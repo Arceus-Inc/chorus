@@ -80,9 +80,18 @@ Scope discipline is the whole game.
   org-data edits, scored selection across a heterogeneous workforce. Exposes
   (does not build) the seams horizon and lattice plug into.
 
+## Research
+
+- [`docs/paperclip-research/`](docs/paperclip-research/) — a complete, code-level
+  architecture study of [Paperclip](https://github.com/paperclipai/paperclip) (the
+  same thesis, already shipped), read end to end as prior art for chorus. Includes the
+  data model, task lifecycle, the agent-execution boundary, the liveness/recovery
+  machinery, governance/budgets, and a
+  [synthesis of what chorus should steal vs. build differently](docs/paperclip-research/10-implications-for-chorus.md).
+
 ## Status
 
-🚧 Pre-implementation. This repo currently holds direction only; M1 is next.
+🚧 Pre-implementation. This repo currently holds direction + research; M1 is next.
 
 ## License
 
