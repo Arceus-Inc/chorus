@@ -45,6 +45,19 @@ So chorus supplies only **(task, role, dod, workspace, observer)** and gets back
 Everything Paperclip's `heartbeat.ts` does to *manage* an external agent (spawn, stream, cancel,
 parse) is gone.
 
+### Versioned contract binding (the one dependency chorus pins)
+
+The seam binds to **`dream.contracts`**, not to dream internals — so the surface chorus depends on is
+exactly the Protocols (`ExecPlanLedger`, `MemoryStore`/`MemoryWriter`, `RoleManifest`,
+`RunTaskResult`, the event types). chorus pins a **compatible-release** requirement
+(`dream ~= MAJOR.MINOR`) and treats `dream.contracts.__contract_version__` as the compatibility key:
+at import, chorus asserts the running dream's contract version is within the range it was built
+against and **fails fast with a clear error** otherwise, rather than discovering a drifted signature
+mid-beat. Because the siblings (horizon, lattice) bind the *same* contracts module, the contract
+version is the single coordination point across all four repos — internals may churn freely beneath
+it. (Stability policy: contracts follow semver; a breaking Protocol change is a dream MAJOR bump and
+a coordinated chorus release.)
+
 ---
 
 ## 3. role → manifest → toolset
@@ -90,6 +103,25 @@ verifier. The generator turn-loop writes the artifact; the evaluator turn-loop r
 
 > This is how chorus closes Paperclip's ⚪ **Enforced Outcomes** gap at M1: the verifier sees the
 > real artifact, in-process, because chorus is dream-native.
+
+### The failure contract — when `run_task` does not return a clean pass
+
+`run_task` resolves one of three ways, and chorus maps each to a **typed task state**, never to a
+silent stall (spec 02 §3). The mapping is the beat's whole error contract:
+
+| `run_task` outcome | Meaning | chorus does |
+|---|---|---|
+| returns `passed=True` | evaluator accepted the artifact | `done` + land outcome (spec 04 §2) |
+| returns `passed=False` | ran to completion, DoD not met | enter the DoD-failure ladder (spec 04 §1) — `blocked`/repair, **not** an error |
+| raises `dream.TaskCancelled` | cooperative cancel (caps/budget/operator) | release lock; leave task in its pre-beat state; record `cancelled` run |
+| raises `dream.RunTaskError` (planner/engine/tool fault) | the loop itself failed | `run` marked `failed`; task surfaced as **stranded** → recovery ladder (spec 02 §6), owner preserved |
+| raises anything else / process dies | crash | nothing to do *in-band* — the lease expires and the tick's recovery pass reclaims it (spec 02 §7) |
+
+The invariants: a **raise is never swallowed into `done`**; a failed/raised beat always leaves either
+a typed disposition or a stranded-task signal the tick can re-derive from rows (B2.2), so no error
+path produces a silently dead task. `RunTaskError` carries a typed `phase` (`plan|sprint|evaluate`)
+and cause, which chorus records on the `run` and the `recovery_action` evidence so the escalation
+trail names *where* it broke.
 
 ---
 

@@ -76,6 +76,42 @@ merge).
 
 ---
 
+## Post-M4 — the sibling integration milestones (horizon, lattice)
+
+These are not chorus features — they are the moments a **sibling repo** plugs into a seam chorus
+already reserved (spec 00 §5a). chorus needs **no kernel change** for either; the milestone is
+"prove the seam holds."
+
+| Milestone | Sibling | The seam it fills | What proves it |
+|---|---|---|---|
+| **H1 — horizon takes intake** | horizon | `submit` / `task.depth=0` intake slot + the `goal` tree (spec 10 §5) | horizon drives `submit` from OKR direction; chorus executes identically; the stub intake is *retired*, not rewritten |
+| **L1 — lattice replaces the writer** | lattice | the `MemoryWriter` swap behind `MemoryStore`/`MemoryWriter` (spec 07 §4) | lattice's consolidating writer replaces `AppendOnlyMemoryWriter`; chorus's read path + provenance unchanged; raw deltas it already wrote are consolidated |
+
+The invariant the two milestones jointly prove: **the four-repo architecture was real from M1.**
+Because every sibling seam was a typed contract + a stub default (never a stub the sibling must rip
+out), H1 and L1 are *additions at the seam*, not migrations through the kernel. If either requires
+editing the scheduler, ledger, or recovery, the seam was wrong — and that's the test.
+
+---
+
+## Per-milestone test strategy
+
+Each milestone ships with the test class that *proves its specific invariant*, layered on the prior:
+
+| Milestone | The test that proves it | Failure-injection / crash test |
+|---|---|---|
+| **M1** | `test_public_api` pins the surface; an integration test runs a real `submit → run_task → evaluator → merge`; a `Command` DoD that fails forces the repair loop | kill the process mid-beat → restart → lease-recovery re-dispatches; assert **no duplicate run, no stranded task** |
+| **M2** | dependency-gating test (`B` withheld until `A` done); concurrency test (two beats under the cap); a budget test that a hard breach pauses + kills | crash mid-dispatch → assert the `wake` coalescing index holds (no double-dispatch); `cost_event` race → live-recompute still blocks |
+| **M3** | decomposition exact-once test (3 children, fingerprint reuse); `children_done` re-invocation test; a Reviewer-verified PM task | kill the manager **mid-fan-out** → retry resumes from the same `decomposition_claim`, reuses created children, never double-fans-out |
+| **M4** | cron exact-once-across-ticks test; export→import round-trip (org + routines re-materialize, secrets re-prompted); a new role plugin schedules with no kernel diff | two ticks fire the same routine edge → `claim_cron_edge` lets exactly one win; multi-process tick (Postgres) → `SKIP LOCKED` drains disjoint wakes |
+| **H1 / L1** | a sibling-seam contract test: horizon/lattice bind only `dream.contracts` + chorus contracts (import-graph assertion: **no chorus internals imported**) | swap the stub for the sibling impl → the full M1–M4 suite still passes unchanged |
+
+The through-line: **every milestone's headline test is a crash/exact-once test**, because the whole
+thesis is that crash-safety lives in the partial-unique indexes + the lease clock (spec 01, spec 02),
+not in coordination code. A milestone isn't done until its failure-injection test is green.
+
+---
+
 ## The dependency graph (what unblocks what)
 
 ```
@@ -83,6 +119,8 @@ M1 seam (run_task + DoD + landing + lease recovery)
   └─▶ M2 wakes + deps + budgets + memory-writer
         └─▶ M3 decomposition + children_done + recovery + Reviewer
               └─▶ M4 cron + monitors + dynamic org + portability
+                    ├─▶ H1 horizon fills the intake seam (submit / goal tree)
+                    └─▶ L1 lattice fills the memory-writer seam (consolidation)
 ```
 
 Each milestone is shippable on its own (a real, if small, working org). The first slice to build is

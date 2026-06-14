@@ -89,6 +89,23 @@ Per-status health (transplanted):
 comments don't wake the assignee; plain text naming an employee is not assignment. Routing requires
 a *structured* primitive (mention, assignment mutation, interaction response, blocker, wake).
 
+### Lease defaults (the lease clock that replaces silence thresholds)
+
+The board lease is the single liveness primitive (§6). SDK defaults, all overridable per role/run:
+
+| Knob | Default | Meaning |
+|---|---|---|
+| `lease_ttl` | **120 s** | a claim is live only while its lease is unexpired |
+| `renew_interval` | **30 s** (¼ TTL) | the running beat re-stamps the lease this often |
+| `renew_grace` | **2 missed renewals** (~60 s) | slack before a lease is *eligible* to be reaped |
+| `reap_after` | `lease_ttl + renew_grace` (~180 s) | the tick may reclaim the claim only past this |
+
+The asymmetry is deliberate (Paperclip's rule): **renew aggressively, reap conservatively.** A
+beat renews at ¼ TTL so transient pauses never trip it; the tick reaps only after TTL *and* grace
+*and* a structured no-progress check, so a slow-but-live run is never stolen. Reaping is **crash
+recovery, not retry** (§6) — it releases the lock and surfaces recovery work, it never re-dispatches
+blindly.
+
 ---
 
 ## 4. Decomposition — exact-once (the manager recursion)
@@ -168,6 +185,25 @@ witness dream's structured event stream and the coordination board's **lease clo
 What survives from Paperclip's watchdog: **source-aware folding** — before opening recovery, re-read
 the source task; if it's terminal with durable same-run terminal activity after the evidence point,
 *fold* (resolve) the alert. (Avoids "the run handle stayed hot but the work actually finished.")
+
+### The `recovery_action` state machine
+
+A `recovery_action` row (spec 01 Cluster B) is itself a tracked lifecycle, so recovery never
+becomes its own silent dead state:
+
+```
+open ──(owner acts / wake resolves the source path)──▶ resolved
+  │
+  ├─(folded: source found terminal on re-read)───────▶ folded
+  ├─(superseded by a newer action on same source)────▶ superseded
+  └─(ladder exhausted, needs board judgment)─────────▶ escalated ──▶ (human/horizon)
+```
+
+Invariants: at most **one** `open` recovery_action per `(source_kind, source_id)` fingerprint
+(partial-unique index, spec 01); `resolved|folded|superseded|escalated` are terminal; an `open`
+action *is* a valid liveness path (§3), so opening one keeps its source healthy while the named
+owner is pending. `escalated` emits an `activity(verb='recovered')` row and a `wake` to the
+human/horizon responder — it is the only tier that leaves the SDK's autonomous loop.
 
 ---
 

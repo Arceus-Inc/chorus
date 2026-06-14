@@ -87,9 +87,32 @@ Every mutation appends to an `activity` log (`actor_type/actor_id`, `action`, `e
 event log is for *liveness/realtime*; the audit log is for *accountability*. They overlap but serve
 different readers.
 
+### Retention — the event log rotates, the audit trail does not
+
+`events.jsonl` is an unbounded firehose, so it **rotates**: at a size/age threshold (default 64 MB /
+7 days) the active file is sealed to `events-{seq}.jsonl.gz` and a fresh file opened. Rotation is
+safe because the event log is *derived* telemetry — nothing reads it to reconstruct state (the ledger
+is the source of truth, spec 00 B2.2), so old segments can be compacted or shipped off-box without
+affecting correctness. The **`activity` table never rotates**: it is the durable accountability
+record and is bounded by being the *audited subset* of events, not the firehose. The inspector reads
+live state from the ledger + the active segment; historical replay reads sealed segments on demand.
+
 ---
 
-## 6. What chorus does NOT build (vs Paperclip's frontend)
+## 6. Correlation — one id from tick to cost
+
+A single `trace_id` threads an entire causal chain so a human can follow "this dollar came from that
+tick": the tick that dispatches a wake **mints a `trace_id`**, the beat inherits it onto every
+`run.*` event, the evaluator verdict carries it, each `cost_event` the beat produces stores it (spec
+01 Cluster E), and the `activity` row for the disposition carries it too. So
+`tick → wake → run → tool_use… → evaluated → cost_event → activity` all share one id — the inspector's
+"why did this task cost $4" and "what did this tick set in motion" are both a single `trace_id` filter
+across the event log, the cost ledger, and the audit trail. dream's OTel spans (§4) use the same id
+as their trace root when tracing is on, so external traces stitch to internal events for free.
+
+---
+
+## 7. What chorus does NOT build (vs Paperclip's frontend)
 
 - no **per-adapter stdout parsers** (`parse-stdout.ts`) — the stream is already structured;
 - no **WebSocket fan-out infrastructure in the SDK** — the bus is in-process (Arceus adds the WS);

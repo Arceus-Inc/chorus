@@ -47,6 +47,14 @@ Role = ( RoleManifest          # toolset + system prompt + permission mode  (dre
 A role is a **plugin** (spec 09): adding "Designer" = adding a manifest + a DoD generator + an
 outcome kind. No kernel change.
 
+**Overlay, not inheritance.** A role is resolved by **layering**, narrower-wins, never by class
+inheritance: `base defaults → role manifest → employee overrides → task/run policy`. Each layer can
+only *narrow* capability (drop a tool, tighten permission mode, restrict memory scope) — never widen
+it, mirroring `compute_minimum_toolset`'s intersection (spec 05 §3). So an employee override that
+tries to *add* a tool the manifest disallows is ignored (the disallow wins); an override that drops a
+tool takes effect. This gives "a stricter Engineer for untrusted repos" without a new role class —
+just an overlay — and keeps capability monotonic: no resolution order can ever escalate privilege.
+
 ### The v0 roles
 
 | Role | Toolset leans | DoD (verifier) | Outcome |
@@ -74,6 +82,21 @@ table; team structure is emergent"*). No process tree. Invariants (Paperclip's, 
 - Humans and employees are unified as **principals** for ownership (a task is assigned to an
   employee XOR a human).
 
+**The principal model (typed).** "Principal" is the ownership union the ledger enforces as a literal
+XOR pair of nullable columns (`*_employee_id` / `*_user_id`, spec 01) — never a single polymorphic
+id:
+
+```
+Principal = Employee(id)   # execution-backed: can be assigned work that runs a beat
+          | Human(user_id) # judgment-backed: can own, decide, approve — never runs a beat
+```
+
+The distinction is load-bearing, not cosmetic: only an **Employee** principal yields an action-path
+primitive (a beat); a **Human** principal is a valid liveness path *only* as an owner/approver (spec
+02 §3), never as a thing the scheduler dispatches. Every ownership/sender/actor column in the ledger
+(`assignee`, `created_by`, `message.from`, `activity.actor`) is this same XOR pair, so "who did
+this" is always exactly one principal and the kernel never has to guess a type tag.
+
 The org *behaves* hierarchical (managers, reports, delegation, review) but the **runtime is flat
 and durable** — no employee ever blocks inside another's call stack (B1.2). The only sanctioned tree
 is dream's `swarm` (bounded, depth-capped, ephemeral intra-task helpers).
@@ -97,6 +120,20 @@ employee or a broken org chain are cancelled.
 
 Recovery owner selection (failure path, off by default) *recommends* an owner by walking
 assignee → reporting chain → creator chain → root — it **never auto-reassigns** (spec 02 §8).
+
+### Delegation depth cap (`request_depth`)
+
+Every delegated/decomposed child inherits `parent.request_depth + 1` (spec 01, spec 02 §4). The cap
+bounds the manager recursion so a runaway decompose-loop can't fan out forever:
+
+- **Default cap = `5`** hops from the intake root (override per-workforce). A root intake task is
+  depth `0`; a manager's children are `1`, their children `2`, …
+- **At the cap**, a manager beat that tries to decompose **fails closed**: no children are created,
+  the task is set `blocked` with a typed `recovery_action(cause='request_depth_exceeded')` naming
+  the manager as owner (spec 02 §6) — it is surfaced as visible work, never silently dropped.
+- The cap is checked **before** the `decomposition_claim` is opened, so a breach leaves no partial
+  fan-out to reconcile. `request_depth` is distinct from structural `task.depth`: depth measures the
+  parent_id tree; request_depth measures *delegation hops*, and it is the one the cap guards.
 
 ---
 
