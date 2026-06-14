@@ -89,6 +89,30 @@ Dispatch priority (Paperclip's): in-progress resumes first → dependency-ready 
 tick **never runs `run_task` inline** — it kicks the beat off async and moves on, so one slow beat
 can't stall the pulse.
 
+**The deterministic sort key.** `wakes.claim` orders the eligible set by a total, tie-broken key so
+two ticks (or two Arceus processes) always agree on *which* wake is next — no nondeterministic
+ordering, no starvation:
+
+```python
+sort_key = (
+    0 if task.status == "in_progress" else 1,   # 1. resume live work before starting new
+    0 if task.deps_all_done else 1,             # 2. dependency-ready before still-gated
+    PRIORITY_RANK[task.priority],               # 3. critical=0 high=1 medium=2 low=3
+    wake.created_at,                            # 4. FIFO within a band (oldest first — anti-starve)
+    wake.id,                                    # 5. final tie-break: stable, total order
+)
+```
+
+Every component is a stored column, so the key is a pure function of the rows (B2.2). `wake.id` as
+the last element guarantees a *total* order even when all else ties — the property multi-tick
+exact-once dispatch (§5) relies on.
+
+**Tick cadence.** default `tick_interval = 1 s`; the tick is idempotent, so the exact value only
+trades latency for wakeups. In the multi-process (Arceus) deployment each process adds a small
+random **jitter** (±250 ms) so ticks don't synchronize and contend on the same rows. If a tick's
+work exceeds the interval, the next tick is skipped (no overlap) — there is never more than one tick
+in flight *per process*; cross-process safety is §5.
+
 ### The beat (`run_beat`)
 
 ```python
@@ -101,7 +125,7 @@ async def run_beat(wake, claim):
         role=emp.role.manifest, dod=task.dod,
         observer=event_bus.emit,                       # witness liveness (no watchdog)
     )
-    memory_writer.apply(raw_delta(emp, result))        # append-only (no lattice)
+    memory_writer.apply(raw_delta(emp, result))        # append-only raw sprint delta; lattice consolidates later
     land_outcome(task, result)                         # role-specific (spec 04)
     set_status(task, "done" if result.passed else "blocked")
     claims.release(task.id, claim.checkout_run_id)     # compare-and-clear
@@ -163,6 +187,29 @@ chorus does not rewrite it.
   sequentially, not concurrently.
 - **Fairness**: prioritized claim avoids starving old/low-priority wakes; round-robin across
   employees within a priority band.
+
+### Multi-tick safety (one ledger, many ticking processes — the Arceus/Postgres case)
+
+In the SQLite SDK there is one process and one tick; exact-once is the partial-unique indexes
+alone. In the **Arceus/Postgres** distribution several workers may tick the *same* ledger, so every
+claim step must be exact-once at the row level — the design never assumes a single ticker:
+
+- **`wakes.claim`** is a single `UPDATE … SET status='claimed', claimed_by=:pid WHERE id IN (SELECT
+  … ORDER BY <sort_key> LIMIT :n FOR UPDATE SKIP LOCKED) RETURNING *`. `SKIP LOCKED` lets two
+  workers drain disjoint wakes with zero contention; the deterministic sort key (§3) means they
+  pull the *right* ones. (SQLite has no `SKIP LOCKED`, but with one writer it doesn't need it — the
+  same statement degrades to a plain ordered `UPDATE … RETURNING`.)
+- **`claim_cron_edge`** stays a conditional `UPDATE routine_trigger SET next_run_at=:next WHERE
+  id=:id AND next_run_at=:edge` — only one worker's UPDATE matches the edge, so a routine fires
+  exactly once even if every worker sees it due.
+- **The board checkout** (`claims.claim`) is already an atomic CAS on dream's board; a `409` means a
+  peer won the lock → skip, never retry.
+- For the recovery pass, workers take a **Postgres advisory lock** (`pg_try_advisory_lock`) around
+  the stale-lease reap so two workers don't both reclaim the same claim; under SQLite the single
+  writer makes this a no-op.
+
+The rule: **no scheduler step trusts "I am the only ticker."** Every mutation is a conditional
+write that exactly one caller can win, so correctness is identical whether one process ticks or ten.
 
 ---
 
