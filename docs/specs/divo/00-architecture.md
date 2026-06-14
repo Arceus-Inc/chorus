@@ -77,16 +77,45 @@ dream is a **package dependency**, not vendored. chorus reuses dream's `run_task
 
 - **Not the agent loop** — that is dream. chorus *calls* `run_task`; it never writes a turn FSM, a
   tool-call atom, or an evaluator. If you find yourself doing that, stop.
-- **Not company direction** — that is **horizon** (absent for now → intake is human/cron-driven).
-- **Not memory consolidation / employee growth** — that is **lattice** (absent → memory is
-  append-only; chorus never decides what's *worth* remembering).
+- **Not company direction** — that is **horizon** (the *next* sibling to be built; until it ships,
+  chorus runs a *stub* intake — human/cron-driven — that horizon will later own and drive).
+- **Not memory consolidation / employee growth** — that is **lattice** (a sibling; chorus captures
+  memory at the **sprint level** — raw, append-only, with provenance — and **reserves the
+  consolidation seam** lattice will own; chorus never decides what's *worth* remembering).
 - **Not multi-tenant hosting, auth, billing, the web board** — that is **Arceus** (the product).
-- chorus depends on dream; **nothing depends sideways** (horizon/lattice are siblings meeting only
-  at the data layer + `dream.contracts`).
+- chorus depends on dream; **nothing depends sideways**. The architecture is **four repos**
+  (dream · chorus · horizon · lattice); horizon and lattice are siblings meeting only at the data
+  layer + `dream.contracts`. chorus *stubs* intake (until horizon) and *writes raw* sprint memory
+  (until lattice) — reserving both seams, absorbing neither.
 
 > The moment the kernel "knows what a good sprint looks like," hardcodes a cadence, or bakes in
 > "engineers open PRs," it has stopped being an SDK. Those are role plugins, horizon policy, and
 > the company definition the SDK *interprets*.
+
+### 5a. Reserved sibling seams (the four-repo contract)
+
+chorus does not absorb horizon or lattice; it holds a **named seam** for each, so the sibling can
+later plug in *without chorus changing*:
+
+| Sibling | Owns (when built) | The seam chorus reserves now | chorus's stub today |
+|---|---|---|---|
+| **horizon** | direction · OKR tree · what-to-do-next prioritisation · cross-sprint objective health | `submit()` intake + the `goal` table (a local mirror horizon will feed) + `task.depth=0` "intake slot" | human/cron-driven `submit`; goals created flat at intake |
+| **lattice** | memory consolidation · skill/role evolution · what's *worth* remembering | the `MemoryWriter` contract (chorus ships the append-only impl; lattice replaces it) + the provenance every record carries | `AppendOnlyMemoryWriter` — raw sprint deltas, never consolidated |
+
+The rule: **a seam is a typed contract + a stub default, never a stub that the sibling must rip
+out.** horizon reads/writes the same ledger + goal rows; lattice swaps the writer behind the same
+`MemoryStore`/`MemoryWriter` split. Both bind to `dream.contracts` + chorus's own contracts (spec
+09 §4), never to chorus internals.
+
+### 5b. Glossary — the two heartbeats (used across every spec)
+
+- **tick** — the *kernel pulse*: one pass over the ledger (recover → cron → monitors → dispatch).
+  Holds no state; pure function of the rows (B2.2). The org's only timer. (spec 03 §3)
+- **beat** — *one employee's* short `dream.run_task` invocation. Born from a `wake`, rehydrates an
+  employee, does one pass, lands its outcome, dissolves. (spec 03 §3, B1.1)
+- **wake** — a durable "run employee E for reason R" row; the *only* thing that starts a beat
+  (push-driven dispatch). (spec 03 §2)
+- **run** — the durable record of one beat (thin — no PID/stdout, because liveness is witnessed).
 
 ---
 

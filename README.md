@@ -24,7 +24,11 @@ lattice    the people      →  employee growth + memory consolidation
 Strict bottom-up dependency. **chorus depends on dream; nothing depends
 sideways.** chorus, horizon, and lattice are siblings that never import each
 other — they meet only at the data layer (ledger, org repo, memory repo) and at
-`dream.contracts` typed Protocols.
+`dream.contracts` typed Protocols. **horizon** is the next sibling to be built;
+until it ships, chorus runs a *stub* intake that horizon will later own. chorus
+captures memory at the **sprint level** (raw, append-only, with provenance) and
+reserves the consolidation seam for **lattice** — it stubs intake and writes raw
+memory, absorbing neither sibling.
 
 ## What chorus owns
 

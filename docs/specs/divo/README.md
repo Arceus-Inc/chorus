@@ -32,8 +32,10 @@ One chorus spec per Paperclip research dimension — so coverage is at parity, n
 - **dream-native.** chorus calls `dream.run_task` in-process and witnesses its structured
   event stream. There is **no subprocess adapter, no MCP phone-home, no output-silence
   watchdog** — the three things that bloat Paperclip. (B2.2)
-- **Two repos only.** dream + chorus. No horizon (→ chorus owns intake), no lattice (→
-  memory is append-only). (see chorus-on-dream.md)
+- **Four repos.** dream · chorus · horizon · lattice (strict bottom-up; siblings never import each
+  other). chorus *stubs* intake until **horizon** ships (horizon then owns direction/what-to-do-next),
+  and writes **raw sprint memory** while **lattice** owns consolidation. Both seams are reserved,
+  neither sibling is absorbed. (see chorus-on-dream.md)
 - **Storage.** SQLite-WAL is the SDK default; Postgres is the Arceus driver. The schema
   stays in the SQLite ∩ Postgres intersection. Partial-unique indexes work in both. (B2.1)
 - **Reuse dream's coordination.** The two-lock atomic checkout + lease live on dream's

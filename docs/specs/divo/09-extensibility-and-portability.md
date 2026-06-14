@@ -27,6 +27,28 @@ No scheduler, ledger, or recovery change. This is "the org scales in roles witho
 (the M4 proof). The kernel stays ignorant of *what* roles do — it only schedules, checks out,
 verifies, and lands.
 
+### Registration lifecycle & validation
+
+`register_role` is **fail-closed and idempotent**, validated *before* the role can own work — a
+malformed plugin must never reach the scheduler:
+
+1. **validate** — name is a non-empty unique slug; the `RoleManifest`'s tools resolve to *registered*
+   tools (an unknown tool is rejected, not silently dropped); `permission_mode`/`memory_scope` are
+   legal enum values; the `dod_generator` returns a typed `Verifier` for a probe intent; the
+   `outcome_kind` has a registered `OutcomeLander` (spec 04 §2). Any failure raises
+   `RolePluginInvalid` — registration is rejected whole, never half-applied.
+2. **register** — the validated plugin is added to the in-memory role registry keyed by slug. Re-
+   registering the *same* slug with an *identical* definition is a no-op (idempotent boot); re-
+   registering with a *different* definition raises `RolePluginConflict` unless `replace=True` is
+   passed (explicit override), so an accidental shadow can't silently change a running role.
+3. **freeze at first use** — once an employee of that role has run a beat, the manifest is pinned for
+   provenance; later `replace=True` registers a *new version* rather than mutating history, so
+   memory/audit records always resolve the manifest the beat actually ran under.
+
+Registration happens at boot (or package import); the registry is rebuilt from code each start — it
+is **not** ledger state, so there is nothing to migrate, and an unregistered role referenced by an
+imported package is surfaced as a blocked-import error (§3), never a runtime null.
+
 ---
 
 ## 2. Skills — playbooks (dream's, reused)
@@ -75,6 +97,25 @@ chorus export ./acme-eng-team.tar     # serialize workforce -> portable package
 chorus import ./acme-eng-team.tar      # re-materialize into a fresh ledger, prompts for envInputs
 ```
 
+### Schema version & import conflict rules
+
+The package format is versioned (`agentcompanies/v1`) and `chorus.yaml` carries both the **format
+version** and the **minimum chorus version** it was exported from. Import is gated and conflict-aware:
+
+- **Version gate** — chorus imports an equal-or-older *format* version (running forward-only package
+  migrations to its own), and **refuses a newer format** with a clear error rather than guessing at
+  unknown fields. A package needing a newer chorus than the running SDK is rejected up front.
+- **Slug collisions** — on import into a non-empty ledger, a slug that already exists resolves by an
+  explicit `--on-conflict` policy: `skip` (keep existing, default), `rename` (suffix the incoming
+  slug), or `replace` (only with the flag). Import is **transactional**: it validates the *whole*
+  package (all roles registered, all `reports_to_slug` resolvable, no `reports_to` cycle, every
+  referenced skill present) and either materializes everything or nothing — never a half-imported org.
+- **Unresolved references fail the import** — a `role.md` naming an unregistered role plugin, a
+  `reports_to_slug` with no target, or a goal/project slug that doesn't resolve is a blocked-import
+  error listing every offending reference, so the fix is one pass, not a runtime surprise.
+- **envInputs are re-prompted, never inferred** — missing required `envInputs` abort the import before
+  any row is written; secrets are always operator-supplied at import (§3 rule 3).
+
 > This is the "portable git-markdown org" belief (B-portability) — and the assessment confirms
 > Paperclip already did the slug-identity + env-input externalization + system-dependent stripping,
 > so chorus transplants a *solved* design rather than inventing one.
@@ -94,6 +135,14 @@ Everything binds to typed contracts, not concrete classes (B0.2). The roots:
 A consumer extends chorus by implementing a contract (a role plugin, a custom `OutcomeLander`, a
 durable `WakeQueue`), never by forking the kernel — which is the OS test from
 [00-architecture §5](00-architecture.md).
+
+**The siblings are consumers, not forks.** horizon and lattice extend chorus through *exactly these
+same contracts* — horizon drives intake by writing `task`/`goal` rows and reading the event stream;
+lattice swaps the `MemoryWriter` behind the `MemoryStore`/`MemoryWriter` split (spec 07 §4). Neither
+imports chorus internals and chorus imports neither of them (spec 00 §5a); they meet only at
+`dream.contracts` + chorus's own contracts + the shared data layer. So "reserve the sibling seam" is
+not a special case — it is the **same plugin discipline** every third-party extension uses, which is
+why adding a sibling later needs no kernel change.
 
 ---
 

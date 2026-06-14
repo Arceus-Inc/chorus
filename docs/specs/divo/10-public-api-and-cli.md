@@ -18,7 +18,7 @@ class Chorus:
     def build(cls, *, db_path, org_repo, memory_repo, dream, *,
               roles=None, caps=None) -> "Chorus": ...
 
-    # intake (replaces horizon)
+    # intake (stub until horizon ships — the horizon handoff seam)
     def submit(self, intent: str, *, assignee=None, dod=None, depends_on=()) -> Task: ...
 
     # the heartbeat
@@ -42,6 +42,60 @@ class Chorus:
 `build()` is the composition root: it news-up `SqliteLedger`, `GitWorkforce`, `GitMemoryStore`, the
 `AppendOnlyMemoryWriter`, the dream board `ClaimManager`, the `Scheduler`, and injects them. Nothing
 else creates concrete classes.
+
+### The read-model return shapes (typed, not dicts)
+
+The inspection methods return frozen dataclasses so consumers bind to a typed surface the public-API
+test pins — never ad-hoc dicts:
+
+```python
+@dataclass(frozen=True)
+class TickReport:                 # what one pulse did (spec 03)
+    at: datetime
+    recovered: int                # stale leases reaped / stranded tasks reconciled
+    routines_fired: int
+    wakes_dispatched: int
+    beats_started: int            # async dispatches kicked off this tick (not awaited)
+    blocked_by_budget: int
+
+@dataclass(frozen=True)
+class WorkforceStatus:            # the company at a glance (spec 08)
+    employees: tuple[EmployeeView, ...]   # name, role, status, last_beat_at, spend
+    open_tasks: int
+    running_beats: int
+    blocked: tuple[TaskView, ...]         # the blocked inbox, ranked
+    open_incidents: tuple[IncidentView, ...]  # budget / recovery
+
+@dataclass(frozen=True)
+class TaskView:                   # one task, resolved for reading
+    id: str; intent: str; status: TaskStatus; priority: str
+    assignee: str | None          # employee name or human id
+    goal_id: str | None; depth: int; request_depth: int
+    dod: Verifier; latest_run: RunView | None
+    liveness: str                 # 'healthy' | 'stalled' (derived, spec 02 §3)
+    blockers: tuple[str, ...]     # unresolved task_dependency leaves
+```
+
+These are **read projections**, not the ledger rows — they resolve names and liveness so the caller
+never re-implements the queries. `events()` yields the spec 08 `Event` envelope verbatim.
+
+### Public exceptions (the typed failure surface)
+
+The facade raises a small, pinned hierarchy — callers catch types, never parse messages:
+
+```python
+class ChorusError(Exception): ...              # root of everything chorus raises
+class InvalidIntake(ChorusError): ...          # submit() with a bad intent/assignee/dod
+class UnknownEmployee(ChorusError): ...         # hire/assign to a missing employee
+class OrgInvariantViolation(ChorusError): ...   # reports_to cycle, double assignee, terminate root
+class RolePluginInvalid(ChorusError): ...       # registration validation failed (spec 09 §1)
+class RolePluginConflict(ChorusError): ...      # slug re-register without replace=True
+class BudgetBlocked(ChorusError): ...           # submit/dispatch refused by a hard-stop
+class PackageImportError(ChorusError): ...      # version gate / unresolved refs (spec 09 §3)
+```
+
+`dream`-originated faults (`RunTaskError`, `TaskCancelled`, spec 05) are **not** re-wrapped — they
+surface as the dream types so the seam stays honest; chorus only adds its own org-level errors above.
 
 A consumer (an `examples/` file, or Arceus) does only:
 
@@ -112,3 +166,38 @@ a WebSocket for streaming — *all machinery to bridge the process boundary* (re
 So extending chorus's "agent contract" = registering a tool/role on the engine, not editing a
 `tools.ts` + a route. The network surface is purely an Arceus concern, layered *on top of* this
 library API.
+
+---
+
+## 5. The horizon handoff seam (on `submit`)
+
+`submit()` is the reserved intake seam (spec 00 §5a). Today it is the *stub* — a human/CLI/cron hands
+in an intent and chorus creates a flat `depth=0` task. When **horizon** ships it becomes the writer
+of intake: horizon owns *what to do next* (OKR-driven prioritisation, direction) and drives the same
+`submit` path (or writes `task`/`goal` rows directly), while chorus keeps executing exactly as it
+does now. The contract chorus pins so horizon can plug in without a kernel change:
+
+- `submit` stays the single intake entry point; horizon calls it (or the ledger seam beneath it) —
+  chorus never grows a second intake door.
+- `task.depth=0` is the **intake slot** horizon fills; `goal_id` resolves into the `goal` tree
+  horizon will own (spec 01 Cluster D). Until then, operators seed `company` goals and `submit`
+  attaches to them.
+- chorus does **not** prioritise across intake (no "what's most important" logic) — it executes what
+  it's given in scheduler order (spec 03). That judgement is horizon's, reserved, not stubbed-in.
+
+---
+
+## 6. API stability & deprecation policy
+
+The pinned surface (§3) is a contract, versioned with the package:
+
+- **Semver.** chorus follows semver; a breaking change to the `__all__` surface or a public
+  dataclass/exception shape is a **major** bump. Additive changes (new method, new optional field,
+  new `Event` type) are **minor**.
+- **Deprecation window.** a public symbol is deprecated for **one minor cycle** before removal:
+  it keeps working, emits a `DeprecationWarning` naming the replacement, and is listed in the
+  changelog — never removed in the same release it's deprecated.
+- **`_`-prefixed is private.** anything not re-exported from `chorus/__init__.py` may change at any
+  time; `test_public_api.py` is the enforcement, so an accidental surface change fails CI.
+- **Contracts track dream.** the `dream.contracts` re-exports (spec 05) move with dream's contract
+  version; a dream MAJOR that breaks a Protocol is a coordinated chorus MAJOR.

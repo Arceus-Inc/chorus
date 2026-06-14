@@ -2,7 +2,8 @@
 
 The chorus ledger. Every row is durable; the scheduler holds no state not in these tables
 (B2.2). Transplanted from Paperclip's 86-table model — slimmed to the dream-native,
-single-workforce, two-repo world — with the **partial-unique indexes carried over verbatim**,
+single-workforce, four-repo world (dream · chorus · horizon · lattice) — with the
+**partial-unique indexes carried over verbatim**,
 because those indexes *are* the crash-safety contracts (they make self-spawned work exact-once
 at the database layer instead of in coordination code).
 
@@ -321,6 +322,10 @@ emergent from `reports_to` + per-task assignment.
 `id`, `title`, `level` (`company\|team\|employee\|task`), `status`, `parent_id` (self-FK),
 `owner_employee_id`. ≥1 root `company` goal. Every task's `goal_id` resolves into this tree.
 
+> **horizon seam:** the `goal` tree is the local mirror **horizon** will own (spec 00 §5a). Until
+> horizon ships, goals are created flat at intake and `company` roots are seeded by the operator;
+> when horizon arrives it becomes the writer of this tree and chorus keeps reading it unchanged.
+
 ---
 
 ## Cluster E — Money: `budget_policy`, `budget_incident`, `cost_event`
@@ -353,6 +358,84 @@ The Enforced-Outcomes surface (spec 04). `artifact`: `task_id`, `type` (`pr\|doc
 artifact\|workspace_file`), `provider`, `external_id`, `url`, `review_state`, `health_status`,
 `is_primary`, `resource_ref` (json). `artifact_revision`: immutable history — *the thing
 decomposition is authorized against* (the `accepted_plan_revision_id` above).
+
+---
+
+## Cluster G — Coordination & audit: `message`, `approval`, `activity`
+
+These three close referential gaps the other clusters already point at: `wake` coalesces a
+`message` reason, `budget_incident.approval_id` points at an `approval`, and spec 08 §5's audit
+trail is an `activity` stream.
+
+### `message` — the durable mailbox (≈ Paperclip `agent_messages`)
+
+Manager↔report and human↔employee messages. A message **does not run anything** — it lands here,
+then enqueues a `wake(reason='message')` for the recipient (the run-causing event stays the wake).
+
+| Column | Type | Meaning |
+|---|---|---|
+| `id` | text PK | |
+| `from_employee_id` / `from_user_id` | text | **XOR** sender (one is null) |
+| `to_employee_id` | text FK→employee | recipient (the woken principal) |
+| `task_id` | text FK→task | optional thread anchor |
+| `body` | text | |
+| `kind` | text | `instruction\|reply\|escalation\|fyi` |
+| `read_at` | ts | null until the recipient's beat consumes it |
+| `created_at` | ts | |
+
+Index `(to_employee_id, read_at)` — a beat drains its unread inbox in one query.
+
+### `approval` — the human gate (referenced by spec 04 §5 / M4)
+
+The durable record behind a hard-stop budget breach or any role-declared approval gate. A task
+that needs approval sits `blocked`; the `approval` row is the thing a human (or horizon, later)
+resolves to unblock it.
+
+| Column | Type | Meaning |
+|---|---|---|
+| `id` | text PK | |
+| `subject_kind` | text | `budget_incident\|task\|artifact` |
+| `subject_id` | text | FK into that table |
+| `reason` | text | why approval is required |
+| `status` | text | `pending\|approved\|denied\|expired` |
+| `decided_by_user_id` | text | who resolved it (null while pending) |
+| `decided_at` / `expires_at` / `created_at` | ts | |
+
+```sql
+-- at most one pending approval per subject (exact-once gate)
+CREATE UNIQUE INDEX approval_subject_pending_uq
+  ON approval(subject_kind, subject_id) WHERE status = 'pending';
+```
+
+### `activity` — the append-only audit stream (spec 08 §5)
+
+Immutable governance log: every state transition a human might audit (assignment, decomposition,
+recovery, budget gate, hire/fire, approval). Distinct from the spec 08 *event stream* (operational
+telemetry) — `activity` is the **durable, queryable** subset that must survive log rotation.
+
+| Column | Type | Meaning |
+|---|---|---|
+| `id` | text PK | |
+| `actor_employee_id` / `actor_user_id` | text | who (XOR; null = the kernel itself) |
+| `verb` | text | `assigned\|decomposed\|recovered\|gated\|hired\|fired\|approved\|denied` |
+| `subject_kind` / `subject_id` | text | the row acted on |
+| `trace_id` | text | correlates to the event stream / cost_event (spec 08 §6) |
+| `payload` | json | verb-specific detail |
+| `occurred_at` | ts | |
+
+Append-only (no `updated_at`). Index `(subject_kind, subject_id)`, `(occurred_at)`.
+
+---
+
+## Schema versioning & SQLite↔Postgres migration
+
+A single-row `schema_version` table (`version` int, `applied_at` ts) gates every boot: chorus
+refuses to open a ledger whose `version` is newer than the SDK, and runs forward-only migrations
+to reach its own version. Because the schema lives in the **SQLite ∩ Postgres intersection**,
+each migration ships as one statement set valid on both drivers; driver-specific DDL (e.g.
+`jsonb` vs `text`, partial-index syntax that differs) is selected by the active driver, never
+branched in business logic. The Arceus/Postgres distribution applies the *same numbered
+migrations* — the version integer is the single compatibility key across both backends.
 
 ---
 
