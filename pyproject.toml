@@ -1,0 +1,91 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "chorus"
+version = "0.1.0"
+description = "An SDK for running an org of agents that completes one sprint, built on dream."
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.11"
+authors = [{ name = "Arceus-Inc" }]
+keywords = ["agent", "workforce", "orchestration", "sdk", "dream"]
+classifiers = [
+  "Development Status :: 2 - Pre-Alpha",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Typing :: Typed",
+]
+dependencies = [
+  # chorus depends on dream; nothing depends sideways (spec 00 §5).
+  "dream",
+  "croniter>=2.0",
+  "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+postgres = ["psycopg[binary]>=3.1"]  # Arceus distribution driver (spec 00 §7)
+dev = [
+  "pytest>=8.2",
+  "pytest-asyncio>=0.23",
+  "pytest-cov>=5.0",
+  "ruff>=0.6",
+  "mypy>=1.11",
+  "types-pyyaml>=6.0",
+]
+
+[project.scripts]
+chorus = "chorus_cli.__main__:main"
+
+[project.urls]
+Homepage   = "https://github.com/Arceus-Inc/chorus"
+Repository = "https://github.com/Arceus-Inc/chorus"
+
+# dream is a sibling repo; during local development install it editable:
+#   uv pip install -e ../dream -e .[dev]
+[tool.uv.sources]
+dream = { path = "../dream", editable = true }
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/chorus", "src/chorus_cli"]
+
+[tool.hatch.build.targets.sdist]
+include = ["src/chorus", "src/chorus_cli", "tests", "README.md", "pyproject.toml"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM", "RUF"]
+ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["B", "SIM"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+packages = ["chorus", "chorus_cli"]
+mypy_path = "src"
+warn_unused_ignores = true
+warn_redundant_casts = true
+
+[[tool.mypy.overrides]]
+module = ["tests.*"]
+disallow_untyped_defs = false
+
+[[tool.mypy.overrides]]
+module = ["croniter", "croniter.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+addopts = ["-q", "--strict-markers"]
