@@ -26,6 +26,7 @@ One chorus spec per Paperclip research dimension — so coverage is at parity, n
 | [09](09-extensibility-and-portability.md) | **Extensibility & portability** | `09-extensibility` | role plugins, skills, the slug-portable company package, the contract layer |
 | [10](10-public-api-and-cli.md) | **Public API & CLI** | `07-api-realtime-auth-mcp` | the `Chorus` facade, the CLI, the public-API pin, why there's no REST/MCP |
 | [11](11-build-plan.md) | **Build plan (M1→M4)** | `10-implications` | per-milestone goal, tables, dream APIs, new code, acceptance, deferrals |
+| [12](12-storage.md) | **Storage architecture** | `DATABASE.md` | store→backend routing, SQLite-now-vs-Postgres-later, the portable-intersection rules, the `Ledger` conformance test |
 
 ## The frame these specs assume (from the beliefs)
 
