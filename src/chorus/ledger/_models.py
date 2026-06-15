@@ -261,6 +261,69 @@ class Message:
     created_at: datetime | None = None
 
 
+class RecoveryKind(StrEnum):
+    """What flavour of stuckness a :class:`RecoveryAction` owns (spec 01 Cluster B, spec 02)."""
+
+    MISSING_DISPOSITION = "missing_disposition"
+    STRANDED = "stranded"
+    WORKSPACE = "workspace"
+    STALE_RUN_WATCHDOG = "stale_run_watchdog"
+    GRAPH_LIVENESS = "graph_liveness"
+
+
+class RecoveryStatus(StrEnum):
+    """A recovery's lifecycle; ``active``/``escalated`` are *open* (spec 01 Cluster B)."""
+
+    ACTIVE = "active"
+    ESCALATED = "escalated"
+    RESOLVED = "resolved"
+
+
+class RecoveryOutcome(StrEnum):
+    """How a recovery ended (spec 01 Cluster B)."""
+
+    RESTORED = "restored"
+    DELEGATED = "delegated"
+    FALSE_POSITIVE = "false_positive"
+    BLOCKED = "blocked"
+    ESCALATED = "escalated"
+    CANCELLED = "cancelled"
+
+
+@dataclass(frozen=True)
+class RecoveryAction:
+    """Liveness-as-visibility — the first-class "who owns making this unstuck" (spec 01 Cluster B).
+
+    At most one *open* (active/escalated) recovery exists per source task, and one per
+    ``(source, cause, fingerprint)`` — both enforced by partial-unique indexes. ``recovery_task_id``
+    is set only for an issue-backed independent repair. Attempts are bounded by ``max_attempts``.
+    """
+
+    id: str
+    source_task_id: str
+    kind: RecoveryKind
+    recovery_task_id: str | None = None
+    status: RecoveryStatus = RecoveryStatus.ACTIVE
+    owner_employee_id: str | None = None
+    owner_user_id: str | None = None
+    previous_owner_employee_id: str | None = None
+    return_owner_employee_id: str | None = None
+    cause: str = ""
+    fingerprint: str = ""
+    evidence: dict[str, object] = field(default_factory=dict)
+    next_action: str | None = None
+    wake_policy: dict[str, object] = field(default_factory=dict)
+    monitor_policy: dict[str, object] = field(default_factory=dict)
+    attempt_count: int = 0
+    max_attempts: int = 0
+    timeout_at: datetime | None = None
+    last_attempt_at: datetime | None = None
+    resolved_at: datetime | None = None
+    outcome: RecoveryOutcome | None = None
+    resolution_note: str | None = None
+    created_at: datetime | None = None
+
+
 @dataclass(frozen=True)
 class ArtifactRevision:
     """Immutable artifact history (spec 01 Cluster F ``artifact_revision``).
@@ -409,6 +472,10 @@ __all__ = [
     "Message",
     "MessageKind",
     "OriginKind",
+    "RecoveryAction",
+    "RecoveryKind",
+    "RecoveryOutcome",
+    "RecoveryStatus",
     "Run",
     "RunStatus",
     "Task",
