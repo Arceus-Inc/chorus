@@ -13,5 +13,5 @@ CREATE TABLE activity (
     CONSTRAINT activity_single_actor CHECK (actor_employee_id IS NULL OR actor_user_id IS NULL)
 );
 
-CREATE INDEX activity_subject_idx ON activity(subject_kind, subject_id);
+CREATE INDEX activity_subject_idx ON activity(subject_kind, subject_id, occurred_at, id);
 CREATE INDEX activity_occurred_idx ON activity(occurred_at);

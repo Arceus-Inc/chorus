@@ -7,7 +7,7 @@ CREATE TABLE decomposition_claim (
     request_fingerprint       TEXT NOT NULL DEFAULT '',
     requested_children        TEXT NOT NULL DEFAULT '[]',
     child_task_ids            TEXT NOT NULL DEFAULT '[]',
-    owner_run_id              TEXT,
+    owner_run_id              TEXT REFERENCES run(id),
     completed_at              TEXT,
     created_at                TEXT NOT NULL
 );

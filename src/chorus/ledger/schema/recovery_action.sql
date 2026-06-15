@@ -22,7 +22,9 @@ CREATE TABLE recovery_action (
     resolved_at                TEXT,
     outcome                    TEXT,
     resolution_note            TEXT,
-    created_at                 TEXT NOT NULL
+    created_at                 TEXT NOT NULL,
+    CONSTRAINT recovery_attempts CHECK (
+        attempt_count >= 0 AND max_attempts >= 0 AND attempt_count <= max_attempts)
 );
 
 CREATE UNIQUE INDEX recovery_active_source_uq ON recovery_action(source_task_id)
