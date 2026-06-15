@@ -168,6 +168,20 @@ class TaskRepo:
         ).fetchall()
         return [_row_to_task(row) for row in rows]
 
+    def agent_owned_open(self) -> list[Task]:
+        """Employee-owned, non-terminal, non-parked tasks - the recovery sweep's scan set (spec 02 §7).
+
+        Excludes ``backlog`` (parked), ``done``/``cancelled`` (terminal), and human-held work
+        (``assignee_user_id`` set) - the sweep never treats human-owned work as beat-managed (§8).
+        """
+        rows = self._conn.execute(
+            "SELECT * FROM task WHERE assignee_employee_id IS NOT NULL "
+            "AND assignee_user_id IS NULL "
+            "AND status IN ('todo', 'in_progress', 'in_review', 'blocked') "
+            "ORDER BY created_at, id"
+        ).fetchall()
+        return [_row_to_task(row) for row in rows]
+
 
 def _row_to_task(row: sqlite3.Row) -> Task:
     return Task(

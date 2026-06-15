@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
+from datetime import datetime
 
 from chorus.ledger._models import Run, RunStatus
 from chorus.ledger.repos._base import dumps, from_iso, loads, to_iso, utcnow_iso
@@ -49,7 +50,19 @@ class RunRepo:
             "SELECT * FROM run WHERE task_id = ? ORDER BY created_at, id", (task_id,)
         ).fetchall()
         return [_row_to_run(row) for row in rows]
+    def running_with_expired_lease(self, now: datetime) -> list[Run]:
+        """``running`` runs whose lease has passed (or was never set) - orphaned beats (spec 02 §7).
 
+        These are crash debris: the worker died mid-beat and the lease lapsed, so the tick reaps
+        them (release the lock, mark timed-out) before any new dispatch.
+        """
+        rows = self._conn.execute(
+            "SELECT * FROM run WHERE status = 'running' "
+            "AND (lease_expires_at IS NULL OR lease_expires_at < ?) "
+            "ORDER BY created_at, id",
+            (to_iso(now),),
+        ).fetchall()
+        return [_row_to_run(row) for row in rows]
     def finish(
         self,
         run_id: str,

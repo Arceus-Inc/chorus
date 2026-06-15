@@ -78,6 +78,14 @@ class RecoveryActionRepo:
         ).fetchone()
         return _row_to_action(row) if row is not None else None
 
+    def all_open(self) -> list[RecoveryAction]:
+        """Every open (active/escalated) recovery, oldest first - the sweep's fold candidates."""
+        rows = self._conn.execute(
+            "SELECT * FROM recovery_action WHERE status IN ('active', 'escalated') "
+            "ORDER BY created_at, id"
+        ).fetchall()
+        return [_row_to_action(row) for row in rows]
+
     def escalate(self, action_id: str) -> None:
         self._conn.execute(
             "UPDATE recovery_action SET status = 'escalated' WHERE id = ? AND status = 'active'",
