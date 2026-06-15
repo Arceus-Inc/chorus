@@ -36,6 +36,8 @@ from chorus.ledger._models import (
 from chorus.ledger.migrations import MIGRATIONS
 from chorus.ledger.repos import (
     ArtifactRepo,
+    DependencyCycleError,
+    DependencyRepo,
     DodRepo,
     EmployeeRepo,
     GoalRepo,
@@ -48,6 +50,8 @@ __all__ = [
     "Artifact",
     "ArtifactRepo",
     "ArtifactType",
+    "DependencyCycleError",
+    "DependencyRepo",
     "Dod",
     "DodRepo",
     "DodStatus",

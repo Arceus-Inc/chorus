@@ -119,11 +119,20 @@ class TaskRepo:
         self._conn.commit()
 
     def list_eligible(self, *, limit: int) -> list[Task]:
-        """Unclaimed ``todo`` tasks, priority then age (M1: no dependency gate yet)."""
+        """Unclaimed ``todo`` tasks whose blockers are all ``done``, priority then age (spec 03 §3).
+
+        A task with any blocker not yet ``done`` (``cancelled`` does not count — spec 02 §2) is
+        withheld, so the scheduler never queues a run for blocked work.
+        """
         rows = self._conn.execute(
-            "SELECT * FROM task WHERE status = 'todo' AND checkout_run_id IS NULL "
-            "ORDER BY CASE priority WHEN 'critical' THEN 0 WHEN 'high' THEN 1 "
-            "WHEN 'medium' THEN 2 ELSE 3 END, created_at LIMIT ?",
+            "SELECT * FROM task t WHERE t.status = 'todo' AND t.checkout_run_id IS NULL "
+            "AND t.assignee_user_id IS NULL "  # human-owned tasks aren't agent-claimable
+            "AND NOT EXISTS ("
+            "  SELECT 1 FROM task_dependency d JOIN task b ON b.id = d.depends_on_id "
+            "  WHERE d.task_id = t.id AND b.status <> 'done'"
+            ") "
+            "ORDER BY CASE t.priority WHEN 'critical' THEN 0 WHEN 'high' THEN 1 "
+            "WHEN 'medium' THEN 2 ELSE 3 END, t.created_at LIMIT ?",
             (limit,),
         ).fetchall()
         return [_row_to_task(row) for row in rows]

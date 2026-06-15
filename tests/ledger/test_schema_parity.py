@@ -35,11 +35,15 @@ def _normalized_objects(conn: sqlite3.Connection) -> list[tuple[str, str, str]]:
 
 def test_migrations_match_declared_schema() -> None:
     migrated = sqlite3.connect(":memory:")
-    MigrationRunner(MIGRATIONS).apply(migrated)
-
     declared = sqlite3.connect(":memory:")
-    for entry in sorted(files("chorus.ledger.schema").iterdir(), key=lambda e: e.name):
-        if entry.name.endswith(".sql"):
-            declared.executescript(entry.read_text())
-
-    assert _normalized_objects(migrated) == _normalized_objects(declared)
+    try:
+        MigrationRunner(MIGRATIONS).apply(migrated)
+        for entry in sorted(files("chorus.ledger.schema").iterdir(), key=lambda e: e.name):
+            if entry.name.endswith(".sql"):
+                declared.executescript(entry.read_text())
+        migrated_objects = _normalized_objects(migrated)
+        declared_objects = _normalized_objects(declared)
+    finally:
+        migrated.close()
+        declared.close()
+    assert migrated_objects == declared_objects
