@@ -95,6 +95,18 @@ class WakeRepo:
         row = self._conn.execute("SELECT * FROM wake WHERE id = ?", (wake_id,)).fetchone()
         return _row_to_wake(row) if row is not None else None
 
+    def active_for_employee(self, employee_id: str) -> list[Wake]:
+        """Live wakes (``queued`` or ``claimed``) for an employee — a liveness path (spec 02 §3).
+
+        A claimed wake means a beat is about to run / is running; both keep the target task healthy.
+        """
+        rows = self._conn.execute(
+            "SELECT * FROM wake WHERE employee_id = ? AND status IN ('queued', 'claimed') "
+            "ORDER BY created_at, id",
+            (employee_id,),
+        ).fetchall()
+        return [_row_to_wake(row) for row in rows]
+
     def queued(self, *, employee_id: str | None = None) -> list[Wake]:
         """Queued wakes (oldest first), optionally scoped to one employee."""
         if employee_id is None:

@@ -53,6 +53,15 @@ class MonitorRepo:
         row = self._conn.execute("SELECT * FROM monitor WHERE id = ?", (monitor_id,)).fetchone()
         return _row_to_monitor(row) if row is not None else None
 
+    def armed_for_task(self, task_id: str) -> Monitor | None:
+        """The single armed (``pending``) monitor for a task, or ``None`` — a liveness path (§3)."""
+        row = self._conn.execute(
+            "SELECT * FROM monitor WHERE task_id = ? AND status = 'pending' "
+            "ORDER BY next_check_at, id LIMIT 1",
+            (task_id,),
+        ).fetchone()
+        return _row_to_monitor(row) if row is not None else None
+
     def due(self, *, now: datetime) -> list[Monitor]:
         """Pending monitors whose ``next_check_at`` has arrived, oldest first."""
         rows = self._conn.execute(

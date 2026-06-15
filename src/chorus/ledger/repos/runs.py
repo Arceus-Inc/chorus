@@ -43,6 +43,13 @@ class RunRepo:
         row = self._conn.execute("SELECT * FROM run WHERE id = ?", (run_id,)).fetchone()
         return _row_to_run(row) if row is not None else None
 
+    def for_task(self, task_id: str) -> list[Run]:
+        """All runs for a task, oldest first — the liveness/recovery history (spec 02 §3)."""
+        rows = self._conn.execute(
+            "SELECT * FROM run WHERE task_id = ? ORDER BY created_at, id", (task_id,)
+        ).fetchall()
+        return [_row_to_run(row) for row in rows]
+
     def finish(
         self,
         run_id: str,
