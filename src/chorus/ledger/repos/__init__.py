@@ -7,6 +7,7 @@ shared connection.
 
 from __future__ import annotations
 
+from chorus.ledger.repos.approvals import ApprovalRepo
 from chorus.ledger.repos.artifacts import ArtifactRepo
 from chorus.ledger.repos.dependencies import DependencyCycleError, DependencyRepo
 from chorus.ledger.repos.dod import DodRepo
@@ -18,6 +19,7 @@ from chorus.ledger.repos.tasks import TaskRepo
 from chorus.ledger.repos.wakes import WakeRepo
 
 __all__ = [
+    "ApprovalRepo",
     "ArtifactRepo",
     "DependencyCycleError",
     "DependencyRepo",
