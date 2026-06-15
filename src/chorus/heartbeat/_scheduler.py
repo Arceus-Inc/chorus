@@ -20,9 +20,21 @@ import uuid
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, TypeVar
 
+from chorus.cron._fire import fire_routine
 from chorus.heartbeat._wake import TickReport, Wake
 from chorus.ledger import TaskPriority
-from chorus.ledger._models import DodStatus, Run, RunStatus, TaskStatus
+from chorus.ledger._models import (
+    DodStatus,
+    Monitor,
+    MonitorRecoveryPolicy,
+    MonitorStatus,
+    RecoveryAction,
+    RecoveryKind,
+    Run,
+    RunStatus,
+    TaskStatus,
+    WakeReason,
+)
 from chorus.recovery import reconcile
 
 if TYPE_CHECKING:
@@ -86,6 +98,28 @@ class Scheduler:
         swept = reconcile(ledger, now=now)
         recovered = len(swept.reaped_runs)
 
+        # (b) CRON — fire due routines (each firing double-fire-guarded; writes a task, never a beat).
+        routines_fired = 0
+        for trigger in ledger.routine_triggers.due(now=now):
+            if fire_routine(ledger, trigger, now=now) is not None:
+                routines_fired += 1
+
+        # (c) MONITORS — drain deferred self-wakes; a one-shot fire wakes the owner, an exhausted
+        # monitor escalates per its recovery policy instead.
+        for monitor in ledger.monitors.due(now=now):
+            fired = ledger.monitors.fire(monitor.id)
+            if fired.status is MonitorStatus.EXHAUSTED:
+                self._apply_monitor_recovery(ledger, fired)
+                continue
+            ledger.wakes.enqueue(
+                Wake(
+                    id=f"wake_{uuid.uuid4().hex[:12]}",
+                    employee_id=fired.employee_id,
+                    reason=WakeReason.MONITOR_DUE,
+                    payload={"task_id": fired.task_id},
+                )
+            )
+
         # (d) DISPATCH — claim up to the free concurrency budget, then serialize per employee.
         free_slots = self.max_concurrent_runs - ledger.runs.count_running()
         queued_before = len(ledger.wakes.queued())
@@ -114,9 +148,46 @@ class Scheduler:
         return TickReport(
             at=now,
             recovered=recovered,
+            routines_fired=routines_fired,
             wakes_dispatched=dispatched,
             beats_started=dispatched,
             blocked_by_budget=blocked_by_budget,
+        )
+
+    def _apply_monitor_recovery(self, ledger: SqliteLedger, monitor: Monitor) -> None:
+        """An exhausted monitor escalates per its recovery policy (spec 03 §3c, spec 01 Cluster B).
+
+        ``wake_owner`` enqueues a recovery wake to the assignee; ``create_recovery``/``escalate``
+        open a first-class ``recovery_action`` (at most one open per source task) — liveness stays
+        visible rather than silently lapsing when the deferred check gives up.
+        """
+        if monitor.recovery_policy is MonitorRecoveryPolicy.WAKE_OWNER:
+            ledger.wakes.enqueue(
+                Wake(
+                    id=f"wake_{uuid.uuid4().hex[:12]}",
+                    employee_id=monitor.employee_id,
+                    reason=WakeReason.RECOVERY,
+                    payload={"task_id": monitor.task_id, "cause": "monitor_exhausted"},
+                )
+            )
+            return
+        if ledger.recovery_actions.active_for_source(monitor.task_id) is not None:
+            return
+        kind = (
+            RecoveryKind.GRAPH_LIVENESS
+            if monitor.recovery_policy is MonitorRecoveryPolicy.ESCALATE
+            else RecoveryKind.STALE_RUN_WATCHDOG
+        )
+        ledger.recovery_actions.open(
+            RecoveryAction(
+                id=f"rec_{uuid.uuid4().hex[:12]}",
+                source_task_id=monitor.task_id,
+                kind=kind,
+                owner_employee_id=monitor.employee_id,
+                cause="monitor_exhausted",
+                fingerprint="monitor",
+                next_action="resolve the stalled external dependency or hand it off",
+            )
         )
 
     def _dispatch_beat(self, wake: Wake, *, run_id: str, now: datetime) -> None:
