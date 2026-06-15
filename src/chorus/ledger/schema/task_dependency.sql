@@ -3,7 +3,8 @@ CREATE TABLE task_dependency (
     id            TEXT PRIMARY KEY,
     task_id       TEXT NOT NULL REFERENCES task(id),
     depends_on_id TEXT NOT NULL REFERENCES task(id),
-    created_at    TEXT NOT NULL
+    created_at    TEXT NOT NULL,
+    CONSTRAINT task_dependency_no_self CHECK (task_id <> depends_on_id)
 );
 
 CREATE UNIQUE INDEX task_dependency_uq ON task_dependency(task_id, depends_on_id);

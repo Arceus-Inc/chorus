@@ -126,6 +126,7 @@ class TaskRepo:
         """
         rows = self._conn.execute(
             "SELECT * FROM task t WHERE t.status = 'todo' AND t.checkout_run_id IS NULL "
+            "AND t.assignee_user_id IS NULL "  # human-owned tasks aren't agent-claimable
             "AND NOT EXISTS ("
             "  SELECT 1 FROM task_dependency d JOIN task b ON b.id = d.depends_on_id "
             "  WHERE d.task_id = t.id AND b.status <> 'done'"
