@@ -85,6 +85,15 @@ CREATE UNIQUE INDEX task_active_productivity_review_uq ON task(origin_kind, orig
 > across crashes and concurrent ticks. The DB rejects the second insert; no coordination code
 > needed. **Keep them. They are the contract.**
 
+> **Why per-kind, not one generic index (deliberate):** each kind may need its own "open"
+> definition — `routine_execution` keys on `(origin_kind, origin_id, origin_fingerprint)` and
+> requires a dispatched run; the recovery/eval/review kinds key on `(origin_kind, origin_id)` while
+> non-terminal. We keep **one index per kind on purpose**: a new self-spawned kind adds a new index
+> (a migration), trading a little schema churn for an explicit, independently-tunable exact-once
+> contract per kind. A single generic `WHERE origin_kind <> 'manual'` index was considered and
+> rejected — do not collapse these into one. (`decomposition` is *not* here: its exact-once lives in
+> the `decomposition_claim` table, which also carries a durable partial result.)
+
 ### `task_dependency` — the real DAG (≈ `issue_relations type=blocks`)
 
 `parent_id` is *structure*; this is *dependency*.
@@ -468,13 +477,37 @@ Append-only (no `updated_at`). Index `(subject_kind, subject_id)`, `(occurred_at
 
 ## Schema versioning & SQLite↔Postgres migration
 
-A single-row `schema_version` table (`version` int, `applied_at` ts) gates every boot: chorus
-refuses to open a ledger whose `version` is newer than the SDK, and runs forward-only migrations
-to reach its own version. Because the schema lives in the **SQLite ∩ Postgres intersection**,
-each migration ships as one statement set valid on both drivers; driver-specific DDL (e.g.
-`jsonb` vs `text`, partial-index syntax that differs) is selected by the active driver, never
-branched in business logic. The Arceus/Postgres distribution applies the *same numbered
-migrations* — the version integer is the single compatibility key across both backends.
+Versioning tracks an **applied-migration set**, not a single integer (collision-safe under parallel
+development). A `schema_migrations` table holds one row per applied migration:
+
+| Column | Type | Meaning |
+|---|---|---|
+| `id` | text PK | sortable, collision-resistant id — timestamp-prefixed + slug, e.g. `20260615T1200_dod_table` |
+| `checksum` | text | hash of the migration's statements (drift / post-apply-edit detection) |
+| `applied_at` | ts | when it ran |
+
+**Boot gate.** chorus diffs the migrations the SDK ships against the rows in `schema_migrations`:
+- shipped but not in the DB → **apply**, in `id` order (forward-only, no down-migrations);
+- a DB row whose `id` the SDK doesn't ship → the DB is **ahead of the SDK** → **refuse to open**
+  (an older SDK must never run against a newer ledger);
+- a shipped migration whose `checksum` ≠ the applied row → **refuse** (the migration was edited
+  after it was applied — a bug, not a no-op).
+
+**Why a set, not an int:** the `id` captures *identity*, so two branches that each add a migration
+merge as two rows (no renumbering), and the gate catches an *unknown* migration even when counts
+match. A **derived display version** — `max(id)` (or the row count) — is exposed for logs and
+`chorus inspect`; it is presentation only, never the source of truth.
+
+**Dual-dialect.** Because the schema lives in the **SQLite ∩ Postgres intersection**, each migration
+ships as one statement set valid on both drivers; driver-specific DDL (`jsonb` vs `text`,
+partial-index syntax that differs) is selected by the active driver, never branched in business
+logic. The Arceus/Postgres distribution keeps its **own** `schema_migrations` table and applies the
+**same migration ids + checksums** independently — the applied-migration set (not an integer) is the
+compatibility key across both backends.
+
+**When migrations run:** the embedded-SQLite SDK auto-applies forward on `open()` (single process,
+under the file's write lock); the Arceus/Postgres distribution runs them as an **explicit deploy
+step** so N processes don't race — both against this same `schema_migrations` contract.
 
 ---
 
