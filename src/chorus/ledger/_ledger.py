@@ -15,6 +15,7 @@ from chorus.ledger._migrations import MigrationRunner
 from chorus.ledger.migrations import MIGRATIONS
 from chorus.ledger.repos import (
     ArtifactRepo,
+    DependencyRepo,
     DodRepo,
     EmployeeRepo,
     GoalRepo,
@@ -34,6 +35,7 @@ class Ledger(Protocol):
     employees: EmployeeRepo
     goals: GoalRepo
     tasks: TaskRepo
+    dependencies: DependencyRepo
     runs: RunRepo
     dod: DodRepo
     artifacts: ArtifactRepo
@@ -56,6 +58,7 @@ class SqliteLedger:
         self.employees = EmployeeRepo(conn)
         self.goals = GoalRepo(conn)
         self.tasks = TaskRepo(conn)
+        self.dependencies = DependencyRepo(conn)
         self.runs = RunRepo(conn)
         self.dod = DodRepo(conn)
         self.artifacts = ArtifactRepo(conn)
