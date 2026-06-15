@@ -32,6 +32,9 @@ from chorus.ledger._models import (
     TaskDependency,
     TaskPriority,
     TaskStatus,
+    Wake,
+    WakeReason,
+    WakeStatus,
 )
 from chorus.ledger.migrations import MIGRATIONS
 from chorus.ledger.repos import (
@@ -43,6 +46,7 @@ from chorus.ledger.repos import (
     GoalRepo,
     RunRepo,
     TaskRepo,
+    WakeRepo,
 )
 
 __all__ = [
@@ -78,4 +82,8 @@ __all__ = [
     "TaskPriority",
     "TaskRepo",
     "TaskStatus",
+    "Wake",
+    "WakeReason",
+    "WakeRepo",
+    "WakeStatus",
 ]

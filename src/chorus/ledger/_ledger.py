@@ -21,6 +21,7 @@ from chorus.ledger.repos import (
     GoalRepo,
     RunRepo,
     TaskRepo,
+    WakeRepo,
 )
 
 
@@ -36,6 +37,7 @@ class Ledger(Protocol):
     goals: GoalRepo
     tasks: TaskRepo
     dependencies: DependencyRepo
+    wakes: WakeRepo
     runs: RunRepo
     dod: DodRepo
     artifacts: ArtifactRepo
@@ -59,6 +61,7 @@ class SqliteLedger:
         self.goals = GoalRepo(conn)
         self.tasks = TaskRepo(conn)
         self.dependencies = DependencyRepo(conn)
+        self.wakes = WakeRepo(conn)
         self.runs = RunRepo(conn)
         self.dod = DodRepo(conn)
         self.artifacts = ArtifactRepo(conn)
