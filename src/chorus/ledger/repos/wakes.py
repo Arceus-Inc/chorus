@@ -14,6 +14,20 @@ import sqlite3
 from chorus.ledger._models import Wake, WakeReason, WakeStatus
 from chorus.ledger.repos._base import dumps, from_iso, loads, utcnow_iso
 
+# The spec 03 §3 deterministic dispatch sort key, as a SQL ORDER BY fragment over aliases
+# ``w`` (wake) and ``t`` (its target task, LEFT JOINed — NULL for a task-less wake):
+#   resume first (in_progress) -> deps-ready first -> priority band -> FIFO -> wake id.
+_DISPATCH_ORDER = (
+    "CASE WHEN t.status = 'in_progress' THEN 0 ELSE 1 END, "
+    "CASE WHEN t.id IS NOT NULL AND EXISTS ("
+    "  SELECT 1 FROM task_dependency d JOIN task b ON b.id = d.depends_on_id "
+    "  WHERE d.task_id = t.id AND b.status <> 'done'"
+    ") THEN 1 ELSE 0 END, "
+    "CASE t.priority WHEN 'critical' THEN 0 WHEN 'high' THEN 1 "
+    "WHEN 'medium' THEN 2 WHEN 'low' THEN 3 ELSE 4 END, "
+    "w.created_at, w.id"
+)
+
 
 class WakeRepo:
     """Enqueue (coalescing), claim, and finish ``wake`` rows."""
@@ -59,24 +73,37 @@ class WakeRepo:
         return _row_to_wake(row)
 
     def claim(self, *, limit: int) -> list[Wake]:
-        """Atomically take up to ``limit`` oldest queued wakes, marking them ``claimed`` (FIFO).
+        """Atomically take up to ``limit`` queued wakes in the kernel's dispatch order (spec 03 §3d).
 
-        The claim is a single ``UPDATE … WHERE id IN (SELECT … LIMIT) AND status='queued'`` so two
-        concurrent claimers can't both take the same wake (no select-then-update race).
+        Order is the deterministic sort key, not arrival: an ``in_progress`` task (a resume) outranks
+        a fresh ``todo``; a deps-ready task outranks a gated one; then the priority band; then FIFO
+        (``created_at``); then the wake id. The claim is a single ``UPDATE … WHERE id IN (SELECT …
+        ORDER BY … LIMIT) AND status='queued'`` so two concurrent claimers can't take the same wake;
+        a follow-up read re-applies the order (``RETURNING`` order is unspecified).
         """
         if limit <= 0:
             return []
         now = utcnow_iso()
         claimed = self._conn.execute(
-            "UPDATE wake SET status = 'claimed', claimed_at = ? WHERE id IN "
-            "(SELECT id FROM wake WHERE status = 'queued' ORDER BY created_at, id LIMIT ?) "
-            "AND status = 'queued' RETURNING *",
+            "UPDATE wake SET status = 'claimed', claimed_at = ? WHERE id IN ("
+            "  SELECT w.id FROM wake w "
+            "  LEFT JOIN task t ON t.id = json_extract(w.payload, '$.task_id') "
+            f"  WHERE w.status = 'queued' ORDER BY {_DISPATCH_ORDER} LIMIT ?"
+            ") AND status = 'queued' RETURNING id",
             (now, limit),
         ).fetchall()
         self._conn.commit()
-        # RETURNING order is unspecified; re-sort to FIFO (created_at ISO sorts chronologically).
-        claimed.sort(key=lambda row: (row["created_at"], row["id"]))
-        return [_row_to_wake(row) for row in claimed]
+        if not claimed:
+            return []
+        ids = [row["id"] for row in claimed]
+        placeholders = ", ".join("?" for _ in ids)
+        ordered = self._conn.execute(
+            f"SELECT w.* FROM wake w "
+            f"LEFT JOIN task t ON t.id = json_extract(w.payload, '$.task_id') "
+            f"WHERE w.id IN ({placeholders}) ORDER BY {_DISPATCH_ORDER}",
+            ids,
+        ).fetchall()
+        return [_row_to_wake(row) for row in ordered]
 
     def assign_run(self, wake_id: str, run_id: str) -> None:
         self._conn.execute("UPDATE wake SET run_id = ? WHERE id = ?", (run_id, wake_id))
