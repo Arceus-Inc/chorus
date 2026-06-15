@@ -91,7 +91,7 @@ a *structured* primitive (mention, assignment mutation, interaction response, bl
 
 ### Lease defaults (the lease clock that replaces silence thresholds)
 
-The board lease is the single liveness primitive (§6). SDK defaults, all overridable per role/run:
+The **`run.lease_expires_at`** clock (chorus ledger) is the single liveness primitive (§6). SDK defaults, all overridable per role/run:
 
 | Knob | Default | Meaning |
 |---|---|---|
@@ -175,12 +175,11 @@ copied retry/resume/child contexts.
 
 Paperclip's silent-active-run watchdog classifies output silence (`60min`/`4h` thresholds) by
 *reconstructing* liveness from stdout timing — ~350KB of code. **chorus deletes it.** Because we
-witness dream's structured event stream and the coordination board's **lease clock**:
-- "stuck" = the lease expired (the run's process/heartbeat stopped renewing it) **and** the
-  structured state shows no progress — not a guess from byte-silence.
-- dream's `runtime/_watchdog.py` already finds stale claims on the board; the tick consumes them
-  (spec 03 step a) and opens a `recovery_action`. No silence thresholds, no regex over stdout, no
-  per-adapter parsers.
+witness dream's structured event stream and the ledger's **`run.lease_expires_at`** clock:
+- "stuck" = the lease expired (the beat stopped renewing it) **and** the structured state shows no
+  progress — not a guess from byte-silence.
+- the tick's recovery sweep finds tasks whose `run.lease_expires_at` passed (spec 03 step a) and
+  opens a `recovery_action`. No silence thresholds, no regex over stdout, no per-adapter parsers.
 
 What survives from Paperclip's watchdog: **source-aware folding** — before opening recovery, re-read
 the source task; if it's terminal with durable same-run terminal activity after the evidence point,
@@ -210,7 +209,7 @@ human/horizon responder — it is the only tier that leaves the SDK's autonomous
 ## 7. Startup & periodic reconciliation (the tick's recovery pass)
 
 On startup and each tick, in sequence (`execution-semantics.md` §10, slimmed):
-1. reap orphaned `running` runs (lease expired on the board) → release locks.
+1. reap orphaned `running` runs (whose `run.lease_expires_at` passed) → release locks.
 2. resume persisted `queued` runs.
 3. reconcile stranded assigned work (§6 modes a/b).
 4. scan stale leases → fold source-resolved or open/update `recovery_action`.

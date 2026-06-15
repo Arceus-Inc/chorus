@@ -18,7 +18,7 @@ merge).
 | | |
 |---|---|
 | **Tables** | `employee`(1), `task`, `run`, `goal`, `artifact` |
-| **dream reuse** | `run_task`, `roles` (engineer manifest), `coordination` board `ClaimManager`, the event stream |
+| **dream reuse** | `run_task`, `roles` (engineer manifest), the event stream (checkout + lease are chorus's own ledger) |
 | **New chorus code** | `Chorus.build/submit`, a *trivial* `tick` (eligible → checkout → beat), the Engineer role plugin, `OutcomeLander` for PR→CI→merge, `SqliteLedger`, `GitWorkforce(1)` |
 | **DoD seam** | `submit` generates a `Command` verifier; passed **into** `run_task` (spec 05 §5) |
 | **Acceptance** | submit a task → it runs → the evaluator verifies the artifact against the DoD → PR merged → task `done`. Kill mid-run, restart, the lease-recovery pass re-dispatches; **no stranded sweeper needed.** |
@@ -37,7 +37,7 @@ merge).
 | | |
 |---|---|
 | **Tables** | + `wake`, `task_dependency`, `cost_event`, `budget_policy`, `budget_incident` |
-| **dream reuse** | board two-lock + lease watchdog; `MemoryStore`/`MemoryWriter` contracts |
+| **dream reuse** | `MemoryStore`/`MemoryWriter` contracts (two-lock checkout + lease are chorus's own ledger) |
 | **New chorus code** | the real `tick` (recover → dispatch loop, per-employee serialization), `wake` coalescing (the partial-unique index), `task_assigned`/`deps_resolved` wakes, assignment (hard role filter), the two-gate budgets, the `AppendOnlyMemoryWriter` + 3 scopes, the mailbox (`message` wake) |
 | **Acceptance** | submit A and B with `B depends_on A`; B is withheld until A is `done`, then a `deps_resolved` wake dispatches B. Two beats run concurrently under the concurrency cap; a hard budget breach pauses + kills. |
 | **Proves** | concurrency, dependency edges as data, push-driven dispatch, two-gate caps, append-only memory with provenance. |

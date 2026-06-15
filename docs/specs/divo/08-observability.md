@@ -39,7 +39,7 @@ estimate from byte-silence (research [08 §2](../../paperclip-research/08-fronte
 |---|---|---|
 | **working** | streaming stdout + "Live now" dot | `run.started` + ongoing `run.tool_use`/`run.turn` events |
 | **progress quality** | `classifyRunLiveness` regex over final stdout | `run.evaluated` verdict from the evaluator (`advanced`/`completed`/`plan_only`/`blocked`) |
-| **hung** | output-silence thresholds (60min/4h) | **board lease expired** (the run stopped renewing) — a fact, not a guess |
+| **hung** | output-silence thresholds (60min/4h) | **`run.lease_expires_at` passed** (the beat stopped renewing) — a fact, not a guess |
 | **stuck** | recovery card inferred from silence + evidence | `recovery.opened` from the liveness contract (spec 02 §3) — a non-terminal task with *no action-path primitive* |
 
 So chorus's "stuck" vocabulary is **derived from the ledger's liveness contract + the evaluator**,

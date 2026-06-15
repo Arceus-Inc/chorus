@@ -40,7 +40,7 @@ class Chorus:
 ```
 
 `build()` is the composition root: it news-up `SqliteLedger`, `GitWorkforce`, `GitMemoryStore`, the
-`AppendOnlyMemoryWriter`, the dream board `ClaimManager`, the `Scheduler`, and injects them. Nothing
+`AppendOnlyMemoryWriter`, the `Scheduler` (checkout + lease on the ledger), and injects them. Nothing
 else creates concrete classes.
 
 ### The read-model return shapes (typed, not dicts)
