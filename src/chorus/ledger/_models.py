@@ -1,11 +1,10 @@
-"""The core ledger row models (spec 01 Clusters A, C, D).
+"""The core ledger row models (spec 01 Clusters A, C, D, F).
 
 Every row is durable; the scheduler holds no state not in these tables (B2.2).
 These are the dream-native, single-workforce slim of Paperclip's 86-table model.
-The frozen dataclasses below carry the load-bearing columns each subsystem
-queries; the full SQL schema (partial-unique crash-safety indexes, the two-lock
-contract, the budget/artifact clusters) lives in spec 01 and ``_ledger.py``'s
-DDL.
+The frozen dataclasses below are the typed row shapes the repos map to/from; the
+SQL schema (partial-unique crash-safety indexes, the two-lock contract) lives in
+``migrations/`` and is applied by the :class:`SqliteLedger` facade.
 """
 
 from __future__ import annotations
@@ -13,10 +12,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from chorus.outcomes import Verifier
 
 
 class TaskStatus(StrEnum):
@@ -71,6 +66,24 @@ class GoalLevel(StrEnum):
     TASK = "task"
 
 
+class DodStatus(StrEnum):
+    """The verification verdict on a :class:`Dod` (spec 01 Cluster F)."""
+
+    PENDING = "pending"
+    PASSED = "passed"
+    FAILED = "failed"
+
+
+class ArtifactType(StrEnum):
+    """What kind of landed outcome an :class:`Artifact` is (spec 01 Cluster F)."""
+
+    PR = "pr"
+    DOC = "doc"
+    FINDING = "finding"
+    ARTIFACT = "artifact"
+    WORKSPACE_FILE = "workspace_file"
+
+
 @dataclass(frozen=True)
 class Task:
     """The universal work unit — the ExecPlan made durable (spec 01 Cluster A).
@@ -79,7 +92,9 @@ class Task:
     ``assignee_user_id``); ``in_progress`` requires an assignee + a live path;
     every task traces to a goal; the two locks are distinct
     (``checkout_run_id`` = who owns the right to execute, ``execution_run_id`` =
-    which run is live), enforced on dream's board and mirrored here for queries.
+    which run is live) — authoritative columns in *this* ledger, set by the atomic
+    checkout CAS (spec 01 invariant 4); dream's board is swarm-only. The DoD is a
+    1:1 ``dod`` row, not a column (Cluster F).
     """
 
     id: str
@@ -90,7 +105,6 @@ class Task:
     assignee_user_id: str | None = None
     goal_id: str | None = None
     parent_id: str | None = None
-    dod: Verifier | None = None
     depth: int = 0
     request_depth: int = 0
     origin_kind: OriginKind = OriginKind.MANUAL
@@ -151,7 +165,47 @@ class Goal:
     owner_employee_id: str | None = None
 
 
+@dataclass(frozen=True)
+class Dod:
+    """Definition-of-done + verification record, 1:1 with a task (spec 01 Cluster F).
+
+    The ``dod`` row is the authoritative verdict: ``task.status`` is derived from
+    ``status`` (``done`` iff ``passed``); ``run.outcome`` is the raw input it is
+    computed from (spec 01 Cluster F invariant).
+    """
+
+    id: str
+    task_id: str
+    kind: str
+    spec: dict[str, object] = field(default_factory=dict)
+    artifact_class: str | None = None
+    revision: int = 1
+    status: DodStatus = DodStatus.PENDING
+    verdict: dict[str, object] | None = None
+    verified_by_run_id: str | None = None
+
+
+@dataclass(frozen=True)
+class Artifact:
+    """A landed outcome — a PR, doc, or finding (spec 01 Cluster F)."""
+
+    id: str
+    task_id: str
+    type: ArtifactType
+    provider: str | None = None
+    external_id: str | None = None
+    url: str | None = None
+    review_state: str | None = None
+    health_status: str | None = None
+    is_primary: bool = False
+    resource_ref: dict[str, object] | None = None
+
+
 __all__ = [
+    "Artifact",
+    "ArtifactType",
+    "Dod",
+    "DodStatus",
     "Goal",
     "GoalLevel",
     "OriginKind",
