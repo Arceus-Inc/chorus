@@ -203,6 +203,34 @@ class Artifact:
     resource_ref: dict[str, object] | None = None
 
 
+class MessageKind(StrEnum):
+    """The intent of a mailbox message (spec 01 Cluster G ``message``)."""
+
+    INSTRUCTION = "instruction"
+    REPLY = "reply"
+    ESCALATION = "escalation"
+    FYI = "fyi"
+
+
+@dataclass(frozen=True)
+class Message:
+    """A durable mailbox message (spec 01 Cluster G).
+
+    Sender is an employee XOR a human (``from_employee_id`` / ``from_user_id``). A message does not
+    run anything — the run-causing event is the wake the scheduler enqueues for ``to_employee_id``.
+    """
+
+    id: str
+    to_employee_id: str
+    body: str
+    kind: MessageKind = MessageKind.INSTRUCTION
+    from_employee_id: str | None = None
+    from_user_id: str | None = None
+    task_id: str | None = None
+    read_at: datetime | None = None
+    created_at: datetime | None = None
+
+
 class WakeReason(StrEnum):
     """Why a wake fired and who fires it (spec 03 §2)."""
 
@@ -253,6 +281,8 @@ __all__ = [
     "DodStatus",
     "Goal",
     "GoalLevel",
+    "Message",
+    "MessageKind",
     "OriginKind",
     "Run",
     "RunStatus",
