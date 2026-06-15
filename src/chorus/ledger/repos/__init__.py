@@ -17,6 +17,7 @@ from chorus.ledger.repos.dod import DodRepo
 from chorus.ledger.repos.employees import EmployeeRepo
 from chorus.ledger.repos.goals import GoalRepo
 from chorus.ledger.repos.messages import MessageRepo
+from chorus.ledger.repos.recovery_actions import RecoveryActionRepo
 from chorus.ledger.repos.runs import RunRepo
 from chorus.ledger.repos.tasks import TaskRepo
 from chorus.ledger.repos.wakes import WakeRepo
@@ -33,6 +34,7 @@ __all__ = [
     "EmployeeRepo",
     "GoalRepo",
     "MessageRepo",
+    "RecoveryActionRepo",
     "RunRepo",
     "TaskRepo",
     "WakeRepo",
