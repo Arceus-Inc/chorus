@@ -110,3 +110,13 @@ def test_checksum_is_stable_and_content_sensitive() -> None:
     b = _mk("0001_a", "CREATE TABLE a (y TEXT)")
     assert a1.checksum == a2.checksum
     assert a1.checksum != b.checksum
+
+
+def test_reads_do_not_create_table_or_commit(conn: sqlite3.Connection) -> None:
+    # Read paths must tolerate a missing table and never create/commit (no caller-tx side effects).
+    runner = MigrationRunner([_mk("0001_a", "CREATE TABLE a (x TEXT)")])
+    assert runner.applied(conn) == {}
+    assert runner.display_version(conn) is None
+    assert runner.pending(conn) == ["0001_a"]
+    tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    assert "schema_migrations" not in tables
