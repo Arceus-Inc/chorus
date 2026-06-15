@@ -89,3 +89,8 @@ ignore_missing_imports = true
 testpaths = ["tests"]
 asyncio_mode = "auto"
 addopts = ["-q", "--strict-markers"]
+markers = [
+  "unit: fast, isolated unit tests",
+  "integration: cross-component tests",
+  "e2e: end-to-end against a real (sqlite) ledger",
+]
