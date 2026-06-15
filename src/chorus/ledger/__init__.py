@@ -19,6 +19,8 @@ from chorus.ledger._migrations import (
     MigrationRunner,
 )
 from chorus.ledger._models import (
+    Activity,
+    ActivityVerb,
     Approval,
     ApprovalStatus,
     ApprovalSubjectKind,
@@ -43,6 +45,7 @@ from chorus.ledger._models import (
 )
 from chorus.ledger.migrations import MIGRATIONS
 from chorus.ledger.repos import (
+    ActivityRepo,
     ApprovalRepo,
     ArtifactRepo,
     DependencyCycleError,
@@ -58,6 +61,9 @@ from chorus.ledger.repos import (
 
 __all__ = [
     "MIGRATIONS",
+    "Activity",
+    "ActivityRepo",
+    "ActivityVerb",
     "Approval",
     "ApprovalRepo",
     "ApprovalStatus",
