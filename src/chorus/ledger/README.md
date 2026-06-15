@@ -51,6 +51,27 @@ The kernel depends on the `Ledger` **Protocol** (also in `_ledger.py`), never on
 concretely — a Postgres-backed ledger can be dropped in behind the same shape (spec 12). Only
 `open()` (connection setup) and the migration DDL are dialect-specific.
 
+### Cross-aggregate transactions
+
+A single repo write is atomic on its own. When an operation must touch **several** tables at once,
+wrap it so it commits (or rolls back) as one unit:
+
+```python
+with ledger.transaction():
+    ledger.tasks.submit(child)
+    ledger.decomposition_claims.add_child(claim_id, child.id)   # both, or neither
+```
+
+Inside the block, repos defer their per-call commits; the outermost block commits once on success or
+rolls back on any exception. The facade exposes the spec-mandated multi-table operations built on this:
+
+- `ledger.finalize_beat(task_id=…, run_id=…, dod_status=…, verdict=…)` — at beat end, writes the
+  `dod` verdict **and** derives `task.status='done'` (+ `completed_at`) **and** enqueues the
+  downstream `wake` rows (`deps_resolved` / `children_done`) the *next* beat picks up — all in one
+  transaction (spec 01 Cluster F, spec 03). A non-passed verdict only records the dod result.
+- `ledger.create_child(claim_id, child)` — creates a decomposition child `task` and records it on the
+  claim's `child_task_ids` atomically (spec 02 §4), so a crash mid-fan-out never strands a task.
+
 ### Conventions baked into the repos
 
 - **Immutable models** — every row is a `@dataclass(frozen=True)` in `_models.py`; enums are `StrEnum`.
