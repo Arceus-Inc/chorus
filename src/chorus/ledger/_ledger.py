@@ -14,6 +14,7 @@ from typing import Protocol, runtime_checkable
 from chorus.ledger._migrations import MigrationRunner
 from chorus.ledger.migrations import MIGRATIONS
 from chorus.ledger.repos import (
+    ApprovalRepo,
     ArtifactRepo,
     DependencyRepo,
     DodRepo,
@@ -40,6 +41,7 @@ class Ledger(Protocol):
     dependencies: DependencyRepo
     wakes: WakeRepo
     messages: MessageRepo
+    approvals: ApprovalRepo
     runs: RunRepo
     dod: DodRepo
     artifacts: ArtifactRepo
@@ -65,6 +67,7 @@ class SqliteLedger:
         self.dependencies = DependencyRepo(conn)
         self.wakes = WakeRepo(conn)
         self.messages = MessageRepo(conn)
+        self.approvals = ApprovalRepo(conn)
         self.runs = RunRepo(conn)
         self.dod = DodRepo(conn)
         self.artifacts = ArtifactRepo(conn)
