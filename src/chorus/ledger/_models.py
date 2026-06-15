@@ -231,6 +231,43 @@ class Message:
     created_at: datetime | None = None
 
 
+class ApprovalSubjectKind(StrEnum):
+    """What an :class:`Approval` gates (spec 01 Cluster G ``approval``)."""
+
+    BUDGET_INCIDENT = "budget_incident"
+    TASK = "task"
+    ARTIFACT = "artifact"
+
+
+class ApprovalStatus(StrEnum):
+    """A human gate's verdict lifecycle (spec 01 Cluster G, spec 04 §5)."""
+
+    PENDING = "pending"
+    APPROVED = "approved"
+    DENIED = "denied"
+    EXPIRED = "expired"
+
+
+@dataclass(frozen=True)
+class Approval:
+    """The durable human gate behind a hard-stop or role-declared approval (spec 01 Cluster G).
+
+    A task needing sign-off sits ``blocked`` while this row is ``pending``; resolving it (approve /
+    deny / expire) is what a human — or horizon, later — does to unblock. The gate is exact-once:
+    at most one ``pending`` row per ``(subject_kind, subject_id)`` (partial-unique index).
+    """
+
+    id: str
+    subject_kind: ApprovalSubjectKind
+    subject_id: str
+    reason: str
+    status: ApprovalStatus = ApprovalStatus.PENDING
+    decided_by_user_id: str | None = None
+    decided_at: datetime | None = None
+    expires_at: datetime | None = None
+    created_at: datetime | None = None
+
+
 class WakeReason(StrEnum):
     """Why a wake fired and who fires it (spec 03 §2)."""
 
@@ -275,6 +312,9 @@ class Wake:
 
 
 __all__ = [
+    "Approval",
+    "ApprovalStatus",
+    "ApprovalSubjectKind",
     "Artifact",
     "ArtifactType",
     "Dod",
