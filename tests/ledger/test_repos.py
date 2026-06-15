@@ -10,7 +10,6 @@ eligibility — is exercised here at the repo API.
 from __future__ import annotations
 
 import sqlite3
-from collections.abc import Iterator
 
 import pytest
 
@@ -32,17 +31,10 @@ from chorus.workforce import Employee
 pytestmark = pytest.mark.integration
 
 
-@pytest.fixture
-def ledger() -> Iterator[SqliteLedger]:
-    lg = SqliteLedger.open(":memory:")
-    try:
-        yield lg
-    finally:
-        lg.close()
-
-
 def test_open_applies_schema_and_reports_version(ledger: SqliteLedger) -> None:
-    assert ledger.schema_version() == "0001_m1_core"
+    from chorus.ledger.migrations import MIGRATIONS
+
+    assert ledger.schema_version() == MIGRATIONS[-1].id
 
 
 def test_employee_create_and_get(ledger: SqliteLedger) -> None:
@@ -202,3 +194,10 @@ def test_checkout_of_user_owned_task_returns_false(ledger: SqliteLedger) -> None
     assert got is not None
     assert got.assignee_user_id == "u1"
     assert got.checkout_run_id is None
+
+
+def test_list_eligible_excludes_human_owned(ledger: SqliteLedger) -> None:
+    ledger.tasks.submit(Task(id="t1", intent="x", status=TaskStatus.TODO))
+    ledger.tasks.submit(Task(id="t2", intent="y", status=TaskStatus.TODO, assignee_user_id="u1"))
+    # human-owned t2 is excluded — checkout would always reject it (eligibility ⇔ claimability)
+    assert [t.id for t in ledger.tasks.list_eligible(limit=10)] == ["t1"]

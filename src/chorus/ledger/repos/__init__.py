@@ -8,6 +8,7 @@ shared connection.
 from __future__ import annotations
 
 from chorus.ledger.repos.artifacts import ArtifactRepo
+from chorus.ledger.repos.dependencies import DependencyCycleError, DependencyRepo
 from chorus.ledger.repos.dod import DodRepo
 from chorus.ledger.repos.employees import EmployeeRepo
 from chorus.ledger.repos.goals import GoalRepo
@@ -16,6 +17,8 @@ from chorus.ledger.repos.tasks import TaskRepo
 
 __all__ = [
     "ArtifactRepo",
+    "DependencyCycleError",
+    "DependencyRepo",
     "DodRepo",
     "EmployeeRepo",
     "GoalRepo",
