@@ -133,6 +133,36 @@ class TaskDependency:
     created_at: datetime | None = None
 
 
+class DecompositionStatus(StrEnum):
+    """A fan-out claim's lifecycle (spec 01 Cluster A ``decomposition_claim``)."""
+
+    IN_FLIGHT = "in_flight"
+    COMPLETED = "completed"
+
+
+@dataclass(frozen=True)
+class DecompositionClaim:
+    """Exact-once fan-out — the manager-splits-work primitive (spec 01 Cluster A).
+
+    The most important crash-safety object after the locks. The claim is durable *before* fan-out
+    starts; ``child_task_ids`` is the durable partial result accumulated one-per-tx while underway;
+    the completed set is durable after. Re-reading the same accepted plan revision can't authorize a
+    second child tree — the ``(source_task_id, accepted_plan_revision_id)`` pair is unique, so a
+    retry resumes the same claim and reuses the children it already created.
+    """
+
+    id: str
+    source_task_id: str
+    accepted_plan_revision_id: str
+    owner_run_id: str | None = None
+    status: DecompositionStatus = DecompositionStatus.IN_FLIGHT
+    request_fingerprint: str = ""
+    requested_children: list[dict[str, object]] = field(default_factory=list)
+    child_task_ids: list[str] = field(default_factory=list)
+    completed_at: datetime | None = None
+    created_at: datetime | None = None
+
+
 @dataclass(frozen=True)
 class Run:
     """One beat — one ``dream.run_task`` invocation, kept THIN (spec 01 Cluster C ``run``)."""
@@ -370,6 +400,8 @@ __all__ = [
     "Artifact",
     "ArtifactRevision",
     "ArtifactType",
+    "DecompositionClaim",
+    "DecompositionStatus",
     "Dod",
     "DodStatus",
     "Goal",
