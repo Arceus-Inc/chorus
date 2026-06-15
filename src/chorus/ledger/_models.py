@@ -231,6 +231,24 @@ class Message:
     created_at: datetime | None = None
 
 
+@dataclass(frozen=True)
+class ArtifactRevision:
+    """Immutable artifact history (spec 01 Cluster F ``artifact_revision``).
+
+    Each row is a frozen snapshot of an :class:`Artifact` at one ``revision`` (monotonic per
+    artifact, assigned by the repo on record). A revision is *the thing decomposition is authorized
+    against* — :class:`DecompositionClaim` FKs its ``accepted_plan_revision_id`` here.
+    """
+
+    id: str
+    artifact_id: str
+    revision: int = 0
+    resource_ref: dict[str, object] | None = None
+    summary: str | None = None
+    created_by_run_id: str | None = None
+    created_at: datetime | None = None
+
+
 class ActivityVerb(StrEnum):
     """A state transition worth auditing (spec 01 Cluster G ``activity``, spec 08 §5)."""
 
@@ -350,6 +368,7 @@ __all__ = [
     "ApprovalStatus",
     "ApprovalSubjectKind",
     "Artifact",
+    "ArtifactRevision",
     "ArtifactType",
     "Dod",
     "DodStatus",

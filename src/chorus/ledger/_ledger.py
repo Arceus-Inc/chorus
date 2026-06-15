@@ -17,6 +17,7 @@ from chorus.ledger.repos import (
     ActivityRepo,
     ApprovalRepo,
     ArtifactRepo,
+    ArtifactRevisionRepo,
     DependencyRepo,
     DodRepo,
     EmployeeRepo,
@@ -47,6 +48,7 @@ class Ledger(Protocol):
     runs: RunRepo
     dod: DodRepo
     artifacts: ArtifactRepo
+    artifact_revisions: ArtifactRevisionRepo
 
     def schema_version(self) -> str | None: ...
 
@@ -74,6 +76,7 @@ class SqliteLedger:
         self.runs = RunRepo(conn)
         self.dod = DodRepo(conn)
         self.artifacts = ArtifactRepo(conn)
+        self.artifact_revisions = ArtifactRevisionRepo(conn)
 
     @classmethod
     def open(cls, db_path: str) -> SqliteLedger:

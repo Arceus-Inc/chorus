@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from chorus.ledger.repos.activity import ActivityRepo
 from chorus.ledger.repos.approvals import ApprovalRepo
+from chorus.ledger.repos.artifact_revisions import ArtifactRevisionRepo
 from chorus.ledger.repos.artifacts import ArtifactRepo
 from chorus.ledger.repos.dependencies import DependencyCycleError, DependencyRepo
 from chorus.ledger.repos.dod import DodRepo
@@ -23,6 +24,7 @@ __all__ = [
     "ActivityRepo",
     "ApprovalRepo",
     "ArtifactRepo",
+    "ArtifactRevisionRepo",
     "DependencyCycleError",
     "DependencyRepo",
     "DodRepo",
