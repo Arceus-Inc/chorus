@@ -231,6 +231,38 @@ class Message:
     created_at: datetime | None = None
 
 
+class ActivityVerb(StrEnum):
+    """A state transition worth auditing (spec 01 Cluster G ``activity``, spec 08 §5)."""
+
+    ASSIGNED = "assigned"
+    DECOMPOSED = "decomposed"
+    RECOVERED = "recovered"
+    GATED = "gated"
+    HIRED = "hired"
+    FIRED = "fired"
+    APPROVED = "approved"
+    DENIED = "denied"
+
+
+@dataclass(frozen=True)
+class Activity:
+    """One immutable row in the governance audit stream (spec 01 Cluster G, spec 08 §5).
+
+    Append-only (no ``updated_at``). Actor is an employee XOR a human; both null means the kernel
+    itself acted. ``trace_id`` correlates to the operational event stream / ``cost_event``.
+    """
+
+    id: str
+    verb: ActivityVerb
+    subject_kind: str
+    subject_id: str
+    actor_employee_id: str | None = None
+    actor_user_id: str | None = None
+    trace_id: str | None = None
+    payload: Mapping[str, Any] = field(default_factory=dict)
+    occurred_at: datetime | None = None
+
+
 class ApprovalSubjectKind(StrEnum):
     """What an :class:`Approval` gates (spec 01 Cluster G ``approval``)."""
 
@@ -312,6 +344,8 @@ class Wake:
 
 
 __all__ = [
+    "Activity",
+    "ActivityVerb",
     "Approval",
     "ApprovalStatus",
     "ApprovalSubjectKind",
