@@ -7,6 +7,12 @@ the facade and repos consume it.
 
 from __future__ import annotations
 
+from chorus.lifecycle._decompose import ChildSpec, decompose
+from chorus.lifecycle._disposition import (
+    Disposition,
+    DispositionAction,
+    reconcile_disposition,
+)
 from chorus.lifecycle._liveness import Health, Liveness, classify
 from chorus.lifecycle._transitions import (
     LEGAL_TRANSITIONS,
@@ -20,11 +26,16 @@ from chorus.lifecycle._transitions import (
 __all__ = [
     "LEGAL_TRANSITIONS",
     "TERMINAL",
+    "ChildSpec",
+    "Disposition",
+    "DispositionAction",
     "Health",
     "IllegalTransition",
     "Liveness",
     "assert_legal",
     "classify",
+    "decompose",
     "entry_stamp",
     "is_legal",
+    "reconcile_disposition",
 ]

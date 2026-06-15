@@ -107,6 +107,18 @@ class WakeRepo:
         ).fetchall()
         return [_row_to_wake(row) for row in rows]
 
+    def by_coalesce_key(self, coalesce_key: str) -> list[Wake]:
+        """Every wake ever filed under ``coalesce_key``, oldest first (spec 02 §5 disposition).
+
+        Spans the queued/claimed/done boundary — the disposition reconciler reads it to tell a
+        *delivered-then-consumed* finish-handoff from a still-pending one.
+        """
+        rows = self._conn.execute(
+            "SELECT * FROM wake WHERE coalesce_key = ? ORDER BY created_at, id",
+            (coalesce_key,),
+        ).fetchall()
+        return [_row_to_wake(row) for row in rows]
+
     def queued(self, *, employee_id: str | None = None) -> list[Wake]:
         """Queued wakes (oldest first), optionally scoped to one employee."""
         if employee_id is None:
