@@ -12,7 +12,10 @@ CREATE TABLE monitor (
     attempt_count   INTEGER NOT NULL DEFAULT 0,
     recovery_policy TEXT NOT NULL DEFAULT 'wake_owner',
     created_at      TEXT NOT NULL,
-    fired_at        TEXT
+    fired_at        TEXT,
+    CONSTRAINT monitor_armed_has_schedule CHECK (status <> 'pending' OR next_check_at IS NOT NULL),
+    CONSTRAINT monitor_attempts CHECK (
+        attempt_count >= 0 AND max_attempts >= 1 AND attempt_count <= max_attempts)
 );
 
 CREATE UNIQUE INDEX monitor_armed_task_uq ON monitor(task_id) WHERE status = 'pending';

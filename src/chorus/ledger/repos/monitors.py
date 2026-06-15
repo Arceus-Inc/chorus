@@ -67,6 +67,8 @@ class MonitorRepo:
         monitor = self.get(monitor_id)
         if monitor is None:
             raise KeyError(monitor_id)
+        if monitor.status is not MonitorStatus.PENDING:
+            raise ValueError(f"monitor {monitor_id} is {monitor.status.value}, not pending")
         attempts = monitor.attempt_count + 1
         exhausted = attempts >= monitor.max_attempts
         status = MonitorStatus.EXHAUSTED if exhausted else MonitorStatus.FIRED
@@ -84,6 +86,8 @@ class MonitorRepo:
             raise KeyError(monitor_id)
         if monitor.status is MonitorStatus.EXHAUSTED:
             raise ValueError("cannot re-arm an exhausted monitor")
+        if monitor.status is not MonitorStatus.FIRED:
+            raise ValueError(f"monitor {monitor_id} is {monitor.status.value}, not fired")
         self._conn.execute(
             "UPDATE monitor SET status = 'pending', next_check_at = ? WHERE id = ?",
             (to_iso(next_check_at), monitor_id),

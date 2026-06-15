@@ -63,9 +63,16 @@ class ApprovalRepo:
         return _row_to_approval(row) if row is not None else None
 
     def pending(self) -> list[Approval]:
-        """All open gates, oldest first."""
+        """Open gates that have not lapsed, oldest first.
+
+        A pending row whose ``expires_at`` is in the past is treated as lapsed and excluded — it no
+        longer holds the subject's exact-once gate open.
+        """
+        now = utcnow_iso()
         rows = self._conn.execute(
-            "SELECT * FROM approval WHERE status = 'pending' ORDER BY created_at, id"
+            "SELECT * FROM approval WHERE status = 'pending' "
+            "AND (expires_at IS NULL OR expires_at > ?) ORDER BY created_at, id",
+            (now,),
         ).fetchall()
         return [_row_to_approval(row) for row in rows]
 

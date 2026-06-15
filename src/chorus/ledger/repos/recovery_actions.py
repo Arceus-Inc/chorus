@@ -86,7 +86,17 @@ class RecoveryActionRepo:
         self._conn.commit()
 
     def record_attempt(self, action_id: str) -> RecoveryAction:
-        """Increment the bounded attempt counter and stamp the attempt time."""
+        """Increment the bounded attempt counter and stamp the attempt time.
+
+        Refuses to exceed ``max_attempts`` — retries stop once the cap is reached.
+        """
+        action = self.get(action_id)
+        if action is None:
+            raise KeyError(action_id)
+        if action.attempt_count >= action.max_attempts:
+            raise ValueError(
+                f"recovery {action_id} exhausted its {action.max_attempts} attempt(s)"
+            )
         now = utcnow_iso()
         self._conn.execute(
             "UPDATE recovery_action SET attempt_count = attempt_count + 1, last_attempt_at = ? "
@@ -95,8 +105,7 @@ class RecoveryActionRepo:
         )
         self._conn.commit()
         updated = self.get(action_id)
-        if updated is None:
-            raise KeyError(action_id)
+        assert updated is not None  # exists — we read it above
         return updated
 
     def resolve(

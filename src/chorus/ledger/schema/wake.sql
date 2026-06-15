@@ -16,3 +16,4 @@ CREATE TABLE wake (
 
 CREATE UNIQUE INDEX wake_queued_key_uq ON wake(coalesce_key) WHERE status = 'queued';
 CREATE INDEX wake_employee_status_idx ON wake(employee_id, status);
+CREATE INDEX wake_queue_idx ON wake(status, created_at, id);

@@ -43,43 +43,51 @@ class WakeRepo:
             ),
         )
         self._conn.commit()
-        # Return the persisted queued row for this key (the existing one on a coalesce).
+        # Return the persisted queued row for this key (the existing one on a coalesce). Under a
+        # concurrent claimer the queued row may have moved to 'claimed' — fall back to the latest.
         row = self._conn.execute(
             "SELECT * FROM wake WHERE coalesce_key = ? AND status = ?",
             (key, WakeStatus.QUEUED.value),
         ).fetchone()
+        if row is None:
+            row = self._conn.execute(
+                "SELECT * FROM wake WHERE coalesce_key = ? ORDER BY created_at DESC, id DESC LIMIT 1",
+                (key,),
+            ).fetchone()
+        if row is None:  # pragma: no cover - the row we just upserted must exist
+            raise KeyError(key)
         return _row_to_wake(row)
 
     def claim(self, *, limit: int) -> list[Wake]:
-        """Atomically take up to ``limit`` oldest queued wakes, marking them ``claimed`` (FIFO)."""
-        now = utcnow_iso()
-        rows = self._conn.execute(
-            "SELECT id FROM wake WHERE status = 'queued' ORDER BY created_at, id LIMIT ?",
-            (limit,),
-        ).fetchall()
-        ids = [str(row["id"]) for row in rows]
-        if not ids:
+        """Atomically take up to ``limit`` oldest queued wakes, marking them ``claimed`` (FIFO).
+
+        The claim is a single ``UPDATE … WHERE id IN (SELECT … LIMIT) AND status='queued'`` so two
+        concurrent claimers can't both take the same wake (no select-then-update race).
+        """
+        if limit <= 0:
             return []
-        placeholders = ", ".join("?" for _ in ids)
-        self._conn.execute(
-            f"UPDATE wake SET status = 'claimed', claimed_at = ? WHERE id IN ({placeholders})",
-            (now, *ids),
-        )
-        self._conn.commit()
+        now = utcnow_iso()
         claimed = self._conn.execute(
-            f"SELECT * FROM wake WHERE id IN ({placeholders})", tuple(ids)
+            "UPDATE wake SET status = 'claimed', claimed_at = ? WHERE id IN "
+            "(SELECT id FROM wake WHERE status = 'queued' ORDER BY created_at, id LIMIT ?) "
+            "AND status = 'queued' RETURNING *",
+            (now, limit),
         ).fetchall()
-        by_id = {str(row["id"]): row for row in claimed}
-        return [_row_to_wake(by_id[wid]) for wid in ids]  # preserve claim (FIFO) order
+        self._conn.commit()
+        # RETURNING order is unspecified; re-sort to FIFO (created_at ISO sorts chronologically).
+        claimed.sort(key=lambda row: (row["created_at"], row["id"]))
+        return [_row_to_wake(row) for row in claimed]
 
     def assign_run(self, wake_id: str, run_id: str) -> None:
         self._conn.execute("UPDATE wake SET run_id = ? WHERE id = ?", (run_id, wake_id))
         self._conn.commit()
 
     def mark_done(self, wake_id: str) -> None:
+        """Finish a *claimed* wake; queued wakes are left untouched (lifecycle guard)."""
         now = utcnow_iso()
         self._conn.execute(
-            "UPDATE wake SET status = 'done', finished_at = ? WHERE id = ?", (now, wake_id)
+            "UPDATE wake SET status = 'done', finished_at = ? WHERE id = ? AND status = 'claimed'",
+            (now, wake_id),
         )
         self._conn.commit()
 
