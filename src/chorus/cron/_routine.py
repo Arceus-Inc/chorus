@@ -74,7 +74,9 @@ def parse_cron(expression: str, *, base: datetime, timezone: str = "UTC") -> dat
     ``next_run_at`` UPDATE (spec 01) — not this function — is what guards against
     double-firing the same edge across ticks/processes.
     """
-    raise NotImplementedError("spec 03 §4: delegate to dream's 5-field cron parser")
+    from dream.tasks._cron import next_run_time
+
+    return next_run_time(expression, base=base, tz=timezone)
 
 
 __all__ = [

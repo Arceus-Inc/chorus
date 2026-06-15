@@ -182,6 +182,19 @@ class TaskRepo:
         ).fetchall()
         return [_row_to_task(row) for row in rows]
 
+    def has_open_for_routine(self, routine_id: str) -> bool:
+        """True iff a non-terminal task spawned by this routine is still live (spec 03 §4).
+
+        The ``skip_if_active`` gate: a routine firing while its prior task is still open is suppressed
+        rather than duplicated (complements the ``task_open_routine_uq`` exact-once index).
+        """
+        row = self._conn.execute(
+            "SELECT 1 FROM task WHERE origin_kind = 'routine_execution' AND origin_id = ? "
+            "AND status NOT IN ('done', 'cancelled') LIMIT 1",
+            (routine_id,),
+        ).fetchone()
+        return row is not None
+
 
 def _row_to_task(row: sqlite3.Row) -> Task:
     return Task(
