@@ -14,7 +14,7 @@ independently verified** (`run-liveness.ts` counts whether a run *progressed*, n
 deliverable is *correct*). chorus closes this because dream's evaluator sees the real artifact.
 
 **DoD = the cheapest *sufficient* verifier for the artifact class** (B3.1). It is generated at intake,
-persisted typed on `task.dod`, and enforced by dream's evaluator inside `run_task`. Three tiers:
+persisted as a 1:1 `dod` row (spec 01 Cluster F), and enforced by dream's evaluator inside `run_task`. Three tiers:
 
 ```
 DoD = Command          # objective gate: a shell command must exit 0 (tests/CI/typecheck)
@@ -23,7 +23,7 @@ DoD = Command          # objective gate: a shell command must exit 0 (tests/CI/t
 ```
 
 ```json
-// task.dod
+// a `dod` row per task (spec 01 Cluster F)
 {
   "kind": "command",
   "spec": { "command": "pytest -q && ruff check .", "timeout_s": 300 },
@@ -48,7 +48,7 @@ DoD = Command          # objective gate: a shell command must exit 0 (tests/CI/t
 dream's `run_task` already runs an evaluator that verifies the *sprint contract* per task. chorus's
 DoD is the *task-level* outcome. The seam: **chorus passes `dod` down into `run_task`**, and dream's
 evaluator enforces it as the final acceptance — so chorus is a thin orchestrator around dream's
-evaluator, not a second outer verification layer. (`harness.run_task(..., dod=task.dod)`; the
+evaluator, not a second outer verification layer. (`harness.run_task(..., dod=<the task's dod row>)`; the
 generator turn-loop writes the artifact, the evaluator turn-loop runs the `Command`/`AgentReview`.)
 
 ### Who generates the DoD, and when it may be revised
@@ -60,8 +60,8 @@ never invents acceptance criteria (that would be the kernel "knowing what good l
 For a decomposed child, the **decomposing manager's** role generates the child DoDs as part of the
 accepted plan revision — so the DoD is authorized by the same revision the children are (spec 02 §4).
 
-**Revisability.** `task.dod` is mutable *only* through a typed, audited path, because a worker that
-can weaken its own gate is back to self-report:
+**Revisability.** the `dod` row is mutable *only* through a typed, audited path (bumping
+`dod.revision`), because a worker that can weaken its own gate is back to self-report:
 
 - A **tightening** revision (adding a check) by the assignee's manager is allowed mid-task and emits
   an `activity(verb='decomposed')`-class audit row; the next evaluator pass uses the new DoD.

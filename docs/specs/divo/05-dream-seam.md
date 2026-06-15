@@ -16,7 +16,7 @@ result = await dream.run_task(
     task_id = task.id,
     intent  = task.intent,
     role    = employee.role.manifest,   # dream.roles.RoleManifest
-    dod     = task.dod,                  # typed verifier (spec 04) — enforced by dream's evaluator
+    dod     = load_dod(task.id),         # the task's 1:1 `dod` row (spec 01/04) — enforced by dream's evaluator
     worktree_root = workspace,
     observer = event_bus.emit,          # witness the structured stream
 )   # -> dream.RunTaskResult
@@ -95,7 +95,7 @@ The consequence: chorus's `run` table is **thin** (spec 01) and its recovery is 
 
 ## 5. The DoD pass-down (the M1 decision, fixed)
 
-chorus passes `dod=task.dod` **into** `run_task`, and dream's evaluator enforces it as the final
+chorus loads the task's `dod` row and passes its verifier **into** `run_task`, and dream's evaluator enforces it as the final
 acceptance gate — so chorus is a *thin orchestrator around dream's evaluator*, not a second outer
 verifier. The generator turn-loop writes the artifact; the evaluator turn-loop runs the DoD's
 `Command` (exit 0?) / `AgentReview` (Reviewer verdict) / `HumanApproval`. `run_task` returns
