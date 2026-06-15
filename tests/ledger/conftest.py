@@ -12,6 +12,7 @@ from collections.abc import Iterator
 
 import pytest
 
+from chorus.ledger import SqliteLedger
 from chorus.ledger._migrations import MigrationRunner
 from chorus.ledger.migrations import MIGRATIONS
 
@@ -38,3 +39,13 @@ def migrated(conn: sqlite3.Connection, runner: MigrationRunner) -> sqlite3.Conne
     """A connection with the full M1 schema applied."""
     runner.apply(conn)
     return conn
+
+
+@pytest.fixture
+def ledger() -> Iterator[SqliteLedger]:
+    """An open, migrated in-memory ledger facade (repos wired)."""
+    lg = SqliteLedger.open(":memory:")
+    try:
+        yield lg
+    finally:
+        lg.close()

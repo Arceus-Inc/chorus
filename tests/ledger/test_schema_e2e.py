@@ -112,6 +112,7 @@ def test_display_version_reports_latest_migration(
     migrated: sqlite3.Connection, runner: object
 ) -> None:
     from chorus.ledger._migrations import MigrationRunner
+    from chorus.ledger.migrations import MIGRATIONS
 
     assert isinstance(runner, MigrationRunner)
-    assert runner.display_version(migrated) == "0001_m1_core"
+    assert runner.display_version(migrated) == MIGRATIONS[-1].id

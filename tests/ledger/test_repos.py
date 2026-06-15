@@ -10,7 +10,6 @@ eligibility — is exercised here at the repo API.
 from __future__ import annotations
 
 import sqlite3
-from collections.abc import Iterator
 
 import pytest
 
@@ -32,17 +31,10 @@ from chorus.workforce import Employee
 pytestmark = pytest.mark.integration
 
 
-@pytest.fixture
-def ledger() -> Iterator[SqliteLedger]:
-    lg = SqliteLedger.open(":memory:")
-    try:
-        yield lg
-    finally:
-        lg.close()
-
-
 def test_open_applies_schema_and_reports_version(ledger: SqliteLedger) -> None:
-    assert ledger.schema_version() == "0001_m1_core"
+    from chorus.ledger.migrations import MIGRATIONS
+
+    assert ledger.schema_version() == MIGRATIONS[-1].id
 
 
 def test_employee_create_and_get(ledger: SqliteLedger) -> None:
