@@ -119,9 +119,14 @@ class MigrationRunner:
             raise MigrationError(f"duplicate migration id(s): {ids}")
 
     def applied(self, conn: sqlite3.Connection) -> dict[str, str]:
-        """Return ``{id: checksum}`` for migrations recorded in the ledger."""
-        self._ensure_table(conn)
-        rows = conn.execute("SELECT id, checksum FROM schema_migrations").fetchall()
+        """Return ``{id: checksum}`` recorded in the ledger (``{}`` if the table doesn't exist yet).
+
+        Read-only: never creates the table or commits the caller's connection.
+        """
+        try:
+            rows = conn.execute("SELECT id, checksum FROM schema_migrations").fetchall()
+        except sqlite3.OperationalError:
+            return {}
         return {str(row[0]): str(row[1]) for row in rows}
 
     def pending(self, conn: sqlite3.Connection) -> list[str]:
@@ -130,9 +135,11 @@ class MigrationRunner:
         return [m.id for m in self._migrations if m.id not in applied]
 
     def display_version(self, conn: sqlite3.Connection) -> str | None:
-        """The highest applied migration id — presentation only, never the source of truth."""
-        self._ensure_table(conn)
-        row = conn.execute("SELECT MAX(id) FROM schema_migrations").fetchone()
+        """The highest applied migration id — presentation only; read-only (``None`` if none)."""
+        try:
+            row = conn.execute("SELECT MAX(id) FROM schema_migrations").fetchone()
+        except sqlite3.OperationalError:
+            return None
         if row is None or row[0] is None:
             return None
         return str(row[0])
@@ -140,22 +147,35 @@ class MigrationRunner:
     def apply(self, conn: sqlite3.Connection) -> list[str]:
         """Apply every pending migration in id order; return the ids applied this call.
 
-        Refuses on a ledger ahead of the SDK (:class:`LedgerAheadError`) or a checksum
-        mismatch (:class:`MigrationDriftError`). Each migration runs in its own transaction:
-        a failure rolls back its statements and leaves ``schema_migrations`` untouched.
+        Refuses on a ledger ahead of the SDK (:class:`LedgerAheadError`) or a checksum mismatch
+        (:class:`MigrationDriftError`). Each migration runs under ``BEGIN IMMEDIATE`` — the write
+        lock is taken *before* deciding, and the migration is re-checked against
+        ``schema_migrations`` inside that lock — so two processes starting together can't
+        double-apply: the loser sees it already applied and skips. A failed migration rolls back
+        its statements and leaves ``schema_migrations`` untouched.
         """
-        applied = self.applied(conn)
-        self._gate(applied)
-
-        newly: list[str] = []
         prev_isolation = conn.isolation_level
-        conn.isolation_level = None  # take manual transaction control
+        conn.isolation_level = None  # explicit transaction control — no implicit commits
         try:
+            conn.execute("BEGIN IMMEDIATE")
+            self._ensure_table(conn)
+            conn.execute("COMMIT")
+
+            applied = self.applied(conn)
+            self._gate(applied)
+
+            newly: list[str] = []
             for migration in self._migrations:
                 if migration.id in applied:
                     continue
-                conn.execute("BEGIN")
+                conn.execute("BEGIN IMMEDIATE")  # write lock taken before deciding
                 try:
+                    already = conn.execute(
+                        "SELECT 1 FROM schema_migrations WHERE id = ?", (migration.id,)
+                    ).fetchone()
+                    if already is not None:  # a racing process applied it — skip, never re-run
+                        conn.execute("COMMIT")
+                        continue
                     for stmt in migration.statements:
                         conn.execute(stmt)
                     conn.execute(
@@ -167,9 +187,9 @@ class MigrationRunner:
                     conn.execute("ROLLBACK")
                     raise
                 newly.append(migration.id)
+            return newly
         finally:
             conn.isolation_level = prev_isolation
-        return newly
 
     def _gate(self, applied: dict[str, str]) -> None:
         shipped = {m.id: m.checksum for m in self._migrations}
@@ -186,5 +206,5 @@ class MigrationRunner:
                 )
 
     def _ensure_table(self, conn: sqlite3.Connection) -> None:
+        """Create ``schema_migrations`` if absent. No commit — the caller owns the transaction."""
         conn.execute(_SCHEMA_MIGRATIONS_DDL)
-        conn.commit()

@@ -179,3 +179,26 @@ def test_artifact_create_and_list(ledger: SqliteLedger) -> None:
     assert len(arts) == 1
     assert arts[0].type is ArtifactType.PR
     assert arts[0].is_primary is True
+
+
+def test_finish_preserves_liveness_when_omitted(ledger: SqliteLedger) -> None:
+    ledger.employees.create(Employee(id="e1", name="a", role="engineer"))
+    ledger.tasks.submit(Task(id="t1", intent="x"))
+    ledger.runs.create(Run(id="r1", employee_id="e1", task_id="t1"))
+    ledger.runs.finish("r1", RunStatus.RUNNING, liveness_state="advanced")
+    ledger.runs.finish("r1", RunStatus.SUCCEEDED)  # omit liveness_state
+    got = ledger.runs.get("r1")
+    assert got is not None
+    assert got.status is RunStatus.SUCCEEDED
+    assert got.liveness_state == "advanced"  # preserved, not erased
+
+
+def test_checkout_of_user_owned_task_returns_false(ledger: SqliteLedger) -> None:
+    ledger.employees.create(Employee(id="e1", name="a", role="engineer"))
+    ledger.tasks.submit(Task(id="t1", intent="x", status=TaskStatus.TODO, assignee_user_id="u1"))
+    # CAS must fail cleanly (a human owns it) — not raise IntegrityError on the XOR CHECK.
+    assert ledger.tasks.checkout("t1", employee_id="e1", run_id="r1") is False
+    got = ledger.tasks.get("t1")
+    assert got is not None
+    assert got.assignee_user_id == "u1"
+    assert got.checkout_run_id is None

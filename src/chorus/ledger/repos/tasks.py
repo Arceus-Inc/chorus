@@ -79,7 +79,8 @@ class TaskRepo:
         cursor = self._conn.execute(
             "UPDATE task SET checkout_run_id = ?, execution_run_id = ?, status = 'in_progress', "
             "assignee_employee_id = ?, started_at = COALESCE(started_at, ?), updated_at = ? "
-            f"WHERE id = ? AND checkout_run_id IS NULL AND status IN ({placeholders})",
+            "WHERE id = ? AND checkout_run_id IS NULL AND assignee_user_id IS NULL "
+            f"AND status IN ({placeholders})",
             (run_id, run_id, employee_id, now, now, task_id, *_CLAIMABLE),
         )
         self._conn.commit()

@@ -54,7 +54,7 @@ class RunRepo:
     ) -> None:
         now = utcnow_iso()
         self._conn.execute(
-            "UPDATE run SET status = ?, liveness_state = ?, "
+            "UPDATE run SET status = ?, liveness_state = COALESCE(?, liveness_state), "
             "outcome = COALESCE(?, outcome), usage = COALESCE(?, usage), finished_at = ? "
             "WHERE id = ?",
             (
