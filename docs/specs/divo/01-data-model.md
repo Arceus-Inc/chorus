@@ -30,7 +30,6 @@ The ExecPlan made durable. One `task` row per unit of work, at any depth of the 
 | `assignee_user_id` | text | human ownership (not execution-backed) |
 | `checkout_run_id` | text | ownership lock — the right to execute; set by the atomic checkout CAS (this ledger) |
 | `execution_run_id` | text | liveness lock — which `run` is live now |
-| `dod` | json | the typed Definition-of-Done verifier (spec 04) |
 | `depth` | int | `0` = root (intake/horizon slot); `>0` = chorus decomposition |
 | `origin_kind` | text | `manual\|routine_execution\|decomposition\|stranded_recovery\|stale_run_eval\|productivity_review` |
 | `origin_id` | text | the entity that spawned this task |
@@ -355,9 +354,46 @@ never trusted** (Paperclip rule).
 
 ---
 
-## Cluster F — Outcomes: `artifact`, `artifact_revision`
+## Cluster F — Outcomes: `dod`, `artifact`, `artifact_revision`
 
-The Enforced-Outcomes surface (spec 04). `artifact`: `task_id`, `type` (`pr\|doc\|finding\|
+The Enforced-Outcomes surface (spec 04). The DoD is **not** a `task` column — it is a 1:1 `dod`
+row (the `Verifier` type lives in spec 04; this is its storage + verification record).
+
+### `dod` — the definition-of-done + verification record (1:1 with `task`)
+
+| Column | Type | Meaning |
+|---|---|---|
+| `id` | text PK | |
+| `task_id` | text FK→task | the task this governs (1:1) |
+| `kind` | text | `command\|agent_review\|human_approval` (the discriminator) |
+| `spec` | json | verifier inputs — a validated `Verifier` per kind (spec 04): command+timeout / reviewer_role+rubric / approver |
+| `artifact_class` | text | what artifact satisfies it (`pr\|doc\|finding\|decision\|…`) |
+| `revision` | int | default 1; bumped if the DoD is re-generated (future-proofs history) |
+| `status` | text | `pending\|passed\|failed` — the verification **verdict** |
+| `verdict` | json | the evaluator's structured result (score/notes); null until verified |
+| `verified_by_run_id` | text FK→run | provenance: which beat produced the verdict |
+| `created_at` / `updated_at` | ts | |
+
+```sql
+CREATE UNIQUE INDEX dod_task_uq    ON dod(task_id);   -- 1:1 with task
+CREATE INDEX        dod_kind_idx   ON dod(kind);      -- "all command-gated tasks"
+CREATE INDEX        dod_status_idx ON dod(status);    -- "all failed DoDs"
+```
+
+**Invariant — the `dod` row is the authoritative verification record.** At beat end chorus writes
+`dod.status`/`verdict`/`verified_by_run_id` from the run's result and sets `task.status` (`done`
+iff `dod.status='passed'`) **in the same transaction**. The verdict has *one* home (the `dod`
+row); `task.status` is derived from it; `run.outcome` is the raw dream result it's computed from.
+This is genuinely distinct from `run.outcome` — a run can "succeed" per dream while an
+`agent_review` DoD is still `pending`.
+
+> **Reserved, not built (YAGNI):** DoD *revision history* (a `dod_revision` child table) and shared
+> DoD *templates* (a generator-side `dod_template`). The `revision` int leaves the door open;
+> neither is needed for M1–M4.
+
+### `artifact` / `artifact_revision`
+
+`artifact`: `task_id`, `type` (`pr\|doc\|finding\|
 artifact\|workspace_file`), `provider`, `external_id`, `url`, `review_state`, `health_status`,
 `is_primary`, `resource_ref` (json). `artifact_revision`: immutable history — *the thing
 decomposition is authorized against* (the `accepted_plan_revision_id` above).

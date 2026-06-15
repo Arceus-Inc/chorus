@@ -122,7 +122,7 @@ async def run_beat(wake, run):
     ledger.begin_execution(task.id, run.id)            # set execution_run_id + lease (this ledger)
     result = await dream.run_task(                     # the ONE seam — planner→sprint→evaluator
         task_id=task.id, intent=task.intent,
-        role=emp.role.manifest, dod=task.dod,
+        role=emp.role.manifest, dod=load_dod(task.id),  # the task's 1:1 dod row (spec 01/04)
         observer=event_bus.emit,                       # witness liveness (no watchdog)
     )
     memory_writer.apply(raw_delta(emp, result))        # append-only raw sprint delta; lattice consolidates later
