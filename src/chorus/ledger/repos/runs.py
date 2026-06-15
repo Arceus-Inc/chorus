@@ -50,6 +50,14 @@ class RunRepo:
             "SELECT * FROM run WHERE task_id = ? ORDER BY created_at, id", (task_id,)
         ).fetchall()
         return [_row_to_run(row) for row in rows]
+
+    def count_running(self) -> int:
+        """Live beats in flight — feeds ``free_slots`` (the concurrency budget gate, spec 03 §5)."""
+        row = self._conn.execute(
+            "SELECT COUNT(*) AS n FROM run WHERE status = 'running'"
+        ).fetchone()
+        return int(row["n"])
+
     def running_with_expired_lease(self, now: datetime) -> list[Run]:
         """``running`` runs whose lease has passed (or was never set) - orphaned beats (spec 02 §7).
 
