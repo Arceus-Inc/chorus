@@ -118,6 +118,21 @@ class TaskRepo:
             )
         self._conn.commit()
 
+    def all_children_terminal(self, parent_id: str) -> bool:
+        """True iff ``parent_id`` has children and every child is terminal (``done``/``cancelled``).
+
+        The ``children_done`` signal: false when the parent has no children, so a childless task
+        never spuriously wakes a parent.
+        """
+        row = self._conn.execute(
+            "SELECT COUNT(*) AS total, "
+            "SUM(CASE WHEN status IN ('done', 'cancelled') THEN 1 ELSE 0 END) AS terminal "
+            "FROM task WHERE parent_id = ?",
+            (parent_id,),
+        ).fetchone()
+        total = int(row["total"])
+        return total > 0 and total == int(row["terminal"])
+
     def list_eligible(self, *, limit: int) -> list[Task]:
         """Unclaimed ``todo`` tasks whose blockers are all ``done``, priority then age (spec 03 §3).
 
