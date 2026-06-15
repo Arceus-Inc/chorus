@@ -19,6 +19,7 @@ import sqlite3
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from importlib.resources.abc import Traversable
 
 from chorus.errors import ChorusError
 
@@ -28,6 +29,7 @@ __all__ = [
     "MigrationDriftError",
     "MigrationError",
     "MigrationRunner",
+    "load_migrations",
 ]
 
 _SCHEMA_MIGRATIONS_DDL = """
@@ -74,6 +76,37 @@ class Migration:
 
 def _utcnow_iso() -> str:
     return datetime.now(UTC).isoformat()
+
+
+def _split_statements(sql: str) -> list[str]:
+    """Split a ``.sql`` migration into individual statements (``;``-separated).
+
+    Drops ``--`` line comments and blank chunks. The shipped DDL keeps ``;`` only at statement
+    boundaries (none inside CHECK/WHERE clauses), so a plain split is correct and keeps each
+    statement runnable under the runner's per-migration transaction.
+    """
+    # Strip ``--`` line comments first, so a ``;`` inside a comment never splits a statement.
+    # (The shipped DDL has no ``--`` inside string literals.)
+    without_comments = "\n".join(line.split("--", 1)[0] for line in sql.splitlines())
+    return [statement.strip() for statement in without_comments.split(";") if statement.strip()]
+
+
+def load_migrations(directory: Traversable) -> tuple[Migration, ...]:
+    """Load ``*.sql`` migrations from a package directory, ordered by filename (Postgres-style).
+
+    Each file is one migration: its ``id`` is the filename without ``.sql`` (e.g. ``0001_m1_core``),
+    its statements are the ``;``-separated DDL. Adding a migration is dropping a new numbered
+    ``.sql`` file — no Python edit. The declarative current schema lives in ``chorus.ledger.schema``;
+    a parity test asserts applying these yields exactly that schema.
+    """
+    sql_files = sorted(
+        (entry for entry in directory.iterdir() if entry.name.endswith(".sql")),
+        key=lambda entry: entry.name,
+    )
+    return tuple(
+        Migration(id=entry.name[:-4], statements=tuple(_split_statements(entry.read_text())))
+        for entry in sql_files
+    )
 
 
 class MigrationRunner:
