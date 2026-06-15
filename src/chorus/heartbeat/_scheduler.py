@@ -15,10 +15,20 @@ assignment, ``fire_downstream_wakes``, and the outcome/DoD seam.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
+from typing import TYPE_CHECKING, TypeVar
 
 from chorus.heartbeat._wake import TickReport, Wake
 from chorus.ledger import TaskPriority
+from chorus.ledger._models import DodStatus, Run, RunStatus, TaskStatus
+
+if TYPE_CHECKING:
+    from chorus.heartbeat._beat import BeatRunner
+    from chorus.ledger import SqliteLedger
+    from chorus.observability import EventBus
+    from chorus.workforce import Workforce
+
+_T = TypeVar("_T")
 
 # Dispatch priority rank for the deterministic sort key (spec 03 §3).
 PRIORITY_RANK: dict[TaskPriority, int] = {
@@ -38,9 +48,24 @@ class Scheduler:
     wake queue, claim manager, budgets, and event bus.
     """
 
-    def __init__(self, *, tick_interval_s: float = 1.0, max_concurrent_runs: int = 4) -> None:
+    def __init__(
+        self,
+        *,
+        tick_interval_s: float = 1.0,
+        max_concurrent_runs: int = 4,
+        lease_ttl_s: float = 300.0,
+        ledger: SqliteLedger | None = None,
+        workforce: Workforce | None = None,
+        beat_runner: BeatRunner | None = None,
+        event_bus: EventBus | None = None,
+    ) -> None:
         self.tick_interval_s = tick_interval_s
         self.max_concurrent_runs = max_concurrent_runs
+        self.lease_ttl_s = lease_ttl_s
+        self._ledger = ledger
+        self._workforce = workforce
+        self._beat_runner = beat_runner
+        self._event_bus = event_bus
 
     async def tick(self, now: datetime) -> TickReport:
         """One kernel pulse — recover → cron → monitors → dispatch (spec 03 §3).
@@ -52,15 +77,70 @@ class Scheduler:
         """
         raise NotImplementedError("spec 03 §3: recover → cron → monitors → dispatch")
 
-    async def run_beat(self, wake: Wake) -> None:
+    async def run_beat(self, wake: Wake, *, run_id: str, now: datetime) -> None:
         """One employee's short ``dream.run_task`` invocation (spec 03 §3).
 
-        rehydrate → begin_execution (mint the execution lock on the board) →
-        ``dream.run_task(dod=task.dod, observer=event_bus.emit)`` → append raw
-        memory delta → land outcome → set status → release lock → fire downstream
-        wakes (``deps_resolved`` / ``children_done``).
+        The task is already checked out under ``run_id`` (the tick's dispatch CAS); the beat:
+        rehydrate the employee → ``begin_execution`` (mint the ``run`` row + lease the checkout lock
+        points at) → ``dream.run_task(observer=event_bus.emit)`` → land the verdict (finish the run,
+        record the DoD, ``done`` on pass / ``blocked`` on fail) → release the lock → fire the
+        downstream wakes (``deps_resolved`` / ``children_done``) → mark the wake done. dream is the
+        only seam; everything else is a durable ledger write, re-derivable after a crash.
         """
-        raise NotImplementedError("spec 03 §3: the beat lifecycle")
+        ledger = self._require_ledger()
+        workforce = self._require(self._workforce, "workforce")
+        beat_runner = self._require(self._beat_runner, "beat_runner")
+
+        employee = workforce.get(wake.employee_id)
+        task_id = str(wake.payload["task_id"])
+        task = ledger.tasks.get(task_id)
+        if task is None:
+            raise KeyError(task_id)
+
+        # begin_execution — mint the run row the checkout lock already points at, with a fresh lease.
+        lease = now + timedelta(seconds=self.lease_ttl_s)
+        ledger.runs.create(
+            Run(
+                id=run_id,
+                employee_id=employee.id,
+                task_id=task_id,
+                wake_id=wake.id,
+                status=RunStatus.RUNNING,
+                lease_expires_at=lease,
+                started_at=now,
+            )
+        )
+
+        observer = self._event_bus.emit if self._event_bus is not None else None
+        result = await beat_runner.run_task(
+            task_id=task_id, intent=task.intent, observer=observer
+        )
+
+        verdict = result.outcome or None
+        if result.passed:
+            ledger.runs.finish(run_id, RunStatus.SUCCEEDED, outcome=verdict)
+            ledger.finalize_beat(
+                task_id=task_id, run_id=run_id, dod_status=DodStatus.PASSED, verdict=verdict
+            )
+        else:
+            ledger.runs.finish(run_id, RunStatus.FAILED, outcome=verdict)
+            ledger.finalize_beat(
+                task_id=task_id, run_id=run_id, dod_status=DodStatus.FAILED, verdict=verdict
+            )
+            ledger.tasks.set_status(task_id, TaskStatus.BLOCKED)
+
+        ledger.tasks.release_locks(task_id, run_id=run_id)
+        ledger.wakes.mark_done(wake.id)
+
+    def _require_ledger(self) -> SqliteLedger:
+        return self._require(self._ledger, "ledger")
+
+    @staticmethod
+    def _require(seam: _T | None, name: str) -> _T:
+        if seam is None:
+            raise RuntimeError(f"Scheduler not wired with a {name} (inject it at construction)")
+        return seam
+
 
     @staticmethod
     def sort_key(*, in_progress: bool, deps_done: bool, priority: TaskPriority,
