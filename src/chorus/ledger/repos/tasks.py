@@ -13,6 +13,7 @@ import sqlite3
 
 from chorus.ledger._models import OriginKind, Task, TaskPriority, TaskStatus
 from chorus.ledger.repos._base import from_iso, to_iso, utcnow_iso
+from chorus.lifecycle._transitions import assert_legal
 
 # Statuses from which a task may be checked out into agent-owned in_progress (spec 02 §2).
 _CLAIMABLE: tuple[str, ...] = ("backlog", "todo", "blocked", "in_review")
@@ -118,6 +119,21 @@ class TaskRepo:
             )
         self._conn.commit()
 
+    def transition(self, task_id: str, target: TaskStatus) -> None:
+        """Guarded status PATCH — reject an illegal edge before writing (spec 02 §2).
+
+        The status machine vets ``current → target`` (and forbids a bare PATCH into
+        ``in_progress`` — that path is :meth:`checkout` only); only then does it
+        delegate to :meth:`set_status` to write + stamp. Raises
+        :class:`~chorus.lifecycle.IllegalTransition` on an illegal edge and
+        ``KeyError`` for an unknown task — the row is left untouched in both cases.
+        """
+        task = self.get(task_id)
+        if task is None:
+            raise KeyError(task_id)
+        assert_legal(task.status, target)
+        self.set_status(task_id, target)
+
     def all_children_terminal(self, parent_id: str) -> bool:
         """True iff ``parent_id`` has children and every child is terminal (``done``/``cancelled``).
 
@@ -149,6 +165,20 @@ class TaskRepo:
             "ORDER BY CASE t.priority WHEN 'critical' THEN 0 WHEN 'high' THEN 1 "
             "WHEN 'medium' THEN 2 ELSE 3 END, t.created_at LIMIT ?",
             (limit,),
+        ).fetchall()
+        return [_row_to_task(row) for row in rows]
+
+    def agent_owned_open(self) -> list[Task]:
+        """Employee-owned, non-terminal, non-parked tasks - the recovery sweep's scan set (spec 02 §7).
+
+        Excludes ``backlog`` (parked), ``done``/``cancelled`` (terminal), and human-held work
+        (``assignee_user_id`` set) - the sweep never treats human-owned work as beat-managed (§8).
+        """
+        rows = self._conn.execute(
+            "SELECT * FROM task WHERE assignee_employee_id IS NOT NULL "
+            "AND assignee_user_id IS NULL "
+            "AND status IN ('todo', 'in_progress', 'in_review', 'blocked') "
+            "ORDER BY created_at, id"
         ).fetchall()
         return [_row_to_task(row) for row in rows]
 
