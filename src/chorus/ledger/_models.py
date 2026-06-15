@@ -163,6 +163,108 @@ class DecompositionClaim:
     created_at: datetime | None = None
 
 
+class RoutineTarget(StrEnum):
+    """What a routine firing produces (spec 01 Cluster C ``routine``)."""
+
+    SPAWN_TASK = "spawn_task"
+    NEXT_BEAT = "next_beat"
+
+
+class RoutineConcurrency(StrEnum):
+    """How a routine handles an already-active prior firing (spec 01 Cluster C)."""
+
+    SKIP_IF_ACTIVE = "skip_if_active"
+    COALESCE = "coalesce"
+    ALWAYS = "always"
+
+
+class RoutineCatchUp(StrEnum):
+    """How a routine treats missed windows (spec 01 Cluster C)."""
+
+    SKIP_MISSED = "skip_missed"
+    BACKFILL_ONE = "backfill_one"
+
+
+class RoutineStatus(StrEnum):
+    """A routine's lifecycle (spec 01 Cluster C)."""
+
+    ACTIVE = "active"
+    PAUSED = "paused"
+
+
+class TriggerKind(StrEnum):
+    """How a routine trigger fires (spec 01 Cluster C ``routine_trigger``)."""
+
+    CRON = "cron"
+    WEBHOOK = "webhook"
+    MANUAL = "manual"
+
+
+class RoutineRunStatus(StrEnum):
+    """One firing's lifecycle (spec 01 Cluster C ``routine_run``)."""
+
+    RECEIVED = "received"
+    DISPATCHED = "dispatched"
+    COALESCED = "coalesced"
+    SUPPRESSED = "suppressed"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
+@dataclass(frozen=True)
+class Routine:
+    """A cron template + owner + policies (spec 01 Cluster C ``routine``)."""
+
+    id: str
+    employee_id: str
+    intent_template: str
+    goal_id: str | None = None
+    parent_task_id: str | None = None
+    target: RoutineTarget = RoutineTarget.SPAWN_TASK
+    concurrency_policy: RoutineConcurrency = RoutineConcurrency.SKIP_IF_ACTIVE
+    catch_up_policy: RoutineCatchUp = RoutineCatchUp.SKIP_MISSED
+    status: RoutineStatus = RoutineStatus.ACTIVE
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+@dataclass(frozen=True)
+class RoutineTrigger:
+    """A routine's schedule (spec 01 Cluster C ``routine_trigger``).
+
+    ``next_run_at`` is the double-fire-guard target: firing is an optimistic ``UPDATE … WHERE
+    next_run_at=<old>`` so two ticks can't fire the same edge.
+    """
+
+    id: str
+    routine_id: str
+    kind: TriggerKind = TriggerKind.CRON
+    cron_expression: str | None = None
+    timezone: str = "UTC"
+    next_run_at: datetime | None = None
+    last_fired_at: datetime | None = None
+    created_at: datetime | None = None
+
+
+@dataclass(frozen=True)
+class RoutineRun:
+    """One firing → one task (spec 01 Cluster C ``routine_run``).
+
+    Dispatch is exact-once via ``idempotency_key`` (partial-unique). ``coalesced_into_run_id`` points
+    a folded firing at the survivor.
+    """
+
+    id: str
+    routine_id: str
+    trigger_id: str
+    status: RoutineRunStatus = RoutineRunStatus.RECEIVED
+    dispatch_fingerprint: str = ""
+    idempotency_key: str | None = None
+    linked_task_id: str | None = None
+    coalesced_into_run_id: str | None = None
+    created_at: datetime | None = None
+
+
 @dataclass(frozen=True)
 class Run:
     """One beat — one ``dream.run_task`` invocation, kept THIN (spec 01 Cluster C ``run``)."""
@@ -608,6 +710,14 @@ __all__ = [
     "RecoveryKind",
     "RecoveryOutcome",
     "RecoveryStatus",
+    "Routine",
+    "RoutineCatchUp",
+    "RoutineConcurrency",
+    "RoutineRun",
+    "RoutineRunStatus",
+    "RoutineStatus",
+    "RoutineTarget",
+    "RoutineTrigger",
     "Run",
     "RunStatus",
     "Task",
