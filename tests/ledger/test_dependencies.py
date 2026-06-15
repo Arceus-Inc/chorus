@@ -26,12 +26,14 @@ def test_add_and_read_edges(ledger: SqliteLedger) -> None:
     assert ledger.dependencies.dependents("a") == ["b"]
 
 
-def test_add_is_idempotent(ledger: SqliteLedger) -> None:
+def test_add_is_idempotent_and_returns_persisted_edge(ledger: SqliteLedger) -> None:
     _task(ledger, "a")
     _task(ledger, "b")
-    ledger.dependencies.add("b", "a")
-    ledger.dependencies.add("b", "a")  # same edge again — no-op
+    first = ledger.dependencies.add("b", "a")
+    second = ledger.dependencies.add("b", "a")  # duplicate — must return the persisted edge
     assert ledger.dependencies.blockers("b") == ["a"]
+    assert second.id == first.id  # not a freshly-generated, never-inserted id
+    assert second.created_at == first.created_at
 
 
 def test_remove_edge(ledger: SqliteLedger) -> None:

@@ -42,8 +42,18 @@ class DependencyRepo:
             (edge_id, task_id, depends_on_id, now),
         )
         self._conn.commit()
+        # Return the *persisted* edge: on a duplicate (DO NOTHING) the existing row's id/created_at
+        # differ from the values generated above, so always read back what's actually stored.
+        row = self._conn.execute(
+            "SELECT id, task_id, depends_on_id, created_at FROM task_dependency "
+            "WHERE task_id = ? AND depends_on_id = ?",
+            (task_id, depends_on_id),
+        ).fetchone()
         return TaskDependency(
-            id=edge_id, task_id=task_id, depends_on_id=depends_on_id, created_at=from_iso(now)
+            id=str(row["id"]),
+            task_id=str(row["task_id"]),
+            depends_on_id=str(row["depends_on_id"]),
+            created_at=from_iso(row["created_at"]),
         )
 
     def remove(self, task_id: str, depends_on_id: str) -> None:

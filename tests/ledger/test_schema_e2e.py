@@ -116,3 +116,15 @@ def test_display_version_reports_latest_migration(
 
     assert isinstance(runner, MigrationRunner)
     assert runner.display_version(migrated) == MIGRATIONS[-1].id
+
+
+def test_task_dependency_self_edge_rejected_by_db(migrated: sqlite3.Connection) -> None:
+    # Defense in depth: the DB CHECK rejects a self-edge even if the repo guard is bypassed.
+    _insert_task(migrated, "t1")
+    with pytest.raises(sqlite3.IntegrityError):
+        migrated.execute(
+            "INSERT INTO task_dependency (id, task_id, depends_on_id, created_at) "
+            "VALUES (?, ?, ?, ?)",
+            ("d1", "t1", "t1", _NOW),
+        )
+        migrated.commit()

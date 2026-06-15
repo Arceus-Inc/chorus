@@ -194,3 +194,10 @@ def test_checkout_of_user_owned_task_returns_false(ledger: SqliteLedger) -> None
     assert got is not None
     assert got.assignee_user_id == "u1"
     assert got.checkout_run_id is None
+
+
+def test_list_eligible_excludes_human_owned(ledger: SqliteLedger) -> None:
+    ledger.tasks.submit(Task(id="t1", intent="x", status=TaskStatus.TODO))
+    ledger.tasks.submit(Task(id="t2", intent="y", status=TaskStatus.TODO, assignee_user_id="u1"))
+    # human-owned t2 is excluded — checkout would always reject it (eligibility ⇔ claimability)
+    assert [t.id for t in ledger.tasks.list_eligible(limit=10)] == ["t1"]
