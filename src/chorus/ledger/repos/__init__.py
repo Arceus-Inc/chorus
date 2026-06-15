@@ -14,6 +14,7 @@ from chorus.ledger.repos.employees import EmployeeRepo
 from chorus.ledger.repos.goals import GoalRepo
 from chorus.ledger.repos.runs import RunRepo
 from chorus.ledger.repos.tasks import TaskRepo
+from chorus.ledger.repos.wakes import WakeRepo
 
 __all__ = [
     "ArtifactRepo",
@@ -24,4 +25,5 @@ __all__ = [
     "GoalRepo",
     "RunRepo",
     "TaskRepo",
+    "WakeRepo",
 ]

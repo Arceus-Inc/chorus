@@ -9,9 +9,11 @@ SQL schema (partial-unique crash-safety indexes, the two-lock contract) lives in
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
+from typing import Any
 
 
 class TaskStatus(StrEnum):
@@ -201,6 +203,49 @@ class Artifact:
     resource_ref: dict[str, object] | None = None
 
 
+class WakeReason(StrEnum):
+    """Why a wake fired and who fires it (spec 03 §2)."""
+
+    TASK_ASSIGNED = "task_assigned"
+    DEPS_RESOLVED = "deps_resolved"
+    CHILDREN_DONE = "children_done"
+    MESSAGE = "message"
+    CRON_DUE = "cron_due"
+    MONITOR_DUE = "monitor_due"
+    RECOVERY = "recovery"
+    MANUAL = "manual"
+
+
+class WakeStatus(StrEnum):
+    """A wake's claim lifecycle (spec 01 Cluster C ``wake``)."""
+
+    QUEUED = "queued"
+    CLAIMED = "claimed"
+    DONE = "done"
+
+
+@dataclass(frozen=True)
+class Wake:
+    """The coalescing push inbox row (spec 01 Cluster C, spec 03 §2).
+
+    ``coalesce_key`` (default ``employee:reason:task``) is the dedup key the partial-unique index
+    enforces — a flurry of identical triggers folds into one *queued* wake (``coalesced_count``
+    bumped), so the employee runs once.
+    """
+
+    id: str
+    employee_id: str
+    reason: WakeReason
+    payload: Mapping[str, Any] = field(default_factory=dict)
+    status: WakeStatus = WakeStatus.QUEUED
+    coalesce_key: str | None = None
+    coalesced_count: int = 0
+    run_id: str | None = None
+    created_at: datetime | None = None
+    claimed_at: datetime | None = None
+    finished_at: datetime | None = None
+
+
 __all__ = [
     "Artifact",
     "ArtifactType",
@@ -215,4 +260,7 @@ __all__ = [
     "TaskDependency",
     "TaskPriority",
     "TaskStatus",
+    "Wake",
+    "WakeReason",
+    "WakeStatus",
 ]
