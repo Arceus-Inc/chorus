@@ -9,7 +9,8 @@ CREATE TABLE cost_event (
     input_tokens  INTEGER NOT NULL DEFAULT 0,
     output_tokens INTEGER NOT NULL DEFAULT 0,
     cost_cents    INTEGER NOT NULL,
-    occurred_at   TEXT NOT NULL
+    occurred_at   TEXT NOT NULL,
+    CONSTRAINT cost_event_nonneg CHECK (cost_cents >= 0 AND input_tokens >= 0 AND output_tokens >= 0)
 );
 
 CREATE INDEX cost_event_employee_idx ON cost_event(employee_id, occurred_at);

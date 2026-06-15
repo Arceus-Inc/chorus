@@ -58,7 +58,13 @@ class ActivityRepo:
         return [_row_to_activity(row) for row in rows]
 
     def recent(self, *, limit: int) -> list[Activity]:
-        """The global audit tail, newest first."""
+        """The global audit tail, newest first. ``limit`` must be positive.
+
+        A non-positive ``limit`` is rejected — in SQLite a negative ``LIMIT`` means "no cap", which
+        would silently turn this into an unbounded full-table read.
+        """
+        if limit <= 0:
+            raise ValueError("limit must be positive")
         rows = self._conn.execute(
             "SELECT * FROM activity ORDER BY occurred_at DESC, id DESC LIMIT ?", (limit,)
         ).fetchall()

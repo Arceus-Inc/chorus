@@ -9,7 +9,7 @@ CREATE TABLE message (
     kind             TEXT NOT NULL DEFAULT 'instruction',
     read_at          TEXT,
     created_at       TEXT NOT NULL,
-    CONSTRAINT message_single_sender CHECK (from_employee_id IS NULL OR from_user_id IS NULL)
+    CONSTRAINT message_single_sender CHECK ((from_employee_id IS NULL) <> (from_user_id IS NULL))
 );
 
-CREATE INDEX message_inbox_idx ON message(to_employee_id, read_at);
+CREATE INDEX message_inbox_idx ON message(to_employee_id, read_at, created_at, id);

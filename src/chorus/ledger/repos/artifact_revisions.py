@@ -20,25 +20,27 @@ class ArtifactRevisionRepo:
         self._conn = conn
 
     def record(self, revision: ArtifactRevision) -> ArtifactRevision:
-        """Append the next revision for the artifact; the assigned number is returned."""
+        """Append the next revision for the artifact; the assigned number is returned.
+
+        The ``MAX(revision)+1`` read and the insert are one atomic ``INSERT … SELECT`` statement, so
+        two concurrent writers can't allocate the same revision number for one artifact (which would
+        otherwise trip ``artifact_revision_seq_uq``). On the lost race the unique index rejects the
+        loser rather than silently double-numbering.
+        """
         now = utcnow_iso()
-        row = self._conn.execute(
-            "SELECT COALESCE(MAX(revision), 0) + 1 AS next FROM artifact_revision "
-            "WHERE artifact_id = ?",
-            (revision.artifact_id,),
-        ).fetchone()
-        next_revision = int(row["next"])
         self._conn.execute(
-            "INSERT INTO artifact_revision (id, artifact_id, revision, resource_ref, summary, "
-            "created_by_run_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO artifact_revision "
+            "(id, artifact_id, revision, resource_ref, summary, created_by_run_id, created_at) "
+            "SELECT ?, ?, COALESCE(MAX(revision), 0) + 1, ?, ?, ?, ? "
+            "FROM artifact_revision WHERE artifact_id = ?",
             (
                 revision.id,
                 revision.artifact_id,
-                next_revision,
                 dumps(revision.resource_ref) if revision.resource_ref is not None else None,
                 revision.summary,
                 revision.created_by_run_id,
                 now,
+                revision.artifact_id,
             ),
         )
         self._conn.commit()

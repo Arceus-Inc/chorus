@@ -50,13 +50,30 @@ class BudgetIncidentRepo:
         return _row_to_incident(row) if row is not None else None
 
     def attach_approval(self, incident_id: str, approval_id: str) -> None:
-        """Point a hard breach at the approval that gates its release."""
+        """Point an *open hard* breach at the approval that gates its release."""
+        incident = self.get(incident_id)
+        if incident is None:
+            raise KeyError(incident_id)
+        if incident.status is not BudgetIncidentStatus.OPEN:
+            raise ValueError(f"incident {incident_id} is {incident.status.value}, not open")
+        if incident.threshold_type is not BudgetThreshold.HARD:
+            raise ValueError("only hard incidents gate on an approval")
         self._conn.execute(
             "UPDATE budget_incident SET approval_id = ? WHERE id = ?", (approval_id, incident_id)
         )
         self._conn.commit()
 
     def resolve(self, incident_id: str) -> None:
+        """Resolve an open incident; a hard incident needs an *approved* approval first."""
+        incident = self.get(incident_id)
+        if incident is None:
+            raise KeyError(incident_id)
+        if incident.threshold_type is BudgetThreshold.HARD and not self._is_approved(
+            incident.approval_id
+        ):
+            raise ValueError(
+                f"hard incident {incident_id} needs an approved approval before it can resolve"
+            )
         self._conn.execute(
             "UPDATE budget_incident SET status = 'resolved' WHERE id = ? AND status = 'open'",
             (incident_id,),
@@ -64,11 +81,20 @@ class BudgetIncidentRepo:
         self._conn.commit()
 
     def dismiss(self, incident_id: str) -> None:
-        """Dismiss the incident, freeing the window for a fresh one."""
+        """Dismiss an *open* incident, freeing the window for a fresh one."""
         self._conn.execute(
-            "UPDATE budget_incident SET status = 'dismissed' WHERE id = ?", (incident_id,)
+            "UPDATE budget_incident SET status = 'dismissed' WHERE id = ? AND status = 'open'",
+            (incident_id,),
         )
         self._conn.commit()
+
+    def _is_approved(self, approval_id: str | None) -> bool:
+        if approval_id is None:
+            return False
+        row = self._conn.execute(
+            "SELECT status FROM approval WHERE id = ?", (approval_id,)
+        ).fetchone()
+        return row is not None and row["status"] == "approved"
 
     def open_for_policy(self, policy_id: str) -> list[BudgetIncident]:
         """Open incidents for a policy, oldest first."""

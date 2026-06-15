@@ -21,7 +21,9 @@ class CostEventRepo:
         self._conn = conn
 
     def record(self, event: CostEvent) -> CostEvent:
-        """Append one immutable spend record."""
+        """Append one immutable spend record; ``cost_cents`` must be non-negative."""
+        if event.cost_cents < 0:
+            raise ValueError("cost_cents must be non-negative")
         occurred = to_iso(event.occurred_at) or utcnow_iso()
         self._conn.execute(
             "INSERT INTO cost_event (id, employee_id, task_id, run_id, provider, model, "

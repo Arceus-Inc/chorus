@@ -22,12 +22,18 @@ class DecompositionClaimRepo:
         self._conn = conn
 
     def open(self, claim: DecompositionClaim) -> DecompositionClaim:
-        """Record an in-flight claim before fan-out; the exact-once index rejects a second tree."""
+        """Record an in-flight claim before fan-out; the exact-once index rejects a second tree.
+
+        ``child_task_ids`` is always initialized empty — fan-out is "open before any child is
+        created", so only :meth:`add_child` may populate it. The accepted plan revision must belong
+        to the source task (lineage guard) so a claim can't decompose task A with task B's plan.
+        """
+        self._require_revision_lineage(claim.source_task_id, claim.accepted_plan_revision_id)
         now = utcnow_iso()
         self._conn.execute(
             "INSERT INTO decomposition_claim (id, source_task_id, accepted_plan_revision_id, "
             "status, request_fingerprint, requested_children, child_task_ids, owner_run_id, "
-            "completed_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)",
+            "completed_at, created_at) VALUES (?, ?, ?, ?, ?, ?, '[]', ?, NULL, ?)",
             (
                 claim.id,
                 claim.source_task_id,
@@ -35,7 +41,6 @@ class DecompositionClaimRepo:
                 DecompositionStatus.IN_FLIGHT.value,
                 claim.request_fingerprint,
                 dumps(claim.requested_children),
-                dumps(claim.child_task_ids),
                 claim.owner_run_id,
                 now,
             ),
@@ -44,6 +49,19 @@ class DecompositionClaimRepo:
         opened = self.get(claim.id)
         assert opened is not None  # just inserted in this transaction
         return opened
+
+    def _require_revision_lineage(self, source_task_id: str, revision_id: str) -> None:
+        """Reject a plan revision that belongs to a different task than ``source_task_id``."""
+        row = self._conn.execute(
+            "SELECT a.task_id AS task_id FROM artifact_revision ar "
+            "JOIN artifact a ON a.id = ar.artifact_id WHERE ar.id = ?",
+            (revision_id,),
+        ).fetchone()
+        if row is not None and row["task_id"] != source_task_id:
+            raise ValueError(
+                f"plan revision {revision_id} belongs to task {row['task_id']}, "
+                f"not source task {source_task_id}"
+            )
 
     def get(self, claim_id: str) -> DecompositionClaim | None:
         row = self._conn.execute(
@@ -63,10 +81,15 @@ class DecompositionClaimRepo:
         return _row_to_claim(row) if row is not None else None
 
     def add_child(self, claim_id: str, child_task_id: str) -> DecompositionClaim:
-        """Append one created child id to the durable partial result (idempotent)."""
+        """Append one created child id to the durable partial result (idempotent).
+
+        Rejected once the claim is ``completed`` — a sealed claim's child set is immutable.
+        """
         claim = self.get(claim_id)
         if claim is None:
             raise KeyError(claim_id)
+        if claim.status is not DecompositionStatus.IN_FLIGHT:
+            raise ValueError(f"claim {claim_id} is {claim.status.value}, not in_flight")
         if child_task_id not in claim.child_task_ids:
             children = [*claim.child_task_ids, child_task_id]
             self._conn.execute(

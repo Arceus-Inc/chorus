@@ -19,9 +19,11 @@ from chorus.ledger import (
     ArtifactType,
     DecompositionClaim,
     DecompositionStatus,
+    Run,
     SqliteLedger,
     Task,
 )
+from chorus.workforce import Employee
 
 pytestmark = pytest.mark.integration
 
@@ -30,6 +32,9 @@ def _plan_revision(ledger: SqliteLedger, *, source: str = "t1", rev_id: str = "r
     ledger.tasks.submit(Task(id=source, intent="decompose me"))
     ledger.artifacts.create(Artifact(id="plan", task_id=source, type=ArtifactType.DOC))
     ledger.artifact_revisions.record(ArtifactRevision(id=rev_id, artifact_id="plan"))
+    # owner_run_id is FK→run, so the owning run must exist
+    ledger.employees.create(Employee(id="e1", name="e1", role="engineer"))
+    ledger.runs.create(Run(id="run1", employee_id="e1", task_id=source))
     return rev_id
 
 

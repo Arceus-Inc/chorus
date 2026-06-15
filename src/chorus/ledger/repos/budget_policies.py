@@ -5,7 +5,7 @@ from __future__ import annotations
 import sqlite3
 
 from chorus.ledger._models import BudgetPolicy, BudgetScope
-from chorus.ledger.repos._base import utcnow_iso
+from chorus.ledger.repos._base import from_iso, utcnow_iso
 
 
 class BudgetPolicyRepo:
@@ -80,4 +80,6 @@ def _row_to_policy(row: sqlite3.Row) -> BudgetPolicy:
         warn_percent=row["warn_percent"],
         hard_stop_enabled=bool(row["hard_stop_enabled"]),
         window_kind=row["window_kind"],
+        created_at=from_iso(row["created_at"]),
+        updated_at=from_iso(row["updated_at"]),
     )
