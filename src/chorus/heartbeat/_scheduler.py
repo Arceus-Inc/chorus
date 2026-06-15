@@ -15,12 +15,15 @@ assignment, ``fire_downstream_wakes``, and the outcome/DoD seam.
 
 from __future__ import annotations
 
+import asyncio
+import uuid
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, TypeVar
 
 from chorus.heartbeat._wake import TickReport, Wake
 from chorus.ledger import TaskPriority
 from chorus.ledger._models import DodStatus, Run, RunStatus, TaskStatus
+from chorus.recovery import reconcile
 
 if TYPE_CHECKING:
     from chorus.heartbeat._beat import BeatRunner
@@ -66,6 +69,7 @@ class Scheduler:
         self._workforce = workforce
         self._beat_runner = beat_runner
         self._event_bus = event_bus
+        self._inflight: set[asyncio.Task[None]] = set()
 
     async def tick(self, now: datetime) -> TickReport:
         """One kernel pulse — recover → cron → monitors → dispatch (spec 03 §3).
@@ -75,7 +79,60 @@ class Scheduler:
         same ledger; every claim step is exact-once at the row level
         (``SKIP LOCKED`` + the deterministic sort key, spec 03 §5).
         """
-        raise NotImplementedError("spec 03 §3: recover → cron → monitors → dispatch")
+        ledger = self._require_ledger()
+
+        # (a) RECOVER — reap orphaned leases + reconcile stranded work before any new dispatch, so
+        # a crashed beat's lock is freed and its slot returned to the budget this same pulse.
+        swept = reconcile(ledger, now=now)
+        recovered = len(swept.reaped_runs)
+
+        # (d) DISPATCH — claim up to the free concurrency budget, then serialize per employee.
+        free_slots = self.max_concurrent_runs - ledger.runs.count_running()
+        queued_before = len(ledger.wakes.queued())
+        claimed = ledger.wakes.claim(limit=free_slots) if free_slots > 0 else []
+        blocked_by_budget = max(0, queued_before - free_slots)
+
+        busy = ledger.runs.running_employee_ids()
+        dispatched = 0
+        for wake in claimed:
+            # Per-employee serialization (spec 03 §5): at most one live beat per employee. A wake we
+            # can't run this pulse goes back to ``queued`` (FIFO position preserved), not stranded.
+            if wake.employee_id in busy or "task_id" not in wake.payload:
+                ledger.wakes.release(wake.id)
+                continue
+            task_id = str(wake.payload["task_id"])
+            run_id = f"run_{uuid.uuid4().hex}"
+            # Dispatch CAS (spec 03 §5): checkout flips the task to ``in_progress`` under ``run_id``.
+            # A False is a 409 — a live owner already holds it — so we release the wake and skip.
+            if not ledger.tasks.checkout(task_id, employee_id=wake.employee_id, run_id=run_id):
+                ledger.wakes.release(wake.id)
+                continue
+            busy.add(wake.employee_id)
+            self._dispatch_beat(wake, run_id=run_id, now=now)
+            dispatched += 1
+
+        return TickReport(
+            at=now,
+            recovered=recovered,
+            wakes_dispatched=dispatched,
+            beats_started=dispatched,
+            blocked_by_budget=blocked_by_budget,
+        )
+
+    def _dispatch_beat(self, wake: Wake, *, run_id: str, now: datetime) -> None:
+        """Kick a beat off as a background task — the tick never awaits it (spec 03 §3d).
+
+        The handle is tracked so a composition root (or a test) can :meth:`drain` the inflight beats
+        deterministically; the done-callback drops it so the set self-prunes.
+        """
+        task = asyncio.create_task(self.run_beat(wake, run_id=run_id, now=now))
+        self._inflight.add(task)
+        task.add_done_callback(self._inflight.discard)
+
+    async def drain(self) -> None:
+        """Await every beat this scheduler has dispatched — the tick's async tail (spec 03 §3d)."""
+        if self._inflight:
+            await asyncio.gather(*tuple(self._inflight))
 
     async def run_beat(self, wake: Wake, *, run_id: str, now: datetime) -> None:
         """One employee's short ``dream.run_task`` invocation (spec 03 §3).

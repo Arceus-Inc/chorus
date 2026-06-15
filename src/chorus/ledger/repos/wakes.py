@@ -118,6 +118,20 @@ class WakeRepo:
         )
         self._conn.commit()
 
+    def release(self, wake_id: str) -> None:
+        """Return a *claimed* wake to ``queued`` so a later tick re-claims it (spec 03 §5).
+
+        The tick over-claims (up to the free-slot budget) then serializes per employee; a wake it
+        can't dispatch this pulse (employee already has a live beat) is released, not stranded — its
+        ``created_at`` is preserved so it keeps its FIFO position (anti-starvation).
+        """
+        self._conn.execute(
+            "UPDATE wake SET status = 'queued', claimed_at = NULL "
+            "WHERE id = ? AND status = 'claimed'",
+            (wake_id,),
+        )
+        self._conn.commit()
+
     def get(self, wake_id: str) -> Wake | None:
         row = self._conn.execute("SELECT * FROM wake WHERE id = ?", (wake_id,)).fetchone()
         return _row_to_wake(row) if row is not None else None
