@@ -20,7 +20,8 @@ stuck in SQLite that should be in Postgres") cannot happen if every store is rou
 | Store | Contract | Holds | SDK backend (chorus) | Distribution backend (Arceus) | Why this backend |
 |---|---|---|---|---|---|
 | **Ledger** | `Ledger` | tasks, wakes, routines, runs, goals, budgets | **SQLite-WAL** (a file) | Postgres | hot, transactional, crash-safe; **schema is portable** |
-| **Coordination board** | dream `coordination` | the two locks (`checkout`/`execution`) + lease | dream `board.sqlite` | Postgres claims | reuse dream — chorus doesn't rebuild it |
+| **Task locks + lease** | `Ledger` (task cols + `run`) | the two locks + `lease_expires_at` | **chorus ledger** (same store as `task`) | Postgres (same store) | one store with `task` → atomic checkout CAS, no drift |
+| **Swarm coordination** | dream `coordination` | dream's *intra-task* sub-agent claims | dream `board.sqlite` | dream | reuse dream — inside one `run_task`, not chorus task ownership |
 | **Memory — working** | `MemoryStore`/`MemoryWriter` | episodic notes, durable knowledge | git-markdown | git / Postgres | slow, diffable, provenance-linked |
 | **Memory — long-term** | `MemoryStore` (vector) | semantic recall over a growing corpus | file/`sqlite-vss` index (later) | **Postgres + pgvector** / vector DB | genuinely needs vectors — **never the ledger** |
 | **Artifacts / blobs** | object-store seam | files, PR refs, rendered outputs | filesystem | S3-compatible | not a DB at all |

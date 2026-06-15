@@ -2,8 +2,9 @@
 
 The kernel **tick**, the **wake** model, and **cron/routines**. This supersedes the design sketch
 in heartbeat-cron.md with the concrete schema (spec 01) and the recovery
-sequence (spec 02). Built on dream's coordination board + cron parser; the *org scheduling* is
-chorus's own.
+sequence (spec 02). Built on dream's cron parser; the locks, lease, and *org scheduling* are
+chorus's own — on its ledger (spec 01). dream's coordination board is reused only for the
+intra-task swarm, never for chorus task ownership.
 
 > **Two heartbeats, named apart** (the disambiguation that unblocks everything):
 > **tick** = the kernel's pulse (one pass over the ledger); **beat** = one employee's short
@@ -44,7 +45,7 @@ wake per `coalesce_key`" a *database* guarantee — a flurry of identical trigge
 (bump `coalesced_count`), so the employee runs once. (Paperclip's `coalescedCount`, enforced by an
 index instead of code.)
 
-**Lifecycle:** `enqueue (coalesces) → tick claims (concurrency-capped) → checkout on the board
+**Lifecycle:** `enqueue (coalesces) → tick claims (concurrency-capped) → checkout on the ledger
 (atomic CAS) → beat runs dream.run_task → on terminal, mark_done + fire downstream wakes.`
 
 ---
@@ -57,10 +58,9 @@ crashed beat is reaped before new dispatch):
 
 ```python
 async def tick(now):
-    # (a) RECOVER — reap stale leases (dream board watchdog), requeue orphaned wakes
-    for stale in board.stale_claims(now):              # dream coordination
-        claims.reclaim(stale.task_id)
-        ledger.release_locks(stale.task_id)            # compare-and-clear terminal-only
+    # (a) RECOVER — reap tasks whose run lease passed, requeue orphaned wakes
+    for stale in ledger.stale_leases(now):             # run.lease_expires_at < now (this ledger)
+        ledger.release_locks(stale.task_id)            # compare-and-clear, terminal-only
         recovery.open_or_update(stale)                 # liveness-as-visibility (spec 02 §6)
     reconcile_stranded(now)                            # spec 02 §9 modes a/b (bounded: one wake)
 
@@ -80,9 +80,9 @@ async def tick(now):
     for w in wakes.claim(limit=free_slots()):          # prioritized: in_progress → deps-ready → age
         task = resolve_task(w)
         if budgets.invocation_blocked(task): continue  # spec 04 two-gate, gate 1
-        granted = claims.claim(task.id)                # dream board CAS (two-lock); 409 → skip
-        if not granted: continue
-        dispatch_async(run_beat, w, granted)           # NON-blocking — the tick never awaits a beat
+        run = ledger.checkout(task.id, w.employee_id)  # conditional UPDATE … RETURNING; None = 409 → skip
+        if run is None: continue
+        dispatch_async(run_beat, w, run)               # NON-blocking — the tick never awaits a beat
 ```
 
 Dispatch priority (Paperclip's): in-progress resumes first → dependency-ready → priority/age. The
@@ -116,10 +116,10 @@ in flight *per process*; cross-process safety is §5.
 ### The beat (`run_beat`)
 
 ```python
-async def run_beat(wake, claim):
+async def run_beat(wake, run):
     emp  = workforce.rehydrate(wake.employee_id)       # identity: org row + memory read (B1.1)
     task = ledger.get(wake.task_id)
-    claims.begin_execution(task.id, claim.checkout_run_id)   # dream board: mint execution lock
+    ledger.begin_execution(task.id, run.id)            # set execution_run_id + lease (this ledger)
     result = await dream.run_task(                     # the ONE seam — planner→sprint→evaluator
         task_id=task.id, intent=task.intent,
         role=emp.role.manifest, dod=task.dod,
@@ -128,7 +128,7 @@ async def run_beat(wake, claim):
     memory_writer.apply(raw_delta(emp, result))        # append-only raw sprint delta; lattice consolidates later
     land_outcome(task, result)                         # role-specific (spec 04)
     set_status(task, "done" if result.passed else "blocked")
-    claims.release(task.id, claim.checkout_run_id)     # compare-and-clear
+    ledger.release_locks(task.id)                      # compare-and-clear, terminal-only
     fire_downstream_wakes(task)                         # deps_resolved / children_done
     wakes.mark_done(wake.id)
 ```
@@ -180,8 +180,8 @@ chorus does not rewrite it.
 
 ## 5. Concurrency, fairness, caps
 
-- **Concurrency cap**: `free_slots()` = `max_concurrent_runs − count(running)`; sourced from the
-  board's `count_executing` (dream `ClaimManager`). This is budget **gate 1** at the dispatch layer.
+- **Concurrency cap**: `free_slots()` = `max_concurrent_runs − count(running)`; sourced from a ledger
+  `count(run WHERE status='running')`. This is budget **gate 1** at the dispatch layer.
 - **Per-employee serialization**: at most one live beat per employee (a per-employee claim) — the
   in-process analog of Paperclip's `agent-start-lock`. Two queued wakes for one employee run
   sequentially, not concurrently.
@@ -202,8 +202,9 @@ claim step must be exact-once at the row level — the design never assumes a si
 - **`claim_cron_edge`** stays a conditional `UPDATE routine_trigger SET next_run_at=:next WHERE
   id=:id AND next_run_at=:edge` — only one worker's UPDATE matches the edge, so a routine fires
   exactly once even if every worker sees it due.
-- **The board checkout** (`claims.claim`) is already an atomic CAS on dream's board; a `409` means a
-  peer won the lock → skip, never retry.
+- **The checkout** (`ledger.checkout`) is an atomic CAS — a conditional `UPDATE task SET
+  checkout_run_id=… WHERE checkout_run_id IS NULL RETURNING` on the chorus ledger; a `None`/`409`
+  means a peer won the lock → skip, never retry.
 - For the recovery pass, workers take a **Postgres advisory lock** (`pg_try_advisory_lock`) around
   the stale-lease reap so two workers don't both reclaim the same claim; under SQLite the single
   writer makes this a no-op.

@@ -129,8 +129,8 @@ trail names *where* it broke.
 
 - **Cancellation**: chorus cancels a beat by cancelling the `run_task` coroutine (it's in-process —
   no SIGTERM to a process group, no `AbortController` over a socket). dream's engine unwinds its
-  turn loop cleanly and checkpoints. The board lock is released by the tick's recovery pass if the
-  cancel races a crash.
+  turn loop cleanly and checkpoints. The checkout lock (a `task` column) is released by the tick's
+  recovery pass if the cancel races a crash.
 - **Caps**: budget gate 1 blocks *before* `run_task` is called; gate 2 (a `cost_event` crossing the
   hard limit) cancels the in-flight coroutine + pauses the scope (spec 04 §3). dream's own per-run
   `max_turns` + `limits` are the inner bound.

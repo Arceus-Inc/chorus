@@ -34,13 +34,16 @@ One chorus spec per Paperclip research dimension — so coverage is at parity, n
   event stream. There is **no subprocess adapter, no MCP phone-home, no output-silence
   watchdog** — the three things that bloat Paperclip. (B2.2)
 - **Four repos.** dream · chorus · horizon · lattice (strict bottom-up; siblings never import each
-  other). chorus *stubs* intake until **horizon** ships (horizon then owns direction/what-to-do-next),
-  and writes **raw sprint memory** while **lattice** owns consolidation. Both seams are reserved,
-  neither sibling is absorbed. (see chorus-on-dream.md)
+  other). chorus owns the intake + memory **mechanisms** (`submit`/`goal`/scheduler;
+  `MemoryWriter`) and ships **default policies** for both (flat-goal intake; raw append-only
+  memory). **horizon** is the intake/direction *policy* (sets what to submit + `task.priority`);
+  **lattice** is the memory-consolidation *policy*. Mechanism stays in chorus; policy is the
+  sibling. Both seams reserved, neither absorbed.
 - **Storage.** SQLite-WAL is the SDK default; Postgres is the Arceus driver. The schema
   stays in the SQLite ∩ Postgres intersection. Partial-unique indexes work in both. (B2.1)
-- **Reuse dream's coordination.** The two-lock atomic checkout + lease live on dream's
-  `coordination` board (`board.sqlite`); chorus does **not** rebuild them.
+- **Locks in chorus's own ledger.** The two-lock atomic checkout + `lease_expires_at` are
+  `task`/`run` columns in the chorus ledger (one store → atomic with status/assignee, no drift).
+  dream's `coordination` board is reused only for dream's *intra-task swarm*, not task ownership.
 - **The differentiator.** Paperclip's ROADMAP still lists **Enforced Outcomes**, **Memory**,
   and **Artifacts** as ⚪ open. chorus closes Enforced Outcomes at M1 because dream's
   evaluator verifies the real artifact against a typed DoD. (B3.1)
@@ -49,7 +52,7 @@ One chorus spec per Paperclip research dimension — so coverage is at parity, n
 
 | Paperclip | chorus | Note |
 |---|---|---|
-| `issues` (+ 2 locks) | `task` | locks delegated to dream coordination board |
+| `issues` (+ 2 locks) | `task` | locks are `task` columns in chorus's ledger (atomic CAS) |
 | `issue_relations type=blocks` | `task_dependency` | `depends_on` edges |
 | `issue_plan_decompositions` | `decomposition_claim` | exact-once fan-out |
 | `issue_recovery_actions` | `recovery_action` | liveness-as-visibility |

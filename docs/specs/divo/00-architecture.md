@@ -77,16 +77,21 @@ dream is a **package dependency**, not vendored. chorus reuses dream's `run_task
 
 - **Not the agent loop** — that is dream. chorus *calls* `run_task`; it never writes a turn FSM, a
   tool-call atom, or an evaluator. If you find yourself doing that, stop.
-- **Not company direction** — that is **horizon** (the *next* sibling to be built; until it ships,
-  chorus runs a *stub* intake — human/cron-driven — that horizon will later own and drive).
+- **Not company direction** — that is **horizon**, a sibling *policy* layer. chorus permanently
+  owns the intake **mechanism** (`submit`, the `goal` table, `task.depth=0`, the `task.priority`
+  field, and the scheduler that reads them); horizon owns the intake **policy** (what to submit,
+  strategic priority, OKR-tree health). chorus ships a **default intake policy** — human-via-CLI +
+  cron + flat goals + default priority — always available, which horizon *augments or overrides*.
+  It is **not** a stub horizon rips out; horizon never schedules, chorus never decides direction.
 - **Not memory consolidation / employee growth** — that is **lattice** (a sibling; chorus captures
   memory at the **sprint level** — raw, append-only, with provenance — and **reserves the
   consolidation seam** lattice will own; chorus never decides what's *worth* remembering).
 - **Not multi-tenant hosting, auth, billing, the web board** — that is **Arceus** (the product).
 - chorus depends on dream; **nothing depends sideways**. The architecture is **four repos**
   (dream · chorus · horizon · lattice); horizon and lattice are siblings meeting only at the data
-  layer + `dream.contracts`. chorus *stubs* intake (until horizon) and *writes raw* sprint memory
-  (until lattice) — reserving both seams, absorbing neither.
+  layer + `dream.contracts`. chorus owns the intake + memory **mechanisms** and ships **default
+  policies** for both (flat-goal intake; raw append-only memory); horizon and lattice are the
+  *policy* layers that drive them — reserving both seams, absorbing neither.
 
 > The moment the kernel "knows what a good sprint looks like," hardcodes a cadence, or bakes in
 > "engineers open PRs," it has stopped being an SDK. Those are role plugins, horizon policy, and
@@ -97,14 +102,17 @@ dream is a **package dependency**, not vendored. chorus reuses dream's `run_task
 chorus does not absorb horizon or lattice; it holds a **named seam** for each, so the sibling can
 later plug in *without chorus changing*:
 
-| Sibling | Owns (when built) | The seam chorus reserves now | chorus's stub today |
+| Sibling | Owns (when built) — the *policy* | The *mechanism* chorus owns permanently | chorus's default today |
 |---|---|---|---|
-| **horizon** | direction · OKR tree · what-to-do-next prioritisation · cross-sprint objective health | `submit()` intake + the `goal` table (a local mirror horizon will feed) + `task.depth=0` "intake slot" | human/cron-driven `submit`; goals created flat at intake |
-| **lattice** | memory consolidation · skill/role evolution · what's *worth* remembering | the `MemoryWriter` contract (chorus ships the append-only impl; lattice replaces it) + the provenance every record carries | `AppendOnlyMemoryWriter` — raw sprint deltas, never consolidated |
+| **horizon** | direction · OKR tree · *what* to submit · strategic priority ranking · cross-sprint objective health | `submit()` + the `goal` table + `task.depth=0` intake slot + the `task.priority` field the scheduler consumes | **default intake policy**: human/cron `submit`, flat goals, default priority — always on; horizon is optional + additive |
+| **lattice** | memory consolidation · skill/role evolution · what's *worth* remembering | the `MemoryWriter` contract (chorus ships the append-only impl) + the provenance every record carries | `AppendOnlyMemoryWriter` — raw sprint deltas, never consolidated |
 
-The rule: **a seam is a typed contract + a stub default, never a stub that the sibling must rip
-out.** horizon reads/writes the same ledger + goal rows; lattice swaps the writer behind the same
-`MemoryStore`/`MemoryWriter` split. Both bind to `dream.contracts` + chorus's own contracts (spec
+The rule, restated: **chorus owns the mechanism (the write path + the scheduler that reads it); the
+sibling owns the policy (what to write).** horizon drives intake by writing `goal`/`priority` rows
+and reading the event stream — it never replaces chorus's intake or scheduler (it *sets*
+`task.priority`; the scheduler *orders by* deps + caps + priority). lattice swaps the writer behind
+the same `MemoryStore`/`MemoryWriter` split. A seam is a typed contract + a **default**, never a
+placeholder a sibling must rip out. Both bind to `dream.contracts` + chorus's own contracts (spec
 09 §4), never to chorus internals.
 
 ### 5b. Glossary — the two heartbeats (used across every spec)
@@ -139,7 +147,7 @@ chorus is **NOT**:
 | Storage | **SQLite-WAL** (a file) | Postgres (Railway) |
 | Tenancy | one workforce | many companies, isolated |
 | Surface | library + CLI + `examples/` | hosted API + web board + auth |
-| Coordination | dream board (`board.sqlite`) | dream board / Postgres claims |
+| Task locks + lease | **chorus ledger** (`task` cols + `run`) | Postgres (same ledger store) |
 
 The schema stays in the SQLite ∩ Postgres intersection so the same kernel runs both (spec 01).
 

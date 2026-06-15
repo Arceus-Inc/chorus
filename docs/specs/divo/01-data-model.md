@@ -28,8 +28,8 @@ The ExecPlan made durable. One `task` row per unit of work, at any depth of the 
 | `priority` | text | `critical\|high\|medium\|low` (default `medium`) |
 | `assignee_employee_id` | text FK→employee | **XOR** with `assignee_user_id` (hard invariant) |
 | `assignee_user_id` | text | human ownership (not execution-backed) |
-| `checkout_run_id` | text | ownership lock → **lives on dream's board**; mirrored here for queries |
-| `execution_run_id` | text | liveness lock → which run is live now |
+| `checkout_run_id` | text | ownership lock — the right to execute; set by the atomic checkout CAS (this ledger) |
+| `execution_run_id` | text | liveness lock — which `run` is live now |
 | `dod` | json | the typed Definition-of-Done verifier (spec 04) |
 | `depth` | int | `0` = root (intake/horizon slot); `>0` = chorus decomposition |
 | `origin_kind` | text | `manual\|routine_execution\|decomposition\|stranded_recovery\|stale_run_eval\|productivity_review` |
@@ -44,11 +44,14 @@ The ExecPlan made durable. One `task` row per unit of work, at any depth of the 
 1. **Single assignee**: `assignee_employee_id` XOR `assignee_user_id`. Never both.
 2. **`in_progress` requires an assignee** and (for employee-owned) an execution-backed path — it must never become a silent dead state (§ liveness, spec 02).
 3. **Every task traces to a goal** (`goal_id` resolved at create: explicit → project's goal → company default; children inherit parent's).
-4. **The two locks are distinct**: `checkout_run_id` = *who owns the right to execute*; `execution_run_id` = *which run is live*. A run owns `checkout_run_id` only while non-terminal; finalization compare-and-clears (never clobbering a successor). Stale-lock clearing is **crash recovery, not retry**. A checkout `409` = a real live owner → the caller stops, never retries.
+4. **The two locks are distinct, and both are columns on `task` in chorus's own ledger** (not a separate store): `checkout_run_id` = *who owns the right to execute*; `execution_run_id` = *which run is live*. Checkout is a **single conditional `UPDATE task SET checkout_run_id=:run, status='in_progress', assignee_employee_id=:e WHERE checkout_run_id IS NULL RETURNING …`** — atomic with the status + assignee flip, one store, no dual-write drift. A run owns `checkout_run_id` only while non-terminal; finalization compare-and-clears (never clobbering a successor). Stale-lock clearing is **crash recovery, not retry** (the tick reaps tasks whose `run.lease_expires_at` passed). A checkout `409` = a real live owner → the caller stops, never retries.
 
-> **chorus note:** the locks are *enforced* on dream's coordination `board.sqlite` (`ClaimManager`,
-> `checkout_run_id`/`execution_run_id`). The `task` columns are a denormalized mirror for the
-> board UI and the scheduler's eligibility queries; the board is the source of truth *of now*.
+> **chorus note:** the locks live **here, on `task`, in chorus's own ledger** — they are the source
+> of truth, set by the single conditional `UPDATE … WHERE checkout_run_id IS NULL RETURNING` above
+> (atomic with the status + assignee flip; one store, no drift). Crash recovery uses
+> `run.lease_expires_at` (Cluster C), swept by the tick. dream's coordination `board.sqlite` is a
+> **separate** concern — it coordinates dream's *intra-task swarm* inside one `run_task`; chorus
+> does **not** route task ownership through it.
 
 **Indexes** (Paperclip's, kept): `(assignee_employee_id, status)`, `(parent_id)`, `(goal_id)`,
 `(status)`, `(origin_kind, origin_id)`.
@@ -270,7 +273,7 @@ WHERE id=? AND next_run_at=<old>` — optimistic concurrency, so two ticks can't
 
 A run is one `dream.run_task` invocation. Paperclip's `heartbeat_runs` has ~50 columns (PID,
 process group, stdout excerpts, `last_output_at`, output-silence bookkeeping) — **chorus drops
-all of it.** We witness dream's event stream and the lease lives on the board.
+all of it.** We witness dream's event stream and the lease lives on `run.lease_expires_at` (this ledger).
 
 | Column | Type | Meaning |
 |---|---|---|
@@ -279,7 +282,7 @@ all of it.** We witness dream's event stream and the lease lives on the board.
 | `task_id` | text FK→task | |
 | `wake_id` | text FK→wake | what triggered it |
 | `status` | text | `queued\|running\|succeeded\|failed\|cancelled\|timed_out` |
-| `lease_expires_at` | ts | crash-recovery clock (mirrors board) |
+| `lease_expires_at` | ts | crash-recovery clock — renewed by the live beat; the tick reaps tasks whose lease passed |
 | `liveness_state` | text | from dream's evaluator: `advanced\|completed\|blocked\|plan_only\|empty\|needs_followup\|failed` |
 | `outcome` | json | dream `RunTaskResult` summary (sprints, final ledger, pass/fail) |
 | `usage` | json | tokens/cost from the event stream |
@@ -444,5 +447,5 @@ migrations* — the version integer is the single compatibility key across both 
 `company-goal → task (DAG via parent_id structure + task_dependency edges) → run (one
 dream.run_task) → artifact`, owned by an `employee` (org = `reports_to`), scheduled by `wake`s
 and `routine`s, kept honest by `recovery_action`/`monitor` (liveness) and `budget_*` (caps) —
-**every self-spawned row made exact-once by a partial-unique index, every lock on dream's board,
-every run thin because the evaluator and event stream replace the watchdog.**
+**every self-spawned row made exact-once by a partial-unique index, every lock a `task` column in
+chorus's own ledger, every run thin because the evaluator and event stream replace the watchdog.**
