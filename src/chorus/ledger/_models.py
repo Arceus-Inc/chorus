@@ -324,6 +324,48 @@ class RecoveryAction:
     created_at: datetime | None = None
 
 
+class MonitorStatus(StrEnum):
+    """A monitor's one-shot lifecycle (spec 01 Cluster B ``monitor``)."""
+
+    PENDING = "pending"
+    FIRED = "fired"
+    CLEARED = "cleared"
+    EXHAUSTED = "exhausted"
+
+
+class MonitorRecoveryPolicy(StrEnum):
+    """What a monitor does when its attempts are exhausted (spec 01 Cluster B)."""
+
+    WAKE_OWNER = "wake_owner"
+    CREATE_RECOVERY = "create_recovery"
+    ESCALATE = "escalate"
+
+
+@dataclass(frozen=True)
+class Monitor:
+    """Deferred self-wake for a task waiting on an external system (spec 01 Cluster B).
+
+    One-shot: on fire it is cleared and a ``monitor_due`` wake is queued; if the external thing still
+    isn't done the assignee must **re-arm** with a new ``next_check_at``. Re-arming an exhausted
+    monitor is rejected. At most one armed (pending) monitor per task. *Not* a recurring interval.
+    ``external_ref`` is secret-adjacent — redacted before persist, omitted from wakes.
+    """
+
+    id: str
+    task_id: str
+    employee_id: str
+    next_check_at: datetime | None = None
+    status: MonitorStatus = MonitorStatus.PENDING
+    notes: str | None = None
+    external_ref: str | None = None
+    timeout_at: datetime | None = None
+    max_attempts: int = 1
+    attempt_count: int = 0
+    recovery_policy: MonitorRecoveryPolicy = MonitorRecoveryPolicy.WAKE_OWNER
+    created_at: datetime | None = None
+    fired_at: datetime | None = None
+
+
 @dataclass(frozen=True)
 class ArtifactRevision:
     """Immutable artifact history (spec 01 Cluster F ``artifact_revision``).
@@ -471,6 +513,9 @@ __all__ = [
     "GoalLevel",
     "Message",
     "MessageKind",
+    "Monitor",
+    "MonitorRecoveryPolicy",
+    "MonitorStatus",
     "OriginKind",
     "RecoveryAction",
     "RecoveryKind",
