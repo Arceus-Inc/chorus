@@ -22,6 +22,9 @@ from chorus.ledger.repos.goals import GoalRepo
 from chorus.ledger.repos.messages import MessageRepo
 from chorus.ledger.repos.monitors import MonitorRepo
 from chorus.ledger.repos.recovery_actions import RecoveryActionRepo
+from chorus.ledger.repos.routine_runs import RoutineRunRepo
+from chorus.ledger.repos.routine_triggers import RoutineTriggerRepo
+from chorus.ledger.repos.routines import RoutineRepo
 from chorus.ledger.repos.runs import RunRepo
 from chorus.ledger.repos.tasks import TaskRepo
 from chorus.ledger.repos.wakes import WakeRepo
@@ -43,6 +46,9 @@ __all__ = [
     "MessageRepo",
     "MonitorRepo",
     "RecoveryActionRepo",
+    "RoutineRepo",
+    "RoutineRunRepo",
+    "RoutineTriggerRepo",
     "RunRepo",
     "TaskRepo",
     "WakeRepo",

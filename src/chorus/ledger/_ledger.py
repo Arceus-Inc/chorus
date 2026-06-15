@@ -29,6 +29,9 @@ from chorus.ledger.repos import (
     MessageRepo,
     MonitorRepo,
     RecoveryActionRepo,
+    RoutineRepo,
+    RoutineRunRepo,
+    RoutineTriggerRepo,
     RunRepo,
     TaskRepo,
     WakeRepo,
@@ -54,6 +57,9 @@ class Ledger(Protocol):
     activity: ActivityRepo
     monitors: MonitorRepo
     recovery_actions: RecoveryActionRepo
+    routines: RoutineRepo
+    routine_triggers: RoutineTriggerRepo
+    routine_runs: RoutineRunRepo
     runs: RunRepo
     dod: DodRepo
     artifacts: ArtifactRepo
@@ -88,6 +94,9 @@ class SqliteLedger:
         self.activity = ActivityRepo(conn)
         self.monitors = MonitorRepo(conn)
         self.recovery_actions = RecoveryActionRepo(conn)
+        self.routines = RoutineRepo(conn)
+        self.routine_triggers = RoutineTriggerRepo(conn)
+        self.routine_runs = RoutineRunRepo(conn)
         self.runs = RunRepo(conn)
         self.dod = DodRepo(conn)
         self.artifacts = ArtifactRepo(conn)
