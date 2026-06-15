@@ -1,16 +1,19 @@
-"""The ordered, immutable migration set the SDK ships (spec 01 §schema-versioning).
+"""The migration set the SDK ships (spec 01 §schema-versioning).
 
-``MIGRATIONS`` is the single source of truth for the schema the running SDK expects. The
-:class:`~chorus.ledger._migrations.MigrationRunner` applies any not yet recorded in the ledger's
-``schema_migrations`` table, in ``id`` order. Add a new migration by appending its module here;
-never edit a shipped one.
+Migrations are plain ``*.sql`` files in this directory (Postgres / golang-migrate style), applied
+in filename order by the :class:`~chorus.ledger._migrations.MigrationRunner` and recorded in
+``schema_migrations``. **Add a migration by dropping a new numbered ``.sql`` file — no Python edit.**
+
+The *declarative* current schema lives in ``chorus.ledger.schema`` (the ``schema/`` folder); a
+parity test asserts that applying these migrations yields exactly that schema, so they never drift.
 """
 
 from __future__ import annotations
 
-from chorus.ledger._migrations import Migration
-from chorus.ledger.migrations._0001_m1_core import MIGRATION_0001
+from importlib.resources import files
 
-MIGRATIONS: tuple[Migration, ...] = (MIGRATION_0001,)
+from chorus.ledger._migrations import Migration, load_migrations
+
+MIGRATIONS: tuple[Migration, ...] = load_migrations(files(__name__))
 
 __all__ = ["MIGRATIONS"]
