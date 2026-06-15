@@ -18,6 +18,7 @@ from chorus.ledger.repos import (
     ApprovalRepo,
     ArtifactRepo,
     ArtifactRevisionRepo,
+    DecompositionClaimRepo,
     DependencyRepo,
     DodRepo,
     EmployeeRepo,
@@ -40,6 +41,7 @@ class Ledger(Protocol):
     employees: EmployeeRepo
     goals: GoalRepo
     tasks: TaskRepo
+    decomposition_claims: DecompositionClaimRepo
     dependencies: DependencyRepo
     wakes: WakeRepo
     messages: MessageRepo
@@ -68,6 +70,7 @@ class SqliteLedger:
         self.employees = EmployeeRepo(conn)
         self.goals = GoalRepo(conn)
         self.tasks = TaskRepo(conn)
+        self.decomposition_claims = DecompositionClaimRepo(conn)
         self.dependencies = DependencyRepo(conn)
         self.wakes = WakeRepo(conn)
         self.messages = MessageRepo(conn)
