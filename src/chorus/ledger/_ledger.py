@@ -24,6 +24,7 @@ from chorus.ledger.repos import (
     EmployeeRepo,
     GoalRepo,
     MessageRepo,
+    MonitorRepo,
     RecoveryActionRepo,
     RunRepo,
     TaskRepo,
@@ -48,6 +49,7 @@ class Ledger(Protocol):
     messages: MessageRepo
     approvals: ApprovalRepo
     activity: ActivityRepo
+    monitors: MonitorRepo
     recovery_actions: RecoveryActionRepo
     runs: RunRepo
     dod: DodRepo
@@ -78,6 +80,7 @@ class SqliteLedger:
         self.messages = MessageRepo(conn)
         self.approvals = ApprovalRepo(conn)
         self.activity = ActivityRepo(conn)
+        self.monitors = MonitorRepo(conn)
         self.recovery_actions = RecoveryActionRepo(conn)
         self.runs = RunRepo(conn)
         self.dod = DodRepo(conn)
