@@ -8,6 +8,8 @@ up), and ``create_child`` (decomposition child + claim append, atomically).
 
 from __future__ import annotations
 
+import sqlite3
+
 import pytest
 
 from chorus.ledger import (
@@ -50,6 +52,30 @@ def test_transaction_rolls_back_on_error(ledger: SqliteLedger) -> None:
             ledger.tasks.submit(Task(id="t1", intent="a"))
             raise RuntimeError("boom")
     assert ledger.tasks.get("t1") is None  # nothing persisted
+
+
+def test_caught_inner_error_still_rolls_back_outer(ledger: SqliteLedger) -> None:
+    # a nested block that fails (and whose error the caller swallows) must still abort the outer
+    with ledger.transaction():
+        try:
+            with ledger.transaction():
+                ledger.tasks.submit(Task(id="t1", intent="a"))
+                raise RuntimeError("inner boom")
+        except RuntimeError:
+            pass
+        ledger.tasks.submit(Task(id="t2", intent="b"))
+    assert ledger.tasks.get("t1") is None
+    assert ledger.tasks.get("t2") is None  # outer committed nothing — the abort latched
+
+
+def test_construct_requires_ledger_connection() -> None:
+    # a plain connection can't defer commits, so the facade rejects it instead of failing later
+    plain = sqlite3.connect(":memory:")
+    try:
+        with pytest.raises(TypeError, match="requires a connection"):
+            SqliteLedger(plain)
+    finally:
+        plain.close()
 
 
 # --- finalize_beat: verdict + derived status -----------------------------------------------------
@@ -134,6 +160,21 @@ def test_create_child_persists_task_and_records_on_claim(ledger: SqliteLedger) -
     claim = ledger.create_child("dc1", Task(id="child1", intent="sub", parent_id="src"))
     assert claim.child_task_ids == ["child1"]
     assert ledger.tasks.get("child1") is not None
+
+
+def test_create_child_is_idempotent_on_retry(ledger: SqliteLedger) -> None:
+    _claim(ledger)
+    ledger.create_child("dc1", Task(id="child1", intent="sub", parent_id="src"))
+    # a resumed fan-out re-creates the same child id -> no duplicate insert, no error
+    claim = ledger.create_child("dc1", Task(id="child1", intent="sub", parent_id="src"))
+    assert claim.child_task_ids == ["child1"]
+
+
+def test_create_child_unknown_claim_raises(ledger: SqliteLedger) -> None:
+    ledger.tasks.submit(Task(id="src", intent="x"))
+    with pytest.raises(KeyError):
+        ledger.create_child("ghost", Task(id="child1", intent="sub", parent_id="src"))
+    assert ledger.tasks.get("child1") is None  # rolled back
 
 
 def test_create_child_on_sealed_claim_rolls_back(ledger: SqliteLedger) -> None:
