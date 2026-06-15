@@ -11,6 +11,9 @@ from chorus.ledger.repos.activity import ActivityRepo
 from chorus.ledger.repos.approvals import ApprovalRepo
 from chorus.ledger.repos.artifact_revisions import ArtifactRevisionRepo
 from chorus.ledger.repos.artifacts import ArtifactRepo
+from chorus.ledger.repos.budget_incidents import BudgetIncidentRepo
+from chorus.ledger.repos.budget_policies import BudgetPolicyRepo
+from chorus.ledger.repos.cost_events import CostEventRepo
 from chorus.ledger.repos.decomposition_claims import DecompositionClaimRepo
 from chorus.ledger.repos.dependencies import DependencyCycleError, DependencyRepo
 from chorus.ledger.repos.dod import DodRepo
@@ -28,6 +31,9 @@ __all__ = [
     "ApprovalRepo",
     "ArtifactRepo",
     "ArtifactRevisionRepo",
+    "BudgetIncidentRepo",
+    "BudgetPolicyRepo",
+    "CostEventRepo",
     "DecompositionClaimRepo",
     "DependencyCycleError",
     "DependencyRepo",
