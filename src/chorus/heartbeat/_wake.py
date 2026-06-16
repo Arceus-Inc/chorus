@@ -31,7 +31,8 @@ class TickReport:
     routines_fired: int = 0
     wakes_dispatched: int = 0
     beats_started: int = 0
-    blocked_by_budget: int = 0
+    blocked_by_budget: int = 0  # dispatches withheld by the concurrency cap (spec 03 §5)
+    budget_gated: int = 0  # dispatches withheld by a money-budget hard-stop (spec 04 §3 Gate 1)
 
 
 __all__ = [

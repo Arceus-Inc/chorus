@@ -23,6 +23,7 @@ class BeatOutcome:
     passed: bool
     outcome: dict[str, object] = field(default_factory=dict)
     summary: str = ""
+    cost_cents: int = 0  # the beat's spend, recorded as a cost_event for the budget gates (spec 04 §3)
 
 
 @runtime_checkable

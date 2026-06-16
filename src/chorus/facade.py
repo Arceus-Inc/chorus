@@ -16,6 +16,7 @@ from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from typing import Any
 
+from chorus.budgets import BudgetEnforcer
 from chorus.events import Event
 from chorus.heartbeat import BeatRunner, Scheduler, TickReport, Wake
 from chorus.ledger import Message, SqliteLedger, Task
@@ -75,6 +76,7 @@ class Chorus:
         beat_runner: BeatRunner | None = None,
         roles: Sequence[RolePlugin] | None = None,
         caps: Caps | None = None,
+        company_id: str = "company",
     ) -> Chorus:
         """The composition root — wire the concrete backends and inject them (spec 10 §1).
 
@@ -97,6 +99,8 @@ class Chorus:
             workforce=workforce,
             beat_runner=beat_runner,
             event_bus=event_bus,
+            # budgets are inert until a policy is created — injecting the enforcer just arms the gates
+            budget_enforcer=BudgetEnforcer(ledger, company_id=company_id),
         )
         return cls(
             ledger=ledger,
