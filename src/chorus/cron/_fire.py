@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING
 from chorus.cron._routine import parse_cron
 from chorus.ledger._models import (
     OriginKind,
+    RoutineCatchUp,
     RoutineConcurrency,
     RoutineRun,
     RoutineRunStatus,
@@ -51,7 +52,11 @@ def fire_routine(
         return None
 
     edge = trigger.next_run_at
-    next_edge = parse_cron(trigger.cron_expression, base=now, timezone=trigger.timezone)
+    # Catch-up policy (spec 03 §4): skip_missed jumps the edge past ``now`` (dropping every window
+    # missed while chorus was down); backfill_one advances a single cron step from the edge, so each
+    # tick fires exactly one missed window until caught up — one-at-a-time, throttled to one task/tick.
+    catch_up_base = edge if routine.catch_up_policy is RoutineCatchUp.BACKFILL_ONE else now
+    next_edge = parse_cron(trigger.cron_expression, base=catch_up_base, timezone=trigger.timezone)
     # Double-fire guard (spec 03 §5): only the tick still holding this edge advances it and proceeds.
     if not ledger.routine_triggers.claim_fire(
         trigger.id, expected_next_run_at=edge, new_next_run_at=next_edge
@@ -61,15 +66,23 @@ def fire_routine(
     idempotency_key = f"{routine.id}:{trigger.id}:{edge.isoformat()}"
     run_id = f"rr_{uuid.uuid4().hex[:12]}"
 
-    # skip_if_active (spec 03 §4): a firing while the prior task is still open is recorded as
-    # suppressed, not duplicated.
+    # Concurrency policy (spec 03 §4): while a prior task for this routine is still open,
+    # ``skip_if_active`` suppresses the firing and ``coalesce`` folds it onto the live run (linking
+    # the survivor); ``always`` ignores the open task and spawns a fresh one.
     if (
-        routine.concurrency_policy is RoutineConcurrency.SKIP_IF_ACTIVE
+        routine.concurrency_policy is not RoutineConcurrency.ALWAYS
         and ledger.tasks.has_open_for_routine(routine.id)
     ):
-        _record(
-            ledger, run_id, routine, trigger, idempotency_key, RoutineRunStatus.SUPPRESSED
-        )
+        if routine.concurrency_policy is RoutineConcurrency.COALESCE:
+            _record(
+                ledger, run_id, routine, trigger, idempotency_key,
+                RoutineRunStatus.COALESCED,
+                coalesced_into_run_id=_latest_dispatched_run(ledger, routine.id),
+            )
+        else:  # skip_if_active
+            _record(
+                ledger, run_id, routine, trigger, idempotency_key, RoutineRunStatus.SUPPRESSED
+            )
         return None
 
     if _record(ledger, run_id, routine, trigger, idempotency_key) is None:
@@ -120,6 +133,8 @@ def _record(
     trigger: RoutineTrigger,
     idempotency_key: str,
     status: RoutineRunStatus = RoutineRunStatus.RECEIVED,
+    *,
+    coalesced_into_run_id: str | None = None,
 ) -> str | None:
     """Register the firing exact-once; ``None`` if the idempotency key already fired this edge."""
     try:
@@ -130,11 +145,22 @@ def _record(
                 trigger_id=trigger.id,
                 status=status,
                 idempotency_key=idempotency_key,
+                coalesced_into_run_id=coalesced_into_run_id,
             )
         )
     except sqlite3.IntegrityError:
         return None
     return run_id
+
+
+def _latest_dispatched_run(ledger: SqliteLedger, routine_id: str) -> str | None:
+    """The most recent *dispatched* run for the routine — the survivor a coalesced firing folds into."""
+    dispatched = [
+        run
+        for run in ledger.routine_runs.by_routine(routine_id)
+        if run.status is RoutineRunStatus.DISPATCHED
+    ]
+    return dispatched[-1].id if dispatched else None
 
 
 __all__ = ["fire_routine"]
