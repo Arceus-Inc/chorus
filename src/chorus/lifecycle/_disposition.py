@@ -23,6 +23,7 @@ from enum import StrEnum
 from typing import TYPE_CHECKING
 
 from chorus.ledger._models import (
+    ActivityVerb,
     RecoveryAction,
     RecoveryKind,
     RunStatus,
@@ -32,7 +33,11 @@ from chorus.ledger._models import (
     WakeReason,
     WakeStatus,
 )
+from chorus.lifecycle._audit import record_activity
 from chorus.lifecycle._liveness import classify
+
+# The disposition the employee must declare on a finish-handoff (spec 02 §5).
+_HANDOFF_CHOICES: tuple[str, ...] = ("done", "cancelled", "in_review", "blocked", "delegate")
 
 if TYPE_CHECKING:
     from chorus.ledger import SqliteLedger
@@ -92,7 +97,12 @@ def _enqueue_handoff(task: Task, ledger: SqliteLedger, key: str) -> Disposition:
             id=f"wake_{uuid.uuid4().hex[:12]}",
             employee_id=task.assignee_employee_id,  # type: ignore[arg-type]  # guarded above
             reason=WakeReason.RECOVERY,
-            payload={"kind": "finish_handoff", "task_id": task.id},
+            # carry the structured choice menu so the beat picks exactly one disposition (spec 02 §5)
+            payload={
+                "kind": "finish_handoff",
+                "task_id": task.id,
+                "choices": list(_HANDOFF_CHOICES),
+            },
             coalesce_key=key,
         )
     )
@@ -101,11 +111,12 @@ def _enqueue_handoff(task: Task, ledger: SqliteLedger, key: str) -> Disposition:
 
 def _escalate(task: Task, ledger: SqliteLedger) -> Disposition:
     """Exhausted ladder: surface the stuck task as ``blocked`` + a recovery owner (spec 02 §5)."""
+    action_id = f"rec_{uuid.uuid4().hex[:12]}"
     with ledger.transaction():
         ledger.tasks.transition(task.id, TaskStatus.BLOCKED)
         ledger.recovery_actions.open(
             RecoveryAction(
-                id=f"rec_{uuid.uuid4().hex[:12]}",
+                id=action_id,
                 source_task_id=task.id,
                 kind=RecoveryKind.MISSING_DISPOSITION,
                 owner_employee_id=task.assignee_employee_id,
@@ -113,6 +124,13 @@ def _escalate(task: Task, ledger: SqliteLedger) -> Disposition:
                 fingerprint="finish_handoff",
                 next_action="declare a disposition: done/cancelled, in_review, blocked, or delegate",
             )
+        )
+        record_activity(
+            ledger,
+            verb=ActivityVerb.RECOVERED,
+            subject_id=task.id,
+            actor_employee_id=task.assignee_employee_id,
+            payload={"cause": "missing_disposition", "recovery_action": action_id},
         )
     return Disposition(DispositionAction.ESCALATED, "missing_disposition")
 

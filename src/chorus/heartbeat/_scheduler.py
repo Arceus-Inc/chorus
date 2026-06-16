@@ -24,6 +24,7 @@ from chorus.cron._fire import fire_routine
 from chorus.heartbeat._wake import TickReport, Wake
 from chorus.ledger import TaskPriority
 from chorus.ledger._models import (
+    ActivityVerb,
     DodStatus,
     Monitor,
     MonitorRecoveryPolicy,
@@ -35,6 +36,7 @@ from chorus.ledger._models import (
     TaskStatus,
     WakeReason,
 )
+from chorus.lifecycle import record_activity
 from chorus.recovery import reconcile
 
 if TYPE_CHECKING:
@@ -178,9 +180,10 @@ class Scheduler:
             if monitor.recovery_policy is MonitorRecoveryPolicy.ESCALATE
             else RecoveryKind.STALE_RUN_WATCHDOG
         )
+        action_id = f"rec_{uuid.uuid4().hex[:12]}"
         ledger.recovery_actions.open(
             RecoveryAction(
-                id=f"rec_{uuid.uuid4().hex[:12]}",
+                id=action_id,
                 source_task_id=monitor.task_id,
                 kind=kind,
                 owner_employee_id=monitor.employee_id,
@@ -188,6 +191,14 @@ class Scheduler:
                 fingerprint="monitor",
                 next_action="resolve the stalled external dependency or hand it off",
             )
+        )
+        # Governance audit (spec 08 §5): an exhausted monitor surfaced a recovery.
+        record_activity(
+            ledger,
+            verb=ActivityVerb.RECOVERED,
+            subject_id=monitor.task_id,
+            actor_employee_id=monitor.employee_id,
+            payload={"cause": "monitor_exhausted", "recovery_action": action_id},
         )
 
     def _dispatch_beat(self, wake: Wake, *, run_id: str, now: datetime) -> None:

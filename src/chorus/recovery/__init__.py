@@ -28,9 +28,9 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 
 from chorus.ledger._models import (
+    ActivityVerb,
     RecoveryAction,
     RecoveryKind,
-    RecoveryOutcome,
     RunStatus,
     Task,
     TaskStatus,
@@ -38,7 +38,7 @@ from chorus.ledger._models import (
     WakeReason,
     WakeStatus,
 )
-from chorus.lifecycle import classify
+from chorus.lifecycle import classify, record_activity
 
 if TYPE_CHECKING:
     from chorus.ledger import SqliteLedger
@@ -146,10 +146,16 @@ def _enqueue_recovery_wake(
 
 
 def _escalate(ledger: SqliteLedger, task: Task, *, cause: str) -> str | None:
-    """Exhausted ladder: surface the stuck task as ``blocked`` + a recovery owner (spec 02 §6)."""
+    """Exhausted ladder: surface the stuck task as ``blocked`` + a recovery owner (spec 02 §6).
+
+    Not silent: leaves a governance ``activity(verb='recovered')`` trail and, when the owner has a
+    manager (``reports_to``), escalates *up the chain of command* with a wake — so a stuck task is
+    visibly handed to a responder, never just parked on a row nobody sees.
+    """
     if ledger.recovery_actions.active_for_source(task.id) is not None:
         return None
     action_id = f"rec_{uuid.uuid4().hex[:12]}"
+    manager = _manager_of(ledger, task.assignee_employee_id)
     with ledger.transaction():
         if task.status is not TaskStatus.BLOCKED:
             ledger.tasks.transition(task.id, TaskStatus.BLOCKED)
@@ -164,7 +170,37 @@ def _escalate(ledger: SqliteLedger, task: Task, *, cause: str) -> str | None:
                 next_action="resume or hand off the stranded task",
             )
         )
+        record_activity(
+            ledger,
+            verb=ActivityVerb.RECOVERED,
+            subject_id=task.id,
+            actor_employee_id=task.assignee_employee_id,
+            payload={"cause": cause, "recovery_action": action_id, "escalated_to": manager},
+        )
+        if manager is not None:
+            ledger.wakes.enqueue(
+                Wake(
+                    id=f"wake_{uuid.uuid4().hex[:12]}",
+                    employee_id=manager,
+                    reason=WakeReason.RECOVERY,
+                    payload={
+                        "kind": "escalation",
+                        "task_id": task.id,
+                        "stranded_owner": task.assignee_employee_id,
+                        "cause": cause,
+                    },
+                    coalesce_key=f"escalation:{task.id}",
+                )
+            )
     return action_id
+
+
+def _manager_of(ledger: SqliteLedger, employee_id: str | None) -> str | None:
+    """The owner's manager up the org chain (``reports_to``), or ``None`` at the org root."""
+    if employee_id is None:
+        return None
+    owner = ledger.employees.get(employee_id)
+    return owner.reports_to if owner is not None else None
 
 
 def _open_recovery(ledger: SqliteLedger, task: Task, *, cause: str) -> str | None:
@@ -194,11 +230,7 @@ def _fold_terminal_sources(ledger: SqliteLedger) -> list[str]:
     for action in ledger.recovery_actions.all_open():
         source = ledger.tasks.get(action.source_task_id)
         if source is None or source.status in (TaskStatus.DONE, TaskStatus.CANCELLED):
-            ledger.recovery_actions.resolve(
-                action.id,
-                outcome=RecoveryOutcome.FALSE_POSITIVE,
-                resolution_note="source terminal",
-            )
+            ledger.recovery_actions.fold(action.id, resolution_note="source terminal")
             folded.append(action.id)
     return folded
 

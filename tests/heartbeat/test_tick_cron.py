@@ -149,6 +149,8 @@ async def test_tick_escalates_an_exhausted_monitor_to_a_recovery(ledger: SqliteL
     assert action is not None
     assert action.cause == "monitor_exhausted"
     assert _monitor_due_wakes(ledger) == []  # exhausted escalates instead of waking
+    # the escalation is audited (spec 08 §5)
+    assert any(a.verb.value == "recovered" for a in ledger.activity.by_subject("task", "t1"))
 
 
 def _monitor_due_wakes(ledger: SqliteLedger) -> list[Wake]:
