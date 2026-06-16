@@ -1,0 +1,118 @@
+"""The dream beat adapter — RunTaskResult → BeatOutcome (spec 03 §3, spec 05 dream seam).
+
+``to_beat_outcome`` is the verdict rule: a beat *passed* iff dream's plan fully completed (every
+ledger step ``done``). ``DreamBeatRunner`` runs one beat through a dream Harness and lands that
+verdict, turning any harness error into a clean ``passed=False`` rather than an unhandled crash.
+The adapter never imports dream — it reads the result through narrow protocols, so these fakes stand
+in for dream's real types.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+
+import pytest
+
+from chorus.adapters import DreamBeatRunner, to_beat_outcome
+
+pytestmark = pytest.mark.unit
+
+
+# -- fakes shaped like dream's RunTaskResult (the read-only surface the adapter consumes) ----------
+
+
+@dataclass(frozen=True)
+class _Step:
+    status: str
+
+
+@dataclass(frozen=True)
+class _Ledger:
+    steps: tuple[_Step, ...]
+
+
+@dataclass(frozen=True)
+class _Sprint:
+    outcome: str | None
+
+
+@dataclass(frozen=True)
+class _Result:
+    final_ledger: _Ledger
+    sprints: tuple[_Sprint, ...] = field(default_factory=tuple)
+
+
+def _result(*statuses: str, sprints: tuple[str | None, ...] = ()) -> _Result:
+    return _Result(
+        final_ledger=_Ledger(steps=tuple(_Step(s) for s in statuses)),
+        sprints=tuple(_Sprint(o) for o in sprints),
+    )
+
+
+class _FakeHarness:
+    """A stand-in dream Harness: returns a canned result, or raises a canned error."""
+
+    def __init__(self, *, result: _Result | None = None, error: Exception | None = None) -> None:
+        self._result = result
+        self._error = error
+        self.calls: list[str] = []
+
+    async def run_task(self, *, task_id: str, intent: str) -> _Result:
+        self.calls.append(task_id)
+        if self._error is not None:
+            raise self._error
+        assert self._result is not None
+        return self._result
+
+
+# -- to_beat_outcome: the verdict rule -------------------------------------------------------------
+
+
+def test_passed_when_every_step_done() -> None:
+    outcome = to_beat_outcome(_result("done", "done", sprints=("pass", "pass")))
+    assert outcome.passed is True
+    assert outcome.outcome["steps_total"] == 2
+    assert outcome.outcome["steps_done"] == 2
+    assert outcome.outcome["sprint_outcomes"] == ["pass", "pass"]
+
+
+def test_not_passed_when_a_step_is_unfinished() -> None:
+    assert to_beat_outcome(_result("done", "in_progress")).passed is False
+
+
+def test_not_passed_when_a_step_is_blocked() -> None:
+    outcome = to_beat_outcome(_result("done", "blocked"))
+    assert outcome.passed is False
+    assert outcome.outcome["steps_blocked"] == 1
+
+
+def test_empty_plan_is_not_passed() -> None:
+    # no steps means nothing was actually completed — never a silent pass
+    assert to_beat_outcome(_result()).passed is False
+
+
+# -- DreamBeatRunner: run one beat through the harness ---------------------------------------------
+
+
+async def test_run_task_maps_a_completed_plan_to_passed() -> None:
+    harness = _FakeHarness(result=_result("done"))
+    runner = DreamBeatRunner(harness)
+    outcome = await runner.run_task(task_id="t1", intent="ship it")
+    assert outcome.passed is True
+    assert harness.calls == ["t1"]
+
+
+async def test_run_task_turns_a_harness_error_into_a_failed_beat() -> None:
+    runner = DreamBeatRunner(_FakeHarness(error=RuntimeError("provider 500")))
+    outcome = await runner.run_task(task_id="t1", intent="ship it")
+    assert outcome.passed is False
+    assert "provider 500" in str(outcome.outcome["error"])
+
+
+async def test_run_task_accepts_and_ignores_a_chorus_observer() -> None:
+    harness = _FakeHarness(result=_result("done"))
+    runner = DreamBeatRunner(harness)
+    seen: list[object] = []
+    outcome = await runner.run_task(task_id="t1", intent="x", observer=seen.append)
+    assert outcome.passed is True
+    assert seen == []  # M1 does not forward chorus events into dream
