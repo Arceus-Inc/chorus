@@ -329,6 +329,43 @@ def _inbox(ctx: CommandContext) -> LoopSignal:
     return LoopSignal.CONTINUE
 
 
+# -- the kernel -------------------------------------------------------------------------------------
+
+_TICK = "tick"
+
+
+@REGISTRY.command(
+    "tick", summary="run one kernel pulse — dispatch a real beat (needs Azure keys)", usage=_TICK
+)
+def _tick(ctx: CommandContext) -> LoopSignal:
+    if ctx.args:
+        ctx.out.error(f"usage: {_TICK}")
+        return LoopSignal.CONTINUE
+    beats = ctx.session.beats
+    if beats is None:
+        ctx.out.error(
+            "no beat runner configured — set AZURE_OPENAI_API_KEY, AZURE_OPENAI_BASE_URL, "
+            "AZURE_OPENAI_DEPLOYMENT and relaunch"
+        )
+        return LoopSignal.CONTINUE
+    ctx.out.line(f"ticking the kernel (model {beats.model}) — this runs a real beat, please wait…")
+    report = beats.run_tick()
+    ctx.out.kv(
+        {
+            "recovered": report.recovered,
+            "routines_fired": report.routines_fired,
+            "wakes_dispatched": report.wakes_dispatched,
+            "beats_started": report.beats_started,
+            "blocked_by_budget": report.blocked_by_budget,
+        }
+    )
+    if report.beats_started:
+        ctx.out.line("a beat ran — see how it landed with 'task <id>'")
+    else:
+        ctx.out.line("nothing to dispatch (assign a task first, then tick)")
+    return LoopSignal.CONTINUE
+
+
 # -- accounting -------------------------------------------------------------------------------------
 
 _COST = "cost <employee_id>"

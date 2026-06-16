@@ -9,13 +9,14 @@ from __future__ import annotations
 
 from chorus_cli.__main__ import main
 from chorus_cli._commands import REGISTRY
-from chorus_cli._context import CliSession, CommandContext, LoopSignal
+from chorus_cli._context import BeatService, CliSession, CommandContext, LoopSignal
 from chorus_cli._registry import Command, CommandRegistry
 from chorus_cli._render import Console
 from chorus_cli._repl import dispatch, run_repl
 
 __all__ = [
     "REGISTRY",
+    "BeatService",
     "CliSession",
     "Command",
     "CommandContext",
