@@ -128,6 +128,28 @@ def test_priced_beat_with_no_usage_costs_zero() -> None:
     assert to_beat_outcome(_result("done"), pricing=pricing).cost_cents == 0
 
 
+def test_outcome_carries_model_and_token_totals() -> None:
+    result = _result("done", usage_by_model={"gpt-x": _Usage(input_tokens=100, output_tokens=40)})
+    outcome = to_beat_outcome(result)  # tokens are surfaced regardless of pricing
+    assert outcome.model == "gpt-x"
+    assert outcome.input_tokens == 100
+    assert outcome.output_tokens == 40
+
+
+def test_multiple_models_are_joined_and_tokens_summed() -> None:
+    result = _result(
+        "done",
+        usage_by_model={
+            "gpt-4": _Usage(input_tokens=10, output_tokens=1),
+            "gpt-5.2": _Usage(input_tokens=20, output_tokens=2),
+        },
+    )
+    outcome = to_beat_outcome(result)
+    assert outcome.model == "gpt-4+gpt-5.2"  # sorted, joined
+    assert outcome.input_tokens == 30
+    assert outcome.output_tokens == 3
+
+
 # -- DreamBeatRunner: run one beat through the harness ---------------------------------------------
 
 

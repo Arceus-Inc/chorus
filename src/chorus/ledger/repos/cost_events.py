@@ -53,6 +53,13 @@ class CostEventRepo:
         ).fetchone()
         return _row_to_event(row) if row is not None else None
 
+    def for_run(self, run_id: str) -> list[CostEvent]:
+        """Every cost event a run recorded, oldest first — the run's spend, itemised."""
+        rows = self._conn.execute(
+            "SELECT * FROM cost_event WHERE run_id = ? ORDER BY occurred_at, id", (run_id,)
+        ).fetchall()
+        return [_row_to_event(row) for row in rows]
+
     def spent_cents(self, employee_id: str, *, since: datetime | None = None) -> int:
         """Live-recomputed spend for an employee, optionally bounded to a window start."""
         if since is None:

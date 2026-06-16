@@ -83,7 +83,11 @@ def to_beat_outcome(result: RunResult, *, pricing: TokenPricing | None = None) -
     done = sum(1 for step in steps if step.status == DreamStepStatus.DONE)
     blocked = sum(1 for step in steps if step.status == DreamStepStatus.BLOCKED)
     passed = len(steps) > 0 and done == len(steps)
-    cost_cents = pricing.cost_cents(result.usage_by_model) if pricing is not None else 0
+    usage = result.usage_by_model
+    cost_cents = pricing.cost_cents(usage) if pricing is not None else 0
+    model = "+".join(sorted(usage))  # "" / "gpt-5.2" / "gpt-4+gpt-5.2"
+    input_tokens = sum(u.input_tokens for u in usage.values())
+    output_tokens = sum(u.output_tokens for u in usage.values())
     outcome: dict[str, object] = {
         "steps_total": len(steps),
         "steps_done": done,
@@ -96,7 +100,15 @@ def to_beat_outcome(result: RunResult, *, pricing: TokenPricing | None = None) -
         if passed
         else f"plan incomplete: {done}/{len(steps)} done, {blocked} blocked"
     )
-    return BeatOutcome(passed=passed, outcome=outcome, summary=summary, cost_cents=cost_cents)
+    return BeatOutcome(
+        passed=passed,
+        outcome=outcome,
+        summary=summary,
+        cost_cents=cost_cents,
+        model=model,
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+    )
 
 
 class DreamBeatRunner:

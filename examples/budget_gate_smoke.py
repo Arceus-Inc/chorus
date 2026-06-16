@@ -103,6 +103,10 @@ def main() -> int:
         spent = ledger.cost_events.spent_cents(_EMPLOYEE)
         incidents = ledger.budget_incidents.open_for_policy("bp1")
         blocked = enforcer.invocation_block(_EMPLOYEE, now=now)
+        run = ledger.runs.for_task("t1")[-1]
+        for ce in ledger.cost_events.for_run(run.id):
+            print(f"  cost_event: model={ce.model!r} in={ce.input_tokens} out={ce.output_tokens} "
+                  f"cost={ce.cost_cents}c")
         print(f"  spent: {spent} cents (cap {_CAP_CENTS})")
         print(f"  open incidents: {[i.threshold_type.value for i in incidents]}")
         print(f"  invocation_block now: {blocked.value if blocked is not None else None}")

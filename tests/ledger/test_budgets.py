@@ -217,6 +217,29 @@ def test_cost_event_record_and_spent(ledger: SqliteLedger) -> None:
     assert ledger.cost_events.spent_cents("e1") == 500
 
 
+def test_for_run_returns_a_runs_cost_events_with_usage(ledger: SqliteLedger) -> None:
+    _employee(ledger)
+    ledger.tasks.submit(Task(id="t1", intent="x"))
+    ledger.runs.create(Run(id="run1", employee_id="e1", task_id="t1"))
+    ledger.runs.create(Run(id="run2", employee_id="e1", task_id="t1"))
+    ledger.cost_events.record(
+        CostEvent(
+            id="ce1", employee_id="e1", task_id="t1", run_id="run1",
+            provider="dream", model="gpt-5.2", cost_cents=300,
+            input_tokens=1200, output_tokens=340, occurred_at=_at(10),
+        )
+    )
+    ledger.cost_events.record(  # a different run — must not be returned
+        CostEvent(id="ce2", employee_id="e1", run_id="run2", provider="dream", model="m",
+                  cost_cents=10, occurred_at=_at(20))
+    )
+    events = ledger.cost_events.for_run("run1")
+    assert [e.id for e in events] == ["ce1"]
+    assert events[0].model == "gpt-5.2"
+    assert events[0].input_tokens == 1200
+    assert events[0].output_tokens == 340
+
+
 def test_spent_cents_respects_window(ledger: SqliteLedger) -> None:
     _employee(ledger)
     ledger.cost_events.record(

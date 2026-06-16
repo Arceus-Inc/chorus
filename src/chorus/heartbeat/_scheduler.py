@@ -337,8 +337,10 @@ class Scheduler:
                 task_id=task_id,
                 run_id=run_id,
                 provider="dream",
-                model="",
+                model=result.model,
                 cost_cents=result.cost_cents,
+                input_tokens=result.input_tokens,
+                output_tokens=result.output_tokens,
                 occurred_at=now,
             )
         )

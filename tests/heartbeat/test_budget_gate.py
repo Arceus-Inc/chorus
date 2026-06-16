@@ -25,15 +25,28 @@ _COMPANY = "acme"
 
 
 class _FakeBeat:
-    """A stand-in beat runner that records its calls and reports a fixed cost."""
+    """A stand-in beat runner that records its calls and reports a fixed cost + usage."""
 
-    def __init__(self, *, cost_cents: int = 0) -> None:
+    def __init__(
+        self, *, cost_cents: int = 0, model: str = "", input_tokens: int = 0, output_tokens: int = 0
+    ) -> None:
         self._cost_cents = cost_cents
+        self._model = model
+        self._input_tokens = input_tokens
+        self._output_tokens = output_tokens
         self.calls: list[str] = []
 
     async def run_task(self, *, task_id: str, intent: str, observer: object = None) -> BeatOutcome:
         self.calls.append(task_id)
-        return BeatOutcome(passed=True, outcome={}, summary="done", cost_cents=self._cost_cents)
+        return BeatOutcome(
+            passed=True,
+            outcome={},
+            summary="done",
+            cost_cents=self._cost_cents,
+            model=self._model,
+            input_tokens=self._input_tokens,
+            output_tokens=self._output_tokens,
+        )
 
 
 class _FakeWorkforce:
@@ -161,3 +174,22 @@ async def test_cost_event_is_recorded_even_with_budgets_off(ledger: SqliteLedger
 
     assert beat.calls == ["t1"]
     assert ledger.cost_events.spent_cents("e1") == 42  # the spend ledger fills regardless of gating
+
+
+async def test_cost_event_records_the_beats_model_and_token_counts(ledger: SqliteLedger) -> None:
+    e1 = _emp(ledger, "e1")
+    beat = _FakeBeat(cost_cents=42, model="gpt-5.2", input_tokens=1200, output_tokens=340)
+    sched = _wired(ledger, beat, e1, enforcer=None)
+    _assigned_wake(ledger, task_id="t1", employee_id="e1", wake_id="w1")
+
+    await sched.tick(_NOW)
+    await sched.drain()
+
+    runs = ledger.runs.for_task("t1")
+    events = ledger.cost_events.for_run(runs[0].id)
+    assert len(events) == 1
+    recorded = events[0]
+    assert recorded.model == "gpt-5.2"
+    assert recorded.input_tokens == 1200
+    assert recorded.output_tokens == 340
+    assert recorded.provider == "dream"
