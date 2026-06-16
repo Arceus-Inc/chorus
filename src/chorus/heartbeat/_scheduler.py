@@ -26,6 +26,7 @@ from chorus.heartbeat._wake import TickReport, Wake
 from chorus.ledger import TaskPriority
 from chorus.ledger._models import (
     ActivityVerb,
+    CostEvent,
     DodStatus,
     Monitor,
     MonitorRecoveryPolicy,
@@ -41,7 +42,8 @@ from chorus.lifecycle import record_activity
 from chorus.recovery import reconcile
 
 if TYPE_CHECKING:
-    from chorus.heartbeat._beat import BeatRunner
+    from chorus.budgets import BudgetEnforcer
+    from chorus.heartbeat._beat import BeatOutcome, BeatRunner
     from chorus.ledger import SqliteLedger
     from chorus.observability import EventBus
     from chorus.workforce import Workforce
@@ -80,6 +82,7 @@ class Scheduler:
         workforce: Workforce | None = None,
         beat_runner: BeatRunner | None = None,
         event_bus: EventBus | None = None,
+        budget_enforcer: BudgetEnforcer | None = None,
         clock: Callable[[], datetime] | None = None,
         sleep: Callable[[float], Awaitable[None]] | None = None,
     ) -> None:
@@ -90,6 +93,7 @@ class Scheduler:
         self._workforce = workforce
         self._beat_runner = beat_runner
         self._event_bus = event_bus
+        self._budget_enforcer = budget_enforcer  # None = budgets off (gating is opt-in)
         self._clock = clock or _utc_now  # the time source the run loop stamps each pulse with
         self._sleep = sleep or asyncio.sleep  # the inter-pulse wait (injectable for deterministic tests)
         self._stop = asyncio.Event()  # set by stop(); ends the run loop after the current pulse
@@ -140,11 +144,20 @@ class Scheduler:
 
         busy = ledger.runs.running_employee_ids()
         dispatched = 0
+        budget_gated = 0
         for wake in claimed:
             # Per-employee serialization (spec 03 §5): at most one live beat per employee. A wake we
             # can't run this pulse goes back to ``queued`` (FIFO position preserved), not stranded.
             if wake.employee_id in busy or "task_id" not in wake.payload:
                 ledger.wakes.release(wake.id)
+                continue
+            # Gate 1 (spec 04 §3): no beat starts for a paused or over-budget scope.
+            if (
+                self._budget_enforcer is not None
+                and self._budget_enforcer.invocation_block(wake.employee_id, now=now) is not None
+            ):
+                ledger.wakes.release(wake.id)
+                budget_gated += 1
                 continue
             task_id = str(wake.payload["task_id"])
             run_id = f"run_{uuid.uuid4().hex}"
@@ -164,6 +177,7 @@ class Scheduler:
             wakes_dispatched=dispatched,
             beats_started=dispatched,
             blocked_by_budget=blocked_by_budget,
+            budget_gated=budget_gated,
         )
 
     async def tick_once(self) -> TickReport:
@@ -303,6 +317,35 @@ class Scheduler:
 
         ledger.tasks.release_locks(task_id, run_id=run_id)
         ledger.wakes.mark_done(wake.id)
+        self._record_cost(employee.id, task_id=task_id, run_id=run_id, result=result, now=now)
+
+    def _record_cost(
+        self, employee_id: str, *, task_id: str, run_id: str, result: BeatOutcome, now: datetime
+    ) -> None:
+        """Record the beat's spend as a cost event and run Gate 2 against it (spec 04 §3).
+
+        The cost event is the durable spend ledger (recorded whenever a beat cost something); Gate 2
+        only fires when a budget enforcer is wired. A zero-cost beat is a no-op.
+        """
+        if result.cost_cents <= 0:
+            return
+        ledger = self._require_ledger()
+        event = ledger.cost_events.record(
+            CostEvent(
+                id=f"cost_{uuid.uuid4().hex[:12]}",
+                employee_id=employee_id,
+                task_id=task_id,
+                run_id=run_id,
+                provider="dream",
+                model=result.model,
+                cost_cents=result.cost_cents,
+                input_tokens=result.input_tokens,
+                output_tokens=result.output_tokens,
+                occurred_at=now,
+            )
+        )
+        if self._budget_enforcer is not None:
+            self._budget_enforcer.on_cost_event(event, now=now)
 
     def _require_ledger(self) -> SqliteLedger:
         return self._require(self._ledger, "ledger")

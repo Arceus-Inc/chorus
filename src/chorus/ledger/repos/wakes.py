@@ -132,6 +132,22 @@ class WakeRepo:
         )
         self._conn.commit()
 
+    def drop_queued(self, *, employee_id: str | None = None) -> int:
+        """Delete pending (``queued``) wakes, optionally scoped to one employee (spec 04 §3 kill).
+
+        Returns how many were dropped. A hard budget breach cancels pending wakes so no new beat
+        starts for the paused scope; ``employee_id=None`` clears the whole queue (company scope).
+        Claimed/done wakes are left untouched.
+        """
+        if employee_id is None:
+            cursor = self._conn.execute("DELETE FROM wake WHERE status = 'queued'")
+        else:
+            cursor = self._conn.execute(
+                "DELETE FROM wake WHERE status = 'queued' AND employee_id = ?", (employee_id,)
+            )
+        self._conn.commit()
+        return cursor.rowcount
+
     def get(self, wake_id: str) -> Wake | None:
         row = self._conn.execute("SELECT * FROM wake WHERE id = ?", (wake_id,)).fetchone()
         return _row_to_wake(row) if row is not None else None

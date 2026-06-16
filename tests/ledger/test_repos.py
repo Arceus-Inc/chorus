@@ -140,6 +140,31 @@ def test_run_create_and_finish(ledger: SqliteLedger) -> None:
     assert got.outcome == {"passed": True}
 
 
+def test_cancel_running_only_touches_running_and_returns_their_ids(ledger: SqliteLedger) -> None:
+    ledger.employees.create(Employee(id="e1", name="a", role="engineer"))
+    ledger.tasks.submit(Task(id="t1", intent="x"))
+    ledger.runs.create(Run(id="live", employee_id="e1", task_id="t1", status=RunStatus.RUNNING))
+    ledger.runs.create(Run(id="done", employee_id="e1", task_id="t1", status=RunStatus.RUNNING))
+    ledger.runs.finish("done", RunStatus.SUCCEEDED)  # terminal before the kill
+
+    cancelled = ledger.runs.cancel_running(employee_id="e1")
+
+    assert cancelled == ["live"]  # only the still-running row, reported exactly
+    assert ledger.runs.get("live").status is RunStatus.CANCELLED  # type: ignore[union-attr]
+    assert ledger.runs.get("done").status is RunStatus.SUCCEEDED  # type: ignore[union-attr]
+
+
+def test_cancel_running_scopes_to_one_employee(ledger: SqliteLedger) -> None:
+    ledger.employees.create(Employee(id="e1", name="a", role="engineer"))
+    ledger.employees.create(Employee(id="e2", name="b", role="engineer"))
+    ledger.tasks.submit(Task(id="t1", intent="x"))
+    ledger.runs.create(Run(id="r1", employee_id="e1", task_id="t1", status=RunStatus.RUNNING))
+    ledger.runs.create(Run(id="r2", employee_id="e2", task_id="t1", status=RunStatus.RUNNING))
+
+    assert ledger.runs.cancel_running(employee_id="e1") == ["r1"]
+    assert ledger.runs.get("r2").status is RunStatus.RUNNING  # type: ignore[union-attr]
+
+
 def test_dod_create_get_and_record_verdict(ledger: SqliteLedger) -> None:
     ledger.tasks.submit(Task(id="t1", intent="x"))
     created = ledger.dod.create("t1", Verifier.command("pytest -q"))

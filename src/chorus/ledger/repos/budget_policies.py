@@ -45,6 +45,15 @@ class BudgetPolicyRepo:
         ).fetchone()
         return _row_to_policy(row) if row is not None else None
 
+    def set_amount(self, policy_id: str, amount: int) -> None:
+        """Raise (or lower) a policy's cap — the human ``raise_budget_and_resume`` path (spec 04 §3)."""
+        now = utcnow_iso()
+        self._conn.execute(
+            "UPDATE budget_policy SET amount = ?, updated_at = ? WHERE id = ?",
+            (amount, now, policy_id),
+        )
+        self._conn.commit()
+
     def find(
         self,
         *,
