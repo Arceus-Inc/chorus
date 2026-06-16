@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import sqlite3
 
-from chorus.ledger._models import Approval, ApprovalStatus, ApprovalSubjectKind
+from chorus.ledger._models import Approval, ApprovalGate, ApprovalStatus, ApprovalSubjectKind
 from chorus.ledger.repos._base import from_iso, utcnow_iso
 
 
@@ -23,15 +23,16 @@ class ApprovalRepo:
         """Open a pending gate; the exact-once index rejects a duplicate open subject."""
         now = utcnow_iso()
         self._conn.execute(
-            "INSERT INTO approval (id, subject_kind, subject_id, reason, status, "
+            "INSERT INTO approval (id, subject_kind, subject_id, reason, status, gate_kind, "
             "decided_by_user_id, decided_at, expires_at, created_at) "
-            "VALUES (?, ?, ?, ?, ?, NULL, NULL, ?, ?)",
+            "VALUES (?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?)",
             (
                 approval.id,
                 approval.subject_kind.value,
                 approval.subject_id,
                 approval.reason,
                 ApprovalStatus.PENDING.value,
+                approval.gate_kind.value if approval.gate_kind else None,
                 approval.expires_at.isoformat() if approval.expires_at else None,
                 now,
             ),
@@ -84,6 +85,7 @@ def _row_to_approval(row: sqlite3.Row) -> Approval:
         subject_id=row["subject_id"],
         reason=row["reason"],
         status=ApprovalStatus(row["status"]),
+        gate_kind=ApprovalGate(row["gate_kind"]) if row["gate_kind"] else None,
         decided_by_user_id=row["decided_by_user_id"],
         decided_at=from_iso(row["decided_at"]),
         expires_at=from_iso(row["expires_at"]),

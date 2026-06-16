@@ -12,10 +12,13 @@ decorator, so the verb table is assembled declaratively in one file.
 
 from __future__ import annotations
 
+import sqlite3
 import uuid
 
 from chorus.budgets import BudgetEnforcer, BudgetWindow, window_start
+from chorus.governance import GovernanceError, GovernanceResolver
 from chorus.ledger import (
+    ApprovalGate,
     BudgetPolicy,
     BudgetScope,
     BudgetThreshold,
@@ -602,9 +605,100 @@ def _budget(ctx: CommandContext) -> LoopSignal:
     return handler(ctx, ctx.args[1:])
 
 
+# -- approvals & governance (spec 04 §5) ------------------------------------------------------------
+
+
+def _parse_gate(raw: str, out: Console) -> ApprovalGate | None:
+    try:
+        return ApprovalGate(raw)
+    except ValueError:
+        choices = ", ".join(gate.value for gate in ApprovalGate)
+        out.error(f"unknown gate {raw!r}; choose one of: {choices}")
+        return None
+
+
+def _resolver(ctx: CommandContext) -> GovernanceResolver:
+    return GovernanceResolver(ctx.session.ledger)
+
+
+def _approval_list(ctx: CommandContext) -> LoopSignal:
+    pending = ctx.session.ledger.approvals.pending()
+    ctx.out.table(
+        ("approval", "subject", "id", "gate", "reason"),
+        [
+            (a.id, a.subject_kind.value, a.subject_id,
+             _fmt(a.gate_kind.value if a.gate_kind else None), _preview(a.reason))
+            for a in pending
+        ],
+    )
+    return LoopSignal.CONTINUE
+
+
+def _approval_open(ctx: CommandContext, args: tuple[str, ...]) -> LoopSignal:
+    if len(args) < 3:
+        ctx.out.error(f"usage: {_APPROVAL_OPEN}")
+        return LoopSignal.CONTINUE
+    gate = _parse_gate(args[1], ctx.out)
+    if gate is None:
+        return LoopSignal.CONTINUE
+    try:
+        approval = _resolver(ctx).open_task_gate(args[0], gate_kind=gate, reason=" ".join(args[2:]))
+    except GovernanceError as exc:
+        ctx.out.error(str(exc))
+        return LoopSignal.CONTINUE
+    except sqlite3.IntegrityError:
+        ctx.out.error(f"task {args[0]!r} already has a pending gate")
+        return LoopSignal.CONTINUE
+    ctx.out.line(f"opened {approval.id}: {gate.value} gate on {args[0]} — task blocked")
+    return LoopSignal.CONTINUE
+
+
+def _approval_resolve(ctx: CommandContext, args: tuple[str, ...], *, approve: bool) -> LoopSignal:
+    usage = _APPROVAL_APPROVE if approve else _APPROVAL_DENY
+    if len(args) != 1:
+        ctx.out.error(f"usage: {usage}")
+        return LoopSignal.CONTINUE
+    try:
+        outcome = _resolver(ctx).resolve(
+            args[0], approve=approve, decided_by_user_id=_OPERATOR, now=ctx.session.clock()
+        )
+    except GovernanceError as exc:
+        ctx.out.error(str(exc))
+        return LoopSignal.CONTINUE
+    verb = "approved" if approve else "denied"
+    ctx.out.line(
+        f"{verb} {outcome.approval_id} → task {outcome.task_id} is "
+        f"{outcome.task_status.value} ({outcome.wakes_fired} wakes)"
+    )
+    return LoopSignal.CONTINUE
+
+
+_APPROVAL_OPEN = "approval open <task_id> <acceptance|authorization> <reason…>"
+_APPROVAL_APPROVE = "approval approve <approval_id>"
+_APPROVAL_DENY = "approval deny <approval_id>"
+_APPROVAL = "approval [list | open … | approve <id> | deny <id>]"
+
+
+@REGISTRY.command("approval", summary="view or resolve approval gates", usage=_APPROVAL)
+def _approval(ctx: CommandContext) -> LoopSignal:
+    if not ctx.args or ctx.args[0] == "list":
+        return _approval_list(ctx)
+    sub = ctx.args[0]
+    rest = ctx.args[1:]
+    if sub == "open":
+        return _approval_open(ctx, rest)
+    if sub == "approve":
+        return _approval_resolve(ctx, rest, approve=True)
+    if sub == "deny":
+        return _approval_resolve(ctx, rest, approve=False)
+    ctx.out.error(f"unknown approval subcommand {sub!r}; usage: {_APPROVAL}")
+    return LoopSignal.CONTINUE
+
+
 REGISTRY.alias("?", of="help")
 REGISTRY.alias("exit", of="quit")
 REGISTRY.alias("budgets", of="budget")
+REGISTRY.alias("approvals", of="approval")
 
 
 __all__ = ["REGISTRY"]

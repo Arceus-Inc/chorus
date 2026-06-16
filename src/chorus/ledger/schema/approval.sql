@@ -8,7 +8,8 @@ CREATE TABLE approval (
     decided_by_user_id TEXT,
     decided_at         TEXT,
     expires_at         TEXT,
-    created_at         TEXT NOT NULL
+    created_at         TEXT NOT NULL,
+    gate_kind          TEXT
 );
 
 CREATE UNIQUE INDEX approval_subject_pending_uq

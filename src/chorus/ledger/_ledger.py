@@ -109,7 +109,7 @@ class Ledger(Protocol):
         self,
         *,
         task_id: str,
-        run_id: str,
+        run_id: str | None,
         dod_status: DodStatus,
         verdict: dict[str, object] | None = None,
     ) -> list[Wake]: ...
@@ -199,7 +199,7 @@ class SqliteLedger:
         self,
         *,
         task_id: str,
-        run_id: str,
+        run_id: str | None,
         dod_status: DodStatus,
         verdict: dict[str, object] | None = None,
     ) -> list[Wake]:

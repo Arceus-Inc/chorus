@@ -156,6 +156,11 @@ class MigrationRunner:
         """
         prev_isolation = conn.isolation_level
         conn.isolation_level = None  # explicit transaction control — no implicit commits
+        # DDL runs with FK enforcement off (must be toggled outside a transaction): a table rebuild
+        # renames the old table aside, and only with FK off does ``legacy_alter_table`` stop the
+        # rename rewriting *incoming* references to the temporary name. Restored in ``finally``.
+        prev_foreign_keys = bool(conn.execute("PRAGMA foreign_keys").fetchone()[0])
+        conn.execute("PRAGMA foreign_keys = OFF")
         try:
             conn.execute("BEGIN IMMEDIATE")
             self._ensure_table(conn)
@@ -189,6 +194,7 @@ class MigrationRunner:
                 newly.append(migration.id)
             return newly
         finally:
+            conn.execute(f"PRAGMA foreign_keys = {'ON' if prev_foreign_keys else 'OFF'}")
             conn.isolation_level = prev_isolation
 
     def _gate(self, applied: dict[str, str]) -> None:
