@@ -28,6 +28,7 @@ from chorus.ledger import (
     TaskPriority,
 )
 from chorus.lifecycle import assign_task, deliver_message
+from chorus.outcomes import DoDKind, Verifier
 from chorus.workforce import Employee
 from chorus_cli._context import CommandContext, LoopSignal
 from chorus_cli._registry import CommandRegistry
@@ -693,6 +694,59 @@ def _approval(ctx: CommandContext) -> LoopSignal:
         return _approval_resolve(ctx, rest, approve=False)
     ctx.out.error(f"unknown approval subcommand {sub!r}; usage: {_APPROVAL}")
     return LoopSignal.CONTINUE
+
+
+# -- definition of done (spec 04 §1) ----------------------------------------------------------------
+
+_DOD_SET = "dod set <task_id> <command|human_approval|agent_review> [args…]"
+_DOD = "dod set …"
+
+
+def _build_verifier(raw_kind: str, rest: tuple[str, ...], out: Console) -> Verifier | None:
+    try:
+        kind = DoDKind(raw_kind)
+    except ValueError:
+        choices = ", ".join(k.value for k in DoDKind)
+        out.error(f"unknown DoD kind {raw_kind!r}; choose one of: {choices}")
+        return None
+    if kind is DoDKind.COMMAND:
+        if not rest:
+            out.error("a command DoD needs a shell command")
+            return None
+        return Verifier.command(" ".join(rest))
+    if kind is DoDKind.HUMAN_APPROVAL:
+        return Verifier.human_approval(approver=rest[0] if rest else "board")
+    return Verifier.agent_review(
+        reviewer_role=rest[0] if rest else "reviewer", rubric=" ".join(rest[1:])
+    )
+
+
+def _dod_set(ctx: CommandContext, args: tuple[str, ...]) -> LoopSignal:
+    if len(args) < 2:
+        ctx.out.error(f"usage: {_DOD_SET}")
+        return LoopSignal.CONTINUE
+    task_id, raw_kind = args[0], args[1]
+    if ctx.session.ledger.tasks.get(task_id) is None:
+        ctx.out.error(f"no such task: {task_id!r}")
+        return LoopSignal.CONTINUE
+    verifier = _build_verifier(raw_kind, args[2:], ctx.out)
+    if verifier is None:
+        return LoopSignal.CONTINUE
+    try:
+        ctx.session.ledger.dod.create(task_id, verifier)
+    except sqlite3.IntegrityError:
+        ctx.out.error(f"task {task_id!r} already has a DoD")
+        return LoopSignal.CONTINUE
+    ctx.out.line(f"set {verifier.kind.value} DoD on {task_id} ({verifier.artifact_class})")
+    return LoopSignal.CONTINUE
+
+
+@REGISTRY.command("dod", summary="set a task's Definition of Done", usage=_DOD)
+def _dod(ctx: CommandContext) -> LoopSignal:
+    if not ctx.args or ctx.args[0] != "set":
+        ctx.out.error(f"usage: {_DOD}")
+        return LoopSignal.CONTINUE
+    return _dod_set(ctx, ctx.args[1:])
 
 
 REGISTRY.alias("?", of="help")
