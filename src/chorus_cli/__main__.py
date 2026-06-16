@@ -19,14 +19,17 @@ import argparse
 import os
 import sys
 from collections.abc import Callable, Sequence
+from pathlib import Path
 from typing import TextIO
 
 from chorus.ledger import SqliteLedger
 from chorus_cli._commands import REGISTRY
 from chorus_cli._context import BeatService, CliSession
+from chorus_cli._env import load_env_file
 from chorus_cli._repl import run_repl
 
 _DEFAULT_DB = "chorus.db"
+_DEFAULT_ENV = ".env"
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -36,6 +39,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--db",
         default=_DEFAULT_DB,
         help=f"ledger database path (default: {_DEFAULT_DB!r}; ':memory:' for a throwaway one)",
+    )
+    parser.add_argument(
+        "--env-file",
+        default=_DEFAULT_ENV,
+        help=f"dotenv file to load credentials from (default: {_DEFAULT_ENV!r})",
     )
     return parser
 
@@ -68,6 +76,7 @@ def main(
     scripted input and a captured stream; they default to real stdin/stdout.
     """
     args = build_parser().parse_args(argv)
+    load_env_file(Path(args.env_file))  # pick up local credentials before wiring the beat service
     ledger = SqliteLedger.open(args.db)
     try:
         session = CliSession(ledger=ledger, beats=_beat_service_from_env(ledger))

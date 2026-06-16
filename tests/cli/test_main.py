@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 from collections.abc import Callable
+from pathlib import Path
 
 import pytest
 
@@ -31,6 +32,35 @@ def test_parser_defaults_to_the_default_db() -> None:
 def test_parser_accepts_a_db_path() -> None:
     args = build_parser().parse_args(["--db", ":memory:"])
     assert args.db == ":memory:"
+
+
+def test_parser_defaults_to_dotenv() -> None:
+    assert build_parser().parse_args([]).env_file == ".env"
+
+
+def test_main_loads_dotenv_and_wires_the_beat_service(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_input: MakeInput
+) -> None:
+    env_file = tmp_path / ".env"
+    env_file.write_text(
+        "AZURE_OPENAI_API_KEY=k\n"
+        "AZURE_OPENAI_BASE_URL=https://x/openai/v1\n"
+        "AZURE_OPENAI_DEPLOYMENT=gpt-x\n",
+        encoding="utf-8",
+    )
+    sentinel = object()
+    monkeypatch.setattr("chorus_cli._beats.build_beat_service", lambda *a, **k: sentinel)
+    captured: dict[str, object] = {}
+
+    def fake_run_repl(session: object, registry: object, **kwargs: object) -> int:
+        captured["beats"] = session.beats  # type: ignore[attr-defined]
+        return 0
+
+    monkeypatch.setattr("chorus_cli.__main__.run_repl", fake_run_repl)
+
+    code = main(["--db", ":memory:", "--env-file", str(env_file)], input_func=make_input([]))
+    assert code == 0
+    assert captured["beats"] is sentinel
 
 
 def test_main_runs_a_session_and_returns_zero(make_input: MakeInput) -> None:
