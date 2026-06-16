@@ -11,10 +11,26 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from enum import StrEnum
 from typing import Protocol, runtime_checkable
 
 from chorus.events import Event
 from chorus.outcomes import VerificationStep
+
+
+class BeatDisposition(StrEnum):
+    """How a beat resolved — the four-way error contract chorus maps to a task state (spec 05 §5).
+
+    ``PASSED``/``DOD_FAILED`` are clean returns (the evaluator accepted / ran-but-rejected); a raise
+    out of ``run_task`` resolves to ``ERRORED`` (engine/tool fault → stranded → recovery ladder) or
+    ``CANCELLED`` (cooperative cancel → task returns to its pre-beat state). A raise is **never**
+    swallowed into ``done`` — the disposition keeps the engine fault distinct from a DoD failure.
+    """
+
+    PASSED = "passed"
+    DOD_FAILED = "dod_failed"
+    ERRORED = "errored"
+    CANCELLED = "cancelled"
 
 
 @dataclass(frozen=True)
@@ -30,6 +46,17 @@ class BeatOutcome:
     model: str = ""
     input_tokens: int = 0
     output_tokens: int = 0
+    # How the beat resolved (spec 05 §5). Defaults from ``passed`` for a clean return, so existing
+    # callers need not set it; the dream adapter sets ``ERRORED``/``CANCELLED`` on a raise.
+    disposition: BeatDisposition | None = None
+
+    def __post_init__(self) -> None:
+        if self.disposition is None:
+            object.__setattr__(
+                self,
+                "disposition",
+                BeatDisposition.PASSED if self.passed else BeatDisposition.DOD_FAILED,
+            )
 
 
 @runtime_checkable
@@ -52,6 +79,7 @@ class BeatRunner(Protocol):
 
 
 __all__ = [
+    "BeatDisposition",
     "BeatOutcome",
     "BeatRunner",
 ]

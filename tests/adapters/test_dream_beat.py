@@ -9,11 +9,15 @@ in for dream's real types.
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass, field
+from typing import Any
 
 import pytest
 
 from chorus.adapters import DreamBeatRunner, ModelRate, TokenPricing, to_beat_outcome
+from chorus.events import Event, EventKind
+from chorus.heartbeat import BeatDisposition
 from chorus.outcomes import VerificationStep
 
 pytestmark = pytest.mark.unit
@@ -64,20 +68,57 @@ def _result(
     )
 
 
-class _FakeHarness:
-    """A stand-in dream Harness: returns a canned result, or raises a canned error."""
+class _FakeRunTaskError(Exception):
+    """Shaped like ``dream.RunTaskError``: a stable ``code`` and a typed ``phase``."""
 
-    def __init__(self, *, result: _Result | None = None, error: Exception | None = None) -> None:
+    code = "dream.run_task"
+
+    def __init__(self, message: str, *, phase: str) -> None:
+        super().__init__(message)
+        self.phase = phase
+
+
+class _FakeTaskCancelled(Exception):
+    """Shaped like ``dream.TaskCancelled``: the stable cooperative-cancel ``code``."""
+
+    code = "dream.cancelled"
+
+
+class _FakeHarness:
+    """A stand-in dream Harness: returns a canned result, or raises a canned error.
+
+    When ``events`` is given it replays them through the ``observer`` dream is handed, so the bridge's
+    dream-dict -> chorus-Event translation can be exercised without a real engine.
+    """
+
+    def __init__(
+        self,
+        *,
+        result: _Result | None = None,
+        error: BaseException | None = None,
+        events: tuple[dict[str, Any], ...] = (),
+    ) -> None:
         self._result = result
         self._error = error
+        self._events = events
         self.calls: list[str] = []
         self.verification_steps: tuple[dict[str, str], ...] = ()
+        self.observer: object = None
 
     async def run_task(
-        self, *, task_id: str, intent: str, verification_steps: tuple[dict[str, str], ...] = ()
+        self,
+        *,
+        task_id: str,
+        intent: str,
+        verification_steps: tuple[dict[str, str], ...] = (),
+        observer: object = None,
     ) -> _Result:
         self.calls.append(task_id)
         self.verification_steps = verification_steps
+        self.observer = observer
+        if observer is not None:
+            for event in self._events:
+                observer.on_event(event)  # type: ignore[attr-defined]
         if self._error is not None:
             raise self._error
         assert self._result is not None
@@ -170,7 +211,9 @@ async def test_run_task_turns_a_harness_error_into_a_failed_beat() -> None:
     runner = DreamBeatRunner(_FakeHarness(error=RuntimeError("provider 500")))
     outcome = await runner.run_task(task_id="t1", intent="ship it")
     assert outcome.passed is False
+    assert outcome.disposition is BeatDisposition.ERRORED  # an unexpected fault is an engine error
     assert "provider 500" in str(outcome.outcome["error"])
+    assert outcome.outcome["phase"] is None  # a non-dream error carries no phase
 
 
 async def test_run_task_prices_the_beat_when_pricing_is_wired() -> None:
@@ -205,10 +248,86 @@ async def test_run_task_with_no_verification_passes_none() -> None:
     assert harness.verification_steps == ()
 
 
-async def test_run_task_accepts_and_ignores_a_chorus_observer() -> None:
-    harness = _FakeHarness(result=_result("done"))
-    runner = DreamBeatRunner(harness)
-    seen: list[object] = []
-    outcome = await runner.run_task(task_id="t1", intent="x", observer=seen.append)
+async def test_run_task_forwards_dream_events_to_the_observer() -> None:
+    # dream replays its dict event stream through the bridge; chorus witnesses the mapped run.* subset.
+    harness = _FakeHarness(
+        result=_result("done"),
+        events=(
+            {"kind": "task.started", "task_id": "t1", "intent": "x"},
+            {"kind": "role.text", "role": "generator", "text": "hello"},
+            {"kind": "role.tool.start", "role": "generator", "tool": "bash"},
+            {"kind": "evaluator.completed", "sprint_number": 1, "outcome": "pass", "score": 1.0},
+            {"kind": "task.completed", "task_id": "t1", "sprint_count": 1},
+        ),
+    )
+    seen: list[Event] = []
+    outcome = await DreamBeatRunner(harness).run_task(task_id="t1", intent="x", observer=seen.append)
     assert outcome.passed is True
-    assert seen == []  # M1 does not forward chorus events into dream
+    assert [e.kind for e in seen] == [
+        EventKind.RUN_STARTED,
+        EventKind.RUN_TEXT,
+        EventKind.RUN_TOOL_USE,
+        EventKind.RUN_EVALUATED,
+        EventKind.RUN_DONE,
+    ]
+    text = next(e for e in seen if e.kind is EventKind.RUN_TEXT)
+    assert text.task_id == "t1"
+    assert text.payload["text"] == "hello"
+    assert text.payload["dream_kind"] == "role.text"  # the original dream kind is preserved
+
+
+async def test_run_task_drops_dream_events_without_a_chorus_equivalent() -> None:
+    # macro lifecycle kinds have no closed-vocabulary run.* equivalent yet — dropped, not mislabelled.
+    harness = _FakeHarness(
+        result=_result("done"),
+        events=(
+            {"kind": "planner.started", "task_id": "t1"},
+            {"kind": "contract.written", "sprint_number": 1, "path": "c.json"},
+            {"kind": "role.text", "text": "kept"},
+        ),
+    )
+    seen: list[Event] = []
+    await DreamBeatRunner(harness).run_task(task_id="t1", intent="x", observer=seen.append)
+    assert [e.kind for e in seen] == [EventKind.RUN_TEXT]
+
+
+async def test_run_task_runs_dream_silent_without_an_observer() -> None:
+    harness = _FakeHarness(result=_result("done"), events=({"kind": "role.text", "text": "x"},))
+    await DreamBeatRunner(harness).run_task(task_id="t1", intent="x")
+    assert harness.observer is None  # no observer in -> no bridge handed to dream
+
+
+# -- the failure contract: a raise -> a typed disposition (spec 05 §5) -----------------------------
+
+
+async def test_run_task_classifies_a_run_task_error_as_errored() -> None:
+    harness = _FakeHarness(error=_FakeRunTaskError("planner blew up", phase="plan"))
+    outcome = await DreamBeatRunner(harness).run_task(task_id="t1", intent="x")
+    assert outcome.passed is False
+    assert outcome.disposition is BeatDisposition.ERRORED
+    assert outcome.outcome["phase"] == "plan"  # the typed phase rides onto the outcome
+    assert "planner blew up" in str(outcome.outcome["error"])
+
+
+async def test_run_task_classifies_task_cancelled_as_cancelled() -> None:
+    harness = _FakeHarness(error=_FakeTaskCancelled("budget exhausted"))
+    outcome = await DreamBeatRunner(harness).run_task(task_id="t1", intent="x")
+    assert outcome.passed is False
+    assert outcome.disposition is BeatDisposition.CANCELLED
+    assert "budget exhausted" in str(outcome.outcome["cancelled"])
+
+
+async def test_run_task_propagates_asyncio_cancellation() -> None:
+    # structured cancellation must never be swallowed into a beat outcome — it re-raises.
+    harness = _FakeHarness(error=asyncio.CancelledError())
+    with pytest.raises(asyncio.CancelledError):
+        await DreamBeatRunner(harness).run_task(task_id="t1", intent="x")
+
+
+def test_beat_outcome_disposition_defaults_from_passed() -> None:
+    from chorus.heartbeat import BeatOutcome
+
+    assert BeatOutcome(passed=True).disposition is BeatDisposition.PASSED
+    assert BeatOutcome(passed=False).disposition is BeatDisposition.DOD_FAILED
+    assert to_beat_outcome(_result("done")).disposition is BeatDisposition.PASSED
+    assert to_beat_outcome(_result("blocked")).disposition is BeatDisposition.DOD_FAILED
