@@ -18,6 +18,7 @@ from chorus.ledger import SqliteLedger
 from chorus.ledger._models import (
     OriginKind,
     Routine,
+    RoutineCatchUp,
     RoutineConcurrency,
     RoutineRunStatus,
     RoutineStatus,
@@ -41,6 +42,7 @@ def _routine(
     eid: str = "e1",
     target: RoutineTarget = RoutineTarget.SPAWN_TASK,
     concurrency: RoutineConcurrency = RoutineConcurrency.SKIP_IF_ACTIVE,
+    catch_up: RoutineCatchUp = RoutineCatchUp.SKIP_MISSED,
     cron: str = "0 * * * *",
 ) -> RoutineTrigger:
     """An active routine + its due cron trigger, returned ready to fire."""
@@ -52,6 +54,7 @@ def _routine(
             intent_template=f"hourly sweep {rid}",
             target=target,
             concurrency_policy=concurrency,
+            catch_up_policy=catch_up,
         )
     )
     return ledger.routine_triggers.create(
@@ -135,6 +138,64 @@ def test_skip_if_active_suppresses_while_prior_task_is_open(ledger: SqliteLedger
     assert result is None  # suppressed — prior routine task still open
     runs = ledger.routine_runs.by_routine("r1")
     assert any(r.status is RoutineRunStatus.SUPPRESSED for r in runs)
+
+
+def test_coalesce_folds_onto_the_live_run(ledger: SqliteLedger) -> None:
+    trig = _routine(ledger, concurrency=RoutineConcurrency.COALESCE)
+    first = fire_routine(ledger, trig, now=_NOW)  # spawns task #1 (open) + a dispatched run
+    assert first is not None
+    survivor = next(
+        r.id for r in ledger.routine_runs.by_routine("r1")
+        if r.status is RoutineRunStatus.DISPATCHED
+    )
+    # re-arm the edge; fire again while the prior task is still open
+    ledger.routine_triggers.claim_fire(
+        trig.id,
+        expected_next_run_at=_NOW + timedelta(hours=1),
+        new_next_run_at=_NOW + timedelta(hours=1),
+    )
+    re_armed = ledger.routine_triggers.get(trig.id)
+    assert re_armed is not None
+    result = fire_routine(ledger, re_armed, now=_NOW + timedelta(hours=1))
+
+    assert result is None  # no new task — folded onto the live run
+    coalesced = [r for r in ledger.routine_runs.by_routine("r1") if r.status is RoutineRunStatus.COALESCED]
+    assert len(coalesced) == 1
+    assert coalesced[0].coalesced_into_run_id == survivor
+    # only the one routine-spawned task exists
+    assert ledger.tasks.has_open_for_routine("r1") is True
+
+
+def test_always_spawns_even_while_prior_task_is_open(ledger: SqliteLedger) -> None:
+    trig = _routine(ledger, concurrency=RoutineConcurrency.ALWAYS)
+    first = fire_routine(ledger, trig, now=_NOW)  # task #1 (open)
+    ledger.routine_triggers.claim_fire(
+        trig.id,
+        expected_next_run_at=_NOW + timedelta(hours=1),
+        new_next_run_at=_NOW + timedelta(hours=1),
+    )
+    re_armed = ledger.routine_triggers.get(trig.id)
+    assert re_armed is not None
+    second = fire_routine(ledger, re_armed, now=_NOW + timedelta(hours=1))
+    assert second is not None and second != first  # a fresh task, prior still open
+
+
+def test_skip_missed_jumps_the_edge_past_now(ledger: SqliteLedger) -> None:
+    # default catch-up: three hourly windows missed -> next edge is the first one after `now`
+    trig = _routine(ledger)  # edge = _NOW (12:00)
+    fire_routine(ledger, trig, now=_NOW + timedelta(hours=3, minutes=30))  # now = 15:30
+    advanced = ledger.routine_triggers.get(trig.id)
+    assert advanced is not None
+    assert advanced.next_run_at == _NOW + timedelta(hours=4)  # 16:00, past now
+
+
+def test_backfill_one_advances_a_single_step(ledger: SqliteLedger) -> None:
+    # backfill: same three missed windows -> advance ONE step from the edge, catch up one per tick
+    trig = _routine(ledger, catch_up=RoutineCatchUp.BACKFILL_ONE)  # edge = _NOW (12:00)
+    fire_routine(ledger, trig, now=_NOW + timedelta(hours=3, minutes=30))  # now = 15:30
+    advanced = ledger.routine_triggers.get(trig.id)
+    assert advanced is not None
+    assert advanced.next_run_at == _NOW + timedelta(hours=1)  # 13:00, still behind -> refires next tick
 
 
 def test_skip_if_active_fires_once_prior_task_is_terminal(ledger: SqliteLedger) -> None:
