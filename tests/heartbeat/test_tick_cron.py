@@ -33,7 +33,7 @@ _NOW = datetime.fromisoformat("2026-06-16T12:00:00+00:00")
 
 class _FakeBeat:
     async def run_task(
-        self, *, task_id: str, intent: str, observer: object = None
+        self, *, task_id: str, intent: str, verification: object = (), observer: object = None
     ) -> BeatOutcome:
         return BeatOutcome(passed=True, outcome={}, summary="done")
 

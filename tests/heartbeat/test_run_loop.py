@@ -30,7 +30,9 @@ class _FakeBeat:
     def __init__(self) -> None:
         self.calls: list[str] = []
 
-    async def run_task(self, *, task_id: str, intent: str, observer: object = None) -> BeatOutcome:
+    async def run_task(
+        self, *, task_id: str, intent: str, verification: object = (), observer: object = None
+    ) -> BeatOutcome:
         self.calls.append(task_id)
         return BeatOutcome(passed=True, outcome={}, summary="ok")
 

@@ -1,0 +1,185 @@
+"""The beat enforces the task's DoD: run_beat hands the Command checks to the runner (spec 04 §1)."""
+
+from __future__ import annotations
+
+from datetime import datetime
+
+import pytest
+
+from chorus.governance import GovernanceResolver
+from chorus.heartbeat import Scheduler, Wake, WakeReason
+from chorus.heartbeat._beat import BeatOutcome
+from chorus.ledger import ApprovalGate, SqliteLedger, Task, TaskStatus
+from chorus.outcomes import VerificationStep, Verifier
+from chorus.workforce import Employee
+
+pytestmark = pytest.mark.integration
+
+_NOW = datetime.fromisoformat("2026-06-16T12:00:00+00:00")
+
+
+class _RecordingBeat:
+    """A beat runner with a fixed verdict that records the verification it was handed."""
+
+    def __init__(self, *, passed: bool = True) -> None:
+        self._passed = passed
+        self.calls: list[str] = []
+        self.verification: tuple[VerificationStep, ...] | None = None
+
+    async def run_task(
+        self,
+        *,
+        task_id: str,
+        intent: str,
+        verification: tuple[VerificationStep, ...] = (),
+        observer: object = None,
+    ) -> BeatOutcome:
+        self.calls.append(task_id)
+        self.verification = verification
+        return BeatOutcome(passed=self._passed, outcome={}, summary="ok")
+
+
+class _FakeWorkforce:
+    def __init__(self, *employees: Employee) -> None:
+        self._by_id = {e.id: e for e in employees}
+
+    def get(self, employee_id: str) -> Employee:
+        return self._by_id[employee_id]
+
+
+def _seed(ledger: SqliteLedger) -> Employee:
+    employee = ledger.employees.create(Employee(id="e1", name="e1", role="engineer"))
+    ledger.tasks.submit(
+        Task(id="t1", intent="ship", status=TaskStatus.TODO, assignee_employee_id="e1")
+    )
+    ledger.wakes.enqueue(
+        Wake(id="w1", employee_id="e1", reason=WakeReason.TASK_ASSIGNED, payload={"task_id": "t1"})
+    )
+    return employee
+
+
+def _scheduler(
+    ledger: SqliteLedger, beat: _RecordingBeat, employee: Employee, *, max_repair_attempts: int = 2
+) -> Scheduler:
+    return Scheduler(
+        ledger=ledger,
+        workforce=_FakeWorkforce(employee),
+        beat_runner=beat,
+        max_concurrent_runs=1,
+        max_repair_attempts=max_repair_attempts,
+    )
+
+
+async def _tick(ledger: SqliteLedger, beat: _RecordingBeat, employee: Employee) -> None:
+    sched = _scheduler(ledger, beat, employee)
+    await sched.tick(_NOW)
+    await sched.drain()
+
+
+async def test_run_beat_passes_the_command_dod_as_verification(ledger: SqliteLedger) -> None:
+    employee = _seed(ledger)
+    ledger.dod.create("t1", Verifier.command("pytest -q && ruff check ."))
+    beat = _RecordingBeat()
+
+    await _tick(ledger, beat, employee)
+
+    assert beat.calls == ["t1"]
+    assert beat.verification == (VerificationStep(command="pytest -q && ruff check ."),)
+
+
+async def test_run_beat_with_no_dod_passes_no_verification(ledger: SqliteLedger) -> None:
+    employee = _seed(ledger)  # no DoD created
+    beat = _RecordingBeat()
+
+    await _tick(ledger, beat, employee)
+
+    assert beat.verification == ()
+
+
+async def test_run_beat_with_a_human_approval_dod_passes_no_verification(ledger: SqliteLedger) -> None:
+    employee = _seed(ledger)
+    ledger.dod.create("t1", Verifier.human_approval())  # not an objective check
+    beat = _RecordingBeat()
+
+    await _tick(ledger, beat, employee)
+
+    assert beat.verification == ()
+
+
+# -- HumanApproval beat-hook (spec 04 §1 + §5) ------------------------------------------------------
+
+
+async def test_human_approval_dod_opens_an_approval_instead_of_marking_done(
+    ledger: SqliteLedger,
+) -> None:
+    employee = _seed(ledger)
+    ledger.dod.create("t1", Verifier.human_approval())
+
+    await _tick(ledger, _RecordingBeat(passed=True), employee)
+
+    task = ledger.tasks.get("t1")
+    assert task is not None and task.status is TaskStatus.BLOCKED  # not done — pending a human
+    pending = ledger.approvals.pending()
+    assert len(pending) == 1 and pending[0].gate_kind is ApprovalGate.ACCEPTANCE
+    # and a human signing off lands the task done
+    GovernanceResolver(ledger).resolve(
+        pending[0].id, approve=True, decided_by_user_id="board", now=_NOW
+    )
+    assert ledger.tasks.get("t1").status is TaskStatus.DONE  # type: ignore[union-attr]
+
+
+async def test_command_dod_pass_marks_done_without_an_approval(ledger: SqliteLedger) -> None:
+    employee = _seed(ledger)
+    ledger.dod.create("t1", Verifier.command("pytest -q"))
+
+    await _tick(ledger, _RecordingBeat(passed=True), employee)
+
+    assert ledger.tasks.get("t1").status is TaskStatus.DONE  # type: ignore[union-attr]
+    assert ledger.approvals.pending() == []
+
+
+# -- self-repair ladder (spec 04 §1) ---------------------------------------------------------------
+
+
+def _recovery_wakes(ledger: SqliteLedger) -> list[Wake]:
+    return [w for w in ledger.wakes.queued() if w.reason is WakeReason.RECOVERY]
+
+
+async def test_command_dod_failure_rewakes_for_self_repair(ledger: SqliteLedger) -> None:
+    employee = _seed(ledger)
+    ledger.dod.create("t1", Verifier.command("pytest -q"))
+
+    await _tick(ledger, _RecordingBeat(passed=False), employee)  # 1st failure
+
+    # rung 1: kept dispatchable (todo) with a re-wake — not yet "stuck"
+    assert ledger.tasks.get("t1").status is TaskStatus.TODO  # type: ignore[union-attr]
+    assert [w.payload.get("task_id") for w in _recovery_wakes(ledger)] == ["t1"]
+    assert ledger.recovery_actions.active_for_source("t1") is None  # not escalated yet
+
+
+async def test_command_dod_failure_escalates_when_repair_budget_is_spent(
+    ledger: SqliteLedger,
+) -> None:
+    employee = _seed(ledger)
+    ledger.dod.create("t1", Verifier.command("pytest -q"))
+    beat = _RecordingBeat(passed=False)
+    sched = _scheduler(ledger, beat, employee, max_repair_attempts=1)
+
+    await sched.tick(_NOW)  # tick 1: fail → 1 failed run ≤ 1 → re-wake
+    await sched.drain()
+    assert _recovery_wakes(ledger)  # a retry was queued
+
+    await sched.tick(_NOW)  # tick 2: claims the retry → fail → 2 > 1 → escalate
+    await sched.drain()
+    assert ledger.recovery_actions.active_for_source("t1") is not None  # rung 3: recovery opened
+    assert ledger.tasks.get("t1").status is TaskStatus.BLOCKED  # type: ignore[union-attr]
+    assert _recovery_wakes(ledger) == []  # no further retry — it waits for a human
+
+
+async def test_failure_without_a_command_dod_just_blocks(ledger: SqliteLedger) -> None:
+    employee = _seed(ledger)  # no DoD
+
+    await _tick(ledger, _RecordingBeat(passed=False), employee)
+
+    assert ledger.tasks.get("t1").status is TaskStatus.BLOCKED  # type: ignore[union-attr]
+    assert _recovery_wakes(ledger) == []  # self-repair is Command-DoD only

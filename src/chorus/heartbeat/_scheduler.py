@@ -22,8 +22,9 @@ from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, TypeVar
 
 from chorus.cron._fire import fire_routine
+from chorus.governance import GovernanceResolver
 from chorus.heartbeat._wake import TickReport, Wake
-from chorus.ledger import TaskPriority
+from chorus.ledger import ApprovalGate, TaskPriority
 from chorus.ledger._models import (
     ActivityVerb,
     CostEvent,
@@ -39,6 +40,7 @@ from chorus.ledger._models import (
     WakeReason,
 )
 from chorus.lifecycle import record_activity
+from chorus.outcomes import DoDKind, Verifier
 from chorus.recovery import reconcile
 
 if TYPE_CHECKING:
@@ -78,6 +80,7 @@ class Scheduler:
         tick_interval_s: float = 1.0,
         max_concurrent_runs: int = 4,
         lease_ttl_s: float = 300.0,
+        max_repair_attempts: int = 2,
         ledger: SqliteLedger | None = None,
         workforce: Workforce | None = None,
         beat_runner: BeatRunner | None = None,
@@ -89,6 +92,7 @@ class Scheduler:
         self.tick_interval_s = tick_interval_s
         self.max_concurrent_runs = max_concurrent_runs
         self.lease_ttl_s = lease_ttl_s
+        self.max_repair_attempts = max_repair_attempts  # DoD-failure self-repair budget (spec 04 §1)
         self._ledger = ledger
         self._workforce = workforce
         self._beat_runner = beat_runner
@@ -298,26 +302,86 @@ class Scheduler:
         )
 
         observer = self._event_bus.emit if self._event_bus is not None else None
+        # The DoD's objective checks ride into the beat: dream's evaluator runs them as the
+        # acceptance gate, so ``done`` means plan-complete *and* the Command gate passed (spec 04 §1).
+        verifier = ledger.dod.verifier_for_task(task_id)
+        verification = verifier.verification_steps() if verifier is not None else ()
         result = await beat_runner.run_task(
-            task_id=task_id, intent=task.intent, observer=observer
+            task_id=task_id, intent=task.intent, verification=verification, observer=observer
         )
 
         verdict = result.outcome or None
         if result.passed:
             ledger.runs.finish(run_id, RunStatus.SUCCEEDED, outcome=verdict)
-            ledger.finalize_beat(
-                task_id=task_id, run_id=run_id, dod_status=DodStatus.PASSED, verdict=verdict
-            )
+            self._land_passed(task_id, run_id=run_id, verifier=verifier, verdict=verdict)
         else:
             ledger.runs.finish(run_id, RunStatus.FAILED, outcome=verdict)
             ledger.finalize_beat(
                 task_id=task_id, run_id=run_id, dod_status=DodStatus.FAILED, verdict=verdict
             )
-            ledger.tasks.set_status(task_id, TaskStatus.BLOCKED)
+            self._climb_repair_ladder(task_id, employee_id=employee.id, verifier=verifier)
 
         ledger.tasks.release_locks(task_id, run_id=run_id)
         ledger.wakes.mark_done(wake.id)
         self._record_cost(employee.id, task_id=task_id, run_id=run_id, result=result, now=now)
+
+    def _land_passed(
+        self, task_id: str, *, run_id: str, verifier: Verifier | None, verdict: dict[str, object] | None
+    ) -> None:
+        """A passed beat lands ``done`` — unless its DoD is a human sign-off (spec 04 §1 + §5).
+
+        For a ``HumanApproval`` DoD the deliverable is produced but a person decides: open an
+        **acceptance** gate (parks the task ``blocked`` pending the approval) instead of finalising.
+        """
+        ledger = self._require_ledger()
+        if verifier is not None and verifier.kind is DoDKind.HUMAN_APPROVAL:
+            GovernanceResolver(ledger).open_task_gate(
+                task_id, gate_kind=ApprovalGate.ACCEPTANCE, reason=f"human-approval DoD for {task_id}"
+            )
+            return
+        ledger.finalize_beat(
+            task_id=task_id, run_id=run_id, dod_status=DodStatus.PASSED, verdict=verdict
+        )
+
+    def _climb_repair_ladder(
+        self, task_id: str, *, employee_id: str, verifier: Verifier | None
+    ) -> None:
+        """A failed beat climbs the bounded self-repair ladder, owning the task's status (spec 04 §1).
+
+        Rung 1 (``Command`` DoD, budget left) — keep the task ``todo`` and re-wake the same assignee
+        to retry: a live wake means the recovery sweep leaves it alone. Rung 3 (budget spent) — set
+        ``blocked`` + a ``recovery_action`` for a human (no further retry). A non-Command failure has
+        no objective gate to retry, so it goes straight to ``blocked``.
+        """
+        ledger = self._require_ledger()
+        if verifier is None or verifier.kind is not DoDKind.COMMAND:
+            ledger.tasks.set_status(task_id, TaskStatus.BLOCKED)
+            return
+        failures = sum(1 for run in ledger.runs.for_task(task_id) if run.status is RunStatus.FAILED)
+        if failures <= self.max_repair_attempts:
+            ledger.tasks.set_status(task_id, TaskStatus.TODO)  # dispatchable; not yet "stuck"
+            ledger.wakes.enqueue(
+                Wake(
+                    id=f"wake_{uuid.uuid4().hex[:12]}",
+                    employee_id=employee_id,
+                    reason=WakeReason.RECOVERY,
+                    payload={"task_id": task_id, "cause": "dod_failed"},
+                )
+            )
+            return
+        ledger.tasks.set_status(task_id, TaskStatus.BLOCKED)
+        if ledger.recovery_actions.active_for_source(task_id) is None:
+            ledger.recovery_actions.open(
+                RecoveryAction(
+                    id=f"rec_{uuid.uuid4().hex[:12]}",
+                    source_task_id=task_id,
+                    kind=RecoveryKind.STALE_RUN_WATCHDOG,
+                    owner_employee_id=employee_id,
+                    cause="dod_repair_exhausted",
+                    fingerprint="dod",
+                    next_action="fix the failing check or revise the DoD",
+                )
+            )
 
     def _record_cost(
         self, employee_id: str, *, task_id: str, run_id: str, result: BeatOutcome, now: datetime

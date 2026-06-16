@@ -52,6 +52,18 @@ DoDSpec = Command | AgentReview | HumanApproval
 
 
 @dataclass(frozen=True)
+class VerificationStep:
+    """One objective check dream's evaluator runs as a real subprocess (the oracle, spec 15 P3).
+
+    The chorus-side, dream-free shape of a verification step; the dream adapter renders it into
+    dream's ``verification_steps`` at the call boundary.
+    """
+
+    command: str
+    timeout_s: int = 300
+
+
+@dataclass(frozen=True)
 class Verifier:
     """The typed DoD persisted on ``task.dod`` and enforced by dream's evaluator.
 
@@ -77,6 +89,16 @@ class Verifier:
     def human_approval(cls, *, approver: str = "board", artifact_class: str = "decision") -> Verifier:
         return cls(DoDKind.HUMAN_APPROVAL, HumanApproval(approver), artifact_class)
 
+    def verification_steps(self) -> tuple[VerificationStep, ...]:
+        """The objective checks dream's evaluator should run — the ``Command`` gate, else none.
+
+        ``AgentReview`` and ``HumanApproval`` are chorus-orchestrated (a Reviewer beat / an approval),
+        not subprocesses dream runs, so they contribute no verification steps.
+        """
+        if isinstance(self.spec, Command):
+            return (VerificationStep(command=self.spec.command, timeout_s=self.spec.timeout_s),)
+        return ()
+
 
 __all__ = [
     "AgentReview",
@@ -84,5 +106,6 @@ __all__ = [
     "DoDKind",
     "DoDSpec",
     "HumanApproval",
+    "VerificationStep",
     "Verifier",
 ]

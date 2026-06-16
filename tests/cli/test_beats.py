@@ -27,7 +27,9 @@ class _FakeBeat:
         self._passed = passed
         self.calls: list[str] = []
 
-    async def run_task(self, *, task_id: str, intent: str, observer: object = None) -> BeatOutcome:
+    async def run_task(
+        self, *, task_id: str, intent: str, verification: object = (), observer: object = None
+    ) -> BeatOutcome:
         self.calls.append(task_id)
         return BeatOutcome(passed=self._passed, outcome={"note": "fake"}, summary="fake beat")
 

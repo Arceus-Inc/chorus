@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 from typing import Protocol, runtime_checkable
 
 from chorus.events import Event
+from chorus.outcomes import VerificationStep
 
 
 @dataclass(frozen=True)
@@ -40,9 +41,13 @@ class BeatRunner(Protocol):
         *,
         task_id: str,
         intent: str,
+        verification: tuple[VerificationStep, ...] = (),
         observer: Callable[[Event], None] | None = None,
     ) -> BeatOutcome:
-        """Run the task end-to-end; ``observer`` witnesses dream's structured run events."""
+        """Run the task end-to-end, enforcing ``verification`` (the DoD's objective checks).
+
+        ``observer`` witnesses dream's structured run events.
+        """
         ...
 
 
