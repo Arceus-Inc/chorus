@@ -14,9 +14,9 @@ from datetime import datetime
 import pytest
 
 from chorus.heartbeat import Scheduler, Wake, WakeReason
-from chorus.heartbeat._beat import BeatOutcome, BeatRunner
+from chorus.heartbeat._beat import BeatDisposition, BeatOutcome, BeatRunner
 from chorus.ledger import SqliteLedger, Task
-from chorus.ledger._models import DodStatus, RunStatus, TaskStatus
+from chorus.ledger._models import DodStatus, RecoveryKind, RunStatus, TaskStatus
 from chorus.workforce import Employee
 
 pytestmark = pytest.mark.integration
@@ -37,6 +37,18 @@ class _FakeBeat:
     ) -> BeatOutcome:
         self.calls.append({"task_id": task_id, "intent": intent, "observer": observer})
         return BeatOutcome(passed=self._passed, outcome=self._outcome, summary="done")
+
+
+class _CannedBeat:
+    """A :class:`BeatRunner` that returns a prebuilt :class:`BeatOutcome` (for the failure contract)."""
+
+    def __init__(self, outcome: BeatOutcome) -> None:
+        self._outcome = outcome
+
+    async def run_task(
+        self, *, task_id: str, intent: str, verification: object = (), observer: object = None
+    ) -> BeatOutcome:
+        return self._outcome
 
 
 class _FakeWorkforce:
@@ -185,6 +197,75 @@ async def test_beat_passes_task_intent_to_dream(ledger: SqliteLedger) -> None:
     assert len(beat.calls) == 1
     assert beat.calls[0]["task_id"] == "t1"
     assert beat.calls[0]["intent"] == "do t1"
+
+
+async def test_errored_beat_strands_task_to_recovery(ledger: SqliteLedger) -> None:
+    wake = _setup_task(ledger)
+    outcome = BeatOutcome(
+        passed=False,
+        disposition=BeatDisposition.ERRORED,
+        outcome={"error": "RunTaskError('boom')", "phase": "sprint"},
+    )
+    sched = _wired(ledger, _CannedBeat(outcome))
+    await sched.run_beat(wake, run_id="r1", now=_NOW)
+
+    task = ledger.tasks.get("t1")
+    assert task is not None
+    assert task.status is TaskStatus.BLOCKED  # stranded, not a DoD failure
+    assert task.assignee_employee_id == "e1"  # owner preserved
+    run = ledger.runs.get("r1")
+    assert run is not None and run.status is RunStatus.FAILED
+    action = ledger.recovery_actions.active_for_source("t1")
+    assert action is not None
+    assert action.kind is RecoveryKind.STRANDED
+    assert action.cause == "run_task_error"
+    assert action.evidence["phase"] == "sprint"  # the phase names where the loop broke
+
+
+async def test_errored_beat_records_no_dod_verdict(ledger: SqliteLedger) -> None:
+    # an engine fault is not a DoD verdict — the dod row must stay pending (never recorded failed).
+    eid, tid = "e1", "t1"
+    ledger.employees.create(Employee(id=eid, name=eid, role="engineer"))
+    ledger.tasks.submit(Task(id=tid, intent="ship it", assignee_employee_id=eid))
+    ledger.tasks.set_status(tid, TaskStatus.TODO)
+    ledger.dod.create(tid, _command_verifier())
+    assert ledger.tasks.checkout(tid, employee_id=eid, run_id="r1")
+    ledger.wakes.enqueue(
+        Wake(id="w1", employee_id=eid, reason=WakeReason.TASK_ASSIGNED, payload={"task_id": tid})
+    )
+    (wake,) = ledger.wakes.claim(limit=1)
+    outcome = BeatOutcome(passed=False, disposition=BeatDisposition.ERRORED, outcome={"phase": "plan"})
+    await _wired(ledger, _CannedBeat(outcome)).run_beat(wake, run_id="r1", now=_NOW)
+    dod = ledger.dod.get_for_task(tid)
+    assert dod is not None
+    assert dod.status is DodStatus.PENDING
+
+
+async def test_errored_beat_releases_locks(ledger: SqliteLedger) -> None:
+    wake = _setup_task(ledger)
+    outcome = BeatOutcome(passed=False, disposition=BeatDisposition.ERRORED, outcome={"phase": "plan"})
+    await _wired(ledger, _CannedBeat(outcome)).run_beat(wake, run_id="r1", now=_NOW)
+    task = ledger.tasks.get("t1")
+    assert task is not None
+    assert task.checkout_run_id is None
+    assert task.execution_run_id is None
+
+
+async def test_cancelled_beat_returns_task_to_pre_beat_state(ledger: SqliteLedger) -> None:
+    wake = _setup_task(ledger)
+    outcome = BeatOutcome(
+        passed=False, disposition=BeatDisposition.CANCELLED, outcome={"cancelled": "budget"}
+    )
+    sched = _wired(ledger, _CannedBeat(outcome))
+    await sched.run_beat(wake, run_id="r1", now=_NOW)
+
+    task = ledger.tasks.get("t1")
+    assert task is not None
+    assert task.status is TaskStatus.TODO  # back to dispatchable, its pre-beat state
+    assert task.checkout_run_id is None  # lock released
+    run = ledger.runs.get("r1")
+    assert run is not None and run.status is RunStatus.CANCELLED
+    assert ledger.recovery_actions.active_for_source("t1") is None  # cancel opens no recovery card
 
 
 def _command_verifier() -> object:
