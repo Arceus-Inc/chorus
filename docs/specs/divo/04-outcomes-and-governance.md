@@ -5,6 +5,12 @@ Work Products* — plus the governance Paperclip *did* solve (two-gate budgets, 
 This is where chorus's **differentiator** lives: because it is dream-native, the evaluator verifies
 the real artifact against a typed Definition-of-Done.
 
+> **Implementation status.** §3 budgets is fully built; §1/§2/§5 are partly built; §4 trust is not
+> started. Everything not yet implemented — DoD auto-generation + AgentReview, outcome landing, the
+> trust presets, and the rest of governance — is catalogued in
+> [06.5 — Deferred from spec 04](06.5-deferred-from-spec04.md), to be built **after spec 06** (roles)
+> lands. Read that doc for the precise done-vs-deferred breakdown.
+
 ---
 
 ## 1. Definition of Done — a typed verifier (the differentiator)
