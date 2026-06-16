@@ -2,8 +2,8 @@
 
 An interactive console over the chorus durable ledger. It drives the parts of the kernel that work
 end-to-end today — seed a workforce, submit and assign tasks, pass messages, set and enforce
-**budgets**, inspect state, and (with provider keys) run a real beat through dream and watch the
-budget gates fire.
+**budgets**, open and resolve **approval gates**, inspect state, and (with provider keys) run a real
+beat through dream and watch the budget gates fire.
 
 Everything is one SQLite ledger. State persists across sessions when you point `--db` at a file.
 
@@ -44,7 +44,7 @@ chorus>
 
 | Mode | Needs | What works |
 |------|-------|------------|
-| **Keys-free** (default) | nothing | every command except `tick` — manage and inspect the ledger, including budgets |
+| **Keys-free** (default) | nothing | every command except `tick` — manage and inspect the ledger, including budgets and approval gates |
 | **Keyed** | Azure OpenAI creds | additionally `tick`: run a real beat through dream; spend is priced and the budget gates fire |
 
 To enable `tick`, set three variables (export them, or drop them in a `.env` — see
@@ -97,6 +97,26 @@ Without them, `tick` simply prints how to enable it.
 - `--window=W` — `monthly` (default), `weekly`, `rolling_30d`, or `total`.
 - **Status** in the dashboard: `ok` → `warn` (≥ warn%) → `over` (≥ cap) → `paused` (a hard incident
   is open; a human must `budget raise` to resume).
+
+### Approvals & governance (spec 04 §5)
+
+A pending **approval** is a human gate: open one on a task (it parks the task `blocked`), then
+resolving it moves the task. An approval carries its **gate kind**:
+
+| Command | Does |
+|---|---|
+| `approval` / `approvals` / `approval list` | list pending gates (subject, gate kind, reason) |
+| `approval open <task_id> <acceptance\|authorization> <reason…>` | open a gate — parks the task `blocked` |
+| `approval approve <approval_id>` | approve — moves the task per its gate |
+| `approval deny <approval_id>` | deny — moves the task per its gate |
+
+| Gate kind | approve | deny |
+|---|---|---|
+| **acceptance** — the approval *is* the task's done-ness (a HumanApproval DoD) | task → `done`, its dependents unblock | task stays `blocked` (DoD recorded `failed`) |
+| **authorization** — sign off *before* the work proceeds | task → `todo` + the assignee is woken | task → `cancelled` |
+
+Decisions are recorded as the `operator`. (Budget hard-stops also raise approvals — those are resolved
+with `budget raise` / `budget dismiss`, not these verbs.)
 
 ### The kernel
 
@@ -185,6 +205,21 @@ task t1
 tick                                 # the next dispatch is gated_by_budget
 budget raise <policy_id> 100000      # resume
 ```
+
+### Sign off a task with an approval gate (keys-free)
+
+```
+hire alice Alice engineer
+submit t1 "write the launch spec"
+assign t1 alice
+approval open t1 acceptance "board signs off the spec"   # t1 is now blocked
+approvals                                                # see the pending gate + its id
+approval approve <approval_id>                           # t1 → done; dependents unblock
+task t1
+```
+
+Use `authorization` instead of `acceptance` to gate *before* the work runs (approve → `todo`,
+deny → `cancelled`).
 
 ---
 

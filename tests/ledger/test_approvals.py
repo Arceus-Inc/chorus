@@ -11,9 +11,39 @@ import sqlite3
 
 import pytest
 
-from chorus.ledger import Approval, ApprovalStatus, ApprovalSubjectKind, SqliteLedger
+from chorus.ledger import (
+    Approval,
+    ApprovalGate,
+    ApprovalStatus,
+    ApprovalSubjectKind,
+    SqliteLedger,
+)
 
 pytestmark = pytest.mark.integration
+
+
+def test_gate_kind_round_trips(ledger: SqliteLedger) -> None:
+    ledger.approvals.request(
+        Approval(
+            id="a1",
+            subject_kind=ApprovalSubjectKind.TASK,
+            subject_id="t1",
+            reason="sign off the spec",
+            gate_kind=ApprovalGate.ACCEPTANCE,
+        )
+    )
+    got = ledger.approvals.get("a1")
+    assert got is not None and got.gate_kind is ApprovalGate.ACCEPTANCE
+
+
+def test_gate_kind_defaults_to_none(ledger: SqliteLedger) -> None:
+    ledger.approvals.request(
+        Approval(
+            id="a1", subject_kind=ApprovalSubjectKind.BUDGET_INCIDENT, subject_id="bi1", reason="x"
+        )
+    )
+    got = ledger.approvals.get("a1")
+    assert got is not None and got.gate_kind is None
 
 
 def test_request_and_get(ledger: SqliteLedger) -> None:
