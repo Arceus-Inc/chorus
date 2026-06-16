@@ -10,7 +10,8 @@ console for now — see ``examples/real_beat.py``.
 
 Set AZURE_OPENAI_API_KEY, AZURE_OPENAI_BASE_URL, AZURE_OPENAI_DEPLOYMENT to enable the ``tick``
 command — one kernel pulse that dispatches a real beat through dream. Without them the console runs
-keys-free (everything but ``tick``).
+keys-free (everything but ``tick``). Beats are priced with CHORUS_PRICE_INPUT_CENTS_PER_MTOK /
+CHORUS_PRICE_OUTPUT_CENTS_PER_MTOK (illustrative defaults) so the budget gates have real spend to act on.
 """
 
 from __future__ import annotations
@@ -22,6 +23,7 @@ from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import TextIO
 
+from chorus.adapters import ModelRate, TokenPricing
 from chorus.ledger import SqliteLedger
 from chorus_cli._commands import REGISTRY
 from chorus_cli._context import BeatService, CliSession
@@ -30,6 +32,10 @@ from chorus_cli._repl import run_repl
 
 _DEFAULT_DB = "chorus.db"
 _DEFAULT_ENV = ".env"
+_DEFAULT_COMPANY = "company"
+# Illustrative GPT-5-class pricing (whole cents per million tokens); override via env.
+_DEFAULT_INPUT_CENTS_PER_MTOK = 125
+_DEFAULT_OUTPUT_CENTS_PER_MTOK = 1000
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -45,11 +51,38 @@ def build_parser() -> argparse.ArgumentParser:
         default=_DEFAULT_ENV,
         help=f"dotenv file to load credentials from (default: {_DEFAULT_ENV!r})",
     )
+    parser.add_argument(
+        "--company",
+        default=_DEFAULT_COMPANY,
+        help=f"company id for company-wide budgets (default: {_DEFAULT_COMPANY!r})",
+    )
     return parser
 
 
-def _beat_service_from_env(ledger: SqliteLedger) -> BeatService | None:
-    """Wire a real beat service from Azure credentials, or ``None`` when they are unset.
+def _env_int(name: str, default: int) -> int:
+    """Read an integer env var, falling back to ``default`` when unset or malformed."""
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    try:
+        return int(raw)
+    except ValueError:
+        return default
+
+
+def _pricing_from_env() -> TokenPricing:
+    """A default-rate :class:`TokenPricing` so any model the beat reports accrues spend."""
+    return TokenPricing(
+        rates={},
+        default=ModelRate(
+            _env_int("CHORUS_PRICE_INPUT_CENTS_PER_MTOK", _DEFAULT_INPUT_CENTS_PER_MTOK),
+            _env_int("CHORUS_PRICE_OUTPUT_CENTS_PER_MTOK", _DEFAULT_OUTPUT_CENTS_PER_MTOK),
+        ),
+    )
+
+
+def _beat_service_from_env(ledger: SqliteLedger, *, company_id: str) -> BeatService | None:
+    """Wire a real, priced, budget-enforcing beat service from Azure creds, or ``None`` if unset.
 
     dream is imported **lazily** here — only when all three credentials are present — so the keys-free
     console never imports the SDK. This is the CLI's composition seam for the kernel.
@@ -61,7 +94,14 @@ def _beat_service_from_env(ledger: SqliteLedger) -> BeatService | None:
         return None
     from chorus_cli._beats import build_beat_service
 
-    return build_beat_service(ledger, api_key=api_key, base_url=base_url, deployment=deployment)
+    return build_beat_service(
+        ledger,
+        api_key=api_key,
+        base_url=base_url,
+        deployment=deployment,
+        company_id=company_id,
+        pricing=_pricing_from_env(),
+    )
 
 
 def main(
@@ -79,7 +119,8 @@ def main(
     load_env_file(Path(args.env_file))  # pick up local credentials before wiring the beat service
     ledger = SqliteLedger.open(args.db)
     try:
-        session = CliSession(ledger=ledger, beats=_beat_service_from_env(ledger))
+        beats = _beat_service_from_env(ledger, company_id=args.company)
+        session = CliSession(ledger=ledger, beats=beats, company_id=args.company)
         return run_repl(
             session,
             REGISTRY,

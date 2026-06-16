@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import pytest
 
+from chorus.adapters import ModelRate, TokenPricing
 from chorus.heartbeat import Scheduler, Wake, WakeReason
 from chorus.heartbeat._beat import BeatOutcome
 from chorus.ledger import SqliteLedger, Task, TaskStatus
@@ -69,7 +70,12 @@ def test_build_beat_service_wires_a_scheduler(
     # The harness is dream's; stub it so we exercise the wiring without a provider.
     monkeypatch.setattr(_beats.dream, "build_harness", lambda **kwargs: object())
     runner = build_beat_service(
-        ledger, api_key="k", base_url="https://example/openai/v1", deployment="gpt-x"
+        ledger,
+        api_key="k",
+        base_url="https://example/openai/v1",
+        deployment="gpt-x",
+        company_id="acme",
+        pricing=TokenPricing(rates={}, default=ModelRate(1, 1)),
     )
     assert isinstance(runner, SchedulerTickRunner)
     assert runner.model == "gpt-x"

@@ -331,6 +331,13 @@ def test_tick_with_nothing_to_dispatch_says_so(ledger: SqliteLedger) -> None:
     assert "nothing to dispatch" in out
 
 
+def test_tick_reports_a_budget_gated_dispatch(ledger: SqliteLedger) -> None:
+    report = TickReport(at=datetime.fromisoformat("2026-06-16T12:00:00+00:00"), budget_gated=1)
+    session = CliSession(ledger=ledger, beats=_FakeBeatService(report))
+    _, out = _run("tick", session)
+    assert "gated by a budget" in out
+
+
 def test_tick_rejects_arguments(ledger: SqliteLedger) -> None:
     session = CliSession(ledger=ledger, beats=_FakeBeatService(TickReport(at=datetime.now())))
     _, out = _run("tick now", session)

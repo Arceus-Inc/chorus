@@ -217,6 +217,18 @@ def test_cost_event_record_and_spent(ledger: SqliteLedger) -> None:
     assert ledger.cost_events.spent_cents("e1") == 500
 
 
+def test_budget_policies_all_lists_every_policy(ledger: SqliteLedger) -> None:
+    _employee(ledger)
+    ledger.budget_policies.create(
+        BudgetPolicy(id="bpc", scope_type=BudgetScope.COMPANY, scope_id="acme", amount=1000)
+    )
+    ledger.budget_policies.create(
+        BudgetPolicy(id="bpe", scope_type=BudgetScope.EMPLOYEE, scope_id="e1", amount=100)
+    )
+    ids = {p.id for p in ledger.budget_policies.all()}
+    assert ids == {"bpc", "bpe"}
+
+
 def test_for_run_returns_a_runs_cost_events_with_usage(ledger: SqliteLedger) -> None:
     _employee(ledger)
     ledger.tasks.submit(Task(id="t1", intent="x"))
