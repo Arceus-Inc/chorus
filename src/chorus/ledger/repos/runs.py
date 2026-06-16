@@ -90,22 +90,23 @@ class RunRepo:
         scope; ``employee_id=None`` cancels the whole workforce (a company-scope breach).
         """
         now = utcnow_iso()
+        # One atomic statement: the ``status = 'running'`` predicate lives in the UPDATE itself and
+        # ``RETURNING`` reports exactly the rows it flipped — so a run that finishes concurrently is
+        # never overwritten back to ``cancelled`` (no select-then-update race).
         if employee_id is None:
-            rows = self._conn.execute("SELECT id FROM run WHERE status = 'running'").fetchall()
+            rows = self._conn.execute(
+                "UPDATE run SET status = 'cancelled', finished_at = ? "
+                "WHERE status = 'running' RETURNING id",
+                (now,),
+            ).fetchall()
         else:
             rows = self._conn.execute(
-                "SELECT id FROM run WHERE status = 'running' AND employee_id = ?", (employee_id,)
+                "UPDATE run SET status = 'cancelled', finished_at = ? "
+                "WHERE status = 'running' AND employee_id = ? RETURNING id",
+                (now, employee_id),
             ).fetchall()
-        ids = [str(row["id"]) for row in rows]
-        if not ids:
-            return []
-        placeholders = ", ".join("?" for _ in ids)
-        self._conn.execute(
-            f"UPDATE run SET status = 'cancelled', finished_at = ? WHERE id IN ({placeholders})",
-            (now, *ids),
-        )
         self._conn.commit()
-        return ids
+        return [str(row["id"]) for row in rows]
 
     def finish(
         self,

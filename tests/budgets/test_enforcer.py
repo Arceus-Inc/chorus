@@ -53,6 +53,8 @@ def _policy(
     warn_percent: int = 80,
     hard_stop: bool = True,
     policy_id: str = "bp1",
+    metric: str = "cost_cents",
+    window_kind: str = "monthly",
 ) -> str:
     ledger.budget_policies.create(
         BudgetPolicy(
@@ -62,6 +64,8 @@ def _policy(
             amount=amount,
             warn_percent=warn_percent,
             hard_stop_enabled=hard_stop,
+            metric=metric,
+            window_kind=window_kind,
         )
     )
     return policy_id
@@ -131,6 +135,37 @@ def test_gate1_ignores_over_when_hard_stop_disabled(ledger: SqliteLedger) -> Non
     _policy(ledger, scope=BudgetScope.EMPLOYEE, scope_id="e1", amount=100, hard_stop=False)
     _spend(ledger, "e1", 200)
     assert _enforcer(ledger).invocation_block("e1", now=NOW) is None  # soft-only never blocks
+
+
+def test_gate1_paused_policy_is_not_masked_by_an_over_policy_in_same_scope(
+    ledger: SqliteLedger,
+) -> None:
+    # Two cost policies for one employee (distinct windows — the unique key is scope/metric/window).
+    # bp2 (monthly) gets paused; bp1 (weekly) ends up merely over and sorts first by id, so a
+    # first-match loop would report EMPLOYEE_OVER and mask the pause — paused must still win.
+    _emp(ledger, "e1")
+    _policy(ledger, scope=BudgetScope.EMPLOYEE, scope_id="e1", amount=50,
+            policy_id="bp2", window_kind="monthly")
+    enf = _enforcer(ledger)
+    enf.on_cost_event(_spend(ledger, "e1", 60), now=NOW)  # bp2 hard breach -> paused
+    _policy(ledger, scope=BudgetScope.EMPLOYEE, scope_id="e1", amount=100,
+            policy_id="bp1", window_kind="weekly")
+    _spend(ledger, "e1", 60)  # total 120 -> bp1 (weekly) is over (recorded only, not evaluated)
+    assert enf.invocation_block("e1", now=NOW) is BlockReason.EMPLOYEE_PAUSED
+
+
+def test_gate1_ignores_a_non_cost_metric_policy(ledger: SqliteLedger) -> None:
+    _emp(ledger, "e1")
+    # a tokens cap of 1 — cost-cents spend must not be evaluated against it
+    _policy(ledger, scope=BudgetScope.EMPLOYEE, scope_id="e1", amount=1, metric="tokens")
+    _spend(ledger, "e1", 100)  # 100 cents — would blow a 1-cent cost cap, but this caps tokens
+    assert _enforcer(ledger).invocation_block("e1", now=NOW) is None
+
+
+def test_gate2_does_not_raise_for_a_non_cost_metric_policy(ledger: SqliteLedger) -> None:
+    _emp(ledger, "e1")
+    _policy(ledger, scope=BudgetScope.EMPLOYEE, scope_id="e1", amount=1, metric="tokens")
+    assert _enforcer(ledger).on_cost_event(_spend(ledger, "e1", 100), now=NOW) == []
 
 
 # -- Gate 2: on cost event ------------------------------------------------------------------------

@@ -35,6 +35,7 @@ if TYPE_CHECKING:
 
 _PERCENT = 100
 _EPOCH = datetime(1970, 1, 1, tzinfo=UTC)  # the pinned window_start for a lifetime (``total``) cap
+_COST_METRIC = "cost_cents"  # the only metric this enforcer aggregates (spend in cents)
 
 
 class BlockReason(StrEnum):
@@ -56,17 +57,22 @@ class BudgetEnforcer:
     # -- Gate 1: proactive pre-invocation block ---------------------------------------------------
 
     def invocation_block(self, employee_id: str, *, now: datetime) -> BlockReason | None:
-        """Block reason if a beat for ``employee_id`` must not start — else ``None`` (spec 04 §3)."""
-        for policy in self._ledger.budget_policies.by_scope(BudgetScope.COMPANY, self._company_id):
-            if self._is_paused(policy):
-                return BlockReason.COMPANY_PAUSED
-            if self._is_over(policy, now):
-                return BlockReason.COMPANY_OVER
-        for policy in self._ledger.budget_policies.by_scope(BudgetScope.EMPLOYEE, employee_id):
-            if self._is_paused(policy):
-                return BlockReason.EMPLOYEE_PAUSED
-            if self._is_over(policy, now):
-                return BlockReason.EMPLOYEE_OVER
+        """Block reason if a beat for ``employee_id`` must not start — else ``None`` (spec 04 §3).
+
+        Precedence is company-before-employee and, within a scope, paused-before-over: the scope's
+        paused/over state is computed across *all* its policies first, so a paused policy is never
+        masked by an over policy that merely sorts earlier.
+        """
+        company = self._cost_policies(BudgetScope.COMPANY, self._company_id)
+        if any(self._is_paused(policy) for policy in company):
+            return BlockReason.COMPANY_PAUSED
+        if any(self._is_over(policy, now) for policy in company):
+            return BlockReason.COMPANY_OVER
+        employee = self._cost_policies(BudgetScope.EMPLOYEE, employee_id)
+        if any(self._is_paused(policy) for policy in employee):
+            return BlockReason.EMPLOYEE_PAUSED
+        if any(self._is_over(policy, now) for policy in employee):
+            return BlockReason.EMPLOYEE_OVER
         return None
 
     # -- Gate 2: reactive auto-pause + kill on a cost event ---------------------------------------
@@ -94,11 +100,16 @@ class BudgetEnforcer:
         observed = self._observed_spend(policy, now)
         if new_amount <= observed:
             raise ValueError(f"new budget {new_amount} must exceed observed spend {observed}")
-        self._ledger.budget_policies.set_amount(policy_id, new_amount)
-        incident = self._open_hard_incident(policy_id)
-        if incident is not None and incident.approval_id is not None:
-            self._ledger.approvals.approve(incident.approval_id, decided_by_user_id=decided_by_user_id)
-            self._ledger.budget_incidents.resolve(incident.id)
+        # Atomic: raising the cap, approving the request, and resolving the incident commit together
+        # (or not at all), so a failure mid-resume never leaves a raised cap with the scope still paused.
+        with self._ledger.transaction():
+            self._ledger.budget_policies.set_amount(policy_id, new_amount)
+            incident = self._open_hard_incident(policy_id)
+            if incident is not None and incident.approval_id is not None:
+                self._ledger.approvals.approve(
+                    incident.approval_id, decided_by_user_id=decided_by_user_id
+                )
+                self._ledger.budget_incidents.resolve(incident.id)
 
     def dismiss(self, incident_id: str, *, decided_by_user_id: str) -> None:
         """Decline to resume: deny the approval; the incident stays open so the scope stays paused."""
@@ -110,10 +121,19 @@ class BudgetEnforcer:
 
     # -- internals --------------------------------------------------------------------------------
 
+    def _cost_policies(self, scope_type: BudgetScope, scope_id: str) -> list[BudgetPolicy]:
+        """A scope's policies that meter spend in cents — non-cost metrics (e.g. tokens) are skipped,
+        since this enforcer only aggregates ``cost_event`` cents (spec 04 §3)."""
+        return [
+            policy
+            for policy in self._ledger.budget_policies.by_scope(scope_type, scope_id)
+            if policy.metric == _COST_METRIC
+        ]
+
     def _policies_for(self, employee_id: str) -> list[BudgetPolicy]:
         return [
-            *self._ledger.budget_policies.by_scope(BudgetScope.EMPLOYEE, employee_id),
-            *self._ledger.budget_policies.by_scope(BudgetScope.COMPANY, self._company_id),
+            *self._cost_policies(BudgetScope.EMPLOYEE, employee_id),
+            *self._cost_policies(BudgetScope.COMPANY, self._company_id),
         ]
 
     def _evaluate(self, policy: BudgetPolicy, *, now: datetime) -> BudgetIncident | None:
