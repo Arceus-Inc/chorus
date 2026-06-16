@@ -102,6 +102,18 @@ def test_finalize_passed_marks_done_and_records_verdict(ledger: SqliteLedger) ->
     assert dod.verified_by_run_id == "r1"
 
 
+def test_finalize_without_a_run_marks_done(ledger: SqliteLedger) -> None:
+    # the human-approval path lands a verdict with no beat run behind it (spec 04 §5)
+    _emp(ledger, "e1")
+    ledger.tasks.submit(Task(id="t1", intent="x", assignee_employee_id="e1"))
+    ledger.dod.create("t1", Verifier.human_approval())
+    ledger.finalize_beat(task_id="t1", run_id=None, dod_status=DodStatus.PASSED)
+    task = ledger.tasks.get("t1")
+    dod = ledger.dod.get_for_task("t1")
+    assert task is not None and task.status is TaskStatus.DONE
+    assert dod is not None and dod.status is DodStatus.PASSED and dod.verified_by_run_id is None
+
+
 def test_finalize_failed_records_verdict_but_not_done(ledger: SqliteLedger) -> None:
     _task_with_dod(ledger)
     ledger.finalize_beat(task_id="t1", run_id="r1", dod_status=DodStatus.FAILED)

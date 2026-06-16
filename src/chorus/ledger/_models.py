@@ -623,6 +623,18 @@ class ApprovalStatus(StrEnum):
     EXPIRED = "expired"
 
 
+class ApprovalGate(StrEnum):
+    """How resolving a *task* approval acts on the task (spec 04 §5).
+
+    Orthogonal to :class:`ApprovalSubjectKind` (which says *what* is gated): ``ACCEPTANCE`` means the
+    approval **is** the task's acceptance (approve → done), ``AUTHORIZATION`` means it authorises the
+    work to proceed (approve → todo). ``None`` for non-task gates (e.g. a budget incident).
+    """
+
+    ACCEPTANCE = "acceptance"
+    AUTHORIZATION = "authorization"
+
+
 @dataclass(frozen=True)
 class Approval:
     """The durable human gate behind a hard-stop or role-declared approval (spec 01 Cluster G).
@@ -637,6 +649,7 @@ class Approval:
     subject_id: str
     reason: str
     status: ApprovalStatus = ApprovalStatus.PENDING
+    gate_kind: ApprovalGate | None = None
     decided_by_user_id: str | None = None
     decided_at: datetime | None = None
     expires_at: datetime | None = None
