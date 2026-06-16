@@ -78,6 +78,13 @@ class BudgetPolicyRepo:
         ).fetchall()
         return [_row_to_policy(row) for row in rows]
 
+    def all(self) -> list[BudgetPolicy]:
+        """Every policy, ordered by scope then id — the read model for a budget dashboard."""
+        rows = self._conn.execute(
+            "SELECT * FROM budget_policy ORDER BY scope_type, scope_id, id"
+        ).fetchall()
+        return [_row_to_policy(row) for row in rows]
+
 
 def _row_to_policy(row: sqlite3.Row) -> BudgetPolicy:
     return BudgetPolicy(
