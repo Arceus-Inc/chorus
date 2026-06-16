@@ -7,14 +7,17 @@ forward to the injected ``Scheduler`` (a fake here) rather than re-implementing 
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from pathlib import Path
 
 import pytest
 
+from chorus.errors import OrgInvariantViolation
 from chorus.facade import Caps, Chorus
 from chorus.heartbeat import TickReport
 from chorus.ledger import Message, SqliteLedger, Task
 from chorus.ledger._models import WakeReason
-from chorus.workforce import Employee
+from chorus.roles import RoleRegistry, default_roles
+from chorus.workforce import Employee, GitWorkforce
 
 pytestmark = pytest.mark.integration
 
@@ -50,7 +53,7 @@ def _chorus(scheduler: _FakeScheduler) -> Chorus:
         event_bus=None,  # type: ignore[arg-type]
         inspector=None,  # type: ignore[arg-type]
         dream=None,
-        roles={},
+        roles=RoleRegistry(),
         caps=Caps(),
     )
 
@@ -84,7 +87,7 @@ def _chorus_on(ledger: SqliteLedger) -> Chorus:
         event_bus=None,  # type: ignore[arg-type]
         inspector=None,  # type: ignore[arg-type]
         dream=None,
-        roles={},
+        roles=RoleRegistry(),
         caps=Caps(),
     )
 
@@ -113,3 +116,68 @@ def test_send_message_wakes_through_the_facade() -> None:
         assert [m.id for m in ledger.messages.inbox("rep")] == ["m1"]
     finally:
         ledger.close()
+
+
+# -- hire / terminate / register_role (spec 06 §3, spec 09 §1) ----------------
+
+
+class _CancelSpyLedger:
+    """A ledger stub that records the cancellation calls ``terminate`` must make."""
+
+    def __init__(self) -> None:
+        self.cancelled_runs: list[str] = []
+        self.dropped_wakes: list[str] = []
+        outer = self
+
+        class _Runs:
+            def cancel_running(self, *, employee_id: str) -> None:
+                outer.cancelled_runs.append(employee_id)
+
+        class _Wakes:
+            def drop_queued(self, *, employee_id: str) -> None:
+                outer.dropped_wakes.append(employee_id)
+
+        self.runs = _Runs()
+        self.wakes = _Wakes()
+
+
+def _chorus_hr(org_repo: str, ledger: object, roles: RoleRegistry | None = None) -> Chorus:
+    return Chorus(
+        ledger=ledger,  # type: ignore[arg-type]
+        workforce=GitWorkforce(org_repo),
+        memory_writer=None,  # type: ignore[arg-type]
+        scheduler=_FakeScheduler(),  # type: ignore[arg-type]
+        event_bus=None,  # type: ignore[arg-type]
+        inspector=None,  # type: ignore[arg-type]
+        dream=None,
+        roles=roles if roles is not None else RoleRegistry.from_plugins(default_roles()),
+        caps=Caps(),
+    )
+
+
+def test_hire_validates_role_against_the_registry(tmp_path: Path) -> None:
+    chorus = _chorus_hr(str(tmp_path / "org"), _CancelSpyLedger())
+    emp = chorus.hire(name="Ada", role="engineer")
+    assert emp.role == "engineer"
+    with pytest.raises(OrgInvariantViolation):
+        chorus.hire(name="Bad", role="nonexistent-role")
+
+
+def test_terminate_cancels_in_flight_work(tmp_path: Path) -> None:
+    ledger = _CancelSpyLedger()
+    chorus = _chorus_hr(str(tmp_path / "org"), ledger)
+    boss = chorus.hire(name="Boss", role="manager")
+    rep = chorus.hire(name="Rep", role="engineer", reports_to=boss.id)
+    chorus.terminate(rep.id)
+    assert ledger.cancelled_runs == [rep.id]
+    assert ledger.dropped_wakes == [rep.id]
+
+
+def test_register_role_then_hire_into_it(tmp_path: Path) -> None:
+    chorus = _chorus_hr(str(tmp_path / "org"), _CancelSpyLedger(), roles=RoleRegistry())
+    with pytest.raises(OrgInvariantViolation):
+        chorus.hire(name="Early", role="engineer")
+    (plugin,) = (p for p in default_roles() if p.name == "engineer")
+    chorus.register_role(plugin)
+    assert chorus.hire(name="Ada", role="engineer").role == "engineer"
+

@@ -33,6 +33,8 @@ class TickReport:
     beats_started: int = 0
     blocked_by_budget: int = 0  # dispatches withheld by the concurrency cap (spec 03 §5)
     budget_gated: int = 0  # dispatches withheld by a money-budget hard-stop (spec 04 §3 Gate 1)
+    invokability_cancelled: int = 0  # wakes cancelled — dead/orphaned employee (spec 06 §3)
+    invokability_skipped: int = 0  # wakes held back — paused employee (spec 06 §3)
 
 
 __all__ = [

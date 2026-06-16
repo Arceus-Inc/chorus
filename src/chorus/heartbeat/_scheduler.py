@@ -24,6 +24,7 @@ from typing import TYPE_CHECKING, TypeVar
 from chorus.cron._fire import fire_routine
 from chorus.governance import GovernanceResolver
 from chorus.heartbeat._beat import BeatDisposition
+from chorus.heartbeat._invokability import invokability_block
 from chorus.heartbeat._wake import TickReport, Wake
 from chorus.ledger import ApprovalGate, TaskPriority
 from chorus.ledger._models import (
@@ -150,12 +151,28 @@ class Scheduler:
         busy = ledger.runs.running_employee_ids()
         dispatched = 0
         budget_gated = 0
+        invokability_cancelled = 0
+        invokability_skipped = 0
         for wake in claimed:
             # Per-employee serialization (spec 03 §5): at most one live beat per employee. A wake we
             # can't run this pulse goes back to ``queued`` (FIFO position preserved), not stranded.
             if wake.employee_id in busy or "task_id" not in wake.payload:
                 ledger.wakes.release(wake.id)
                 continue
+            # Gate 0 (spec 06 §3): a dead, orphaned, or paused identity never starts a beat. A
+            # terminal verdict cancels the wake and its task; a paused one releases it to wait.
+            if self._workforce is not None:
+                block = invokability_block(self._workforce, wake.employee_id)
+                if block is not None:
+                    if block.cancels:
+                        task_id = str(wake.payload["task_id"])
+                        ledger.wakes.mark_done(wake.id)
+                        ledger.tasks.set_status(task_id, TaskStatus.CANCELLED)
+                        invokability_cancelled += 1
+                    else:
+                        ledger.wakes.release(wake.id)
+                        invokability_skipped += 1
+                    continue
             # Gate 1 (spec 04 §3): no beat starts for a paused or over-budget scope.
             if (
                 self._budget_enforcer is not None
@@ -183,6 +200,8 @@ class Scheduler:
             beats_started=dispatched,
             blocked_by_budget=blocked_by_budget,
             budget_gated=budget_gated,
+            invokability_cancelled=invokability_cancelled,
+            invokability_skipped=invokability_skipped,
         )
 
     async def tick_once(self) -> TickReport:

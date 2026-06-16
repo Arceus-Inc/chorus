@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from chorus.budgets import BudgetEnforcer
+from chorus.errors import OrgInvariantViolation
 from chorus.events import Event
 from chorus.heartbeat import BeatRunner, Scheduler, TickReport, Wake
 from chorus.ledger import Message, SqliteLedger, Task
@@ -24,7 +25,7 @@ from chorus.lifecycle import assign_task, deliver_message
 from chorus.memory import AppendOnlyMemoryWriter
 from chorus.observability import EventBus, LedgerInspector, TaskView, WorkforceStatus
 from chorus.outcomes import Verifier
-from chorus.roles import RolePlugin, default_roles
+from chorus.roles import RolePlugin, RoleRegistry, default_roles
 from chorus.workforce import Employee, GitWorkforce
 
 
@@ -50,7 +51,7 @@ class Chorus:
         event_bus: EventBus,
         inspector: LedgerInspector,
         dream: Any,
-        roles: dict[str, RolePlugin],
+        roles: RoleRegistry,
         caps: Caps,
     ) -> None:
         self._ledger = ledger
@@ -88,7 +89,7 @@ class Chorus:
         the same validated path (spec 09 §1).
         """
         the_caps = caps or Caps()
-        registry = {p.name: p for p in (roles if roles is not None else default_roles())}
+        registry = RoleRegistry.from_plugins(roles if roles is not None else default_roles())
         ledger = SqliteLedger.open(db_path)
         workforce = GitWorkforce(org_repo)
         event_bus = EventBus()
@@ -164,16 +165,28 @@ class Chorus:
     # -- org as data (spec 06 §3) ---------------------------------------------
 
     def hire(self, *, name: str, role: str, reports_to: str | None = None) -> Employee:
-        """Add an employee (a data edit, not a process spawn) (spec 06 §3)."""
-        raise NotImplementedError("spec 06 §3: validate role + org chain, then GitWorkforce.hire")
+        """Add an employee (a data edit, not a process spawn) (spec 06 §3).
+
+        Validates the role is registered, then delegates the org-chain invariants (unknown
+        ``reports_to``, self-edge, duplicate slug) to the workforce.
+        """
+        if role not in self._roles:
+            raise OrgInvariantViolation(f"unknown role {role!r}")
+        return self._workforce.hire(name=name, role=role, reports_to=reports_to)
 
     def terminate(self, employee_id: str) -> None:
-        """Irreversibly terminate an employee; cancel its in-flight work (spec 06 §3)."""
-        raise NotImplementedError("spec 06 §3: irreversible terminate + cancel runs")
+        """Irreversibly terminate an employee; cancel its in-flight work (spec 06 §3).
+
+        The terminate is the source of truth (irreversible, root-protected); cancelling the
+        in-flight run and dropping queued wakes stops the scheduler dispatching the dead identity.
+        """
+        self._workforce.terminate(employee_id)
+        self._ledger.runs.cancel_running(employee_id=employee_id)
+        self._ledger.wakes.drop_queued(employee_id=employee_id)
 
     def register_role(self, plugin: RolePlugin, *, replace: bool = False) -> None:
         """Register a role plugin — fail-closed + idempotent (spec 09 §1)."""
-        raise NotImplementedError("spec 09 §1: validate → register → freeze-at-first-use")
+        self._roles.register(plugin, replace=replace)
 
     # -- cron (spec 03 §4) ----------------------------------------------------
 

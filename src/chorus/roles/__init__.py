@@ -9,15 +9,20 @@ from __future__ import annotations
 
 from chorus.roles._defaults import default_roles
 from chorus.roles._manifest import Isolation, MemoryScope, PermissionMode, RoleManifest
+from chorus.roles._overlay import ManifestOverlay, resolve_manifest
 from chorus.roles._plugin import DoDGenerator, Role, RolePlugin
+from chorus.roles._registry import RoleRegistry
 
 __all__ = [
     "DoDGenerator",
     "Isolation",
+    "ManifestOverlay",
     "MemoryScope",
     "PermissionMode",
     "Role",
     "RoleManifest",
     "RolePlugin",
+    "RoleRegistry",
     "default_roles",
+    "resolve_manifest",
 ]
