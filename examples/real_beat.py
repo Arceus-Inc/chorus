@@ -21,12 +21,15 @@ from pathlib import Path
 
 import dream  # type: ignore[import-not-found]
 
-from chorus.adapters import DreamBeatRunner
+from chorus.adapters import DreamBeatRunner, check_dream_contract
 
 _INTENT = "Reply with the single word DONE and mark the task complete."
 
 
 async def main() -> int:
+    # Fail fast at the composition root if the installed dream's contract has drifted from what chorus
+    # was built against (spec 05 §2) — a clear error here beats a mid-beat signature mismatch.
+    check_dream_contract(dream)
     api_key = os.environ.get("AZURE_OPENAI_API_KEY")
     base_url = os.environ.get("AZURE_OPENAI_BASE_URL")
     deployment = os.environ.get("AZURE_OPENAI_DEPLOYMENT")

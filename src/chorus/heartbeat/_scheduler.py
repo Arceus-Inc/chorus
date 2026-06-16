@@ -23,6 +23,7 @@ from typing import TYPE_CHECKING, TypeVar
 
 from chorus.cron._fire import fire_routine
 from chorus.governance import GovernanceResolver
+from chorus.heartbeat._beat import BeatDisposition
 from chorus.heartbeat._wake import TickReport, Wake
 from chorus.ledger import ApprovalGate, TaskPriority
 from chorus.ledger._models import (
@@ -311,7 +312,17 @@ class Scheduler:
         )
 
         verdict = result.outcome or None
-        if result.passed:
+        if result.disposition is BeatDisposition.CANCELLED:
+            # Cooperative cancel (caps/budget/operator): record a cancelled run and return the task
+            # to its pre-beat (dispatchable) state — no DoD verdict, no recovery card (spec 05 §5/§6).
+            ledger.runs.finish(run_id, RunStatus.CANCELLED, outcome=verdict)
+            ledger.tasks.set_status(task_id, TaskStatus.TODO)
+        elif result.disposition is BeatDisposition.ERRORED:
+            # Engine/tool fault: the run failed and the task is stranded onto the recovery ladder with
+            # the phase on the evidence, owner preserved — never collapsed into a DoD failure (§5).
+            ledger.runs.finish(run_id, RunStatus.FAILED, outcome=verdict)
+            self._strand_errored(task_id, employee_id=employee.id, result=result)
+        elif result.passed:
             ledger.runs.finish(run_id, RunStatus.SUCCEEDED, outcome=verdict)
             self._land_passed(task_id, run_id=run_id, verifier=verifier, verdict=verdict)
         else:
@@ -382,6 +393,34 @@ class Scheduler:
                     next_action="fix the failing check or revise the DoD",
                 )
             )
+
+    def _strand_errored(
+        self, task_id: str, *, employee_id: str, result: BeatOutcome
+    ) -> None:
+        """An engine-faulted beat strands its task onto the recovery ladder (spec 05 §5, spec 02 §6).
+
+        Distinct from a DoD failure: there is no objective gate to re-run, so the task goes ``blocked``
+        and opens a first-class ``recovery_action`` (owner preserved) carrying the ``run_task`` phase +
+        error as evidence, so the escalation trail names *where* the loop broke. At most one open
+        stranded recovery per task — a re-strand under a live card is a no-op.
+        """
+        ledger = self._require_ledger()
+        ledger.tasks.set_status(task_id, TaskStatus.BLOCKED)
+        if ledger.recovery_actions.active_for_source(task_id) is not None:
+            return
+        phase = result.outcome.get("phase")
+        ledger.recovery_actions.open(
+            RecoveryAction(
+                id=f"rec_{uuid.uuid4().hex[:12]}",
+                source_task_id=task_id,
+                kind=RecoveryKind.STRANDED,
+                owner_employee_id=employee_id,
+                cause="run_task_error",
+                fingerprint=str(phase) if phase else "engine",
+                evidence={"phase": phase, "error": result.outcome.get("error")},
+                next_action="inspect the engine fault and resume or hand off the task",
+            )
+        )
 
     def _record_cost(
         self, employee_id: str, *, task_id: str, run_id: str, result: BeatOutcome, now: datetime
