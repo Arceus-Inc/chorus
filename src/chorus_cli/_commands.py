@@ -125,6 +125,9 @@ def _hire(ctx: CommandContext) -> LoopSignal:
         ctx.out.error(f"usage: {_HIRE}")
         return LoopSignal.CONTINUE
     employee_id, name, role = ctx.args[0], ctx.args[1], ctx.args[2]
+    if ctx.session.ledger.employees.get(employee_id) is not None:
+        ctx.out.error(f"employee {employee_id!r} already exists")
+        return LoopSignal.CONTINUE
     reports_to = ctx.args[3] if len(ctx.args) == 4 else None
     created = ctx.session.ledger.employees.create(
         Employee(id=employee_id, name=name, role=role, reports_to=reports_to)
@@ -176,6 +179,9 @@ def _submit(ctx: CommandContext) -> LoopSignal:
             return LoopSignal.CONTINUE
         priority = parsed
     task_id, intent = rest[0], " ".join(rest[1:])
+    if ctx.session.ledger.tasks.get(task_id) is not None:
+        ctx.out.error(f"task {task_id!r} already exists")
+        return LoopSignal.CONTINUE
     created = ctx.session.ledger.tasks.submit(
         Task(id=task_id, intent=intent, priority=priority)
     )

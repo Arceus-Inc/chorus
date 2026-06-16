@@ -93,6 +93,12 @@ def test_hire_wrong_arity_reports_usage(session: CliSession, ledger: SqliteLedge
     assert ledger.employees.get("alice") is None  # nothing written
 
 
+def test_hire_duplicate_id_errors_cleanly(session: CliSession) -> None:
+    _run("hire alice Alice engineer", session)
+    _, out = _run("hire alice Alicia designer", session)
+    assert "error:" in out and "already exists" in out and "alice" in out
+
+
 def test_employee_shows_a_record(session: CliSession) -> None:
     _run("hire alice Alice engineer", session)
     _, out = _run("employee alice", session)
@@ -145,6 +151,12 @@ def test_submit_missing_intent_reports_usage(session: CliSession, ledger: Sqlite
     _, out = _run("submit t1", session)
     assert "usage: submit" in out
     assert ledger.tasks.get("t1") is None
+
+
+def test_submit_duplicate_id_errors_cleanly(session: CliSession) -> None:
+    _run("submit t1 ship it", session)
+    _, out = _run("submit t1 ship it again", session)
+    assert "error:" in out and "already exists" in out and "t1" in out
 
 
 def test_task_shows_task_runs_and_dod(session: CliSession, ledger: SqliteLedger) -> None:
