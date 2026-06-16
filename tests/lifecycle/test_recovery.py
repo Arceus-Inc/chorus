@@ -283,7 +283,7 @@ def test_open_recovery_is_folded_when_source_becomes_terminal(ledger: SqliteLedg
     assert "rec_stale" in report.folded
     action = ledger.recovery_actions.get("rec_stale")
     assert action is not None
-    assert action.status is RecoveryStatus.RESOLVED
+    assert action.status is RecoveryStatus.FOLDED  # folded, not resolved (source self-resolved)
     assert action.outcome is RecoveryOutcome.FALSE_POSITIVE
     assert ledger.recovery_actions.active_for_source("t1") is None
 

@@ -21,7 +21,8 @@ from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
-from chorus.ledger._models import DecompositionClaim, DecompositionStatus, Task
+from chorus.ledger._models import ActivityVerb, DecompositionClaim, DecompositionStatus, Task
+from chorus.lifecycle._audit import record_activity
 
 if TYPE_CHECKING:
     from chorus.ledger import SqliteLedger
@@ -97,6 +98,14 @@ def decompose(
     ledger.decomposition_claims.complete(claim.id)
     sealed = ledger.decomposition_claims.get(claim.id)
     assert sealed is not None  # just completed it in this call
+    # Governance audit (spec 08 §5): the manager split this task into a child tree.
+    record_activity(
+        ledger,
+        verb=ActivityVerb.DECOMPOSED,
+        subject_id=source_task_id,
+        actor_employee_id=source.assignee_employee_id,
+        payload={"children": [spec.task.id for spec in children], "claim_id": sealed.id},
+    )
     return sealed
 
 

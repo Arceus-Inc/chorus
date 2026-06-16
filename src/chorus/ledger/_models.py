@@ -374,11 +374,18 @@ class RecoveryKind(StrEnum):
 
 
 class RecoveryStatus(StrEnum):
-    """A recovery's lifecycle; ``active``/``escalated`` are *open* (spec 01 Cluster B)."""
+    """A recovery's lifecycle (spec 01 Cluster B, spec 02 §6).
+
+    ``active``/``escalated`` are *open*; ``resolved``/``folded``/``superseded`` are terminal:
+    ``resolved`` = owner acted; ``folded`` = the source resolved itself (false positive);
+    ``superseded`` = a newer action replaced this one.
+    """
 
     ACTIVE = "active"
     ESCALATED = "escalated"
     RESOLVED = "resolved"
+    FOLDED = "folded"
+    SUPERSEDED = "superseded"
 
 
 class RecoveryOutcome(StrEnum):

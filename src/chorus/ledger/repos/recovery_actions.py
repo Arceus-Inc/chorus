@@ -123,12 +123,26 @@ class RecoveryActionRepo:
         outcome: RecoveryOutcome,
         resolution_note: str | None = None,
     ) -> None:
-        """Close the recovery, freeing the source for a future one."""
+        """Close the recovery (owner acted), freeing the source for a future one."""
         now = utcnow_iso()
         self._conn.execute(
             "UPDATE recovery_action SET status = 'resolved', outcome = ?, resolution_note = ?, "
             "resolved_at = ? WHERE id = ? AND status IN ('active', 'escalated')",
             (outcome.value, resolution_note, now, action_id),
+        )
+        self._conn.commit()
+
+    def fold(self, action_id: str, *, resolution_note: str | None = None) -> None:
+        """Fold the recovery as a *false positive* — the source resolved itself (spec 02 §6).
+
+        Distinct terminal state from :meth:`resolve` (owner acted): a fold means the alert was moot,
+        not that anyone did the work. Both free the source (neither is in the open index set).
+        """
+        now = utcnow_iso()
+        self._conn.execute(
+            "UPDATE recovery_action SET status = 'folded', outcome = ?, resolution_note = ?, "
+            "resolved_at = ? WHERE id = ? AND status IN ('active', 'escalated')",
+            (RecoveryOutcome.FALSE_POSITIVE.value, resolution_note, now, action_id),
         )
         self._conn.commit()
 
