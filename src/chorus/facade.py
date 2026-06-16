@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from chorus.events import Event
-from chorus.heartbeat import Scheduler, TickReport
+from chorus.heartbeat import BeatRunner, Scheduler, TickReport
 from chorus.ledger import SqliteLedger, Task
 from chorus.memory import AppendOnlyMemoryWriter
 from chorus.observability import EventBus, LedgerInspector, TaskView, WorkforceStatus
@@ -71,27 +71,38 @@ class Chorus:
         org_repo: str,
         memory_repo: str,
         dream: Any,
+        beat_runner: BeatRunner | None = None,
         roles: Sequence[RolePlugin] | None = None,
         caps: Caps | None = None,
     ) -> Chorus:
         """The composition root — wire the concrete backends and inject them (spec 10 §1).
 
         ``dream`` is the dream SDK facade/module — the single seam chorus calls
-        for the planner→sprint→evaluator loop. ``roles`` defaults to
-        :func:`chorus.roles.default_roles`; extra roles register through the same
-        validated path (spec 09 §1).
+        for the planner→sprint→evaluator loop. ``beat_runner`` is the concrete dream
+        adapter the scheduler runs each beat through; until it is supplied the kernel
+        ticks (recover/cron/monitors/dispatch) but cannot execute a beat. ``roles``
+        defaults to :func:`chorus.roles.default_roles`; extra roles register through
+        the same validated path (spec 09 §1).
         """
         the_caps = caps or Caps()
         registry = {p.name: p for p in (roles if roles is not None else default_roles())}
+        ledger = SqliteLedger.open(db_path)
+        workforce = GitWorkforce(org_repo)
+        event_bus = EventBus()
+        scheduler = Scheduler(
+            tick_interval_s=the_caps.tick_interval_s,
+            max_concurrent_runs=the_caps.max_concurrent_runs,
+            ledger=ledger,
+            workforce=workforce,
+            beat_runner=beat_runner,
+            event_bus=event_bus,
+        )
         return cls(
-            ledger=SqliteLedger.open(db_path),
-            workforce=GitWorkforce(org_repo),
+            ledger=ledger,
+            workforce=workforce,
             memory_writer=AppendOnlyMemoryWriter(memory_repo),
-            scheduler=Scheduler(
-                tick_interval_s=the_caps.tick_interval_s,
-                max_concurrent_runs=the_caps.max_concurrent_runs,
-            ),
-            event_bus=EventBus(),
+            scheduler=scheduler,
+            event_bus=event_bus,
             inspector=LedgerInspector(),
             dream=dream,
             roles=registry,
@@ -119,12 +130,16 @@ class Chorus:
     # -- the heartbeat (spec 03) ----------------------------------------------
 
     async def tick(self) -> TickReport:
-        """One kernel pulse (spec 03 §3)."""
-        raise NotImplementedError("spec 03 §3: delegate to Scheduler.tick(now)")
+        """One kernel pulse, stamped with the kernel clock (spec 03 §3)."""
+        return await self._scheduler.tick_once()
 
-    async def run_forever(self, interval_s: float = 2.0) -> None:
-        """Drive ticks until cancelled (spec 03 §3)."""
-        raise NotImplementedError("spec 03 §3: loop tick() at interval, jittered in Arceus")
+    async def run_forever(self) -> None:
+        """Run the heartbeat until :meth:`stop` (or cancellation), draining beats on exit (spec 03 §3)."""
+        await self._scheduler.run()
+
+    def stop(self) -> None:
+        """Signal :meth:`run_forever` to exit after the current pulse (spec 03 §3)."""
+        self._scheduler.stop()
 
     # -- org as data (spec 06 §3) ---------------------------------------------
 

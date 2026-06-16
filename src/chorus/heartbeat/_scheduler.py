@@ -17,7 +17,8 @@ from __future__ import annotations
 
 import asyncio
 import uuid
-from datetime import datetime, timedelta
+from collections.abc import Awaitable, Callable
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, TypeVar
 
 from chorus.cron._fire import fire_routine
@@ -47,6 +48,10 @@ if TYPE_CHECKING:
 
 _T = TypeVar("_T")
 
+
+def _utc_now() -> datetime:
+    return datetime.now(UTC)
+
 # Dispatch priority rank for the deterministic sort key (spec 03 §3).
 PRIORITY_RANK: dict[TaskPriority, int] = {
     TaskPriority.CRITICAL: 0,
@@ -75,6 +80,8 @@ class Scheduler:
         workforce: Workforce | None = None,
         beat_runner: BeatRunner | None = None,
         event_bus: EventBus | None = None,
+        clock: Callable[[], datetime] | None = None,
+        sleep: Callable[[float], Awaitable[None]] | None = None,
     ) -> None:
         self.tick_interval_s = tick_interval_s
         self.max_concurrent_runs = max_concurrent_runs
@@ -83,6 +90,9 @@ class Scheduler:
         self._workforce = workforce
         self._beat_runner = beat_runner
         self._event_bus = event_bus
+        self._clock = clock or _utc_now  # the time source the run loop stamps each pulse with
+        self._sleep = sleep or asyncio.sleep  # the inter-pulse wait (injectable for deterministic tests)
+        self._stop = asyncio.Event()  # set by stop(); ends the run loop after the current pulse
         self._inflight: set[asyncio.Task[None]] = set()
 
     async def tick(self, now: datetime) -> TickReport:
@@ -155,6 +165,29 @@ class Scheduler:
             beats_started=dispatched,
             blocked_by_budget=blocked_by_budget,
         )
+
+    async def tick_once(self) -> TickReport:
+        """One pulse stamped with the injected clock — the facade's manual single tick (spec 03 §3)."""
+        return await self.tick(self._clock())
+
+    async def run(self) -> None:
+        """Drive ticks at ``tick_interval_s`` until :meth:`stop` (or cancellation) — the §3 cadence.
+
+        Each pulse ticks the ledger then waits the interval. ``stop()`` ends the loop after the
+        current pulse; cancellation ends it at the next ``await``. Either way the ``finally`` drains
+        the in-flight beats, so shutdown never orphans a running beat. Single-use: a stopped loop
+        stays stopped (construct a fresh ``Scheduler`` to run again).
+        """
+        try:
+            while not self._stop.is_set():
+                await self.tick(self._clock())
+                await self._sleep(self.tick_interval_s)
+        finally:
+            await self.drain()
+
+    def stop(self) -> None:
+        """Signal :meth:`run` to exit after the current pulse (idempotent)."""
+        self._stop.set()
 
     def _apply_monitor_recovery(self, ledger: SqliteLedger, monitor: Monitor) -> None:
         """An exhausted monitor escalates per its recovery policy (spec 03 §3c, spec 01 Cluster B).
