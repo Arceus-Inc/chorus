@@ -82,6 +82,31 @@ class RunRepo:
             (to_iso(now),),
         ).fetchall()
         return [_row_to_run(row) for row in rows]
+
+    def cancel_running(self, *, employee_id: str | None = None) -> list[str]:
+        """Cancel every live (``running``) run, optionally scoped to one employee (spec 04 §3 kill).
+
+        Returns the cancelled run ids. A hard budget breach kills in-flight work for the paused
+        scope; ``employee_id=None`` cancels the whole workforce (a company-scope breach).
+        """
+        now = utcnow_iso()
+        if employee_id is None:
+            rows = self._conn.execute("SELECT id FROM run WHERE status = 'running'").fetchall()
+        else:
+            rows = self._conn.execute(
+                "SELECT id FROM run WHERE status = 'running' AND employee_id = ?", (employee_id,)
+            ).fetchall()
+        ids = [str(row["id"]) for row in rows]
+        if not ids:
+            return []
+        placeholders = ", ".join("?" for _ in ids)
+        self._conn.execute(
+            f"UPDATE run SET status = 'cancelled', finished_at = ? WHERE id IN ({placeholders})",
+            (now, *ids),
+        )
+        self._conn.commit()
+        return ids
+
     def finish(
         self,
         run_id: str,

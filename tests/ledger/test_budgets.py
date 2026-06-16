@@ -242,3 +242,18 @@ def test_spent_cents_is_per_employee(ledger: SqliteLedger) -> None:
                   cost_cents=999, occurred_at=_at(10))
     )
     assert ledger.cost_events.spent_cents("e1") == 100
+
+
+def test_total_spent_cents_sums_the_whole_workforce(ledger: SqliteLedger) -> None:
+    _employee(ledger, "e1")
+    _employee(ledger, "e2")
+    ledger.cost_events.record(
+        CostEvent(id="ce1", employee_id="e1", provider="p", model="m",
+                  cost_cents=100, occurred_at=_at(10))
+    )
+    ledger.cost_events.record(
+        CostEvent(id="ce2", employee_id="e2", provider="p", model="m",
+                  cost_cents=250, occurred_at=_at(100))
+    )
+    assert ledger.cost_events.total_spent_cents() == 350  # lifetime (no window)
+    assert ledger.cost_events.total_spent_cents(since=_at(50)) == 250  # windowed

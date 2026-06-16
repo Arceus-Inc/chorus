@@ -68,6 +68,19 @@ class CostEventRepo:
             ).fetchone()
         return int(row["total"])
 
+    def total_spent_cents(self, *, since: datetime | None = None) -> int:
+        """Live-recomputed spend across the *whole* workforce — the company-scope sum (spec 04 §3)."""
+        if since is None:
+            row = self._conn.execute(
+                "SELECT COALESCE(SUM(cost_cents), 0) AS total FROM cost_event"
+            ).fetchone()
+        else:
+            row = self._conn.execute(
+                "SELECT COALESCE(SUM(cost_cents), 0) AS total FROM cost_event WHERE occurred_at >= ?",
+                (to_iso(since),),
+            ).fetchone()
+        return int(row["total"])
+
 
 def _row_to_event(row: sqlite3.Row) -> CostEvent:
     return CostEvent(
