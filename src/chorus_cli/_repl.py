@@ -68,7 +68,7 @@ def run_repl(
     use_colour = stream.isatty() if colour is None else colour
     console = Console(out=stream, colour=use_colour)
 
-    console.line("chorus console — type 'help' for commands, 'quit' to exit")
+    console.line("chorus console -- type 'help' for commands, 'quit' to exit")
     while True:
         try:
             line = input_func(_PROMPT)

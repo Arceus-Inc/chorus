@@ -145,7 +145,7 @@ def _hire(ctx: CommandContext) -> LoopSignal:
     created = ctx.session.ledger.employees.create(
         Employee(id=employee_id, name=name, role=role, reports_to=reports_to)
     )
-    ctx.out.line(f"hired {created.id} ({created.role}) — status {created.status.value}")
+    ctx.out.line(f"hired {created.id} ({created.role}) -- status {created.status.value}")
     return LoopSignal.CONTINUE
 
 
@@ -239,7 +239,7 @@ def _task(ctx: CommandContext) -> LoopSignal:
     )
     dod = ledger.dod.get_for_task(task.id)
     if dod is not None:
-        ctx.out.line(f"dod: {dod.kind} — {dod.status.value}")
+        ctx.out.line(f"dod: {dod.kind} -- {dod.status.value}")
     return LoopSignal.CONTINUE
 
 
@@ -259,7 +259,7 @@ def _assign(ctx: CommandContext) -> LoopSignal:
     if wake is None:
         ctx.out.error(f"could not assign {task_id!r} (unknown or already terminal)")
         return LoopSignal.CONTINUE
-    ctx.out.line(f"assigned {task_id} → {employee_id}; woke {wake.id} ({wake.reason.value})")
+    ctx.out.line(f"assigned {task_id} -> {employee_id}; woke {wake.id} ({wake.reason.value})")
     return LoopSignal.CONTINUE
 
 
@@ -354,7 +354,7 @@ _TICK = "tick"
 
 
 @REGISTRY.command(
-    "tick", summary="run one kernel pulse — dispatch a real beat (needs Azure keys)", usage=_TICK
+    "tick", summary="run one kernel pulse -- dispatch a real beat (needs Azure keys)", usage=_TICK
 )
 def _tick(ctx: CommandContext) -> LoopSignal:
     if ctx.args:
@@ -363,11 +363,11 @@ def _tick(ctx: CommandContext) -> LoopSignal:
     beats = ctx.session.beats
     if beats is None:
         ctx.out.error(
-            "no beat runner configured — set AZURE_OPENAI_API_KEY, AZURE_OPENAI_BASE_URL, "
+            "no beat runner configured -- set AZURE_OPENAI_API_KEY, AZURE_OPENAI_BASE_URL, "
             "AZURE_OPENAI_DEPLOYMENT and relaunch"
         )
         return LoopSignal.CONTINUE
-    ctx.out.line(f"ticking the kernel (model {beats.model}) — this runs a real beat, please wait…")
+    ctx.out.line(f"ticking the kernel (model {beats.model}) -- this runs a real beat, please wait...")
     report = beats.run_tick()
     ctx.out.kv(
         {
@@ -380,9 +380,9 @@ def _tick(ctx: CommandContext) -> LoopSignal:
         }
     )
     if report.beats_started:
-        ctx.out.line("a beat ran — see how it landed with 'task <id>'")
+        ctx.out.line("a beat ran -- see how it landed with 'task <id>'")
     elif report.budget_gated:
-        ctx.out.line("a dispatch was gated by a budget — see 'budget' (raise to resume)")
+        ctx.out.line("a dispatch was gated by a budget -- see 'budget' (raise to resume)")
     else:
         ctx.out.line("nothing to dispatch (assign a task first, then tick)")
     return LoopSignal.CONTINUE
@@ -478,7 +478,7 @@ def _budget_list(ctx: CommandContext) -> LoopSignal:
     ledger = ctx.session.ledger
     policies = ledger.budget_policies.all()
     if not policies:
-        ctx.out.line("no budgets — 'budget set employee <id> <cents>' or 'budget set company <cents>'")
+        ctx.out.line("no budgets -- 'budget set employee <id> <cents>' or 'budget set company <cents>'")
         return LoopSignal.CONTINUE
     rows = []
     for policy in policies:
@@ -486,12 +486,12 @@ def _budget_list(ctx: CommandContext) -> LoopSignal:
         pct = f"{spent * 100 // policy.amount}%" if policy.amount else "-"
         rows.append((policy.id, policy.scope_type.value, policy.scope_id, policy.amount, spent,
                      pct, policy.window_kind, _budget_status(ctx, policy, spent)))
-    ctx.out.table(("policy", "scope", "id", "cap¢", "spent¢", "used", "window", "status"), rows)
+    ctx.out.table(("policy", "scope", "id", "cap_cents", "spent_cents", "used", "window", "status"), rows)
     incidents = [i for p in policies for i in ledger.budget_incidents.open_for_policy(p.id)]
     if incidents:
         ctx.out.line("open incidents:")
         ctx.out.table(
-            ("incident", "policy", "threshold", "observed¢", "approval"),
+            ("incident", "policy", "threshold", "observed_cents", "approval"),
             [(i.id, i.policy_id, i.threshold_type.value, i.amount_observed, _fmt(i.approval_id))
              for i in incidents],
         )
@@ -538,14 +538,14 @@ def _budget_set(ctx: CommandContext, args: tuple[str, ...]) -> LoopSignal:
     )
     if existing is not None:
         ledger.budget_policies.set_amount(existing.id, amount)
-        ctx.out.line(f"updated {existing.id}: {scope.value} {scope_id} cap → {amount}¢")
+        ctx.out.line(f"updated {existing.id}: {scope.value} {scope_id} cap -> {amount} cents")
         return LoopSignal.CONTINUE
     policy_id = f"bp_{uuid.uuid4().hex[:12]}"
     ledger.budget_policies.create(
         BudgetPolicy(id=policy_id, scope_type=scope, scope_id=scope_id, amount=amount,
                      warn_percent=warn, window_kind=window.value)
     )
-    ctx.out.line(f"set {policy_id}: {scope.value} {scope_id} cap {amount}¢ (warn {warn}%, {window.value})")
+    ctx.out.line(f"set {policy_id}: {scope.value} {scope_id} cap {amount} cents (warn {warn}%, {window.value})")
     return LoopSignal.CONTINUE
 
 
@@ -566,7 +566,7 @@ def _budget_raise(ctx: CommandContext, args: tuple[str, ...]) -> LoopSignal:
     except ValueError as exc:
         ctx.out.error(str(exc))
         return LoopSignal.CONTINUE
-    ctx.out.line(f"raised {args[0]} to {amount}¢ and resumed the scope")
+    ctx.out.line(f"raised {args[0]} to {amount} cents and resumed the scope")
     return LoopSignal.CONTINUE
 
 
@@ -595,7 +595,7 @@ _BUDGET_SUBCOMMANDS = {
 }
 
 
-@REGISTRY.command("budget", summary="view or manage budgets — caps, spend, incidents", usage=_BUDGET)
+@REGISTRY.command("budget", summary="view or manage budgets -- caps, spend, incidents", usage=_BUDGET)
 def _budget(ctx: CommandContext) -> LoopSignal:
     if not ctx.args or ctx.args[0] == "list":
         return _budget_list(ctx)
@@ -650,7 +650,7 @@ def _approval_open(ctx: CommandContext, args: tuple[str, ...]) -> LoopSignal:
     except sqlite3.IntegrityError:
         ctx.out.error(f"task {args[0]!r} already has a pending gate")
         return LoopSignal.CONTINUE
-    ctx.out.line(f"opened {approval.id}: {gate.value} gate on {args[0]} — task blocked")
+    ctx.out.line(f"opened {approval.id}: {gate.value} gate on {args[0]} -- task blocked")
     return LoopSignal.CONTINUE
 
 
@@ -668,7 +668,7 @@ def _approval_resolve(ctx: CommandContext, args: tuple[str, ...], *, approve: bo
         return LoopSignal.CONTINUE
     verb = "approved" if approve else "denied"
     ctx.out.line(
-        f"{verb} {outcome.approval_id} → task {outcome.task_id} is "
+        f"{verb} {outcome.approval_id} -> task {outcome.task_id} is "
         f"{outcome.task_status.value} ({outcome.wakes_fired} wakes)"
     )
     return LoopSignal.CONTINUE

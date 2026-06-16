@@ -104,6 +104,17 @@ def _beat_service_from_env(ledger: SqliteLedger, *, company_id: str) -> BeatServ
     )
 
 
+def _utf8_stdout() -> TextIO:
+    """Return ``sys.stdout`` forced to UTF-8 so the console's glyphs (``-> -- cent``) never
+    crash or mojibake on a Windows cp1252 terminal. A no-op where stdout is already UTF-8 or
+    cannot be reconfigured (e.g. a redirected pipe that lacks ``reconfigure``).
+    """
+    reconfigure = getattr(sys.stdout, "reconfigure", None)
+    if reconfigure is not None:
+        reconfigure(encoding="utf-8")
+    return sys.stdout
+
+
 def main(
     argv: Sequence[str] | None = None,
     *,
@@ -118,6 +129,7 @@ def main(
     args = build_parser().parse_args(argv)
     load_env_file(Path(args.env_file))  # pick up local credentials before wiring the beat service
     ledger = SqliteLedger.open(args.db)
+    sink = output if output is not None else _utf8_stdout()
     try:
         beats = _beat_service_from_env(ledger, company_id=args.company)
         session = CliSession(ledger=ledger, beats=beats, company_id=args.company)
@@ -125,7 +137,7 @@ def main(
             session,
             REGISTRY,
             input_func=input_func,
-            output=output if output is not None else sys.stdout,
+            output=sink,
         )
     finally:
         ledger.close()
