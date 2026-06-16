@@ -35,11 +35,17 @@ async def main() -> int:
         return 0
 
     with tempfile.TemporaryDirectory() as work_dir:
+        # Lean harness: no skills / memory / MCP / plugins, so this first end-to-end run has the
+        # smallest failure surface and no external dependencies. The trivial intent needs no tools.
         harness = dream.build_harness(
             model=deployment,
             api_key=api_key,
             base_url=base_url,
             working_dir=Path(work_dir),
+            skills=False,
+            memory=False,
+            mcp=False,
+            plugins=False,
         )
         runner = DreamBeatRunner(harness)
         print(f"running one beat — intent: {_INTENT!r}")
