@@ -15,7 +15,8 @@ from pathlib import Path
 
 import dream
 
-from chorus.adapters import DreamBeatRunner
+from chorus.adapters import DreamBeatRunner, TokenPricing
+from chorus.budgets import BudgetEnforcer
 from chorus.heartbeat import Scheduler, TickReport
 from chorus.ledger import SqliteLedger
 from chorus.workforce import Employee
@@ -80,13 +81,17 @@ def build_beat_service(
     api_key: str,
     base_url: str,
     deployment: str,
+    company_id: str,
+    pricing: TokenPricing,
     work_dir: Path | None = None,
     max_concurrent_runs: int = 1,
 ) -> SchedulerTickRunner:
     """Wire a dream harness + scheduler into a :class:`SchedulerTickRunner` (the composition root).
 
-    ``work_dir`` is dream's scratch directory for the beat; a throwaway temp dir is created when not
-    given. The harness is lean (no skills/memory/mcp/plugins), mirroring ``examples/real_beat.py``.
+    The beat runner is priced (``pricing``) so each beat accrues a real ``cost_cents``, and the
+    scheduler carries a :class:`~chorus.budgets.BudgetEnforcer` for ``company_id`` — so a ``tick``
+    records spend and the two budget gates actually fire. ``work_dir`` is dream's scratch directory; a
+    throwaway temp dir is created when not given. The harness is lean (no skills/memory/mcp/plugins).
     """
     root = work_dir if work_dir is not None else Path(tempfile.mkdtemp(prefix="chorus-cli-"))
     harness = dream.build_harness(
@@ -102,7 +107,8 @@ def build_beat_service(
     scheduler = Scheduler(
         ledger=ledger,
         workforce=LedgerWorkforce(ledger),
-        beat_runner=DreamBeatRunner(harness),
+        beat_runner=DreamBeatRunner(harness, pricing=pricing),
+        budget_enforcer=BudgetEnforcer(ledger, company_id=company_id),
         max_concurrent_runs=max_concurrent_runs,
     )
     return SchedulerTickRunner(scheduler, model=deployment)

@@ -10,7 +10,7 @@ import pytest
 
 from chorus.ledger import SqliteLedger
 from chorus_cli import main
-from chorus_cli.__main__ import _beat_service_from_env, build_parser
+from chorus_cli.__main__ import _beat_service_from_env, _pricing_from_env, build_parser
 
 pytestmark = pytest.mark.integration
 
@@ -83,9 +83,24 @@ def test_main_exits_cleanly_on_eof(make_input: MakeInput) -> None:
 def test_beat_service_is_none_without_credentials() -> None:
     ledger = SqliteLedger.open(":memory:")
     try:
-        assert _beat_service_from_env(ledger) is None  # env cleared by the autouse fixture
+        assert _beat_service_from_env(ledger, company_id="acme") is None  # env cleared by fixture
     finally:
         ledger.close()
+
+
+def test_pricing_defaults_when_env_unset(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("CHORUS_PRICE_INPUT_CENTS_PER_MTOK", raising=False)
+    monkeypatch.delenv("CHORUS_PRICE_OUTPUT_CENTS_PER_MTOK", raising=False)
+    rate = _pricing_from_env().rate_for("any-model")
+    assert rate is not None and rate.input_cents_per_mtok == 125 and rate.output_cents_per_mtok == 1000
+
+
+def test_pricing_reads_env_and_ignores_malformed(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("CHORUS_PRICE_INPUT_CENTS_PER_MTOK", "200")
+    monkeypatch.setenv("CHORUS_PRICE_OUTPUT_CENTS_PER_MTOK", "not-a-number")
+    rate = _pricing_from_env().rate_for("any-model")
+    assert rate is not None and rate.input_cents_per_mtok == 200
+    assert rate.output_cents_per_mtok == 1000  # malformed -> default
 
 
 def test_beat_service_is_built_when_credentials_are_present(
@@ -99,6 +114,6 @@ def test_beat_service_is_built_when_credentials_are_present(
 
     ledger = SqliteLedger.open(":memory:")
     try:
-        assert _beat_service_from_env(ledger) is sentinel
+        assert _beat_service_from_env(ledger, company_id="acme") is sentinel
     finally:
         ledger.close()

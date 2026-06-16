@@ -66,6 +66,7 @@ class CliSession:
     ledger: SqliteLedger
     clock: Callable[[], datetime] = utc_now
     beats: BeatService | None = None
+    company_id: str = "company"  # the scope id for company-wide budgets (spec 04 §3)
 
 
 @dataclass(frozen=True)
