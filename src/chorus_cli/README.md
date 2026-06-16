@@ -70,6 +70,7 @@ Without them, `tick` simply prints how to enable it.
 | `employee <id>` | show one employee |
 | `submit [--priority=LEVEL] <id> <intent…>` | create a backlog task (priority: `critical`/`high`/`medium`/`low`) |
 | `task <id>` | show a task with its runs and DoD |
+| `dod set <task_id> <command\|human_approval\|agent_review> [args…]` | attach a typed Definition of Done |
 | `assign <task_id> <employee_id>` | assign a task (`backlog → todo`) and enqueue its wake |
 | `eligible [limit]` | tasks ready to dispatch |
 
@@ -124,6 +125,22 @@ with `budget raise` / `budget dismiss`, not these verbs.)
 |---|---|
 | `tick` | one kernel pulse: recover → cron → monitors → dispatch, then await the beat (needs keys) |
 | `quit` / `exit` | leave |
+
+---
+
+## How the DoD enforces (spec 04 §1)
+
+A task's `dod` is the typed gate its beat must clear — `done` is never self-report:
+
+- **`command`** — the shell check rides into the beat as dream's verification (dream runs it and
+  gates on it). `done` means the plan completed **and** the command exited 0.
+- **`human_approval`** — when the beat completes, chorus opens an **acceptance approval** instead of
+  finishing; the task sits `blocked` until someone runs `approval approve` (then it's `done`).
+- **`agent_review`** — a Reviewer-role verdict (ships with the Reviewer role; not enforced yet).
+
+**Self-repair ladder** (Command DoD): a failed check re-wakes the same employee to retry (the task
+stays `todo`), up to a bounded budget; once spent, the task goes `blocked` with a `recovery_action`
+for a human.
 
 ---
 

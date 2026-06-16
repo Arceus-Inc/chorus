@@ -165,6 +165,33 @@ def test_cancel_running_scopes_to_one_employee(ledger: SqliteLedger) -> None:
     assert ledger.runs.get("r2").status is RunStatus.RUNNING  # type: ignore[union-attr]
 
 
+def test_verifier_for_task_round_trips_command(ledger: SqliteLedger) -> None:
+    ledger.tasks.submit(Task(id="t1", intent="x"))
+    ledger.dod.create("t1", Verifier.command("pytest -q", artifact_class="pr", timeout_s=120))
+    assert ledger.dod.verifier_for_task("t1") == Verifier.command(
+        "pytest -q", artifact_class="pr", timeout_s=120
+    )
+
+
+def test_verifier_for_task_round_trips_agent_review(ledger: SqliteLedger) -> None:
+    ledger.tasks.submit(Task(id="t1", intent="x"))
+    ledger.dod.create("t1", Verifier.agent_review(reviewer_role="reviewer", rubric="be strict"))
+    assert ledger.dod.verifier_for_task("t1") == Verifier.agent_review(
+        reviewer_role="reviewer", rubric="be strict"
+    )
+
+
+def test_verifier_for_task_round_trips_human_approval(ledger: SqliteLedger) -> None:
+    ledger.tasks.submit(Task(id="t1", intent="x"))
+    ledger.dod.create("t1", Verifier.human_approval(approver="board"))
+    assert ledger.dod.verifier_for_task("t1") == Verifier.human_approval(approver="board")
+
+
+def test_verifier_for_task_none_without_a_dod(ledger: SqliteLedger) -> None:
+    ledger.tasks.submit(Task(id="t1", intent="x"))
+    assert ledger.dod.verifier_for_task("t1") is None
+
+
 def test_dod_create_get_and_record_verdict(ledger: SqliteLedger) -> None:
     ledger.tasks.submit(Task(id="t1", intent="x"))
     created = ledger.dod.create("t1", Verifier.command("pytest -q"))

@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 import pytest
 
 from chorus.adapters import DreamBeatRunner, ModelRate, TokenPricing, to_beat_outcome
+from chorus.outcomes import VerificationStep
 
 pytestmark = pytest.mark.unit
 
@@ -70,9 +71,13 @@ class _FakeHarness:
         self._result = result
         self._error = error
         self.calls: list[str] = []
+        self.verification_steps: tuple[dict[str, str], ...] = ()
 
-    async def run_task(self, *, task_id: str, intent: str) -> _Result:
+    async def run_task(
+        self, *, task_id: str, intent: str, verification_steps: tuple[dict[str, str], ...] = ()
+    ) -> _Result:
         self.calls.append(task_id)
+        self.verification_steps = verification_steps
         if self._error is not None:
             raise self._error
         assert self._result is not None
@@ -183,6 +188,21 @@ async def test_run_task_is_unpriced_without_pricing() -> None:
     )
     outcome = await DreamBeatRunner(harness).run_task(task_id="t1", intent="x")
     assert outcome.cost_cents == 0
+
+
+async def test_run_task_forwards_the_command_dod_as_verification_steps() -> None:
+    harness = _FakeHarness(result=_result("done"))
+    runner = DreamBeatRunner(harness)
+    await runner.run_task(
+        task_id="t1", intent="ship", verification=(VerificationStep(command="pytest -q"),)
+    )
+    assert harness.verification_steps == ({"kind": "command", "command": "pytest -q"},)
+
+
+async def test_run_task_with_no_verification_passes_none() -> None:
+    harness = _FakeHarness(result=_result("done"))
+    await DreamBeatRunner(harness).run_task(task_id="t1", intent="x")
+    assert harness.verification_steps == ()
 
 
 async def test_run_task_accepts_and_ignores_a_chorus_observer() -> None:

@@ -18,6 +18,7 @@ from typing import Protocol
 from chorus.adapters._pricing import TokenPricing, UsageView
 from chorus.events import Event
 from chorus.heartbeat import BeatOutcome
+from chorus.outcomes import VerificationStep
 
 
 class DreamStepStatus(StrEnum):
@@ -68,7 +69,9 @@ class RunResult(Protocol):
 class TaskHarness(Protocol):
     """A built dream Harness — the one call a beat makes (the adapter's sole dependency)."""
 
-    async def run_task(self, *, task_id: str, intent: str) -> RunResult: ...
+    async def run_task(
+        self, *, task_id: str, intent: str, verification_steps: tuple[dict[str, str], ...] = ()
+    ) -> RunResult: ...
 
 
 def to_beat_outcome(result: RunResult, *, pricing: TokenPricing | None = None) -> BeatOutcome:
@@ -128,13 +131,19 @@ class DreamBeatRunner:
         *,
         task_id: str,
         intent: str,
+        verification: tuple[VerificationStep, ...] = (),
         observer: Callable[[Event], None] | None = None,
     ) -> BeatOutcome:
         # M1: the chorus event observer is not forwarded into dream (the event-stream bridge is a
         # later slice); chorus's own lifecycle events still fire from the scheduler and ledger.
         del observer
+        steps: tuple[dict[str, str], ...] = tuple(
+            {"kind": "command", "command": step.command} for step in verification
+        )
         try:
-            result = await self._harness.run_task(task_id=task_id, intent=intent)
+            result = await self._harness.run_task(
+                task_id=task_id, intent=intent, verification_steps=steps
+            )
         except Exception as exc:  # broad on purpose — a beat must never crash the dispatch loop
             return BeatOutcome(
                 passed=False,
