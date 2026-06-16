@@ -62,15 +62,26 @@ def _parse_limit(raw: str, out: Console) -> int | None:
 
 
 def _pop_flag(args: tuple[str, ...], name: str) -> tuple[str | None, tuple[str, ...]]:
-    """Pull a ``--name=value`` flag out of ``args``; return ``(value | None, remaining_args)``."""
-    prefix = f"--{name}="
+    """Pull a ``--name`` flag out of ``args``; return ``(value | None, remaining_args)``.
+
+    Accepts both joined (``--name=value``) and space-separated (``--name value``) forms — the two
+    conventions a user reasonably types — and leaves everything else in ``rest``.
+    """
+    joined = f"--{name}="
+    bare = f"--{name}"
     value: str | None = None
     rest: list[str] = []
-    for arg in args:
-        if arg.startswith(prefix):
-            value = arg[len(prefix) :]
+    index = 0
+    while index < len(args):
+        arg = args[index]
+        if arg.startswith(joined):
+            value = arg[len(joined) :]
+        elif arg == bare and index + 1 < len(args):
+            value = args[index + 1]
+            index += 1  # consume the following value token
         else:
             rest.append(arg)
+        index += 1
     return value, tuple(rest)
 
 
@@ -222,6 +233,9 @@ def _assign(ctx: CommandContext) -> LoopSignal:
         ctx.out.error(f"usage: {_ASSIGN}")
         return LoopSignal.CONTINUE
     task_id, employee_id = ctx.args
+    if ctx.session.ledger.employees.get(employee_id) is None:
+        ctx.out.error(f"no such employee: {employee_id!r} (hire them first)")
+        return LoopSignal.CONTINUE
     wake = assign_task(ctx.session.ledger, task_id, employee_id)
     if wake is None:
         ctx.out.error(f"could not assign {task_id!r} (unknown or already terminal)")
@@ -279,6 +293,9 @@ def _message(ctx: CommandContext) -> LoopSignal:
         ctx.out.error(f"usage: {_MESSAGE}")
         return LoopSignal.CONTINUE
     to_employee_id, body = ctx.args[0], " ".join(ctx.args[1:])
+    if ctx.session.ledger.employees.get(to_employee_id) is None:
+        ctx.out.error(f"no such employee: {to_employee_id!r} (hire them first)")
+        return LoopSignal.CONTINUE
     wake = deliver_message(
         ctx.session.ledger,
         Message(

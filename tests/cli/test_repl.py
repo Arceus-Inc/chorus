@@ -8,7 +8,15 @@ from collections.abc import Callable
 import pytest
 
 from chorus.ledger import SqliteLedger
-from chorus_cli import CliSession, Console, LoopSignal, dispatch, run_repl
+from chorus_cli import (
+    CliSession,
+    CommandContext,
+    CommandRegistry,
+    Console,
+    LoopSignal,
+    dispatch,
+    run_repl,
+)
 from chorus_cli._commands import REGISTRY
 
 pytestmark = pytest.mark.integration
@@ -49,6 +57,21 @@ def test_quoting_keeps_multiword_arguments_together(
     _dispatch('submit t1 "ship the docs"', session)
     task = ledger.tasks.get("t1")
     assert task is not None and task.intent == "ship the docs"
+
+
+def test_a_handler_error_is_reported_not_fatal(session: CliSession) -> None:
+    registry = CommandRegistry()
+
+    @registry.command("boom", summary="raises", usage="boom")
+    def _boom(ctx: CommandContext) -> LoopSignal:
+        raise RuntimeError("kaboom")
+
+    buffer = io.StringIO()
+    signal = dispatch(
+        "boom", session=session, console=Console(out=buffer, colour=False), registry=registry
+    )
+    assert signal is LoopSignal.CONTINUE  # the loop survives a crashing command
+    assert "error:" in buffer.getvalue() and "kaboom" in buffer.getvalue()
 
 
 # -- the loop ---------------------------------------------------------------------------------------

@@ -109,6 +109,12 @@ def test_submit_with_priority_flag(session: CliSession, ledger: SqliteLedger) ->
     assert task is not None and task.priority.value == "high" and task.intent == "ship it"
 
 
+def test_submit_priority_space_separated(session: CliSession, ledger: SqliteLedger) -> None:
+    _run("submit t1 --priority high ship it", session)
+    task = ledger.tasks.get("t1")
+    assert task is not None and task.priority.value == "high" and task.intent == "ship it"
+
+
 def test_submit_with_bad_priority_errors_and_writes_nothing(
     session: CliSession, ledger: SqliteLedger
 ) -> None:
@@ -152,9 +158,19 @@ def test_assign_moves_backlog_to_todo_and_wakes(
     assert any(w.employee_id == "alice" for w in ledger.wakes.queued())
 
 
-def test_assign_unknown_task_errors(session: CliSession) -> None:
-    _, out = _run("assign ghost alice", session)
-    assert "error:" in out
+def test_assign_unknown_task_errors(session: CliSession, ledger: SqliteLedger) -> None:
+    ledger.employees.create(Employee(id="alice", name="Alice", role="engineer"))
+    _, out = _run("assign ghost alice", session)  # employee exists, task does not
+    assert "error:" in out and "ghost" in out
+
+
+def test_assign_unknown_employee_errors_cleanly(
+    session: CliSession, ledger: SqliteLedger
+) -> None:
+    ledger.tasks.submit(Task(id="t1", intent="ship"))
+    _, out = _run("assign t1 ghost", session)
+    assert "error:" in out and "ghost" in out
+    assert ledger.tasks.get("t1").status is TaskStatus.BACKLOG  # not left half-assigned
 
 
 def test_eligible_lists_assigned_unblocked_tasks(
@@ -219,6 +235,11 @@ def test_message_delivers_and_shows_in_inbox(session: CliSession, ledger: Sqlite
 def test_message_missing_body_reports_usage(session: CliSession) -> None:
     _, out = _run("message alice", session)
     assert "usage: message" in out
+
+
+def test_message_to_unknown_employee_errors_cleanly(session: CliSession) -> None:
+    _, out = _run("message ghost hello there", session)
+    assert "error:" in out and "ghost" in out
 
 
 def test_inbox_shows_delivered_messages(session: CliSession) -> None:
