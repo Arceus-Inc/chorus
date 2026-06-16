@@ -8,6 +8,7 @@ the facade and repos consume it.
 from __future__ import annotations
 
 from chorus.lifecycle._audit import record_activity
+from chorus.lifecycle._coordination import assign_task, deliver_message
 from chorus.lifecycle._decompose import ChildSpec, decompose
 from chorus.lifecycle._disposition import (
     Disposition,
@@ -34,8 +35,10 @@ __all__ = [
     "IllegalTransition",
     "Liveness",
     "assert_legal",
+    "assign_task",
     "classify",
     "decompose",
+    "deliver_message",
     "entry_stamp",
     "is_legal",
     "reconcile_disposition",

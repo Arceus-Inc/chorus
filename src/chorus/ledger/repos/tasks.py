@@ -134,6 +134,23 @@ class TaskRepo:
         assert_legal(task.status, target)
         self.set_status(task_id, target)
 
+    def assign(self, task_id: str, employee_id: str) -> bool:
+        """Assign a non-terminal task to an employee, moving ``backlog`` → ``todo`` (spec 03 §2).
+
+        Sets the single employee assignee (clearing any human assignee, single-assignee XOR) and, if
+        the task is parked in ``backlog``, makes it actionable. Returns ``False`` for an unknown or
+        terminal task — the wake-producing caller treats that as "nothing to wake".
+        """
+        now = utcnow_iso()
+        cursor = self._conn.execute(
+            "UPDATE task SET assignee_employee_id = ?, assignee_user_id = NULL, "
+            "status = CASE WHEN status = 'backlog' THEN 'todo' ELSE status END, updated_at = ? "
+            "WHERE id = ? AND status NOT IN ('done', 'cancelled')",
+            (employee_id, now, task_id),
+        )
+        self._conn.commit()
+        return cursor.rowcount == 1
+
     def all_children_terminal(self, parent_id: str) -> bool:
         """True iff ``parent_id`` has children and every child is terminal (``done``/``cancelled``).
 

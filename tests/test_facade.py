@@ -12,8 +12,11 @@ import pytest
 
 from chorus.facade import Caps, Chorus
 from chorus.heartbeat import TickReport
+from chorus.ledger import Message, SqliteLedger, Task
+from chorus.ledger._models import WakeReason
+from chorus.workforce import Employee
 
-pytestmark = pytest.mark.unit
+pytestmark = pytest.mark.integration
 
 _REPORT = TickReport(at=datetime(2026, 6, 16, tzinfo=UTC))
 
@@ -70,3 +73,43 @@ def test_stop_delegates_to_scheduler() -> None:
     chorus = _chorus(sched)
     chorus.stop()
     assert sched.stopped is True
+
+
+def _chorus_on(ledger: SqliteLedger) -> Chorus:
+    return Chorus(
+        ledger=ledger,
+        workforce=None,  # type: ignore[arg-type]
+        memory_writer=None,  # type: ignore[arg-type]
+        scheduler=_FakeScheduler(),  # type: ignore[arg-type]
+        event_bus=None,  # type: ignore[arg-type]
+        inspector=None,  # type: ignore[arg-type]
+        dream=None,
+        roles={},
+        caps=Caps(),
+    )
+
+
+def test_assign_wakes_through_the_facade() -> None:
+    ledger = SqliteLedger.open(":memory:")
+    try:
+        ledger.employees.create(Employee(id="e1", name="a", role="engineer"))
+        ledger.tasks.submit(Task(id="t1", intent="ship"))
+        wake = _chorus_on(ledger).assign("t1", "e1")
+        assert wake is not None and wake.reason is WakeReason.TASK_ASSIGNED
+        assert [w.id for w in ledger.wakes.queued(employee_id="e1")] == [wake.id]
+    finally:
+        ledger.close()
+
+
+def test_send_message_wakes_through_the_facade() -> None:
+    ledger = SqliteLedger.open(":memory:")
+    try:
+        ledger.employees.create(Employee(id="mgr", name="m", role="manager"))
+        ledger.employees.create(Employee(id="rep", name="r", role="engineer"))
+        wake = _chorus_on(ledger).send_message(
+            Message(id="m1", from_employee_id="mgr", to_employee_id="rep", body="hi")
+        )
+        assert wake.reason is WakeReason.MESSAGE and wake.employee_id == "rep"
+        assert [m.id for m in ledger.messages.inbox("rep")] == ["m1"]
+    finally:
+        ledger.close()
