@@ -17,8 +17,9 @@ from dataclasses import dataclass
 from typing import Any
 
 from chorus.events import Event
-from chorus.heartbeat import BeatRunner, Scheduler, TickReport
-from chorus.ledger import SqliteLedger, Task
+from chorus.heartbeat import BeatRunner, Scheduler, TickReport, Wake
+from chorus.ledger import Message, SqliteLedger, Task
+from chorus.lifecycle import assign_task, deliver_message
 from chorus.memory import AppendOnlyMemoryWriter
 from chorus.observability import EventBus, LedgerInspector, TaskView, WorkforceStatus
 from chorus.outcomes import Verifier
@@ -126,6 +127,21 @@ class Chorus:
         second intake door.
         """
         raise NotImplementedError("spec 10 §5: intake stub → task(depth=0)")
+
+    def assign(
+        self, task_id: str, employee_id: str, *, assigned_by: str | None = None
+    ) -> Wake | None:
+        """Assign a task to an employee and wake them (``task_assigned``, spec 03 §2).
+
+        The async manager→report handoff: sets the owner (``backlog`` → ``todo``), enqueues the
+        wake the next tick dispatches, and audits the handoff. ``None`` if the task is unknown or
+        already terminal.
+        """
+        return assign_task(self._ledger, task_id, employee_id, assigned_by=assigned_by)
+
+    def send_message(self, message: Message) -> Wake:
+        """Deliver a mailbox message and wake the recipient (``message``, spec 03 §2)."""
+        return deliver_message(self._ledger, message)
 
     # -- the heartbeat (spec 03) ----------------------------------------------
 
