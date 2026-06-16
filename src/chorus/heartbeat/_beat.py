@@ -23,6 +23,12 @@ class BeatOutcome:
     passed: bool
     outcome: dict[str, object] = field(default_factory=dict)
     summary: str = ""
+    # The beat's spend + the usage it was priced from — recorded as a cost_event (spec 04 §3).
+    # ``model`` is the model(s) the beat used (``"a+b"`` when more than one); tokens are run totals.
+    cost_cents: int = 0
+    model: str = ""
+    input_tokens: int = 0
+    output_tokens: int = 0
 
 
 @runtime_checkable

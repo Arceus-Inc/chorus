@@ -53,6 +53,13 @@ class CostEventRepo:
         ).fetchone()
         return _row_to_event(row) if row is not None else None
 
+    def for_run(self, run_id: str) -> list[CostEvent]:
+        """Every cost event a run recorded, oldest first — the run's spend, itemised."""
+        rows = self._conn.execute(
+            "SELECT * FROM cost_event WHERE run_id = ? ORDER BY occurred_at, id", (run_id,)
+        ).fetchall()
+        return [_row_to_event(row) for row in rows]
+
     def spent_cents(self, employee_id: str, *, since: datetime | None = None) -> int:
         """Live-recomputed spend for an employee, optionally bounded to a window start."""
         if since is None:
@@ -65,6 +72,19 @@ class CostEventRepo:
                 "SELECT COALESCE(SUM(cost_cents), 0) AS total FROM cost_event "
                 "WHERE employee_id = ? AND occurred_at >= ?",
                 (employee_id, to_iso(since)),
+            ).fetchone()
+        return int(row["total"])
+
+    def total_spent_cents(self, *, since: datetime | None = None) -> int:
+        """Live-recomputed spend across the *whole* workforce — the company-scope sum (spec 04 §3)."""
+        if since is None:
+            row = self._conn.execute(
+                "SELECT COALESCE(SUM(cost_cents), 0) AS total FROM cost_event"
+            ).fetchone()
+        else:
+            row = self._conn.execute(
+                "SELECT COALESCE(SUM(cost_cents), 0) AS total FROM cost_event WHERE occurred_at >= ?",
+                (to_iso(since),),
             ).fetchone()
         return int(row["total"])
 

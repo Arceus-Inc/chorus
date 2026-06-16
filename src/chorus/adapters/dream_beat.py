@@ -11,10 +11,11 @@ dream's ``RunTaskResult`` (the protocols below), so the SDK import stays at the 
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from enum import StrEnum
 from typing import Protocol
 
+from chorus.adapters._pricing import TokenPricing, UsageView
 from chorus.events import Event
 from chorus.heartbeat import BeatOutcome
 
@@ -58,6 +59,11 @@ class RunResult(Protocol):
     @property
     def sprints(self) -> Sequence[RunSprint]: ...
 
+    @property
+    def usage_by_model(self) -> Mapping[str, UsageView]:
+        """Per-model token usage dream metered for the run (empty on older dream pins → cost 0)."""
+        ...
+
 
 class TaskHarness(Protocol):
     """A built dream Harness — the one call a beat makes (the adapter's sole dependency)."""
@@ -65,28 +71,44 @@ class TaskHarness(Protocol):
     async def run_task(self, *, task_id: str, intent: str) -> RunResult: ...
 
 
-def to_beat_outcome(result: RunResult) -> BeatOutcome:
+def to_beat_outcome(result: RunResult, *, pricing: TokenPricing | None = None) -> BeatOutcome:
     """Map a dream run result to the chorus verdict: ``passed`` iff every plan step is ``done``.
 
     An empty plan is never a silent pass. ``outcome`` carries the step tally and the per-sprint
-    evaluation outcomes for the audit/DoD record; ``summary`` is a one-line human gloss.
+    evaluation outcomes for the audit/DoD record; ``summary`` is a one-line human gloss. When
+    ``pricing`` is supplied the beat's spend is priced from dream's metered usage and lands on
+    :attr:`BeatOutcome.cost_cents` for the budget gates; without it the beat is unpriced (cost 0).
     """
     steps = list(result.final_ledger.steps)
     done = sum(1 for step in steps if step.status == DreamStepStatus.DONE)
     blocked = sum(1 for step in steps if step.status == DreamStepStatus.BLOCKED)
     passed = len(steps) > 0 and done == len(steps)
+    usage = result.usage_by_model
+    cost_cents = pricing.cost_cents(usage) if pricing is not None else 0
+    model = "+".join(sorted(usage))  # "" / "gpt-5.2" / "gpt-4+gpt-5.2"
+    input_tokens = sum(u.input_tokens for u in usage.values())
+    output_tokens = sum(u.output_tokens for u in usage.values())
     outcome: dict[str, object] = {
         "steps_total": len(steps),
         "steps_done": done,
         "steps_blocked": blocked,
         "sprint_outcomes": [sprint.outcome for sprint in result.sprints],
+        "cost_cents": cost_cents,
     }
     summary = (
         f"plan complete: {done}/{len(steps)} steps done"
         if passed
         else f"plan incomplete: {done}/{len(steps)} done, {blocked} blocked"
     )
-    return BeatOutcome(passed=passed, outcome=outcome, summary=summary)
+    return BeatOutcome(
+        passed=passed,
+        outcome=outcome,
+        summary=summary,
+        cost_cents=cost_cents,
+        model=model,
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+    )
 
 
 class DreamBeatRunner:
@@ -97,8 +119,9 @@ class DreamBeatRunner:
     than crashing the dispatched background task.
     """
 
-    def __init__(self, harness: TaskHarness) -> None:
+    def __init__(self, harness: TaskHarness, *, pricing: TokenPricing | None = None) -> None:
         self._harness = harness
+        self._pricing = pricing
 
     async def run_task(
         self,
@@ -118,7 +141,7 @@ class DreamBeatRunner:
                 outcome={"error": repr(exc)},
                 summary=f"beat errored: {exc}",
             )
-        return to_beat_outcome(result)
+        return to_beat_outcome(result, pricing=self._pricing)
 
 
 __all__ = [
@@ -126,5 +149,6 @@ __all__ = [
     "DreamStepStatus",
     "RunResult",
     "TaskHarness",
+    "UsageView",
     "to_beat_outcome",
 ]
