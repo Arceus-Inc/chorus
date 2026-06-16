@@ -298,8 +298,12 @@ class Scheduler:
         )
 
         observer = self._event_bus.emit if self._event_bus is not None else None
+        # The DoD's objective checks ride into the beat: dream's evaluator runs them as the
+        # acceptance gate, so ``done`` means plan-complete *and* the Command gate passed (spec 04 §1).
+        verifier = ledger.dod.verifier_for_task(task_id)
+        verification = verifier.verification_steps() if verifier is not None else ()
         result = await beat_runner.run_task(
-            task_id=task_id, intent=task.intent, observer=observer
+            task_id=task_id, intent=task.intent, verification=verification, observer=observer
         )
 
         verdict = result.outcome or None

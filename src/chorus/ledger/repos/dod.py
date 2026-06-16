@@ -10,10 +10,11 @@ from __future__ import annotations
 import sqlite3
 import uuid
 from dataclasses import asdict
+from typing import cast
 
 from chorus.ledger._models import Dod, DodStatus
 from chorus.ledger.repos._base import dumps, loads, utcnow_iso
-from chorus.outcomes import Verifier
+from chorus.outcomes import AgentReview, Command, DoDKind, HumanApproval, Verifier
 
 
 class DodRepo:
@@ -57,6 +58,15 @@ class DodRepo:
         row = self._conn.execute("SELECT * FROM dod WHERE task_id = ?", (task_id,)).fetchone()
         return _row_to_dod(row) if row is not None else None
 
+    def verifier_for_task(self, task_id: str) -> Verifier | None:
+        """The typed :class:`~chorus.outcomes.Verifier` for a task's DoD — the reverse of ``create``.
+
+        The beat passes a ``Command`` verifier's checks into dream's evaluator for enforcement
+        (spec 04 §1); ``None`` when the task has no DoD.
+        """
+        dod = self.get_for_task(task_id)
+        return _verifier_from_dod(dod) if dod is not None else None
+
     def record_verdict(
         self,
         dod_id: str,
@@ -78,6 +88,22 @@ class DodRepo:
             ),
         )
         self._conn.commit()
+
+
+def _verifier_from_dod(dod: Dod) -> Verifier:
+    """Rebuild the typed verifier from a persisted ``dod`` row (the reverse of serialisation)."""
+    kind = DoDKind(dod.kind)
+    spec = dod.spec
+    artifact_class = dod.artifact_class or ""
+    if kind is DoDKind.COMMAND:
+        return Verifier(
+            kind, Command(str(spec["command"]), cast("int", spec["timeout_s"])), artifact_class
+        )
+    if kind is DoDKind.AGENT_REVIEW:
+        return Verifier(
+            kind, AgentReview(str(spec["reviewer_role"]), str(spec["rubric"])), artifact_class
+        )
+    return Verifier(kind, HumanApproval(str(spec["approver"])), artifact_class)
 
 
 def _row_to_dod(row: sqlite3.Row) -> Dod:
