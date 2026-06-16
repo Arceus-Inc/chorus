@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 
 import pytest
 
-from chorus.adapters import DreamBeatRunner, to_beat_outcome
+from chorus.adapters import DreamBeatRunner, ModelRate, TokenPricing, to_beat_outcome
 
 pytestmark = pytest.mark.unit
 
@@ -37,15 +37,29 @@ class _Sprint:
 
 
 @dataclass(frozen=True)
+class _Usage:
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cache_read_tokens: int = 0
+    cache_write_tokens: int = 0
+
+
+@dataclass(frozen=True)
 class _Result:
     final_ledger: _Ledger
     sprints: tuple[_Sprint, ...] = field(default_factory=tuple)
+    usage_by_model: dict[str, _Usage] = field(default_factory=dict)
 
 
-def _result(*statuses: str, sprints: tuple[str | None, ...] = ()) -> _Result:
+def _result(
+    *statuses: str,
+    sprints: tuple[str | None, ...] = (),
+    usage_by_model: dict[str, _Usage] | None = None,
+) -> _Result:
     return _Result(
         final_ledger=_Ledger(steps=tuple(_Step(s) for s in statuses)),
         sprints=tuple(_Sprint(o) for o in sprints),
+        usage_by_model=usage_by_model or {},
     )
 
 
@@ -91,6 +105,29 @@ def test_empty_plan_is_not_passed() -> None:
     assert to_beat_outcome(_result()).passed is False
 
 
+# -- cost: the beat's spend, priced from dream's metered usage -------------------------------------
+
+
+def test_unpriced_beat_costs_zero() -> None:
+    result = _result("done", usage_by_model={"gpt-x": _Usage(input_tokens=1_000_000)})
+    assert to_beat_outcome(result).cost_cents == 0  # no pricing supplied
+
+
+def test_priced_beat_carries_real_cost() -> None:
+    pricing = TokenPricing(rates={"gpt-x": ModelRate(125, 1000)})
+    result = _result(
+        "done", usage_by_model={"gpt-x": _Usage(input_tokens=1_000_000, output_tokens=200_000)}
+    )
+    outcome = to_beat_outcome(result, pricing=pricing)
+    assert outcome.cost_cents == 325  # 125 + 200
+    assert outcome.outcome["cost_cents"] == 325
+
+
+def test_priced_beat_with_no_usage_costs_zero() -> None:
+    pricing = TokenPricing(rates={"gpt-x": ModelRate(125, 1000)})
+    assert to_beat_outcome(_result("done"), pricing=pricing).cost_cents == 0
+
+
 # -- DreamBeatRunner: run one beat through the harness ---------------------------------------------
 
 
@@ -107,6 +144,23 @@ async def test_run_task_turns_a_harness_error_into_a_failed_beat() -> None:
     outcome = await runner.run_task(task_id="t1", intent="ship it")
     assert outcome.passed is False
     assert "provider 500" in str(outcome.outcome["error"])
+
+
+async def test_run_task_prices_the_beat_when_pricing_is_wired() -> None:
+    harness = _FakeHarness(
+        result=_result("done", usage_by_model={"gpt-x": _Usage(input_tokens=2_000_000)})
+    )
+    runner = DreamBeatRunner(harness, pricing=TokenPricing(rates={"gpt-x": ModelRate(125, 1000)}))
+    outcome = await runner.run_task(task_id="t1", intent="ship it")
+    assert outcome.cost_cents == 250  # 2 Mtok input * 125 c/Mtok
+
+
+async def test_run_task_is_unpriced_without_pricing() -> None:
+    harness = _FakeHarness(
+        result=_result("done", usage_by_model={"gpt-x": _Usage(input_tokens=2_000_000)})
+    )
+    outcome = await DreamBeatRunner(harness).run_task(task_id="t1", intent="x")
+    assert outcome.cost_cents == 0
 
 
 async def test_run_task_accepts_and_ignores_a_chorus_observer() -> None:
