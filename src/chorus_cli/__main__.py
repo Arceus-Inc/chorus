@@ -1,58 +1,93 @@
-"""``chorus`` CLI entrypoint — a thin wrapper over the :class:`chorus.Chorus` facade.
+"""``chorus`` CLI entrypoint — an interactive console over the durable ledger (spec 10 §2).
 
-Intake via the CLI is the only way work enters until well after M4 — there are no
-inbound Slack/GitHub channels (those are Arceus, post-M4) (spec 10 §2).
+Today the console drives the parts of chorus that run end-to-end without a provider: seed the
+workforce, submit and assign tasks, pass messages, and inspect the ledger. Running beats (the
+scheduler's ``dream.run_task`` loop) needs a configured dream beat runner and stays out of this
+console for now — see ``examples/real_beat.py``.
 
-    chorus submit "<intent>" [--assignee E] [--dod CMD] [--depends-on T,...]
-    chorus tick                       # one pulse (cron/dev)
-    chorus run                        # run_forever
-    chorus employees [list|hire|terminate]
-    chorus routines  [list|add|pause]
-    chorus inspect   [status|task <id>|events|stuck]
-    chorus export <path> | import <path>     # portable package (spec 09)
+    chorus                 # open ./chorus.db and start the console
+    chorus --db PATH       # open a specific ledger (':memory:' for a throwaway one)
+
+Set AZURE_OPENAI_API_KEY, AZURE_OPENAI_BASE_URL, AZURE_OPENAI_DEPLOYMENT to enable the ``tick``
+command — one kernel pulse that dispatches a real beat through dream. Without them the console runs
+keys-free (everything but ``tick``).
 """
 
 from __future__ import annotations
 
 import argparse
-from collections.abc import Sequence
+import os
+import sys
+from collections.abc import Callable, Sequence
+from pathlib import Path
+from typing import TextIO
+
+from chorus.ledger import SqliteLedger
+from chorus_cli._commands import REGISTRY
+from chorus_cli._context import BeatService, CliSession
+from chorus_cli._env import load_env_file
+from chorus_cli._repl import run_repl
+
+_DEFAULT_DB = "chorus.db"
+_DEFAULT_ENV = ".env"
 
 
 def build_parser() -> argparse.ArgumentParser:
-    """Construct the ``chorus`` argument parser (spec 10 §2 command surface)."""
+    """Construct the ``chorus`` argument parser."""
     parser = argparse.ArgumentParser(prog="chorus", description=__doc__)
-    sub = parser.add_subparsers(dest="command", required=True)
-
-    p_submit = sub.add_parser("submit", help="create an intake task")
-    p_submit.add_argument("intent")
-    p_submit.add_argument("--assignee")
-    p_submit.add_argument("--dod")
-    p_submit.add_argument("--depends-on", default="")
-
-    sub.add_parser("tick", help="run one kernel pulse")
-    sub.add_parser("run", help="run_forever")
-
-    p_emp = sub.add_parser("employees", help="manage the workforce")
-    p_emp.add_argument("action", choices=("list", "hire", "terminate"))
-
-    p_routines = sub.add_parser("routines", help="manage cron routines")
-    p_routines.add_argument("action", choices=("list", "add", "pause"))
-
-    p_inspect = sub.add_parser("inspect", help="read the org's state")
-    p_inspect.add_argument("view", choices=("status", "task", "events", "stuck"))
-    p_inspect.add_argument("id", nargs="?")
-
-    for verb in ("export", "import"):
-        p = sub.add_parser(verb, help=f"{verb} a portable company/team package")
-        p.add_argument("path")
-
+    parser.add_argument(
+        "--db",
+        default=_DEFAULT_DB,
+        help=f"ledger database path (default: {_DEFAULT_DB!r}; ':memory:' for a throwaway one)",
+    )
+    parser.add_argument(
+        "--env-file",
+        default=_DEFAULT_ENV,
+        help=f"dotenv file to load credentials from (default: {_DEFAULT_ENV!r})",
+    )
     return parser
 
 
-def main(argv: Sequence[str] | None = None) -> int:
-    """CLI entrypoint; wires the facade and dispatches the subcommand (spec 10 §2)."""
-    build_parser().parse_args(argv)
-    raise NotImplementedError("spec 10 §2: wire Chorus.build() and dispatch the subcommand")
+def _beat_service_from_env(ledger: SqliteLedger) -> BeatService | None:
+    """Wire a real beat service from Azure credentials, or ``None`` when they are unset.
+
+    dream is imported **lazily** here — only when all three credentials are present — so the keys-free
+    console never imports the SDK. This is the CLI's composition seam for the kernel.
+    """
+    api_key = os.environ.get("AZURE_OPENAI_API_KEY")
+    base_url = os.environ.get("AZURE_OPENAI_BASE_URL")
+    deployment = os.environ.get("AZURE_OPENAI_DEPLOYMENT")
+    if not (api_key and base_url and deployment):
+        return None
+    from chorus_cli._beats import build_beat_service
+
+    return build_beat_service(ledger, api_key=api_key, base_url=base_url, deployment=deployment)
+
+
+def main(
+    argv: Sequence[str] | None = None,
+    *,
+    input_func: Callable[[str], str] = input,
+    output: TextIO | None = None,
+) -> int:
+    """Parse args, open the ledger, and run the interactive console until quit (spec 10 §2).
+
+    ``input_func`` / ``output`` are injectable so the whole entrypoint can be driven from a test with
+    scripted input and a captured stream; they default to real stdin/stdout.
+    """
+    args = build_parser().parse_args(argv)
+    load_env_file(Path(args.env_file))  # pick up local credentials before wiring the beat service
+    ledger = SqliteLedger.open(args.db)
+    try:
+        session = CliSession(ledger=ledger, beats=_beat_service_from_env(ledger))
+        return run_repl(
+            session,
+            REGISTRY,
+            input_func=input_func,
+            output=output if output is not None else sys.stdout,
+        )
+    finally:
+        ledger.close()
 
 
 if __name__ == "__main__":
