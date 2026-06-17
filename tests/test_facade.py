@@ -17,7 +17,7 @@ from chorus.heartbeat import TickReport
 from chorus.ledger import Message, SqliteLedger, Task
 from chorus.ledger._models import WakeReason
 from chorus.roles import RoleRegistry, default_roles
-from chorus.workforce import Employee, GitWorkforce
+from chorus.workforce import Employee, GitWorkforce, LedgerWorkforce
 
 pytestmark = pytest.mark.integration
 
@@ -180,4 +180,39 @@ def test_register_role_then_hire_into_it(tmp_path: Path) -> None:
     (plugin,) = (p for p in default_roles() if p.name == "engineer")
     chorus.register_role(plugin)
     assert chorus.hire(name="Ada", role="engineer").role == "engineer"
+
+
+def _chorus_io(ledger: SqliteLedger) -> Chorus:
+    """A facade over a real ledger whose live workforce is the ledger employee table."""
+    return Chorus(
+        ledger=ledger,
+        workforce=LedgerWorkforce(ledger.employees),
+        memory_writer=None,  # type: ignore[arg-type]
+        scheduler=_FakeScheduler(),  # type: ignore[arg-type]
+        event_bus=None,  # type: ignore[arg-type]
+        inspector=None,  # type: ignore[arg-type]
+        dream=None,
+        roles=RoleRegistry.from_plugins(default_roles()),
+        caps=Caps(),
+    )
+
+
+def test_export_then_import_workforce_round_trips_through_the_ledger(tmp_path: Path) -> None:
+    ledger = SqliteLedger.open(":memory:")
+    try:
+        chorus = _chorus_io(ledger)
+        chorus.hire(name="Boss", role="manager")
+        chorus.hire(name="Alice", role="engineer", reports_to="boss")
+        org = str(tmp_path / "org")
+        assert chorus.export_workforce(org) == 2
+
+        fresh = SqliteLedger.open(":memory:")
+        try:
+            assert _chorus_io(fresh).import_workforce(org) == 2
+            alice = fresh.employees.get("alice")
+            assert alice is not None and alice.reports_to == "boss"
+        finally:
+            fresh.close()
+    finally:
+        ledger.close()
 

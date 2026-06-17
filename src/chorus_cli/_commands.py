@@ -16,6 +16,7 @@ import sqlite3
 import uuid
 
 from chorus.budgets import BudgetEnforcer, BudgetWindow, window_start
+from chorus.errors import OrgInvariantViolation, UnknownEmployee
 from chorus.governance import GovernanceError, GovernanceResolver
 from chorus.ledger import (
     ApprovalGate,
@@ -29,7 +30,7 @@ from chorus.ledger import (
 )
 from chorus.lifecycle import assign_task, deliver_message
 from chorus.outcomes import DoDKind, Verifier
-from chorus.workforce import Employee
+from chorus.workforce import Employee, GitWorkforce, LedgerWorkforce, copy_org
 from chorus_cli._context import CommandContext, LoopSignal
 from chorus_cli._registry import CommandRegistry
 from chorus_cli._render import Console
@@ -171,6 +172,40 @@ def _employee(ctx: CommandContext) -> LoopSignal:
             "spent_cents": employee.spent_monthly_cents,
         }
     )
+    return LoopSignal.CONTINUE
+
+
+_EXPORT = "export <dir>"
+
+
+@REGISTRY.command("export", summary="serialize the org to a git-markdown tree", usage=_EXPORT)
+def _export(ctx: CommandContext) -> LoopSignal:
+    if len(ctx.args) != 1:
+        ctx.out.error(f"usage: {_EXPORT}")
+        return LoopSignal.CONTINUE
+    org_repo = ctx.args[0]
+    live = LedgerWorkforce(ctx.session.ledger.employees)
+    count = copy_org(live, GitWorkforce(org_repo))
+    ctx.out.line(f"exported {count} employees to {org_repo}/employees/")
+    return LoopSignal.CONTINUE
+
+
+_IMPORT = "import <dir>"
+
+
+@REGISTRY.command("import", summary="materialize a git-markdown org into the ledger", usage=_IMPORT)
+def _import(ctx: CommandContext) -> LoopSignal:
+    if len(ctx.args) != 1:
+        ctx.out.error(f"usage: {_IMPORT}")
+        return LoopSignal.CONTINUE
+    org_repo = ctx.args[0]
+    live = LedgerWorkforce(ctx.session.ledger.employees)
+    try:
+        count = copy_org(GitWorkforce(org_repo), live)
+    except (OrgInvariantViolation, UnknownEmployee) as exc:
+        ctx.out.error(f"import failed: {exc}")
+        return LoopSignal.CONTINUE
+    ctx.out.line(f"imported {count} employees from {org_repo}")
     return LoopSignal.CONTINUE
 
 

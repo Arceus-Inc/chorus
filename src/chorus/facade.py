@@ -27,7 +27,7 @@ from chorus.memory import AppendOnlyMemoryWriter
 from chorus.observability import EventBus, LedgerInspector, TaskView, WorkforceStatus
 from chorus.outcomes import Verifier
 from chorus.roles import RolePlugin, RoleRegistry, default_roles
-from chorus.workforce import Employee, LedgerWorkforce, Workforce
+from chorus.workforce import Employee, GitWorkforce, LedgerWorkforce, Workforce, copy_org
 
 
 @dataclass(frozen=True)
@@ -191,6 +191,25 @@ class Chorus:
     def register_role(self, plugin: RolePlugin, *, replace: bool = False) -> None:
         """Register a role plugin — fail-closed + idempotent (spec 09 §1)."""
         self._roles.register(plugin, replace=replace)
+
+    # -- portability: org as data (spec 09 §3) --------------------------------
+
+    def export_workforce(self, org_repo: str) -> int:
+        """Serialize the live ledger org to a portable git-markdown tree (spec 09 §3).
+
+        Writes ``<org_repo>/employees/<slug>/role.md`` for every non-terminated employee — the
+        portable package is the *serialization* of the live store, not a second store. Returns the
+        number of employees exported.
+        """
+        return copy_org(self._workforce, GitWorkforce(org_repo))
+
+    def import_workforce(self, org_repo: str) -> int:
+        """Materialize a git-markdown org into the live ledger store (spec 09 §3).
+
+        Re-hires every employee under ``<org_repo>/employees/`` into the ledger (managers first, so
+        each ``reports_to`` edge resolves as it lands). Returns the number imported.
+        """
+        return copy_org(GitWorkforce(org_repo), self._workforce)
 
     # -- cron (spec 03 §4) ----------------------------------------------------
 

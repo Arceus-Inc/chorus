@@ -20,6 +20,7 @@ from __future__ import annotations
 from chorus.workforce._git import GitWorkforce
 from chorus.workforce._ledger import EmployeeStore, LedgerWorkforce
 from chorus.workforce._models import Employee, EmployeeStatus
+from chorus.workforce._package import copy_org
 from chorus.workforce._protocol import Workforce
 
 __all__ = [
@@ -29,4 +30,5 @@ __all__ = [
     "GitWorkforce",
     "LedgerWorkforce",
     "Workforce",
+    "copy_org",
 ]
