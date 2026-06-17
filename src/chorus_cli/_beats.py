@@ -22,6 +22,7 @@ from chorus.heartbeat import Scheduler, TickReport
 from chorus.ledger import SqliteLedger
 from chorus.workforce import LedgerWorkforce
 from chorus_cli._chat import ChatBeatService, ChatRenderBus
+from chorus_cli._role_chat import build_role_chat_service
 
 # Illustrative GPT-5-class pricing (whole cents per million tokens); override via env.
 _DEFAULT_INPUT_CENTS_PER_MTOK = 125
@@ -118,49 +119,6 @@ def build_beat_service(
     return SchedulerTickRunner(scheduler, model=deployment)
 
 
-def build_chat_service(
-    ledger: SqliteLedger,
-    *,
-    api_key: str,
-    base_url: str,
-    deployment: str,
-    company_id: str,
-    employee_id: str,
-    render_bus: ChatRenderBus,
-    pricing: TokenPricing,
-    work_dir: Path | None = None,
-) -> ChatBeatService:
-    """Wire a memory-enabled, employee-scoped beat service for the ``chat`` sub-loop.
-
-    Differs from :func:`build_beat_service` in three ways that make a chat conversational: dream is
-    built with ``memory=True`` (the employee remembers earlier turns), the working dir is **stable and
-    per-employee** (``.chorus/chat/<company>/<employee>`` by default, so memory persists across
-    sessions), and the scheduler's event bus is the ``render_bus`` so the beat's ``run.*`` stream is
-    rendered as the reply. ``max_concurrent_runs=1`` keeps a chat turn sequential.
-    """
-    root = work_dir if work_dir is not None else Path.cwd() / ".chorus" / "chat" / company_id / employee_id
-    root.mkdir(parents=True, exist_ok=True)
-    harness = dream.build_harness(
-        model=deployment,
-        api_key=api_key,
-        base_url=base_url,
-        working_dir=root,
-        skills=False,
-        memory=True,
-        mcp=False,
-        plugins=False,
-    )
-    scheduler = Scheduler(
-        ledger=ledger,
-        workforce=LedgerWorkforce(ledger.employees),
-        beat_runner=DreamBeatRunner(harness, pricing=pricing),
-        budget_enforcer=BudgetEnforcer(ledger, company_id=company_id),
-        event_bus=render_bus,
-        max_concurrent_runs=1,
-    )
-    return ChatBeatService(scheduler, model=deployment, working_dir=str(root))
-
-
 def chat_service_from_env(
     ledger: SqliteLedger,
     *,
@@ -168,23 +126,25 @@ def chat_service_from_env(
     render_bus: ChatRenderBus,
     company_id: str,
 ) -> ChatBeatService | None:
-    """Build a chat beat service from Azure creds, or ``None`` when they are unset (keys-free chat).
+    """Build a **role-aware** chat beat service from Azure creds, or ``None`` when unset (keys-free chat).
 
-    Mirrors ``__main__._beat_service_from_env`` for the chat path: the same three Azure variables gate
-    a real beat, and dream is imported only when they are all present.
+    The same three Azure variables gate a real beat (dream is imported only when present). The harness
+    is materialized for the employee's role — its tools, memory, and a per-role overlay of its brief +
+    permission posture — so the whole ``run_task`` loop runs as that employee (see
+    :func:`chorus_cli._role_chat.build_role_chat_service`).
     """
     api_key = os.environ.get("AZURE_OPENAI_API_KEY")
     base_url = os.environ.get("AZURE_OPENAI_BASE_URL")
     deployment = os.environ.get("AZURE_OPENAI_DEPLOYMENT")
     if not (api_key and base_url and deployment):
         return None
-    return build_chat_service(
+    return build_role_chat_service(
         ledger,
+        employee_id=employee_id,
         api_key=api_key,
         base_url=base_url,
         deployment=deployment,
         company_id=company_id,
-        employee_id=employee_id,
         render_bus=render_bus,
         pricing=default_pricing_from_env(),
     )
@@ -193,7 +153,6 @@ def chat_service_from_env(
 __all__ = [
     "SchedulerTickRunner",
     "build_beat_service",
-    "build_chat_service",
     "chat_service_from_env",
     "default_pricing_from_env",
 ]

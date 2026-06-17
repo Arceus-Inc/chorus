@@ -12,6 +12,7 @@ from chorus.adapters._contract import (
     DreamContractError,
     check_dream_contract,
 )
+from chorus.adapters._observer import DreamObserverBridge
 from chorus.adapters._pricing import ModelRate, TokenPricing, UsageView
 from chorus.adapters.dream_beat import (
     DreamBeatRunner,
@@ -25,6 +26,7 @@ __all__ = [
     "SUPPORTED_DREAM_CONTRACT",
     "DreamBeatRunner",
     "DreamContractError",
+    "DreamObserverBridge",
     "DreamStepStatus",
     "ModelRate",
     "RunResult",
