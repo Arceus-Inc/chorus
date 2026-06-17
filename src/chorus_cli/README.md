@@ -232,7 +232,10 @@ so it remembers earlier turns across a session.
 
 ## How the DoD enforces (spec 04 §1)
 
-A task's `dod` is the typed gate its beat must clear — `done` is never self-report:
+A task's `dod` is the typed gate its beat must clear — `done` is never self-report. **DoD at intake:**
+a task with no explicit `dod set` inherits its **assignee role's** DoD when the beat is dispatched — so
+an engineer (in `chat` or via `tick`) is always held to its `pytest -q && ruff check .` gate without
+you setting one; a manual `dod set` always wins.
 
 - **`command`** — the shell check rides into the beat as dream's verification (dream runs it and
   gates on it). `done` means the plan completed **and** the command exited 0.

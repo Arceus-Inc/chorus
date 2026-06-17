@@ -20,6 +20,7 @@ from chorus.adapters import DreamBeatRunner, ModelRate, TokenPricing
 from chorus.budgets import BudgetEnforcer
 from chorus.heartbeat import Scheduler, TickReport
 from chorus.ledger import SqliteLedger
+from chorus.roles import RoleRegistry, default_roles
 from chorus.workforce import LedgerWorkforce
 from chorus_cli._chat import ChatBeatService, ChatRenderBus
 from chorus_cli._role_chat import build_role_chat_service
@@ -114,6 +115,7 @@ def build_beat_service(
         workforce=LedgerWorkforce(ledger.employees),
         beat_runner=DreamBeatRunner(harness, pricing=pricing),
         budget_enforcer=BudgetEnforcer(ledger, company_id=company_id),
+        roles=RoleRegistry.from_plugins(default_roles()),  # tasks inherit the role DoD at intake
         max_concurrent_runs=max_concurrent_runs,
     )
     return SchedulerTickRunner(scheduler, model=deployment)

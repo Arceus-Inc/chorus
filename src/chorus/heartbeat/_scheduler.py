@@ -50,6 +50,7 @@ if TYPE_CHECKING:
     from chorus.heartbeat._beat import BeatOutcome, BeatRunner
     from chorus.ledger import SqliteLedger
     from chorus.observability import EventBus
+    from chorus.roles import RoleRegistry
     from chorus.workforce import Workforce
 
 _T = TypeVar("_T")
@@ -88,6 +89,7 @@ class Scheduler:
         beat_runner: BeatRunner | None = None,
         event_bus: EventBus | None = None,
         budget_enforcer: BudgetEnforcer | None = None,
+        roles: RoleRegistry | None = None,
         clock: Callable[[], datetime] | None = None,
         sleep: Callable[[float], Awaitable[None]] | None = None,
     ) -> None:
@@ -100,6 +102,7 @@ class Scheduler:
         self._beat_runner = beat_runner
         self._event_bus = event_bus
         self._budget_enforcer = budget_enforcer  # None = budgets off (gating is opt-in)
+        self._roles = roles  # None = no intake DoD (a task keeps whatever DoD was set explicitly)
         self._clock = clock or _utc_now  # the time source the run loop stamps each pulse with
         self._sleep = sleep or asyncio.sleep  # the inter-pulse wait (injectable for deterministic tests)
         self._stop = asyncio.Event()  # set by stop(); ends the run loop after the current pulse
@@ -322,6 +325,15 @@ class Scheduler:
         )
 
         observer = self._event_bus.emit if self._event_bus is not None else None
+        # Intake DoD (spec 04 §1 / 06 §2): a task with no explicit DoD inherits its assignee role's, so
+        # a beat is always held to the role's gate — the engineer to its tests, etc. A DoD a human set
+        # via ``dod set`` always wins (only filled when absent). Persisted so ``task <id>`` shows it.
+        if (
+            self._roles is not None
+            and employee.role in self._roles
+            and ledger.dod.get_for_task(task_id) is None
+        ):
+            ledger.dod.create(task_id, self._roles.get(employee.role).dod_generator(task.intent))
         # The DoD's objective checks ride into the beat: dream's evaluator runs them as the
         # acceptance gate, so ``done`` means plan-complete *and* the Command gate passed (spec 04 §1).
         verifier = ledger.dod.verifier_for_task(task_id)

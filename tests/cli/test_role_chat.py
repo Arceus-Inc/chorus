@@ -167,6 +167,38 @@ def test_seed_makes_the_employee_branch_off_real_code(
         ledger.close()
 
 
+def test_chat_wires_the_role_registry_so_tasks_inherit_the_role_dod(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    ledger = SqliteLedger.open(":memory:")
+    try:
+        ledger.employees.create(Employee(id="ada", name="Ada", role="engineer"))
+        monkeypatch.setattr(_role_chat.dream, "build_harness", lambda **kw: object())
+        captured: dict[str, Any] = {}
+        real_scheduler = _role_chat.Scheduler
+
+        def _capture(**kw: Any) -> object:
+            captured.update(kw)
+            return real_scheduler(**kw)
+
+        monkeypatch.setattr(_role_chat, "Scheduler", _capture)
+        _role_chat.build_role_chat_service(
+            ledger,
+            employee_id="ada",
+            api_key="k",
+            base_url="https://x/openai/v1",
+            deployment="gpt-x",
+            company_id="acme",
+            render_bus=_role_chat.ChatRenderBus(out=io.StringIO()),
+            work_dir=tmp_path,
+        )
+        # the scheduler is handed the role registry → a chat task inherits the engineer's DoD at intake
+        assert captured["roles"] is not None
+        assert "engineer" in captured["roles"]
+    finally:
+        ledger.close()
+
+
 def test_a_role_that_declares_skills_enables_skill_loading(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
