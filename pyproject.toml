@@ -55,10 +55,10 @@ Repository = "https://github.com/Arceus-Inc/chorus"
 dream = { path = "../dream", editable = true }
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/chorus", "src/chorus_cli", "src/chorus_employee"]
+packages = ["src/chorus", "src/chorus_cli", "src/chorus_employee", "src/chorus_harness"]
 
 [tool.hatch.build.targets.sdist]
-include = ["src/chorus", "src/chorus_cli", "src/chorus_employee", "tests", "README.md", "pyproject.toml"]
+include = ["src/chorus", "src/chorus_cli", "src/chorus_employee", "src/chorus_harness", "tests", "README.md", "pyproject.toml"]
 
 [tool.ruff]
 line-length = 100
@@ -75,7 +75,7 @@ ignore = ["E501"]
 [tool.mypy]
 python_version = "3.11"
 strict = true
-packages = ["chorus", "chorus_cli", "chorus_employee"]
+packages = ["chorus", "chorus_cli", "chorus_employee", "chorus_harness"]
 mypy_path = "src"
 warn_unused_ignores = true
 warn_redundant_casts = true

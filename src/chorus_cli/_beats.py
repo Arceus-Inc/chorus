@@ -1,22 +1,20 @@
-"""The console's composition root for running real beats — the one module that wires dream.
+"""The console's composition root for running real beats (spec 06 §2, spec 10 §1).
 
-A :class:`BeatService` is a :class:`~chorus.heartbeat.Scheduler` wired with a real
-:class:`~chorus.adapters.DreamBeatRunner`, plus the sync ``run_tick`` bridge the (synchronous)
-console calls. :func:`build_beat_service` builds the dream harness from Azure credentials; it is the
-only place in the CLI that imports dream, and it is imported lazily (only when keys are present), so
-the keys-free console never pays for it.
+A :class:`BeatService` is a :class:`~chorus.heartbeat.Scheduler` wired with the org's
+:class:`~chorus_harness.EmployeeHarnessFactory`, plus the sync ``run_tick`` bridge the (synchronous)
+console calls. ``tick`` and ``chat`` run beats through the *same* factory, so every dispatched beat
+runs as its employee — role tools, brief, permission posture, and its own branch-isolated worktree.
+The dream import lives in ``chorus_harness`` (imported lazily, only when keys are present), so the
+keys-free console never pays for it.
 """
 
 from __future__ import annotations
 
 import asyncio
 import os
-import tempfile
 from pathlib import Path
 
-import dream
-
-from chorus.adapters import DreamBeatRunner, ModelRate, TokenPricing
+from chorus.adapters import ModelRate, TokenPricing
 from chorus.budgets import BudgetEnforcer
 from chorus.heartbeat import Scheduler, TickReport
 from chorus.ledger import SqliteLedger
@@ -24,6 +22,7 @@ from chorus.roles import RoleRegistry, default_roles
 from chorus.workforce import LedgerWorkforce
 from chorus_cli._chat import ChatBeatService, ChatRenderBus
 from chorus_cli._role_chat import build_role_chat_service
+from chorus_harness import EmployeeHarnessFactory
 
 # Illustrative GPT-5-class pricing (whole cents per million tokens); override via env.
 _DEFAULT_INPUT_CENTS_PER_MTOK = 125
@@ -89,33 +88,35 @@ def build_beat_service(
     deployment: str,
     company_id: str,
     pricing: TokenPricing,
-    work_dir: Path | None = None,
+    seed: str | Path | None = None,
+    work_root: Path | None = None,
     max_concurrent_runs: int = 1,
 ) -> SchedulerTickRunner:
-    """Wire a dream harness + scheduler into a :class:`SchedulerTickRunner` (the composition root).
+    """Wire the org harness factory + scheduler into a :class:`SchedulerTickRunner` (spec 06 §2).
 
-    The beat runner is priced (``pricing``) so each beat accrues a real ``cost_cents``, and the
-    scheduler carries a :class:`~chorus.budgets.BudgetEnforcer` for ``company_id`` — so a ``tick``
-    records spend and the two budget gates actually fire. ``work_dir`` is dream's scratch directory; a
-    throwaway temp dir is created when not given. The harness is lean (no skills/memory/mcp/plugins).
+    Every dispatched beat is resolved through the :class:`~chorus_harness.EmployeeHarnessFactory`, so it
+    runs as its employee — role tools/brief/permission/memory in the employee's own worktree under
+    ``.chorus/work/{org}/`` (``work_root`` overrides the base; ``seed`` points it at a real repo). The
+    factory is priced so each beat accrues ``cost_cents`` and the scheduler's
+    :class:`~chorus.budgets.BudgetEnforcer` gates fire; ``roles`` also drives DoD-at-intake.
     """
-    root = work_dir if work_dir is not None else Path(tempfile.mkdtemp(prefix="chorus-cli-"))
-    harness = dream.build_harness(
-        model=deployment,
+    registry = RoleRegistry.from_plugins(default_roles())
+    factory = EmployeeHarnessFactory(
         api_key=api_key,
         base_url=base_url,
-        working_dir=root,
-        skills=False,
-        memory=False,
-        mcp=False,
-        plugins=False,
+        deployment=deployment,
+        company_id=company_id,
+        roles=registry,
+        pricing=pricing,
+        seed=seed,
+        work_root=work_root,
     )
     scheduler = Scheduler(
         ledger=ledger,
         workforce=LedgerWorkforce(ledger.employees),
-        beat_runner=DreamBeatRunner(harness, pricing=pricing),
+        beat_runner_for=factory,  # resolve a role-faithful runner per dispatched employee
         budget_enforcer=BudgetEnforcer(ledger, company_id=company_id),
-        roles=RoleRegistry.from_plugins(default_roles()),  # tasks inherit the role DoD at intake
+        roles=registry,  # tasks inherit the assignee role's DoD at intake (spec 04 §1)
         max_concurrent_runs=max_concurrent_runs,
     )
     return SchedulerTickRunner(scheduler, model=deployment)

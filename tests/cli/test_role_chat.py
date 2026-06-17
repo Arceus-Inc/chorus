@@ -1,126 +1,97 @@
-"""Materializing an employee into a configured dream harness (spec 06 §2 → dream seam).
+"""Building the chat beat service over the org harness factory (spec 06 §2).
 
-The employee's role → tool-name mapping, the per-role overlays that make the *whole* harness run as
-the employee, and the wiring of a role-scoped harness into the chat scheduler. dream's harness build
-is stubbed so the translation + file writes are tested without a provider.
+The role → harness materialization itself is tested in ``tests/harness/test_factory.py``; here we test
+the chat front-end's *wiring*: resolve the employee, hand the factory's materialized harness to a
+scheduler with the render bus, and surface the worktree + config on the :class:`ChatBeatService`.
 """
 
 from __future__ import annotations
 
 import io
+import subprocess
 from pathlib import Path
 from typing import Any
 
 import pytest
 
+from chorus.errors import UnknownEmployee
 from chorus.ledger import SqliteLedger
-from chorus.roles import RoleBeatConfig
 from chorus.workforce import Employee
 from chorus_cli import _role_chat
+from chorus_cli._chat import ChatBeatService
+from chorus_harness import _factory as _factory_mod
 
 pytestmark = pytest.mark.integration
 
 
-def test_chorus_tools_map_to_dream_builtins_dropping_chorus_only() -> None:
-    # engineer's allow-list → dream built-ins (run_command is dream's `bash`)
-    assert _role_chat.dream_tool_names(("read_file", "write_file", "run_command", "git")) == (
-        "read_file",
-        "write_file",
-        "bash",
-        "git",
+def _stub_build_harness(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Stub dream's harness build (the factory owns the import) so no provider is needed."""
+    monkeypatch.setattr(_factory_mod.dream, "build_harness", lambda **kw: object())
+
+
+def _service(
+    ledger: SqliteLedger, *, employee_id: str = "ada", **kwargs: Any
+) -> ChatBeatService:
+    return _role_chat.build_role_chat_service(
+        ledger,
+        employee_id=employee_id,
+        api_key="k",
+        base_url="https://x/openai/v1",
+        deployment="gpt-x",
+        company_id="acme",
+        render_bus=_role_chat.ChatRenderBus(out=io.StringIO()),
+        **kwargs,
     )
-    # manager's allow-list → only read_file is a built-in; submit_task/assign_task are chorus tools
-    assert _role_chat.dream_tool_names(("read_file", "submit_task", "assign_task")) == ("read_file",)
 
 
-def test_write_role_overlays_flavours_all_three_dream_roles(tmp_path: Path) -> None:
-    config = RoleBeatConfig(
-        system_prompt="You implement and ship changes.",
-        tools=("read_file", "write_file"),
-        permission_mode="acceptEdits",
-    )
-    _role_chat.write_role_overlays(tmp_path, config)
-    for role in ("planner", "generator", "evaluator"):
-        overlay = (tmp_path / "roles" / f"{role}.toml").read_text(encoding="utf-8")
-        assert "You implement and ship changes." in overlay  # the brief reached every role
-        assert 'permission_mode = "acceptEdits"' in overlay  # the employee's posture
-
-
-def test_build_role_chat_service_resolves_the_role_and_scopes_the_harness(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_unknown_employee_raises(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    _stub_build_harness(monkeypatch)
     ledger = SqliteLedger.open(":memory:")
     try:
-        ledger.employees.create(Employee(id="ada", name="Ada", role="engineer"))
-        captured: dict[str, Any] = {}
-
-        def _fake_build_harness(**kwargs: Any) -> object:
-            captured.update(kwargs)
-            return object()
-
-        monkeypatch.setattr(_role_chat.dream, "build_harness", _fake_build_harness)
-        service = _role_chat.build_role_chat_service(
-            ledger,
-            employee_id="ada",
-            api_key="k",
-            base_url="https://x/openai/v1",
-            deployment="gpt-x",
-            company_id="acme",
-            render_bus=_role_chat.ChatRenderBus(out=io.StringIO()),
-            work_dir=tmp_path,
-        )
-        assert service.model == "gpt-x"
-        # the engineer's harness is scoped to its built-in tools, across the whole loop
-        names = [t.name for t in captured["registry"].list_tools()]
-        assert set(names) == {"read_file", "write_file", "bash", "git"}
-        # the engineer declares no skills → dream's skill loading is off
-        assert captured["skills"] is False
-        # every other build_harness scalar comes from the engineer's config (not dream's defaults)
-        assert captured["model"] == "gpt-x"  # config.model is None → the deployment model
-        assert captured["max_turns"] == 12  # the engineer's deeper coding budget
-        assert captured["working_memory"] is True  # the engineer keeps a scratchpad
-        assert captured["memory"] is True
-        assert captured["mcp"] is False and captured["plugins"] is False
-        assert captured["wake_model"] is None
-        assert captured["env"] is None  # empty role env → no env override
-        # and its identity was written as overlays the harness's run_task will read
-        assert (tmp_path / "roles" / "generator.toml").exists()
+        with pytest.raises(UnknownEmployee):
+            _service(ledger, employee_id="ghost", work_root=tmp_path)
     finally:
         ledger.close()
 
 
-def test_worktree_isolation_makes_working_dir_a_branch_isolated_worktree(
+def test_service_surfaces_the_materialized_worktree_and_config(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    import subprocess
+    _stub_build_harness(monkeypatch)
+    ledger = SqliteLedger.open(":memory:")
+    try:
+        ledger.employees.create(Employee(id="ada", name="Ada", role="engineer"))
+        service = _service(ledger, work_root=tmp_path)
+        assert service.model == "gpt-x"
+        # the chat service runs in the employee's branch-isolated worktree (shared with tick)
+        assert service.working_dir == str(tmp_path / "acme" / "worktrees" / "ada")
+        assert service.workspace is not None  # /merge can integrate it
+        # /config reads the resolved role spec off the service
+        assert service.harness_spec.tools == ("read_file", "write_file", "run_command", "git")
+        assert service.harness_spec.permission_mode == "acceptEdits"
+    finally:
+        ledger.close()
 
-    monkeypatch.chdir(tmp_path)  # .chorus/chat/... lands under the tmp dir, not the real cwd
+
+def test_chat_wires_the_role_registry_so_tasks_inherit_the_role_dod(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _stub_build_harness(monkeypatch)
     ledger = SqliteLedger.open(":memory:")
     try:
         ledger.employees.create(Employee(id="ada", name="Ada", role="engineer"))
         captured: dict[str, Any] = {}
-        monkeypatch.setattr(
-            _role_chat.dream, "build_harness", lambda **kw: captured.update(kw) or object()
-        )
-        service = _role_chat.build_role_chat_service(
-            ledger,
-            employee_id="ada",
-            api_key="k",
-            base_url="https://x/openai/v1",
-            deployment="gpt-x",
-            company_id="acme",
-            render_bus=_role_chat.ChatRenderBus(out=io.StringIO()),
-        )  # no work_dir → the engineer (isolation=worktree) gets a real worktree
-        working_dir = Path(captured["working_dir"])
-        assert working_dir == tmp_path / ".chorus" / "chat" / "acme" / "worktrees" / "ada"
-        branch = subprocess.run(
-            ["git", "-C", str(working_dir), "rev-parse", "--abbrev-ref", "HEAD"],
-            check=True,
-            capture_output=True,
-            text=True,
-        ).stdout.strip()
-        assert branch == "chorus/ada"  # the employee writes confined to its own branch
-        assert service.workspace is not None  # /merge can integrate it later
+        real_scheduler = _role_chat.Scheduler
+
+        def _capture(**kw: Any) -> object:
+            captured.update(kw)
+            return real_scheduler(**kw)
+
+        monkeypatch.setattr(_role_chat, "Scheduler", _capture)
+        _service(ledger, work_root=tmp_path)
+        # the scheduler is handed the role registry → a chat task inherits the engineer's DoD at intake
+        assert captured["roles"] is not None
+        assert "engineer" in captured["roles"]
     finally:
         ledger.close()
 
@@ -128,9 +99,7 @@ def test_worktree_isolation_makes_working_dir_a_branch_isolated_worktree(
 def test_seed_makes_the_employee_branch_off_real_code(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    import subprocess
-
-    # a real source repo with committed code
+    _stub_build_harness(monkeypatch)
     source = tmp_path / "source"
     source.mkdir()
     subprocess.run(["git", "-C", str(source), "init", "-b", "trunk"], check=True, capture_output=True)
@@ -142,93 +111,11 @@ def test_seed_makes_the_employee_branch_off_real_code(
         capture_output=True,
     )
 
-    monkeypatch.chdir(tmp_path)
     ledger = SqliteLedger.open(":memory:")
     try:
         ledger.employees.create(Employee(id="ada", name="Ada", role="engineer"))
-        captured: dict[str, Any] = {}
-        monkeypatch.setattr(
-            _role_chat.dream, "build_harness", lambda **kw: captured.update(kw) or object()
-        )
-        _role_chat.build_role_chat_service(
-            ledger,
-            employee_id="ada",
-            api_key="k",
-            base_url="https://x/openai/v1",
-            deployment="gpt-x",
-            company_id="acme",
-            render_bus=_role_chat.ChatRenderBus(out=io.StringIO()),
-            seed=source,
-        )
-        working_dir = Path(captured["working_dir"])
-        # the engineer's isolated worktree starts from the seeded codebase, not a blank tree
-        assert (working_dir / "app.py").read_text(encoding="utf-8") == "print('real')\n"
-    finally:
-        ledger.close()
-
-
-def test_chat_wires_the_role_registry_so_tasks_inherit_the_role_dod(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    ledger = SqliteLedger.open(":memory:")
-    try:
-        ledger.employees.create(Employee(id="ada", name="Ada", role="engineer"))
-        monkeypatch.setattr(_role_chat.dream, "build_harness", lambda **kw: object())
-        captured: dict[str, Any] = {}
-        real_scheduler = _role_chat.Scheduler
-
-        def _capture(**kw: Any) -> object:
-            captured.update(kw)
-            return real_scheduler(**kw)
-
-        monkeypatch.setattr(_role_chat, "Scheduler", _capture)
-        _role_chat.build_role_chat_service(
-            ledger,
-            employee_id="ada",
-            api_key="k",
-            base_url="https://x/openai/v1",
-            deployment="gpt-x",
-            company_id="acme",
-            render_bus=_role_chat.ChatRenderBus(out=io.StringIO()),
-            work_dir=tmp_path,
-        )
-        # the scheduler is handed the role registry → a chat task inherits the engineer's DoD at intake
-        assert captured["roles"] is not None
-        assert "engineer" in captured["roles"]
-    finally:
-        ledger.close()
-
-
-def test_a_role_that_declares_skills_enables_skill_loading(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    from chorus.outcomes import Verifier
-    from chorus.roles import RoleManifest, RolePlugin, RoleRegistry
-
-    ledger = SqliteLedger.open(":memory:")
-    try:
-        ledger.employees.create(Employee(id="ana", name="Ana", role="analyst"))
-        skilled = RolePlugin(
-            name="analyst",
-            manifest=RoleManifest(system_prompt="You analyse.", tools=("read_file",), skills=("data-dive",)),
-            dod_generator=lambda intent: Verifier.agent_review(),
-            outcome_kind="finding",
-        )
-        captured: dict[str, Any] = {}
-        monkeypatch.setattr(
-            _role_chat.dream, "build_harness", lambda **kw: captured.update(skills=kw.get("skills"))
-        )
-        _role_chat.build_role_chat_service(
-            ledger,
-            employee_id="ana",
-            api_key="k",
-            base_url="https://x/openai/v1",
-            deployment="gpt-x",
-            company_id="acme",
-            render_bus=_role_chat.ChatRenderBus(out=io.StringIO()),
-            work_dir=tmp_path,
-            roles=RoleRegistry.from_plugins([skilled]),
-        )
-        assert captured["skills"] is True  # declaring skills turns dream's skill loading on
+        service = _service(ledger, work_root=tmp_path / "ws", seed=source)
+        # the engineer's worktree starts from the seeded codebase, not a blank tree
+        assert (Path(service.working_dir) / "app.py").read_text(encoding="utf-8") == "print('real')\n"
     finally:
         ledger.close()

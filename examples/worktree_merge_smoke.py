@@ -57,7 +57,7 @@ def main() -> int:
 
     sys.stdout.reconfigure(line_buffering=True)  # interleave cleanly with the beat's streamed prose
     base = Path(tempfile.mkdtemp(prefix="chorus-worktree-"))
-    os.chdir(base)  # .chorus/chat/... lands under the tmp dir, not the real cwd
+    os.chdir(base)  # .chorus/work/... lands under the tmp dir, not the real cwd
     seed = base / "source"
     _make_seed_repo(seed)
 

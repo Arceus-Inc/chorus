@@ -14,7 +14,6 @@ from chorus.heartbeat import Scheduler, Wake, WakeReason
 from chorus.heartbeat._beat import BeatOutcome
 from chorus.ledger import SqliteLedger, Task, TaskStatus
 from chorus.workforce import Employee, LedgerWorkforce
-from chorus_cli import _beats
 from chorus_cli._beats import SchedulerTickRunner, build_beat_service
 
 pytestmark = pytest.mark.integration
@@ -46,11 +45,9 @@ def _seed_assigned_wake(ledger: SqliteLedger, *, task_id: str, employee_id: str)
 # -- build_beat_service -----------------------------------------------------------------------------
 
 
-def test_build_beat_service_wires_a_scheduler(
-    ledger: SqliteLedger, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    # The harness is dream's; stub it so we exercise the wiring without a provider.
-    monkeypatch.setattr(_beats.dream, "build_harness", lambda **kwargs: object())
+def test_build_beat_service_wires_a_scheduler(ledger: SqliteLedger) -> None:
+    # The harness is materialized lazily per beat by the factory, so no provider call happens here —
+    # build_beat_service just wires the scheduler over the org factory.
     runner = build_beat_service(
         ledger,
         api_key="k",

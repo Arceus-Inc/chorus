@@ -3,7 +3,7 @@
 Written as the *standing identity* of the role: what "done" means, the house rules, and
 the posture. The composition root layers it onto each dream intra-task role (planner /
 generator / evaluator) as a per-role overlay, so the whole ``run_task`` loop speaks as the
-Engineer (see :func:`chorus_cli._role_chat.write_role_overlays`).
+Engineer (see :func:`chorus_harness.write_role_overlays`).
 """
 
 from __future__ import annotations
