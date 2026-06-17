@@ -104,7 +104,19 @@ def main(
     scripted input and a captured stream; they default to real stdin/stdout.
     """
     args = build_parser().parse_args(argv)
-    load_env_file(Path(args.env_file))  # pick up local credentials before wiring the beat service
+
+    def _warn_env_override(key: str) -> None:
+        # The .env is authoritative for its creds, but a stale shell export is worth flagging: it is
+        # exactly the trap where a wrong AZURE_OPENAI_* silently breaks every beat (the model can't be
+        # reached, so the planner sees an empty reply).
+        print(
+            f"warning: {key} was set in your shell; using {args.env_file} instead "
+            f"(unset it or update {args.env_file} to silence this).",
+            file=sys.stderr,
+        )
+
+    # ``override`` so the gitignored .env wins over a stale shell var; warn on each real conflict.
+    load_env_file(Path(args.env_file), override=True, on_conflict=_warn_env_override)
     ledger = SqliteLedger.open(args.db)
     sink = output if output is not None else _utf8_stdout()
     try:
