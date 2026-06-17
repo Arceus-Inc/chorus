@@ -85,7 +85,9 @@ class LoggingBus(EventBus):
         if event.kind is EventKind.RUN_TOOL_USE:
             _log(f"    → TOOL {p.get('tool', '?')}  {str(p.get('input', ''))[:160]}")
         elif event.kind is EventKind.RUN_TOOL_RESULT:
-            _log(f"    ← {p.get('tool', '?')} [{'ERR' if p.get('is_error') else 'ok'}]")
+            tag = "ERR" if p.get("is_error") else "ok"
+            note = f"  {str(p.get('content', ''))[:160]}" if p.get("is_error") else ""
+            _log(f"    ← {p.get('tool', '?')} [{tag}]{note}")
         elif event.kind is EventKind.RUN_EVALUATED:
             _log(f"    ⊢ evaluated: {p.get('outcome', p)}")
         elif event.kind is EventKind.RUN_STARTED:
