@@ -10,7 +10,8 @@ import pytest
 
 from chorus.ledger import SqliteLedger
 from chorus_cli import main
-from chorus_cli.__main__ import _beat_service_from_env, _pricing_from_env, build_parser
+from chorus_cli.__main__ import _beat_service_from_env, build_parser
+from chorus_cli._beats import default_pricing_from_env
 
 pytestmark = pytest.mark.integration
 
@@ -91,14 +92,14 @@ def test_beat_service_is_none_without_credentials() -> None:
 def test_pricing_defaults_when_env_unset(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("CHORUS_PRICE_INPUT_CENTS_PER_MTOK", raising=False)
     monkeypatch.delenv("CHORUS_PRICE_OUTPUT_CENTS_PER_MTOK", raising=False)
-    rate = _pricing_from_env().rate_for("any-model")
+    rate = default_pricing_from_env().rate_for("any-model")
     assert rate is not None and rate.input_cents_per_mtok == 125 and rate.output_cents_per_mtok == 1000
 
 
 def test_pricing_reads_env_and_ignores_malformed(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("CHORUS_PRICE_INPUT_CENTS_PER_MTOK", "200")
     monkeypatch.setenv("CHORUS_PRICE_OUTPUT_CENTS_PER_MTOK", "not-a-number")
-    rate = _pricing_from_env().rate_for("any-model")
+    rate = default_pricing_from_env().rate_for("any-model")
     assert rate is not None and rate.input_cents_per_mtok == 200
     assert rate.output_cents_per_mtok == 1000  # malformed -> default
 

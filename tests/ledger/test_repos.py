@@ -123,6 +123,40 @@ def test_list_eligible_returns_only_unclaimed_todo(ledger: SqliteLedger) -> None
     assert eligible == ["t1"]
 
 
+def test_open_for_assignee_returns_none_without_a_workable_task(ledger: SqliteLedger) -> None:
+    ledger.employees.create(Employee(id="e1", name="a", role="engineer"))
+    ledger.employees.create(Employee(id="e2", name="b", role="engineer"))
+    # no tasks at all
+    assert ledger.tasks.open_for_assignee("e1") is None
+    # a task assigned to someone else, and one of ours that is terminal, are both ignored
+    ledger.tasks.submit(Task(id="t1", intent="x", status=TaskStatus.TODO, assignee_employee_id="e2"))
+    ledger.tasks.submit(Task(id="t2", intent="y", status=TaskStatus.DONE, assignee_employee_id="e1"))
+    ledger.tasks.submit(
+        Task(id="t3", intent="z", status=TaskStatus.CANCELLED, assignee_employee_id="e1")
+    )
+    assert ledger.tasks.open_for_assignee("e1") is None
+
+
+def test_open_for_assignee_returns_the_workable_task(ledger: SqliteLedger) -> None:
+    ledger.employees.create(Employee(id="e1", name="a", role="engineer"))
+    ledger.tasks.submit(Task(id="t1", intent="x", status=TaskStatus.TODO, assignee_employee_id="e1"))
+    got = ledger.tasks.open_for_assignee("e1")
+    assert got is not None
+    assert got.id == "t1"
+    # blocked is not workable — a steer should not silently re-wake a blocked task
+    ledger.tasks.set_status("t1", TaskStatus.BLOCKED)
+    assert ledger.tasks.open_for_assignee("e1") is None
+
+
+def test_open_for_assignee_prefers_the_most_recent(ledger: SqliteLedger) -> None:
+    ledger.employees.create(Employee(id="e1", name="a", role="engineer"))
+    ledger.tasks.submit(Task(id="t1", intent="x", status=TaskStatus.TODO, assignee_employee_id="e1"))
+    ledger.tasks.submit(Task(id="t2", intent="y", status=TaskStatus.TODO, assignee_employee_id="e1"))
+    got = ledger.tasks.open_for_assignee("e1")
+    assert got is not None
+    assert got.id == "t2"
+
+
 def test_exact_once_self_spawned_submit_is_rejected(ledger: SqliteLedger) -> None:
     ledger.tasks.submit(
         Task(

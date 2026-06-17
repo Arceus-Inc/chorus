@@ -199,6 +199,23 @@ class TaskRepo:
         ).fetchall()
         return [_row_to_task(row) for row in rows]
 
+    def open_for_assignee(self, employee_id: str) -> Task | None:
+        """The most-recent **workable** task assigned to ``employee_id``, or ``None``.
+
+        Workable means ``todo`` / ``in_progress`` / ``in_review`` — the states a steer can
+        re-wake. ``backlog`` (parked), ``blocked`` (needs recovery, not a bare re-wake), and
+        the terminal states are excluded, and human-held work (``assignee_user_id`` set) is
+        never agent-managed. The chat console uses this to decide whether a new line attaches
+        to a live task or promotes a fresh one.
+        """
+        row = self._conn.execute(
+            "SELECT * FROM task WHERE assignee_employee_id = ? AND assignee_user_id IS NULL "
+            "AND status IN ('todo', 'in_progress', 'in_review') "
+            "ORDER BY created_at DESC, id DESC LIMIT 1",
+            (employee_id,),
+        ).fetchone()
+        return _row_to_task(row) if row is not None else None
+
     def has_open_for_routine(self, routine_id: str) -> bool:
         """True iff a non-terminal task spawned by this routine is still live (spec 03 §4).
 

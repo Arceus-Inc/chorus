@@ -42,6 +42,7 @@ from chorus.lifecycle import (
 )
 from chorus.outcomes import DoDKind, Verifier
 from chorus.workforce import EmployeeStatus, GitWorkforce, LedgerWorkforce, copy_org
+from chorus_cli._chat import ChatRenderBus, run_chat
 from chorus_cli._context import CommandContext, LoopSignal
 from chorus_cli._registry import CommandRegistry
 from chorus_cli._render import Console
@@ -552,6 +553,54 @@ def _tick(ctx: CommandContext) -> LoopSignal:
         ctx.out.line("a dispatch was gated by a budget -- see 'budget' (raise to resume)")
     else:
         ctx.out.line("nothing to dispatch (assign a task first, then tick)")
+    return LoopSignal.CONTINUE
+
+
+_CHAT = "chat <employee_id>"
+
+
+@REGISTRY.command(
+    "chat", summary="converse with an employee -- each line runs a real beat (needs Azure keys)", usage=_CHAT
+)
+def _chat(ctx: CommandContext) -> LoopSignal:
+    if len(ctx.args) != 1:
+        ctx.out.error(f"usage: {_CHAT}")
+        return LoopSignal.CONTINUE
+    employee_id = ctx.args[0]
+    employee = ctx.session.ledger.employees.get(employee_id)
+    if employee is None:
+        ctx.out.error(f"no such employee: {employee_id!r} (hire them first)")
+        return LoopSignal.CONTINUE
+    if employee.status is EmployeeStatus.TERMINATED:
+        ctx.out.error(f"{employee_id!r} is terminated -- termination is irreversible")
+        return LoopSignal.CONTINUE
+    # The render bus shares the console's stream so the streamed reply and the footer interleave.
+    render_bus = ChatRenderBus(ctx.out.out, colour=ctx.out.colour)
+    # dream is imported lazily here (only when chatting) so the keys-free console never pays for it.
+    from chorus_cli._beats import chat_service_from_env
+
+    service = chat_service_from_env(
+        ctx.session.ledger,
+        employee_id=employee_id,
+        render_bus=render_bus,
+        company_id=ctx.session.company_id,
+    )
+    if service is None:
+        ctx.out.error(
+            "no beat runner configured -- set AZURE_OPENAI_API_KEY, AZURE_OPENAI_BASE_URL, "
+            "AZURE_OPENAI_DEPLOYMENT and relaunch"
+        )
+        return LoopSignal.CONTINUE
+    if employee.status is EmployeeStatus.PAUSED:
+        ctx.out.line(f"note: {employee_id} is paused -- its turns will be gated until you 'resume' it")
+    run_chat(
+        employee_id,
+        ledger=ctx.session.ledger,
+        service=service,
+        render_bus=render_bus,
+        console=ctx.out,
+        input_func=ctx.session.input_func,
+    )
     return LoopSignal.CONTINUE
 
 
