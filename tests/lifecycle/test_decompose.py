@@ -24,7 +24,7 @@ from chorus.ledger._models import (
     OriginKind,
     WakeReason,
 )
-from chorus.lifecycle import ChildSpec, decompose
+from chorus.lifecycle import ChildSpec, Fanned, decompose
 from chorus.workforce import Employee
 
 REV = "rev_1"  # the accepted-plan-revision id, backed by a real artifact revision on the source
@@ -105,14 +105,15 @@ def test_gating_child_becomes_a_first_class_dependency(
 
 
 def test_claim_completes_after_fan_out(ledger: SqliteLedger, source: Task) -> None:
-    claim = decompose(
+    outcome = decompose(
         ledger,
         source_task_id=source.id,
         accepted_plan_revision_id=REV,
         children=[ChildSpec(_child("c1")), ChildSpec(_child("c2"))],
     )
-    assert claim.status is DecompositionStatus.COMPLETED
-    assert claim.child_task_ids == ["c1", "c2"]
+    assert isinstance(outcome, Fanned)
+    assert outcome.claim.status is DecompositionStatus.COMPLETED
+    assert outcome.claim.child_task_ids == ["c1", "c2"]
 
 
 def test_resume_reuses_partial_result_no_duplicate_children(
@@ -126,8 +127,9 @@ def test_resume_reuses_partial_result_no_duplicate_children(
     second = decompose(
         ledger, source_task_id=source.id, accepted_plan_revision_id=REV, children=specs
     )
-    assert second.id == first.id  # exact-once: one claim per (source, revision)
-    assert second.child_task_ids == ["c1", "c2"]  # not duplicated
+    assert isinstance(first, Fanned) and isinstance(second, Fanned)
+    assert second.claim.id == first.claim.id  # exact-once: one claim per (source, revision)
+    assert second.claim.child_task_ids == ["c1", "c2"]  # not duplicated
     assert ledger.dependencies.blockers("src") == ["c1"]  # dependency add is idempotent
 
 

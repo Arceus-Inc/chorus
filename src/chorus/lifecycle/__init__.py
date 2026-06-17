@@ -9,7 +9,13 @@ from __future__ import annotations
 
 from chorus.lifecycle._audit import record_activity
 from chorus.lifecycle._coordination import assign_task, deliver_message
-from chorus.lifecycle._decompose import ChildSpec, decompose
+from chorus.lifecycle._decompose import (
+    DEFAULT_REQUEST_DEPTH_CAP,
+    ChildSpec,
+    DepthCapped,
+    Fanned,
+    decompose,
+)
 from chorus.lifecycle._disposition import (
     Disposition,
     DispositionAction,
@@ -26,11 +32,14 @@ from chorus.lifecycle._transitions import (
 )
 
 __all__ = [
+    "DEFAULT_REQUEST_DEPTH_CAP",
     "LEGAL_TRANSITIONS",
     "TERMINAL",
     "ChildSpec",
+    "DepthCapped",
     "Disposition",
     "DispositionAction",
+    "Fanned",
     "Health",
     "IllegalTransition",
     "Liveness",

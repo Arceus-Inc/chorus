@@ -76,6 +76,7 @@ Without them, `tick` simply prints how to enable it.
 | `task <id>` | show a task with its runs and DoD |
 | `dod set <task_id> <command\|human_approval\|agent_review> [args…]` | attach a typed Definition of Done |
 | `assign <task_id> <employee_id>` | assign a task (`backlog → todo`) and enqueue its wake |
+| `decompose <parent_id> <child_intent…>` | manager fan-out: create a gated child; refused (parent `blocked` + recovery) past the delegation depth cap (default 5) |
 | `eligible [limit]` | tasks ready to dispatch |
 
 ### Coordination & inspection
