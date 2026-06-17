@@ -13,9 +13,9 @@ from chorus.adapters import ModelRate, TokenPricing
 from chorus.heartbeat import Scheduler, Wake, WakeReason
 from chorus.heartbeat._beat import BeatOutcome
 from chorus.ledger import SqliteLedger, Task, TaskStatus
-from chorus.workforce import Employee
+from chorus.workforce import Employee, LedgerWorkforce
 from chorus_cli import _beats
-from chorus_cli._beats import LedgerWorkforce, SchedulerTickRunner, build_beat_service
+from chorus_cli._beats import SchedulerTickRunner, build_beat_service
 
 pytestmark = pytest.mark.integration
 
@@ -43,27 +43,7 @@ def _seed_assigned_wake(ledger: SqliteLedger, *, task_id: str, employee_id: str)
     )
 
 
-# -- LedgerWorkforce --------------------------------------------------------------------------------
-
-
-def test_ledger_workforce_get_returns_the_employee(ledger: SqliteLedger) -> None:
-    ledger.employees.create(Employee(id="alice", name="Alice", role="engineer"))
-    assert LedgerWorkforce(ledger).get("alice").name == "Alice"
-
-
-def test_ledger_workforce_get_unknown_raises(ledger: SqliteLedger) -> None:
-    with pytest.raises(KeyError):
-        LedgerWorkforce(ledger).get("ghost")
-
-
-def test_ledger_workforce_mutators_are_not_implemented(ledger: SqliteLedger) -> None:
-    workforce = LedgerWorkforce(ledger)
-    with pytest.raises(NotImplementedError):
-        workforce.hire(name="A", role="engineer")
-    with pytest.raises(NotImplementedError):
-        workforce.terminate("alice")
-    with pytest.raises(NotImplementedError):
-        workforce.list()
+# -- build_beat_service -----------------------------------------------------------------------------
 
 
 def test_build_beat_service_wires_a_scheduler(
@@ -89,7 +69,7 @@ def test_build_beat_service_wires_a_scheduler(
 def _runner(ledger: SqliteLedger, beat: _FakeBeat) -> SchedulerTickRunner:
     scheduler = Scheduler(
         ledger=ledger,
-        workforce=LedgerWorkforce(ledger),
+        workforce=LedgerWorkforce(ledger.employees),
         beat_runner=beat,
         max_concurrent_runs=1,
     )

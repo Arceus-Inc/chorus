@@ -1,8 +1,13 @@
-"""The git-markdown default ``Workforce`` — org persisted as ``employees/<slug>/role.md``."""
+"""The git-markdown ``Workforce`` — the portable export/import form (spec 09 §3).
+
+Not the live store: the runtime source of truth is the ledger employee table
+(:class:`~chorus.workforce.LedgerWorkforce`). This is the slug-portable git-markdown
+serialization of that org — what ``chorus export`` / ``chorus import`` move between
+deployments — implemented over the same :class:`~chorus.workforce.Workforce` seam.
+"""
 
 from __future__ import annotations
 
-import re
 from pathlib import Path
 from typing import Any
 
@@ -10,15 +15,17 @@ import yaml
 
 from chorus.errors import OrgInvariantViolation, UnknownEmployee
 from chorus.workforce._models import Employee, EmployeeStatus
+from chorus.workforce._slug import slugify
 
 
 class GitWorkforce:
-    """The git-markdown default ``Workforce`` (spec 06 §3, spec 09 §3).
+    """The git-markdown portable ``Workforce`` form (spec 06 §3, spec 09 §3).
 
     Each employee is an ``employees/<slug>/role.md`` with frontmatter
     (``role``, ``reports_to_slug``, ``memory_scope``, ``skills``); the tree is the
     portable-package format export/imports (spec 09 §3). The slug *is* the id
-    (``slugify(name)``), so the org survives re-import into a fresh workforce.
+    (``slugify(name)``), so the org survives re-import into a fresh ledger. The live
+    runtime store is :class:`~chorus.workforce.LedgerWorkforce`, not this.
     """
 
     def __init__(self, org_repo: str) -> None:
@@ -46,7 +53,7 @@ class GitWorkforce:
     # -- writes ---------------------------------------------------------------
 
     def hire(self, *, name: str, role: str, reports_to: str | None = None) -> Employee:
-        slug = _slugify(name)
+        slug = slugify(name)
         if not slug:
             raise OrgInvariantViolation(f"name {name!r} produces an empty slug")
         if reports_to == slug:
@@ -115,11 +122,6 @@ class GitWorkforce:
         }
         body = yaml.safe_dump(front, sort_keys=True, default_flow_style=False)
         path.write_text(f"---\n{body}---\n", encoding="utf-8")
-
-
-def _slugify(name: str) -> str:
-    """Lowercase, collapse non-alphanumeric runs to a single hyphen, strip edges."""
-    return re.sub(r"[^a-z0-9]+", "-", name.strip().lower()).strip("-")
 
 
 def _parse_frontmatter(text: str) -> dict[str, Any]:

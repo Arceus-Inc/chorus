@@ -2,9 +2,10 @@
 
 One object, built once, wires the concrete backends and is the **only** thing
 that imports dream (the "wiring"). ``build()`` news-up the ``SqliteLedger``, the
-``GitWorkforce``, the ``GitMemoryStore`` + ``AppendOnlyMemoryWriter``, the dream
-board ``ClaimManager``, the ``Scheduler``, the ``EventBus``, and the
-``Inspector``, and injects them — nothing else creates concrete classes.
+``LedgerWorkforce`` (the single live org store), the ``GitMemoryStore`` +
+``AppendOnlyMemoryWriter``, the dream board ``ClaimManager``, the ``Scheduler``,
+the ``EventBus``, and the ``Inspector``, and injects them — nothing else creates
+concrete classes.
 
 A consumer (an ``examples/`` file, or Arceus) only touches the public methods
 below; the behavior is stubbed pending implementation (M1+, spec 11 build plan).
@@ -26,7 +27,7 @@ from chorus.memory import AppendOnlyMemoryWriter
 from chorus.observability import EventBus, LedgerInspector, TaskView, WorkforceStatus
 from chorus.outcomes import Verifier
 from chorus.roles import RolePlugin, RoleRegistry, default_roles
-from chorus.workforce import Employee, GitWorkforce
+from chorus.workforce import Employee, LedgerWorkforce, Workforce
 
 
 @dataclass(frozen=True)
@@ -45,7 +46,7 @@ class Chorus:
         self,
         *,
         ledger: SqliteLedger,
-        workforce: GitWorkforce,
+        workforce: Workforce,
         memory_writer: AppendOnlyMemoryWriter,
         scheduler: Scheduler,
         event_bus: EventBus,
@@ -91,7 +92,10 @@ class Chorus:
         the_caps = caps or Caps()
         registry = RoleRegistry.from_plugins(roles if roles is not None else default_roles())
         ledger = SqliteLedger.open(db_path)
-        workforce = GitWorkforce(org_repo)
+        # The live workforce is the ledger employee table — the single source of truth every
+        # assignment FK points at (spec 06 §3). ``org_repo`` is the portable git-markdown
+        # export/import location (spec 09 §3, the GitWorkforce codec), not a second live store.
+        workforce = LedgerWorkforce(ledger.employees)
         event_bus = EventBus()
         scheduler = Scheduler(
             tick_interval_s=the_caps.tick_interval_s,

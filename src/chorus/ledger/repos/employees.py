@@ -48,6 +48,19 @@ class EmployeeRepo:
         ).fetchone()
         return _row_to_employee(row) if row is not None else None
 
+    def list(self) -> list[Employee]:
+        """Every employee row (terminated included) — the Workforce layer filters."""
+        rows = self._conn.execute("SELECT * FROM employee ORDER BY id").fetchall()
+        return [_row_to_employee(row) for row in rows]
+
+    def set_status(self, employee_id: str, status: EmployeeStatus) -> None:
+        """Transition one employee's lifecycle status (spec 01 Cluster D)."""
+        self._conn.execute(
+            "UPDATE employee SET status = ?, updated_at = ? WHERE id = ?",
+            (status.value, utcnow_iso(), employee_id),
+        )
+        self._conn.commit()
+
 
 def _row_to_employee(row: sqlite3.Row) -> Employee:
     return Employee(

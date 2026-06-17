@@ -19,35 +19,7 @@ from chorus.adapters import DreamBeatRunner, TokenPricing
 from chorus.budgets import BudgetEnforcer
 from chorus.heartbeat import Scheduler, TickReport
 from chorus.ledger import SqliteLedger
-from chorus.workforce import Employee
-
-
-class LedgerWorkforce:
-    """A :class:`~chorus.workforce.Workforce` backed by the ledger's employee rows.
-
-    The scheduler only needs ``get`` to rehydrate an employee before a beat, and that is what the
-    console drives. The mutating half of the protocol (``hire``/``terminate``/``list``) is not part
-    of the tick path here — the console seeds the workforce by writing employee rows directly — so it
-    stays unimplemented, mirroring the still-stubbed git-markdown ``GitWorkforce`` (spec 06).
-    """
-
-    def __init__(self, ledger: SqliteLedger) -> None:
-        self._ledger = ledger
-
-    def get(self, employee_id: str) -> Employee:
-        employee = self._ledger.employees.get(employee_id)
-        if employee is None:
-            raise KeyError(employee_id)
-        return employee
-
-    def hire(self, *, name: str, role: str, reports_to: str | None = None) -> Employee:
-        raise NotImplementedError("the console hires by writing employee rows, not via the scheduler")
-
-    def terminate(self, employee_id: str) -> None:
-        raise NotImplementedError("termination is not a tick-path operation in the console")
-
-    def list(self) -> list[Employee]:
-        raise NotImplementedError("the console has no workforce listing yet (spec 06)")
+from chorus.workforce import LedgerWorkforce
 
 
 class SchedulerTickRunner:
@@ -106,7 +78,7 @@ def build_beat_service(
     )
     scheduler = Scheduler(
         ledger=ledger,
-        workforce=LedgerWorkforce(ledger),
+        workforce=LedgerWorkforce(ledger.employees),
         beat_runner=DreamBeatRunner(harness, pricing=pricing),
         budget_enforcer=BudgetEnforcer(ledger, company_id=company_id),
         max_concurrent_runs=max_concurrent_runs,
@@ -115,7 +87,6 @@ def build_beat_service(
 
 
 __all__ = [
-    "LedgerWorkforce",
     "SchedulerTickRunner",
     "build_beat_service",
 ]

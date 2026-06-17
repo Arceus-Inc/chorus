@@ -26,7 +26,7 @@ from chorus.ledger import (
     TaskStatus,
 )
 from chorus.outcomes import Verifier
-from chorus.workforce import Employee
+from chorus.workforce import Employee, EmployeeStatus
 
 pytestmark = pytest.mark.integration
 
@@ -45,6 +45,24 @@ def test_employee_create_and_get(ledger: SqliteLedger) -> None:
     assert got.name == "alice"
     assert got.role == "engineer"
     assert ledger.employees.get("missing") is None
+
+
+def test_employee_list_returns_every_row(ledger: SqliteLedger) -> None:
+    ledger.employees.create(Employee(id="e1", name="a", role="engineer"))
+    ledger.employees.create(Employee(id="e2", name="b", role="engineer", reports_to="e1"))
+    assert {e.id for e in ledger.employees.list()} == {"e1", "e2"}
+
+
+def test_employee_list_is_empty_on_a_fresh_ledger(ledger: SqliteLedger) -> None:
+    assert ledger.employees.list() == []
+
+
+def test_employee_set_status_transitions(ledger: SqliteLedger) -> None:
+    ledger.employees.create(Employee(id="e1", name="a", role="engineer"))
+    ledger.employees.set_status("e1", EmployeeStatus.TERMINATED)
+    got = ledger.employees.get("e1")
+    assert got is not None
+    assert got.status is EmployeeStatus.TERMINATED
 
 
 def test_goal_create_and_get(ledger: SqliteLedger) -> None:

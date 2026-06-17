@@ -9,19 +9,24 @@ ledger + memory git, never in a running thing.
 
 This package is a facade (spec I6): the :class:`Employee` value object and its
 :class:`EmployeeStatus` live in ``_models``, the swappable :class:`Workforce`
-seam in ``_protocol``, and the git-markdown default :class:`GitWorkforce` in
-``_git``. Import the public names from here, not the submodules.
+seam in ``_protocol``, the ledger-backed default :class:`LedgerWorkforce` (the
+single live org store) in ``_ledger``, and the portable git-markdown
+export/import form :class:`GitWorkforce` in ``_git``. Import the public names
+from here, not the submodules.
 """
 
 from __future__ import annotations
 
 from chorus.workforce._git import GitWorkforce
+from chorus.workforce._ledger import EmployeeStore, LedgerWorkforce
 from chorus.workforce._models import Employee, EmployeeStatus
 from chorus.workforce._protocol import Workforce
 
 __all__ = [
     "Employee",
     "EmployeeStatus",
+    "EmployeeStore",
     "GitWorkforce",
+    "LedgerWorkforce",
     "Workforce",
 ]
