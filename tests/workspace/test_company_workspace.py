@@ -159,9 +159,9 @@ def test_operational_files_are_excluded_from_the_branch(tmp_path: Path) -> None:
     ws = CompanyWorkspace(tmp_path / "acme")
     ada = ws.worktree_for("ada")
     # dream/chorus operational artefacts the harness writes into the working dir
-    (ada.path / "roles").mkdir()
-    (ada.path / "roles" / "generator.toml").write_text("x", encoding="utf-8")
+    (ada.path / ".harness" / "roles").mkdir(parents=True)
+    (ada.path / ".harness" / "roles" / "generator.toml").write_text("x", encoding="utf-8")
     (ada.path / "real.py").write_text("y", encoding="utf-8")
     status = _git(ada.path, "status", "--porcelain")
     assert "real.py" in status  # a real deliverable is tracked
-    assert "roles/" not in status and "generator.toml" not in status  # operational, excluded
+    assert ".harness/" not in status and "generator.toml" not in status  # operational, excluded

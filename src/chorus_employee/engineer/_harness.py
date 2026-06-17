@@ -22,10 +22,21 @@ def engineer_manifest() -> RoleManifest:
     """The complete harness identity of an Engineer (spec 06 §2 → dream ``build_harness``)."""
     return RoleManifest(
         # — per-role overlay —
-        system_prompt=ENGINEER_BRIEF,  # → roles/{planner,generator,evaluator}.toml system_prompt
+        system_prompt=ENGINEER_BRIEF,  # → .harness/roles/{planner,generator,evaluator}.toml
         permission_mode=PermissionMode.ACCEPT_EDITS,  # → overlay permission_mode (may write edits)
         # — build_harness(registry=…) —
-        tools=("read_file", "write_file", "run_command", "git"),  # the wire toolset
+        tools=(
+            "read_file",
+            "write_file",
+            "run_command",
+            "git",
+            "memory_search",
+            "memory_get",
+            "working_memory_read",
+            "working_memory_write",
+            "working_memory_append",
+            "memory_propose",
+        ),  # the wire toolset, including Dream's durable + task memory surfaces
         disallowed_tools=(),  # nothing additionally denied at the role level
         # — build_harness(skills=…) —
         skills=(),  # no Engineer skill playbooks yet → skills toggle stays off (follow-up)
