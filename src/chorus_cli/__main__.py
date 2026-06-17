@@ -8,10 +8,12 @@ console for now — see ``examples/real_beat.py``.
     chorus                 # open ./chorus.db and start the console
     chorus --db PATH       # open a specific ledger (':memory:' for a throwaway one)
 
-Set AZURE_OPENAI_API_KEY, AZURE_OPENAI_BASE_URL, AZURE_OPENAI_DEPLOYMENT to enable the ``tick``
-command — one kernel pulse that dispatches a real beat through dream. Without them the console runs
-keys-free (everything but ``tick``). Beats are priced with CHORUS_PRICE_INPUT_CENTS_PER_MTOK /
-CHORUS_PRICE_OUTPUT_CENTS_PER_MTOK (illustrative defaults) so the budget gates have real spend to act on.
+Set AZURE_OPENAI_API_KEY, AZURE_OPENAI_BASE_URL, AZURE_OPENAI_DEPLOYMENT to enable the ``tick`` and
+``chat`` commands — ``tick`` is one kernel pulse that dispatches a real beat through dream; ``chat
+<employee>`` is a conversational sub-loop where each line you type runs a beat and streams the
+employee's reply back. Without them the console runs keys-free (everything but ``tick`` / ``chat``).
+Beats are priced with CHORUS_PRICE_INPUT_CENTS_PER_MTOK / CHORUS_PRICE_OUTPUT_CENTS_PER_MTOK
+(illustrative defaults) so the budget gates have real spend to act on.
 """
 
 from __future__ import annotations
@@ -23,7 +25,6 @@ from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import TextIO
 
-from chorus.adapters import ModelRate, TokenPricing
 from chorus.ledger import SqliteLedger
 from chorus_cli._commands import REGISTRY
 from chorus_cli._context import BeatService, CliSession
@@ -33,9 +34,6 @@ from chorus_cli._repl import run_repl
 _DEFAULT_DB = "chorus.db"
 _DEFAULT_ENV = ".env"
 _DEFAULT_COMPANY = "company"
-# Illustrative GPT-5-class pricing (whole cents per million tokens); override via env.
-_DEFAULT_INPUT_CENTS_PER_MTOK = 125
-_DEFAULT_OUTPUT_CENTS_PER_MTOK = 1000
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -59,28 +57,6 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _env_int(name: str, default: int) -> int:
-    """Read an integer env var, falling back to ``default`` when unset or malformed."""
-    raw = os.environ.get(name)
-    if raw is None:
-        return default
-    try:
-        return int(raw)
-    except ValueError:
-        return default
-
-
-def _pricing_from_env() -> TokenPricing:
-    """A default-rate :class:`TokenPricing` so any model the beat reports accrues spend."""
-    return TokenPricing(
-        rates={},
-        default=ModelRate(
-            _env_int("CHORUS_PRICE_INPUT_CENTS_PER_MTOK", _DEFAULT_INPUT_CENTS_PER_MTOK),
-            _env_int("CHORUS_PRICE_OUTPUT_CENTS_PER_MTOK", _DEFAULT_OUTPUT_CENTS_PER_MTOK),
-        ),
-    )
-
-
 def _beat_service_from_env(ledger: SqliteLedger, *, company_id: str) -> BeatService | None:
     """Wire a real, priced, budget-enforcing beat service from Azure creds, or ``None`` if unset.
 
@@ -92,7 +68,7 @@ def _beat_service_from_env(ledger: SqliteLedger, *, company_id: str) -> BeatServ
     deployment = os.environ.get("AZURE_OPENAI_DEPLOYMENT")
     if not (api_key and base_url and deployment):
         return None
-    from chorus_cli._beats import build_beat_service
+    from chorus_cli._beats import build_beat_service, default_pricing_from_env
 
     return build_beat_service(
         ledger,
@@ -100,7 +76,7 @@ def _beat_service_from_env(ledger: SqliteLedger, *, company_id: str) -> BeatServ
         base_url=base_url,
         deployment=deployment,
         company_id=company_id,
-        pricing=_pricing_from_env(),
+        pricing=default_pricing_from_env(),
     )
 
 
@@ -132,7 +108,11 @@ def main(
     sink = output if output is not None else _utf8_stdout()
     try:
         beats = _beat_service_from_env(ledger, company_id=args.company)
-        session = CliSession(ledger=ledger, beats=beats, company_id=args.company)
+        # ``input_func`` rides on the session too (not just ``run_repl``) so the modal ``chat``
+        # sub-loop reads from the same source after a command hands off to it.
+        session = CliSession(
+            ledger=ledger, beats=beats, company_id=args.company, input_func=input_func
+        )
         return run_repl(
             session,
             REGISTRY,

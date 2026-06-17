@@ -20,17 +20,29 @@ from chorus.errors import OrgInvariantViolation, UnknownEmployee
 from chorus.governance import GovernanceError, GovernanceResolver
 from chorus.ledger import (
     ApprovalGate,
+    Artifact,
+    ArtifactRevision,
+    ArtifactType,
     BudgetPolicy,
     BudgetScope,
     BudgetThreshold,
     Message,
     MessageKind,
+    SqliteLedger,
     Task,
     TaskPriority,
 )
-from chorus.lifecycle import assign_task, deliver_message
+from chorus.lifecycle import (
+    DEFAULT_REQUEST_DEPTH_CAP,
+    ChildSpec,
+    DepthCapped,
+    assign_task,
+    decompose,
+    deliver_message,
+)
 from chorus.outcomes import DoDKind, Verifier
 from chorus.workforce import EmployeeStatus, GitWorkforce, LedgerWorkforce, copy_org
+from chorus_cli._chat import ChatRenderBus, run_chat
 from chorus_cli._context import CommandContext, LoopSignal
 from chorus_cli._registry import CommandRegistry
 from chorus_cli._render import Console
@@ -400,6 +412,47 @@ def _eligible(ctx: CommandContext) -> LoopSignal:
     return LoopSignal.CONTINUE
 
 
+def _accepted_plan(ledger: SqliteLedger, parent_id: str) -> str:
+    """Record a minimal accepted plan revision the decomposition claim references (spec 02 §4)."""
+    plan = Artifact(id=f"plan_{uuid.uuid4().hex[:12]}", task_id=parent_id, type=ArtifactType.DOC)
+    ledger.artifacts.create(plan)
+    revision = ArtifactRevision(id=f"rev_{uuid.uuid4().hex[:12]}", artifact_id=plan.id)
+    ledger.artifact_revisions.record(revision)
+    return revision.id
+
+
+_DECOMPOSE = "decompose <parent_id> <child_intent...>"
+
+
+@REGISTRY.command("decompose", summary="manager fan-out: create a gated child (depth-capped)", usage=_DECOMPOSE)
+def _decompose(ctx: CommandContext) -> LoopSignal:
+    if len(ctx.args) < 2:
+        ctx.out.error(f"usage: {_DECOMPOSE}")
+        return LoopSignal.CONTINUE
+    parent_id, child_intent = ctx.args[0], " ".join(ctx.args[1:])
+    ledger = ctx.session.ledger
+    if ledger.tasks.get(parent_id) is None:
+        ctx.out.error(f"no such task: {parent_id!r}")
+        return LoopSignal.CONTINUE
+    revision_id = _accepted_plan(ledger, parent_id)  # the manager's accepted plan (spec 02 §4)
+    child = Task(id=f"task_{uuid.uuid4().hex[:12]}", intent=child_intent)
+    outcome = decompose(
+        ledger,
+        source_task_id=parent_id,
+        accepted_plan_revision_id=revision_id,
+        children=[ChildSpec(task=child, gates_parent=True)],
+        request_depth_cap=DEFAULT_REQUEST_DEPTH_CAP,
+    )
+    if isinstance(outcome, DepthCapped):
+        ctx.out.error(
+            f"decompose refused: {parent_id} is at the delegation depth cap "
+            f"({DEFAULT_REQUEST_DEPTH_CAP}) -- task blocked, recovery {outcome.recovery.id} opened"
+        )
+        return LoopSignal.CONTINUE
+    ctx.out.line(f"decomposed {parent_id} -> {child.id} ({child_intent})")
+    return LoopSignal.CONTINUE
+
+
 # -- coordination -----------------------------------------------------------------------------------
 
 _WAKES = "wakes"
@@ -500,6 +553,54 @@ def _tick(ctx: CommandContext) -> LoopSignal:
         ctx.out.line("a dispatch was gated by a budget -- see 'budget' (raise to resume)")
     else:
         ctx.out.line("nothing to dispatch (assign a task first, then tick)")
+    return LoopSignal.CONTINUE
+
+
+_CHAT = "chat <employee_id>"
+
+
+@REGISTRY.command(
+    "chat", summary="converse with an employee -- each line runs a real beat (needs Azure keys)", usage=_CHAT
+)
+def _chat(ctx: CommandContext) -> LoopSignal:
+    if len(ctx.args) != 1:
+        ctx.out.error(f"usage: {_CHAT}")
+        return LoopSignal.CONTINUE
+    employee_id = ctx.args[0]
+    employee = ctx.session.ledger.employees.get(employee_id)
+    if employee is None:
+        ctx.out.error(f"no such employee: {employee_id!r} (hire them first)")
+        return LoopSignal.CONTINUE
+    if employee.status is EmployeeStatus.TERMINATED:
+        ctx.out.error(f"{employee_id!r} is terminated -- termination is irreversible")
+        return LoopSignal.CONTINUE
+    # The render bus shares the console's stream so the streamed reply and the footer interleave.
+    render_bus = ChatRenderBus(ctx.out.out, colour=ctx.out.colour)
+    # dream is imported lazily here (only when chatting) so the keys-free console never pays for it.
+    from chorus_cli._beats import chat_service_from_env
+
+    service = chat_service_from_env(
+        ctx.session.ledger,
+        employee_id=employee_id,
+        render_bus=render_bus,
+        company_id=ctx.session.company_id,
+    )
+    if service is None:
+        ctx.out.error(
+            "no beat runner configured -- set AZURE_OPENAI_API_KEY, AZURE_OPENAI_BASE_URL, "
+            "AZURE_OPENAI_DEPLOYMENT and relaunch"
+        )
+        return LoopSignal.CONTINUE
+    if employee.status is EmployeeStatus.PAUSED:
+        ctx.out.line(f"note: {employee_id} is paused -- its turns will be gated until you 'resume' it")
+    run_chat(
+        employee_id,
+        ledger=ctx.session.ledger,
+        service=service,
+        render_bus=render_bus,
+        console=ctx.out,
+        input_func=ctx.session.input_func,
+    )
     return LoopSignal.CONTINUE
 
 

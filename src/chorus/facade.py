@@ -22,7 +22,7 @@ from chorus.errors import OrgInvariantViolation
 from chorus.events import Event
 from chorus.heartbeat import BeatRunner, Scheduler, TickReport, Wake
 from chorus.ledger import Message, SqliteLedger, Task
-from chorus.lifecycle import assign_task, deliver_message
+from chorus.lifecycle import DEFAULT_REQUEST_DEPTH_CAP, assign_task, deliver_message
 from chorus.memory import AppendOnlyMemoryWriter
 from chorus.observability import EventBus, LedgerInspector, TaskView, WorkforceStatus
 from chorus.outcomes import Verifier
@@ -35,7 +35,7 @@ class Caps:
     """Workforce-wide governance caps (spec 03 §5, spec 06 §4)."""
 
     max_concurrent_runs: int = 4
-    request_depth_cap: int = 5
+    request_depth_cap: int = DEFAULT_REQUEST_DEPTH_CAP
     tick_interval_s: float = 1.0
 
 
