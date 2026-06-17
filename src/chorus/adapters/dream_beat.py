@@ -18,8 +18,9 @@ from enum import StrEnum
 from typing import Any, Protocol
 
 from chorus.adapters._failure import failure_outcome
+from chorus.adapters._observer import DreamObserverBridge
 from chorus.adapters._pricing import TokenPricing, UsageView
-from chorus.events import Event, EventKind
+from chorus.events import Event
 from chorus.heartbeat import BeatOutcome
 from chorus.outcomes import VerificationStep
 
@@ -90,45 +91,6 @@ class TaskHarness(Protocol):
         verification_steps: tuple[dict[str, str], ...] = (),
         observer: _DreamObserver | None = None,
     ) -> RunResult: ...
-
-
-# dream's run_task observer emits plain dicts with a stable ``"kind"``; chorus witnesses the liveness
-# subset that maps 1:1 onto its closed ``run.*`` vocabulary (spec 08 §2). Macro lifecycle kinds
-# (planner/generator/sprint/contract/negotiation) have no chorus run.* equivalent yet and are skipped
-# rather than mislabelled — the witnessed micro-stream is the liveness signal spec 05 §4 needs.
-_DREAM_TO_CHORUS_KIND: dict[str, EventKind] = {
-    "task.started": EventKind.RUN_STARTED,
-    "task.completed": EventKind.RUN_DONE,
-    "role.text": EventKind.RUN_TEXT,
-    "role.tool.start": EventKind.RUN_TOOL_USE,
-    "role.tool.result": EventKind.RUN_TOOL_RESULT,
-    "evaluator.completed": EventKind.RUN_EVALUATED,
-}
-
-
-class _ObserverBridge:
-    """Translate dream's dict event stream into chorus :class:`Event` envelopes (spec 05 §4).
-
-    chorus passes ``event_bus.emit`` (a ``Callable[[Event], None]``); dream calls ``on_event(dict)``.
-    This bridge sits between them: each dream event with a chorus ``run.*`` equivalent becomes a typed
-    :class:`Event` carrying the original ``kind`` + payload, so chorus witnesses dream's stream
-    instead of parsing prose. Unmapped kinds are dropped (the closed vocabulary stays closed).
-    """
-
-    def __init__(
-        self, emit: Callable[[Event], None], *, task_id: str, clock: Callable[[], datetime]
-    ) -> None:
-        self._emit = emit
-        self._task_id = task_id
-        self._clock = clock
-
-    def on_event(self, event: dict[str, Any]) -> None:
-        kind = _DREAM_TO_CHORUS_KIND.get(str(event.get("kind", "")))
-        if kind is None:
-            return
-        payload: dict[str, Any] = {k: v for k, v in event.items() if k != "kind"}
-        payload["dream_kind"] = event.get("kind")
-        self._emit(Event(kind=kind, at=self._clock(), task_id=self._task_id, payload=payload))
 
 
 def to_beat_outcome(result: RunResult, *, pricing: TokenPricing | None = None) -> BeatOutcome:
@@ -204,7 +166,7 @@ class DreamBeatRunner:
         # Bridge the chorus observer into dream so the run's structured events reach the event log
         # (spec 05 §4); without one, dream runs silent (no bridge allocated).
         bridge = (
-            _ObserverBridge(observer, task_id=task_id, clock=self._clock)
+            DreamObserverBridge(observer, task_id=task_id, clock=self._clock)
             if observer is not None
             else None
         )

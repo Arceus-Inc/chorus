@@ -1,9 +1,8 @@
 """The four-way failure contract — classify a raise out of a beat into a typed disposition (spec 05 §5).
 
-Shared by every dream beat adapter (``DreamBeatRunner`` over ``run_task``, ``RoleBeatRunner`` over
-``run_role``): a raise is classified **structurally** off dream's stable error contract
-(``code``/``phase``) so the adapter never imports dream. ``asyncio.CancelledError`` is re-raised by
-the caller and never reaches here.
+Used by :class:`DreamBeatRunner` (the one beat seam, over ``run_task``): a raise is classified
+**structurally** off dream's stable error contract (``code``/``phase``) so the adapter never imports
+dream. ``asyncio.CancelledError`` is re-raised by the caller and never reaches here.
 """
 
 from __future__ import annotations
