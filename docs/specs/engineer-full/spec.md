@@ -14,18 +14,86 @@ pick up any one cold.
 [`chorus_employee/engineer/_harness.py`](../../../src/chorus_employee/engineer/_harness.py) (the
 component declaration); the materializer is
 [`chorus_harness/_factory.py`](../../../src/chorus_harness/_factory.py) (turns the manifest into a
-`dream.build_harness(...)` call in the worktree). Today `skills`/`mcp`/`plugins` are threaded as
-**bools = off**, `hooks` is **not a knob yet**, and the bus is consumed **live by `chat` only**.
+`dream.build_harness(...)` call in the worktree). `skills`/`mcp`/`plugins` are role-manifest knobs,
+`hooks` are a Dream plugin-installed surface rather than a direct `build_harness(hooks=...)` knob, and
+the Spec-08 event spine is now a concrete JSONL-backed bus that tick and chat can both feed.
 
-**Cross-cutting prerequisite — one dream spike:** before §1/§2, confirm what `dream.build_harness`
-actually accepts. Known params: `registry, skill_registry, skills, memory, working_memory, mcp,
-plugins, skill_event_sink, env, wake_model`. **There is no `hooks=` param** — §1 likely needs a dream
-change. Budget a 1-day spike to pin the hook + skill-registry + MCP-config load paths in dream before
-building chorus-side.
+**Cross-cutting Dream execution-layer facts (verified against `dream/src/dream/_factory.py`).**
+`dream.build_harness(...)` accepts `registry`, `skill_registry`, `skills`, `memory`,
+`working_memory`, `mcp`, `plugins`, `skill_event_sink`, `env`, and `wake_model`. MCP and plugins are
+loaded lazily at the first session start; missing config is treated as an empty surface. Skills can be
+workspace-discovered or supplied through an explicit `SkillRegistry`. Workspace memory is currently
+project-dir based; there is no direct Chorus memory-scope partition knob yet. There is still no direct
+`hooks=` param; hooks should be treated as a Dream plugin capability unless Dream later exposes a
+first-class hook config loader.
 
 **Global definition of done (every slice):** ruff + mypy `--strict` + full pytest green; a keyed e2e
 through the CLI proving the surface works on a real beat; clean enum-driven Python (frozen dataclasses,
 StrEnums, no `getattr`/`setattr`); chorus core stays dream-free (only `chorus_harness` imports dream).
+
+## Completion Review
+
+This spec is complete as a build plan when it answers four questions for each remaining surface:
+
+| Surface | Current repo truth | Build decision | Status |
+|---|---|---|---|
+| Hooks | Dream has no `hooks=` factory knob; plugins can install hooks/providers/tools. | Do not add Chorus-only hook syntax until Dream exposes or documents a hook loader. Prefer plugin-backed hooks. | Design-gated |
+| Skill files | Dream supports `skill_registry` and workspace skill discovery. Chorus only passes `skills=bool(config.skills)` today. | Add a role skill registry in `chorus_harness`, then package Engineer playbooks. | Ready |
+| Plugins | Dream already loads repo-local plugins when `plugins=True`. | Treat plugins as seeded-repo features; flip Engineer only when demo seed carries one. | Ready |
+| MCP | Dream already admits working-dir MCP allowlists when `mcp=True`. | Add typed `McpServerSpec` renderer only for explicit Chorus-managed allowlists; otherwise rely on seeded repo config. | Ready with secret guard |
+| Event log | Chorus had a stub bus; now `EventBus(log_path=...)` appends/replays JSONL and `FanoutBus` isolates sink failure. | Use this as the durable Spec-08 spine; inspector reads it next. | Implemented baseline |
+| Inspector | `LedgerInspector` remains a pure read-model stub. | Build blocked inbox first from ledger, then live surface from `events.jsonl`. | Ready |
+| Memory | Dream memory is project-dir based; Chorus does not write per-beat episodic deltas. | Add append-only writer + scheduler injection; scope partitioning waits on Dream memory-dir/scope seam. | Ready, scope-gated |
+
+## High-Level Design
+
+```mermaid
+flowchart LR
+   CLI[chorus CLI / minimal ledger demo]
+   Ledger[(SQLite Ledger)]
+   Scheduler[Scheduler]
+   Factory[EmployeeHarnessFactory]
+   Worktree[Employee Worktree]
+   Dream[dream Harness]
+   Events[(events.jsonl)]
+   Inspector[chorus inspect]
+
+   CLI --> Ledger
+   CLI --> Scheduler
+   Scheduler --> Ledger
+   Scheduler --> Factory
+   Factory --> Worktree
+   Factory --> Dream
+   Dream --> Scheduler
+   Scheduler --> Events
+   Inspector --> Ledger
+   Inspector --> Events
+```
+
+Chorus owns the organization plane: employees, task assignment, run rows, recovery cards, budgets,
+worktree isolation, role manifests, and durable observability. Dream owns the execution plane: tool
+dispatch, planner/generator/evaluator flow, skills, memory catalogue/tools, MCP admission, plugins,
+and the structured `run.*` event stream. The seam stays narrow: Chorus materializes a role-faithful
+Dream harness in the employee worktree, calls `run_task`, records a `BeatOutcome`, and persists both
+ledger state and typed events.
+
+The Engineer harness is complete when every role-surface is either (a) directly threaded into
+`dream.build_harness`, (b) rendered into the worktree config Dream already reads, or (c) explicitly
+gated behind a Dream execution-layer seam that does not exist yet. No Chorus core module may import
+Dream; all execution-layer imports remain in `chorus_harness` or adapter packages.
+
+## Low-Level Design
+
+| Layer | Contract | Concrete files | Notes |
+|---|---|---|---|
+| Role declaration | `RoleManifest` frozen dataclass | `src/chorus/roles/_manifest.py`, `src/chorus_employee/engineer/_harness.py` | Add only typed fields; keep env non-secret. |
+| Beat projection | `RoleBeatConfig` | `src/chorus/roles/_beat_config.py` | Carries Dream factory knobs as plain strings/bools. |
+| Materialization | `EmployeeHarnessFactory.materialize(employee)` | `src/chorus_harness/_factory.py` | Writes overlays/sandbox, builds Dream harness, wraps `DreamBeatRunner`. |
+| Execution seam | `BeatRunner.run_task(...) -> BeatOutcome` | `src/chorus/adapters/dream_beat.py` | Uses Dream as execution layer; timeout + local command-DoD fallback prevents stranded runs. |
+| Durable event spine | `EventBus.emit/replay`, `FanoutBus.emit` | `src/chorus/observability/_bus.py` | JSONL lines are typed `Event` envelopes; fanout failures never fail beats. |
+| CLI wiring | `build_beat_service`, `build_role_chat_service` | `src/chorus_cli/_beats.py`, `src/chorus_cli/_role_chat.py` | Tick logs directly; chat fans out render + log. |
+| Inspector read model | `LedgerInspector` | `src/chorus/observability/_inspector.py` | Build blocked inbox first, live surface second. |
+| Memory writer | `MemoryWriter` protocol + append-only writer | `src/chorus/memory/_writer.py` (planned) | Scheduler injection; Dream scope partitioning remains gated. |
 
 ---
 
@@ -136,19 +204,21 @@ present. E2e: a stub MCP server's tool is callable in a beat.
 **Goal.** Persist the run's event stream to a durable `events.jsonl` per workforce (spec 08 §1) so the
 inspector/audit have a spine, instead of the bus being consumed only live in chat.
 
-**Design.** A `JsonlEventSink` `EventBus` that appends each `Event` as one JSON line, plus a
-`FanoutBus` so a beat feeds **both** the live renderer and the log. The engineer's beat already emits
-the structured `RUN_*` stream via `DreamObserverBridge` — this just durably records it.
+**Design.** A concrete `EventBus(log_path=...)` appends each `Event` as one JSON line and replays it
+as typed envelopes; `FanoutBus` lets a beat feed **both** the live chat renderer and the log. The
+engineer's beat already emits the structured `RUN_*` stream via `DreamObserverBridge` — this durably
+records it without parsing prose.
 
 **Slices.**
-1. `JsonlEventSink(path)` implementing `EventBus.emit` — append `Event` as JSON (kind, at, task_id,
-   payload). TDD: round-trip a few events.
-2. `FanoutBus(*buses)` — emit to each child; never let one raise break the beat.
-3. Wire into `build_beat_service` (tick) + `build_role_chat_service` (chat): `event_bus = FanoutBus(
-   render_or_noop, JsonlEventSink(company_root / "events.jsonl"))`.
+1. `EventBus(log_path)` implements `emit`, `subscribe`, and `replay` — append `Event` as JSON (kind,
+   at, task_id, employee_id, run_id, payload). TDD: round-trip a few events.
+2. `FanoutBus(*sinks)` — emit to each child; never let one sink raise break the beat.
+3. Wire into `build_beat_service` (tick) with `EventBus(company_root / "events.jsonl")` and
+   `build_role_chat_service` (chat) with `FanoutBus(render_bus, EventBus(...))`.
 
-**Tests/acceptance.** Unit: sink writes parseable lines; fanout delivers to all. E2e: after a beat,
-`events.jsonl` contains `run.started … run.evaluated … run.done`.
+**Tests/acceptance.** Unit: bus writes parseable lines; replay returns typed `Event`s; fanout delivers
+to healthy sinks even if another sink raises. E2e: after a beat, `events.jsonl` contains `run.started …
+run.evaluated … run.done` when Dream emits those lifecycle events.
 
 **Risk.** Low — additive, no kernel change. **Effort:** 0.5d.
 
@@ -254,6 +324,6 @@ Each ships behind its own keyed e2e and the global DoD above.
 | 2 Skills | `chorus_employee/engineer/skills/*.md` | `_factory.py` (`_skill_registry`), `engineer/_harness.py`, `pyproject.toml` (data) |
 | 3 Plugins | — | `engineer/_harness.py` |
 | 4 MCP | `chorus_harness.write_mcp_config`, `McpServerSpec` | `_manifest.py`, `_beat_config.py`, `_factory.py`, `engineer/_harness.py` |
-| 5 Event log | `chorus/observability/_jsonl.py`, `_fanout.py` | `chorus_cli/_beats.py`, `chorus_cli/_role_chat.py` |
+| 5 Event log | — | `chorus/observability/_bus.py`, `chorus/observability/__init__.py`, `chorus_cli/_beats.py`, `chorus_cli/_role_chat.py` |
 | 6 Inspector | `chorus_cli/_commands.py` (`inspect`), `chorus/observability/_inspect.py` | `chorus_cli/README.md` |
 | 7 Memory | `chorus/memory/_writer.py` (`AppendOnlyMemoryWriter`), `_scope.py` | `heartbeat/_scheduler.py` (per-beat delta + writer param), `_factory.py` (scope selection), `engineer/_harness.py` |

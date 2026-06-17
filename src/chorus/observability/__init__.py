@@ -7,7 +7,7 @@ byte-silence.
 
 from __future__ import annotations
 
-from chorus.observability._bus import EventBus, Subscriber
+from chorus.observability._bus import EventBus, EventSink, FanoutBus, Subscriber
 from chorus.observability._inspector import Inspector, LedgerInspector
 from chorus.observability._views import (
     EmployeeView,
@@ -20,6 +20,8 @@ from chorus.observability._views import (
 __all__ = [
     "EmployeeView",
     "EventBus",
+    "EventSink",
+    "FanoutBus",
     "IncidentView",
     "Inspector",
     "LedgerInspector",

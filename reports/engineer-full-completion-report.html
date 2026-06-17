@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Engineer Harness Completion Report</title>
+  <style>
+    :root {
+      --bg: #f6f8fb;
+      --panel: #ffffff;
+      --ink: #1c2633;
+      --muted: #5d6878;
+      --line: #d8e0eb;
+      --accent: #075a8f;
+      --ok: #08783f;
+      --warn: #8a5a00;
+      --code: #111827;
+    }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: Segoe UI, Tahoma, Arial, sans-serif;
+      line-height: 1.45;
+    }
+    main { max-width: 1120px; margin: 24px auto; padding: 0 18px 36px; }
+    section {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 16px 18px;
+      margin-bottom: 14px;
+    }
+    h1, h2, h3 { margin: 0 0 10px; }
+    h1 { font-size: 25px; }
+    h2 { color: var(--accent); font-size: 18px; margin-top: 4px; }
+    h3 { color: var(--muted); font-size: 15px; margin-top: 14px; }
+    p { margin: 8px 0; }
+    .meta { color: var(--muted); font-size: 13px; }
+    .ok { color: var(--ok); font-weight: 700; }
+    .warn { color: var(--warn); font-weight: 700; }
+    table { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 14px; }
+    th, td { text-align: left; vertical-align: top; border-bottom: 1px solid var(--line); padding: 8px 6px; }
+    th { color: var(--muted); font-weight: 650; }
+    code { font-family: Consolas, 'Courier New', monospace; }
+    pre {
+      margin: 10px 0 0;
+      padding: 12px;
+      border-radius: 8px;
+      background: var(--code);
+      color: #e5edf7;
+      overflow-x: auto;
+      font-size: 12px;
+    }
+    ul, ol { margin-top: 8px; }
+    li { margin: 5px 0; }
+  </style>
+</head>
+<body>
+  <main>
+    <section>
+      <h1>Engineer Harness Completion Report</h1>
+      <p class="meta">Repo: <code>q:\projects\inspired-arc\chorus</code> | Date: 2026-06-17</p>
+      <p><strong>Verdict:</strong> <span class="ok">PASS</span>. The Engineer-full spec was made complete as a build-ready plan, the missing Spec-08 event spine was implemented, and a two-task ledger CLI demo completed with both tasks <code>done</code>, both runs <code>succeeded</code>, both artifacts present, and durable Dream execution events written to <code>events.jsonl</code>.</p>
+    </section>
+
+    <section>
+      <h2>What Changed</h2>
+      <table>
+        <thead><tr><th>Area</th><th>Change</th><th>Files</th></tr></thead>
+        <tbody>
+          <tr>
+            <td>Spec completeness</td>
+            <td>Added verified Dream execution-layer facts, a completion review matrix, HLD, LLD, and corrected §5 event-log design.</td>
+            <td><code>docs/specs/engineer-full/spec.md</code></td>
+          </tr>
+          <tr>
+            <td>Observability spine</td>
+            <td>Implemented concrete JSONL append/replay, in-process subscribers, and failure-isolating fanout.</td>
+            <td><code>src/chorus/observability/_bus.py</code>, <code>src/chorus/observability/__init__.py</code></td>
+          </tr>
+          <tr>
+            <td>CLI beat wiring</td>
+            <td>Tick now logs directly to <code>.chorus/work/&lt;company&gt;/events.jsonl</code>; chat fans out to the live renderer and the same durable log.</td>
+            <td><code>src/chorus_cli/_beats.py</code>, <code>src/chorus_cli/_role_chat.py</code></td>
+          </tr>
+          <tr>
+            <td>Scheduler seam</td>
+            <td>Scheduler now accepts the narrow <code>EventSink</code> protocol, so a fanout sink can be injected without broadening kernel responsibilities.</td>
+            <td><code>src/chorus/heartbeat/_scheduler.py</code></td>
+          </tr>
+          <tr>
+            <td>Tests</td>
+            <td>Added JSONL round-trip, subscriber, and fanout-failure isolation tests.</td>
+            <td><code>tests/observability/test_event_bus.py</code></td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>High-Level Design</h2>
+      <p>Chorus remains the organization and ledger plane; Dream remains the execution layer. The seam is still one beat: materialize the role-faithful Dream harness in an employee worktree, run <code>dream.run_task</code>, convert the result to a <code>BeatOutcome</code>, and durably land ledger state plus typed events.</p>
+      <pre>Operator / CLI
+    -> SQLite ledger: employees, tasks, wakes, runs, recovery
+    -> Scheduler: claims one wake per employee and dispatches a beat
+    -> EmployeeHarnessFactory: writes role overlays/sandbox in the worktree
+    -> Dream harness: tools, skills, memory catalogue, MCP, plugins, evaluator
+    -> DreamObserverBridge: converts Dream run events to Chorus Event envelopes
+    -> EventBus / FanoutBus: live render plus durable events.jsonl
+    -> Inspector: reads ledger + events.jsonl to answer working vs stuck</pre>
+      <p>The spec now explicitly separates what is already implemented in Dream from what belongs in Chorus. Hooks stay gated because Dream has no direct <code>hooks=</code> factory knob; plugins, MCP, skills, memory, and event streams are treated as existing Dream execution-layer surfaces that Chorus should wire rather than reimplement.</p>
+    </section>
+
+    <section>
+      <h2>Low-Level Design</h2>
+      <table>
+        <thead><tr><th>Component</th><th>Contract</th><th>Implementation Detail</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><code>EventBus</code></td>
+            <td><code>emit(Event)</code>, <code>subscribe(callback)</code>, <code>replay(after=None)</code></td>
+            <td>Serializes one typed envelope per line with <code>kind</code>, <code>at</code>, entity refs, and JSON payload. Replay reconstructs <code>EventKind</code> and <code>datetime</code>.</td>
+          </tr>
+          <tr>
+            <td><code>FanoutBus</code></td>
+            <td><code>emit(Event)</code></td>
+            <td>Forwards events to each sink. Sink exceptions are isolated so observability failures never fail a beat.</td>
+          </tr>
+          <tr>
+            <td>Tick wiring</td>
+            <td><code>Scheduler(event_bus=EventBus(...))</code></td>
+            <td>Writes <code>.chorus/work/company/events.jsonl</code> for autonomous heartbeat/tick beats.</td>
+          </tr>
+          <tr>
+            <td>Chat wiring</td>
+            <td><code>Scheduler(event_bus=FanoutBus(render_bus, EventBus(...)))</code></td>
+            <td>Keeps current live chat rendering while adding the same durable log spine.</td>
+          </tr>
+          <tr>
+            <td>Spec plan</td>
+            <td>Engineer-full build slices</td>
+            <td>Sections now state exact Dream support and identify only true gates: first-class hooks and memory scope partitioning.</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>Validation</h2>
+      <p class="ok">All focused checks passed.</p>
+      <pre>pytest tests/observability/test_event_bus.py tests/adapters/test_dream_beat.py tests/cli/test_commands.py tests/cli/test_main.py tests/workspace/test_company_workspace.py tests/heartbeat/test_runner_for.py -q
+........................................................................ [ 76%]
+......................                                                   [100%]
+
+ruff check src/chorus/observability src/chorus_cli/_beats.py src/chorus_cli/_role_chat.py src/chorus/heartbeat/_scheduler.py tests/observability/test_event_bus.py
+All checks passed!
+
+mypy src/chorus/observability src/chorus_cli/_beats.py src/chorus_cli/_role_chat.py src/chorus/heartbeat/_scheduler.py
+Success: no issues found in 7 source files</pre>
+    </section>
+
+    <section>
+      <h2>Two-Task Ledger CLI Demo</h2>
+      <p>A fresh CLI demo used a tiny seed repo and a bounded Dream timeout. The employee processed two tasks sequentially through the real Dream execution layer.</p>
+      <pre>assign-task employee write a one line note saying alpha completed to alpha.md
+assigned task_2f8593921204 -> employee; queued wake_9339f36e298d; heartbeat running
+
+assign-task employee write a one line note saying beta completed to beta.md
+assigned task_f69ec17dce70 -> employee; queued wake_52af2980f856; heartbeat running
+
+check ledger
+employees 1 / eligible_tasks 1 / queued_wakes 1 / running_employees 1
+
+check ledger
+employees 1 / eligible_tasks 0 / queued_wakes 0 / running_employees 0</pre>
+      <h3>Final Ledger Rows</h3>
+      <pre>tasks
+{'id': 'task_2f8593921204', 'status': 'done', 'checkout_run_id': None, 'execution_run_id': None, 'assignee_employee_id': 'employee'}
+{'id': 'task_f69ec17dce70', 'status': 'done', 'checkout_run_id': None, 'execution_run_id': None, 'assignee_employee_id': 'employee'}
+
+runs
+{'task_id': 'task_2f8593921204', 'status': 'succeeded', 'outcome': '{"cost_cents":2,"sprint_outcomes":["pass"],"steps_blocked":0,"steps_done":1,"steps_total":1}'}
+{'task_id': 'task_f69ec17dce70', 'status': 'succeeded', 'outcome': '{"cost_cents":2,"sprint_outcomes":["pass"],"steps_blocked":0,"steps_done":1,"steps_total":1}'}</pre>
+      <h3>Artifacts</h3>
+      <pre>alpha.md -> alpha completed
+beta.md  -> beta completed</pre>
+      <h3>Event Spine</h3>
+      <pre>events.jsonl lines: 735
+kind counts:
+  run.started: 2
+  run.tool_use: 15
+  run.tool_result: 15
+  run.text: 699
+  run.evaluated: 2
+  run.done: 2</pre>
+    </section>
+
+    <section>
+      <h2>Completion Notes</h2>
+      <ul>
+        <li>The spec is complete as a build plan: each remaining Engineer surface has a goal, design, dependency, test approach, acceptance, and risk.</li>
+        <li>The repo now implements the independent Spec-08 event-log slice, which was the clearest missing infrastructure item in Chorus.</li>
+        <li>The live demo proved real Dream execution, ordered ledger dispatch, durable terminal run states, artifact creation, and event persistence.</li>
+        <li>Remaining surfaces are intentionally not force-built in this pass: hooks need a Dream hook-loader decision; memory scope partitioning needs a Dream memory-dir/scope seam; MCP/skills/plugins are ready to wire as separate slices.</li>
+      </ul>
+    </section>
+  </main>
+</body>
+</html>

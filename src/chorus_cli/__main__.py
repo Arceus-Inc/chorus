@@ -77,7 +77,7 @@ def _beat_service_from_env(ledger: SqliteLedger, *, company_id: str) -> BeatServ
         deployment=deployment,
         company_id=company_id,
         pricing=default_pricing_from_env(),
-        seed=os.environ.get("CHORUS_COMPANY_SEED") or None,
+        seed=os.environ.get("CHORUS_COMPANY_SEED") or str(Path.cwd()),
     )
 
 
@@ -117,6 +117,7 @@ def main(
 
     # ``override`` so the gitignored .env wins over a stale shell var; warn on each real conflict.
     load_env_file(Path(args.env_file), override=True, on_conflict=_warn_env_override)
+    db_path = args.db if args.db == ":memory:" else str(Path(args.db).resolve())
     ledger = SqliteLedger.open(args.db)
     sink = output if output is not None else _utf8_stdout()
     try:
@@ -124,7 +125,12 @@ def main(
         # ``input_func`` rides on the session too (not just ``run_repl``) so the modal ``chat``
         # sub-loop reads from the same source after a command hands off to it.
         session = CliSession(
-            ledger=ledger, beats=beats, company_id=args.company, input_func=input_func
+            ledger=ledger,
+            beats=beats,
+            db_path=db_path,
+            company_id=args.company,
+            input_func=input_func,
+            minimal_mode=True,
         )
         return run_repl(
             session,

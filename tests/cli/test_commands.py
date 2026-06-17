@@ -13,7 +13,7 @@ import pytest
 
 from chorus.heartbeat import TickReport
 from chorus.ledger import SqliteLedger, Task, TaskStatus
-from chorus.outcomes import Verifier
+from chorus.outcomes import DoDKind, Verifier
 from chorus.workforce import Employee
 from chorus_cli import CliSession, Console, LoopSignal, dispatch
 from chorus_cli._commands import REGISTRY
@@ -297,6 +297,39 @@ def test_tick_runs_the_kernel_and_reports(ledger: SqliteLedger) -> None:
     assert "fake-deployment" in out  # announces the model
     assert "beats_started" in out and "1" in out
     assert "task <id>" in out  # points the user at the result
+
+
+def test_tick_in_minimal_mode_defers_to_background_heartbeat(ledger: SqliteLedger) -> None:
+    report = TickReport(at=datetime.fromisoformat("2026-06-16T12:00:00+00:00"), beats_started=1)
+    beats = _FakeBeatService(report)
+    session = CliSession(ledger=ledger, beats=beats, minimal_mode=True)
+
+    _, out = _run("tick", session)
+
+    assert beats.ticks == 0
+    assert "heartbeat is already live" in out
+
+
+def test_minimal_assign_task_uses_file_exists_dod(ledger: SqliteLedger) -> None:
+    session = CliSession(ledger=ledger, minimal_mode=True)
+
+    _, out = _run(
+        "assign-task employee get the total number of md files in the dir and write it to total_md_files.md",
+        session,
+    )
+
+    assert "assigned" in out
+    task = ledger.tasks.open_for_assignee("employee")
+    assert task is not None
+    dod = ledger.dod.get_for_task(task.id)
+    assert dod is not None
+    verifier = ledger.dod.verifier_for_task(task.id)
+    assert verifier is not None
+    assert verifier.kind is DoDKind.COMMAND
+    steps = verifier.verification_steps()
+    assert len(steps) == 1
+    assert "total_md_files.md" in steps[0].command
+    assert "pytest" not in steps[0].command
 
 
 def test_tick_with_nothing_to_dispatch_says_so(ledger: SqliteLedger) -> None:

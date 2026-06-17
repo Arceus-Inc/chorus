@@ -14,7 +14,7 @@ import pytest
 from chorus.heartbeat import Scheduler, Wake, WakeReason
 from chorus.heartbeat._beat import BeatOutcome
 from chorus.heartbeat._runner_for import single
-from chorus.ledger import SqliteLedger, Task, TaskStatus
+from chorus.ledger import RunStatus, SqliteLedger, Task, TaskStatus
 from chorus.workforce import Employee
 
 pytestmark = pytest.mark.integration
@@ -44,6 +44,11 @@ class _PerEmployee:
 
     def runner_for(self, employee: Employee) -> _TaggedBeat:
         return self.runners.setdefault(employee.id, _TaggedBeat(employee.id))
+
+
+class _BrokenFactory:
+    def runner_for(self, employee: Employee) -> _TaggedBeat:
+        raise RecursionError("copy loop")
 
 
 class _FakeWorkforce:
@@ -103,3 +108,30 @@ async def test_scheduler_still_accepts_a_single_beat_runner(ledger: SqliteLedger
     await sched.drain()
 
     assert runner.calls == ["t-ada"]  # back-compat: a single runner is wrapped in single()
+
+
+async def test_runner_materialization_failure_is_recorded_as_failed_run(
+    ledger: SqliteLedger,
+) -> None:
+    ada = _seed(ledger, "ada", "t-ada")
+    sched = Scheduler(
+        ledger=ledger,
+        workforce=_FakeWorkforce(ada),
+        beat_runner_for=_BrokenFactory(),
+        max_concurrent_runs=1,
+    )
+
+    await sched.tick(_NOW)
+    await sched.drain()
+
+    runs = ledger.runs.for_task("t-ada")
+    assert len(runs) == 1
+    assert runs[0].status is RunStatus.FAILED
+    assert "copy loop" in str(runs[0].outcome)
+
+    task = ledger.tasks.get("t-ada")
+    assert task is not None
+    assert task.status is TaskStatus.BLOCKED
+    assert task.checkout_run_id is None
+    assert task.execution_run_id is None
+    assert ledger.recovery_actions.active_for_source("t-ada") is not None

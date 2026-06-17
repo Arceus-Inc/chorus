@@ -108,6 +108,31 @@ def test_seed_from_a_plain_directory_commits_its_files(tmp_path: Path) -> None:
     assert _git(repo, "rev-parse", "--abbrev-ref", "HEAD") == "main"
 
 
+def test_plain_directory_seed_skips_nested_chorus_workspace(tmp_path: Path) -> None:
+    src = tmp_path / "proj"
+    (src / ".chorus" / "work" / "company" / "repo").mkdir(parents=True)
+    (src / ".chorus" / "work" / "company" / "repo" / "loop.txt").write_text(
+        "loop\n", encoding="utf-8"
+    )
+    (src / "chorus" / ".chorus" / "work" / "company" / "repo").mkdir(parents=True)
+    (src / "chorus" / ".chorus" / "work" / "company" / "repo" / "nested.txt").write_text(
+        "nested\n", encoding="utf-8"
+    )
+    (src / "chorus" / ".pytest_cache").mkdir(parents=True)
+    (src / "chorus" / ".pytest_cache" / "cache.txt").write_text("cache\n", encoding="utf-8")
+    (src / "chorus" / "app.py").write_text("print('ok')\n", encoding="utf-8")
+    (src / "README.md").write_text("# ok\n", encoding="utf-8")
+
+    ws = CompanyWorkspace(src / ".chorus" / "work" / "company", seed=src)
+    repo = ws.ensure_repo()
+
+    assert (repo / "README.md").read_text(encoding="utf-8") == "# ok\n"
+    assert (repo / "chorus" / "app.py").read_text(encoding="utf-8") == "print('ok')\n"
+    assert not (repo / ".chorus").exists()
+    assert not (repo / "chorus" / ".chorus").exists()
+    assert not (repo / "chorus" / ".pytest_cache").exists()
+
+
 def test_operational_files_are_excluded_from_the_branch(tmp_path: Path) -> None:
     ws = CompanyWorkspace(tmp_path / "acme")
     ada = ws.worktree_for("ada")

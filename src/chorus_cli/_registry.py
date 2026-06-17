@@ -24,6 +24,7 @@ class Command:
     summary: str
     usage: str
     handler: Handler
+    hidden: bool = False
 
 
 class DuplicateCommandError(ValueError):
@@ -37,7 +38,7 @@ class CommandRegistry:
         self._commands: dict[str, Command] = {}
 
     def command(
-        self, name: str, *, summary: str, usage: str
+        self, name: str, *, summary: str, usage: str, hidden: bool = False
     ) -> Callable[[Handler], Handler]:
         """Decorator: register ``handler`` under ``name``; returns it unchanged for normal use."""
 
@@ -45,7 +46,7 @@ class CommandRegistry:
             if name in self._commands:
                 raise DuplicateCommandError(name)
             self._commands[name] = Command(
-                name=name, summary=summary, usage=usage, handler=handler
+                name=name, summary=summary, usage=usage, handler=handler, hidden=hidden
             )
             return handler
 
@@ -64,12 +65,12 @@ class CommandRegistry:
         """The command for ``name``, or ``None`` if the verb is unknown."""
         return self._commands.get(name)
 
-    def visible(self) -> tuple[Command, ...]:
+    def visible(self, *, include_hidden: bool = False) -> tuple[Command, ...]:
         """The distinct commands in registration order — for the ``help`` listing (aliases folded)."""
         seen: set[str] = set()
         out: list[Command] = []
         for command in self._commands.values():
-            if command.name in seen:
+            if command.name in seen or (command.hidden and not include_hidden):
                 continue
             seen.add(command.name)
             out.append(command)

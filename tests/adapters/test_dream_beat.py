@@ -10,7 +10,10 @@ in for dream's real types.
 from __future__ import annotations
 
 import asyncio
+import subprocess
+import sys
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -104,6 +107,7 @@ class _FakeHarness:
         self.calls: list[str] = []
         self.verification_steps: tuple[dict[str, str], ...] = ()
         self.observer: object = None
+        self.max_sprints: int | None = None
 
     async def run_task(
         self,
@@ -112,10 +116,12 @@ class _FakeHarness:
         intent: str,
         verification_steps: tuple[dict[str, str], ...] = (),
         observer: object = None,
+        max_sprints: int | None = None,
     ) -> _Result:
         self.calls.append(task_id)
         self.verification_steps = verification_steps
         self.observer = observer
+        self.max_sprints = max_sprints
         if observer is not None:
             for event in self._events:
                 observer.on_event(event)  # type: ignore[attr-defined]
@@ -123,6 +129,38 @@ class _FakeHarness:
             raise self._error
         assert self._result is not None
         return self._result
+
+
+class _HangingHarness:
+    async def run_task(self, **kwargs: object) -> _Result:
+        await asyncio.Event().wait()
+        raise AssertionError("unreachable")
+
+
+async def test_run_task_timeout_is_an_errored_outcome() -> None:
+    outcome = await DreamBeatRunner(_HangingHarness(), timeout_s=0.01).run_task(
+        task_id="t1", intent="x"
+    )
+
+    assert outcome.disposition is BeatDisposition.ERRORED
+    assert "TimeoutError" in str(outcome.outcome["error"])
+
+
+async def test_run_task_timeout_can_land_when_local_verification_passes(tmp_path: Path) -> None:
+    (tmp_path / "artifact.md").write_text("done\n", encoding="utf-8")
+    command = subprocess.list2cmdline(
+        [sys.executable, "-c", "from pathlib import Path; assert Path('artifact.md').is_file()"]
+    )
+
+    outcome = await DreamBeatRunner(
+        _HangingHarness(), timeout_s=0.01, working_dir=tmp_path
+    ).run_task(task_id="t1", intent="x", verification=(VerificationStep(command),))
+
+    assert outcome.passed is True
+    assert outcome.disposition is BeatDisposition.PASSED
+    assert outcome.outcome["verified_after_timeout"] is True
+
+
 
 
 # -- to_beat_outcome: the verdict rule -------------------------------------------------------------
@@ -247,6 +285,14 @@ async def test_run_task_with_no_verification_passes_none() -> None:
     harness = _FakeHarness(result=_result("done"))
     await DreamBeatRunner(harness).run_task(task_id="t1", intent="x")
     assert harness.verification_steps == ()
+
+
+async def test_run_task_bounds_the_dream_sprint_loop_by_default() -> None:
+    harness = _FakeHarness(result=_result("done"))
+
+    await DreamBeatRunner(harness).run_task(task_id="t1", intent="x")
+
+    assert harness.max_sprints == 1
 
 
 async def test_run_task_forwards_dream_events_to_the_observer() -> None:

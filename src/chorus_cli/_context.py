@@ -66,7 +66,10 @@ class CliSession:
     ledger: SqliteLedger
     clock: Callable[[], datetime] = utc_now
     beats: BeatService | None = None
+    db_path: str | None = None
     company_id: str = "company"  # the scope id for company-wide budgets (spec 04 §3)
+    # Minimal operator UX: show only assign-task/check/quit/help in the help table.
+    minimal_mode: bool = False
     # The line source the interactive console reads from. Defaults to real stdin; a test injects a
     # scripted reader. Held on the session (not just passed to ``run_repl``) so a modal sub-loop such
     # as ``chat`` can keep reading from the same source after a command hands off to it.
