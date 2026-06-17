@@ -12,6 +12,7 @@ reusable by the public API and fully testable with a real git repo in a temp dir
 
 from __future__ import annotations
 
+import shutil
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -62,10 +63,14 @@ class CompanyWorkspace:
     returns the existing one, so a chat session can call them on every turn without accumulating state.
     """
 
-    def __init__(self, root: Path) -> None:
+    def __init__(self, root: Path, *, seed: str | Path | None = None) -> None:
         self._root = root
         self._repo = root / "repo"
         self._worktrees = root / "worktrees"
+        # Optional source the company ``main`` is seeded from on first creation, so employees branch
+        # off a real codebase instead of an empty tree: a local git repo or remote URL (cloned), or a
+        # plain directory (copied + committed). Ignored once ``repo/`` exists — seeding happens once.
+        self._seed = seed
 
     @property
     def root(self) -> Path:
@@ -76,20 +81,71 @@ class CompanyWorkspace:
         return self._repo
 
     def ensure_repo(self) -> Path:
-        """Create the company ``repo/`` (branch ``main`` + an empty root commit) if absent; return it.
+        """Create the company ``repo/`` (branch ``main``) if absent; return it.
 
-        The empty root commit is what lets worktrees branch off ``main`` (you cannot add a worktree
-        from an unborn HEAD). The operational excludes are written to the repo's shared
-        ``info/exclude`` so every worktree inherits them.
+        Without a seed, ``main`` is an empty root commit (the minimum that lets worktrees branch — you
+        cannot add a worktree from an unborn HEAD). With a seed, ``main`` carries the seeded code. The
+        operational excludes are written to the repo's shared ``info/exclude`` so every worktree
+        inherits them.
         """
         if (self._repo / ".git").exists():
             return self._repo
-        self._repo.mkdir(parents=True, exist_ok=True)
-        self._run(self._repo, "init", "-b", "main")
-        self._run(self._repo, *_COMMIT_IDENTITY, "commit", "--allow-empty", "-m", "chorus: company root")
+        self._repo.parent.mkdir(parents=True, exist_ok=True)
+        if self._seed is not None:
+            self._seed_repo(self._seed)
+        else:
+            self._repo.mkdir(parents=True, exist_ok=True)
+            self._run(self._repo, "init", "-b", "main")
+            self._run(
+                self._repo, *_COMMIT_IDENTITY, "commit", "--allow-empty", "-m", "chorus: company root"
+            )
         exclude = self._repo / ".git" / "info" / "exclude"
         exclude.write_text("\n".join(_OPERATIONAL_EXCLUDES) + "\n", encoding="utf-8")
         return self._repo
+
+    def _seed_repo(self, seed: str | Path) -> None:
+        """Materialize ``repo/`` from ``seed`` — clone a git repo/URL, or copy a plain directory."""
+        src = Path(seed)
+        if src.exists() and (src / ".git").exists():
+            self._clone(str(src))
+        elif src.exists():
+            self._repo.mkdir(parents=True, exist_ok=True)
+            self._run(self._repo, "init", "-b", "main")
+            self._copy_tree(src, self._repo)
+            self._run(self._repo, "add", "-A")
+            self._run(self._repo, *_COMMIT_IDENTITY, "commit", "-m", f"chorus: seed from {src.name}")
+        else:  # not a local path → treat as a remote clone URL
+            self._clone(str(seed))
+
+    def _clone(self, source: str) -> None:
+        """Clone ``source`` into ``repo/`` and normalize the checked-out branch to ``main``."""
+        self._run(self._repo.parent, "clone", source, str(self._repo))
+        if self._has_commits():
+            self._run(self._repo, "branch", "-M", "main")  # worktrees branch off `main`
+        else:
+            self._run(self._repo, "checkout", "-b", "main")
+
+    def _has_commits(self) -> bool:
+        return (
+            subprocess.run(
+                ["git", "-C", str(self._repo), "rev-parse", "--verify", "--quiet", "HEAD"],
+                capture_output=True,
+                text=True,
+            ).returncode
+            == 0
+        )
+
+    @staticmethod
+    def _copy_tree(src: Path, dst: Path) -> None:
+        """Copy ``src``'s contents into ``dst`` (a fresh repo), skipping its ``.git``."""
+        for item in src.iterdir():
+            if item.name == ".git":
+                continue
+            target = dst / item.name
+            if item.is_dir():
+                shutil.copytree(item, target)
+            else:
+                shutil.copy2(item, target)
 
     def worktree_for(self, employee_id: str) -> WorktreeWorkspace:
         """Create (or reuse) ``employee_id``'s branch-isolated worktree; return its path + branch."""

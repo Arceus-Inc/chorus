@@ -104,12 +104,15 @@ def build_role_chat_service(
     pricing: TokenPricing | None = None,
     work_dir: Path | None = None,
     roles: RoleRegistry | None = None,
+    seed: str | Path | None = None,
 ) -> ChatBeatService:
     """Wire a chat beat service whose harness runs AS the employee's role (spec 06 §2 → dream).
 
     Resolves ``employee_id``'s chorus role → a :class:`RoleBeatConfig`, materializes it into a
     configured dream harness (role tools, memory, + the role overlays that flavour the whole
     planner→generator→evaluator loop), and runs it through the standard :class:`DreamBeatRunner`.
+    ``seed`` points the company workspace at a real repo/directory the first time it is created, so
+    worktree-isolated employees branch off actual code instead of an empty tree.
     """
     employee = ledger.employees.get(employee_id)
     if employee is None:
@@ -129,7 +132,7 @@ def build_role_chat_service(
     if work_dir is not None:
         root = work_dir
     elif config.isolation == "worktree":
-        workspace = CompanyWorkspace(company_root)
+        workspace = CompanyWorkspace(company_root, seed=seed)
         root = workspace.worktree_for(employee_id).path
     else:
         root = company_root / employee_id

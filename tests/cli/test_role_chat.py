@@ -125,6 +125,48 @@ def test_worktree_isolation_makes_working_dir_a_branch_isolated_worktree(
         ledger.close()
 
 
+def test_seed_makes_the_employee_branch_off_real_code(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    import subprocess
+
+    # a real source repo with committed code
+    source = tmp_path / "source"
+    source.mkdir()
+    subprocess.run(["git", "-C", str(source), "init", "-b", "trunk"], check=True, capture_output=True)
+    (source / "app.py").write_text("print('real')\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(source), "add", "-A"], check=True, capture_output=True)
+    subprocess.run(
+        ["git", "-C", str(source), "-c", "user.name=u", "-c", "user.email=u@x", "commit", "-m", "i"],
+        check=True,
+        capture_output=True,
+    )
+
+    monkeypatch.chdir(tmp_path)
+    ledger = SqliteLedger.open(":memory:")
+    try:
+        ledger.employees.create(Employee(id="ada", name="Ada", role="engineer"))
+        captured: dict[str, Any] = {}
+        monkeypatch.setattr(
+            _role_chat.dream, "build_harness", lambda **kw: captured.update(kw) or object()
+        )
+        _role_chat.build_role_chat_service(
+            ledger,
+            employee_id="ada",
+            api_key="k",
+            base_url="https://x/openai/v1",
+            deployment="gpt-x",
+            company_id="acme",
+            render_bus=_role_chat.ChatRenderBus(out=io.StringIO()),
+            seed=source,
+        )
+        working_dir = Path(captured["working_dir"])
+        # the engineer's isolated worktree starts from the seeded codebase, not a blank tree
+        assert (working_dir / "app.py").read_text(encoding="utf-8") == "print('real')\n"
+    finally:
+        ledger.close()
+
+
 def test_a_role_that_declares_skills_enables_skill_loading(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

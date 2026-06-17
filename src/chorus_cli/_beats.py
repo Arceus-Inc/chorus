@@ -131,7 +131,8 @@ def chat_service_from_env(
     The same three Azure variables gate a real beat (dream is imported only when present). The harness
     is materialized for the employee's role — its tools, memory, and a per-role overlay of its brief +
     permission posture — so the whole ``run_task`` loop runs as that employee (see
-    :func:`chorus_cli._role_chat.build_role_chat_service`).
+    :func:`chorus_cli._role_chat.build_role_chat_service`). ``CHORUS_COMPANY_SEED`` (a repo path/URL or
+    a directory) seeds the company workspace on first creation so employees branch off real code.
     """
     api_key = os.environ.get("AZURE_OPENAI_API_KEY")
     base_url = os.environ.get("AZURE_OPENAI_BASE_URL")
@@ -147,6 +148,7 @@ def chat_service_from_env(
         company_id=company_id,
         render_bus=render_bus,
         pricing=default_pricing_from_env(),
+        seed=os.environ.get("CHORUS_COMPANY_SEED") or None,
     )
 
 
