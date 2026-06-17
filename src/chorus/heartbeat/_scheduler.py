@@ -25,6 +25,7 @@ from chorus.cron._fire import fire_routine
 from chorus.governance import GovernanceResolver
 from chorus.heartbeat._beat import BeatDisposition
 from chorus.heartbeat._invokability import invokability_block
+from chorus.heartbeat._runner_for import single
 from chorus.heartbeat._wake import TickReport, Wake
 from chorus.ledger import ApprovalGate, TaskPriority
 from chorus.ledger._models import (
@@ -48,6 +49,7 @@ from chorus.recovery import reconcile
 if TYPE_CHECKING:
     from chorus.budgets import BudgetEnforcer
     from chorus.heartbeat._beat import BeatOutcome, BeatRunner
+    from chorus.heartbeat._runner_for import BeatRunnerFor
     from chorus.ledger import SqliteLedger
     from chorus.observability import EventBus
     from chorus.roles import RoleRegistry
@@ -87,6 +89,7 @@ class Scheduler:
         ledger: SqliteLedger | None = None,
         workforce: Workforce | None = None,
         beat_runner: BeatRunner | None = None,
+        beat_runner_for: BeatRunnerFor | None = None,
         event_bus: EventBus | None = None,
         budget_enforcer: BudgetEnforcer | None = None,
         roles: RoleRegistry | None = None,
@@ -99,7 +102,14 @@ class Scheduler:
         self.max_repair_attempts = max_repair_attempts  # DoD-failure self-repair budget (spec 04 §1)
         self._ledger = ledger
         self._workforce = workforce
-        self._beat_runner = beat_runner
+        # The beat seam is per-employee (resolve a role-faithful runner for the dispatched employee). A
+        # single ``beat_runner`` is the degenerate case — wrapped in ``single()`` so both inject the
+        # same way (spec 06 §2).
+        self._beat_runner_for = (
+            beat_runner_for
+            if beat_runner_for is not None
+            else (single(beat_runner) if beat_runner is not None else None)
+        )
         self._event_bus = event_bus
         self._budget_enforcer = budget_enforcer  # None = budgets off (gating is opt-in)
         self._roles = roles  # None = no intake DoD (a task keeps whatever DoD was set explicitly)
@@ -302,9 +312,11 @@ class Scheduler:
         """
         ledger = self._require_ledger()
         workforce = self._require(self._workforce, "workforce")
-        beat_runner = self._require(self._beat_runner, "beat_runner")
+        beat_runner_for = self._require(self._beat_runner_for, "beat_runner")
 
         employee = workforce.get(wake.employee_id)
+        # Resolve the runner whose harness is materialized for *this* employee's role (spec 06 §2).
+        beat_runner = beat_runner_for.runner_for(employee)
         task_id = str(wake.payload["task_id"])
         task = ledger.tasks.get(task_id)
         if task is None:
