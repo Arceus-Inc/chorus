@@ -6,10 +6,11 @@ Engineer that harness, one component per module:
 - :mod:`._brief`   — the operating brief (system prompt).
 - :mod:`._harness` — the :class:`~chorus.roles.RoleManifest`: every ``build_harness`` component.
 - :mod:`._dod`     — the Definition of Done (intent → typed :class:`~chorus.outcomes.Verifier`).
+- :mod:`._lander`  — the outcome lander (a passed beat → a ``pr`` artifact).
 
-:func:`engineer_plugin` assembles them into the registrable
-:class:`~chorus.roles.RolePlugin` triple. This is the **single source** of the Engineer:
-``chorus.roles.default_roles`` imports it from here rather than re-declaring it.
+:func:`engineer_plugin` assembles the role triple; :func:`engineer_lander` provides the matching
+:class:`~chorus.outcomes.OutcomeLander`. This is the **single source** of the Engineer:
+``chorus.roles.default_roles`` imports the plugin from here rather than re-declaring it.
 """
 
 from __future__ import annotations
@@ -17,6 +18,7 @@ from __future__ import annotations
 from chorus.roles._plugin import RolePlugin
 from chorus_employee.engineer._dod import engineer_dod
 from chorus_employee.engineer._harness import engineer_manifest
+from chorus_employee.engineer._lander import EngineerLander, engineer_lander
 
 
 def engineer_plugin() -> RolePlugin:
@@ -29,4 +31,4 @@ def engineer_plugin() -> RolePlugin:
     )
 
 
-__all__ = ["engineer_plugin"]
+__all__ = ["EngineerLander", "engineer_lander", "engineer_plugin"]

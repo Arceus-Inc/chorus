@@ -188,6 +188,15 @@ class CompanyWorkspace:
             detail=(done.stderr or done.stdout).strip(),
         )
 
+    def snapshot(self, employee_id: str) -> str:
+        """Commit any uncommitted work in the employee's worktree; return its branch HEAD commit sha.
+
+        The outcome-landing primitive (spec 04 §2): an Engineer's deliverable is its branch + the
+        committed work, so landing a "PR" snapshots the worktree and points the artifact at this sha.
+        """
+        self._snapshot(employee_id)
+        return self._run(self.worktree_for(employee_id).path, "rev-parse", "HEAD")
+
     def _snapshot(self, employee_id: str) -> None:
         """Commit any uncommitted (non-excluded) work in the employee's worktree, if there is any."""
         wt = self.worktree_for(employee_id).path

@@ -30,6 +30,8 @@ from chorus.heartbeat._wake import TickReport, Wake
 from chorus.ledger import ApprovalGate, TaskPriority
 from chorus.ledger._models import (
     ActivityVerb,
+    Artifact,
+    ArtifactType,
     CostEvent,
     DodStatus,
     Monitor,
@@ -52,14 +54,29 @@ if TYPE_CHECKING:
     from chorus.heartbeat._runner_for import BeatRunnerFor
     from chorus.ledger import SqliteLedger
     from chorus.observability import EventBus
+    from chorus.outcomes import Artifact as OutcomeArtifact
+    from chorus.outcomes import LanderRegistry
     from chorus.roles import RoleRegistry
-    from chorus.workforce import Workforce
+    from chorus.workforce import Employee, Workforce
 
 _T = TypeVar("_T")
 
 
 def _utc_now() -> datetime:
     return datetime.now(UTC)
+
+
+def _to_ledger_artifact(artifact: OutcomeArtifact) -> Artifact:
+    """Map a lander's canonical :class:`~chorus.outcomes.Artifact` to a storable ledger row."""
+    return Artifact(
+        id=f"art_{uuid.uuid4().hex[:12]}",
+        task_id=artifact.task_id,
+        type=ArtifactType(artifact.type.value),
+        external_id=artifact.external_id,
+        url=artifact.url,
+        is_primary=artifact.is_primary,
+        resource_ref=artifact.resource_ref,
+    )
 
 # Dispatch priority rank for the deterministic sort key (spec 03 §3).
 PRIORITY_RANK: dict[TaskPriority, int] = {
@@ -93,6 +110,7 @@ class Scheduler:
         event_bus: EventBus | None = None,
         budget_enforcer: BudgetEnforcer | None = None,
         roles: RoleRegistry | None = None,
+        landers: LanderRegistry | None = None,
         clock: Callable[[], datetime] | None = None,
         sleep: Callable[[float], Awaitable[None]] | None = None,
     ) -> None:
@@ -113,6 +131,7 @@ class Scheduler:
         self._event_bus = event_bus
         self._budget_enforcer = budget_enforcer  # None = budgets off (gating is opt-in)
         self._roles = roles  # None = no intake DoD (a task keeps whatever DoD was set explicitly)
+        self._landers = landers  # None = a passed beat lands 'done' without recording a role artifact
         self._clock = clock or _utc_now  # the time source the run loop stamps each pulse with
         self._sleep = sleep or asyncio.sleep  # the inter-pulse wait (injectable for deterministic tests)
         self._stop = asyncio.Event()  # set by stop(); ends the run loop after the current pulse
@@ -367,7 +386,9 @@ class Scheduler:
             self._strand_errored(task_id, employee_id=employee.id, result=result)
         elif result.passed:
             ledger.runs.finish(run_id, RunStatus.SUCCEEDED, outcome=verdict)
-            self._land_passed(task_id, run_id=run_id, verifier=verifier, verdict=verdict)
+            await self._land_passed(
+                task_id, run_id=run_id, verifier=verifier, verdict=verdict, employee=employee, result=result
+            )
         else:
             ledger.runs.finish(run_id, RunStatus.FAILED, outcome=verdict)
             ledger.finalize_beat(
@@ -379,13 +400,22 @@ class Scheduler:
         ledger.wakes.mark_done(wake.id)
         self._record_cost(employee.id, task_id=task_id, run_id=run_id, result=result, now=now)
 
-    def _land_passed(
-        self, task_id: str, *, run_id: str, verifier: Verifier | None, verdict: dict[str, object] | None
+    async def _land_passed(
+        self,
+        task_id: str,
+        *,
+        run_id: str,
+        verifier: Verifier | None,
+        verdict: dict[str, object] | None,
+        employee: Employee,
+        result: BeatOutcome,
     ) -> None:
-        """A passed beat lands ``done`` — unless its DoD is a human sign-off (spec 04 §1 + §5).
+        """A passed beat lands its role's outcome, then ``done`` — unless its DoD is a human sign-off.
 
         For a ``HumanApproval`` DoD the deliverable is produced but a person decides: open an
-        **acceptance** gate (parks the task ``blocked`` pending the approval) instead of finalising.
+        **acceptance** gate (parks the task ``blocked`` pending the approval) instead of finalising
+        (spec 04 §1 + §5). Otherwise the role's :class:`~chorus.outcomes.OutcomeLander` records the
+        deliverable as a reviewable artifact (spec 04 §2) before the task is finalised ``done``.
         """
         ledger = self._require_ledger()
         if verifier is not None and verifier.kind is DoDKind.HUMAN_APPROVAL:
@@ -393,9 +423,29 @@ class Scheduler:
                 task_id, gate_kind=ApprovalGate.ACCEPTANCE, reason=f"human-approval DoD for {task_id}"
             )
             return
+        await self._land_outcome(task_id, employee=employee, result=result)
         ledger.finalize_beat(
             task_id=task_id, run_id=run_id, dod_status=DodStatus.PASSED, verdict=verdict
         )
+
+    async def _land_outcome(self, task_id: str, *, employee: Employee, result: BeatOutcome) -> None:
+        """Record the role's deliverable as an artifact via its registered lander (spec 04 §2).
+
+        A no-op when no lander registry is wired or the employee's role lands no artifact kind — the
+        beat still finalises ``done``, so landing is purely additive (the strict-completion record).
+        """
+        if self._landers is None or self._roles is None or employee.role not in self._roles:
+            return
+        outcome_kind = self._roles.get(employee.role).outcome_kind
+        lander = self._landers.get(outcome_kind)
+        if lander is None:
+            return
+        ledger = self._require_ledger()
+        task = ledger.tasks.get(task_id)
+        if task is None:
+            return
+        artifact = await lander.land(task, result)
+        ledger.artifacts.create(_to_ledger_artifact(artifact))
 
     def _climb_repair_ladder(
         self, task_id: str, *, employee_id: str, verifier: Verifier | None

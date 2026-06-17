@@ -12,8 +12,23 @@ into the kernel is ``default_roles`` reaching here for the one concrete Engineer
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
+from chorus.outcomes import LanderRegistry
 from chorus.roles._plugin import RolePlugin
-from chorus_employee.engineer import engineer_plugin
+from chorus_employee.engineer import engineer_lander, engineer_plugin
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+
+def default_landers(company_root: Path) -> LanderRegistry:
+    """The default outcome landers, keyed by ``outcome_kind`` (spec 04 §2).
+
+    Today the Engineer's ``pr`` lander; as employees that land artifacts are added, each registers its
+    lander here — the kernel dispatches landing through the registry with no scheduler change.
+    """
+    return LanderRegistry.from_landers([engineer_lander(company_root)])
 
 
 def default_employees() -> tuple[RolePlugin, ...]:
@@ -28,4 +43,4 @@ def default_employees() -> tuple[RolePlugin, ...]:
     return default_roles()
 
 
-__all__ = ["default_employees", "engineer_plugin"]
+__all__ = ["default_employees", "default_landers", "engineer_plugin"]

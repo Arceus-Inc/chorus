@@ -126,6 +126,11 @@ class EmployeeHarnessFactory:
         base = work_root if work_root is not None else Path.cwd() / ".chorus" / "work"
         self._company_root = base / company_id
 
+    @property
+    def company_root(self) -> Path:
+        """The org's workspace root (``.chorus/work/{org}/``) — where landers find the worktrees."""
+        return self._company_root
+
     def runner_for(self, employee: Employee) -> BeatRunner:
         """The :class:`~chorus.heartbeat.BeatRunnerFor` seam — the role-faithful runner for a beat."""
         return self.materialize(employee).runner
