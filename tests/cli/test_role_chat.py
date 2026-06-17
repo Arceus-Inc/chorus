@@ -57,6 +57,7 @@ def test_build_role_chat_service_resolves_the_role_and_scopes_the_harness(
         def _fake_build_harness(**kwargs: Any) -> object:
             captured["registry"] = kwargs.get("registry")
             captured["working_dir"] = kwargs.get("working_dir")
+            captured["skills"] = kwargs.get("skills")
             return object()
 
         monkeypatch.setattr(_role_chat.dream, "build_harness", _fake_build_harness)
@@ -74,7 +75,44 @@ def test_build_role_chat_service_resolves_the_role_and_scopes_the_harness(
         # the engineer's harness is scoped to its built-in tools, across the whole loop
         names = [t.name for t in captured["registry"].list_tools()]
         assert set(names) == {"read_file", "write_file", "bash", "git"}
+        # the engineer declares no skills → dream's skill loading is off
+        assert captured["skills"] is False
         # and its identity was written as overlays the harness's run_task will read
         assert (tmp_path / "roles" / "generator.toml").exists()
+    finally:
+        ledger.close()
+
+
+def test_a_role_that_declares_skills_enables_skill_loading(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from chorus.outcomes import Verifier
+    from chorus.roles import RoleManifest, RolePlugin, RoleRegistry
+
+    ledger = SqliteLedger.open(":memory:")
+    try:
+        ledger.employees.create(Employee(id="ana", name="Ana", role="analyst"))
+        skilled = RolePlugin(
+            name="analyst",
+            manifest=RoleManifest(system_prompt="You analyse.", tools=("read_file",), skills=("data-dive",)),
+            dod_generator=lambda intent: Verifier.agent_review(),
+            outcome_kind="finding",
+        )
+        captured: dict[str, Any] = {}
+        monkeypatch.setattr(
+            _role_chat.dream, "build_harness", lambda **kw: captured.update(skills=kw.get("skills"))
+        )
+        _role_chat.build_role_chat_service(
+            ledger,
+            employee_id="ana",
+            api_key="k",
+            base_url="https://x/openai/v1",
+            deployment="gpt-x",
+            company_id="acme",
+            render_bus=_role_chat.ChatRenderBus(out=io.StringIO()),
+            work_dir=tmp_path,
+            roles=RoleRegistry.from_plugins([skilled]),
+        )
+        assert captured["skills"] is True  # declaring skills turns dream's skill loading on
     finally:
         ledger.close()

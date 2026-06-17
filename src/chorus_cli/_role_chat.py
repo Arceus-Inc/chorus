@@ -132,7 +132,10 @@ def build_role_chat_service(
         base_url=base_url,
         working_dir=root,
         registry=_role_registry(dream_tool_names(config.tools)),
-        skills=False,  # role skills not declared yet; skill_registry wiring is a follow-up
+        # A role that declares skills enables dream's skill loading (from the working dir). dream
+        # bundles no skills and chorus owns no skill *content* yet, so per-skill scoping (only the
+        # role's named skills, à la tools) waits on chorus skill playbooks — a follow-up.
+        skills=bool(config.skills),
         memory=True,
         mcp=False,
         plugins=False,
