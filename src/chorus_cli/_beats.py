@@ -19,7 +19,13 @@ from chorus.budgets import BudgetEnforcer
 from chorus.heartbeat import Scheduler, TickReport
 from chorus.ledger import SqliteLedger
 from chorus.observability import EventBus
-from chorus.roles import RoleRegistry, default_roles
+from chorus.roles import (
+    RolePlugin,
+    RoleRegistry,
+    RoleSurfaceOverride,
+    apply_role_surface_overrides,
+    default_roles,
+)
 from chorus.workforce import LedgerWorkforce
 from chorus_cli._chat import ChatBeatService, ChatRenderBus
 from chorus_cli._role_chat import build_role_chat_service
@@ -64,6 +70,30 @@ def default_pricing_from_env() -> TokenPricing:
         default=ModelRate(
             _env_int("CHORUS_PRICE_INPUT_CENTS_PER_MTOK", _DEFAULT_INPUT_CENTS_PER_MTOK),
             _env_int("CHORUS_PRICE_OUTPUT_CENTS_PER_MTOK", _DEFAULT_OUTPUT_CENTS_PER_MTOK),
+        ),
+    )
+
+
+def default_roles_from_env() -> tuple[RolePlugin, ...]:
+    """Default role plugins with optional Engineer harness-surface activation.
+
+    ``CHORUS_ENGINEER_SURFACES=skills,mcp,plugins`` is a CLI/demo switch only; the SDK helper it uses
+    is reusable by other front ends that need to opt a role into the same Dream surfaces.
+    """
+    surfaces = {
+        item.strip().lower()
+        for item in os.environ.get("CHORUS_ENGINEER_SURFACES", "").split(",")
+        if item.strip()
+    }
+    if not surfaces:
+        return default_roles()
+    return apply_role_surface_overrides(
+        default_roles(),
+        RoleSurfaceOverride(
+            role="engineer",
+            skills=True if "skills" in surfaces else None,
+            mcp=True if "mcp" in surfaces else None,
+            plugins=True if "plugins" in surfaces else None,
         ),
     )
 
@@ -113,7 +143,7 @@ def build_beat_service(
     factory is priced so each beat accrues ``cost_cents`` and the scheduler's
     :class:`~chorus.budgets.BudgetEnforcer` gates fire; ``roles`` also drives DoD-at-intake.
     """
-    registry = RoleRegistry.from_plugins(default_roles())
+    registry = RoleRegistry.from_plugins(default_roles_from_env())
     factory = EmployeeHarnessFactory(
         api_key=api_key,
         base_url=base_url,
@@ -167,6 +197,7 @@ def chat_service_from_env(
         company_id=company_id,
         render_bus=render_bus,
         pricing=default_pricing_from_env(),
+        roles=RoleRegistry.from_plugins(default_roles_from_env()),
         seed=os.environ.get("CHORUS_COMPANY_SEED") or None,
         timeout_s=_env_float("CHORUS_DREAM_TIMEOUT_S", 90.0),
     )
