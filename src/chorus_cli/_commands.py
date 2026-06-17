@@ -13,8 +13,14 @@ decorator, so the verb table is assembled declaratively in one file.
 from __future__ import annotations
 
 import os
+import re
 import sqlite3
+import subprocess
+import sys
+import threading
 import uuid
+from contextlib import suppress
+from pathlib import Path
 
 from chorus.budgets import BudgetEnforcer, BudgetWindow, window_start
 from chorus.errors import OrgInvariantViolation, UnknownEmployee
@@ -42,10 +48,11 @@ from chorus.lifecycle import (
     deliver_message,
 )
 from chorus.outcomes import DoDKind, Verifier
+from chorus.roles import RoleRegistry, default_roles, role_beat_config
 from chorus.workforce import EmployeeStatus, GitWorkforce, LedgerWorkforce, copy_org
 from chorus.workspace import CompanyWorkspace, WorkspaceError, default_work_root
 from chorus_cli._chat import ChatRenderBus, run_chat
-from chorus_cli._context import CommandContext, LoopSignal
+from chorus_cli._context import BeatService, CommandContext, LoopSignal
 from chorus_cli._registry import CommandRegistry
 from chorus_cli._render import Console
 
@@ -53,6 +60,166 @@ REGISTRY = CommandRegistry()
 
 _PREVIEW = 48  # how many chars of free text (intent/body) a table cell shows
 _OPERATOR = "operator"  # the human at the console — the sender of messages it delivers
+_ROLES = RoleRegistry.from_plugins(default_roles())
+
+# default heartbeat cadence for the lightweight always-on demo runner
+_HEARTBEAT_INTERVAL_S = 0.5
+_CHECK_LEDGER_LIMIT = 12
+_WRITE_FILE_RE = re.compile(r"\bwrite\b.+\bto\s+([A-Za-z0-9_.-]+\.md)\b", re.IGNORECASE)
+
+
+class _HeartbeatWorker:
+    """Run ``beats.run_tick()`` on a daemon thread so the employee keeps working while the CLI waits.
+
+    It is intentionally tiny: best-effort pulse loop with swallowed exceptions (a single failed tick
+    must not kill the console), stopped by an event the ``quit`` command sets.
+    """
+
+    def __init__(
+        self,
+        *,
+        db_path: str,
+        company_id: str,
+        interval_s: float = _HEARTBEAT_INTERVAL_S,
+    ) -> None:
+        self._db_path = db_path
+        self._company_id = company_id
+        self._interval_s = interval_s
+        self._stop = threading.Event()
+        self._thread: threading.Thread | None = None
+
+    def start(self) -> None:
+        if self._thread is not None and self._thread.is_alive():
+            return
+        self._stop.clear()
+        self._thread = threading.Thread(target=self._run, name="chorus-heartbeat", daemon=True)
+        self._thread.start()
+
+    def stop(self) -> None:
+        self._stop.set()
+        if self._thread is not None:
+            self._thread.join(timeout=2.0)
+
+    def _run(self) -> None:
+        if self._db_path == ":memory:":
+            return
+        ledger = SqliteLedger.open(self._db_path)
+        try:
+            beats = self._build_thread_beat_service(ledger)
+            if beats is None:
+                return
+            while not self._stop.is_set():
+                with suppress(Exception):
+                    beats.run_tick()
+                self._stop.wait(self._interval_s)
+        finally:
+            ledger.close()
+
+    def _build_thread_beat_service(self, ledger: SqliteLedger) -> BeatService | None:
+        api_key = os.environ.get("AZURE_OPENAI_API_KEY")
+        base_url = os.environ.get("AZURE_OPENAI_BASE_URL")
+        deployment = os.environ.get("AZURE_OPENAI_DEPLOYMENT")
+        if not (api_key and base_url and deployment):
+            return None
+        from chorus_cli._beats import build_beat_service, default_pricing_from_env
+
+        return build_beat_service(
+            ledger,
+            api_key=api_key,
+            base_url=base_url,
+            deployment=deployment,
+            company_id=self._company_id,
+            pricing=default_pricing_from_env(),
+            seed=os.environ.get("CHORUS_COMPANY_SEED") or str(Path.cwd()),
+        )
+
+
+_HEARTBEAT_BY_LEDGER: dict[int, _HeartbeatWorker] = {}
+
+
+def _ensure_heartbeat(ctx: CommandContext) -> bool:
+    if ctx.session.beats is None or ctx.session.db_path is None:
+        return False
+    key = id(ctx.session.ledger)
+    worker = _HEARTBEAT_BY_LEDGER.get(key)
+    if worker is None:
+        worker = _HeartbeatWorker(db_path=ctx.session.db_path, company_id=ctx.session.company_id)
+        _HEARTBEAT_BY_LEDGER[key] = worker
+        worker.start()
+    return True
+
+
+def _stop_heartbeat(ctx: CommandContext) -> None:
+    worker = _HEARTBEAT_BY_LEDGER.pop(id(ctx.session.ledger), None)
+    if worker is not None:
+        worker.stop()
+
+
+def _maybe_bootstrap_employee(ctx: CommandContext) -> None:
+    """Born-on-start behavior for the minimal demo: one default employee if the org is empty."""
+    if not ctx.session.minimal_mode:
+        return
+    ledger = ctx.session.ledger
+    if ledger.employees.list():
+        return
+    try:
+        created = LedgerWorkforce(ledger.employees).hire(name="employee", role="engineer")
+    except Exception:
+        return
+    company_root = default_work_root() / ctx.session.company_id
+    base = company_root / "worktrees" / created.id
+    ctx.out.line(
+        f"employee born: {created.id} ({created.role}) -- base path {base}"
+    )
+
+
+def _minimal_file_dod(prompt: str) -> Verifier | None:
+    match = _WRITE_FILE_RE.search(prompt)
+    if match is None:
+        return None
+    filename = match.group(1)
+    command = subprocess.list2cmdline(
+        [sys.executable, "-c", f"from pathlib import Path; assert Path({filename!r}).is_file()"]
+    )
+    return Verifier.command(command, artifact_class="file", timeout_s=30)
+
+
+def _employee_base_path(company_id: str, employee_id: str) -> Path:
+    return (default_work_root() / company_id) / "worktrees" / employee_id
+
+
+def _resolve_employee(ledger: SqliteLedger, raw: str) -> str | None:
+    """Resolve ``raw`` to an employee id.
+
+    Accepts a direct employee id first; if absent, treats ``raw`` as a role name and resolves it
+    only when exactly one employee has that role. ``None`` means no match; ``ValueError`` means an
+    ambiguous role (multiple employees share it).
+    """
+    if ledger.employees.get(raw) is not None:
+        return raw
+    matches = [e.id for e in ledger.employees.list() if e.role == raw]
+    if not matches:
+        return None
+    if len(matches) > 1:
+        raise ValueError(
+            f"{raw!r} matches multiple employees {matches}; use an employee id"
+        )
+    return matches[0]
+
+
+def _latest_task_for_employee(ledger: SqliteLedger, employee_id: str) -> Task | None:
+    open_task = ledger.tasks.open_for_assignee(employee_id)
+    if open_task is not None:
+        return open_task
+    candidates = [t for t in ledger.tasks.list_eligible(limit=200) if t.assignee_employee_id == employee_id]
+    if candidates:
+        return candidates[-1]
+    for activity in ledger.activity.recent(limit=200):
+        if activity.subject_kind == "task":
+            task = ledger.tasks.get(activity.subject_id)
+            if task is not None and task.assignee_employee_id == employee_id:
+                return task
+    return None
 
 
 def _fmt(value: object) -> str:
@@ -120,6 +287,8 @@ _HELP = "help [command]"
 
 @REGISTRY.command("help", summary="list commands, or show usage for one", usage=_HELP)
 def _help(ctx: CommandContext) -> LoopSignal:
+    _maybe_bootstrap_employee(ctx)
+    _ensure_heartbeat(ctx)
     if ctx.args:
         target = REGISTRY.get(ctx.args[0])
         if target is None:
@@ -127,10 +296,19 @@ def _help(ctx: CommandContext) -> LoopSignal:
             return LoopSignal.CONTINUE
         ctx.out.kv({"command": target.name, "usage": target.usage, "summary": target.summary})
         return LoopSignal.CONTINUE
-    ctx.out.table(
-        ("command", "summary"),
-        [(command.name, command.summary) for command in REGISTRY.visible()],
-    )
+    if ctx.session.minimal_mode:
+        minimal = ("assign-task", "check", "help", "quit")
+        rows = [
+            (name, REGISTRY.get(name).summary)  # type: ignore[union-attr]
+            for name in minimal
+            if REGISTRY.get(name) is not None
+        ]
+        ctx.out.table(("command", "summary"), rows)
+    else:
+        ctx.out.table(
+            ("command", "summary"),
+            [(command.name, command.summary) for command in REGISTRY.visible(include_hidden=True)],
+        )
     return LoopSignal.CONTINUE
 
 
@@ -139,7 +317,169 @@ _QUIT = "quit"
 
 @REGISTRY.command("quit", summary="leave the console", usage=_QUIT)
 def _quit(ctx: CommandContext) -> LoopSignal:
+    _stop_heartbeat(ctx)
     return LoopSignal.QUIT
+
+
+_ASSIGN_TASK = "assign-task <employee_name> <task prompt...>"
+
+
+@REGISTRY.command(
+    "assign-task",
+    summary="assign a prompt as a task to an employee (minimal demo path)",
+    usage=_ASSIGN_TASK,
+)
+def _assign_task_minimal(ctx: CommandContext) -> LoopSignal:
+    _maybe_bootstrap_employee(ctx)
+    _ensure_heartbeat(ctx)
+    if len(ctx.args) < 2:
+        ctx.out.error(f"usage: {_ASSIGN_TASK}")
+        return LoopSignal.CONTINUE
+    employee_ref, prompt = ctx.args[0], " ".join(ctx.args[1:])
+    try:
+        employee_id = _resolve_employee(ctx.session.ledger, employee_ref)
+    except ValueError as exc:
+        ctx.out.error(str(exc))
+        return LoopSignal.CONTINUE
+    if employee_id is None:
+        ctx.out.error(f"no such employee or role: {employee_ref!r}")
+        return LoopSignal.CONTINUE
+    task_id = f"task_{uuid.uuid4().hex[:12]}"
+    created = ctx.session.ledger.tasks.submit(Task(id=task_id, intent=prompt))
+    dod = _minimal_file_dod(prompt)
+    if dod is not None:
+        ctx.session.ledger.dod.create(task_id, dod)
+    wake = assign_task(ctx.session.ledger, task_id, employee_id)
+    if wake is None:
+        ctx.out.error("could not queue task")
+        return LoopSignal.CONTINUE
+    ctx.out.line(
+        f"assigned {created.id} -> {employee_id}; queued {wake.id}; heartbeat running"
+    )
+    return LoopSignal.CONTINUE
+
+
+_CHECK = "check memory | check ledger | check <employee_name>"
+
+
+@REGISTRY.command("check", summary="inspect memory, ledger, or employee latest-task actions", usage=_CHECK)
+def _check(ctx: CommandContext) -> LoopSignal:
+    _maybe_bootstrap_employee(ctx)
+    _ensure_heartbeat(ctx)
+    if len(ctx.args) != 1:
+        ctx.out.error(f"usage: {_CHECK}")
+        return LoopSignal.CONTINUE
+    target = ctx.args[0]
+    ledger = ctx.session.ledger
+    if target == "memory":
+        employees = ledger.employees.list()
+        if not employees:
+            ctx.out.line("no employees")
+            return LoopSignal.CONTINUE
+        company_root = default_work_root() / ctx.session.company_id
+        ctx.out.kv(
+            {
+                "company_root": str(company_root),
+                "company_repo": str(company_root / "repo"),
+                "launched_from": str(Path.cwd()),
+            }
+        )
+        rows = []
+        for e in employees:
+            base = _employee_base_path(ctx.session.company_id, e.id)
+            rows.append((e.id, e.role, str(base), "yes" if base.exists() else "no"))
+        ctx.out.table(("employee", "role", "base_path", "exists"), rows)
+        return LoopSignal.CONTINUE
+    if target == "ledger":
+        tasks = ledger.tasks.list_eligible(limit=_CHECK_LEDGER_LIMIT)
+        wakes = ledger.wakes.queued()
+        running = ledger.runs.running_employee_ids()
+        ctx.out.kv(
+            {
+                "employees": len(ledger.employees.list()),
+                "eligible_tasks": len(tasks),
+                "queued_wakes": len(wakes),
+                "running_employees": len(running),
+            }
+        )
+        recent = ledger.activity.recent(limit=_CHECK_LEDGER_LIMIT)
+        if recent:
+            ctx.out.table(
+                ("at", "verb", "subject", "id"),
+                [
+                    (str(a.occurred_at), a.verb.value, a.subject_kind, a.subject_id)
+                    for a in recent
+                ],
+            )
+        return LoopSignal.CONTINUE
+
+    try:
+        employee_id = _resolve_employee(ledger, target)
+    except ValueError as exc:
+        ctx.out.error(str(exc))
+        return LoopSignal.CONTINUE
+    if employee_id is None:
+        ctx.out.error(f"no such employee or role: {target!r}")
+        return LoopSignal.CONTINUE
+    employee = ledger.employees.get(employee_id)
+    if employee is None:
+        ctx.out.error(f"no such employee: {employee_id!r}")
+        return LoopSignal.CONTINUE
+    profile = None
+    if employee.role in _ROLES:
+        profile = role_beat_config(_ROLES.get(employee.role).manifest)
+    task = _latest_task_for_employee(ledger, employee_id)
+    if task is None:
+        ctx.out.kv(
+            {
+                "employee": employee_id,
+                "role": employee.role,
+                "base_path": str(_employee_base_path(ctx.session.company_id, employee_id)),
+                "tools": ", ".join(profile.tools) if profile is not None else "-",
+                "skills": ", ".join(profile.skills) if profile is not None else "-",
+                "mcp": "on" if (profile is not None and profile.mcp) else "off",
+                "permission": profile.permission_mode if profile is not None else "-",
+                "memory": profile.memory_scope if profile is not None else "-",
+                "isolation": profile.isolation if profile is not None else "-",
+            }
+        )
+        ctx.out.line(f"{employee_id}: no task yet")
+        return LoopSignal.CONTINUE
+    runs = ledger.runs.for_task(task.id)
+    run = runs[-1] if runs else None
+    ctx.out.kv(
+        {
+            "employee": employee_id,
+            "role": employee.role,
+            "base_path": str(_employee_base_path(ctx.session.company_id, employee_id)),
+            "tools": ", ".join(profile.tools) if profile is not None else "-",
+            "skills": ", ".join(profile.skills) if profile is not None else "-",
+            "mcp": "on" if (profile is not None and profile.mcp) else "off",
+            "permission": profile.permission_mode if profile is not None else "-",
+            "memory": profile.memory_scope if profile is not None else "-",
+            "isolation": profile.isolation if profile is not None else "-",
+            "task": task.id,
+            "intent": _preview(task.intent),
+            "task_status": task.status.value,
+            "run": run.id if run is not None else "-",
+            "run_status": run.status.value if run is not None else "-",
+        }
+    )
+    subject_activity = ledger.activity.by_subject("task", task.id)
+    if subject_activity:
+        ctx.out.table(
+            ("at", "verb", "actor", "payload"),
+            [
+                (
+                    str(a.occurred_at),
+                    a.verb.value,
+                    _fmt(a.actor_employee_id or a.actor_user_id),
+                    _preview(str(dict(a.payload))),
+                )
+                for a in subject_activity[-_CHECK_LEDGER_LIMIT:]
+            ],
+        )
+    return LoopSignal.CONTINUE
 
 
 # -- workforce --------------------------------------------------------------------------------------
@@ -147,7 +487,7 @@ def _quit(ctx: CommandContext) -> LoopSignal:
 _HIRE = "hire <name> <role> [reports_to]"
 
 
-@REGISTRY.command("hire", summary="add an employee to the workforce", usage=_HIRE)
+@REGISTRY.command("hire", summary="add an employee to the workforce", usage=_HIRE, hidden=True)
 def _hire(ctx: CommandContext) -> LoopSignal:
     if not 2 <= len(ctx.args) <= 3:
         ctx.out.error(f"usage: {_HIRE}")
@@ -167,7 +507,7 @@ def _hire(ctx: CommandContext) -> LoopSignal:
 _TERMINATE = "terminate <id>"
 
 
-@REGISTRY.command("terminate", summary="irreversibly terminate an employee", usage=_TERMINATE)
+@REGISTRY.command("terminate", summary="irreversibly terminate an employee", usage=_TERMINATE, hidden=True)
 def _terminate(ctx: CommandContext) -> LoopSignal:
     if len(ctx.args) != 1:
         ctx.out.error(f"usage: {_TERMINATE}")
@@ -188,7 +528,7 @@ def _terminate(ctx: CommandContext) -> LoopSignal:
 _PAUSE = "pause <id>"
 
 
-@REGISTRY.command("pause", summary="pause an employee (the gate holds its wakes)", usage=_PAUSE)
+@REGISTRY.command("pause", summary="pause an employee (the gate holds its wakes)", usage=_PAUSE, hidden=True)
 def _pause(ctx: CommandContext) -> LoopSignal:
     if len(ctx.args) != 1:
         ctx.out.error(f"usage: {_PAUSE}")
@@ -206,7 +546,7 @@ def _pause(ctx: CommandContext) -> LoopSignal:
 _RESUME = "resume <id>"
 
 
-@REGISTRY.command("resume", summary="resume a paused employee", usage=_RESUME)
+@REGISTRY.command("resume", summary="resume a paused employee", usage=_RESUME, hidden=True)
 def _resume(ctx: CommandContext) -> LoopSignal:
     if len(ctx.args) != 1:
         ctx.out.error(f"usage: {_RESUME}")
@@ -228,7 +568,7 @@ def _resume(ctx: CommandContext) -> LoopSignal:
 _WORKFORCE = "workforce"
 
 
-@REGISTRY.command("workforce", summary="list the org (every employee + status)", usage=_WORKFORCE)
+@REGISTRY.command("workforce", summary="list the org (every employee + status)", usage=_WORKFORCE, hidden=True)
 def _workforce(ctx: CommandContext) -> LoopSignal:
     if ctx.args:
         ctx.out.error(f"usage: {_WORKFORCE}")
@@ -247,7 +587,7 @@ def _workforce(ctx: CommandContext) -> LoopSignal:
 _EMPLOYEE = "employee <id>"
 
 
-@REGISTRY.command("employee", summary="show one employee", usage=_EMPLOYEE)
+@REGISTRY.command("employee", summary="show one employee", usage=_EMPLOYEE, hidden=True)
 def _employee(ctx: CommandContext) -> LoopSignal:
     if len(ctx.args) != 1:
         ctx.out.error(f"usage: {_EMPLOYEE}")
@@ -272,7 +612,7 @@ def _employee(ctx: CommandContext) -> LoopSignal:
 _EXPORT = "export <dir>"
 
 
-@REGISTRY.command("export", summary="serialize the org to a git-markdown tree", usage=_EXPORT)
+@REGISTRY.command("export", summary="serialize the org to a git-markdown tree", usage=_EXPORT, hidden=True)
 def _export(ctx: CommandContext) -> LoopSignal:
     if len(ctx.args) != 1:
         ctx.out.error(f"usage: {_EXPORT}")
@@ -287,7 +627,7 @@ def _export(ctx: CommandContext) -> LoopSignal:
 _IMPORT = "import <dir>"
 
 
-@REGISTRY.command("import", summary="materialize a git-markdown org into the ledger", usage=_IMPORT)
+@REGISTRY.command("import", summary="materialize a git-markdown org into the ledger", usage=_IMPORT, hidden=True)
 def _import(ctx: CommandContext) -> LoopSignal:
     if len(ctx.args) != 1:
         ctx.out.error(f"usage: {_IMPORT}")
@@ -308,7 +648,7 @@ def _import(ctx: CommandContext) -> LoopSignal:
 _COMPANY = "company [init [seed]]"
 
 
-@REGISTRY.command("company", summary="show or create the company workspace (the shared git root)", usage=_COMPANY)
+@REGISTRY.command("company", summary="show or create the company workspace (the shared git root)", usage=_COMPANY, hidden=True)
 def _company(ctx: CommandContext) -> LoopSignal:
     """Show or create ``.chorus/work/{company}/repo`` — the ``main`` employees' worktrees branch from.
 
@@ -349,7 +689,7 @@ def _company(ctx: CommandContext) -> LoopSignal:
 _SUBMIT = "submit [--priority=LEVEL] <id> <intent...>"
 
 
-@REGISTRY.command("submit", summary="create a task in the backlog", usage=_SUBMIT)
+@REGISTRY.command("submit", summary="create a task in the backlog", usage=_SUBMIT, hidden=True)
 def _submit(ctx: CommandContext) -> LoopSignal:
     raw_priority, rest = _pop_flag(ctx.args, "priority")
     if len(rest) < 2:
@@ -377,7 +717,7 @@ def _submit(ctx: CommandContext) -> LoopSignal:
 _TASK = "task <id>"
 
 
-@REGISTRY.command("task", summary="show a task with its runs and DoD", usage=_TASK)
+@REGISTRY.command("task", summary="show a task with its runs and DoD", usage=_TASK, hidden=True)
 def _task(ctx: CommandContext) -> LoopSignal:
     if len(ctx.args) != 1:
         ctx.out.error(f"usage: {_TASK}")
@@ -416,7 +756,7 @@ def _task(ctx: CommandContext) -> LoopSignal:
 _ASSIGN = "assign <task_id> <employee_id>"
 
 
-@REGISTRY.command("assign", summary="assign a task and wake the employee", usage=_ASSIGN)
+@REGISTRY.command("assign", summary="assign a task and wake the employee", usage=_ASSIGN, hidden=True)
 def _assign(ctx: CommandContext) -> LoopSignal:
     if len(ctx.args) != 2:
         ctx.out.error(f"usage: {_ASSIGN}")
@@ -436,7 +776,7 @@ def _assign(ctx: CommandContext) -> LoopSignal:
 _ELIGIBLE = "eligible [limit]"
 
 
-@REGISTRY.command("eligible", summary="list tasks ready to dispatch", usage=_ELIGIBLE)
+@REGISTRY.command("eligible", summary="list tasks ready to dispatch", usage=_ELIGIBLE, hidden=True)
 def _eligible(ctx: CommandContext) -> LoopSignal:
     limit = 20
     if ctx.args:
@@ -467,7 +807,7 @@ def _accepted_plan(ledger: SqliteLedger, parent_id: str) -> str:
 _DECOMPOSE = "decompose <parent_id> <child_intent...>"
 
 
-@REGISTRY.command("decompose", summary="manager fan-out: create a gated child (depth-capped)", usage=_DECOMPOSE)
+@REGISTRY.command("decompose", summary="manager fan-out: create a gated child (depth-capped)", usage=_DECOMPOSE, hidden=True)
 def _decompose(ctx: CommandContext) -> LoopSignal:
     if len(ctx.args) < 2:
         ctx.out.error(f"usage: {_DECOMPOSE}")
@@ -501,7 +841,7 @@ def _decompose(ctx: CommandContext) -> LoopSignal:
 _WAKES = "wakes"
 
 
-@REGISTRY.command("wakes", summary="list queued wakes", usage=_WAKES)
+@REGISTRY.command("wakes", summary="list queued wakes", usage=_WAKES, hidden=True)
 def _wakes(ctx: CommandContext) -> LoopSignal:
     queued = ctx.session.ledger.wakes.queued()
     ctx.out.table(
@@ -517,7 +857,7 @@ def _wakes(ctx: CommandContext) -> LoopSignal:
 _MESSAGE = "message <to_employee_id> <body...>"
 
 
-@REGISTRY.command("message", summary="deliver a message and wake the recipient", usage=_MESSAGE)
+@REGISTRY.command("message", summary="deliver a message and wake the recipient", usage=_MESSAGE, hidden=True)
 def _message(ctx: CommandContext) -> LoopSignal:
     if len(ctx.args) < 2:
         ctx.out.error(f"usage: {_MESSAGE}")
@@ -543,7 +883,7 @@ def _message(ctx: CommandContext) -> LoopSignal:
 _INBOX = "inbox <employee_id>"
 
 
-@REGISTRY.command("inbox", summary="show an employee's unread mailbox", usage=_INBOX)
+@REGISTRY.command("inbox", summary="show an employee's unread mailbox", usage=_INBOX, hidden=True)
 def _inbox(ctx: CommandContext) -> LoopSignal:
     if len(ctx.args) != 1:
         ctx.out.error(f"usage: {_INBOX}")
@@ -565,11 +905,14 @@ _TICK = "tick"
 
 
 @REGISTRY.command(
-    "tick", summary="run one kernel pulse -- dispatch a real beat (needs Azure keys)", usage=_TICK
+    "tick", summary="run one kernel pulse -- dispatch a real beat (needs Azure keys)", usage=_TICK, hidden=True
 )
 def _tick(ctx: CommandContext) -> LoopSignal:
     if ctx.args:
         ctx.out.error(f"usage: {_TICK}")
+        return LoopSignal.CONTINUE
+    if ctx.session.minimal_mode:
+        ctx.out.line("heartbeat is already live -- use 'check ledger' or 'check employee' to watch it land")
         return LoopSignal.CONTINUE
     beats = ctx.session.beats
     if beats is None:
@@ -603,7 +946,7 @@ _CHAT = "chat <employee_id>"
 
 
 @REGISTRY.command(
-    "chat", summary="converse with an employee -- each line runs a real beat (needs Azure keys)", usage=_CHAT
+    "chat", summary="converse with an employee -- each line runs a real beat (needs Azure keys)", usage=_CHAT, hidden=True
 )
 def _chat(ctx: CommandContext) -> LoopSignal:
     if len(ctx.args) != 1:
@@ -652,7 +995,7 @@ def _chat(ctx: CommandContext) -> LoopSignal:
 _COST = "cost <employee_id>"
 
 
-@REGISTRY.command("cost", summary="show an employee's recorded spend", usage=_COST)
+@REGISTRY.command("cost", summary="show an employee's recorded spend", usage=_COST, hidden=True)
 def _cost(ctx: CommandContext) -> LoopSignal:
     if len(ctx.args) != 1:
         ctx.out.error(f"usage: {_COST}")
@@ -665,7 +1008,7 @@ def _cost(ctx: CommandContext) -> LoopSignal:
 _SCHEMA = "schema"
 
 
-@REGISTRY.command("schema", summary="show the ledger schema version", usage=_SCHEMA)
+@REGISTRY.command("schema", summary="show the ledger schema version", usage=_SCHEMA, hidden=True)
 def _schema(ctx: CommandContext) -> LoopSignal:
     ctx.out.line(f"schema version: {_fmt(ctx.session.ledger.schema_version())}")
     return LoopSignal.CONTINUE
@@ -854,7 +1197,7 @@ _BUDGET_SUBCOMMANDS = {
 }
 
 
-@REGISTRY.command("budget", summary="view or manage budgets -- caps, spend, incidents", usage=_BUDGET)
+@REGISTRY.command("budget", summary="view or manage budgets -- caps, spend, incidents", usage=_BUDGET, hidden=True)
 def _budget(ctx: CommandContext) -> LoopSignal:
     if not ctx.args or ctx.args[0] == "list":
         return _budget_list(ctx)
@@ -939,7 +1282,7 @@ _APPROVAL_DENY = "approval deny <approval_id>"
 _APPROVAL = "approval [list | open … | approve <id> | deny <id>]"
 
 
-@REGISTRY.command("approval", summary="view or resolve approval gates", usage=_APPROVAL)
+@REGISTRY.command("approval", summary="view or resolve approval gates", usage=_APPROVAL, hidden=True)
 def _approval(ctx: CommandContext) -> LoopSignal:
     if not ctx.args or ctx.args[0] == "list":
         return _approval_list(ctx)
@@ -1000,7 +1343,7 @@ def _dod_set(ctx: CommandContext, args: tuple[str, ...]) -> LoopSignal:
     return LoopSignal.CONTINUE
 
 
-@REGISTRY.command("dod", summary="set a task's Definition of Done", usage=_DOD)
+@REGISTRY.command("dod", summary="set a task's Definition of Done", usage=_DOD, hidden=True)
 def _dod(ctx: CommandContext) -> LoopSignal:
     if not ctx.args or ctx.args[0] != "set":
         ctx.out.error(f"usage: {_DOD}")

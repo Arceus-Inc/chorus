@@ -68,7 +68,14 @@ def run_repl(
     use_colour = stream.isatty() if colour is None else colour
     console = Console(out=stream, colour=use_colour)
 
-    console.line("chorus console -- type 'help' for commands, 'quit' to exit")
+    if session.minimal_mode:
+        console.line(
+            "chorus demo -- employee heartbeat is live. commands: assign-task, check, help, quit"
+        )
+        # Reuse the command bootstrap path so startup and steady-state stay identical.
+        dispatch("help", session=session, console=console, registry=registry)
+    else:
+        console.line("chorus console -- type 'help' for commands, 'quit' to exit")
     while True:
         try:
             line = input_func(_PROMPT)

@@ -21,6 +21,7 @@ from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, TypeVar
 
+from chorus.adapters._failure import failure_outcome
 from chorus.cron._fire import fire_routine
 from chorus.governance import GovernanceResolver
 from chorus.heartbeat._beat import BeatDisposition
@@ -54,7 +55,7 @@ if TYPE_CHECKING:
     from chorus.heartbeat._beat import BeatOutcome, BeatRunner
     from chorus.heartbeat._runner_for import BeatRunnerFor
     from chorus.ledger import SqliteLedger
-    from chorus.observability import EventBus
+    from chorus.observability import EventSink
     from chorus.outcomes import Artifact as OutcomeArtifact
     from chorus.outcomes import LanderRegistry, VerificationStep
     from chorus.roles import RoleRegistry
@@ -109,7 +110,7 @@ class Scheduler:
         workforce: Workforce | None = None,
         beat_runner: BeatRunner | None = None,
         beat_runner_for: BeatRunnerFor | None = None,
-        event_bus: EventBus | None = None,
+        event_bus: EventSink | None = None,
         budget_enforcer: BudgetEnforcer | None = None,
         roles: RoleRegistry | None = None,
         landers: LanderRegistry | None = None,
@@ -364,13 +365,11 @@ class Scheduler:
         workforce = self._require(self._workforce, "workforce")
         beat_runner_for = self._require(self._beat_runner_for, "beat_runner")
 
-        employee = workforce.get(wake.employee_id)
-        # Resolve the runner whose harness is materialized for *this* employee's role (spec 06 §2).
-        beat_runner = beat_runner_for.runner_for(employee)
         task_id = str(wake.payload["task_id"])
         task = ledger.tasks.get(task_id)
         if task is None:
             raise KeyError(task_id)
+        employee = workforce.get(wake.employee_id)
 
         # begin_execution — mint the run row the checkout lock already points at, with a fresh lease.
         lease = now + timedelta(seconds=self.lease_ttl_s)
@@ -387,22 +386,28 @@ class Scheduler:
         )
 
         observer = self._event_bus.emit if self._event_bus is not None else None
-        # Intake DoD (spec 04 §1 / 06 §2): a task with no explicit DoD inherits its assignee role's, so
-        # a beat is always held to the role's gate — the engineer to its tests, etc. A DoD a human set
-        # via ``dod set`` always wins (only filled when absent). Persisted so ``task <id>`` shows it.
-        if (
-            self._roles is not None
-            and employee.role in self._roles
-            and ledger.dod.get_for_task(task_id) is None
-        ):
-            ledger.dod.create(task_id, self._roles.get(employee.role).dod_generator(task.intent))
-        # The DoD's objective checks ride into the beat: dream's evaluator runs them as the
-        # acceptance gate, so ``done`` means plan-complete *and* the Command gate passed (spec 04 §1).
-        verifier = ledger.dod.verifier_for_task(task_id)
-        verification = verifier.verification_steps() if verifier is not None else ()
-        result = await self._run_beat_with_retry(
-            beat_runner, task_id=task_id, intent=task.intent, verification=verification, observer=observer
-        )
+        verifier = None
+        try:
+            # Resolve the runner whose harness is materialized for *this* employee's role (spec 06 §2).
+            beat_runner = beat_runner_for.runner_for(employee)
+            # Intake DoD (spec 04 §1 / 06 §2): a task with no explicit DoD inherits its assignee role's, so
+            # a beat is always held to the role's gate — the engineer to its tests, etc. A DoD a human set
+            # via ``dod set`` always wins (only filled when absent). Persisted so ``task <id>`` shows it.
+            if (
+                self._roles is not None
+                and employee.role in self._roles
+                and ledger.dod.get_for_task(task_id) is None
+            ):
+                ledger.dod.create(task_id, self._roles.get(employee.role).dod_generator(task.intent))
+            # The DoD's objective checks ride into the beat: dream's evaluator runs them as the
+            # acceptance gate, so ``done`` means plan-complete *and* the Command gate passed (spec 04 §1).
+            verifier = ledger.dod.verifier_for_task(task_id)
+            verification = verifier.verification_steps() if verifier is not None else ()
+            result = await self._run_beat_with_retry(
+                beat_runner, task_id=task_id, intent=task.intent, verification=verification, observer=observer
+            )
+        except Exception as exc:
+            result = failure_outcome(exc)
 
         verdict = result.outcome or None
         if result.disposition is BeatDisposition.CANCELLED:

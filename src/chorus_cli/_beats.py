@@ -18,6 +18,7 @@ from chorus.adapters import ModelRate, TokenPricing
 from chorus.budgets import BudgetEnforcer
 from chorus.heartbeat import Scheduler, TickReport
 from chorus.ledger import SqliteLedger
+from chorus.observability import EventBus
 from chorus.roles import RoleRegistry, default_roles
 from chorus.workforce import LedgerWorkforce
 from chorus_cli._chat import ChatBeatService, ChatRenderBus
@@ -37,6 +38,17 @@ def _env_int(name: str, default: int) -> int:
         return default
     try:
         return int(raw)
+    except ValueError:
+        return default
+
+
+def _env_float(name: str, default: float) -> float:
+    """Read a float env var, falling back to ``default`` when unset or malformed."""
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    try:
+        return float(raw)
     except ValueError:
         return default
 
@@ -111,6 +123,7 @@ def build_beat_service(
         pricing=pricing,
         seed=seed,
         work_root=work_root,
+        timeout_s=_env_float("CHORUS_DREAM_TIMEOUT_S", 90.0),
     )
     scheduler = Scheduler(
         ledger=ledger,
@@ -119,6 +132,7 @@ def build_beat_service(
         budget_enforcer=BudgetEnforcer(ledger, company_id=company_id),
         roles=registry,  # tasks inherit the assignee role's DoD at intake (spec 04 §1)
         landers=default_landers(factory.company_root),  # a passed beat lands its role artifact (§2)
+        event_bus=EventBus(log_path=factory.company_root / "events.jsonl"),
         max_concurrent_runs=max_concurrent_runs,
     )
     return SchedulerTickRunner(scheduler, model=deployment)
@@ -154,6 +168,7 @@ def chat_service_from_env(
         render_bus=render_bus,
         pricing=default_pricing_from_env(),
         seed=os.environ.get("CHORUS_COMPANY_SEED") or None,
+        timeout_s=_env_float("CHORUS_DREAM_TIMEOUT_S", 90.0),
     )
 
 

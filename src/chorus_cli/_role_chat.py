@@ -16,6 +16,7 @@ from chorus.budgets import BudgetEnforcer
 from chorus.errors import UnknownEmployee
 from chorus.heartbeat import Scheduler
 from chorus.ledger import SqliteLedger
+from chorus.observability import EventBus, FanoutBus
 from chorus.roles import RoleRegistry, default_roles
 from chorus.workforce import LedgerWorkforce
 from chorus_cli._chat import ChatBeatService, ChatRenderBus
@@ -36,6 +37,7 @@ def build_role_chat_service(
     roles: RoleRegistry | None = None,
     seed: str | Path | None = None,
     work_root: Path | None = None,
+    timeout_s: float | None = 90.0,
 ) -> ChatBeatService:
     """Wire a chat beat service whose harness runs AS the employee's role (spec 06 §2 → dream).
 
@@ -57,6 +59,7 @@ def build_role_chat_service(
         pricing=pricing,
         seed=seed,
         work_root=work_root,
+        timeout_s=timeout_s,
     )
     materialized = factory.materialize(employee)  # role-faithful harness in the employee's worktree
     scheduler = Scheduler(
@@ -64,7 +67,7 @@ def build_role_chat_service(
         workforce=LedgerWorkforce(ledger.employees),
         beat_runner=materialized.runner,  # chat is one employee → one materialized runner
         budget_enforcer=BudgetEnforcer(ledger, company_id=company_id),
-        event_bus=render_bus,
+        event_bus=FanoutBus(render_bus, EventBus(log_path=factory.company_root / "events.jsonl")),
         roles=registry,  # a chat task inherits the employee role's DoD at intake (spec 04 §1)
         landers=default_landers(factory.company_root),  # a passed beat lands its role artifact (§2)
         max_concurrent_runs=1,

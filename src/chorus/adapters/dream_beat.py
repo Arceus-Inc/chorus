@@ -13,8 +13,10 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Callable, Mapping, Sequence
+from contextlib import suppress
 from datetime import UTC, datetime
 from enum import StrEnum
+from pathlib import Path
 from typing import Any, Protocol
 
 from chorus.adapters._failure import failure_outcome
@@ -90,6 +92,7 @@ class TaskHarness(Protocol):
         intent: str,
         verification_steps: tuple[dict[str, str], ...] = (),
         observer: _DreamObserver | None = None,
+        max_sprints: int | None = None,
     ) -> RunResult: ...
 
 
@@ -149,10 +152,16 @@ class DreamBeatRunner:
         harness: TaskHarness,
         *,
         pricing: TokenPricing | None = None,
+        max_sprints: int | None = 1,
+        timeout_s: float | None = 90.0,
+        working_dir: str | Path | None = None,
         clock: Callable[[], datetime] | None = None,
     ) -> None:
         self._harness = harness
         self._pricing = pricing
+        self._max_sprints = max_sprints
+        self._timeout_s = timeout_s
+        self._working_dir = Path(working_dir) if working_dir is not None else None
         self._clock = clock or _utc_now
 
     async def run_task(
@@ -178,14 +187,56 @@ class DreamBeatRunner:
             {"kind": "eval", "command": step.command} for step in verification
         )
         try:
-            result = await self._harness.run_task(
-                task_id=task_id, intent=intent, verification_steps=steps, observer=bridge
+            run = self._harness.run_task(
+                task_id=task_id,
+                intent=intent,
+                verification_steps=steps,
+                observer=bridge,
+                max_sprints=self._max_sprints,
             )
+            result = await asyncio.wait_for(run, timeout=self._timeout_s)
+        except TimeoutError as exc:
+            if verification and await self._verification_passed(verification):
+                return BeatOutcome(
+                    passed=True,
+                    summary="objective verification passed after dream timeout",
+                    outcome={
+                        "steps_total": len(verification),
+                        "steps_done": len(verification),
+                        "verified_after_timeout": True,
+                        "timeout_s": self._timeout_s,
+                    },
+                )
+            return failure_outcome(exc)
         except asyncio.CancelledError:
             raise  # structured cancellation must propagate — never classify it as a beat outcome
         except Exception as exc:  # typed by failure_outcome — a beat never crashes the dispatch loop
             return failure_outcome(exc)
         return to_beat_outcome(result, pricing=self._pricing)
+
+    async def _verification_passed(self, verification: tuple[VerificationStep, ...]) -> bool:
+        if self._working_dir is None:
+            return False
+        for step in verification:
+            try:
+                process = await asyncio.create_subprocess_shell(
+                    step.command,
+                    cwd=self._working_dir,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                )
+                try:
+                    await asyncio.wait_for(process.communicate(), timeout=step.timeout_s)
+                except TimeoutError:
+                    with suppress(ProcessLookupError):
+                        process.kill()
+                        await process.wait()
+                    return False
+            except OSError:
+                return False
+            if process.returncode != 0:
+                return False
+        return True
 
 
 __all__ = [

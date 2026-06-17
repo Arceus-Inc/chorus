@@ -131,6 +131,7 @@ class EmployeeHarnessFactory:
         pricing: TokenPricing | None = None,
         seed: str | Path | None = None,
         work_root: Path | None = None,
+        timeout_s: float | None = 90.0,
     ) -> None:
         self._api_key = api_key
         self._base_url = base_url
@@ -138,6 +139,7 @@ class EmployeeHarnessFactory:
         self._roles = roles
         self._pricing = pricing
         self._seed = seed
+        self._timeout_s = timeout_s
         # The org's workspace root: .chorus/work/{org}/ — shared by chat, tick, and the `company`
         # console command (one identity), via the single dream-free `default_work_root` convention.
         base = work_root if work_root is not None else default_work_root()
@@ -189,7 +191,12 @@ class EmployeeHarnessFactory:
             env=dict(config.env) or None,
         )
         return EmployeeHarness(
-            runner=DreamBeatRunner(harness, pricing=self._pricing),
+            runner=DreamBeatRunner(
+                harness,
+                pricing=self._pricing,
+                timeout_s=self._timeout_s,
+                working_dir=root,
+            ),
             workspace=workspace,
             working_dir=root,
             config=config,

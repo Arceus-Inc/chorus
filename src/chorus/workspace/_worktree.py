@@ -28,8 +28,17 @@ _OPERATIONAL_EXCLUDES = (
     ".dream/",  # dream task/ledger artefacts
     ".harness/",  # dream tool-tier / policy files
     ".chorus/",  # any nested chorus state
+    ".mypy_cache/",
+    ".playwright-mcp/",
+    ".pytest_cache/",
+    ".ruff_cache/",
+    ".venv/",
+    "__pycache__/",
     "memory/",  # memory store spill, if working-dir-local
+    "node_modules/",
 )
+_OPERATIONAL_EXCLUDE_NAMES = {path.rstrip("/") for path in _OPERATIONAL_EXCLUDES}
+_SEED_COPY_IGNORE = shutil.ignore_patterns(".git", *_OPERATIONAL_EXCLUDE_NAMES)
 
 
 # The default base for company workspaces under the current working directory. ``chat``, ``tick``, and
@@ -148,13 +157,13 @@ class CompanyWorkspace:
 
     @staticmethod
     def _copy_tree(src: Path, dst: Path) -> None:
-        """Copy ``src``'s contents into ``dst`` (a fresh repo), skipping its ``.git``."""
+        """Copy ``src``'s contents into ``dst`` (a fresh repo), skipping operational dirs."""
         for item in src.iterdir():
-            if item.name == ".git":
+            if item.name == ".git" or item.name in _OPERATIONAL_EXCLUDE_NAMES:
                 continue
             target = dst / item.name
             if item.is_dir():
-                shutil.copytree(item, target)
+                shutil.copytree(item, target, ignore=_SEED_COPY_IGNORE)
             else:
                 shutil.copy2(item, target)
 
