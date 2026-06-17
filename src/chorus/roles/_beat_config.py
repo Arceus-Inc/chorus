@@ -36,6 +36,7 @@ class RoleBeatConfig:
     permission_mode: str = "default"
     memory_scope: str = "project"
     isolation: str = "worktree"
+    sandbox: str = "repo-write"
     model: str | None = None
     max_turns: int = 8
     working_memory: bool = False
@@ -54,6 +55,7 @@ def role_beat_config(manifest: RoleManifest) -> RoleBeatConfig:
         permission_mode=manifest.permission_mode.value,
         memory_scope=manifest.memory_scope.value,
         isolation=manifest.isolation.value,
+        sandbox=manifest.sandbox.value,
         model=manifest.model,
         max_turns=manifest.max_turns,
         working_memory=manifest.working_memory,

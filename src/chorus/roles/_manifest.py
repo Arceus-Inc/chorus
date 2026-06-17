@@ -43,6 +43,23 @@ class Isolation(StrEnum):
     REMOTE = "remote"
 
 
+class SandboxTier(StrEnum):
+    """The role's trust posture — how much its tools may do (spec 04 §4; dream's sandbox tiers).
+
+    Values are dream's wire strings (so the materializer writes them straight into
+    ``.harness/sandbox.toml``). Ordered by capability: a read-only role can't write; a ``repo-write``
+    role writes within its worktree; ``unrestricted`` additionally lets it run arbitrary commands
+    (tests, builds) — needed for an autonomous engineer, since dream otherwise gates a non-path command
+    behind an interactive approval the kernel can't supply. Even ``unrestricted`` keeps dream's
+    credential guard, command-deny list, and worktree confinement (a deliberate, doubly-gated act).
+    """
+
+    READ_ONLY = "read-only"
+    REPO_WRITE = "repo-write"
+    REPO_WRITE_NET = "repo-write+net-allowlist"
+    UNRESTRICTED = "unrestricted"
+
+
 @dataclass(frozen=True)
 class RoleManifest:
     """One org-role's standing contract — the complete identity of a dream harness.
@@ -65,6 +82,7 @@ class RoleManifest:
     permission_mode: PermissionMode = PermissionMode.DEFAULT
     memory_scope: MemoryScope = MemoryScope.PROJECT
     isolation: Isolation = Isolation.WORKTREE
+    sandbox: SandboxTier = SandboxTier.REPO_WRITE  # the role's trust posture (dream sandbox tier)
     # Engine scalars — the non-capability ``build_harness`` knobs (carried through overlays).
     model: str | None = None  # None → use the deployment model the composition root supplies
     max_turns: int = 8  # dream's per-role turn budget default
@@ -80,4 +98,5 @@ __all__ = [
     "MemoryScope",
     "PermissionMode",
     "RoleManifest",
+    "SandboxTier",
 ]

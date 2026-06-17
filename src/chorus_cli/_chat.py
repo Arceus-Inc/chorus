@@ -264,6 +264,7 @@ def _cmd_config(
             "permission": spec.permission_mode,
             "memory": memory,
             "isolation": isolation,
+            "trust": spec.sandbox,
             "tools": _fmt_list(spec.tools),
             "skills": _fmt_list(spec.skills),
             "mcp": "on" if spec.mcp else "off",

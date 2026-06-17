@@ -87,6 +87,22 @@ def write_role_overlays(harness_dir: Path, config: RoleBeatConfig) -> None:
         (roles_dir / f"{role}.toml").write_text(overlay, encoding="utf-8")
 
 
+def write_sandbox_config(harness_dir: Path, sandbox: str) -> None:
+    """Write dream's ``.harness/sandbox.toml`` for the role's trust posture (spec 04 §4).
+
+    dream double-gates ``unrestricted`` — it also needs ``confirm_unrestricted = true`` — so a role
+    asking for it makes the deliberate, reviewable choice explicit. (Excluded from the branch by the
+    workspace's ``info/exclude``.) The other guards — credential guard, command-deny, worktree
+    confinement — apply at every tier.
+    """
+    harness = harness_dir / ".harness"
+    harness.mkdir(parents=True, exist_ok=True)
+    lines = [f'tier = "{sandbox}"']
+    if sandbox == "unrestricted":
+        lines.append("confirm_unrestricted = true")
+    (harness / "sandbox.toml").write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
 @dataclass(frozen=True)
 class EmployeeHarness:
     """The materialized result for one employee — its runner plus what a front-end surfaces."""
@@ -152,6 +168,7 @@ class EmployeeHarnessFactory:
             root = self._company_root / employee.id
         root.mkdir(parents=True, exist_ok=True)
         write_role_overlays(root, config)  # the employee's identity overlays the whole harness
+        write_sandbox_config(root, config.sandbox)  # the role's trust posture → .harness/sandbox.toml
 
         # Every build_harness knob comes from the role config — this is where the employee *becomes*
         # its harness. config.model overrides the deployment when set; an empty role env means None.

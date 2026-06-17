@@ -17,6 +17,7 @@ from chorus_harness._factory import (
     EmployeeHarnessFactory,
     dream_tool_names,
     write_role_overlays,
+    write_sandbox_config,
 )
 
 __all__ = [
@@ -24,4 +25,5 @@ __all__ = [
     "EmployeeHarnessFactory",
     "dream_tool_names",
     "write_role_overlays",
+    "write_sandbox_config",
 ]
