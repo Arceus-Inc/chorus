@@ -9,6 +9,16 @@ from __future__ import annotations
 
 from chorus.heartbeat._beat import BeatDisposition, BeatOutcome
 
+# A ``*HeadParseError`` is dream's planner/evaluator/generator emitting unparseable structured output —
+# a transient model blip that a re-run usually clears. Matched by class name (structural, no dream
+# import), consistent with how this module reads dream's error contract.
+_TRANSIENT_SUFFIX = "HeadParseError"
+
+
+def _is_transient(exc: BaseException) -> bool:
+    """True for a retryable, transient fault (a head parse blip) — re-running the beat tends to fix it."""
+    return type(exc).__name__.endswith(_TRANSIENT_SUFFIX)
+
 
 def failure_outcome(exc: BaseException) -> BeatOutcome:
     """Classify a beat raise: a ``dream.cancelled`` is a cooperative cancel; anything else is errored."""
@@ -25,6 +35,7 @@ def failure_outcome(exc: BaseException) -> BeatOutcome:
         disposition=BeatDisposition.ERRORED,
         outcome={"error": repr(exc), "phase": phase},
         summary=f"beat errored: {exc}",
+        retryable=_is_transient(exc),
     )
 
 

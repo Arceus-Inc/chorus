@@ -16,6 +16,7 @@ import pytest
 
 from chorus.events import Event, EventKind
 from chorus.heartbeat import BeatOutcome, Scheduler
+from chorus.heartbeat._beat import BeatDisposition
 from chorus.ledger import SqliteLedger, Task, TaskStatus
 from chorus.workforce import Employee, LedgerWorkforce
 from chorus_cli import Console
@@ -211,6 +212,48 @@ def test_run_chat_runs_a_turn_streams_the_reply_and_lands_the_task(
     # the task actually landed in the ledger
     tasks_done = [t for t in [ledger.tasks.get(tid) for tid in _all_task_ids(ledger)] if t]
     assert any(t.intent == "build the parser" and t.status is TaskStatus.DONE for t in tasks_done)
+
+
+class _ErroredChatBeat:
+    """A :class:`BeatRunner` that fails with a (non-retryable) planner parse error."""
+
+    async def run_task(
+        self,
+        *,
+        task_id: str,
+        intent: str,
+        verification: object = (),
+        observer: Callable[[Event], None] | None = None,
+    ) -> BeatOutcome:
+        return BeatOutcome(
+            passed=False,
+            disposition=BeatDisposition.ERRORED,
+            outcome={
+                "error": "PlannerHeadParseError('planner reply missing <spec>...</spec> section')",
+                "phase": None,
+            },
+            retryable=False,  # already exhausted — surface the reason instead of looping in this unit test
+        )
+
+
+def test_footer_surfaces_a_failed_beats_error(ledger: SqliteLedger, make_input) -> None:
+    # the silent ``cost=0c`` is the trap — a failed turn must say *why* (planner parse vs DoD vs engine).
+    ledger.employees.create(Employee(id="e1", name="alice", role="engineer"))
+    service, render_bus, console, out = _chat_harness(ledger, _ErroredChatBeat())  # type: ignore[arg-type]
+
+    run_chat(
+        "e1",
+        ledger=ledger,
+        service=service,
+        render_bus=render_bus,
+        console=console,
+        input_func=make_input(["do the thing", "/quit"]),
+    )
+
+    text = out.getvalue()
+    assert "run=failed" in text
+    # the footer names the cause in plain language, not a silent cost=0c
+    assert "planner" in text.lower() and "parse" in text.lower()
 
 
 def test_config_renders_every_harness_component(ledger: SqliteLedger, make_input, tmp_path) -> None:

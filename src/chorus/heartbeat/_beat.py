@@ -49,6 +49,10 @@ class BeatOutcome:
     # How the beat resolved (spec 05 §5). Defaults from ``passed`` for a clean return, so existing
     # callers need not set it; the dream adapter sets ``ERRORED``/``CANCELLED`` on a raise.
     disposition: BeatDisposition | None = None
+    # An ERRORED beat whose fault is *transient* (e.g. a planner/evaluator parse blip — the model
+    # emitted unparseable structured output). The scheduler re-runs a retryable beat before stranding
+    # it; a clean return or a hard engine fault is never retryable.
+    retryable: bool = False
 
     def __post_init__(self) -> None:
         if self.disposition is None:

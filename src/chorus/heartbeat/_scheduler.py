@@ -50,12 +50,13 @@ from chorus.recovery import reconcile
 
 if TYPE_CHECKING:
     from chorus.budgets import BudgetEnforcer
+    from chorus.events import Event
     from chorus.heartbeat._beat import BeatOutcome, BeatRunner
     from chorus.heartbeat._runner_for import BeatRunnerFor
     from chorus.ledger import SqliteLedger
     from chorus.observability import EventBus
     from chorus.outcomes import Artifact as OutcomeArtifact
-    from chorus.outcomes import LanderRegistry
+    from chorus.outcomes import LanderRegistry, VerificationStep
     from chorus.roles import RoleRegistry
     from chorus.workforce import Employee, Workforce
 
@@ -103,6 +104,7 @@ class Scheduler:
         max_concurrent_runs: int = 4,
         lease_ttl_s: float = 300.0,
         max_repair_attempts: int = 2,
+        transient_retries: int = 2,
         ledger: SqliteLedger | None = None,
         workforce: Workforce | None = None,
         beat_runner: BeatRunner | None = None,
@@ -118,6 +120,9 @@ class Scheduler:
         self.max_concurrent_runs = max_concurrent_runs
         self.lease_ttl_s = lease_ttl_s
         self.max_repair_attempts = max_repair_attempts  # DoD-failure self-repair budget (spec 04 §1)
+        # In-beat retry budget for *transient* engine faults (a planner/evaluator parse blip): re-run the
+        # beat this many times before stranding it onto the recovery ladder (spec 05 §5).
+        self.transient_retries = transient_retries
         self._ledger = ledger
         self._workforce = workforce
         # The beat seam is per-employee (resolve a role-faithful runner for the dispatched employee). A
@@ -319,6 +324,32 @@ class Scheduler:
         if self._inflight:
             await asyncio.gather(*tuple(self._inflight))
 
+    async def _run_beat_with_retry(
+        self,
+        beat_runner: BeatRunner,
+        *,
+        task_id: str,
+        intent: str,
+        verification: tuple[VerificationStep, ...],
+        observer: Callable[[Event], None] | None,
+    ) -> BeatOutcome:
+        """Run the beat, re-running a *transient* engine fault before stranding it (spec 05 §5).
+
+        A retryable ``ERRORED`` outcome — a planner/evaluator parse blip, where the model emitted
+        unparseable structured output — usually clears on a fresh attempt, so the beat is re-run up to
+        ``transient_retries`` times. A clean return, a DoD failure, a cancel, or a hard (non-retryable)
+        engine fault is returned as-is. Same ``run_id`` throughout: the retries are one beat.
+        """
+        attempt = 0
+        while True:
+            result = await beat_runner.run_task(
+                task_id=task_id, intent=intent, verification=verification, observer=observer
+            )
+            transient = result.disposition is BeatDisposition.ERRORED and result.retryable
+            if not transient or attempt >= self.transient_retries:
+                return result
+            attempt += 1
+
     async def run_beat(self, wake: Wake, *, run_id: str, now: datetime) -> None:
         """One employee's short ``dream.run_task`` invocation (spec 03 §3).
 
@@ -369,8 +400,8 @@ class Scheduler:
         # acceptance gate, so ``done`` means plan-complete *and* the Command gate passed (spec 04 §1).
         verifier = ledger.dod.verifier_for_task(task_id)
         verification = verifier.verification_steps() if verifier is not None else ()
-        result = await beat_runner.run_task(
-            task_id=task_id, intent=task.intent, verification=verification, observer=observer
+        result = await self._run_beat_with_retry(
+            beat_runner, task_id=task_id, intent=task.intent, verification=verification, observer=observer
         )
 
         verdict = result.outcome or None

@@ -205,6 +205,23 @@ def _turn_cost_cents(ledger: SqliteLedger, task_id: str) -> tuple[str, int | Non
     return run.status.value, cost
 
 
+def _turn_failure_reason(ledger: SqliteLedger, task_id: str) -> str | None:
+    """A short, human reason the turn failed — so a blocked turn is never a silent ``cost=0c``.
+
+    Distinguishes the cases that need different responses: a *transient* planner/evaluator parse blip
+    (re-send the line), a hard engine fault, or a met-the-plan-but-failed-the-DoD verdict.
+    """
+    runs = ledger.runs.for_task(task_id)
+    if not runs or runs[-1].status.value != "failed":
+        return None
+    error = str((runs[-1].outcome or {}).get("error") or "")
+    if "HeadParseError" in error:
+        return "planner parse error (transient — re-send the line)"
+    if error:
+        return f"errored ({error.split('(')[0][:48]})"
+    return "DoD not met"  # the beat ran but the acceptance gate (e.g. pytest/ruff) rejected it
+
+
 def _render_footer(
     console: Console, *, task_id: str, report: TickReport, ledger: SqliteLedger
 ) -> None:
@@ -217,6 +234,9 @@ def _render_footer(
         bits.append(f"cost={cost}c")
     if report.budget_gated:
         bits.append("budget-gated")
+    reason = _turn_failure_reason(ledger, task_id)
+    if reason is not None:
+        bits.append(reason)  # name the cause, not a silent cost=0c
     console.line(f"  [{' '.join(bits)}]")
 
 
