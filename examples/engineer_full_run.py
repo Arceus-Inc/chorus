@@ -202,7 +202,13 @@ def main() -> int:
         if artifacts:
             a = artifacts[0]
             _log(f"   ★ PR ARTIFACT LANDED: type={a.type.value} ref={a.resource_ref}")
-            _log("   → the engineer shipped: DoD green (pytest+ruff) → PR recorded on the ledger.")
+            # PR → CI → merge: the deliverable is now integrated into the company main, so the next
+            # employee branches off the shipped work.
+            company_main = factory.company_root / "repo"
+            _log(f"   company main log:\n{_git(company_main, 'log', '--oneline', '-3')}")
+            integrated = "subtract" in (company_main / "calc.py").read_text(encoding="utf-8")
+            _log(f"   company main has subtract(): {integrated}")
+            _log("   → the engineer shipped: DoD green (pytest+ruff) → PR recorded → merged to main.")
         else:
             _log("   no artifact landed (DoD not green this run — see run/DoD status above).")
         return 0
