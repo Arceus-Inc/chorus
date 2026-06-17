@@ -21,7 +21,7 @@ One chorus spec per Paperclip research dimension — so coverage is at parity, n
 | [04](04-outcomes-and-governance.md) | **Outcomes, DoD & governance** | `06-governance` | the evaluator-verified DoD (the differentiator), the artifact model, two-gate budgets, fail-closed trust |
 | [05](05-dream-seam.md) | **The dream seam (execution)** | `04-execution-and-adapters` | how a beat invokes `run_task`, witnessing the event stream, the DoD pass-down, the deleted adapter/MCP stack |
 | [06](06-roles-and-workforce.md) | **Roles & workforce** | `02` (agents) + `09` (skills) | employee = replayable identity, role = toolset+DoD+outcome, the org tree, assignment, the thin role `.md` |
-| [06.5](06.5-deferred-from-spec04.md) | **Deferred from spec 04** | — | the spec-04 backlog (DoD auto-gen + AgentReview, outcome landing, fail-closed trust, the rest of governance) — built **after** spec 06 |
+| [06.5](06.5-deferred-from-spec04.md) | **Deferred work backlog (04–06)** | — | the cross-spec backlog: DoD auto-gen + AgentReview, outcome landing, fail-closed trust, governance gaps, and spec-06's unenforced delegation depth cap |
 | [07](07-memory.md) | **Memory** | `memory-landscape.md` | scopes, read-at-start, append-only writer, provenance, the lattice seam |
 | [08](08-observability.md) | **Observability & inspection** | `08-frontend` + `observability.md` | the event taxonomy, working-vs-stuck *witnessed* not guessed, the inspector, opt-in tracing |
 | [09](09-extensibility-and-portability.md) | **Extensibility & portability** | `09-extensibility` | role plugins, skills, the slug-portable company package, the contract layer |
