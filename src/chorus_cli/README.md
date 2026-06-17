@@ -44,8 +44,8 @@ chorus>
 
 | Mode | Needs | What works |
 |------|-------|------------|
-| **Keys-free** (default) | nothing | every command except `tick` — manage and inspect the ledger, including budgets and approval gates |
-| **Keyed** | Azure OpenAI creds | additionally `tick`: run a real beat through dream; spend is priced and the budget gates fire |
+| **Keys-free** (default) | nothing | every command except `tick` / `chat` — manage and inspect the ledger, including budgets and approval gates |
+| **Keyed** | Azure OpenAI creds | additionally `tick` and `chat`: run real beats through dream; spend is priced and the budget gates fire |
 
 To enable `tick`, set three variables (export them, or drop them in a `.env` — see
 [Credentials](#credentials)):
@@ -129,13 +129,113 @@ with `budget raise` / `budget dismiss`, not these verbs.)
 | Command | Does |
 |---|---|
 | `tick` | one kernel pulse: recover → cron → monitors → dispatch, then await the beat (needs keys) |
+| `chat <employee_id>` | converse with an employee — each line runs a real beat **as that employee** (needs keys); `/help` inside lists the slash commands. See [Chat](#chat--converse-with-an-employee) |
 | `quit` / `exit` | leave |
+
+---
+
+## Chat — converse with an employee
+
+`chat <employee_id>` is a conversational front door to a single employee (needs keys). Where the rest
+of the console is verb-driven, chat is a back-and-forth: every line you type is recorded as a message,
+auto-promoted into a task, and run through one real beat — the whole dream `run_task` loop
+(planner → generator → evaluator) — **as that employee**. Its reply streams back live, and a one-line
+verdict footer (task status, run status, spend) closes each turn.
+
+### The employee *is* its config
+
+An employee runs as a fully configured dream harness, materialized from its **role**. Every harness
+knob comes from the role's config — the system prompt (its operating brief), the tool allow-list, the
+permission posture, memory + a working-memory scratchpad, the model, the turn budget, MCP/plugins, and
+the worktree isolation posture. The Engineer, for example, is defined one-module-per-component in
+[`src/chorus_employee/engineer/`](../chorus_employee/engineer/) and ships file/bash/git tools under an
+`acceptEdits` posture with a `pytest -q && ruff check .` Definition of Done. Run `/config` to see the
+live spec:
+
+```
+ada> /config
+  employee:    ada (engineer)
+  model:       gpt-5.2
+  max_turns:   12
+  permission:  acceptEdits
+  memory:      project +working-scratchpad
+  isolation:   worktree → branch chorus/ada
+  tools:       read_file, write_file, run_command, git
+  skills:      (none)
+  mcp:         off
+  plugins:     off
+  working_dir: .chorus/chat/acme/worktrees/ada
+```
+
+### Branch-isolated worktrees
+
+Employees of a company share one workspace under `.chorus/chat/{company}/`, but each works **confined
+to its own git worktree** on branch `chorus/{employee}` — so two employees never collide. (dream
+confines its tools to the harness working dir, so making that dir a per-employee worktree is what
+isolates the edits.)
+
+```
+.chorus/chat/{company}/
+  repo/                  canonical, branch main — the company source of truth
+  worktrees/ada/         branch chorus/ada — Ada works here
+  worktrees/bob/         branch chorus/bob — isolated from Ada
+```
+
+`/merge` integrates an employee's branch back into the company `main` (it snapshots any uncommitted
+work first; a conflict is reported, not applied).
+
+### Seed from a real repo
+
+By default the company `main` starts empty. Point it at a **real codebase** so employees branch off
+actual code — set `CHORUS_COMPANY_SEED` to a git repo path, a clone URL, or a plain directory:
+
+```
+CHORUS_COMPANY_SEED=/path/to/my-repo
+```
+
+Seeding happens once, when the company workspace is first created (clear `.chorus/chat/{company}/` to
+reseed).
+
+### Slash commands
+
+| Command | Does |
+|---|---|
+| `/help` | the slash list |
+| `/info` | employee, model, working dir, active task |
+| `/config` | the employee's full harness config (every component) |
+| `/merge` | merge this employee's isolated worktree into company `main` |
+| `/task` | the current/last task with its runs |
+| `/transcript` | this session's lines |
+| `/quit` · `/exit` | leave chat (back to the console) |
+
+Anything else is sent to the employee as a turn.
+
+### Walkthrough — an engineer edits real code, then merges (needs keys)
+
+```
+# point the company at a repo to work on (a path, a clone URL, or a directory)
+export CHORUS_COMPANY_SEED=/path/to/my-repo
+
+uv run chorus --db /tmp/play.db --company acme
+hire ada Ada engineer                            # the Engineer role = a complete harness config
+chat ada
+ada> /config                                     # the harness ada runs as
+ada> add a subtract(a, b) function to calc.py    # one real beat, isolated on branch chorus/ada
+ada> /merge                                      # integrate ada's branch into company main
+ada> /quit
+```
+
+Continuity is the employee's **memory**: the harness is built with a stable per-employee working dir,
+so it remembers earlier turns across a session.
 
 ---
 
 ## How the DoD enforces (spec 04 §1)
 
-A task's `dod` is the typed gate its beat must clear — `done` is never self-report:
+A task's `dod` is the typed gate its beat must clear — `done` is never self-report. **DoD at intake:**
+a task with no explicit `dod set` inherits its **assignee role's** DoD when the beat is dispatched — so
+an engineer (in `chat` or via `tick`) is always held to its `pytest -q && ruff check .` gate without
+you setting one; a manual `dod set` always wins.
 
 - **`command`** — the shell check rides into the beat as dream's verification (dream runs it and
   gates on it). `done` means the plan completed **and** the command exited 0.
@@ -192,9 +292,11 @@ AZURE_OPENAI_BASE_URL=https://<resource>.cognitiveservices.azure.com/openai/v1
 AZURE_OPENAI_DEPLOYMENT=gpt-5.2
 CHORUS_PRICE_INPUT_CENTS_PER_MTOK=125
 CHORUS_PRICE_OUTPUT_CENTS_PER_MTOK=1000
+CHORUS_COMPANY_SEED=/path/to/my-repo      # optional: seed chat employees' worktrees from a real repo
 ```
 
-`--company <id>` sets the scope id for company-wide budgets (default `company`).
+`--company <id>` sets the scope id for company-wide budgets **and** the chat workspace root
+(`.chorus/chat/<id>/`); default `company`.
 
 ---
 
@@ -258,7 +360,14 @@ Small, focused modules under `src/chorus_cli/`:
 | `_context.py` | `CliSession`, `CommandContext`, the `LoopSignal` enum, the `BeatService` protocol |
 | `_render.py` | `Console` — lines / key-value / tables, TTY-gated colour |
 | `_env.py` | the `.env` loader |
-| `_beats.py` | **the only module that imports dream** — wires the harness, pricing, enforcer, and the sync→async tick bridge (imported lazily, only when keys are present) |
+| `_beats.py` | wires the `tick` beat service + pricing/enforcer; reads `CHORUS_COMPANY_SEED` (imports dream lazily, only when keys are present) |
+| `_chat.py` | the conversational `chat` loop — render bus, auto-promote, slash commands (`/config`, `/merge`, …) |
+| `_role_chat.py` | materializes an employee's role into a configured dream harness (tools, overlays, every `build_harness` scalar, the per-employee worktree) — the composition seam that imports dream |
+
+The employee config + isolation live in core (dream-free): an employee's full harness identity is its
+**role** ([`src/chorus_employee/`](../chorus_employee/) — e.g. the Engineer — projected through
+`chorus.roles.RoleBeatConfig`), and branch-isolated worktrees are
+[`chorus.workspace.CompanyWorkspace`](../chorus/workspace/).
 
 Clean-code conventions: enum-driven (no stringly-typed status), frozen dataclasses, no
 getattr/setattr dispatch, conversions at the boundary. Tests live in `tests/cli/`.

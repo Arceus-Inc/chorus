@@ -106,6 +106,7 @@ class Chorus:
             event_bus=event_bus,
             # budgets are inert until a policy is created — injecting the enforcer just arms the gates
             budget_enforcer=BudgetEnforcer(ledger, company_id=company_id),
+            roles=registry,  # a task inherits its assignee role's DoD at intake (spec 04 §1 / 06 §2)
         )
         return cls(
             ledger=ledger,

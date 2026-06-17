@@ -85,10 +85,15 @@ def main() -> int:
         print(f"[worktree calc.py before]\n{(worktree / 'calc.py').read_text(encoding='utf-8')}")
         print(f"> {_INSTRUCTION}\n")
 
-        ensure_task(ledger, "ada", _INSTRUCTION)
+        task_id, _ = ensure_task(ledger, "ada", _INSTRUCTION)
         render.reset()
         service.run_turn()
         render.end_turn()
+
+        # DoD-at-intake (spec 04 §1 / 06 §2): the chat task inherited the engineer role's DoD,
+        # so this beat was held to the engineer's `pytest -q && ruff check .` gate.
+        dod = ledger.dod.get_for_task(task_id)
+        print(f"\n[intake DoD] kind={dod.kind if dod else None}")
 
         wt_calc = (worktree / "calc.py").read_text(encoding="utf-8") if (worktree / "calc.py").exists() else ""
         print(f"\n[worktree calc.py after]\n{wt_calc}")

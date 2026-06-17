@@ -96,6 +96,57 @@ async def test_run_beat_with_no_dod_passes_no_verification(ledger: SqliteLedger)
     assert beat.verification == ()
 
 
+# -- DoD at intake: a task inherits its assignee role's DoD when none is set (spec 04 §1 / 06 §2) ----
+
+
+def _scheduler_with_roles(ledger: SqliteLedger, beat: _RecordingBeat, employee: Employee) -> Scheduler:
+    from chorus.roles import RoleRegistry, default_roles
+
+    return Scheduler(
+        ledger=ledger,
+        workforce=_FakeWorkforce(employee),
+        beat_runner=beat,
+        roles=RoleRegistry.from_plugins(default_roles()),
+        max_concurrent_runs=1,
+    )
+
+
+async def test_intake_applies_the_assignee_role_dod_when_none_set(ledger: SqliteLedger) -> None:
+    employee = _seed(ledger)  # an engineer with no explicit DoD
+    beat = _RecordingBeat()
+    sched = _scheduler_with_roles(ledger, beat, employee)
+
+    await sched.tick(_NOW)
+    await sched.drain()
+
+    # the engineer's role DoD (pytest + ruff) was inherited, persisted, and enforced in the beat
+    dod = ledger.dod.get_for_task("t1")
+    assert dod is not None
+    assert beat.verification == (VerificationStep(command="pytest -q && ruff check ."),)
+
+
+async def test_intake_does_not_override_an_explicit_dod(ledger: SqliteLedger) -> None:
+    employee = _seed(ledger)
+    ledger.dod.create("t1", Verifier.command("custom-check"))  # a human set the DoD already
+    beat = _RecordingBeat()
+    sched = _scheduler_with_roles(ledger, beat, employee)
+
+    await sched.tick(_NOW)
+    await sched.drain()
+
+    assert beat.verification == (VerificationStep(command="custom-check"),)  # explicit wins
+
+
+async def test_intake_without_a_roles_registry_leaves_the_task_dod_free(ledger: SqliteLedger) -> None:
+    employee = _seed(ledger)
+    beat = _RecordingBeat()
+    _scheduler(ledger, beat, employee)  # the plain scheduler carries no roles
+
+    await _tick(ledger, beat, employee)
+
+    assert beat.verification == ()  # no registry → no intake DoD (back-compat)
+
+
 async def test_run_beat_with_a_human_approval_dod_passes_no_verification(ledger: SqliteLedger) -> None:
     employee = _seed(ledger)
     ledger.dod.create("t1", Verifier.human_approval())  # not an objective check

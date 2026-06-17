@@ -169,6 +169,7 @@ def build_role_chat_service(
         beat_runner=DreamBeatRunner(harness, pricing=pricing),
         budget_enforcer=BudgetEnforcer(ledger, company_id=company_id),
         event_bus=render_bus,
+        roles=registry,  # a chat task inherits the employee role's DoD at intake (spec 04 §1)
         max_concurrent_runs=1,
     )
     return ChatBeatService(
