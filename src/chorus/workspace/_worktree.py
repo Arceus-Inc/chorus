@@ -39,6 +39,7 @@ _OPERATIONAL_EXCLUDES = (
 )
 _OPERATIONAL_EXCLUDE_NAMES = {path.rstrip("/") for path in _OPERATIONAL_EXCLUDES}
 _SEED_COPY_IGNORE = shutil.ignore_patterns(".git", *_OPERATIONAL_EXCLUDE_NAMES)
+_HARNESS_SEED_FILES = frozenset({"mcp-allowlist.toml", "plugins-enabled.toml"})
 
 
 # The default base for company workspaces under the current working directory. ``chat``, ``tick``, and
@@ -159,6 +160,9 @@ class CompanyWorkspace:
     def _copy_tree(src: Path, dst: Path) -> None:
         """Copy ``src``'s contents into ``dst`` (a fresh repo), skipping operational dirs."""
         for item in src.iterdir():
+            if item.name == ".harness":
+                CompanyWorkspace._copy_seed_harness_files(item, dst / item.name)
+                continue
             if item.name == ".git" or item.name in _OPERATIONAL_EXCLUDE_NAMES:
                 continue
             target = dst / item.name
@@ -166,6 +170,17 @@ class CompanyWorkspace:
                 shutil.copytree(item, target, ignore=_SEED_COPY_IGNORE)
             else:
                 shutil.copy2(item, target)
+
+    @staticmethod
+    def _copy_seed_harness_files(src: Path, dst: Path) -> None:
+        """Copy only declarative Dream harness config from a seed repo."""
+        if not src.is_dir():
+            return
+        for name in _HARNESS_SEED_FILES:
+            source = src / name
+            if source.is_file():
+                dst.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(source, dst / name)
 
     def worktree_for(self, employee_id: str) -> WorktreeWorkspace:
         """Create (or reuse) ``employee_id``'s branch-isolated worktree; return its path + branch."""

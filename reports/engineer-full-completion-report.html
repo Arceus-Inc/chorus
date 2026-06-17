@@ -197,6 +197,28 @@ kind counts:
     </section>
 
     <section>
+      <h2>Skills, Plugins, and MCP CLI Smoke</h2>
+      <p class="ok">PASS.</p>
+      <p>A fresh seeded company repo was run through the real CLI with <code>CHORUS_ENGINEER_SURFACES=skills,mcp,plugins</code>. The Engineer profile exposed <code>skill</code>, <code>skills=project</code>, and <code>mcp=on</code>. The task required the project skill, a repo-local Dream plugin tool, and a stdio MCP tool before writing the report artifact.</p>
+      <pre>check engineer
+tools   read_file, write_file, run_command, git, skill
+skills  project
+mcp     on
+
+surface-report.md
+SKILL_SURFACE_TOKEN PLUGIN_SURFACE_OK MCP_SURFACE_OK
+
+plugin-marker.txt
+PLUGIN_SURFACE_OK chorus-cli
+
+ledger
+task_537fc932d61d  done
+run_9efdd5b2b3db4789921741ee3e916b65  succeeded
+outcome: {"cost_cents":5,"sprint_outcomes":["needs-changes"],"steps_blocked":0,"steps_done":0,"steps_total":1,"verification_steps":1,"verified_after_incomplete_dream_result":true}</pre>
+      <p>The smoke also exposed two real seams that were fixed in Chorus: seeded declarative <code>.harness</code> files were previously dropped from worktrees, and explicit Chorus file DoD needed to be honored when Dream wrote the artifact but returned an incomplete evaluator result.</p>
+    </section>
+
+    <section>
       <h2>Completion Notes</h2>
       <ul>
         <li>The spec is complete as a build plan: each remaining Engineer surface has a goal, design, dependency, test approach, acceptance, and risk.</li>

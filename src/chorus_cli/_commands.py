@@ -48,7 +48,7 @@ from chorus.lifecycle import (
     deliver_message,
 )
 from chorus.outcomes import DoDKind, Verifier
-from chorus.roles import RoleRegistry, default_roles, role_beat_config
+from chorus.roles import RoleRegistry, role_beat_config
 from chorus.workforce import EmployeeStatus, GitWorkforce, LedgerWorkforce, copy_org
 from chorus.workspace import CompanyWorkspace, WorkspaceError, default_work_root
 from chorus_cli._chat import ChatRenderBus, run_chat
@@ -60,12 +60,17 @@ REGISTRY = CommandRegistry()
 
 _PREVIEW = 48  # how many chars of free text (intent/body) a table cell shows
 _OPERATOR = "operator"  # the human at the console — the sender of messages it delivers
-_ROLES = RoleRegistry.from_plugins(default_roles())
-
 # default heartbeat cadence for the lightweight always-on demo runner
 _HEARTBEAT_INTERVAL_S = 0.5
 _CHECK_LEDGER_LIMIT = 12
 _WRITE_FILE_RE = re.compile(r"\bwrite\b.+\bto\s+([A-Za-z0-9_.-]+\.md)\b", re.IGNORECASE)
+
+
+def _roles_from_env() -> RoleRegistry:
+    """Role registry used for CLI inspection, matching the beat composition root."""
+    from chorus_cli._beats import default_roles_from_env
+
+    return RoleRegistry.from_plugins(default_roles_from_env())
 
 
 class _HeartbeatWorker:
@@ -426,8 +431,9 @@ def _check(ctx: CommandContext) -> LoopSignal:
         ctx.out.error(f"no such employee: {employee_id!r}")
         return LoopSignal.CONTINUE
     profile = None
-    if employee.role in _ROLES:
-        profile = role_beat_config(_ROLES.get(employee.role).manifest)
+    roles = _roles_from_env()
+    if employee.role in roles:
+        profile = role_beat_config(roles.get(employee.role).manifest)
     task = _latest_task_for_employee(ledger, employee_id)
     if task is None:
         ctx.out.kv(

@@ -16,6 +16,7 @@ from collections.abc import Callable, Mapping, Sequence
 from contextlib import suppress
 from datetime import UTC, datetime
 from enum import StrEnum
+from inspect import isawaitable
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -212,7 +213,33 @@ class DreamBeatRunner:
             raise  # structured cancellation must propagate — never classify it as a beat outcome
         except Exception as exc:  # typed by failure_outcome — a beat never crashes the dispatch loop
             return failure_outcome(exc)
-        return to_beat_outcome(result, pricing=self._pricing)
+        finally:
+            await self._close_harness()
+        outcome = to_beat_outcome(result, pricing=self._pricing)
+        if not outcome.passed and verification and await self._verification_passed(verification):
+            return BeatOutcome(
+                passed=True,
+                summary="objective verification passed after dream returned incomplete",
+                outcome={
+                    **outcome.outcome,
+                    "verified_after_incomplete_dream_result": True,
+                    "verification_steps": len(verification),
+                },
+                cost_cents=outcome.cost_cents,
+                model=outcome.model,
+                input_tokens=outcome.input_tokens,
+                output_tokens=outcome.output_tokens,
+            )
+        return outcome
+
+    async def _close_harness(self) -> None:
+        close = getattr(self._harness, "aclose", None)
+        if close is None:
+            return
+        with suppress(Exception):
+            result = close()
+            if isawaitable(result):
+                await result
 
     async def _verification_passed(self, verification: tuple[VerificationStep, ...]) -> bool:
         if self._working_dir is None:

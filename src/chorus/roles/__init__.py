@@ -13,6 +13,7 @@ from chorus.roles._manifest import Isolation, MemoryScope, PermissionMode, RoleM
 from chorus.roles._overlay import ManifestOverlay, resolve_manifest
 from chorus.roles._plugin import DoDGenerator, Role, RolePlugin
 from chorus.roles._registry import RoleRegistry
+from chorus.roles._surfaces import RoleSurfaceOverride, apply_role_surface_overrides
 
 __all__ = [
     "DoDGenerator",
@@ -25,6 +26,8 @@ __all__ = [
     "RoleManifest",
     "RolePlugin",
     "RoleRegistry",
+    "RoleSurfaceOverride",
+    "apply_role_surface_overrides",
     "default_roles",
     "resolve_manifest",
     "role_beat_config",

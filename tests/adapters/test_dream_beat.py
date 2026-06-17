@@ -108,6 +108,10 @@ class _FakeHarness:
         self.verification_steps: tuple[dict[str, str], ...] = ()
         self.observer: object = None
         self.max_sprints: int | None = None
+        self.close_calls = 0
+
+    async def aclose(self) -> None:
+        self.close_calls += 1
 
     async def run_task(
         self,
@@ -159,6 +163,25 @@ async def test_run_task_timeout_can_land_when_local_verification_passes(tmp_path
     assert outcome.passed is True
     assert outcome.disposition is BeatDisposition.PASSED
     assert outcome.outcome["verified_after_timeout"] is True
+
+
+async def test_run_task_can_land_when_local_verification_passes_after_incomplete_result(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "artifact.md").write_text("done\n", encoding="utf-8")
+    command = subprocess.list2cmdline(
+        [sys.executable, "-c", "from pathlib import Path; assert Path('artifact.md').is_file()"]
+    )
+
+    outcome = await DreamBeatRunner(
+        _FakeHarness(result=_result("blocked", sprints=("needs-changes",))),
+        working_dir=tmp_path,
+    ).run_task(task_id="t1", intent="x", verification=(VerificationStep(command),))
+
+    assert outcome.passed is True
+    assert outcome.disposition is BeatDisposition.PASSED
+    assert outcome.outcome["verified_after_incomplete_dream_result"] is True
+    assert outcome.outcome["steps_blocked"] == 1
 
 
 
@@ -243,15 +266,18 @@ async def test_run_task_maps_a_completed_plan_to_passed() -> None:
     outcome = await runner.run_task(task_id="t1", intent="ship it")
     assert outcome.passed is True
     assert harness.calls == ["t1"]
+    assert harness.close_calls == 1
 
 
 async def test_run_task_turns_a_harness_error_into_a_failed_beat() -> None:
-    runner = DreamBeatRunner(_FakeHarness(error=RuntimeError("provider 500")))
+    harness = _FakeHarness(error=RuntimeError("provider 500"))
+    runner = DreamBeatRunner(harness)
     outcome = await runner.run_task(task_id="t1", intent="ship it")
     assert outcome.passed is False
     assert outcome.disposition is BeatDisposition.ERRORED  # an unexpected fault is an engine error
     assert "provider 500" in str(outcome.outcome["error"])
     assert outcome.outcome["phase"] is None  # a non-dream error carries no phase
+    assert harness.close_calls == 1
 
 
 async def test_run_task_prices_the_beat_when_pricing_is_wired() -> None:

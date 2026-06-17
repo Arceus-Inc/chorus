@@ -108,6 +108,28 @@ def test_seed_from_a_plain_directory_commits_its_files(tmp_path: Path) -> None:
     assert _git(repo, "rev-parse", "--abbrev-ref", "HEAD") == "main"
 
 
+def test_plain_directory_seed_preserves_declarative_harness_surface_config(
+    tmp_path: Path,
+) -> None:
+    src = tmp_path / "proj"
+    harness = src / ".harness"
+    harness.mkdir(parents=True)
+    (harness / "mcp-allowlist.toml").write_text("[[mcp]]\nname = 'demo'\n", encoding="utf-8")
+    (harness / "plugins-enabled.toml").write_text(
+        "[[plugin]]\nname = 'surface-probe'\n", encoding="utf-8"
+    )
+    (harness / "mcp-credentials.toml").write_text("secret = 'nope'\n", encoding="utf-8")
+    (harness / "runtime.json").write_text("{}\n", encoding="utf-8")
+
+    ws = CompanyWorkspace(tmp_path / "acme", seed=src)
+    repo = ws.ensure_repo()
+
+    assert (repo / ".harness" / "mcp-allowlist.toml").exists()
+    assert (repo / ".harness" / "plugins-enabled.toml").exists()
+    assert not (repo / ".harness" / "mcp-credentials.toml").exists()
+    assert not (repo / ".harness" / "runtime.json").exists()
+
+
 def test_plain_directory_seed_skips_nested_chorus_workspace(tmp_path: Path) -> None:
     src = tmp_path / "proj"
     (src / ".chorus" / "work" / "company" / "repo").mkdir(parents=True)
