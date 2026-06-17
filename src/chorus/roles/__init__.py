@@ -7,6 +7,7 @@ scales in *roles*, not kernel edits (spec 09 §1).
 
 from __future__ import annotations
 
+from chorus.roles._beat_config import RoleBeatConfig, role_beat_config
 from chorus.roles._defaults import default_roles
 from chorus.roles._manifest import Isolation, MemoryScope, PermissionMode, RoleManifest
 from chorus.roles._overlay import ManifestOverlay, resolve_manifest
@@ -20,9 +21,11 @@ __all__ = [
     "MemoryScope",
     "PermissionMode",
     "Role",
+    "RoleBeatConfig",
     "RoleManifest",
     "RolePlugin",
     "RoleRegistry",
     "default_roles",
     "resolve_manifest",
+    "role_beat_config",
 ]

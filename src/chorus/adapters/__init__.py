@@ -13,6 +13,7 @@ from chorus.adapters._contract import (
     check_dream_contract,
 )
 from chorus.adapters._pricing import ModelRate, TokenPricing, UsageView
+from chorus.adapters._role_beat import RoleBeatRunner, RoleHarness, RoleRunOutcome
 from chorus.adapters.dream_beat import (
     DreamBeatRunner,
     DreamStepStatus,
@@ -20,6 +21,7 @@ from chorus.adapters.dream_beat import (
     TaskHarness,
     to_beat_outcome,
 )
+from chorus.roles import RoleBeatConfig
 
 __all__ = [
     "SUPPORTED_DREAM_CONTRACT",
@@ -27,6 +29,10 @@ __all__ = [
     "DreamContractError",
     "DreamStepStatus",
     "ModelRate",
+    "RoleBeatConfig",
+    "RoleBeatRunner",
+    "RoleHarness",
+    "RoleRunOutcome",
     "RunResult",
     "TaskHarness",
     "TokenPricing",

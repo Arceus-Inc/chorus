@@ -17,9 +17,10 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any, Protocol
 
+from chorus.adapters._failure import failure_outcome
 from chorus.adapters._pricing import TokenPricing, UsageView
 from chorus.events import Event, EventKind
-from chorus.heartbeat import BeatDisposition, BeatOutcome
+from chorus.heartbeat import BeatOutcome
 from chorus.outcomes import VerificationStep
 
 
@@ -130,30 +131,6 @@ class _ObserverBridge:
         self._emit(Event(kind=kind, at=self._clock(), task_id=self._task_id, payload=payload))
 
 
-def _failure_outcome(exc: BaseException) -> BeatOutcome:
-    """Classify a raise out of ``run_task`` into a typed disposition (spec 05 §5).
-
-    A ``dream.TaskCancelled`` (stable ``code == "dream.cancelled"``) is a cooperative cancel; anything
-    else — a ``dream.RunTaskError`` carrying a typed ``phase``, or any unexpected fault — is an engine
-    error. The adapter reads dream's error contract structurally (``code``/``phase``), never importing
-    dream, so it stays a pure unit. ``asyncio.CancelledError`` is re-raised by the caller, never here.
-    """
-    if getattr(exc, "code", None) == "dream.cancelled":
-        return BeatOutcome(
-            passed=False,
-            disposition=BeatDisposition.CANCELLED,
-            outcome={"cancelled": repr(exc)},
-            summary=f"beat cancelled: {exc}",
-        )
-    phase = getattr(exc, "phase", None)
-    return BeatOutcome(
-        passed=False,
-        disposition=BeatDisposition.ERRORED,
-        outcome={"error": repr(exc), "phase": phase},
-        summary=f"beat errored: {exc}",
-    )
-
-
 def to_beat_outcome(result: RunResult, *, pricing: TokenPricing | None = None) -> BeatOutcome:
     """Map a dream run result to the chorus verdict: ``passed`` iff every plan step is ``done``.
 
@@ -240,8 +217,8 @@ class DreamBeatRunner:
             )
         except asyncio.CancelledError:
             raise  # structured cancellation must propagate — never classify it as a beat outcome
-        except Exception as exc:  # typed by _failure_outcome — a beat never crashes the dispatch loop
-            return _failure_outcome(exc)
+        except Exception as exc:  # typed by failure_outcome — a beat never crashes the dispatch loop
+            return failure_outcome(exc)
         return to_beat_outcome(result, pricing=self._pricing)
 
 
