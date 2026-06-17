@@ -77,6 +77,7 @@ def _beat_service_from_env(ledger: SqliteLedger, *, company_id: str) -> BeatServ
         deployment=deployment,
         company_id=company_id,
         pricing=default_pricing_from_env(),
+        seed=os.environ.get("CHORUS_COMPANY_SEED") or None,
     )
 
 

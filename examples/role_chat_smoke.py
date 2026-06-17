@@ -50,7 +50,7 @@ def main() -> int:
             company_id="acme",
             render_bus=render,
             pricing=default_pricing_from_env(),
-            work_dir=work,
+            work_root=work,
         )
         print(f"[engineer 'ada' | model {service.model} | workdir {work}]")
         print(f"> {_INSTRUCTION}\n")

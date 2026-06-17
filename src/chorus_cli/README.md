@@ -164,18 +164,19 @@ ada> /config
   skills:      (none)
   mcp:         off
   plugins:     off
-  working_dir: .chorus/chat/acme/worktrees/ada
+  working_dir: .chorus/work/acme/worktrees/ada
 ```
 
 ### Branch-isolated worktrees
 
-Employees of a company share one workspace under `.chorus/chat/{company}/`, but each works **confined
-to its own git worktree** on branch `chorus/{employee}` — so two employees never collide. (dream
-confines its tools to the harness working dir, so making that dir a per-employee worktree is what
-isolates the edits.)
+Employees of an org share one workspace under `.chorus/work/{org}/`, but each works **confined to its
+own git worktree** on branch `chorus/{employee}` — so two employees never collide. (dream confines its
+tools to the harness working dir, so making that dir a per-employee worktree is what isolates the
+edits.) The **same** worktree backs an employee whether you reach it through `chat` or the kernel
+dispatches it via `tick` — one identity, one workspace per employee.
 
 ```
-.chorus/chat/{company}/
+.chorus/work/{company}/
   repo/                  canonical, branch main — the company source of truth
   worktrees/ada/         branch chorus/ada — Ada works here
   worktrees/bob/         branch chorus/bob — isolated from Ada
@@ -193,7 +194,7 @@ actual code — set `CHORUS_COMPANY_SEED` to a git repo path, a clone URL, or a 
 CHORUS_COMPANY_SEED=/path/to/my-repo
 ```
 
-Seeding happens once, when the company workspace is first created (clear `.chorus/chat/{company}/` to
+Seeding happens once, when the company workspace is first created (clear `.chorus/work/{company}/` to
 reseed).
 
 ### Slash commands
@@ -296,7 +297,7 @@ CHORUS_COMPANY_SEED=/path/to/my-repo      # optional: seed chat employees' workt
 ```
 
 `--company <id>` sets the scope id for company-wide budgets **and** the chat workspace root
-(`.chorus/chat/<id>/`); default `company`.
+(`.chorus/work/<id>/`); default `company`.
 
 ---
 
@@ -360,14 +361,15 @@ Small, focused modules under `src/chorus_cli/`:
 | `_context.py` | `CliSession`, `CommandContext`, the `LoopSignal` enum, the `BeatService` protocol |
 | `_render.py` | `Console` — lines / key-value / tables, TTY-gated colour |
 | `_env.py` | the `.env` loader |
-| `_beats.py` | wires the `tick` beat service + pricing/enforcer; reads `CHORUS_COMPANY_SEED` (imports dream lazily, only when keys are present) |
+| `_beats.py` | wires the `tick` beat service (scheduler over the org harness factory) + pricing/enforcer; reads `CHORUS_COMPANY_SEED` |
 | `_chat.py` | the conversational `chat` loop — render bus, auto-promote, slash commands (`/config`, `/merge`, …) |
-| `_role_chat.py` | materializes an employee's role into a configured dream harness (tools, overlays, every `build_harness` scalar, the per-employee worktree) — the composition seam that imports dream |
+| `_role_chat.py` | builds the chat beat service over the shared harness factory |
 
-The employee config + isolation live in core (dream-free): an employee's full harness identity is its
-**role** ([`src/chorus_employee/`](../chorus_employee/) — e.g. the Engineer — projected through
-`chorus.roles.RoleBeatConfig`), and branch-isolated worktrees are
-[`chorus.workspace.CompanyWorkspace`](../chorus/workspace/).
+`tick` and `chat` materialize beats through the *same* role-faithful harness factory —
+[`chorus_harness.EmployeeHarnessFactory`](../chorus_harness/) (the one place that imports dream). The
+employee config + isolation live in core (dream-free): an employee's harness identity is its **role**
+([`src/chorus_employee/`](../chorus_employee/) — projected through `chorus.roles.RoleBeatConfig`), and
+branch-isolated worktrees are [`chorus.workspace.CompanyWorkspace`](../chorus/workspace/).
 
 Clean-code conventions: enum-driven (no stringly-typed status), frozen dataclasses, no
 getattr/setattr dispatch, conversions at the boundary. Tests live in `tests/cli/`.

@@ -20,7 +20,7 @@ from typing import Any
 from chorus.budgets import BudgetEnforcer
 from chorus.errors import OrgInvariantViolation
 from chorus.events import Event
-from chorus.heartbeat import BeatRunner, Scheduler, TickReport, Wake
+from chorus.heartbeat import BeatRunner, BeatRunnerFor, Scheduler, TickReport, Wake
 from chorus.ledger import Message, SqliteLedger, Task
 from chorus.lifecycle import DEFAULT_REQUEST_DEPTH_CAP, assign_task, deliver_message
 from chorus.memory import AppendOnlyMemoryWriter
@@ -76,6 +76,7 @@ class Chorus:
         memory_repo: str,
         dream: Any,
         beat_runner: BeatRunner | None = None,
+        beat_runner_for: BeatRunnerFor | None = None,
         roles: Sequence[RolePlugin] | None = None,
         caps: Caps | None = None,
         company_id: str = "company",
@@ -103,6 +104,7 @@ class Chorus:
             ledger=ledger,
             workforce=workforce,
             beat_runner=beat_runner,
+            beat_runner_for=beat_runner_for,  # role-faithful per-employee runners (spec 06 §2)
             event_bus=event_bus,
             # budgets are inert until a policy is created — injecting the enforcer just arms the gates
             budget_enforcer=BudgetEnforcer(ledger, company_id=company_id),
