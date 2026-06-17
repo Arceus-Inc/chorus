@@ -19,13 +19,15 @@ from chorus.roles._manifest import RoleManifest
 class RoleBeatConfig:
     """An employee's dream-harness identity — everything a beat needs to *be* that employee.
 
-    The dream-free projection of the role's :class:`RoleManifest`: the system prompt (brief), the tool
-    and skill allow-lists, the permission posture, and the memory scope. The composition root
-    materializes it into a configured dream harness — ``tools``/``skills``/``memory_scope`` at
-    ``build_harness`` level, ``system_prompt``/``permission_mode`` written as per-role overlays — and
-    the whole ``run_task`` planner→generator→evaluator loop runs as that employee. ``permission_mode``
-    is already the dream-wire string (the chorus enum is a subset of dream's by value);
-    ``tools``/``skills`` are chorus names. Frozen so it is hashable + safe to share across async beats.
+    The dream-free projection of the role's :class:`RoleManifest`, carrying **every** ``build_harness``
+    knob: the system prompt (brief), the tool and skill allow-lists, the permission posture, the memory
+    scope, and the engine scalars (``model``/``max_turns``/``working_memory``/``wake_model``/``mcp``/
+    ``plugins``/``env``). The composition root materializes it into a configured dream harness —
+    ``tools``/``skills``/``memory_scope``/the scalars at ``build_harness`` level,
+    ``system_prompt``/``permission_mode`` written as per-role overlays — and the whole ``run_task``
+    planner→generator→evaluator loop runs as that employee. ``permission_mode`` is already the
+    dream-wire string (the chorus enum is a subset of dream's by value); ``tools``/``skills`` are chorus
+    names. Frozen so it is hashable + safe to share across async beats.
     """
 
     system_prompt: str
@@ -33,6 +35,13 @@ class RoleBeatConfig:
     skills: tuple[str, ...] = ()
     permission_mode: str = "default"
     memory_scope: str = "project"
+    model: str | None = None
+    max_turns: int = 8
+    working_memory: bool = False
+    wake_model: str | None = None
+    mcp: bool = False
+    plugins: bool = False
+    env: tuple[tuple[str, str], ...] = ()
 
 
 def role_beat_config(manifest: RoleManifest) -> RoleBeatConfig:
@@ -43,6 +52,13 @@ def role_beat_config(manifest: RoleManifest) -> RoleBeatConfig:
         skills=manifest.skills,
         permission_mode=manifest.permission_mode.value,
         memory_scope=manifest.memory_scope.value,
+        model=manifest.model,
+        max_turns=manifest.max_turns,
+        working_memory=manifest.working_memory,
+        wake_model=manifest.wake_model,
+        mcp=manifest.mcp,
+        plugins=manifest.plugins,
+        env=manifest.env,
     )
 
 

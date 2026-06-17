@@ -18,11 +18,11 @@ from chorus.outcomes import Verifier
 from chorus.roles._manifest import MemoryScope, PermissionMode, RoleManifest
 from chorus.roles._plugin import RolePlugin
 
-_ENGINEER_BRIEF = (
-    "You implement and ship changes. Make the smallest change that satisfies the task. "
-    "Definition of done: the verifier on the task must pass (tests + CI green). "
-    "House rules: never force-push; leave a PR link in the final comment."
-)
+# The Engineer is the first role to own a dedicated package (chorus_employee/engineer/). The kernel
+# default set sources it from there — single source, no drift — rather than re-declaring it here.
+# Submodule import (not the chorus_employee package root) keeps this edge cycle-free.
+from chorus_employee.engineer import engineer_plugin
+
 _REVIEWER_BRIEF = "You render an approve/block verdict on a diff against the task's rubric."
 _MANAGER_BRIEF = "You decompose work, dispatch children, and integrate their completed subtree."
 _PM_BRIEF = "You produce a spec/decision artifact, persisted somewhere a Reviewer can verify it."
@@ -36,19 +36,7 @@ def default_roles() -> tuple[RolePlugin, ...]:
     editing the kernel (spec 09 §1).
     """
     return (
-        RolePlugin(
-            name="engineer",
-            manifest=RoleManifest(
-                system_prompt=_ENGINEER_BRIEF,
-                tools=("read_file", "write_file", "run_command", "git"),
-                permission_mode=PermissionMode.ACCEPT_EDITS,
-                memory_scope=MemoryScope.PROJECT,
-            ),
-            dod_generator=lambda intent: Verifier.command(
-                "pytest -q && ruff check .", artifact_class="pr"
-            ),
-            outcome_kind="pr",
-        ),
+        engineer_plugin(),
         RolePlugin(
             name="reviewer",
             manifest=RoleManifest(

@@ -113,6 +113,15 @@ def resolve_manifest(base: RoleManifest, *overlays: ManifestOverlay) -> RoleMani
         permission_mode=permission,
         memory_scope=scope,
         isolation=isolation,
+        # Engine scalars are policy, not capability — carried through unchanged (no overlay narrows
+        # them today; an override layer for them would extend ManifestOverlay, not this fold).
+        model=base.model,
+        max_turns=base.max_turns,
+        working_memory=base.working_memory,
+        wake_model=base.wake_model,
+        mcp=base.mcp,
+        plugins=base.plugins,
+        env=base.env,
     )
 
 

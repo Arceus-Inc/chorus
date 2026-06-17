@@ -213,6 +213,50 @@ def test_run_chat_runs_a_turn_streams_the_reply_and_lands_the_task(
     assert any(t.intent == "build the parser" and t.status is TaskStatus.DONE for t in tasks_done)
 
 
+def test_config_renders_every_harness_component(ledger: SqliteLedger, make_input) -> None:
+    from chorus.roles import RoleBeatConfig
+
+    ledger.employees.create(Employee(id="e1", name="alice", role="engineer"))
+    beat = _FakeChatBeat()
+    out = io.StringIO()
+    render_bus = ChatRenderBus(out, colour=False)
+    console = Console(out=out, colour=False)
+    scheduler = Scheduler(
+        ledger=ledger,
+        workforce=LedgerWorkforce(ledger.employees),
+        beat_runner=beat,  # type: ignore[arg-type]
+        event_bus=render_bus,
+        max_concurrent_runs=1,
+    )
+    spec = RoleBeatConfig(
+        system_prompt="You implement and ship changes.",
+        tools=("read_file", "write_file", "run_command", "git"),
+        permission_mode="acceptEdits",
+        memory_scope="project",
+        max_turns=12,
+        working_memory=True,
+    )
+    service = ChatBeatService(
+        scheduler, model="gpt-test", working_dir="/tmp/chat", harness_spec=spec
+    )
+
+    run_chat(
+        "e1",
+        ledger=ledger,
+        service=service,
+        render_bus=render_bus,
+        console=console,
+        input_func=make_input(["/config", "/quit"]),
+    )
+    text = out.getvalue()
+    assert "engineer" in text  # the role
+    assert "acceptEdits" in text  # the permission posture
+    assert "read_file" in text and "git" in text  # the tool allow-list
+    assert "12" in text  # max_turns
+    assert "working" in text.lower()  # the working-memory scratchpad is shown
+    assert beat.calls == []  # /config is a local view — no beat runs
+
+
 def test_run_chat_quits_on_eof(ledger: SqliteLedger, make_input) -> None:
     ledger.employees.create(Employee(id="e1", name="alice", role="engineer"))
     beat = _FakeChatBeat()

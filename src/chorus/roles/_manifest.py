@@ -45,11 +45,17 @@ class Isolation(StrEnum):
 
 @dataclass(frozen=True)
 class RoleManifest:
-    """One org-role's standing contract.
+    """One org-role's standing contract — the complete identity of a dream harness.
 
-    Tuples (not lists) on the collection fields so the manifest is hashable and
-    safe to share across async beats; ``tools`` is the explicit allow-list
-    (no ``None`` "all" escape hatch at the org level — a role always declares).
+    Every field maps to a knob of the dream harness an employee of this role runs: the
+    *capability* fields (``tools``/``disallowed_tools``/``skills``/``permission_mode``/
+    ``memory_scope``/``isolation``) plus the *engine* scalars (``model``/``max_turns``/
+    ``working_memory``/``wake_model``/``mcp``/``plugins``/``env``). Capability fields are
+    subject to overlay narrowing (spec 06 §2); the scalars are policy, carried through.
+
+    Tuples (not lists) on the collection fields — and ``env`` as a tuple of pairs — so the
+    manifest is hashable and safe to share across async beats; ``tools`` is the explicit
+    allow-list (no ``None`` "all" escape hatch at the org level — a role always declares).
     """
 
     system_prompt: str
@@ -59,6 +65,14 @@ class RoleManifest:
     permission_mode: PermissionMode = PermissionMode.DEFAULT
     memory_scope: MemoryScope = MemoryScope.PROJECT
     isolation: Isolation = Isolation.WORKTREE
+    # Engine scalars — the non-capability ``build_harness`` knobs (carried through overlays).
+    model: str | None = None  # None → use the deployment model the composition root supplies
+    max_turns: int = 8  # dream's per-role turn budget default
+    working_memory: bool = False  # the in-task scratchpad memory tier
+    wake_model: str | None = None  # a cheaper model for heartbeat/wake turns
+    mcp: bool = False  # admit the working dir's MCP allowlist (opt-in)
+    plugins: bool = False  # load the working dir's repo-local plugins (opt-in)
+    env: tuple[tuple[str, str], ...] = ()  # host-resolution env (e.g. DREAM_HOME); never secrets
 
 
 __all__ = [

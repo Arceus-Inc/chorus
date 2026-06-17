@@ -55,9 +55,7 @@ def test_build_role_chat_service_resolves_the_role_and_scopes_the_harness(
         captured: dict[str, Any] = {}
 
         def _fake_build_harness(**kwargs: Any) -> object:
-            captured["registry"] = kwargs.get("registry")
-            captured["working_dir"] = kwargs.get("working_dir")
-            captured["skills"] = kwargs.get("skills")
+            captured.update(kwargs)
             return object()
 
         monkeypatch.setattr(_role_chat.dream, "build_harness", _fake_build_harness)
@@ -77,6 +75,14 @@ def test_build_role_chat_service_resolves_the_role_and_scopes_the_harness(
         assert set(names) == {"read_file", "write_file", "bash", "git"}
         # the engineer declares no skills → dream's skill loading is off
         assert captured["skills"] is False
+        # every other build_harness scalar comes from the engineer's config (not dream's defaults)
+        assert captured["model"] == "gpt-x"  # config.model is None → the deployment model
+        assert captured["max_turns"] == 12  # the engineer's deeper coding budget
+        assert captured["working_memory"] is True  # the engineer keeps a scratchpad
+        assert captured["memory"] is True
+        assert captured["mcp"] is False and captured["plugins"] is False
+        assert captured["wake_model"] is None
+        assert captured["env"] is None  # empty role env → no env override
         # and its identity was written as overlays the harness's run_task will read
         assert (tmp_path / "roles" / "generator.toml").exists()
     finally:

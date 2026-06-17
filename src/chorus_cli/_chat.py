@@ -26,6 +26,7 @@ from chorus.heartbeat import Scheduler, TickReport, Wake, WakeReason
 from chorus.ledger import Message, MessageKind, SqliteLedger, Task
 from chorus.lifecycle import assign_task
 from chorus.observability import EventBus
+from chorus.roles import RoleBeatConfig
 from chorus_cli._render import Console
 
 _OPERATOR = "operator"  # the human at the console — the sender of the lines it records
@@ -102,13 +103,23 @@ class ChatBeatService:
     Mirrors ``chorus_cli._beats.SchedulerTickRunner`` but is constructed directly from a wired
     :class:`Scheduler` (whose ``event_bus`` is a :class:`ChatRenderBus`), so a test can hand it a
     scheduler backed by a fake beat runner with no dream import. ``model`` / ``working_dir`` are
-    surfaced for the ``/info`` slash command.
+    surfaced for the ``/info`` slash command; ``harness_spec`` is the employee's full
+    :class:`~chorus.roles.RoleBeatConfig` — every ``build_harness`` component — surfaced for ``/config``
+    (``None`` when the service was built without a resolved role, e.g. an old test harness).
     """
 
-    def __init__(self, scheduler: Scheduler, *, model: str, working_dir: str) -> None:
+    def __init__(
+        self,
+        scheduler: Scheduler,
+        *,
+        model: str,
+        working_dir: str,
+        harness_spec: RoleBeatConfig | None = None,
+    ) -> None:
         self._scheduler = scheduler
         self.model = model
         self.working_dir = working_dir
+        self.harness_spec = harness_spec
 
     def run_turn(self) -> TickReport:
         """Dispatch the queued wake(s) and await the beat — returns the pulse's :class:`TickReport`."""
@@ -207,10 +218,50 @@ chat commands:
   /help              this message
   /quit | /exit      leave chat (back to the console)
   /info              employee, model, working dir, active task
+  /config            the employee's full harness config (every component)
   /task              the current/last task with its runs
   /transcript        this session's lines
 type anything else to send it to the employee as a turn.\
 """
+
+
+def _fmt_list(values: tuple[str, ...]) -> str:
+    """Render a tool/skill allow-list for display — the names, or ``(none)`` when empty."""
+    return ", ".join(values) if values else "(none)"
+
+
+def _cmd_config(
+    console: Console, *, employee_id: str, service: ChatBeatService, ledger: SqliteLedger
+) -> None:
+    """Show the employee's complete dream-harness config — every ``build_harness`` component.
+
+    This is "the chat representing the employee": the resolved role projected to a
+    :class:`~chorus.roles.RoleBeatConfig`, one row per harness knob, so you can see exactly what this
+    employee *is* before you task it.
+    """
+    spec = service.harness_spec
+    if spec is None:
+        console.line("no resolved role config (keys-free chat) — set Azure creds for a real harness")
+        return
+    employee = ledger.employees.get(employee_id)
+    role = employee.role if employee is not None else "?"
+    memory = spec.memory_scope + (" +working-scratchpad" if spec.working_memory else "")
+    console.kv(
+        {
+            "employee": f"{employee_id} ({role})",
+            "model": spec.model or service.model,
+            "max_turns": spec.max_turns,
+            "permission": spec.permission_mode,
+            "memory": memory,
+            "tools": _fmt_list(spec.tools),
+            "skills": _fmt_list(spec.skills),
+            "mcp": "on" if spec.mcp else "off",
+            "plugins": "on" if spec.plugins else "off",
+            "wake_model": spec.wake_model or "(deployment)",
+            "env": _fmt_list(tuple(f"{k}={v}" for k, v in spec.env)),
+            "working_dir": service.working_dir,
+        }
+    )
 
 
 def _cmd_info(
@@ -269,6 +320,8 @@ def _slash(
         console.line(_HELP)
     elif cmd == "/info":
         _cmd_info(console, employee_id=employee_id, service=service, state=state, ledger=ledger)
+    elif cmd == "/config":
+        _cmd_config(console, employee_id=employee_id, service=service, ledger=ledger)
     elif cmd == "/task":
         _cmd_task(console, state=state, ledger=ledger)
     elif cmd == "/transcript":

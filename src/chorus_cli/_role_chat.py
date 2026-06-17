@@ -126,8 +126,11 @@ def build_role_chat_service(
     root.mkdir(parents=True, exist_ok=True)
     write_role_overlays(root, config)  # the employee's identity overlays the whole harness
 
+    # Every build_harness knob comes from the employee's config — this is where the employee *becomes*
+    # its harness. config.model overrides the deployment when set (e.g. a cheaper/stronger per-role
+    # model); an empty role env means "no override" (None), never an empty mapping.
     harness = dream.build_harness(
-        model=deployment,
+        model=config.model or deployment,
         api_key=api_key,
         base_url=base_url,
         working_dir=root,
@@ -136,9 +139,16 @@ def build_role_chat_service(
         # bundles no skills and chorus owns no skill *content* yet, so per-skill scoping (only the
         # role's named skills, à la tools) waits on chorus skill playbooks — a follow-up.
         skills=bool(config.skills),
+        # Every role uses dream memory; chorus's memory_scope picks the *partition* (private/project/
+        # team/company) — a concept dream's flat memory flag doesn't model yet, so scope is carried in
+        # the config (and overlays) but not yet narrowed here. Follow-up: partition-scoped memory.
         memory=True,
-        mcp=False,
-        plugins=False,
+        working_memory=config.working_memory,
+        max_turns=config.max_turns,
+        mcp=config.mcp,
+        plugins=config.plugins,
+        wake_model=config.wake_model,
+        env=dict(config.env) or None,
     )
     scheduler = Scheduler(
         ledger=ledger,
@@ -148,7 +158,9 @@ def build_role_chat_service(
         event_bus=render_bus,
         max_concurrent_runs=1,
     )
-    return ChatBeatService(scheduler, model=deployment, working_dir=str(root))
+    return ChatBeatService(
+        scheduler, model=deployment, working_dir=str(root), harness_spec=config
+    )
 
 
 __all__ = ["build_role_chat_service", "dream_tool_names", "write_role_overlays"]
