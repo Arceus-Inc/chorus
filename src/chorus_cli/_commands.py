@@ -12,6 +12,7 @@ decorator, so the verb table is assembled declaratively in one file.
 
 from __future__ import annotations
 
+import os
 import sqlite3
 import uuid
 
@@ -42,6 +43,7 @@ from chorus.lifecycle import (
 )
 from chorus.outcomes import DoDKind, Verifier
 from chorus.workforce import EmployeeStatus, GitWorkforce, LedgerWorkforce, copy_org
+from chorus.workspace import CompanyWorkspace, WorkspaceError, default_work_root
 from chorus_cli._chat import ChatRenderBus, run_chat
 from chorus_cli._context import CommandContext, LoopSignal
 from chorus_cli._registry import CommandRegistry
@@ -298,6 +300,47 @@ def _import(ctx: CommandContext) -> LoopSignal:
         ctx.out.error(f"import failed: {exc}")
         return LoopSignal.CONTINUE
     ctx.out.line(f"imported {count} employees from {org_repo}")
+    return LoopSignal.CONTINUE
+
+
+# -- company workspace ------------------------------------------------------------------------------
+
+_COMPANY = "company [init [seed]]"
+
+
+@REGISTRY.command("company", summary="show or create the company workspace (the shared git root)", usage=_COMPANY)
+def _company(ctx: CommandContext) -> LoopSignal:
+    """Show or create ``.chorus/work/{company}/repo`` — the ``main`` employees' worktrees branch from.
+
+    ``company`` shows the workspace status; ``company init [seed]`` creates it (idempotent). ``tick`` /
+    ``chat`` create it lazily anyway, but this makes it explicit and lets you seed from a real repo up
+    front. ``seed`` is a git repo path, a clone URL, or a plain directory; it falls back to
+    ``CHORUS_COMPANY_SEED`` when omitted, matching what ``tick`` / ``chat`` read.
+    """
+    company_id = ctx.session.company_id
+    root = default_work_root() / company_id
+    sub = ctx.args[0] if ctx.args else "show"
+    if sub == "show":
+        repo = root / "repo"
+        ctx.out.kv(
+            {
+                "company": company_id,
+                "root": str(root),
+                "created": "yes" if (repo / ".git").exists() else "no",
+            }
+        )
+        return LoopSignal.CONTINUE
+    if sub == "init":
+        seed = ctx.args[1] if len(ctx.args) > 1 else (os.environ.get("CHORUS_COMPANY_SEED") or None)
+        try:
+            repo = CompanyWorkspace(root, seed=seed).ensure_repo()
+        except WorkspaceError as exc:
+            ctx.out.error(f"company init failed: {exc}")
+            return LoopSignal.CONTINUE
+        seeded = f", seeded from {seed}" if seed else ""
+        ctx.out.line(f"company {company_id!r} ready at {repo} (branch main{seeded})")
+        return LoopSignal.CONTINUE
+    ctx.out.error(f"usage: {_COMPANY}")
     return LoopSignal.CONTINUE
 
 

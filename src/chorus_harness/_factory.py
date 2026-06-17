@@ -28,7 +28,7 @@ from chorus.adapters import DreamBeatRunner, TokenPricing
 from chorus.heartbeat import BeatRunner
 from chorus.roles import RoleBeatConfig, RoleRegistry, role_beat_config
 from chorus.workforce import Employee
-from chorus.workspace import CompanyWorkspace
+from chorus.workspace import CompanyWorkspace, default_work_root
 
 # dream runs these three intra-task roles per task; the employee's identity is overlaid onto each.
 _DREAM_ROLES: tuple[Literal["planner", "generator", "evaluator"], ...] = (
@@ -138,8 +138,9 @@ class EmployeeHarnessFactory:
         self._roles = roles
         self._pricing = pricing
         self._seed = seed
-        # The org's workspace root: .chorus/work/{org}/ — shared by chat and tick (one identity).
-        base = work_root if work_root is not None else Path.cwd() / ".chorus" / "work"
+        # The org's workspace root: .chorus/work/{org}/ — shared by chat, tick, and the `company`
+        # console command (one identity), via the single dream-free `default_work_root` convention.
+        base = work_root if work_root is not None else default_work_root()
         self._company_root = base / company_id
 
     @property

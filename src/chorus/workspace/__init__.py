@@ -13,6 +13,13 @@ from chorus.workspace._worktree import (
     MergeResult,
     WorkspaceError,
     WorktreeWorkspace,
+    default_work_root,
 )
 
-__all__ = ["CompanyWorkspace", "MergeResult", "WorkspaceError", "WorktreeWorkspace"]
+__all__ = [
+    "CompanyWorkspace",
+    "MergeResult",
+    "WorkspaceError",
+    "WorktreeWorkspace",
+    "default_work_root",
+]

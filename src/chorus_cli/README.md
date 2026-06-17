@@ -72,6 +72,7 @@ Without them, `tick` simply prints how to enable it.
 | `terminate <id>` | irreversibly terminate an employee (cancels its runs + drops queued wakes) |
 | `pause <id>` / `resume <id>` | hold / release an employee — the invokability gate skips a paused identity |
 | `export <dir>` / `import <dir>` | serialize the org to / from a portable git-markdown tree (`<dir>/employees/<slug>/role.md`) |
+| `company` / `company init [seed]` | show or create the company workspace (`.chorus/work/{company}/repo`, branch `main`) employees' worktrees branch from |
 | `submit [--priority=LEVEL] <id> <intent…>` | create a backlog task (priority: `critical`/`high`/`medium`/`low`) |
 | `task <id>` | show a task with its runs and DoD |
 | `dod set <task_id> <command\|human_approval\|agent_review> [args…]` | attach a typed Definition of Done |
@@ -197,6 +198,14 @@ CHORUS_COMPANY_SEED=/path/to/my-repo
 Seeding happens once, when the company workspace is first created (clear `.chorus/work/{company}/` to
 reseed).
 
+`tick` / `chat` create the workspace lazily on the first beat, but you can also create it **explicitly**
+up front with the `company` command — handy to seed it before anyone runs, or just to see where it is:
+
+| Command | Does |
+|---|---|
+| `company` | show the company workspace: id, root path, whether it's created |
+| `company init [seed]` | create `.chorus/work/{company}/repo` on branch `main` (idempotent); `seed` is a repo path / clone URL / directory, falling back to `CHORUS_COMPANY_SEED` |
+
 ### Slash commands
 
 | Command | Does |
@@ -218,7 +227,8 @@ Anything else is sent to the employee as a turn.
 export CHORUS_COMPANY_SEED=/path/to/my-repo
 
 uv run chorus --db /tmp/play.db --company acme
-hire ada Ada engineer                            # the Engineer role = a complete harness config
+company init                                     # create+seed the workspace up front (optional)
+hire Ada engineer                                # the Engineer role = a complete harness config; id `ada`
 chat ada
 ada> /config                                     # the harness ada runs as
 ada> add a subtract(a, b) function to calc.py    # one real beat, isolated on branch chorus/ada

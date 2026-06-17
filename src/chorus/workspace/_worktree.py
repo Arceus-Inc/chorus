@@ -32,6 +32,17 @@ _OPERATIONAL_EXCLUDES = (
 )
 
 
+# The default base for company workspaces under the current working directory. ``chat``, ``tick``, and
+# the ``company`` console command all resolve a company to ``<cwd>/.chorus/work/{company}`` — defined
+# once here so the front ends cannot drift from the harness factory.
+_WORK_ROOT = Path(".chorus") / "work"
+
+
+def default_work_root() -> Path:
+    """``<cwd>/.chorus/work`` — the base a company workspace is rooted under (``base / company_id``)."""
+    return Path.cwd() / _WORK_ROOT
+
+
 class WorkspaceError(RuntimeError):
     """A git operation in the company workspace failed (non-zero exit)."""
 
@@ -226,4 +237,10 @@ class CompanyWorkspace:
         return done.stdout.strip()
 
 
-__all__ = ["CompanyWorkspace", "MergeResult", "WorkspaceError", "WorktreeWorkspace"]
+__all__ = [
+    "CompanyWorkspace",
+    "MergeResult",
+    "WorkspaceError",
+    "WorktreeWorkspace",
+    "default_work_root",
+]
