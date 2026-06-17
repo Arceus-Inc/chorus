@@ -239,7 +239,8 @@ async def test_run_task_forwards_the_command_dod_as_verification_steps() -> None
     await runner.run_task(
         task_id="t1", intent="ship", verification=(VerificationStep(command="pytest -q"),)
     )
-    assert harness.verification_steps == ({"kind": "command", "command": "pytest -q"},)
+    # dream requires kind ∈ {test, lint, eval}; a chorus Command DoD maps to "eval"
+    assert harness.verification_steps == ({"kind": "eval", "command": "pytest -q"},)
 
 
 async def test_run_task_with_no_verification_passes_none() -> None:

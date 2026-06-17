@@ -170,8 +170,12 @@ class DreamBeatRunner:
             if observer is not None
             else None
         )
+        # dream's verification step ``kind`` must be one of {test, lint, eval} (its SprintContract
+        # rejects anything else and the whole beat errors before the generator). A chorus Command DoD
+        # is a generic shell command, so it maps to ``eval``; the oracle runs ``command`` regardless of
+        # the kind label.
         steps: tuple[dict[str, str], ...] = tuple(
-            {"kind": "command", "command": step.command} for step in verification
+            {"kind": "eval", "command": step.command} for step in verification
         )
         try:
             result = await self._harness.run_task(
