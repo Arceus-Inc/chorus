@@ -67,7 +67,7 @@ def test_main_runs_a_session_and_returns_zero(make_input: MakeInput) -> None:
     out = io.StringIO()
     code = main(
         ["--db", ":memory:"],
-        input_func=make_input(["hire alice Alice engineer", "employee alice", "quit"]),
+        input_func=make_input(["hire Alice engineer", "employee alice", "quit"]),
         output=out,
     )
     assert code == 0

@@ -66,8 +66,12 @@ Without them, `tick` simply prints how to enable it.
 
 | Command | Does |
 |---|---|
-| `hire <id> <name> <role> [reports_to]` | add an employee |
+| `hire <name> <role> [reports_to]` | add an employee (id is the name's slug; enforces the org invariants) |
+| `workforce` | list the org — every employee with role, manager, and status |
 | `employee <id>` | show one employee |
+| `terminate <id>` | irreversibly terminate an employee (cancels its runs + drops queued wakes) |
+| `pause <id>` / `resume <id>` | hold / release an employee — the invokability gate skips a paused identity |
+| `export <dir>` / `import <dir>` | serialize the org to / from a portable git-markdown tree (`<dir>/employees/<slug>/role.md`) |
 | `submit [--priority=LEVEL] <id> <intent…>` | create a backlog task (priority: `critical`/`high`/`medium`/`low`) |
 | `task <id>` | show a task with its runs and DoD |
 | `dod set <task_id> <command\|human_approval\|agent_review> [args…]` | attach a typed Definition of Done |

@@ -28,8 +28,8 @@ def _run(line: str, session: CliSession) -> tuple[LoopSignal, str]:
 def test_export_writes_the_tree_and_reports_the_count(
     session: CliSession, tmp_path: Path
 ) -> None:
-    _run("hire boss Boss manager", session)
-    _run("hire alice Alice engineer boss", session)
+    _run("hire Boss manager", session)
+    _run("hire Alice engineer boss", session)
     org = str(tmp_path / "org")
 
     _, out = _run(f"export {org}", session)
@@ -41,8 +41,8 @@ def test_export_writes_the_tree_and_reports_the_count(
 def test_export_then_import_round_trips_into_a_fresh_ledger(
     session: CliSession, tmp_path: Path
 ) -> None:
-    _run("hire boss Boss manager", session)
-    _run("hire alice Alice engineer boss", session)
+    _run("hire Boss manager", session)
+    _run("hire Alice engineer boss", session)
     org = str(tmp_path / "org")
     _run(f"export {org}", session)
 
@@ -61,7 +61,7 @@ def test_export_then_import_round_trips_into_a_fresh_ledger(
 def test_import_into_a_populated_ledger_reports_the_conflict(
     session: CliSession, tmp_path: Path
 ) -> None:
-    _run("hire boss Boss manager", session)
+    _run("hire Boss manager", session)
     org = str(tmp_path / "org")
     _run(f"export {org}", session)
 

@@ -99,7 +99,7 @@ def test_run_repl_runs_commands_until_quit(
     run_repl(
         session,
         REGISTRY,
-        input_func=make_input(["hire alice Alice engineer", "submit t1 ship", "quit"]),
+        input_func=make_input(["hire Alice engineer", "submit t1 ship", "quit"]),
         output=out,
         colour=False,
     )
@@ -114,7 +114,7 @@ def test_run_repl_keeps_going_after_a_bad_command(
     run_repl(
         session,
         REGISTRY,
-        input_func=make_input(["nonsense", "hire alice Alice engineer", "quit"]),
+        input_func=make_input(["nonsense", "hire Alice engineer", "quit"]),
         output=out,
         colour=False,
     )

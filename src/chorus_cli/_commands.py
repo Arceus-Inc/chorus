@@ -30,7 +30,7 @@ from chorus.ledger import (
 )
 from chorus.lifecycle import assign_task, deliver_message
 from chorus.outcomes import DoDKind, Verifier
-from chorus.workforce import Employee, GitWorkforce, LedgerWorkforce, copy_org
+from chorus.workforce import EmployeeStatus, GitWorkforce, LedgerWorkforce, copy_org
 from chorus_cli._context import CommandContext, LoopSignal
 from chorus_cli._registry import CommandRegistry
 from chorus_cli._render import Console
@@ -130,23 +130,103 @@ def _quit(ctx: CommandContext) -> LoopSignal:
 
 # -- workforce --------------------------------------------------------------------------------------
 
-_HIRE = "hire <id> <name> <role> [reports_to]"
+_HIRE = "hire <name> <role> [reports_to]"
 
 
-@REGISTRY.command("hire", summary="add an employee to the ledger", usage=_HIRE)
+@REGISTRY.command("hire", summary="add an employee to the workforce", usage=_HIRE)
 def _hire(ctx: CommandContext) -> LoopSignal:
-    if not 3 <= len(ctx.args) <= 4:
+    if not 2 <= len(ctx.args) <= 3:
         ctx.out.error(f"usage: {_HIRE}")
         return LoopSignal.CONTINUE
-    employee_id, name, role = ctx.args[0], ctx.args[1], ctx.args[2]
-    if ctx.session.ledger.employees.get(employee_id) is not None:
-        ctx.out.error(f"employee {employee_id!r} already exists")
+    name, role = ctx.args[0], ctx.args[1]
+    reports_to = ctx.args[2] if len(ctx.args) == 3 else None
+    workforce = LedgerWorkforce(ctx.session.ledger.employees)
+    try:
+        created = workforce.hire(name=name, role=role, reports_to=reports_to)
+    except (OrgInvariantViolation, UnknownEmployee) as exc:
+        ctx.out.error(str(exc))
         return LoopSignal.CONTINUE
-    reports_to = ctx.args[3] if len(ctx.args) == 4 else None
-    created = ctx.session.ledger.employees.create(
-        Employee(id=employee_id, name=name, role=role, reports_to=reports_to)
-    )
     ctx.out.line(f"hired {created.id} ({created.role}) -- status {created.status.value}")
+    return LoopSignal.CONTINUE
+
+
+_TERMINATE = "terminate <id>"
+
+
+@REGISTRY.command("terminate", summary="irreversibly terminate an employee", usage=_TERMINATE)
+def _terminate(ctx: CommandContext) -> LoopSignal:
+    if len(ctx.args) != 1:
+        ctx.out.error(f"usage: {_TERMINATE}")
+        return LoopSignal.CONTINUE
+    employee_id = ctx.args[0]
+    ledger = ctx.session.ledger
+    try:
+        LedgerWorkforce(ledger.employees).terminate(employee_id)
+    except (OrgInvariantViolation, UnknownEmployee) as exc:
+        ctx.out.error(str(exc))
+        return LoopSignal.CONTINUE
+    ledger.runs.cancel_running(employee_id=employee_id)
+    ledger.wakes.drop_queued(employee_id=employee_id)
+    ctx.out.line(f"terminated {employee_id} -- cancelled its runs + dropped queued wakes")
+    return LoopSignal.CONTINUE
+
+
+_PAUSE = "pause <id>"
+
+
+@REGISTRY.command("pause", summary="pause an employee (the gate holds its wakes)", usage=_PAUSE)
+def _pause(ctx: CommandContext) -> LoopSignal:
+    if len(ctx.args) != 1:
+        ctx.out.error(f"usage: {_PAUSE}")
+        return LoopSignal.CONTINUE
+    employee_id = ctx.args[0]
+    employees = ctx.session.ledger.employees
+    if employees.get(employee_id) is None:
+        ctx.out.error(f"no such employee: {employee_id!r}")
+        return LoopSignal.CONTINUE
+    employees.set_status(employee_id, EmployeeStatus.PAUSED)
+    ctx.out.line(f"paused {employee_id}")
+    return LoopSignal.CONTINUE
+
+
+_RESUME = "resume <id>"
+
+
+@REGISTRY.command("resume", summary="resume a paused employee", usage=_RESUME)
+def _resume(ctx: CommandContext) -> LoopSignal:
+    if len(ctx.args) != 1:
+        ctx.out.error(f"usage: {_RESUME}")
+        return LoopSignal.CONTINUE
+    employee_id = ctx.args[0]
+    employees = ctx.session.ledger.employees
+    employee = employees.get(employee_id)
+    if employee is None:
+        ctx.out.error(f"no such employee: {employee_id!r}")
+        return LoopSignal.CONTINUE
+    if employee.status is EmployeeStatus.TERMINATED:
+        ctx.out.error(f"{employee_id!r} is terminated -- termination is irreversible")
+        return LoopSignal.CONTINUE
+    employees.set_status(employee_id, EmployeeStatus.IDLE)
+    ctx.out.line(f"resumed {employee_id} -- status idle")
+    return LoopSignal.CONTINUE
+
+
+_WORKFORCE = "workforce"
+
+
+@REGISTRY.command("workforce", summary="list the org (every employee + status)", usage=_WORKFORCE)
+def _workforce(ctx: CommandContext) -> LoopSignal:
+    if ctx.args:
+        ctx.out.error(f"usage: {_WORKFORCE}")
+        return LoopSignal.CONTINUE
+    employees = ctx.session.ledger.employees.list()
+    ctx.out.table(
+        ("id", "name", "role", "reports_to", "status"),
+        [
+            (e.id, e.name, e.role, _fmt(e.reports_to), e.status.value)
+            for e in employees
+        ],
+    )
     return LoopSignal.CONTINUE
 
 

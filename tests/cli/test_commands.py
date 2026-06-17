@@ -74,33 +74,8 @@ def test_exit_alias_returns_quit_signal(session: CliSession) -> None:
 # -- workforce --------------------------------------------------------------------------------------
 
 
-def test_hire_creates_an_employee(session: CliSession, ledger: SqliteLedger) -> None:
-    _, out = _run("hire alice Alice engineer", session)
-    assert "hired alice" in out
-    stored = ledger.employees.get("alice")
-    assert stored is not None and stored.name == "Alice" and stored.role == "engineer"
-
-
-def test_hire_with_reports_to(session: CliSession, ledger: SqliteLedger) -> None:
-    _run("hire boss Boss manager", session)
-    _run("hire alice Alice engineer boss", session)
-    assert ledger.employees.get("alice").reports_to == "boss"
-
-
-def test_hire_wrong_arity_reports_usage(session: CliSession, ledger: SqliteLedger) -> None:
-    _, out = _run("hire alice", session)
-    assert "usage: hire" in out
-    assert ledger.employees.get("alice") is None  # nothing written
-
-
-def test_hire_duplicate_id_errors_cleanly(session: CliSession) -> None:
-    _run("hire alice Alice engineer", session)
-    _, out = _run("hire alice Alicia designer", session)
-    assert "error:" in out and "already exists" in out and "alice" in out
-
-
 def test_employee_shows_a_record(session: CliSession) -> None:
-    _run("hire alice Alice engineer", session)
+    _run("hire Alice engineer", session)
     _, out = _run("employee alice", session)
     assert "alice" in out and "engineer" in out
 
@@ -273,7 +248,7 @@ def test_message_to_unknown_employee_errors_cleanly(session: CliSession) -> None
 
 
 def test_inbox_shows_delivered_messages(session: CliSession) -> None:
-    _run("hire alice Alice engineer", session)
+    _run("hire Alice engineer", session)
     _run("message alice hello there", session)
     _, out = _run("inbox alice", session)
     assert "hello there" in out
@@ -288,7 +263,7 @@ def test_inbox_wrong_arity_reports_usage(session: CliSession) -> None:
 
 
 def test_cost_reports_zero_for_a_fresh_employee(session: CliSession) -> None:
-    _run("hire alice Alice engineer", session)
+    _run("hire Alice engineer", session)
     _, out = _run("cost alice", session)
     assert "alice has spent 0 cents" in out
 
