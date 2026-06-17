@@ -26,6 +26,8 @@ from chorus.heartbeat import Scheduler, TickReport, Wake, WakeReason
 from chorus.ledger import Message, MessageKind, SqliteLedger, Task
 from chorus.lifecycle import assign_task
 from chorus.observability import EventBus
+from chorus.roles import RoleBeatConfig
+from chorus.workspace import CompanyWorkspace
 from chorus_cli._render import Console
 
 _OPERATOR = "operator"  # the human at the console — the sender of the lines it records
@@ -102,13 +104,29 @@ class ChatBeatService:
     Mirrors ``chorus_cli._beats.SchedulerTickRunner`` but is constructed directly from a wired
     :class:`Scheduler` (whose ``event_bus`` is a :class:`ChatRenderBus`), so a test can hand it a
     scheduler backed by a fake beat runner with no dream import. ``model`` / ``working_dir`` are
-    surfaced for the ``/info`` slash command.
+    surfaced for the ``/info`` slash command; ``harness_spec`` is the employee's full
+    :class:`~chorus.roles.RoleBeatConfig` — every ``build_harness`` component — surfaced for ``/config``
+    (``None`` when the service was built without a resolved role, e.g. an old test harness).
+    ``workspace`` + ``employee_id`` are the branch-isolated worktree handle ``/merge`` integrates back
+    into the company ``main`` (``None`` when the role runs unisolated).
     """
 
-    def __init__(self, scheduler: Scheduler, *, model: str, working_dir: str) -> None:
+    def __init__(
+        self,
+        scheduler: Scheduler,
+        *,
+        model: str,
+        working_dir: str,
+        harness_spec: RoleBeatConfig | None = None,
+        workspace: CompanyWorkspace | None = None,
+        employee_id: str | None = None,
+    ) -> None:
         self._scheduler = scheduler
         self.model = model
         self.working_dir = working_dir
+        self.harness_spec = harness_spec
+        self.workspace = workspace
+        self.employee_id = employee_id
 
     def run_turn(self) -> TickReport:
         """Dispatch the queued wake(s) and await the beat — returns the pulse's :class:`TickReport`."""
@@ -207,10 +225,72 @@ chat commands:
   /help              this message
   /quit | /exit      leave chat (back to the console)
   /info              employee, model, working dir, active task
+  /config            the employee's full harness config (every component)
+  /merge             merge this employee's isolated worktree into company main
   /task              the current/last task with its runs
   /transcript        this session's lines
 type anything else to send it to the employee as a turn.\
 """
+
+
+def _fmt_list(values: tuple[str, ...]) -> str:
+    """Render a tool/skill allow-list for display — the names, or ``(none)`` when empty."""
+    return ", ".join(values) if values else "(none)"
+
+
+def _cmd_config(
+    console: Console, *, employee_id: str, service: ChatBeatService, ledger: SqliteLedger
+) -> None:
+    """Show the employee's complete dream-harness config — every ``build_harness`` component.
+
+    This is "the chat representing the employee": the resolved role projected to a
+    :class:`~chorus.roles.RoleBeatConfig`, one row per harness knob, so you can see exactly what this
+    employee *is* before you task it.
+    """
+    spec = service.harness_spec
+    if spec is None:
+        console.line("no resolved role config (keys-free chat) — set Azure creds for a real harness")
+        return
+    employee = ledger.employees.get(employee_id)
+    role = employee.role if employee is not None else "?"
+    memory = spec.memory_scope + (" +working-scratchpad" if spec.working_memory else "")
+    isolated = service.workspace is not None and spec.isolation == "worktree"
+    isolation = f"worktree → branch chorus/{employee_id}" if isolated else spec.isolation
+    console.kv(
+        {
+            "employee": f"{employee_id} ({role})",
+            "model": spec.model or service.model,
+            "max_turns": spec.max_turns,
+            "permission": spec.permission_mode,
+            "memory": memory,
+            "isolation": isolation,
+            "tools": _fmt_list(spec.tools),
+            "skills": _fmt_list(spec.skills),
+            "mcp": "on" if spec.mcp else "off",
+            "plugins": "on" if spec.plugins else "off",
+            "wake_model": spec.wake_model or "(deployment)",
+            "env": _fmt_list(tuple(f"{k}={v}" for k, v in spec.env)),
+            "working_dir": service.working_dir,
+        }
+    )
+
+
+def _cmd_merge(console: Console, *, service: ChatBeatService) -> None:
+    """Merge this employee's branch-isolated worktree back into the company ``main``.
+
+    The "merged later" half of containment: the employee worked confined to ``chorus/{employee}``;
+    this snapshots any uncommitted work and integrates the branch. A conflict is reported, not raised.
+    """
+    if service.workspace is None or service.employee_id is None:
+        console.line("no isolated worktree to merge (this role runs unisolated)")
+        return
+    result = service.workspace.merge(service.employee_id)
+    if result.merged:
+        console.line(f"  [merged {result.branch} → {result.into}]")
+    elif result.conflicted:
+        console.error(f"merge conflict on {result.branch} (aborted) — resolve in {service.workspace.repo}")
+    else:
+        console.error(f"merge failed: {result.detail}")
 
 
 def _cmd_info(
@@ -269,6 +349,10 @@ def _slash(
         console.line(_HELP)
     elif cmd == "/info":
         _cmd_info(console, employee_id=employee_id, service=service, state=state, ledger=ledger)
+    elif cmd == "/config":
+        _cmd_config(console, employee_id=employee_id, service=service, ledger=ledger)
+    elif cmd == "/merge":
+        _cmd_merge(console, service=service)
     elif cmd == "/task":
         _cmd_task(console, state=state, ledger=ledger)
     elif cmd == "/transcript":

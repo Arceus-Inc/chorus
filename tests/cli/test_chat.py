@@ -213,6 +213,109 @@ def test_run_chat_runs_a_turn_streams_the_reply_and_lands_the_task(
     assert any(t.intent == "build the parser" and t.status is TaskStatus.DONE for t in tasks_done)
 
 
+def test_config_renders_every_harness_component(ledger: SqliteLedger, make_input, tmp_path) -> None:
+    from chorus.roles import RoleBeatConfig
+
+    ledger.employees.create(Employee(id="e1", name="alice", role="engineer"))
+    beat = _FakeChatBeat()
+    out = io.StringIO()
+    render_bus = ChatRenderBus(out, colour=False)
+    console = Console(out=out, colour=False)
+    scheduler = Scheduler(
+        ledger=ledger,
+        workforce=LedgerWorkforce(ledger.employees),
+        beat_runner=beat,  # type: ignore[arg-type]
+        event_bus=render_bus,
+        max_concurrent_runs=1,
+    )
+    from chorus.workspace import CompanyWorkspace
+
+    spec = RoleBeatConfig(
+        system_prompt="You implement and ship changes.",
+        tools=("read_file", "write_file", "run_command", "git"),
+        permission_mode="acceptEdits",
+        memory_scope="project",
+        isolation="worktree",
+        max_turns=12,
+        working_memory=True,
+    )
+    service = ChatBeatService(
+        scheduler,
+        model="gpt-test",
+        working_dir="/tmp/chat",
+        harness_spec=spec,
+        workspace=CompanyWorkspace(tmp_path / "acme"),
+        employee_id="e1",
+    )
+
+    run_chat(
+        "e1",
+        ledger=ledger,
+        service=service,
+        render_bus=render_bus,
+        console=console,
+        input_func=make_input(["/config", "/quit"]),
+    )
+    text = out.getvalue()
+    assert "engineer" in text  # the role
+    assert "acceptEdits" in text  # the permission posture
+    assert "read_file" in text and "git" in text  # the tool allow-list
+    assert "12" in text  # max_turns
+    assert "working" in text.lower()  # the working-memory scratchpad is shown
+    assert "chorus/e1" in text  # the isolation row shows the employee's branch
+    assert beat.calls == []  # /config is a local view — no beat runs
+
+
+def test_merge_integrates_the_isolated_worktree_into_company_main(
+    ledger: SqliteLedger, make_input, tmp_path
+) -> None:
+    import subprocess
+
+    from chorus.workspace import CompanyWorkspace
+
+    ledger.employees.create(Employee(id="e1", name="alice", role="engineer"))
+    workspace = CompanyWorkspace(tmp_path / "acme")
+    wt = workspace.worktree_for("e1")
+    (wt.path / "shipped.py").write_text("print('done')\n", encoding="utf-8")  # the employee's work
+
+    beat = _FakeChatBeat()
+    out = io.StringIO()
+    render_bus = ChatRenderBus(out, colour=False)
+    console = Console(out=out, colour=False)
+    scheduler = Scheduler(
+        ledger=ledger,
+        workforce=LedgerWorkforce(ledger.employees),
+        beat_runner=beat,  # type: ignore[arg-type]
+        event_bus=render_bus,
+        max_concurrent_runs=1,
+    )
+    service = ChatBeatService(
+        scheduler,
+        model="gpt-test",
+        working_dir=str(wt.path),
+        workspace=workspace,
+        employee_id="e1",
+    )
+
+    run_chat(
+        "e1",
+        ledger=ledger,
+        service=service,
+        render_bus=render_bus,
+        console=console,
+        input_func=make_input(["/merge", "/quit"]),
+    )
+    assert "merged chorus/e1 → main" in out.getvalue()
+    # company main now carries the employee's deliverable
+    main_file = workspace.repo / "shipped.py"
+    assert main_file.read_text(encoding="utf-8") == "print('done')\n"
+    # and the operational tree stayed clean — only the real file was merged
+    tracked = subprocess.run(
+        ["git", "-C", str(workspace.repo), "ls-files"], check=True, capture_output=True, text=True
+    ).stdout
+    assert "shipped.py" in tracked and "roles/" not in tracked
+
+
 def test_run_chat_quits_on_eof(ledger: SqliteLedger, make_input) -> None:
     ledger.employees.create(Employee(id="e1", name="alice", role="engineer"))
     beat = _FakeChatBeat()

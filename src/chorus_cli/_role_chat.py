@@ -32,6 +32,7 @@ from chorus.heartbeat import Scheduler
 from chorus.ledger import SqliteLedger
 from chorus.roles import RoleBeatConfig, RoleRegistry, default_roles, role_beat_config
 from chorus.workforce import LedgerWorkforce
+from chorus.workspace import CompanyWorkspace
 from chorus_cli._chat import ChatBeatService, ChatRenderBus
 
 # dream runs these three intra-task roles per task; the employee's identity is overlaid onto each.
@@ -103,12 +104,15 @@ def build_role_chat_service(
     pricing: TokenPricing | None = None,
     work_dir: Path | None = None,
     roles: RoleRegistry | None = None,
+    seed: str | Path | None = None,
 ) -> ChatBeatService:
     """Wire a chat beat service whose harness runs AS the employee's role (spec 06 §2 → dream).
 
     Resolves ``employee_id``'s chorus role → a :class:`RoleBeatConfig`, materializes it into a
     configured dream harness (role tools, memory, + the role overlays that flavour the whole
     planner→generator→evaluator loop), and runs it through the standard :class:`DreamBeatRunner`.
+    ``seed`` points the company workspace at a real repo/directory the first time it is created, so
+    worktree-isolated employees branch off actual code instead of an empty tree.
     """
     employee = ledger.employees.get(employee_id)
     if employee is None:
@@ -118,16 +122,28 @@ def build_role_chat_service(
         raise ValueError(f"role {employee.role!r} for {employee_id!r} is not a registered role")
     config = role_beat_config(registry.get(employee.role).manifest)
 
-    root = (
-        work_dir
-        if work_dir is not None
-        else Path.cwd() / ".chorus" / "chat" / company_id / employee_id
-    )
+    # Where the employee works. An explicit ``work_dir`` is honoured as-is (tests / advanced callers).
+    # Otherwise, a ``worktree`` role gets a branch-isolated worktree under the shared company root —
+    # ``working_dir`` IS the worktree, because dream confines its tools to ``working_dir`` (so that is
+    # what isolates one employee's edits from another's). Other isolation postures fall back to a flat
+    # per-employee dir under the company root.
+    company_root = Path.cwd() / ".chorus" / "chat" / company_id
+    workspace: CompanyWorkspace | None = None
+    if work_dir is not None:
+        root = work_dir
+    elif config.isolation == "worktree":
+        workspace = CompanyWorkspace(company_root, seed=seed)
+        root = workspace.worktree_for(employee_id).path
+    else:
+        root = company_root / employee_id
     root.mkdir(parents=True, exist_ok=True)
     write_role_overlays(root, config)  # the employee's identity overlays the whole harness
 
+    # Every build_harness knob comes from the employee's config — this is where the employee *becomes*
+    # its harness. config.model overrides the deployment when set (e.g. a cheaper/stronger per-role
+    # model); an empty role env means "no override" (None), never an empty mapping.
     harness = dream.build_harness(
-        model=deployment,
+        model=config.model or deployment,
         api_key=api_key,
         base_url=base_url,
         working_dir=root,
@@ -136,9 +152,16 @@ def build_role_chat_service(
         # bundles no skills and chorus owns no skill *content* yet, so per-skill scoping (only the
         # role's named skills, à la tools) waits on chorus skill playbooks — a follow-up.
         skills=bool(config.skills),
+        # Every role uses dream memory; chorus's memory_scope picks the *partition* (private/project/
+        # team/company) — a concept dream's flat memory flag doesn't model yet, so scope is carried in
+        # the config (and overlays) but not yet narrowed here. Follow-up: partition-scoped memory.
         memory=True,
-        mcp=False,
-        plugins=False,
+        working_memory=config.working_memory,
+        max_turns=config.max_turns,
+        mcp=config.mcp,
+        plugins=config.plugins,
+        wake_model=config.wake_model,
+        env=dict(config.env) or None,
     )
     scheduler = Scheduler(
         ledger=ledger,
@@ -148,7 +171,14 @@ def build_role_chat_service(
         event_bus=render_bus,
         max_concurrent_runs=1,
     )
-    return ChatBeatService(scheduler, model=deployment, working_dir=str(root))
+    return ChatBeatService(
+        scheduler,
+        model=deployment,
+        working_dir=str(root),
+        harness_spec=config,
+        workspace=workspace,
+        employee_id=employee_id,
+    )
 
 
 __all__ = ["build_role_chat_service", "dream_tool_names", "write_role_overlays"]
