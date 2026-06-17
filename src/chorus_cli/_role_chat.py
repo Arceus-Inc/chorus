@@ -19,6 +19,7 @@ from chorus.ledger import SqliteLedger
 from chorus.roles import RoleRegistry, default_roles
 from chorus.workforce import LedgerWorkforce
 from chorus_cli._chat import ChatBeatService, ChatRenderBus
+from chorus_employee import default_landers
 from chorus_harness import EmployeeHarnessFactory
 
 
@@ -65,6 +66,7 @@ def build_role_chat_service(
         budget_enforcer=BudgetEnforcer(ledger, company_id=company_id),
         event_bus=render_bus,
         roles=registry,  # a chat task inherits the employee role's DoD at intake (spec 04 §1)
+        landers=default_landers(factory.company_root),  # a passed beat lands its role artifact (§2)
         max_concurrent_runs=1,
     )
     return ChatBeatService(

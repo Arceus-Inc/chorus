@@ -22,6 +22,7 @@ from chorus.roles import RoleRegistry, default_roles
 from chorus.workforce import LedgerWorkforce
 from chorus_cli._chat import ChatBeatService, ChatRenderBus
 from chorus_cli._role_chat import build_role_chat_service
+from chorus_employee import default_landers
 from chorus_harness import EmployeeHarnessFactory
 
 # Illustrative GPT-5-class pricing (whole cents per million tokens); override via env.
@@ -117,6 +118,7 @@ def build_beat_service(
         beat_runner_for=factory,  # resolve a role-faithful runner per dispatched employee
         budget_enforcer=BudgetEnforcer(ledger, company_id=company_id),
         roles=registry,  # tasks inherit the assignee role's DoD at intake (spec 04 §1)
+        landers=default_landers(factory.company_root),  # a passed beat lands its role artifact (§2)
         max_concurrent_runs=max_concurrent_runs,
     )
     return SchedulerTickRunner(scheduler, model=deployment)

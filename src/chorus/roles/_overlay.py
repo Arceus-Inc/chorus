@@ -113,6 +113,7 @@ def resolve_manifest(base: RoleManifest, *overlays: ManifestOverlay) -> RoleMani
         permission_mode=permission,
         memory_scope=scope,
         isolation=isolation,
+        sandbox=base.sandbox,  # trust posture — carried through (overlay narrowing of it is a follow-up)
         # Engine scalars are policy, not capability — carried through unchanged (no overlay narrows
         # them today; an override layer for them would extend ManifestOverlay, not this fold).
         model=base.model,

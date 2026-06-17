@@ -49,6 +49,19 @@ def test_engineer_materializes_a_writable_harness_in_its_worktree(
     assert captured["max_turns"] == 12  # the engine scalars come from the role too
 
 
+def test_engineer_gets_an_unrestricted_sandbox_so_it_can_run_commands(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # the engineer must run tests/builds (arbitrary commands), which dream gates behind an interactive
+    # approval the autonomous kernel can't supply — so its trust posture is unrestricted-in-worktree.
+    factory, _ = _factory(monkeypatch, tmp_path)
+    mat = factory.materialize(Employee(id="ada", name="Ada", role="engineer"))
+    sandbox = (mat.working_dir / ".harness" / "sandbox.toml").read_text(encoding="utf-8")
+    assert 'tier = "unrestricted"' in sandbox
+    assert "confirm_unrestricted = true" in sandbox  # dream double-gates it; the choice is explicit
+    assert mat.config.sandbox == "unrestricted"
+
+
 def test_reviewer_materializes_a_read_only_harness(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -58,6 +71,10 @@ def test_reviewer_materializes_a_read_only_harness(
     names = {t.name for t in captured["registry"].list_tools()}
     assert names == {"read_file"}
     assert mat.config.permission_mode == "plan"
+    # and a read-only trust posture — it never mutates
+    sandbox = (mat.working_dir / ".harness" / "sandbox.toml").read_text(encoding="utf-8")
+    assert 'tier = "read-only"' in sandbox
+    assert "confirm_unrestricted" not in sandbox
 
 
 def test_runner_for_is_a_beat_runner(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

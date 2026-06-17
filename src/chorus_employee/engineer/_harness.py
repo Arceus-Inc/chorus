@@ -8,7 +8,13 @@ the dream component it drives, so the whole harness config reads top to bottom.
 
 from __future__ import annotations
 
-from chorus.roles._manifest import Isolation, MemoryScope, PermissionMode, RoleManifest
+from chorus.roles._manifest import (
+    Isolation,
+    MemoryScope,
+    PermissionMode,
+    RoleManifest,
+    SandboxTier,
+)
 from chorus_employee.engineer._brief import ENGINEER_BRIEF
 
 
@@ -38,6 +44,11 @@ def engineer_manifest() -> RoleManifest:
         env=(),  # host-resolution env only (e.g. DREAM_HOME); never carries secrets
         # — worktree containment (spec 04 §4) —
         isolation=Isolation.WORKTREE,
+        # — trust posture (spec 04 §4) → .harness/sandbox.toml —
+        # unrestricted *within the isolated worktree*: the engineer must run tests/builds (arbitrary
+        # commands), which dream otherwise gates behind an interactive approval the kernel can't supply.
+        # dream's credential guard, command-deny list, and worktree confinement still apply.
+        sandbox=SandboxTier.UNRESTRICTED,
     )
 
 

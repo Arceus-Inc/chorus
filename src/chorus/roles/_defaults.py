@@ -15,7 +15,7 @@ judgment-class work, so it must ship at M3 with the first non-code role.
 from __future__ import annotations
 
 from chorus.outcomes import Verifier
-from chorus.roles._manifest import MemoryScope, PermissionMode, RoleManifest
+from chorus.roles._manifest import MemoryScope, PermissionMode, RoleManifest, SandboxTier
 from chorus.roles._plugin import RolePlugin
 
 # The Engineer is the first role to own a dedicated package (chorus_employee/engineer/). The kernel
@@ -44,6 +44,7 @@ def default_roles() -> tuple[RolePlugin, ...]:
                 tools=("read_file",),
                 permission_mode=PermissionMode.PLAN,
                 memory_scope=MemoryScope.PROJECT,
+                sandbox=SandboxTier.READ_ONLY,  # a reviewer never mutates — read-only trust posture
             ),
             dod_generator=lambda intent: Verifier.human_approval(artifact_class="verdict"),
             outcome_kind="verdict",
