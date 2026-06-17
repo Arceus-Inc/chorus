@@ -19,7 +19,18 @@ pytestmark = pytest.mark.unit
 def test_engineer_declares_every_build_harness_component() -> None:
     manifest = engineer_plugin().manifest
     # Capability components.
-    assert manifest.tools == ("read_file", "write_file", "run_command", "git")
+    assert manifest.tools == (
+        "read_file",
+        "write_file",
+        "run_command",
+        "git",
+        "memory_search",
+        "memory_get",
+        "working_memory_read",
+        "working_memory_write",
+        "working_memory_append",
+        "memory_propose",
+    )
     assert manifest.permission_mode.value == "acceptEdits"  # can write under its own posture
     assert manifest.memory_scope.value == "project"
     assert manifest.system_prompt  # a real operating brief, not a placeholder
@@ -32,7 +43,8 @@ def test_engineer_declares_every_build_harness_component() -> None:
 
 def test_engineer_projects_to_a_beat_config_carrying_the_scalars() -> None:
     config = role_beat_config(engineer_plugin().manifest)
-    assert config.tools == ("read_file", "write_file", "run_command", "git")
+    assert "memory_search" in config.tools
+    assert "working_memory_write" in config.tools
     assert config.permission_mode == "acceptEdits"
     assert config.max_turns >= 8
     assert config.working_memory is True

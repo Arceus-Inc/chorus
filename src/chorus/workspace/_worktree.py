@@ -24,9 +24,9 @@ _COMMIT_IDENTITY = ("-c", "user.name=chorus", "-c", "user.email=chorus@local")
 # dream/chorus operational dirs the harness writes into the working dir — excluded from the branch so a
 # merge carries only real deliverables (shared across all worktrees via the repo's info/exclude).
 _OPERATIONAL_EXCLUDES = (
-    "roles/",  # the per-role overlays chorus writes
+    "roles/",  # legacy role overlay location; kept excluded for old worktrees
     ".dream/",  # dream task/ledger artefacts
-    ".harness/",  # dream tool-tier / policy files
+    ".harness/",  # dream tool-tier / policy / role-overlay files
     ".chorus/",  # any nested chorus state
     ".mypy_cache/",
     ".playwright-mcp/",

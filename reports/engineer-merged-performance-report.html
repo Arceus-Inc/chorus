@@ -124,9 +124,15 @@
             <td class="ok">PASS</td>
           </tr>
           <tr>
+            <td>Memory tools</td>
+            <td>A dedicated CLI-registry smoke seeded Dream project memory, required <code>memory_search</code>/<code>memory_get</code>, required working-memory write/read, and gated completion with a command DoD.</td>
+            <td><code>task_memory_surface</code> reached <code>done</code>; <code>memory-report.md</code> contained <code>MEMORY_SURFACE_OK WORKING_MEMORY_OK</code>; Dream trace recorded <code>memory_search</code>, <code>memory_get</code>, <code>working_memory_append</code>, and <code>working_memory_read</code>.</td>
+            <td class="ok">PASS</td>
+          </tr>
+          <tr>
             <td>Artifact landing</td>
             <td>The Engineer wrote concrete files in its isolated worktree and Chorus honored explicit objective verification.</td>
-            <td><code>alpha.md</code>, <code>beta.md</code>, and <code>surface-report.md</code> were present with expected content.</td>
+            <td><code>alpha.md</code>, <code>beta.md</code>, <code>surface-report.md</code>, and <code>memory-report.md</code> were present with expected content.</td>
             <td class="ok">PASS</td>
           </tr>
           <tr>
@@ -162,6 +168,24 @@ surface-report.md
     </section>
 
     <section>
+      <h2>When Did The Engineer Use Memory?</h2>
+      <p>The memory smoke was run after the skills/plugins/MCP smoke to prove Dream memory is also wired through the Engineer path. The task seeded a Dream project-memory record named <code>memory-smoke-token</code>, then required the Engineer to retrieve it and use working memory before writing the final artifact.</p>
+      <pre>task_memory_surface
+  status: done
+  run: run_a68c3bd45dfc4008b3a5edba971ee7b7 succeeded
+  DoD: command verifier passed
+
+memory-report.md
+  MEMORY_SURFACE_OK WORKING_MEMORY_OK
+
+Dream trace evidence
+  memory_search -> success
+  memory_get -> success
+  working_memory_append -> success
+  working_memory_read -> success</pre>
+    </section>
+
+    <section>
       <h2>Key Runs</h2>
       <table>
         <thead><tr><th>Scenario</th><th>Task</th><th>Run</th><th>Outcome</th></tr></thead>
@@ -184,6 +208,12 @@ surface-report.md
             <td><code>run_e6c6a7f2159b4d57973c4e2d470d5e69</code> succeeded</td>
             <td><code>surface-report.md</code> written with all three required tokens</td>
           </tr>
+          <tr>
+            <td>Memory smoke</td>
+            <td><code>task_memory_surface</code></td>
+            <td><code>run_a68c3bd45dfc4008b3a5edba971ee7b7</code> succeeded</td>
+            <td><code>memory-report.md</code> written with durable-memory and working-memory tokens</td>
+          </tr>
         </tbody>
       </table>
     </section>
@@ -193,7 +223,7 @@ surface-report.md
       <ul>
         <li><strong>Followed task intent:</strong> The Engineer produced the requested files for simple ledger tasks and the required token report for the surface smoke.</li>
         <li><strong>Used the right execution plane:</strong> Work ran through Dream harness materialization, not a mocked CLI-only path.</li>
-        <li><strong>Handled connected surfaces:</strong> The Engineer ran with project skills, plugin tools, and MCP tools enabled from the seeded repo.</li>
+        <li><strong>Handled connected surfaces:</strong> The Engineer ran with project skills, plugin tools, MCP tools, durable project memory, and working memory enabled from the seeded repo.</li>
         <li><strong>Produced inspectable evidence:</strong> Ledger rows, run outcomes, worktree files, Dream execution plans, and event logs all support the result.</li>
         <li><strong>Remaining evaluator nuance:</strong> Dream's evaluator reported <code>needs-changes</code> for the surface smoke because it could not independently see all probe calls, but Chorus objective verification passed because the required artifact existed. The run was correctly landed as succeeded with <code>verified_after_incomplete_dream_result: true</code>.</li>
       </ul>
@@ -206,11 +236,11 @@ surface-report.md
   -> writes task + wake to SQLite ledger
   -> heartbeat dispatches a beat
   -> EmployeeHarnessFactory builds Dream harness in worktree
-  -> Dream loads tools, project skills, plugins, MCP allowlist, memory, evaluator
+  -> Dream loads tools, project skills, plugins, MCP allowlist, project memory, working memory, evaluator
   -> Engineer writes artifacts
   -> Dream result + Chorus verification land run/task state
   -> EventBus records run events for inspection</pre>
-      <p><strong>Bottom line:</strong> Chorus and Dream are wired together for the Engineer path. Chorus owns durable orchestration; Dream owns execution. The tested Engineer can receive tasks, run beats, use project skills, call plugin and MCP tools, write artifacts, and land completed work back into the ledger.</p>
+      <p><strong>Bottom line:</strong> Chorus and Dream are wired together for the Engineer path. Chorus owns durable orchestration; Dream owns execution. The tested Engineer can receive tasks, run beats, use project skills, call plugin and MCP tools, retrieve durable memory, use working memory, write artifacts, and land completed work back into the ledger.</p>
     </section>
   </main>
 </body>

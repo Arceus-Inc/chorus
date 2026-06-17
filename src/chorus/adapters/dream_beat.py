@@ -89,11 +89,12 @@ class TaskHarness(Protocol):
     async def run_task(
         self,
         *,
-        task_id: str,
+        task_id: str | None = None,
         intent: str,
-        verification_steps: tuple[dict[str, str], ...] = (),
-        observer: _DreamObserver | None = None,
+        verification_steps: tuple[dict[str, str], ...] | None = None,
+        observer: Any | None = None,
         max_sprints: int | None = None,
+        harness_dir: Path | None = None,
     ) -> RunResult: ...
 
 
@@ -188,13 +189,23 @@ class DreamBeatRunner:
             {"kind": "eval", "command": step.command} for step in verification
         )
         try:
-            run = self._harness.run_task(
-                task_id=task_id,
-                intent=intent,
-                verification_steps=steps,
-                observer=bridge,
-                max_sprints=self._max_sprints,
-            )
+            if self._working_dir is None:
+                run = self._harness.run_task(
+                    task_id=task_id,
+                    intent=intent,
+                    verification_steps=steps,
+                    observer=bridge,
+                    max_sprints=self._max_sprints,
+                )
+            else:
+                run = self._harness.run_task(
+                    task_id=task_id,
+                    intent=intent,
+                    verification_steps=steps,
+                    observer=bridge,
+                    max_sprints=self._max_sprints,
+                    harness_dir=self._working_dir / ".harness",
+                )
             result = await asyncio.wait_for(run, timeout=self._timeout_s)
         except TimeoutError as exc:
             if verification and await self._verification_passed(verification):

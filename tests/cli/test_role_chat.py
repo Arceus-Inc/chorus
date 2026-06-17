@@ -67,7 +67,8 @@ def test_service_surfaces_the_materialized_worktree_and_config(
         assert service.working_dir == str(tmp_path / "acme" / "worktrees" / "ada")
         assert service.workspace is not None  # /merge can integrate it
         # /config reads the resolved role spec off the service
-        assert service.harness_spec.tools == ("read_file", "write_file", "run_command", "git")
+        assert "memory_search" in service.harness_spec.tools
+        assert "working_memory_write" in service.harness_spec.tools
         assert service.harness_spec.permission_mode == "acceptEdits"
     finally:
         ledger.close()

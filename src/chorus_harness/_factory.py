@@ -44,7 +44,23 @@ _CHORUS_TO_DREAM_TOOL: dict[str, str] = {
     "write_file": "write_file",
     "run_command": "bash",
     "git": "git",
+    "skill": "skill",
+    "memory_search": "memory_search",
+    "memory_get": "memory_get",
+    "working_memory_read": "working_memory_read",
+    "working_memory_write": "working_memory_write",
+    "working_memory_append": "working_memory_append",
+    "memory_propose": "memory_propose",
 }
+
+_READ_ONLY_DREAM_SURFACE_TOOLS = frozenset(
+    {
+        "skill",
+        "memory_search",
+        "memory_get",
+        "working_memory_read",
+    }
+)
 
 
 def dream_tool_names(chorus_tools: tuple[str, ...]) -> tuple[str, ...]:
@@ -68,23 +84,42 @@ def _toml_escape(value: str) -> str:
     return value.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n").replace("\t", "\\t")
 
 
+def _toml_string_list(values: tuple[str, ...]) -> str:
+    """Render a tuple of short strings as a TOML array."""
+    return "[" + ", ".join(f'"{_toml_escape(value)}"' for value in values) + "]"
+
+
+def _read_only_role_tools(
+    role: Literal["planner", "evaluator"], config: RoleBeatConfig
+) -> tuple[str, ...]:
+    """Default read-only Dream role tools plus safe Engineer read surfaces."""
+    base = default_role_manifest(role).tools or ()
+    tools = list(base)
+    for name in dream_tool_names(config.tools):
+        if name in _READ_ONLY_DREAM_SURFACE_TOOLS and name not in tools:
+            tools.append(name)
+    return tuple(tools)
+
+
 def write_role_overlays(harness_dir: Path, config: RoleBeatConfig) -> None:
     """Write planner/generator/evaluator overlays so the whole harness runs as the employee.
 
     Each overlay **appends** the employee's brief to that dream role's base prompt (keeping the role's
     orchestration instructions) and sets the employee's permission posture. ``run_task`` loads these
-    from ``{harness_dir}/roles/{role}.toml``.
+    from ``{working_dir}/.harness/roles/{role}.toml``.
     """
-    roles_dir = harness_dir / "roles"
+    roles_dir = harness_dir / ".harness" / "roles"
     roles_dir.mkdir(parents=True, exist_ok=True)
     for role in _DREAM_ROLES:
         base = default_role_manifest(role).system_prompt
         prompt = f"{base}\n\n## Operating brief (your role in the org)\n{config.system_prompt}"
-        overlay = (
-            f'system_prompt = "{_toml_escape(prompt)}"\n'
-            f'permission_mode = "{config.permission_mode}"\n'
-        )
-        (roles_dir / f"{role}.toml").write_text(overlay, encoding="utf-8")
+        lines = [
+            f'system_prompt = "{_toml_escape(prompt)}"',
+            f'permission_mode = "{config.permission_mode}"',
+        ]
+        if role in ("planner", "evaluator"):
+            lines.append(f"tools = {_toml_string_list(_read_only_role_tools(role, config))}")
+        (roles_dir / f"{role}.toml").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 def write_sandbox_config(harness_dir: Path, sandbox: str) -> None:

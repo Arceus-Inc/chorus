@@ -108,6 +108,7 @@ class _FakeHarness:
         self.verification_steps: tuple[dict[str, str], ...] = ()
         self.observer: object = None
         self.max_sprints: int | None = None
+        self.harness_dir: str | Path | None = None
         self.close_calls = 0
 
     async def aclose(self) -> None:
@@ -121,11 +122,13 @@ class _FakeHarness:
         verification_steps: tuple[dict[str, str], ...] = (),
         observer: object = None,
         max_sprints: int | None = None,
+        harness_dir: str | Path | None = None,
     ) -> _Result:
         self.calls.append(task_id)
         self.verification_steps = verification_steps
         self.observer = observer
         self.max_sprints = max_sprints
+        self.harness_dir = harness_dir
         if observer is not None:
             for event in self._events:
                 observer.on_event(event)  # type: ignore[attr-defined]
@@ -182,6 +185,14 @@ async def test_run_task_can_land_when_local_verification_passes_after_incomplete
     assert outcome.disposition is BeatDisposition.PASSED
     assert outcome.outcome["verified_after_incomplete_dream_result"] is True
     assert outcome.outcome["steps_blocked"] == 1
+
+
+async def test_run_task_passes_working_dir_as_harness_dir(tmp_path: Path) -> None:
+    harness = _FakeHarness(result=_result("done"))
+
+    await DreamBeatRunner(harness, working_dir=tmp_path).run_task(task_id="t1", intent="x")
+
+    assert harness.harness_dir == tmp_path / ".harness"
 
 
 

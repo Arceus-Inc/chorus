@@ -44,9 +44,26 @@ def test_engineer_materializes_a_writable_harness_in_its_worktree(
     assert mat.working_dir == tmp_path / "acme" / "worktrees" / "ada"
     assert mat.workspace is not None
     names = {t.name for t in captured["registry"].list_tools()}
-    assert names == {"read_file", "write_file", "bash", "git"}
+    assert names == {"read_file", "write_file", "bash", "git", "memory_search", "memory_get"}
     assert mat.config.permission_mode == "acceptEdits"
     assert captured["max_turns"] == 12  # the engine scalars come from the role too
+    assert captured["working_memory"] is True
+
+
+def test_engineer_role_overlays_admit_read_memory_for_read_only_heads(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    factory, _ = _factory(monkeypatch, tmp_path)
+    mat = factory.materialize(Employee(id="ada", name="Ada", role="engineer"))
+
+    planner = (mat.working_dir / ".harness" / "roles" / "planner.toml").read_text(encoding="utf-8")
+    evaluator = (mat.working_dir / ".harness" / "roles" / "evaluator.toml").read_text(encoding="utf-8")
+    generator = (mat.working_dir / ".harness" / "roles" / "generator.toml").read_text(encoding="utf-8")
+
+    assert '"memory_search"' in planner
+    assert '"memory_get"' in evaluator
+    assert '"working_memory_read"' in planner
+    assert "tools =" not in generator
 
 
 def test_engineer_gets_an_unrestricted_sandbox_so_it_can_run_commands(
