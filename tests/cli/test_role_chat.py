@@ -89,6 +89,42 @@ def test_build_role_chat_service_resolves_the_role_and_scopes_the_harness(
         ledger.close()
 
 
+def test_worktree_isolation_makes_working_dir_a_branch_isolated_worktree(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    import subprocess
+
+    monkeypatch.chdir(tmp_path)  # .chorus/chat/... lands under the tmp dir, not the real cwd
+    ledger = SqliteLedger.open(":memory:")
+    try:
+        ledger.employees.create(Employee(id="ada", name="Ada", role="engineer"))
+        captured: dict[str, Any] = {}
+        monkeypatch.setattr(
+            _role_chat.dream, "build_harness", lambda **kw: captured.update(kw) or object()
+        )
+        service = _role_chat.build_role_chat_service(
+            ledger,
+            employee_id="ada",
+            api_key="k",
+            base_url="https://x/openai/v1",
+            deployment="gpt-x",
+            company_id="acme",
+            render_bus=_role_chat.ChatRenderBus(out=io.StringIO()),
+        )  # no work_dir → the engineer (isolation=worktree) gets a real worktree
+        working_dir = Path(captured["working_dir"])
+        assert working_dir == tmp_path / ".chorus" / "chat" / "acme" / "worktrees" / "ada"
+        branch = subprocess.run(
+            ["git", "-C", str(working_dir), "rev-parse", "--abbrev-ref", "HEAD"],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        assert branch == "chorus/ada"  # the employee writes confined to its own branch
+        assert service.workspace is not None  # /merge can integrate it later
+    finally:
+        ledger.close()
+
+
 def test_a_role_that_declares_skills_enables_skill_loading(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

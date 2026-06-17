@@ -27,6 +27,7 @@ def test_projects_the_manifest_fields_the_beat_needs() -> None:
     assert config.tools == ("read_file", "write_file", "run_command", "git")
     assert config.permission_mode == "acceptEdits"  # dream-compatible string, not the enum
     assert config.memory_scope == "project"
+    assert config.isolation == "worktree"  # the containment posture, as a plain string
 
 
 def test_permission_modes_map_to_dream_strings() -> None:

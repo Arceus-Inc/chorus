@@ -27,6 +27,7 @@ from chorus.ledger import Message, MessageKind, SqliteLedger, Task
 from chorus.lifecycle import assign_task
 from chorus.observability import EventBus
 from chorus.roles import RoleBeatConfig
+from chorus.workspace import CompanyWorkspace
 from chorus_cli._render import Console
 
 _OPERATOR = "operator"  # the human at the console — the sender of the lines it records
@@ -106,6 +107,8 @@ class ChatBeatService:
     surfaced for the ``/info`` slash command; ``harness_spec`` is the employee's full
     :class:`~chorus.roles.RoleBeatConfig` — every ``build_harness`` component — surfaced for ``/config``
     (``None`` when the service was built without a resolved role, e.g. an old test harness).
+    ``workspace`` + ``employee_id`` are the branch-isolated worktree handle ``/merge`` integrates back
+    into the company ``main`` (``None`` when the role runs unisolated).
     """
 
     def __init__(
@@ -115,11 +118,15 @@ class ChatBeatService:
         model: str,
         working_dir: str,
         harness_spec: RoleBeatConfig | None = None,
+        workspace: CompanyWorkspace | None = None,
+        employee_id: str | None = None,
     ) -> None:
         self._scheduler = scheduler
         self.model = model
         self.working_dir = working_dir
         self.harness_spec = harness_spec
+        self.workspace = workspace
+        self.employee_id = employee_id
 
     def run_turn(self) -> TickReport:
         """Dispatch the queued wake(s) and await the beat — returns the pulse's :class:`TickReport`."""
@@ -219,6 +226,7 @@ chat commands:
   /quit | /exit      leave chat (back to the console)
   /info              employee, model, working dir, active task
   /config            the employee's full harness config (every component)
+  /merge             merge this employee's isolated worktree into company main
   /task              the current/last task with its runs
   /transcript        this session's lines
 type anything else to send it to the employee as a turn.\
@@ -246,6 +254,8 @@ def _cmd_config(
     employee = ledger.employees.get(employee_id)
     role = employee.role if employee is not None else "?"
     memory = spec.memory_scope + (" +working-scratchpad" if spec.working_memory else "")
+    isolated = service.workspace is not None and spec.isolation == "worktree"
+    isolation = f"worktree → branch chorus/{employee_id}" if isolated else spec.isolation
     console.kv(
         {
             "employee": f"{employee_id} ({role})",
@@ -253,6 +263,7 @@ def _cmd_config(
             "max_turns": spec.max_turns,
             "permission": spec.permission_mode,
             "memory": memory,
+            "isolation": isolation,
             "tools": _fmt_list(spec.tools),
             "skills": _fmt_list(spec.skills),
             "mcp": "on" if spec.mcp else "off",
@@ -262,6 +273,24 @@ def _cmd_config(
             "working_dir": service.working_dir,
         }
     )
+
+
+def _cmd_merge(console: Console, *, service: ChatBeatService) -> None:
+    """Merge this employee's branch-isolated worktree back into the company ``main``.
+
+    The "merged later" half of containment: the employee worked confined to ``chorus/{employee}``;
+    this snapshots any uncommitted work and integrates the branch. A conflict is reported, not raised.
+    """
+    if service.workspace is None or service.employee_id is None:
+        console.line("no isolated worktree to merge (this role runs unisolated)")
+        return
+    result = service.workspace.merge(service.employee_id)
+    if result.merged:
+        console.line(f"  [merged {result.branch} → {result.into}]")
+    elif result.conflicted:
+        console.error(f"merge conflict on {result.branch} (aborted) — resolve in {service.workspace.repo}")
+    else:
+        console.error(f"merge failed: {result.detail}")
 
 
 def _cmd_info(
@@ -322,6 +351,8 @@ def _slash(
         _cmd_info(console, employee_id=employee_id, service=service, state=state, ledger=ledger)
     elif cmd == "/config":
         _cmd_config(console, employee_id=employee_id, service=service, ledger=ledger)
+    elif cmd == "/merge":
+        _cmd_merge(console, service=service)
     elif cmd == "/task":
         _cmd_task(console, state=state, ledger=ledger)
     elif cmd == "/transcript":
