@@ -8,6 +8,7 @@ the facade and repos consume it.
 from __future__ import annotations
 
 from chorus.lifecycle._audit import record_activity
+from chorus.lifecycle._capability import CapabilityService, ChildPlan, DecomposeResult
 from chorus.lifecycle._coordination import assign_task, deliver_message
 from chorus.lifecycle._decompose import (
     DEFAULT_REQUEST_DEPTH_CAP,
@@ -35,7 +36,10 @@ __all__ = [
     "DEFAULT_REQUEST_DEPTH_CAP",
     "LEGAL_TRANSITIONS",
     "TERMINAL",
+    "CapabilityService",
+    "ChildPlan",
     "ChildSpec",
+    "DecomposeResult",
     "DepthCapped",
     "Disposition",
     "DispositionAction",
