@@ -24,7 +24,7 @@ from typing import TYPE_CHECKING, TypeVar
 from chorus.adapters._failure import failure_outcome
 from chorus.cron._fire import fire_routine
 from chorus.governance import GovernanceResolver
-from chorus.heartbeat._beat import BeatDisposition
+from chorus.heartbeat._beat import BeatDisposition, BeatOutcome
 from chorus.heartbeat._invokability import invokability_block
 from chorus.heartbeat._runner_for import single
 from chorus.heartbeat._wake import TickReport, Wake
@@ -55,7 +55,7 @@ if TYPE_CHECKING:
 
     from chorus.budgets import BudgetEnforcer
     from chorus.events import Event
-    from chorus.heartbeat._beat import BeatOutcome, BeatRunner
+    from chorus.heartbeat._beat import BeatRunner
     from chorus.heartbeat._runner_for import BeatRunnerFor
     from chorus.ledger import SqliteLedger, Task
     from chorus.observability import EventSink
@@ -426,6 +426,22 @@ class Scheduler:
                 started_at=now,
             )
         )
+
+        # Mechanical integrate (M3 §5): a re-invocation whose delegated subtree is already complete is
+        # landed by the kernel — NOT a model beat. Running a manager beat here would re-plan and let the
+        # model call ``decompose`` again, ballooning the subtree and starving later work; the integrate
+        # is mechanical by definition ("all children terminal"). Slice 2 replaces this with a real,
+        # deliberately-scoped reacting integrate beat.
+        if ledger.tasks.has_children(task_id) and ledger.tasks.all_children_terminal(task_id):
+            verifier = ledger.dod.verifier_for_task(task_id)
+            ledger.runs.finish(run_id, RunStatus.SUCCEEDED, outcome=None)
+            await self._land_passed(
+                task_id, run_id=run_id, verifier=verifier, verdict=None,
+                employee=employee, result=BeatOutcome(passed=True, outcome={}, summary="integrated"),
+            )
+            ledger.tasks.release_locks(task_id, run_id=run_id)
+            ledger.wakes.mark_done(wake.id)
+            return
 
         observer = self._event_bus.emit if self._event_bus is not None else None
         verifier = None

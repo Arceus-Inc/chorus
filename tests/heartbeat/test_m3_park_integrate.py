@@ -103,7 +103,9 @@ async def test_full_loop_decompose_then_children_then_integrate_to_done(
 
     assert ledger.tasks.get("M").status is TaskStatus.DONE  # type: ignore[union-attr]  # integrated
     assert ledger.tasks.all_children_terminal("M")  # the whole subtree landed
-    assert "M" in beat.ran and beat.ran.count("M") >= 2  # decompose beat + integrate beat
+    # the manager ran exactly ONE model beat (the decompose); the integrate is mechanical — the kernel
+    # lands the completed subtree without re-invoking the manager, so it can never re-decompose.
+    assert beat.ran.count("M") == 1
     # the ManagerLander recorded the subtree as the manager's primary deliverable
     subtree = next(
         a for a in ledger.artifacts.list_for_task("M")
