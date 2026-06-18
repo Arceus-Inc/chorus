@@ -197,10 +197,16 @@ class DreamBeatRunner:
         steps: tuple[dict[str, str], ...] = tuple(
             {"kind": "eval", "command": step.command} for step in verification
         )
+        # dream gets a **fresh task identity per beat** (the chorus run_id), not the chorus task_id. Its
+        # planner refuses to re-plan a task it has already planned (``PlannerAlreadyRan``), so reusing
+        # the chorus task_id would make every self-repair re-dispatch error out and strand the task
+        # instead of repairing it. Each beat is its own run, so each is an independent planning pass; the
+        # worktree carries state across beats. Events still correlate via the bridge's chorus task_id.
+        dream_task_id = run_id if run_id is not None else task_id
         try:
             if self._working_dir is None:
                 run = self._harness.run_task(
-                    task_id=task_id,
+                    task_id=dream_task_id,
                     intent=intent,
                     verification_steps=steps,
                     observer=bridge,
@@ -208,7 +214,7 @@ class DreamBeatRunner:
                 )
             else:
                 run = self._harness.run_task(
-                    task_id=task_id,
+                    task_id=dream_task_id,
                     intent=intent,
                     verification_steps=steps,
                     observer=bridge,
