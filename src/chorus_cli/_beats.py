@@ -18,6 +18,7 @@ from chorus.adapters import ModelRate, TokenPricing
 from chorus.budgets import BudgetEnforcer
 from chorus.heartbeat import Scheduler, TickReport
 from chorus.ledger import SqliteLedger
+from chorus.memory import AppendOnlyMemoryWriter
 from chorus.observability import EventBus
 from chorus.roles import (
     RolePlugin,
@@ -162,6 +163,7 @@ def build_beat_service(
         budget_enforcer=BudgetEnforcer(ledger, company_id=company_id),
         roles=registry,  # tasks inherit the assignee role's DoD at intake (spec 04 §1)
         landers=default_landers(factory.company_root),  # a passed beat lands its role artifact (§2)
+        memory_writer=AppendOnlyMemoryWriter(factory.company_root / "memory"),  # one episodic delta/beat (§7)
         event_bus=EventBus(log_path=factory.company_root / "events.jsonl"),
         max_concurrent_runs=max_concurrent_runs,
     )

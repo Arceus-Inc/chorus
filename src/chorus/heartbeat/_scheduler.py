@@ -46,15 +46,18 @@ from chorus.ledger._models import (
     WakeReason,
 )
 from chorus.lifecycle import record_activity
+from chorus.memory import SprintDelta
 from chorus.outcomes import DoDKind, Verifier
 from chorus.recovery import reconcile
 
 if TYPE_CHECKING:
+    from dream.contracts import MemoryWriter
+
     from chorus.budgets import BudgetEnforcer
     from chorus.events import Event
     from chorus.heartbeat._beat import BeatOutcome, BeatRunner
     from chorus.heartbeat._runner_for import BeatRunnerFor
-    from chorus.ledger import SqliteLedger
+    from chorus.ledger import SqliteLedger, Task
     from chorus.observability import EventSink
     from chorus.outcomes import Artifact as OutcomeArtifact
     from chorus.outcomes import LanderRegistry, VerificationStep
@@ -66,6 +69,33 @@ _T = TypeVar("_T")
 
 def _utc_now() -> datetime:
     return datetime.now(UTC)
+
+
+_OUTCOME_BY_DISPOSITION: dict[BeatDisposition, str] = {
+    BeatDisposition.PASSED: "done",
+    BeatDisposition.DOD_FAILED: "needs_changes",
+    BeatDisposition.ERRORED: "blocked",
+}
+
+
+def _sprint_delta(
+    *, run_id: str, employee: Employee, task: Task, result: BeatOutcome, scope: str, now: datetime
+) -> SprintDelta:
+    """Build the beat's raw episodic record — honest fields derived from the run (spec 07 §3)."""
+    verdict = result.outcome or {}
+    raw_score = verdict.get("score")
+    score = float(raw_score) if isinstance(raw_score, int | float) else (1.0 if result.passed else 0.0)
+    return SprintDelta(
+        run_id=run_id,
+        task_id=task.id,
+        employee_id=employee.id,
+        scope=scope,
+        intent=task.intent,
+        outcome=_OUTCOME_BY_DISPOSITION.get(result.disposition or BeatDisposition.ERRORED, "blocked"),
+        score=score,
+        created_at=now,
+        body=result.summary or "",
+    )
 
 
 def _to_ledger_artifact(artifact: OutcomeArtifact) -> Artifact:
@@ -106,6 +136,7 @@ class Scheduler:
         lease_ttl_s: float = 300.0,
         max_repair_attempts: int = 2,
         transient_retries: int = 2,
+        memory_writer: MemoryWriter | None = None,
         ledger: SqliteLedger | None = None,
         workforce: Workforce | None = None,
         beat_runner: BeatRunner | None = None,
@@ -138,6 +169,7 @@ class Scheduler:
         self._budget_enforcer = budget_enforcer  # None = budgets off (gating is opt-in)
         self._roles = roles  # None = no intake DoD (a task keeps whatever DoD was set explicitly)
         self._landers = landers  # None = a passed beat lands 'done' without recording a role artifact
+        self._memory_writer = memory_writer  # None = no episodic capture (the kernel is writer-agnostic)
         self._clock = clock or _utc_now  # the time source the run loop stamps each pulse with
         self._sleep = sleep or asyncio.sleep  # the inter-pulse wait (injectable for deterministic tests)
         self._stop = asyncio.Event()  # set by stop(); ends the run loop after the current pulse
@@ -432,9 +464,32 @@ class Scheduler:
             )
             self._climb_repair_ladder(task_id, employee_id=employee.id, verifier=verifier)
 
+        await self._capture_memory(run_id=run_id, employee=employee, task=task, result=result, now=now)
         ledger.tasks.release_locks(task_id, run_id=run_id)
         ledger.wakes.mark_done(wake.id)
         self._record_cost(employee.id, task_id=task_id, run_id=run_id, result=result, now=now)
+
+    async def _capture_memory(
+        self, *, run_id: str, employee: Employee, task: Task, result: BeatOutcome, now: datetime
+    ) -> None:
+        """Write one raw episodic sprint delta for this beat (spec 07 §3) — the kernel stays writer-agnostic.
+
+        A cancelled beat (nothing happened) records nothing; every other disposition leaves an honest
+        trace whose fields are derived from the run, never authored by the worker.
+        """
+        if self._memory_writer is None or result.disposition is BeatDisposition.CANCELLED:
+            return
+        delta = _sprint_delta(
+            run_id=run_id, employee=employee, task=task, result=result,
+            scope=self._memory_scope(employee), now=now,
+        )
+        await self._memory_writer.apply(delta.to_memory_delta())
+
+    def _memory_scope(self, employee: Employee) -> str:
+        """The employee's write scope — its role's ``memory_scope`` (``project`` when unknown)."""
+        if self._roles is not None and employee.role in self._roles:
+            return self._roles.get(employee.role).manifest.memory_scope.value
+        return "project"
 
     async def _land_passed(
         self,

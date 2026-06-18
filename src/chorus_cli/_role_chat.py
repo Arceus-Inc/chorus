@@ -16,6 +16,7 @@ from chorus.budgets import BudgetEnforcer
 from chorus.errors import UnknownEmployee
 from chorus.heartbeat import Scheduler
 from chorus.ledger import SqliteLedger
+from chorus.memory import AppendOnlyMemoryWriter
 from chorus.observability import EventBus, FanoutBus
 from chorus.roles import RoleRegistry, default_roles
 from chorus.workforce import LedgerWorkforce
@@ -70,6 +71,7 @@ def build_role_chat_service(
         event_bus=FanoutBus(render_bus, EventBus(log_path=factory.company_root / "events.jsonl")),
         roles=registry,  # a chat task inherits the employee role's DoD at intake (spec 04 §1)
         landers=default_landers(factory.company_root),  # a passed beat lands its role artifact (§2)
+        memory_writer=AppendOnlyMemoryWriter(factory.company_root / "memory"),  # one episodic delta/beat (§7)
         max_concurrent_runs=1,
     )
     return ChatBeatService(
