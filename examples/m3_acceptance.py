@@ -35,16 +35,8 @@ from chorus_cli._beats import default_pricing_from_env
 from chorus_employee import default_landers
 from chorus_harness import EmployeeHarnessFactory
 
-_PARENT = (
-    "Delegate this with a SINGLE decompose call containing EXACTLY two independent children (no more, "
-    "no depends_on between them, do not implement anything yourself). Each child is a complete, "
-    "self-contained new file — nothing else is required, do not touch any other file:\n"
-    "- label 'add', assignee 'ada': create a NEW file add_util.py containing exactly these two lines:\n"
-    "    def add(a, b):\n        return a + b\n"
-    "- label 'sub', assignee 'bob': create a NEW file sub_util.py containing exactly these two lines:\n"
-    "    def subtract(a, b):\n        return a - b\n"
-    "The repository already has a passing test suite, so each child just needs its one clean new file."
-)
+# A ONE-LINE goal — the manager's brief carries the decomposition intelligence, not this prompt.
+_PARENT = "Build a small Python math utilities library with add and subtract."
 
 _LOG: list[str] = []
 
