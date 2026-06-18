@@ -234,13 +234,51 @@ class CompanyWorkspace:
 
     def _snapshot(self, employee_id: str) -> None:
         """Commit any uncommitted (non-excluded) work in the employee's worktree, if there is any."""
-        wt = self.worktree_for(employee_id).path
+        worktree = self.worktree_for(employee_id)
+        wt = worktree.path
+        self._commit_worktree_changes(wt)
+        self._fold_current_branch_into_employee_branch(wt, worktree.branch)
+
+    def _commit_worktree_changes(self, wt: Path) -> None:
         self._run(wt, "add", "-A")
         staged = subprocess.run(
             ["git", "-C", str(wt), "diff", "--cached", "--quiet"], capture_output=True, text=True
         )
         if staged.returncode != 0:  # non-zero → there are staged changes to capture
             self._run(wt, *_COMMIT_IDENTITY, "commit", "-m", "chorus: snapshot work")
+
+    def _fold_current_branch_into_employee_branch(self, wt: Path, employee_branch: str) -> None:
+        """Ensure the employee branch contains work even if the harness switched branches."""
+        current_branch = self._run(wt, "branch", "--show-current")
+        if not current_branch:
+            current_branch = employee_branch.replace("/", "-") + "-detached-snapshot"
+            self._run(wt, "switch", "-c", current_branch)
+        if current_branch == employee_branch:
+            return
+
+        self._run(wt, "switch", employee_branch)
+        folded = subprocess.run(
+            [
+                "git",
+                "-C",
+                str(wt),
+                *_COMMIT_IDENTITY,
+                "merge",
+                "--no-ff",
+                current_branch,
+                "-m",
+                f"chorus: fold {current_branch} into {employee_branch}",
+            ],
+            capture_output=True,
+            text=True,
+        )
+        if folded.returncode != 0:
+            if "CONFLICT" in (folded.stdout + folded.stderr):
+                self._run(wt, "merge", "--abort")
+            raise WorkspaceError(
+                f"git merge {current_branch} into {employee_branch} failed: "
+                f"{(folded.stderr or folded.stdout).strip()}"
+            )
 
     def _branch_exists(self, branch: str) -> bool:
         return (

@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Engineer Long-Run Experiment Report</title>
+  <style>
+    :root {
+      --bg: #f7f8fa;
+      --panel: #ffffff;
+      --ink: #182230;
+      --muted: #667085;
+      --line: #d9dee7;
+      --accent: #075a8f;
+      --ok: #08783f;
+      --warn: #8a5a00;
+      --bad: #b42318;
+      --soft: #edf4fa;
+      --code: #101828;
+    }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: Segoe UI, Tahoma, Arial, sans-serif;
+      line-height: 1.45;
+    }
+    main { max-width: 1120px; margin: 24px auto 40px; padding: 0 18px; }
+    section {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 16px 18px;
+      margin-bottom: 14px;
+    }
+    h1, h2, h3 { margin: 0 0 10px; }
+    h1 { font-size: 25px; }
+    h2 { color: var(--accent); font-size: 18px; }
+    h3 { color: var(--muted); font-size: 15px; margin-top: 14px; }
+    p { margin: 8px 0; }
+    .meta { color: var(--muted); font-size: 13px; }
+    .ok { color: var(--ok); font-weight: 700; }
+    .warn { color: var(--warn); font-weight: 700; }
+    .bad { color: var(--bad); font-weight: 700; }
+    .pill {
+      display: inline-block;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 2px 8px;
+      background: var(--soft);
+      font-size: 12px;
+      margin: 2px 6px 2px 0;
+    }
+    .grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+    .metric { border: 1px solid var(--line); border-radius: 8px; padding: 10px; background: #fbfcfe; }
+    .metric strong { display: block; font-size: 20px; }
+    .metric span { color: var(--muted); font-size: 12px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 14px; }
+    th, td { text-align: left; vertical-align: top; border-bottom: 1px solid var(--line); padding: 8px 6px; }
+    th { color: var(--muted); font-weight: 650; }
+    code { font-family: Consolas, 'Courier New', monospace; }
+    pre {
+      margin: 10px 0 0;
+      padding: 12px;
+      border-radius: 8px;
+      background: var(--code);
+      color: #e6edf7;
+      overflow-x: auto;
+      font-size: 12px;
+    }
+    ul { margin: 8px 0 0 20px; padding: 0; }
+    li { margin: 5px 0; }
+    @media (max-width: 860px) { .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+    @media (max-width: 560px) { .grid { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <main>
+    <section>
+      <h1>Engineer Long-Run Experiment Report</h1>
+      <p class="meta">Repo: <code>q:\projects\inspired-arc\chorus</code> | Report date: 2026-06-18</p>
+      <p><strong>Final verdict:</strong> <span class="ok">PASS after fix</span>. The Engineer completed a clean 12-task sequential build using Chorus for ledger, beats, landing, and events, and Dream as the execution layer. Every task finished <code>done</code>, every Dream run succeeded, every artifact merged, every post-merge check passed on company <code>main</code>, and memory tools were used throughout.</p>
+      <p><span class="pill">12/12 tasks done</span><span class="pill">12/12 merged</span><span class="pill">12/12 main checks passed</span><span class="pill">450 tool calls logged</span><span class="pill">145 memory calls logged</span></p>
+    </section>
+
+    <section>
+      <h2>What Was Run</h2>
+      <p>The experiment started from a clean seed repo named <code>Stellar Pantry</code>. One Engineer was hired and assigned 12 small tasks one by one: README, Python package model, storage, summary helpers, CLI commands, JSON data, tests, operations docs, and report rendering.</p>
+      <p>Each task included the same memory requirement: search project memory for <code>experiment-conventions</code>, fetch it with <code>memory_get</code>, append working memory, and read working memory back. Each task also had an explicit command verifier that was run again against company <code>main</code> after landing.</p>
+      <p>Raw outputs are under <code>.chorus/engineer-long-run-fixed-20260618/</code>: <code>results.json</code>, <code>tool-log.jsonl</code>, <code>chorus-events.jsonl</code>, the SQLite ledger, isolated Dream home, and the final company work repo.</p>
+    </section>
+
+    <section>
+      <h2>Answer: Do Worktrees Merge After Task Completion?</h2>
+      <p><strong>Yes.</strong> Passed Engineer beats land through <code>EngineerLander</code>, which snapshots the employee worktree and calls <code>CompanyWorkspace.merge()</code>. The merge path creates a merge commit into company <code>main</code> and records a PR-style artifact with <code>merged: true</code>.</p>
+      <p>The long-run found an important edge case: Dream sometimes checked out a task branch inside the employee worktree. Before the fix, Chorus snapshotted the current branch but still merged <code>chorus/employee</code>, so later artifacts said merged while <code>main</code> stopped advancing. The fix makes <code>CompanyWorkspace._snapshot()</code> fold the current worktree branch back into <code>chorus/{employee}</code> before the lander records and merges it. The final run confirmed the worktree branch was <code>chorus/employee</code> after every task and all 12 post-merge checks passed on <code>main</code>.</p>
+    </section>
+
+    <section>
+      <h2>Post-Fix Run Summary</h2>
+      <div class="grid">
+        <div class="metric"><strong>12 / 12</strong><span>Tasks done</span></div>
+        <div class="metric"><strong>12 / 12</strong><span>Runs succeeded</span></div>
+        <div class="metric"><strong>12 / 12</strong><span>Artifacts merged</span></div>
+        <div class="metric"><strong>12 / 12</strong><span>Main checks passed</span></div>
+        <div class="metric"><strong>17m 38s</strong><span>Total wall time</span></div>
+        <div class="metric"><strong>81.2s</strong><span>Median task time</span></div>
+        <div class="metric"><strong>174c</strong><span>Total recorded cost</span></div>
+        <div class="metric"><strong>9222</strong><span>Run text events</span></div>
+      </div>
+      <table>
+        <thead>
+          <tr><th>#</th><th>Task</th><th>Elapsed</th><th>Cost</th><th>Run</th><th>Merge</th><th>Main Check</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>1</td><td>README baseline</td><td>80.968s</td><td>11c</td><td class="ok">succeeded</td><td class="ok">yes</td><td class="ok">passed</td></tr>
+          <tr><td>2</td><td>Core model</td><td>76.368s</td><td>10c</td><td class="ok">succeeded</td><td class="ok">yes</td><td class="ok">passed</td></tr>
+          <tr><td>3</td><td>Seed inventory loader</td><td>94.535s</td><td>14c</td><td class="ok">succeeded</td><td class="ok">yes</td><td class="ok">passed</td></tr>
+          <tr><td>4</td><td>Category summary</td><td>54.359s</td><td>8c</td><td class="ok">succeeded</td><td class="ok">yes</td><td class="ok">passed</td></tr>
+          <tr><td>5</td><td>CLI list command</td><td>69.850s</td><td>10c</td><td class="ok">succeeded</td><td class="ok">yes</td><td class="ok">passed</td></tr>
+          <tr><td>6</td><td>Search helper</td><td>88.102s</td><td>15c</td><td class="ok">succeeded</td><td class="ok">yes</td><td class="ok">passed</td></tr>
+          <tr><td>7</td><td>Low stock helper</td><td>81.008s</td><td>15c</td><td class="ok">succeeded</td><td class="ok">yes</td><td class="ok">passed</td></tr>
+          <tr><td>8</td><td>JSON-backed data</td><td>191.151s</td><td>39c</td><td class="ok">succeeded</td><td class="ok">yes</td><td class="ok">passed</td></tr>
+          <tr><td>9</td><td>Summary tests</td><td>82.522s</td><td>14c</td><td class="ok">succeeded</td><td class="ok">yes</td><td class="ok">passed</td></tr>
+          <tr><td>10</td><td>Operations doc from memory</td><td>59.060s</td><td>8c</td><td class="ok">succeeded</td><td class="ok">yes</td><td class="ok">passed</td></tr>
+          <tr><td>11</td><td>Markdown report renderer</td><td>81.370s</td><td>13c</td><td class="ok">succeeded</td><td class="ok">yes</td><td class="ok">passed</td></tr>
+          <tr><td>12</td><td>CLI report command</td><td>93.233s</td><td>17c</td><td class="ok">succeeded</td><td class="ok">yes</td><td class="ok">passed</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>Tool, Memory, and Event Stats</h2>
+      <table>
+        <thead>
+          <tr><th>Category</th><th>Counts</th><th>Notes</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>All Dream tool calls</td>
+            <td><code>450</code></td>
+            <td><code>bash=139</code>, <code>git=92</code>, <code>read_file=54</code>, <code>write_file=20</code>, plus memory tools.</td>
+          </tr>
+          <tr>
+            <td>Memory tools</td>
+            <td><code>145</code></td>
+            <td><code>memory_search=34</code>, <code>memory_get=30</code>, <code>working_memory_read=33</code>, <code>working_memory_append=28</code>, <code>working_memory_write=20</code>.</td>
+          </tr>
+          <tr>
+            <td>Chorus events</td>
+            <td><code>10146</code></td>
+            <td><code>run.started=12</code>, <code>run.done=12</code>, <code>run.evaluated=12</code>, <code>run.tool_use=450</code>, <code>run.tool_result=450</code>, <code>run.text=9222</code>.</td>
+          </tr>
+          <tr>
+            <td>Git landing</td>
+            <td><code>12 merge commits</code></td>
+            <td>The final company tree contains README, package code, JSON data, docs, tests, and CLI/report files on <code>main</code>.</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>Defect Found by the First Long Run</h2>
+      <p><span class="warn">The long run did its job.</span> The first attempt after fixing the collector produced misleading artifact success: <code>11/12</code> tasks were marked done and <code>11</code> artifacts reported merged, but only <code>6/12</code> post-merge checks passed on company <code>main</code>.</p>
+      <table>
+        <thead>
+          <tr><th>Signal</th><th>First Run</th><th>Post-Fix Run</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Tasks done</td><td><code>11/12</code></td><td class="ok"><code>12/12</code></td></tr>
+          <tr><td>Artifacts marked merged</td><td><code>11</code></td><td class="ok"><code>12</code></td></tr>
+          <tr><td>Main checks passed</td><td class="bad"><code>6/12</code></td><td class="ok"><code>12/12</code></td></tr>
+          <tr><td>Root cause</td><td>Agent work landed on task branches while Chorus merged <code>chorus/employee</code>.</td><td>Snapshot now folds current branch into employee branch before merge.</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>Final Company Repo Evidence</h2>
+      <p>The post-fix company repo history contains a merge commit after every completed task. The final tree on <code>main</code> includes the requested app files and tests:</p>
+      <pre>.gitignore
+README.md
+data/items.json
+docs/operations.md
+stellar_pantry/__init__.py
+stellar_pantry/cli.py
+stellar_pantry/models.py
+stellar_pantry/report.py
+stellar_pantry/storage.py
+stellar_pantry/summary.py
+tests/test_cli.py
+tests/test_summary.py</pre>
+    </section>
+
+    <section>
+      <h2>Engineering Verdict</h2>
+      <p><strong>The Chorus plus Dream Engineer path is now healthy for sequential long-running task ledgers.</strong> The system can carry state across a dozen tasks, use project and working memory repeatedly, land code after each task, and verify the merged company repo.</p>
+      <p>The remaining caveat is evaluator noisiness: several runs returned a Dream sprint outcome of <code>needs-changes</code> while the explicit command verifier passed. Chorus correctly accepted the explicit DoD, but this is worth tracking as evaluation-quality debt rather than an execution-plane blocker.</p>
+    </section>
+  </main>
+</body>
+</html>

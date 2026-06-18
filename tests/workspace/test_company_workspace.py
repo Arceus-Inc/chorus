@@ -67,6 +67,22 @@ def test_merge_integrates_an_employee_branch_into_company_main(tmp_path: Path) -
     assert (repo / "feature.py").read_text(encoding="utf-8") == "print('shipped')\n"
 
 
+def test_merge_folds_agent_task_branch_back_into_employee_branch(tmp_path: Path) -> None:
+    ws = CompanyWorkspace(tmp_path / "acme")
+    repo = ws.ensure_repo()
+    ada = ws.worktree_for("ada")
+    _git(ada.path, "switch", "-c", "task-branch")
+    (ada.path / "feature.py").write_text("print('branched')\n", encoding="utf-8")
+
+    result = ws.merge("ada")
+
+    assert result.merged is True
+    assert result.conflicted is False
+    assert _git(ada.path, "rev-parse", "--abbrev-ref", "HEAD") == "chorus/ada"
+    assert (repo / "feature.py").read_text(encoding="utf-8") == "print('branched')\n"
+    _git(repo, "merge-base", "--is-ancestor", "task-branch", "chorus/ada")
+
+
 def _seed_git_repo(path: Path) -> Path:
     """A throwaway source git repo with one tracked file + a real commit."""
     path.mkdir(parents=True)
