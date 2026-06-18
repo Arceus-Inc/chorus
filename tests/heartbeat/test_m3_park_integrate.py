@@ -1,10 +1,11 @@
-"""M3 Slice 1 — the manager's two-phase lifecycle through the kernel (spec M3 §5, deterministic).
+"""M3 — the manager's two-phase lifecycle through the kernel (spec M3 §5, deterministic).
 
 A decompose beat is a *fifth* outcome: it neither passed, failed its DoD, errored, nor cancelled — it
 **succeeded by delegating**, so the parent is PARKED (``blocked``, waiting on its children), never
 stranded onto the recovery ladder. When the children finish, ``children_done`` re-invokes the manager
-and the kernel mechanically integrates (all children terminal ⇒ ``done``). No model: a fake beat runner
-stands in for the manager (decomposing via the live :class:`CapabilityService`) and the engineers.
+with an integrate context packet; the manager can accept the subtree or submit/assign one bounded
+follow-up. No model: a fake beat runner stands in for the manager (decomposing via the live
+:class:`CapabilityService`) and the engineers.
 """
 
 from __future__ import annotations
@@ -13,7 +14,7 @@ from datetime import UTC, datetime
 
 import pytest
 
-from chorus.heartbeat import Scheduler
+from chorus.heartbeat import IntegrateContextPacket, Scheduler
 from chorus.heartbeat._beat import BeatOutcome
 from chorus.ledger import SqliteLedger, Task, TaskStatus
 from chorus.lifecycle import CapabilityService, ChildPlan, assign_task
@@ -35,6 +36,8 @@ class _TeamBeat:
         self._ledger = ledger
         self._parent = parent
         self.ran: list[str] = []
+        self.integrate_packets: list[IntegrateContextPacket] = []
+        self.working_dir = None
 
     async def run_task(
         self, *, task_id: str, intent: str, verification: object = (),
@@ -49,20 +52,24 @@ class _TeamBeat:
                         ChildPlan(label="ui", intent="build the ui", assignee="bob", depends_on=("api",)),
                     ],
                 )
-            return BeatOutcome(passed=False, outcome={}, summary="delegated", model="m")
+                return BeatOutcome(passed=False, outcome={}, summary="delegated", model="m")
+            assert self.working_dir is not None
+            self.integrate_packets.append(IntegrateContextPacket.read(self.working_dir))
+            return BeatOutcome(passed=True, outcome={}, summary="accepted subtree", model="m")
         return BeatOutcome(passed=True, outcome={}, summary="ok", model="m")  # an engineer child
 
 
 def _team(ledger: SqliteLedger) -> None:
     ledger.employees.create(Employee(id="mgr", name="Moe", role="manager"))
-    ledger.employees.create(Employee(id="ada", name="Ada", role="engineer"))
-    ledger.employees.create(Employee(id="bob", name="Bob", role="engineer"))
+    ledger.employees.create(Employee(id="ada", name="Ada", role="engineer", reports_to="mgr"))
+    ledger.employees.create(Employee(id="bob", name="Bob", role="engineer", reports_to="mgr"))
 
 
 def _sched(ledger: SqliteLedger, beat: _TeamBeat, *, tmp_path: object = None) -> Scheduler:
     from pathlib import Path
 
     root = Path(str(tmp_path)) if tmp_path is not None else Path(".")
+    beat.working_dir = root
     return Scheduler(
         ledger=ledger, workforce=LedgerWorkforce(ledger.employees), beat_runner=beat,
         roles=RoleRegistry.from_plugins(default_roles()),
@@ -103,9 +110,9 @@ async def test_full_loop_decompose_then_children_then_integrate_to_done(
 
     assert ledger.tasks.get("M").status is TaskStatus.DONE  # type: ignore[union-attr]  # integrated
     assert ledger.tasks.all_children_terminal("M")  # the whole subtree landed
-    # the manager ran exactly ONE model beat (the decompose); the integrate is mechanical — the kernel
-    # lands the completed subtree without re-invoking the manager, so it can never re-decompose.
-    assert beat.ran.count("M") == 1
+    assert beat.ran.count("M") == 2  # decompose beat, then real integrate beat
+    assert len(beat.integrate_packets) == 1
+    assert {child.assignee for child in beat.integrate_packets[0].children} == {"ada", "bob"}
     # the ManagerLander recorded the subtree as the manager's primary deliverable
     subtree = next(
         a for a in ledger.artifacts.list_for_task("M")

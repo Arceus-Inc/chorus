@@ -78,8 +78,8 @@ class DecomposeTool(BaseTool):
             joined = ", ".join(result.unknown_assignees)
             return ToolResult(
                 content=(
-                    f"refused: not an employee: {joined}. No subtasks created — assign each child to "
-                    "one of your reports by their employee id, then call decompose again."
+                    f"refused: not a direct report: {joined}. No subtasks created — assign each "
+                    "child to one of your reports by their employee id, then call decompose again."
                 ),
                 is_error=True,
                 structured={"unknown_assignees": list(result.unknown_assignees)},

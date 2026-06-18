@@ -15,6 +15,7 @@ import pytest
 from chorus.ledger import SqliteLedger
 from chorus_cli import CliSession, Console, LoopSignal, dispatch
 from chorus_cli._commands import REGISTRY
+from chorus_cli._repl import _split_line
 
 pytestmark = pytest.mark.integration
 
@@ -58,6 +59,11 @@ def test_company_init_seeds_from_a_directory(tmp_path: Path, monkeypatch: pytest
 
     # the seeded code is committed on the company main, so employees branch off real code
     assert (tmp_path / ".chorus" / "work" / "acme" / "repo" / "calc.py").exists()
+
+
+def test_dispatch_preserves_windows_paths() -> None:
+    path = r"C:\Users\me\tmp\org"
+    assert _split_line(f"export {path}") == ["export", path]
 
 
 def test_company_init_falls_back_to_the_seed_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

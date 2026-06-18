@@ -37,8 +37,8 @@ def _ctx(working_dir: Path) -> object:
 
 def _seed(ledger: SqliteLedger) -> None:
     ledger.employees.create(Employee(id="mgr", name="Mgr", role="manager"))
-    ledger.employees.create(Employee(id="ada", name="Ada", role="engineer"))
-    ledger.employees.create(Employee(id="bob", name="Bob", role="engineer"))
+    ledger.employees.create(Employee(id="ada", name="Ada", role="engineer", reports_to="mgr"))
+    ledger.employees.create(Employee(id="bob", name="Bob", role="engineer", reports_to="mgr"))
     ledger.tasks.submit(Task(id="M", intent="ship it", status=TaskStatus.TODO, assignee_employee_id="mgr"))
     ledger.runs.create(Run(id=REV, employee_id="mgr", task_id="M", status=RunStatus.RUNNING))
 

@@ -76,6 +76,11 @@ class TaskRepo:
         row = self._conn.execute("SELECT * FROM task WHERE id = ?", (task_id,)).fetchone()
         return _row_to_task(row) if row is not None else None
 
+    def all(self) -> list[Task]:
+        """Every task, oldest first — for read-model rollups and inspection."""
+        rows = self._conn.execute("SELECT * FROM task ORDER BY created_at, id").fetchall()
+        return [_row_to_task(row) for row in rows]
+
     def checkout(self, task_id: str, *, employee_id: str, run_id: str) -> bool:
         """Atomically claim a task. Returns ``False`` (a 409) if a live owner already holds it."""
         now = utcnow_iso()

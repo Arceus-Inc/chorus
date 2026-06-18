@@ -30,7 +30,7 @@ def dispatch(
     fuzzy or prefix matching, so dispatch is unambiguous.
     """
     try:
-        tokens = shlex.split(line)
+        tokens = _split_line(line)
     except ValueError as exc:
         console.error(f"could not parse line: {exc}")
         return LoopSignal.CONTINUE
@@ -49,6 +49,21 @@ def dispatch(
     except Exception as exc:  # a failing command must never crash the console (cf. dream's repl)
         console.error(f"{type(exc).__name__}: {exc}")
         return LoopSignal.CONTINUE
+
+
+def _split_line(line: str) -> list[str]:
+    """Split a console line without treating Windows path separators as escapes."""
+    if sys.platform != "win32":
+        return shlex.split(line)
+    lexer = shlex.shlex(line, posix=False)
+    lexer.whitespace_split = True
+    return [_strip_outer_quotes(token) for token in lexer]
+
+
+def _strip_outer_quotes(token: str) -> str:
+    if len(token) >= 2 and token[0] == token[-1] and token[0] in {'"', "'"}:
+        return token[1:-1]
+    return token
 
 
 def run_repl(

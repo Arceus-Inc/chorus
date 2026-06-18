@@ -89,10 +89,67 @@ class WorkforceStatus:
     open_incidents: tuple[IncidentView, ...] = field(default_factory=tuple)
 
 
+@dataclass(frozen=True)
+class ScrumChildView:
+    """One child row in a manager observability packet."""
+
+    task_id: str
+    label: str
+    assignee: str | None
+    assignee_role: str | None
+    status: str
+    blockers: tuple[str, ...] = ()
+    dod_status: str | None = None
+    latest_run_status: str | None = None
+    latest_run_summary: str | None = None
+    artifact_type: str | None = None
+
+
+@dataclass(frozen=True)
+class ScrumPacketView:
+    """A manager-level packet rollup: child outcomes, routing churn, and dependency pressure."""
+
+    parent_task_id: str
+    parent_intent: str
+    manager_id: str | None
+    iteration: int
+    child_count: int
+    completed_children: int
+    blocked_children: int
+    dependency_edges: int
+    assignment_count: int
+    reassignments: int
+    completion_rate: float
+    children: tuple[ScrumChildView, ...] = ()
+
+
+@dataclass(frozen=True)
+class OrgObservabilityReport:
+    """Combined manager + leaf rollup for informed allocation decisions."""
+
+    employees: int
+    managers: int
+    leaves: int
+    tasks_total: int
+    tasks_done: int
+    tasks_blocked: int
+    running_beats: int
+    failed_runs: int
+    completion_rate: float
+    decomposition_count: int
+    assignment_count: int
+    reassignment_count: int
+    dependency_edges: int
+    manager_packets: tuple[ScrumPacketView, ...] = ()
+
+
 __all__ = [
     "EmployeeView",
     "IncidentView",
     "RunView",
+    "OrgObservabilityReport",
+    "ScrumChildView",
+    "ScrumPacketView",
     "TaskView",
     "WorkforceStatus",
 ]

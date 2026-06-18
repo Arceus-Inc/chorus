@@ -30,7 +30,7 @@ from chorus.heartbeat import BeatRunner
 from chorus.roles import RoleBeatConfig, RoleRegistry, role_beat_config
 from chorus.workforce import Employee
 from chorus.workspace import CompanyWorkspace, default_work_root
-from chorus_tools import DecomposeTool
+from chorus_tools import AssignTaskTool, DecomposeTool, SubmitTaskTool
 
 if TYPE_CHECKING:
     from chorus.ledger import SqliteLedger
@@ -43,9 +43,8 @@ _DREAM_ROLES: tuple[Literal["planner", "generator", "evaluator"], ...] = (
 )
 
 # chorus role tool names → dream built-in names. ``run_command`` is dream's ``bash``. chorus-only
-# capability tools (decompose / submit_task / assign_task / query_data) have no built-in: ``decompose``
-# is registered from ``chorus_tools`` (it needs the ledger — see ``_capability_tool``); the rest are
-# Slice 2 and still dropped.
+# capability tools (decompose / submit_task / assign_task / query_data) have no built-in: M3 tools are
+# registered from ``chorus_tools`` because they need the ledger — see ``_capability_tool``.
 _CHORUS_TO_DREAM_TOOL: dict[str, str] = {
     "read_file": "read_file",
     "write_file": "write_file",
@@ -90,6 +89,10 @@ def _capability_tool(name: str, ledger: SqliteLedger) -> BaseTool | None:
     """Build the chorus capability tool for ``name`` (ledger-bound), or ``None`` if it isn't one."""
     if name == "decompose":
         return DecomposeTool(ledger)
+    if name == "submit_task":
+        return SubmitTaskTool(ledger)
+    if name == "assign_task":
+        return AssignTaskTool(ledger)
     return None
 
 
@@ -98,8 +101,8 @@ _DELEGATING_TOOLS = frozenset({"decompose", "submit_task", "assign_task"})
 
 
 def _team_roster(ledger: SqliteLedger, *, exclude: str) -> str:
-    """The org's other employees (id + role) as a brief section, so a delegator names valid assignees."""
-    reports = [emp for emp in ledger.employees.list() if emp.id != exclude]
+    """The employee's direct reports (id + role), so a delegator names valid assignees."""
+    reports = [emp for emp in ledger.employees.list() if emp.reports_to == exclude]
     lines = [f"- {emp.id} ({emp.role})" for emp in reports]
     body = "\n".join(lines) if lines else "(no other employees are currently hired)"
     return (

@@ -3,10 +3,10 @@
 A Manager is a **ledger-writer**: its leverage is the capability tools that decompose and dispatch
 work. Each field below names the dream component it drives.
 
-M3 Slice 1 ships ``decompose`` (bulk fan-out): the
-:class:`~chorus_harness.EmployeeHarnessFactory` registers it as a model-callable chorus capability
-tool bound to the org ledger. ``submit_task`` (incremental add) and ``assign_task`` (route / reassign)
-follow in Slice 2.
+M3 Slice 1 ships ``decompose`` (bulk fan-out). Slice 2 adds bounded integrate actions:
+``submit_task`` for one follow-up and ``assign_task`` for one reroute. The
+:class:`~chorus_harness.EmployeeHarnessFactory` registers these as model-callable chorus capability
+tools bound to the org ledger.
 """
 
 from __future__ import annotations
@@ -21,8 +21,8 @@ def manager_manifest() -> RoleManifest:
         # — per-role overlay —
         system_prompt=MANAGER_BRIEF,  # → roles/{planner,generator,evaluator}.toml system_prompt
         permission_mode=PermissionMode.DEFAULT,
-        # — build_harness(registry=…) — the chorus decompose capability + a read surface (M3 Slice 1) —
-        tools=("read_file", "decompose"),
+        # — build_harness(registry=…) — manager capabilities + a read surface —
+        tools=("read_file", "decompose", "submit_task", "assign_task"),
         # — build_harness(memory=…) — a manager reasons across its team —
         memory_scope=MemoryScope.TEAM,
     )

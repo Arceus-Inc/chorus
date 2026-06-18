@@ -168,6 +168,11 @@ class DreamBeatRunner:
         self._employee_id = employee_id
         self._clock = clock or _utc_now
 
+    @property
+    def working_dir(self) -> Path | None:
+        """The harness working directory where per-beat context files are written, if configured."""
+        return self._working_dir
+
     async def run_task(
         self,
         *,

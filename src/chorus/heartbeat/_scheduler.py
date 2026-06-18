@@ -19,12 +19,14 @@ import asyncio
 import uuid
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import TYPE_CHECKING, TypeVar
 
 from chorus.adapters._failure import failure_outcome
 from chorus.cron._fire import fire_routine
 from chorus.governance import GovernanceResolver
 from chorus.heartbeat._beat import BeatDisposition, BeatOutcome
+from chorus.heartbeat._beat_context import IntegrateContextPacket
 from chorus.heartbeat._invokability import invokability_block
 from chorus.heartbeat._runner_for import single
 from chorus.heartbeat._wake import TickReport, Wake
@@ -436,27 +438,13 @@ class Scheduler:
             )
         )
 
-        # Mechanical integrate (M3 §5): a re-invocation whose delegated subtree is already complete is
-        # landed by the kernel — NOT a model beat. Running a manager beat here would re-plan and let the
-        # model call ``decompose`` again, ballooning the subtree and starving later work; the integrate
-        # is mechanical by definition ("all children terminal"). Slice 2 replaces this with a real,
-        # deliberately-scoped reacting integrate beat.
-        if ledger.tasks.has_children(task_id) and ledger.tasks.all_children_terminal(task_id):
-            verifier = ledger.dod.verifier_for_task(task_id)
-            ledger.runs.finish(run_id, RunStatus.SUCCEEDED, outcome=None)
-            await self._land_passed(
-                task_id, run_id=run_id, verifier=verifier, verdict=None,
-                employee=employee, result=BeatOutcome(passed=True, outcome={}, summary="integrated"),
-            )
-            ledger.tasks.release_locks(task_id, run_id=run_id)
-            ledger.wakes.mark_done(wake.id)
-            return
-
         observer = self._event_bus.emit if self._event_bus is not None else None
         verifier = None
         try:
             # Resolve the runner whose harness is materialized for *this* employee's role (spec 06 §2).
             beat_runner = beat_runner_for.runner_for(employee)
+            if ledger.tasks.has_children(task_id) and ledger.tasks.all_children_terminal(task_id):
+                self._write_integrate_packet(ledger, beat_runner=beat_runner, task_id=task_id)
             # Intake DoD (spec 04 §1 / 06 §2): a task with no explicit DoD inherits its assignee role's, so
             # a beat is always held to the role's gate — the engineer to its tests, etc. A DoD a human set
             # via ``dod set`` always wins (only filled when absent). Persisted so ``task <id>`` shows it.
@@ -537,6 +525,15 @@ class Scheduler:
             scope=self._memory_scope(employee), now=now,
         )
         await self._memory_writer.apply(delta.to_memory_delta())
+
+    def _write_integrate_packet(
+        self, ledger: SqliteLedger, *, beat_runner: BeatRunner, task_id: str
+    ) -> None:
+        """Write the manager's child-feedback packet when the runner has a working directory."""
+        working_dir = getattr(beat_runner, "working_dir", None)
+        if working_dir is None:
+            return
+        IntegrateContextPacket.build(ledger, parent_task_id=task_id).write(Path(working_dir))
 
     def _memory_scope(self, employee: Employee) -> str:
         """The employee's write scope — its role's ``memory_scope`` (``project`` when unknown)."""
