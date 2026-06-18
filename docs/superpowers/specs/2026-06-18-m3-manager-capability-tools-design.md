@@ -16,8 +16,12 @@ foundation M3 has been missing.
   check this cut; the reviewer-verified version is the next M3 slice.
 - **PM / Analyst** roles.
 - `submit_task` creating **standalone (non-child)** top-level work — only child creation is in scope.
-- **Path-A in-beat richness beyond fan-out** (e.g. the manager looking at a child result and creating
-  more *within the same beat*) — the non-blocking model does that across beats.
+- **In-beat richness that depends on a child's run *outcome*** (the manager waiting to see whether a
+  child *succeeded* before creating more, all in one beat). This requires **blocking delegation** — a
+  manager beat holding its lease while children run — which breaks the beat / concurrency / crash model
+  (B1.2/B1.3). Adaptive "see results → create more" happens **across beats**, in the `children_done`
+  re-invocation (Slice 2). *Structural* in-beat use (chaining real child IDs to wire deps) is
+  **allowed** — Path A enables it.
 
 ## 2. Background — why this is needed
 
@@ -38,7 +42,7 @@ fan-out→integrate loop on top of the existing substrate + the M2 dependency/co
 | Decision | Choice | Why |
 |---|---|---|
 | Tool execution model | **Path A — live mutation** | spike-confirmed: a custom `BaseTool.execute()` runs **in dream's loop, in-process**, and can mutate a captured Python object (a ledger handle) + return real IDs. Chorus-only, no dream change. |
-| Manager tools | **`decompose` + `submit_task` + `assign_task`** | `submit_task`/`assign_task` are the primitives; `decompose` is batch sugar over them (+ dependency wiring). |
+| Manager tools (by **responsibility**, not overlapping creators) | `decompose` = **bulk wave**; `submit_task` = **incremental add**; `assign_task` = **route/reassign** | distinct *moves*. `submit_task`/`assign_task` are only *exercised* once the manager reacts to child outcomes across beats — so they land in Slice 2, not Slice 1 (which needs only `decompose`). See §6.1. |
 | `submit_task` semantics | **creates a child** of the manager's current task | so `children_done` fires → the integrate loop works. |
 | Loop closure | **B1 — manager integrates in a re-invocation beat** | the manager does the second half of its job, not a kernel shortcut. |
 | Manager DoD (this cut) | **Mechanical** — "all children terminal" | closes the loop without the unbuilt reviewer. |
@@ -59,7 +63,7 @@ for the per-beat context file; (c) dream already threads a task context into `ct
 ```
  manager beat (dream run_task, in the manager's worktree)
    │  kernel wrote {worktree}/.harness/beat-context.json = {task_id, employee_id} before the beat
-   │  model calls submit_task("api", …) / decompose([...]) / assign_task(id, "eng-A")
+   │  model calls decompose([...]) live (Slice 1); submit_task / assign_task in the adaptive beat (Slice 2)
    ▼
  capability tool.execute()
    │  reads beat-context.json → parent_id, actor
@@ -83,8 +87,15 @@ delegating*, and the parent waits to be re-invoked.
 
 ## 6. Components (each: what · how · depends on)
 
-1. **`chorus_tools/` capability tools** (`_submit_task.py`, `_assign_task.py`, `_decompose.py`) — dream
-   `BaseTool`s. `execute()` reads the per-beat context, calls the capability service, returns IDs.
+1. **`chorus_tools/` capability tools** — dream `BaseTool`s; each `execute()` reads the per-beat
+   context, calls the capability service, returns real IDs. Three **distinct responsibilities** (not
+   overlapping creators), landing in two slices:
+   - **`decompose`** (`_decompose.py`) — **bulk wave**: create an N-child DAG + assign + wire deps in
+     one call. The only tool the single-fan-out first cut needs. **Slice 1.**
+   - **`submit_task`** (`_submit_task.py`) — **incremental add**: create *one* child (e.g. a fix the
+     manager spawns after reading a failed child). **Slice 2** (adaptive integrate).
+   - **`assign_task`** (`_assign_task.py`) — **route/reassign**: (re)assign an *existing* task to a
+     chosen report. **Slice 2.**
    *Depends on:* dream `BaseTool`, the capability service, the per-beat context file.
 2. **`CapabilityService`** (`chorus/lifecycle/_capability.py`) — a thin, dream-free seam wrapping the
    ledger's `decompose()` / `assign_task()` with the idempotency-by-label rule. The tools hold this, not
@@ -104,8 +115,8 @@ delegating*, and the parent waits to be re-invoked.
 7. **Team rehydration** (factory) — append the manager's reports (id + role, read from the workforce at
    materialize) to its brief overlay, so the model names valid assignees. *Depends on:* a read-only
    workforce handle in the factory.
-8. **Manifest update** (`chorus_employee/manager/_harness.py`) — tools become
-   `("read_file", "decompose", "submit_task", "assign_task")`; the dropped-tools note is removed.
+8. **Manifest update** (`chorus_employee/manager/_harness.py`) — Slice 1: tools = `("read_file",
+   "decompose")`; Slice 2 adds `"submit_task", "assign_task"`. The dropped-tools note is removed.
 
 ## 7. Idempotency & validation
 
@@ -141,15 +152,24 @@ delegating*, and the parent waits to be re-invoked.
 
 ## 10. Build order (slices for writing-plans)
 
+**Slice 1 — fan-out + mechanical integrate (`decompose` only).** The walking skeleton of the loop.
 1. `CapabilityService` + idempotency (TDD, dream-free).
-2. The three `chorus_tools` `BaseTool`s over the service (TDD).
-3. Per-beat context file + factory registration of capability tools (TDD; small spike test that a
-   materialized manager harness actually carries `decompose`).
-4. Kernel park/integrate + the "delegated" disposition + Mechanical DoD (TDD).
-5. `ManagerLander` + `default_landers` registration; manifest tool update; team rehydration (TDD).
-6. The keyed acceptance e2e + report.
+2. The **`decompose`** `BaseTool` over the service (TDD).
+3. Per-beat context file + factory registration of capability tools (TDD; assert a materialized manager
+   harness actually carries `decompose`).
+4. Kernel park/integrate + the "delegated" disposition + **Mechanical** DoD (TDD).
+5. `ManagerLander` + `default_landers`; manifest tools = `("read_file", "decompose")`; team rehydration.
+6. Keyed acceptance e2e + report — manager + 2 engineers, single fan-out → both done → integrate → done.
 
-Slices 1–2 and 4 are independent; 3 depends on 1–2; 5 depends on 4; 6 is last.
+*Within Slice 1: steps 1–2 and 4 are independent; 3 depends on 1–2; 5 depends on 4; 6 is last.*
+
+**Slice 2 — adaptive integrate (`submit_task` + `assign_task` go live, and get used).**
+7. `submit_task` + `assign_task` `BaseTool`s + their service methods (TDD); add both to the manager manifest.
+8. The integrate beat becomes a *real* manager beat that **reacts to child outcomes** — a failed child →
+   `submit_task` a fix → `assign_task` it; an overloaded report → `assign_task` a reassignment; grown
+   scope → `decompose` a new wave. The Mechanical DoD gives way to "the manager decided it's integrated."
+   Keyed e2e of the adaptive path. *(This is also where the Reviewer/AgentReview verdict path can replace
+   the mechanical gate — see §1 non-goals.)*
 
 ## 11. Risks & open questions
 
