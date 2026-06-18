@@ -1,12 +1,12 @@
 """The Manager's dream-harness manifest — every ``build_harness`` component, in one place.
 
 A Manager is a **ledger-writer**: its leverage is the capability tools that decompose and dispatch
-work (``submit_task`` / ``assign_task``). Each field below names the dream component it drives.
+work. Each field below names the dream component it drives.
 
-NOTE (M3): the capability tools declared here are not yet registered into the dream harness — the
-:class:`~chorus_harness.EmployeeHarnessFactory` only maps dream built-ins today, so a manager beat
-currently receives only ``read_file``. Wiring chorus capability tools into the harness is the M3
-foundation; this manifest declares the *intended* toolset.
+M3 Slice 1 ships ``decompose`` (bulk fan-out): the
+:class:`~chorus_harness.EmployeeHarnessFactory` registers it as a model-callable chorus capability
+tool bound to the org ledger. ``submit_task`` (incremental add) and ``assign_task`` (route / reassign)
+follow in Slice 2.
 """
 
 from __future__ import annotations
@@ -21,8 +21,8 @@ def manager_manifest() -> RoleManifest:
         # — per-role overlay —
         system_prompt=MANAGER_BRIEF,  # → roles/{planner,generator,evaluator}.toml system_prompt
         permission_mode=PermissionMode.DEFAULT,
-        # — build_harness(registry=…) — ledger-write capability tools (harness registration is M3) —
-        tools=("read_file", "submit_task", "assign_task"),
+        # — build_harness(registry=…) — the chorus decompose capability + a read surface (M3 Slice 1) —
+        tools=("read_file", "decompose"),
         # — build_harness(memory=…) — a manager reasons across its team —
         memory_scope=MemoryScope.TEAM,
     )

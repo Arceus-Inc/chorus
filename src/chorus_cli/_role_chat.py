@@ -61,6 +61,7 @@ def build_role_chat_service(
         seed=seed,
         work_root=work_root,
         timeout_s=timeout_s,
+        ledger=ledger,  # capability tools (e.g. the manager's decompose) mutate the live ledger
     )
     materialized = factory.materialize(employee)  # role-faithful harness in the employee's worktree
     scheduler = Scheduler(

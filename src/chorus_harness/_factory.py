@@ -17,10 +17,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 import dream
 from dream.roles import default_role_manifest
+from dream.tools._base import BaseTool
 from dream.tools._registry import ToolRegistry, ToolSource
 from dream.tools.builtin import default_registry
 
@@ -29,6 +30,10 @@ from chorus.heartbeat import BeatRunner
 from chorus.roles import RoleBeatConfig, RoleRegistry, role_beat_config
 from chorus.workforce import Employee
 from chorus.workspace import CompanyWorkspace, default_work_root
+from chorus_tools import DecomposeTool
+
+if TYPE_CHECKING:
+    from chorus.ledger import SqliteLedger
 
 # dream runs these three intra-task roles per task; the employee's identity is overlaid onto each.
 _DREAM_ROLES: tuple[Literal["planner", "generator", "evaluator"], ...] = (
@@ -37,8 +42,10 @@ _DREAM_ROLES: tuple[Literal["planner", "generator", "evaluator"], ...] = (
     "evaluator",
 )
 
-# chorus role tool names → dream built-in names. ``run_command`` is dream's ``bash``; chorus-only
-# capability tools (submit_task / assign_task / query_data) have no built-in and are dropped.
+# chorus role tool names → dream built-in names. ``run_command`` is dream's ``bash``. chorus-only
+# capability tools (decompose / submit_task / assign_task / query_data) have no built-in: ``decompose``
+# is registered from ``chorus_tools`` (it needs the ledger — see ``_capability_tool``); the rest are
+# Slice 2 and still dropped.
 _CHORUS_TO_DREAM_TOOL: dict[str, str] = {
     "read_file": "read_file",
     "write_file": "write_file",
@@ -77,6 +84,13 @@ def _role_registry(dream_names: tuple[str, ...]) -> ToolRegistry:
         if tool is not None:
             registry.register(tool, source=ToolSource.DEFAULT)
     return registry
+
+
+def _capability_tool(name: str, ledger: SqliteLedger) -> BaseTool | None:
+    """Build the chorus capability tool for ``name`` (ledger-bound), or ``None`` if it isn't one."""
+    if name == "decompose":
+        return DecomposeTool(ledger)
+    return None
 
 
 def _toml_escape(value: str) -> str:
@@ -167,6 +181,7 @@ class EmployeeHarnessFactory:
         seed: str | Path | None = None,
         work_root: Path | None = None,
         timeout_s: float | None = 90.0,
+        ledger: SqliteLedger | None = None,
     ) -> None:
         self._api_key = api_key
         self._base_url = base_url
@@ -175,6 +190,9 @@ class EmployeeHarnessFactory:
         self._pricing = pricing
         self._seed = seed
         self._timeout_s = timeout_s
+        # Capability tools (e.g. the manager's ``decompose``) mutate this ledger live during a beat.
+        # Absent it, a role asking for one simply gets it dropped (fails closed, never crashes).
+        self._ledger = ledger
         # The org's workspace root: .chorus/work/{org}/ — shared by chat, tick, and the `company`
         # console command (one identity), via the single dream-free `default_work_root` convention.
         base = work_root if work_root is not None else default_work_root()
@@ -208,6 +226,13 @@ class EmployeeHarnessFactory:
         write_role_overlays(root, config)  # the employee's identity overlays the whole harness
         write_sandbox_config(root, config.sandbox)  # the role's trust posture → .harness/sandbox.toml
 
+        registry = _role_registry(dream_tool_names(config.tools))
+        if self._ledger is not None:  # bind the role's chorus capability tools to the live ledger
+            for name in config.tools:
+                capability = _capability_tool(name, self._ledger)
+                if capability is not None:
+                    registry.register(capability, source=ToolSource.DEFAULT)
+
         # Every build_harness knob comes from the role config — this is where the employee *becomes*
         # its harness. config.model overrides the deployment when set; an empty role env means None.
         harness = dream.build_harness(
@@ -215,7 +240,7 @@ class EmployeeHarnessFactory:
             api_key=self._api_key,
             base_url=self._base_url,
             working_dir=root,
-            registry=_role_registry(dream_tool_names(config.tools)),
+            registry=registry,
             skills=bool(config.skills),
             memory=True,
             working_memory=config.working_memory,
@@ -231,6 +256,7 @@ class EmployeeHarnessFactory:
                 pricing=self._pricing,
                 timeout_s=self._timeout_s,
                 working_dir=root,
+                employee_id=employee.id,  # stamped into each beat's context for capability tools
             ),
             workspace=workspace,
             working_dir=root,

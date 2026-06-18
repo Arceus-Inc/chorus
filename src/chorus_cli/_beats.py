@@ -155,6 +155,7 @@ def build_beat_service(
         seed=seed,
         work_root=work_root,
         timeout_s=_env_float("CHORUS_DREAM_TIMEOUT_S", 90.0),
+        ledger=ledger,  # capability tools (e.g. the manager's decompose) mutate the live ledger
     )
     scheduler = Scheduler(
         ledger=ledger,

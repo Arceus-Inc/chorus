@@ -366,6 +366,7 @@ class Scheduler:
         self,
         beat_runner: BeatRunner,
         *,
+        run_id: str,
         task_id: str,
         intent: str,
         verification: tuple[VerificationStep, ...],
@@ -381,7 +382,11 @@ class Scheduler:
         attempt = 0
         while True:
             result = await beat_runner.run_task(
-                task_id=task_id, intent=intent, verification=verification, observer=observer
+                run_id=run_id,
+                task_id=task_id,
+                intent=intent,
+                verification=verification,
+                observer=observer,
             )
             transient = result.disposition is BeatDisposition.ERRORED and result.retryable
             if not transient or attempt >= self.transient_retries:
@@ -441,7 +446,12 @@ class Scheduler:
             verifier = ledger.dod.verifier_for_task(task_id)
             verification = verifier.verification_steps() if verifier is not None else ()
             result = await self._run_beat_with_retry(
-                beat_runner, task_id=task_id, intent=task.intent, verification=verification, observer=observer
+                beat_runner,
+                run_id=run_id,
+                task_id=task_id,
+                intent=task.intent,
+                verification=verification,
+                observer=observer,
             )
         except Exception as exc:
             result = failure_outcome(exc)

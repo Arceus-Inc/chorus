@@ -33,7 +33,7 @@ class _Beat:
         self._cost = cost_cents
 
     async def run_task(
-        self, *, task_id: str, intent: str, verification: object = (), observer: object = None
+        self, *, task_id: str, intent: str, verification: object = (), observer: object = None, run_id: str | None = None
     ) -> BeatOutcome:
         self.ran.append(task_id)
         return BeatOutcome(passed=True, outcome={}, summary="ok", cost_cents=self._cost, model="m")

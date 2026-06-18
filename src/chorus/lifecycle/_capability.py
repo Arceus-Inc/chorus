@@ -15,17 +15,20 @@ from __future__ import annotations
 import hashlib
 from collections.abc import Sequence
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
-from chorus.ledger import (
+from chorus.ledger._models import (
     Artifact,
     ArtifactRevision,
     ArtifactType,
-    SqliteLedger,
     Task,
     TaskStatus,
 )
 from chorus.lifecycle._coordination import assign_task
 from chorus.lifecycle._decompose import ChildSpec, DepthCapped, decompose
+
+if TYPE_CHECKING:
+    from chorus.ledger import SqliteLedger
 
 
 @dataclass(frozen=True)

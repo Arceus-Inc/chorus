@@ -141,6 +141,7 @@ class _FakeChatBeat:
         intent: str,
         verification: object = (),
         observer: Callable[[Event], None] | None = None,
+        run_id: str | None = None,
     ) -> BeatOutcome:
         self.calls.append(intent)
         if observer is not None:
@@ -224,6 +225,7 @@ class _ErroredChatBeat:
         intent: str,
         verification: object = (),
         observer: Callable[[Event], None] | None = None,
+        run_id: str | None = None,
     ) -> BeatOutcome:
         return BeatOutcome(
             passed=False,

@@ -24,7 +24,7 @@ from chorus.adapters._failure import failure_outcome
 from chorus.adapters._observer import DreamObserverBridge
 from chorus.adapters._pricing import TokenPricing, UsageView
 from chorus.events import Event
-from chorus.heartbeat import BeatOutcome
+from chorus.heartbeat import BeatContext, BeatOutcome
 from chorus.outcomes import VerificationStep
 
 
@@ -157,6 +157,7 @@ class DreamBeatRunner:
         max_sprints: int | None = 1,
         timeout_s: float | None = 90.0,
         working_dir: str | Path | None = None,
+        employee_id: str | None = None,
         clock: Callable[[], datetime] | None = None,
     ) -> None:
         self._harness = harness
@@ -164,6 +165,7 @@ class DreamBeatRunner:
         self._max_sprints = max_sprints
         self._timeout_s = timeout_s
         self._working_dir = Path(working_dir) if working_dir is not None else None
+        self._employee_id = employee_id
         self._clock = clock or _utc_now
 
     async def run_task(
@@ -173,7 +175,14 @@ class DreamBeatRunner:
         intent: str,
         verification: tuple[VerificationStep, ...] = (),
         observer: Callable[[Event], None] | None = None,
+        run_id: str | None = None,
     ) -> BeatOutcome:
+        # Drop the per-beat context the worktree's capability tools read (which task/run they act for).
+        # Written before the harness runs so a tool firing mid-beat finds it (spec 06 §4, M3).
+        if self._working_dir is not None and run_id is not None and self._employee_id is not None:
+            BeatContext(task_id=task_id, run_id=run_id, employee_id=self._employee_id).write(
+                self._working_dir
+            )
         # Bridge the chorus observer into dream so the run's structured events reach the event log
         # (spec 05 §4); without one, dream runs silent (no bridge allocated).
         bridge = (

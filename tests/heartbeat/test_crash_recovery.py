@@ -32,7 +32,7 @@ class _RecoveryBeat:
         self.calls = 0
 
     async def run_task(
-        self, *, task_id: str, intent: str, verification: object = (), observer: object = None
+        self, *, task_id: str, intent: str, verification: object = (), observer: object = None, run_id: str | None = None
     ) -> BeatOutcome:
         self.calls += 1
         return BeatOutcome(passed=True, outcome={}, summary="recovered")
