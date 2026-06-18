@@ -462,6 +462,19 @@ class Scheduler:
             # to its pre-beat (dispatchable) state — no DoD verdict, no recovery card (spec 05 §5/§6).
             ledger.runs.finish(run_id, RunStatus.CANCELLED, outcome=verdict)
             ledger.tasks.set_status(task_id, TaskStatus.TODO)
+        elif ledger.tasks.has_children(task_id):
+            # The task delegated: its lifecycle is its subtree's, not its own dream verdict (spec M3 §5).
+            # This is the fifth beat outcome — the manager "succeeded by delegating".
+            ledger.runs.finish(run_id, RunStatus.SUCCEEDED, outcome=verdict)
+            if ledger.tasks.all_children_terminal(task_id):
+                # INTEGRATE — Mechanical DoD: the whole subtree is terminal, so the parent is complete.
+                await self._land_passed(
+                    task_id, run_id=run_id, verifier=verifier, verdict=verdict,
+                    employee=employee, result=result,
+                )
+            else:
+                # PARK (delegated) — wait for the children; not done, not failed, no recovery ladder.
+                ledger.tasks.set_status(task_id, TaskStatus.BLOCKED)
         elif result.disposition is BeatDisposition.ERRORED:
             # Engine/tool fault: the run failed and the task is stranded onto the recovery ladder with
             # the phase on the evidence, owner preserved — never collapsed into a DoD failure (§5).
