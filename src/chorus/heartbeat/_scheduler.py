@@ -229,6 +229,11 @@ class Scheduler:
             if wake.employee_id in busy or "task_id" not in wake.payload:
                 ledger.wakes.release(wake.id)
                 continue
+            # Dependency gate (spec 02 §2): a task with unresolved blockers is withheld. Consume this
+            # wake — the blocker's completion fires a fresh ``deps_resolved`` wake that re-dispatches it.
+            if ledger.dependencies.unresolved_blockers(str(wake.payload["task_id"])):
+                ledger.wakes.mark_done(wake.id)
+                continue
             # Gate 0 (spec 06 §3): a dead, orphaned, or paused identity never starts a beat. A
             # terminal verdict cancels the wake and its task; a paused one releases it to wait.
             if self._workforce is not None:
