@@ -74,10 +74,12 @@ class BeatRunner(Protocol):
         intent: str,
         verification: tuple[VerificationStep, ...] = (),
         observer: Callable[[Event], None] | None = None,
+        run_id: str | None = None,
     ) -> BeatOutcome:
         """Run the task end-to-end, enforcing ``verification`` (the DoD's objective checks).
 
-        ``observer`` witnesses dream's structured run events.
+        ``observer`` witnesses dream's structured run events. ``run_id`` is the chorus run this beat
+        executes — threaded so a role's in-beat capability tools learn which run they act under.
         """
         ...
 

@@ -154,6 +154,20 @@ class TaskRepo:
         self._conn.commit()
         return cursor.rowcount == 1
 
+    def has_children(self, parent_id: str) -> bool:
+        """True iff ``parent_id`` has at least one child task (it delegated — spec M3 §5)."""
+        row = self._conn.execute(
+            "SELECT 1 FROM task WHERE parent_id = ? LIMIT 1", (parent_id,)
+        ).fetchone()
+        return row is not None
+
+    def children(self, parent_id: str) -> list[Task]:
+        """Every direct child of ``parent_id``, oldest first (the manager's delegated subtree)."""
+        rows = self._conn.execute(
+            "SELECT * FROM task WHERE parent_id = ? ORDER BY created_at, id", (parent_id,)
+        ).fetchall()
+        return [_row_to_task(row) for row in rows]
+
     def all_children_terminal(self, parent_id: str) -> bool:
         """True iff ``parent_id`` has children and every child is terminal (``done``/``cancelled``).
 

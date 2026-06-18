@@ -192,6 +192,36 @@ async def test_run_task_passes_working_dir_as_harness_dir(tmp_path: Path) -> Non
 
     await DreamBeatRunner(harness, working_dir=tmp_path).run_task(task_id="t1", intent="x")
 
+
+async def test_dream_gets_a_per_beat_task_id_from_the_run_id(tmp_path: Path) -> None:
+    # dream's planner refuses to re-plan a task_id it already planned (PlannerAlreadyRan). Each beat is
+    # its own run, so dream must see the run_id as its task identity — a self-repair re-dispatch (new
+    # run_id) is then an independent planning pass, not a stranded PlannerAlreadyRan error.
+    harness = _FakeHarness(result=_result("done"))
+    await DreamBeatRunner(harness, working_dir=tmp_path, employee_id="e").run_task(
+        task_id="task_M", intent="x", run_id="run_42"
+    )
+    assert harness.calls == ["run_42"]  # dream saw the per-beat run id, not the chorus task id
+
+
+async def test_without_a_run_id_dream_falls_back_to_the_task_id(tmp_path: Path) -> None:
+    harness = _FakeHarness(result=_result("done"))
+    await DreamBeatRunner(harness, working_dir=tmp_path).run_task(task_id="task_M", intent="x")
+    assert harness.calls == ["task_M"]  # no run_id (e.g. a test/chat path) → the chorus task id
+
+
+async def test_run_task_writes_the_beat_context_for_capability_tools(tmp_path: Path) -> None:
+    # A capability tool (e.g. the manager's decompose) reads which task/run it acts for from the
+    # per-beat context the runner drops into the worktree before invoking dream.
+    from chorus.heartbeat import BeatContext
+
+    harness = _FakeHarness(result=_result("done"))
+    await DreamBeatRunner(harness, working_dir=tmp_path, employee_id="mgr").run_task(
+        task_id="M", intent="x", run_id="run1"
+    )
+
+    assert BeatContext.read(tmp_path) == BeatContext(task_id="M", run_id="run1", employee_id="mgr")
+
     assert harness.harness_dir == tmp_path / ".harness"
 
 

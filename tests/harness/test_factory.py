@@ -12,6 +12,7 @@ from typing import Any
 import pytest
 
 from chorus.heartbeat import BeatRunner
+from chorus.ledger import SqliteLedger
 from chorus.roles import RoleRegistry, default_roles
 from chorus.workforce import Employee
 from chorus_harness import _factory as _factory_mod
@@ -92,6 +93,71 @@ def test_reviewer_materializes_a_read_only_harness(
     sandbox = (mat.working_dir / ".harness" / "sandbox.toml").read_text(encoding="utf-8")
     assert 'tier = "read-only"' in sandbox
     assert "confirm_unrestricted" not in sandbox
+
+
+def test_manager_harness_registers_the_decompose_capability_tool(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The manager's leverage is the chorus `decompose` capability — a chorus-only tool with no dream
+    # built-in. It is registered into the harness only when the factory has a ledger to bind it to.
+    ledger = SqliteLedger.open(":memory:")
+    try:
+        captured: dict[str, Any] = {}
+        monkeypatch.setattr(
+            _factory_mod.dream, "build_harness", lambda **kw: captured.update(kw) or object()
+        )
+        factory = _factory_mod.EmployeeHarnessFactory(
+            api_key="k",
+            base_url="https://x/openai/v1",
+            deployment="gpt-x",
+            company_id="acme",
+            roles=RoleRegistry.from_plugins(default_roles()),
+            work_root=tmp_path,
+            ledger=ledger,
+        )
+        factory.materialize(Employee(id="moe", name="Moe", role="manager"))
+        names = {t.name for t in captured["registry"].list_tools()}
+        assert names == {"read_file", "decompose"}  # built-in read + the chorus capability
+    finally:
+        ledger.close()
+
+
+def test_manager_brief_is_rehydrated_with_its_team(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # A delegating role needs to name valid assignees: the factory appends the live workforce roster to
+    # the manager's brief (which the overlays write onto every dream role).
+    ledger = SqliteLedger.open(":memory:")
+    try:
+        from chorus.workforce import Employee as _Emp
+
+        ledger.employees.create(_Emp(id="moe", name="Moe", role="manager"))
+        ledger.employees.create(_Emp(id="ada", name="Ada", role="engineer"))
+        ledger.employees.create(_Emp(id="bob", name="Bob", role="engineer"))
+        captured: dict[str, Any] = {}
+        monkeypatch.setattr(
+            _factory_mod.dream, "build_harness", lambda **kw: captured.update(kw) or object()
+        )
+        factory = _factory_mod.EmployeeHarnessFactory(
+            api_key="k", base_url="https://x/openai/v1", deployment="gpt-x", company_id="acme",
+            roles=RoleRegistry.from_plugins(default_roles()), work_root=tmp_path, ledger=ledger,
+        )
+        mat = factory.materialize(ledger.employees.get("moe"))  # type: ignore[arg-type]
+        generator = (mat.working_dir / ".harness" / "roles" / "generator.toml").read_text("utf-8")
+        assert "ada (engineer)" in generator and "bob (engineer)" in generator
+        assert "moe" not in generator.split("Your reports")[1]  # the manager isn't its own report
+    finally:
+        ledger.close()
+
+
+def test_manager_without_a_ledger_has_no_capability_tools(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # No ledger → the capability tool can't be bound, so it is simply absent (fails closed, no crash).
+    factory, captured = _factory(monkeypatch, tmp_path)
+    factory.materialize(Employee(id="moe", name="Moe", role="manager"))
+    names = {t.name for t in captured["registry"].list_tools()}
+    assert names == {"read_file"}
 
 
 def test_runner_for_is_a_beat_runner(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

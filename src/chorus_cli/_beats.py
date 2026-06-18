@@ -155,6 +155,7 @@ def build_beat_service(
         seed=seed,
         work_root=work_root,
         timeout_s=_env_float("CHORUS_DREAM_TIMEOUT_S", 90.0),
+        ledger=ledger,  # capability tools (e.g. the manager's decompose) mutate the live ledger
     )
     scheduler = Scheduler(
         ledger=ledger,
@@ -162,7 +163,7 @@ def build_beat_service(
         beat_runner_for=factory,  # resolve a role-faithful runner per dispatched employee
         budget_enforcer=BudgetEnforcer(ledger, company_id=company_id),
         roles=registry,  # tasks inherit the assignee role's DoD at intake (spec 04 §1)
-        landers=default_landers(factory.company_root),  # a passed beat lands its role artifact (§2)
+        landers=default_landers(factory.company_root, ledger=ledger),  # a passed beat lands its role artifact (§2)
         memory_writer=AppendOnlyMemoryWriter(factory.company_root / "memory"),  # one episodic delta/beat (§7)
         event_bus=EventBus(log_path=factory.company_root / "events.jsonl"),
         max_concurrent_runs=max_concurrent_runs,

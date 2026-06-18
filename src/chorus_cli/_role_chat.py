@@ -61,6 +61,7 @@ def build_role_chat_service(
         seed=seed,
         work_root=work_root,
         timeout_s=timeout_s,
+        ledger=ledger,  # capability tools (e.g. the manager's decompose) mutate the live ledger
     )
     materialized = factory.materialize(employee)  # role-faithful harness in the employee's worktree
     scheduler = Scheduler(
@@ -70,7 +71,7 @@ def build_role_chat_service(
         budget_enforcer=BudgetEnforcer(ledger, company_id=company_id),
         event_bus=FanoutBus(render_bus, EventBus(log_path=factory.company_root / "events.jsonl")),
         roles=registry,  # a chat task inherits the employee role's DoD at intake (spec 04 §1)
-        landers=default_landers(factory.company_root),  # a passed beat lands its role artifact (§2)
+        landers=default_landers(factory.company_root, ledger=ledger),  # a passed beat lands its role artifact (§2)
         memory_writer=AppendOnlyMemoryWriter(factory.company_root / "memory"),  # one episodic delta/beat (§7)
         max_concurrent_runs=1,
     )

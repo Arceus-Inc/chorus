@@ -44,7 +44,7 @@ class _Beat:
         self._disposition = disposition
 
     async def run_task(
-        self, *, task_id: str, intent: str, verification: object = (), observer: object = None
+        self, *, task_id: str, intent: str, verification: object = (), observer: object = None, run_id: str | None = None
     ) -> BeatOutcome:
         passed = self._disposition is BeatDisposition.PASSED
         return BeatOutcome(

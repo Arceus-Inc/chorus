@@ -24,7 +24,7 @@ from typing import TYPE_CHECKING, TypeVar
 from chorus.adapters._failure import failure_outcome
 from chorus.cron._fire import fire_routine
 from chorus.governance import GovernanceResolver
-from chorus.heartbeat._beat import BeatDisposition
+from chorus.heartbeat._beat import BeatDisposition, BeatOutcome
 from chorus.heartbeat._invokability import invokability_block
 from chorus.heartbeat._runner_for import single
 from chorus.heartbeat._wake import TickReport, Wake
@@ -45,7 +45,7 @@ from chorus.ledger._models import (
     TaskStatus,
     WakeReason,
 )
-from chorus.lifecycle import record_activity
+from chorus.lifecycle import TERMINAL, record_activity
 from chorus.memory import SprintDelta
 from chorus.outcomes import DoDKind, Verifier
 from chorus.recovery import reconcile
@@ -55,7 +55,7 @@ if TYPE_CHECKING:
 
     from chorus.budgets import BudgetEnforcer
     from chorus.events import Event
-    from chorus.heartbeat._beat import BeatOutcome, BeatRunner
+    from chorus.heartbeat._beat import BeatRunner
     from chorus.heartbeat._runner_for import BeatRunnerFor
     from chorus.ledger import SqliteLedger, Task
     from chorus.observability import EventSink
@@ -234,6 +234,15 @@ class Scheduler:
             if ledger.dependencies.unresolved_blockers(str(wake.payload["task_id"])):
                 ledger.wakes.mark_done(wake.id)
                 continue
+            # Stale-wake drain (spec 03 §5): a wake whose task is already terminal is discarded, not
+            # re-queued. A manager fans out several deps_resolved/children_done wakes per task; once one
+            # drives the integrate, the rest point at a now-``done`` task — left queued they fail the
+            # checkout CAS every tick and clog the employee's one-beat-per-pulse slot, starving its
+            # other work. Draining them keeps the dispatch slot live.
+            stale = ledger.tasks.get(str(wake.payload["task_id"]))
+            if stale is None or stale.status in TERMINAL:
+                ledger.wakes.mark_done(wake.id)
+                continue
             # Gate 0 (spec 06 §3): a dead, orphaned, or paused identity never starts a beat. A
             # terminal verdict cancels the wake and its task; a paused one releases it to wait.
             if self._workforce is not None:
@@ -366,6 +375,7 @@ class Scheduler:
         self,
         beat_runner: BeatRunner,
         *,
+        run_id: str,
         task_id: str,
         intent: str,
         verification: tuple[VerificationStep, ...],
@@ -381,7 +391,11 @@ class Scheduler:
         attempt = 0
         while True:
             result = await beat_runner.run_task(
-                task_id=task_id, intent=intent, verification=verification, observer=observer
+                run_id=run_id,
+                task_id=task_id,
+                intent=intent,
+                verification=verification,
+                observer=observer,
             )
             transient = result.disposition is BeatDisposition.ERRORED and result.retryable
             if not transient or attempt >= self.transient_retries:
@@ -422,6 +436,22 @@ class Scheduler:
             )
         )
 
+        # Mechanical integrate (M3 §5): a re-invocation whose delegated subtree is already complete is
+        # landed by the kernel — NOT a model beat. Running a manager beat here would re-plan and let the
+        # model call ``decompose`` again, ballooning the subtree and starving later work; the integrate
+        # is mechanical by definition ("all children terminal"). Slice 2 replaces this with a real,
+        # deliberately-scoped reacting integrate beat.
+        if ledger.tasks.has_children(task_id) and ledger.tasks.all_children_terminal(task_id):
+            verifier = ledger.dod.verifier_for_task(task_id)
+            ledger.runs.finish(run_id, RunStatus.SUCCEEDED, outcome=None)
+            await self._land_passed(
+                task_id, run_id=run_id, verifier=verifier, verdict=None,
+                employee=employee, result=BeatOutcome(passed=True, outcome={}, summary="integrated"),
+            )
+            ledger.tasks.release_locks(task_id, run_id=run_id)
+            ledger.wakes.mark_done(wake.id)
+            return
+
         observer = self._event_bus.emit if self._event_bus is not None else None
         verifier = None
         try:
@@ -441,7 +471,12 @@ class Scheduler:
             verifier = ledger.dod.verifier_for_task(task_id)
             verification = verifier.verification_steps() if verifier is not None else ()
             result = await self._run_beat_with_retry(
-                beat_runner, task_id=task_id, intent=task.intent, verification=verification, observer=observer
+                beat_runner,
+                run_id=run_id,
+                task_id=task_id,
+                intent=task.intent,
+                verification=verification,
+                observer=observer,
             )
         except Exception as exc:
             result = failure_outcome(exc)
@@ -452,6 +487,19 @@ class Scheduler:
             # to its pre-beat (dispatchable) state — no DoD verdict, no recovery card (spec 05 §5/§6).
             ledger.runs.finish(run_id, RunStatus.CANCELLED, outcome=verdict)
             ledger.tasks.set_status(task_id, TaskStatus.TODO)
+        elif ledger.tasks.has_children(task_id):
+            # The task delegated: its lifecycle is its subtree's, not its own dream verdict (spec M3 §5).
+            # This is the fifth beat outcome — the manager "succeeded by delegating".
+            ledger.runs.finish(run_id, RunStatus.SUCCEEDED, outcome=verdict)
+            if ledger.tasks.all_children_terminal(task_id):
+                # INTEGRATE — Mechanical DoD: the whole subtree is terminal, so the parent is complete.
+                await self._land_passed(
+                    task_id, run_id=run_id, verifier=verifier, verdict=verdict,
+                    employee=employee, result=result,
+                )
+            else:
+                # PARK (delegated) — wait for the children; not done, not failed, no recovery ladder.
+                ledger.tasks.set_status(task_id, TaskStatus.BLOCKED)
         elif result.disposition is BeatDisposition.ERRORED:
             # Engine/tool fault: the run failed and the task is stranded onto the recovery ladder with
             # the phase on the evidence, owner preserved — never collapsed into a DoD failure (§5).

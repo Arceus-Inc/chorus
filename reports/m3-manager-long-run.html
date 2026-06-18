@@ -1,0 +1,73 @@
+<!doctype html><meta charset=utf-8><title>Manager Long-Run Experiment Report</title>
+<style>:root{--bg:#f5f7fb;--panel:#fff;--ink:#17202a;--muted:#5f6b7a;--ok:#0a7a34;--bad:#b42318;--line:#d7deea;--accent:#0b5cab}body{margin:0;background:radial-gradient(circle at top right,#dbeafe 0,var(--bg) 45%);color:var(--ink);font-family:Segoe UI,Tahoma,Arial,sans-serif;line-height:1.45}main{max-width:1000px;margin:24px auto;padding:0 16px 40px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px 20px;margin-bottom:16px;box-shadow:0 8px 24px rgba(24,39,75,.06)}h1{font-size:24px;margin:0 0 8px}h2{font-size:18px;color:var(--accent);margin:0 0 12px}.meta{color:var(--muted);font-size:13px}table{width:100%;border-collapse:collapse;font-size:14px;margin-top:8px}th,td{text-align:left;border-bottom:1px solid var(--line);padding:8px 6px;vertical-align:top}th{color:var(--muted);font-weight:600}.ok{color:var(--ok);font-weight:700}.bad{color:var(--bad);font-weight:700}code{font-family:Consolas,monospace;font-size:12px}.pill{display:inline-block;background:#eef4ff;border:1px solid var(--line);border-radius:999px;padding:4px 12px;margin:3px 6px 3px 0;font-size:13px;font-weight:600}.big{font-size:22px;font-weight:800;color:var(--accent)}</style><main>
+<div class=card><h1>Manager Long-Run Experiment Report</h1>
+<p class=meta>chorus M3 Slice 1 · one manager + two engineers · driven through the real chorus stack
+(factory → scheduler → dream beats → landers → event bus → memory writer)</p>
+<p><b>Final verdict: <span class=ok>PASS</span>.</b> The Manager
+turned 3 one-line goals into delegated subtrees: it decomposed each goal, parked while its two
+engineers built and merged their children, then integrated the completed subtree. Chorus owned the
+ledger, the delegation lifecycle (park/integrate), landing, and the append-only memory; dream ran each
+beat. <span class=pill>3/3 goals done</span><span class=pill>8/8 children done</span><span class=pill>5 PRs merged</span><span class=pill>3/3 main checks passed</span><span class=pill>11 memory records</span><span class=pill>4 memory tool calls</span></p></div>
+
+<div class=card><h2>Per-wave summary</h2>
+<table><tr><th>#</th><th>Goal (one-liner)</th><th>Elapsed</th><th>Cost</th><th>Goal</th>
+<th>Children</th><th>Merged</th><th>Main check</th></tr><tr><td>1</td><td>Add string utilities: a slugify(text) function and a shout(text) funct</td><td>302.1s</td><td>46c</td><td class=ok>done</td><td>3/3</td><td>2</td><td class=ok>passed</td></tr><tr><td>2</td><td>Add number utilities: a clamp(x, lo, hi) function and an is_even(n) fu</td><td>223.9s</td><td>35c</td><td class=ok>done</td><td>2/2</td><td>1</td><td class=ok>passed</td></tr><tr><td>3</td><td>Add collection utilities: a head(seq) function and a tail(seq) functio</td><td>399.5s</td><td>74c</td><td class=ok>done</td><td>3/3</td><td>2</td><td class=ok>passed</td></tr></table>
+<p class=meta>Total wall 925.5s · total recorded cost 155c · the manager wrote no
+code — every child file was built and merged by an engineer, then integrated by the manager.</p></div>
+
+<div class=card><h2>The delegated subtree (who built what)</h2>
+<table><tr><th>Wave</th><th>Child task</th><th>Assignee</th><th>Status</th></tr><tr><td>1</td><td><code>task_5abfd20cc5c6</code></td><td>ada</td><td class=ok>done</td></tr><tr><td>1</td><td><code>task_11d06f6910e8</code></td><td>bob</td><td class=ok>done</td></tr><tr><td>1</td><td><code>task_ec4d450041e6</code></td><td>ada</td><td class=ok>done</td></tr><tr><td>2</td><td><code>task_5cfe5ed140ae</code></td><td>ada</td><td class=ok>done</td></tr><tr><td>2</td><td><code>task_630faa210442</code></td><td>bob</td><td class=ok>done</td></tr><tr><td>3</td><td><code>task_30f6635758a0</code></td><td>ada</td><td class=ok>done</td></tr><tr><td>3</td><td><code>task_556157874898</code></td><td>bob</td><td class=ok>done</td></tr><tr><td>3</td><td><code>task_eed749fca15d</code></td><td>bob</td><td class=ok>done</td></tr></table></div>
+
+<div class=card><h2>Append-only episodic memory — today's feature, verified</h2>
+<p class=meta>spec 07 §3 · the kernel writes one immutable <code>sprint_delta</code> per beat via
+<code>AppendOnlyMemoryWriter</code> — for the manager's beats AND the engineers' — with dream-readable
+frontmatter. Read back through dream's own <code>scan_memory_dir</code>.</p>
+<table><tr><th>Check</th><th>Result</th><th>Detail</th></tr><tr><td>one append-only record per beat</td><td class=ok>PASS</td><td>11 records written</td></tr><tr><td>every record named by its run id</td><td class=ok>PASS</td><td>11/11 filename == run_id</td></tr><tr><td>provenance task_id + employee_id (all)</td><td class=ok>PASS</td><td>11/11 carry both</td></tr><tr><td>per-role scope (manager=team, engineer=project)</td><td class=ok>PASS</td><td>scopes: {&#x27;project&#x27;: 8, &#x27;team&#x27;: 3}</td></tr><tr><td>memory written for manager AND engineers</td><td class=ok>PASS</td><td>by employee: {&#x27;bob&#x27;: 4, &#x27;ada&#x27;: 4, &#x27;moe&#x27;: 3}</td></tr><tr><td>dream&#x27;s own scanner reads back every file</td><td class=ok>PASS</td><td>scan_memory_dir parsed 11/11 files on disk</td></tr></table>
+<h3 class=meta style="margin-top:14px">The records on disk (read back by dream)</h3>
+<table><tr><th>file (== run id)</th><th>employee</th><th>scope</th><th>kind</th><th>outcome</th></tr>
+<tr><td><code>run_158e53e732804d49bff4d1c1dd82804f</code></td><td>bob</td><td>project</td><td>sprint_delta</td><td>done</td></tr><tr><td><code>run_2b6d2c7d69b64fa5832485da64d150e0</code></td><td>bob</td><td>project</td><td>sprint_delta</td><td>done</td></tr><tr><td><code>run_5a58ba0c155d4288b5615b5b23afffff</code></td><td>bob</td><td>project</td><td>sprint_delta</td><td>done</td></tr><tr><td><code>run_60610c3882b344ff8b23ce0b98c6a97c</code></td><td>ada</td><td>project</td><td>sprint_delta</td><td>done</td></tr><tr><td><code>run_b43f36657d8740bfad2695f23ef6456d</code></td><td>ada</td><td>project</td><td>sprint_delta</td><td>done</td></tr><tr><td><code>run_c2f66f4d2a7944fe9c3b1f3eb538ffc1</code></td><td>bob</td><td>project</td><td>sprint_delta</td><td>done</td></tr><tr><td><code>run_f41d7a00ba674f4386f43fcc10ee626d</code></td><td>ada</td><td>project</td><td>sprint_delta</td><td>done</td></tr><tr><td><code>run_fb1178591e304a3d9f03dd7ff6b93660</code></td><td>ada</td><td>project</td><td>sprint_delta</td><td>done</td></tr><tr><td><code>run_0399d448ba374ccfa9d0b83c734a9416</code></td><td>moe</td><td>team</td><td>sprint_delta</td><td>needs_changes</td></tr><tr><td><code>run_8df57132789f43368e0b9169c3d70aa9</code></td><td>moe</td><td>team</td><td>sprint_delta</td><td>needs_changes</td></tr><tr><td><code>run_917e1328258049bfbef7ed2ca170199a</code></td><td>moe</td><td>team</td><td>sprint_delta</td><td>needs_changes</td></tr></table></div>
+
+<div class=card><h2>Tool, memory, and event stats</h2>
+<div style="display:flex;gap:24px;flex-wrap:wrap">
+<div style="flex:1;min-width:260px"><h3 class=meta>Dream tool calls (384)</h3>
+<table><tr><th>tool</th><th>calls</th></tr><tr><td><code>bash</code></td><td>134</td></tr><tr><td><code>read_file</code></td><td>115</td></tr><tr><td><code>git</code></td><td>96</td></tr><tr><td><code>write_file</code></td><td>27</td></tr><tr><td><code>decompose</code></td><td>8</td></tr><tr><td><code>memory_search</code></td><td>4</td></tr></table></div>
+<div style="flex:1;min-width:260px"><h3 class=meta>Chorus events (10957)</h3>
+<table><tr><th>kind</th><th>count</th></tr><tr><td><code>run.text</code></td><td>10156</td></tr><tr><td><code>run.tool_use</code></td><td>384</td></tr><tr><td><code>run.tool_result</code></td><td>384</td></tr><tr><td><code>run.started</code></td><td>11</td></tr><tr><td><code>run.evaluated</code></td><td>11</td></tr><tr><td><code>run.done</code></td><td>11</td></tr></table></div></div></div>
+
+<div class=card><h2>Final company repo evidence</h2>
+<p class=meta>5 merge commits on company main — every merged child landed as a PR the
+manager's integrate then closed. The final tree on main:</p>
+<pre style="background:#0f172a;color:#dbeafe;padding:12px;border-radius:10px;font-size:12px;overflow-x:auto">README.md
+docs/evals/run_158e53e732804d49bff4d1c1dd82804f/sprint-1.json
+docs/evals/run_2b6d2c7d69b64fa5832485da64d150e0/sprint-1.json
+docs/evals/run_5a58ba0c155d4288b5615b5b23afffff/sprint-1.json
+docs/evals/run_c2f66f4d2a7944fe9c3b1f3eb538ffc1/sprint-1.json
+docs/evals/run_f41d7a00ba674f4386f43fcc10ee626d/sprint-1.json
+docs/exec-plans/active/run_158e53e732804d49bff4d1c1dd82804f.json
+docs/exec-plans/active/run_2b6d2c7d69b64fa5832485da64d150e0-sprint-1.json
+docs/exec-plans/active/run_2b6d2c7d69b64fa5832485da64d150e0.json
+docs/exec-plans/active/run_2b6d2c7d69b64fa5832485da64d150e0.md
+docs/exec-plans/active/run_5a58ba0c155d4288b5615b5b23afffff-sprint-1.json
+docs/exec-plans/active/run_5a58ba0c155d4288b5615b5b23afffff.json
+docs/exec-plans/active/run_5a58ba0c155d4288b5615b5b23afffff.md
+docs/exec-plans/active/run_c2f66f4d2a7944fe9c3b1f3eb538ffc1.json
+docs/exec-plans/active/run_f41d7a00ba674f4386f43fcc10ee626d.json
+moe/__init__.py
+moe/_text_public.py
+moe/collections/__init__.py
+moe/collections/_collections_public.py
+moe/collections/_utilities.py
+moe/collections/utilities/__init__.py
+moe/utils_text.py
+test_imports.py
+test_smoke.py
+tests/test_head_tail.py</pre></div>
+
+<div class=card><h2>Engineering verdict</h2>
+<p>The manager + two-engineer path is healthy across multiple delegation waves: the manager decomposes a
+one-line goal into assigned subtasks, the kernel <b>parks</b> the parent (the "delegated" disposition),
+the engineers ship and merge their children, and the manager <b>integrates</b> the completed subtree to
+<code>done</code> — wave after wave, carrying ledger + memory state throughout. The append-only memory
+records every beat for every role and is read back cleanly by dream, confirming today's memory-writer
+work end to end.</p></div>
+</main>

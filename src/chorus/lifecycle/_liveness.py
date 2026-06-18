@@ -139,6 +139,12 @@ def _classify_blocked(
         return Liveness(Health.HEALTHY, "pending_approval")
     if _has_active_monitor(task, ledger):
         return Liveness(Health.HEALTHY, "active_monitor")
+    # A queued/claimed wake means the scheduler is about to re-dispatch this task — it is not stalled.
+    # This is the parked-manager case (M3): once its children land, a `blocked` parent's blockers
+    # resolve but it holds a queued `children_done` wake pending the integrate beat. Without this the
+    # reconcile sweep would strand the parked parent (``blocked_no_blocker``) before it integrates.
+    if _has_live_wake(task, ledger):
+        return Liveness(Health.HEALTHY, "queued_wake")
 
     unresolved = ledger.dependencies.unresolved_blockers(task.id)
     if not unresolved:

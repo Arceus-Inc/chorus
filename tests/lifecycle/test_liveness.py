@@ -257,3 +257,16 @@ def test_blocked_with_no_blocker_is_stalled(ledger: SqliteLedger, emp: Employee)
     result = classify(task, ledger, now=NOW)
     assert result.stalled
     assert result.reason == "blocked_no_blocker"
+
+
+def test_blocked_with_a_live_wake_is_healthy(ledger: SqliteLedger, emp: Employee) -> None:
+    # A parked manager (M3): once its children land, its blockers resolve but it stays `blocked` with a
+    # queued `children_done` wake pending the integrate beat. That is healthy — about to be dispatched —
+    # not a stalled leaf. (Without this, the recovery sweep strands the parent before it integrates.)
+    task = _task(ledger, TaskStatus.BLOCKED)
+    ledger.wakes.enqueue(
+        Wake(id="w1", employee_id="emp_1", reason=WakeReason.CHILDREN_DONE, payload={"task_id": "t1"})
+    )
+    result = classify(task, ledger, now=NOW)
+    assert result.healthy
+    assert result.reason == "queued_wake"

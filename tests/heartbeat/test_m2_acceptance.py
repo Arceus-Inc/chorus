@@ -15,7 +15,7 @@ import pytest
 from chorus.budgets import BudgetEnforcer
 from chorus.heartbeat import Scheduler
 from chorus.heartbeat._beat import BeatOutcome
-from chorus.ledger import SqliteLedger, Task, TaskStatus
+from chorus.ledger import SqliteLedger, Task, TaskStatus, Wake, WakeReason
 from chorus.ledger._models import BudgetPolicy, BudgetScope
 from chorus.lifecycle import assign_task
 from chorus.workforce import Employee, LedgerWorkforce
@@ -33,7 +33,7 @@ class _Beat:
         self._cost = cost_cents
 
     async def run_task(
-        self, *, task_id: str, intent: str, verification: object = (), observer: object = None
+        self, *, task_id: str, intent: str, verification: object = (), observer: object = None, run_id: str | None = None
     ) -> BeatOutcome:
         self.ran.append(task_id)
         return BeatOutcome(passed=True, outcome={}, summary="ok", cost_cents=self._cost, model="m")
@@ -97,6 +97,30 @@ async def test_concurrency_cap_limits_dispatch(ledger: SqliteLedger) -> None:
     await sched.tick_once()  # cap=1 → only one beat this pulse; the other waits
     await sched.drain()
     assert len(beat.ran) == 1
+
+
+async def test_stale_wake_for_a_done_task_is_drained_not_requeued(ledger: SqliteLedger) -> None:
+    # A manager fans out several deps_resolved/children_done wakes per task; once one drives the
+    # integrate the rest point at a now-done task. Left queued they fail checkout every tick and clog
+    # the employee's one-beat-per-pulse slot, starving its other work. They must be DRAINED.
+    _two_engineers(ledger)
+    ledger.tasks.submit(Task(id="D", intent="already integrated", assignee_employee_id="e1"))
+    ledger.tasks.set_status("D", TaskStatus.DONE)
+    ledger.tasks.submit(Task(id="T", intent="real pending work", status=TaskStatus.TODO))
+    # The stale wake for the DONE task sits ahead of the live one in e1's queue.
+    ledger.wakes.enqueue(
+        Wake(id="stale", employee_id="e1", reason=WakeReason.CHILDREN_DONE, payload={"task_id": "D"})
+    )
+    assign_task(ledger, "T", "e1")  # the live wake
+    beat = _Beat()
+    sched = _sched(ledger, beat)
+
+    await sched.tick_once()
+    await sched.drain()
+
+    queued = {w.payload.get("task_id") for w in ledger.wakes.queued()}
+    assert "D" not in queued  # the stale wake was drained, not re-queued
+    assert "T" in beat.ran  # ...so the live work still dispatched despite the stale wake ahead of it
 
 
 async def test_hard_budget_breach_pauses_the_scope(ledger: SqliteLedger) -> None:

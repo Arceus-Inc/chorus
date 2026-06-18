@@ -27,7 +27,7 @@ class _FlakyBeat:
         self.calls = 0
 
     async def run_task(
-        self, *, task_id: str, intent: str, verification: object = (), observer: object = None
+        self, *, task_id: str, intent: str, verification: object = (), observer: object = None, run_id: str | None = None
     ) -> BeatOutcome:
         self.calls += 1
         if self.calls <= self._fail_times:

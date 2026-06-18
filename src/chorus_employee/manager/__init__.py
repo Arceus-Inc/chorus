@@ -6,10 +6,10 @@ that harness, one component per module:
 - :mod:`._brief`   — the operating brief (system prompt).
 - :mod:`._harness` — the :class:`~chorus.roles.RoleManifest`: every ``build_harness`` component.
 - :mod:`._dod`     — the Definition of Done (intent → typed :class:`~chorus.outcomes.Verifier`).
+- :mod:`._lander`  — the ``subtree`` :class:`~chorus.outcomes.OutcomeLander` (its completed subtree).
 
-(The ``subtree`` outcome lander + the decompose/integrate loop are M3 wiring, not built yet — there
-is no ``_lander`` module.) :func:`manager_plugin` assembles the role triple. This is the **single
-source** of the Manager: ``chorus.roles.default_roles`` imports the plugin from here.
+:func:`manager_plugin` assembles the role triple. This is the **single source** of the Manager:
+``chorus.roles.default_roles`` imports the plugin from here.
 """
 
 from __future__ import annotations
@@ -17,6 +17,7 @@ from __future__ import annotations
 from chorus.roles._plugin import RolePlugin
 from chorus_employee.manager._dod import manager_dod
 from chorus_employee.manager._harness import manager_manifest
+from chorus_employee.manager._lander import ManagerLander, manager_lander
 
 
 def manager_plugin() -> RolePlugin:
@@ -29,4 +30,4 @@ def manager_plugin() -> RolePlugin:
     )
 
 
-__all__ = ["manager_plugin"]
+__all__ = ["ManagerLander", "manager_lander", "manager_plugin"]
