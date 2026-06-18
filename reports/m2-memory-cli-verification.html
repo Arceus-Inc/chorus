@@ -1,0 +1,57 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Chorus M2 Memory Writer — CLI Verification</title><style>
+:root{--bg:#f5f7fb;--panel:#fff;--ink:#17202a;--muted:#5f6b7a;--ok:#0a7a34;--bad:#b42318;--line:#d7deea;--accent:#0b5cab}
+body{margin:0;background:radial-gradient(circle at top right,#dbeafe 0,var(--bg) 45%);color:var(--ink);font-family:Segoe UI,Tahoma,Arial,sans-serif;line-height:1.4}main{max-width:980px;margin:24px auto;padding:0 16px 32px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px 18px;margin-bottom:14px;box-shadow:0 8px 24px rgba(24,39,75,.06)}
+h1{font-size:24px;margin:0 0 10px}h2{font-size:18px;color:var(--accent);margin:0 0 10px}h3{font-size:13px;margin:6px 0}table{width:100%;border-collapse:collapse;font-size:14px}th,td{text-align:left;border-bottom:1px solid var(--line);padding:8px 6px;vertical-align:top}th{color:var(--muted)}.ok{color:var(--ok);font-weight:700}.bad{color:var(--bad);font-weight:700}pre{background:#0f172a;color:#dbeafe;padding:12px;border-radius:10px;overflow-x:auto;font-size:12px}.meta{color:var(--muted)}</style></head><body><main>
+<div class="card"><h1>Chorus M2 — Memory Writer CLI Verification</h1><p class="meta">spec 07 §3 · verified through the real <code>chorus</code> CLI: <code>assign-task</code> → background heartbeat → beat → <code>AppendOnlyMemoryWriter</code>.</p><p><strong class="ok">MEMORY WRITER WORKING</strong></p></div>
+<div class="card"><h2>Scenario</h2><p>Real CLI, minimal mode. <code>assign-task employee "Create calc.py with add() + a test"</code>; the always-on heartbeat ran the beat (and a self-repair retry); then inspect <code>.chorus/work/memco/memory/</code>. One append-only record landed per beat.</p></div>
+<div class="card"><h2>Checks</h2><table><tr><th>Check</th><th>Result</th><th>Detail</th></tr><tr><td>≥1 episodic record written by the real CLI</td><td class="ok">PASS</td><td>2 record(s) — one per beat (self-repair ran 2)</td></tr>
+<tr><td>one append-only file per beat (distinct run ids)</td><td class="ok">PASS</td><td>run ids: run_3a7ad3019801, run_8fecc672336d</td></tr>
+<tr><td>every record named by its run id</td><td class="ok">PASS</td><td>id == frontmatter.run_id for all</td></tr>
+<tr><td>kind = sprint_delta (all)</td><td class="ok">PASS</td><td>all sprint_delta</td></tr>
+<tr><td>provenance task_id + employee_id (all)</td><td class="ok">PASS</td><td>task=task_20073e1d8a64 emp=employee</td></tr>
+<tr><td>scope = project (all)</td><td class="ok">PASS</td><td>project</td></tr>
+<tr><td>outcome honestly mirrors each beat</td><td class="ok">PASS</td><td>blocked, needs_changes</td></tr>
+<tr><td>dream&#x27;s own scanner reads them back</td><td class="ok">PASS</td><td>scan_memory_dir parsed every record</td></tr></table></div>
+<div class="card"><h2>The captured records (on disk, read back by dream)</h2><h3 class=meta>run_3a7ad30198014f12922c6da17689f81e — outcome=blocked</h3><pre>---
+name: run_3a7ad30198014f12922c6da17689f81e
+description: Create calc.py with a function add(a, b) returning a + b, and test_calc.py
+  with test_add asserting add(1, 2) == 3. Must pass pytest -q &amp;&amp; ruff check .
+metadata:
+  type: project
+  kind: sprint_delta
+  run_id: run_3a7ad30198014f12922c6da17689f81e
+  task_id: task_20073e1d8a64
+  employee_id: employee
+  scope: project
+  intent: Create calc.py with a function add(a, b) returning a + b, and test_calc.py
+    with test_add asserting add(1, 2) == 3. Must pass pytest -q &amp;&amp; ruff check .
+  outcome: blocked
+  score: 0.0
+  artifacts: []
+  files_touched: []
+  created_at: &#x27;2026-06-18T09:46:50.515596+00:00&#x27;
+---
+beat errored: planner has already produced artefacts for task &#x27;task_20073e1d8a64&#x27;: spec=True ledger=True
+</pre>
+<h3 class=meta>run_8fecc672336d459cac64ed6c430d865a — outcome=needs_changes</h3><pre>---
+name: run_8fecc672336d459cac64ed6c430d865a
+description: Create calc.py with a function add(a, b) returning a + b, and test_calc.py
+  with test_add asserting add(1, 2) == 3. Must pass pytest -q &amp;&amp; ruff check .
+metadata:
+  type: project
+  kind: sprint_delta
+  run_id: run_8fecc672336d459cac64ed6c430d865a
+  task_id: task_20073e1d8a64
+  employee_id: employee
+  scope: project
+  intent: Create calc.py with a function add(a, b) returning a + b, and test_calc.py
+    with test_add asserting add(1, 2) == 3. Must pass pytest -q &amp;&amp; ruff check .
+  outcome: needs_changes
+  score: 0.0
+  artifacts: []
+  files_touched: []
+  created_at: &#x27;2026-06-18T09:46:18.215805+00:00&#x27;
+---
+plan incomplete: 0/1 done, 0 blocked
+</pre></div></main></body></html>
