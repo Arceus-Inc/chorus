@@ -61,6 +61,55 @@ quit                  # stops the heartbeat and exits
 You can refer to the employee by name (`employee`) or by role (`engineer`) — role works while there's
 exactly one of them.
 
+## 4. Delegate through a manager (one manager + two engineers)
+
+A **manager** doesn't write code — it breaks a goal into subtasks and hands them to its reports, then
+integrates the finished work. Give it a one-line goal and watch a whole team move.
+
+**Launch with a file DB and a seeded workspace** (the manager loop runs several beats, so it wants a
+persistent ledger + a repo whose tests pass):
+
+```bash
+# a tiny seed repo with a passing test, so each engineer's `pytest -q && ruff check .` gate goes green
+mkdir -p ~/chorus-seed && cd ~/chorus-seed && git init -q -b main
+printf 'def test_smoke():\n    assert True\n' > test_smoke.py
+git add -A && git -c user.name=demo -c user.email=demo@x commit -qm seed
+
+cd /path/to/chorus
+export CHORUS_COMPANY_SEED=~/chorus-seed
+uv run chorus --company team --db team.db        # file DB → the heartbeat ticks on its own
+```
+
+**Hire the team and delegate** (at the console; `hire <name> <role> [reports_to]` is a direct verb):
+
+```
+hire moe manager
+hire ada engineer moe
+hire bob engineer moe
+assign-task moe Build a small Python math utilities library with add and subtract.
+```
+
+That one line is enough — the manager's brief does the planning: it splits the goal into subtasks,
+assigns each to a report, and stops. Watch the team work:
+
+```
+check ledger          # tasks appearing: the manager's goal + the children it created
+check employee moe    # the manager's latest actions
+```
+
+Re-run `check ledger` over a minute or two and you'll see the lifecycle:
+
+| stage | what you see |
+|---|---|
+| manager beat | `moe`'s goal → **blocked** — it delegated (the "parked" state) |
+| fan-out | two child tasks appear, assigned to `ada` / `bob` |
+| engineers | children go `todo → in_progress → done` (each ships + merges a PR) |
+| integrate | once every child is `done`, the kernel marks `moe`'s goal **done** |
+
+The manager decomposes **once**, parks while its reports build and merge, then the completed subtree is
+integrated mechanically — no extra prompting. (Requires the M3 manager role; if `hire moe manager`
+errors with *"not a registered role"*, you're on a build without it.)
+
 ## What's happening under the hood
 
 - **Auto-born employee** — minimal mode hires one `engineer` the first time you act, so you never run
