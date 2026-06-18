@@ -45,7 +45,7 @@ from chorus.ledger._models import (
     TaskStatus,
     WakeReason,
 )
-from chorus.lifecycle import record_activity
+from chorus.lifecycle import TERMINAL, record_activity
 from chorus.memory import SprintDelta
 from chorus.outcomes import DoDKind, Verifier
 from chorus.recovery import reconcile
@@ -232,6 +232,15 @@ class Scheduler:
             # Dependency gate (spec 02 §2): a task with unresolved blockers is withheld. Consume this
             # wake — the blocker's completion fires a fresh ``deps_resolved`` wake that re-dispatches it.
             if ledger.dependencies.unresolved_blockers(str(wake.payload["task_id"])):
+                ledger.wakes.mark_done(wake.id)
+                continue
+            # Stale-wake drain (spec 03 §5): a wake whose task is already terminal is discarded, not
+            # re-queued. A manager fans out several deps_resolved/children_done wakes per task; once one
+            # drives the integrate, the rest point at a now-``done`` task — left queued they fail the
+            # checkout CAS every tick and clog the employee's one-beat-per-pulse slot, starving its
+            # other work. Draining them keeps the dispatch slot live.
+            stale = ledger.tasks.get(str(wake.payload["task_id"]))
+            if stale is None or stale.status in TERMINAL:
                 ledger.wakes.mark_done(wake.id)
                 continue
             # Gate 0 (spec 06 §3): a dead, orphaned, or paused identity never starts a beat. A
