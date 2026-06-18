@@ -15,16 +15,17 @@ judgment-class work, so it must ship at M3 with the first non-code role.
 from __future__ import annotations
 
 from chorus.outcomes import Verifier
-from chorus.roles._manifest import MemoryScope, PermissionMode, RoleManifest, SandboxTier
+from chorus.roles._manifest import MemoryScope, PermissionMode, RoleManifest
 from chorus.roles._plugin import RolePlugin
 
-# The Engineer is the first role to own a dedicated package (chorus_employee/engineer/). The kernel
-# default set sources it from there — single source, no drift — rather than re-declaring it here.
-# Submodule import (not the chorus_employee package root) keeps this edge cycle-free.
+# The Engineer, Reviewer, and Manager each own a dedicated package under chorus_employee/. The kernel
+# default set sources them from there — single source, no drift — rather than re-declaring them here.
+# Submodule imports (not the chorus_employee package root) keep this edge cycle-free. PM / Analyst are
+# still declared inline below until they grow their own packages.
 from chorus_employee.engineer import engineer_plugin
+from chorus_employee.manager import manager_plugin
+from chorus_employee.reviewer import reviewer_plugin
 
-_REVIEWER_BRIEF = "You render an approve/block verdict on a diff against the task's rubric."
-_MANAGER_BRIEF = "You decompose work, dispatch children, and integrate their completed subtree."
 _PM_BRIEF = "You produce a spec/decision artifact, persisted somewhere a Reviewer can verify it."
 _ANALYST_BRIEF = "You produce a data finding, persisted somewhere a Reviewer can verify it."
 
@@ -37,31 +38,8 @@ def default_roles() -> tuple[RolePlugin, ...]:
     """
     return (
         engineer_plugin(),
-        RolePlugin(
-            name="reviewer",
-            manifest=RoleManifest(
-                system_prompt=_REVIEWER_BRIEF,
-                tools=("read_file",),
-                permission_mode=PermissionMode.PLAN,
-                memory_scope=MemoryScope.PROJECT,
-                sandbox=SandboxTier.READ_ONLY,  # a reviewer never mutates — read-only trust posture
-            ),
-            dod_generator=lambda intent: Verifier.human_approval(artifact_class="verdict"),
-            outcome_kind="verdict",
-        ),
-        RolePlugin(
-            name="manager",
-            manifest=RoleManifest(
-                system_prompt=_MANAGER_BRIEF,
-                tools=("read_file", "submit_task", "assign_task"),
-                permission_mode=PermissionMode.DEFAULT,
-                memory_scope=MemoryScope.TEAM,
-            ),
-            dod_generator=lambda intent: Verifier.agent_review(
-                rubric="all children terminal and integrated", artifact_class="subtree"
-            ),
-            outcome_kind="subtree",
-        ),
+        reviewer_plugin(),
+        manager_plugin(),
         RolePlugin(
             name="pm",
             manifest=RoleManifest(
