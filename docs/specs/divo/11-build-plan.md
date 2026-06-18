@@ -43,6 +43,21 @@ merge).
 | **Proves** | concurrency, dependency edges as data, push-driven dispatch, two-gate caps, append-only memory with provenance. |
 | **Defers** | managers, decomposition, cron, the Reviewer. |
 
+> **Status — M2 verified ✅.** Substrate + acceptance complete and tested. Tables, the real tick +
+> per-employee serialization, wake coalescing, `task_assigned`/`deps_resolved` wakes, hard-role-filter
+> assignment, two-gate budgets, the `AppendOnlyMemoryWriter` (one provenance-stamped sprint delta per
+> beat, dream-readable), and the mailbox are all in and tested. **Acceptance**: `tests/heartbeat/
+> test_m2_acceptance.py` (B-withheld→`deps_resolved` dispatch, two engineers concurrent under the cap,
+> cap limits dispatch, hard-budget breach pauses the scope) + keyed e2es
+> (`examples/m2_acceptance.py`, `examples/memory_capture_m2.py`; reports under `reports/`). Writing the
+> acceptance surfaced and fixed a real gap — dispatch had no dependency check, so a blocked task's wake
+> could run before its blocker (now withheld, spec 02 §2).
+>
+> **One dream-gated follow-up (not chorus's to finish):** the memory *write* side covers all scopes,
+> but the *read* side — a beat reading its own scope **plus** entitled broader scopes (spec 07 §2) —
+> needs `dream.build_harness` to accept a scope-addressable memory dir (its store is per-worktree
+> today). Tracked as the spec 07 §7 spike; does not block the M2 acceptance.
+
 ---
 
 ## M3 — One manager, two reports
