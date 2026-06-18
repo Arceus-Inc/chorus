@@ -37,13 +37,13 @@ from chorus_harness import EmployeeHarnessFactory
 
 _PARENT = (
     "Delegate this with a SINGLE decompose call containing EXACTLY two independent children (no more, "
-    "no depends_on between them, do not implement anything yourself):\n"
-    "- label 'add', assignee 'ada': In a new file add_util.py write exactly `def add(a, b):\\n    "
-    "return a + b`. In test_add_util.py write `from add_util import add\\n\\n\\ndef test_add():\\n    "
-    "assert add(1, 2) == 3`. Run pytest -q to confirm it passes.\n"
-    "- label 'sub', assignee 'bob': In a new file sub_util.py write exactly `def subtract(a, b):\\n    "
-    "return a - b`. In test_sub_util.py write `from sub_util import subtract\\n\\n\\ndef "
-    "test_subtract():\\n    assert subtract(3, 1) == 2`. Run pytest -q to confirm it passes."
+    "no depends_on between them, do not implement anything yourself). Each child is a complete, "
+    "self-contained new file — nothing else is required, do not touch any other file:\n"
+    "- label 'add', assignee 'ada': create a NEW file add_util.py containing exactly these two lines:\n"
+    "    def add(a, b):\n        return a + b\n"
+    "- label 'sub', assignee 'bob': create a NEW file sub_util.py containing exactly these two lines:\n"
+    "    def subtract(a, b):\n        return a - b\n"
+    "The repository already has a passing test suite, so each child just needs its one clean new file."
 )
 
 _LOG: list[str] = []
@@ -73,6 +73,9 @@ def _seed_repo(path: Path) -> None:
     path.mkdir(parents=True)
     subprocess.run(["git", "-C", str(path), "init", "-b", "trunk"], check=True, capture_output=True)
     (path / "README.md").write_text("# math utils\n", encoding="utf-8")
+    # A passing smoke test so the engineers' `pytest -q` DoD always collects ≥1 test (no exit-5
+    # "no tests collected"); each child just adds a clean new file and the DoD stays green.
+    (path / "test_smoke.py").write_text("def test_smoke():\n    assert True\n", encoding="utf-8")
     subprocess.run(["git", "-C", str(path), "add", "-A"], check=True, capture_output=True)
     subprocess.run(
         ["git", "-C", str(path), "-c", "user.name=s", "-c", "user.email=s@x", "commit", "-m", "init"],
