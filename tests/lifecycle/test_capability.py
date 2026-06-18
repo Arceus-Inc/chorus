@@ -69,6 +69,19 @@ def test_inter_child_dependency_is_wired(ledger: SqliteLedger) -> None:
     assert ledger.dependencies.unresolved_blockers(res.child_ids["tests"]) == [res.child_ids["api"]]
 
 
+def test_unknown_assignee_fails_closed_without_mutating(ledger: SqliteLedger) -> None:
+    # A model may invent a report id; decompose must reject it cleanly *before* any mutation — never
+    # leave an orphan child or a half-applied fan-out (proper tool envelope, validate at the boundary).
+    svc = _service(ledger)
+    res = svc.decompose(parent_id="M", revision=REV, children=[
+        ChildPlan(label="api", intent="api", assignee="ada"),
+        ChildPlan(label="ghost", intent="x", assignee="nobody"),  # not an employee
+    ])
+    assert res.unknown_assignees == ("nobody",)
+    assert res.child_ids == {}
+    assert ledger.dependencies.unresolved_blockers("M") == []  # nothing fanned out
+
+
 def test_depth_cap_fails_closed(ledger: SqliteLedger) -> None:
     svc = _service(ledger, request_depth=DEFAULT_REQUEST_DEPTH_CAP)  # one more level exceeds the cap
     res = svc.decompose(parent_id="M", revision=REV, children=[ChildPlan(label="x", intent="x", assignee="ada")])

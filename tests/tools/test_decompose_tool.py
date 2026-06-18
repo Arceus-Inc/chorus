@@ -70,6 +70,12 @@ def test_tool_fans_out_and_assigns(ledger: SqliteLedger, tmp_path: Path) -> None
     assert ledger.dependencies.unresolved_blockers(child_ids["tests"]) == [child_ids["api"]]
 
 
+def test_tool_declares_a_repo_write_trust_tier(ledger: SqliteLedger) -> None:
+    # A mutating tool is gated as a write effect; its declared tier must be REPO_WRITE (1) so dream
+    # trusts it at the manager's session tier instead of denying it ("not trusted for write").
+    assert DecomposeTool(ledger).declaration.tier_required == 1
+
+
 def test_tool_rejects_empty_children(ledger: SqliteLedger, tmp_path: Path) -> None:
     _seed(ledger)
     BeatContext(task_id="M", run_id=REV, employee_id="mgr").write(tmp_path)

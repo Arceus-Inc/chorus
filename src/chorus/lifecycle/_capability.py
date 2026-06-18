@@ -44,10 +44,16 @@ class ChildPlan:
 
 @dataclass(frozen=True)
 class DecomposeResult:
-    """The outcome of a decompose call: the ``label → task_id`` map, or ``depth_capped`` (failed closed)."""
+    """The outcome of a decompose call: the ``label → task_id`` map, or a fail-closed reason.
+
+    Exactly one of the failure fields is set on a rejection (and ``child_ids`` is empty): ``depth_capped``
+    when the fan-out would exceed the delegation depth cap, or ``unknown_assignees`` when a child names a
+    report that is not an employee. A clean fan-out leaves both empty and ``child_ids`` populated.
+    """
 
     child_ids: dict[str, str] = field(default_factory=dict)
     depth_capped: bool = False
+    unknown_assignees: tuple[str, ...] = ()
 
 
 def _child_id(parent_id: str, label: str) -> str:
@@ -74,6 +80,10 @@ class CapabilityService:
         ``revision`` is the manager's beat (``run_id``): the decomposition is recorded as the parent's
         accepted plan revision (the claim's exact-once key), so a re-fired tool resumes the same claim.
         """
+        unknown = self._unknown_assignees(children)
+        if unknown:  # fail closed at the boundary — a bad report id never half-applies a fan-out
+            return DecomposeResult(unknown_assignees=unknown)
+
         plan_revision_id = self._ensure_plan_revision(parent_id, revision)
         ids = {child.label: _child_id(parent_id, child.label) for child in children}
         specs = [
@@ -104,6 +114,14 @@ class CapabilityService:
             for blocker_label in child.depends_on:
                 self._ledger.dependencies.add(ids[child.label], ids[blocker_label])
         return DecomposeResult(child_ids=ids)
+
+    def _unknown_assignees(self, children: Sequence[ChildPlan]) -> tuple[str, ...]:
+        """Assignees named by ``children`` that are not employees — in first-seen order, deduplicated."""
+        seen: dict[str, None] = {}
+        for child in children:
+            if child.assignee is not None and self._ledger.employees.get(child.assignee) is None:
+                seen.setdefault(child.assignee, None)
+        return tuple(seen)
 
     def _ensure_plan_revision(self, parent_id: str, revision: str) -> str:
         """Record (once per beat) the parent's accepted decomposition plan; return its revision id.
