@@ -122,6 +122,34 @@ def test_manager_harness_registers_the_decompose_capability_tool(
         ledger.close()
 
 
+def test_manager_brief_is_rehydrated_with_its_team(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # A delegating role needs to name valid assignees: the factory appends the live workforce roster to
+    # the manager's brief (which the overlays write onto every dream role).
+    ledger = SqliteLedger.open(":memory:")
+    try:
+        from chorus.workforce import Employee as _Emp
+
+        ledger.employees.create(_Emp(id="moe", name="Moe", role="manager"))
+        ledger.employees.create(_Emp(id="ada", name="Ada", role="engineer"))
+        ledger.employees.create(_Emp(id="bob", name="Bob", role="engineer"))
+        captured: dict[str, Any] = {}
+        monkeypatch.setattr(
+            _factory_mod.dream, "build_harness", lambda **kw: captured.update(kw) or object()
+        )
+        factory = _factory_mod.EmployeeHarnessFactory(
+            api_key="k", base_url="https://x/openai/v1", deployment="gpt-x", company_id="acme",
+            roles=RoleRegistry.from_plugins(default_roles()), work_root=tmp_path, ledger=ledger,
+        )
+        mat = factory.materialize(ledger.employees.get("moe"))  # type: ignore[arg-type]
+        generator = (mat.working_dir / ".harness" / "roles" / "generator.toml").read_text("utf-8")
+        assert "ada (engineer)" in generator and "bob (engineer)" in generator
+        assert "moe" not in generator.split("Your reports")[1]  # the manager isn't its own report
+    finally:
+        ledger.close()
+
+
 def test_manager_without_a_ledger_has_no_capability_tools(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

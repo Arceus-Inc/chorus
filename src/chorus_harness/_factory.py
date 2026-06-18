@@ -15,7 +15,7 @@ so the factory rebuilds the harness per call without a cache.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
@@ -91,6 +91,20 @@ def _capability_tool(name: str, ledger: SqliteLedger) -> BaseTool | None:
     if name == "decompose":
         return DecomposeTool(ledger)
     return None
+
+
+# Capability tools that route work to *other* employees — a role holding one needs to know its reports.
+_DELEGATING_TOOLS = frozenset({"decompose", "submit_task", "assign_task"})
+
+
+def _team_roster(ledger: SqliteLedger, *, exclude: str) -> str:
+    """The org's other employees (id + role) as a brief section, so a delegator names valid assignees."""
+    reports = [emp for emp in ledger.employees.list() if emp.id != exclude]
+    lines = [f"- {emp.id} ({emp.role})" for emp in reports]
+    body = "\n".join(lines) if lines else "(no other employees are currently hired)"
+    return (
+        "\n\n## Your reports (assign each subtask's `assignee` to one of these employee ids)\n" + body
+    )
 
 
 def _toml_escape(value: str) -> str:
@@ -212,6 +226,12 @@ class EmployeeHarnessFactory:
         if employee.role not in self._roles:
             raise ValueError(f"role {employee.role!r} for {employee.id!r} is not a registered role")
         config = role_beat_config(self._roles.get(employee.role).manifest)
+
+        # Team rehydration: a delegating role (decompose/submit/assign) gets its reports appended to its
+        # brief, read live from the workforce — so the model assigns to real employee ids, not invented.
+        if self._ledger is not None and _DELEGATING_TOOLS.intersection(config.tools):
+            roster = _team_roster(self._ledger, exclude=employee.id)
+            config = replace(config, system_prompt=config.system_prompt + roster)
 
         # ``working_dir`` IS the worktree, because dream confines its tools to it — that is what
         # isolates one employee's edits from another's. A non-worktree posture falls back to a flat

@@ -19,6 +19,7 @@ from chorus.ledger import SqliteLedger, Task, TaskStatus
 from chorus.lifecycle import CapabilityService, ChildPlan, assign_task
 from chorus.roles import RoleRegistry, default_roles
 from chorus.workforce import Employee, LedgerWorkforce
+from chorus_employee import default_landers
 
 pytestmark = pytest.mark.integration
 
@@ -58,10 +59,15 @@ def _team(ledger: SqliteLedger) -> None:
     ledger.employees.create(Employee(id="bob", name="Bob", role="engineer"))
 
 
-def _sched(ledger: SqliteLedger, beat: _TeamBeat) -> Scheduler:
+def _sched(ledger: SqliteLedger, beat: _TeamBeat, *, tmp_path: object = None) -> Scheduler:
+    from pathlib import Path
+
+    root = Path(str(tmp_path)) if tmp_path is not None else Path(".")
     return Scheduler(
         ledger=ledger, workforce=LedgerWorkforce(ledger.employees), beat_runner=beat,
-        roles=RoleRegistry.from_plugins(default_roles()), clock=lambda: _NOW, max_concurrent_runs=4,
+        roles=RoleRegistry.from_plugins(default_roles()),
+        landers=default_landers(root, ledger=ledger),  # the manager lands a subtree artifact on integrate
+        clock=lambda: _NOW, max_concurrent_runs=4,
     )
 
 
@@ -82,12 +88,14 @@ async def test_decompose_beat_parks_the_parent_not_strands_it(ledger: SqliteLedg
     assert set(ledger.dependencies.unresolved_blockers("M")) and not ledger.tasks.all_children_terminal("M")
 
 
-async def test_full_loop_decompose_then_children_then_integrate_to_done(ledger: SqliteLedger) -> None:
+async def test_full_loop_decompose_then_children_then_integrate_to_done(
+    ledger: SqliteLedger, tmp_path: object
+) -> None:
     _team(ledger)
     ledger.tasks.submit(Task(id="M", intent="ship the feature", status=TaskStatus.TODO))
     assign_task(ledger, "M", "mgr")
     beat = _TeamBeat(ledger, parent="M")
-    sched = _sched(ledger, beat)
+    sched = _sched(ledger, beat, tmp_path=tmp_path)
 
     for _ in range(6):  # decompose → api → ui → children_done → integrate
         await sched.tick_once()
@@ -96,3 +104,11 @@ async def test_full_loop_decompose_then_children_then_integrate_to_done(ledger: 
     assert ledger.tasks.get("M").status is TaskStatus.DONE  # type: ignore[union-attr]  # integrated
     assert ledger.tasks.all_children_terminal("M")  # the whole subtree landed
     assert "M" in beat.ran and beat.ran.count("M") >= 2  # decompose beat + integrate beat
+    # the ManagerLander recorded the subtree as the manager's primary deliverable
+    subtree = next(
+        a for a in ledger.artifacts.list_for_task("M")
+        if a.resource_ref is not None and a.resource_ref.get("kind") == "subtree"
+    )
+    assert {c["id"] for c in subtree.resource_ref["children"]} == {  # type: ignore[union-attr,index]
+        c.id for c in ledger.tasks.children("M")
+    }

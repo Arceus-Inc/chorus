@@ -14,21 +14,29 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from chorus.outcomes import LanderRegistry
+from chorus.outcomes import LanderRegistry, OutcomeLander
 from chorus.roles._plugin import RolePlugin
 from chorus_employee.engineer import engineer_lander, engineer_plugin
+from chorus_employee.manager import manager_lander
 
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from chorus.ledger import SqliteLedger
 
-def default_landers(company_root: Path) -> LanderRegistry:
+
+def default_landers(company_root: Path, *, ledger: SqliteLedger | None = None) -> LanderRegistry:
     """The default outcome landers, keyed by ``outcome_kind`` (spec 04 §2).
 
-    Today the Engineer's ``pr`` lander; as employees that land artifacts are added, each registers its
-    lander here — the kernel dispatches landing through the registry with no scheduler change.
+    The Engineer's ``pr`` lander always; the Manager's ``subtree`` lander when a ``ledger`` is supplied
+    (it reads its delegated children from there). As employees that land artifacts are added, each
+    registers its lander here — the kernel dispatches landing through the registry with no scheduler
+    change.
     """
-    return LanderRegistry.from_landers([engineer_lander(company_root)])
+    landers: list[OutcomeLander] = [engineer_lander(company_root)]
+    if ledger is not None:
+        landers.append(manager_lander(ledger))
+    return LanderRegistry.from_landers(landers)
 
 
 def default_employees() -> tuple[RolePlugin, ...]:
