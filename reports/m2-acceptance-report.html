@@ -1,0 +1,13 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Chorus M2 Acceptance</title><style>
+:root{--bg:#f5f7fb;--panel:#fff;--ink:#17202a;--muted:#5f6b7a;--ok:#0a7a34;--bad:#b42318;--line:#d7deea;--accent:#0b5cab}
+body{margin:0;background:radial-gradient(circle at top right,#dbeafe 0,var(--bg) 45%);color:var(--ink);font-family:Segoe UI,Tahoma,Arial,sans-serif;line-height:1.4}main{max-width:980px;margin:24px auto;padding:0 16px 32px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px 18px;margin-bottom:14px;box-shadow:0 8px 24px rgba(24,39,75,.06)}
+h1{font-size:24px;margin:0 0 10px}h2{font-size:18px;color:var(--accent);margin:0 0 10px}table{width:100%;border-collapse:collapse;font-size:14px}th,td{text-align:left;border-bottom:1px solid var(--line);padding:8px 6px;vertical-align:top}th{color:var(--muted)}.ok{color:var(--ok);font-weight:700}.bad{color:var(--bad);font-weight:700}pre{background:#0f172a;color:#dbeafe;padding:12px;border-radius:10px;overflow-x:auto;font-size:12px}.meta{color:var(--muted)}</style></head><body><main>
+<div class="card"><h1>Chorus M2 — Acceptance (dependency edge, keyed)</h1><p class="meta">spec 11 §M2 · two engineers, <code>B depends_on A</code>, real dream beats. Concurrency + budget gating: see <code>tests/heartbeat/test_m2_acceptance.py</code>.</p><p><strong class="ok">M2 ACCEPTANCE PASS</strong></p></div>
+<div class="card"><h2>Scenario</h2><p>Submit A → engineer <code>ada</code> and B → engineer <code>bob</code> with <code>B depends_on A</code>. Tick the kernel; B must stay withheld until A is <code>done</code>, then dispatch.</p></div>
+<div class="card"><h2>Checks</h2><table><tr><th>Check</th><th>Result</th><th>Detail</th></tr><tr><td>A dispatched first (has a run)</td><td class="ok">PASS</td><td>A_runs=1</td></tr>
+<tr><td>B never ran before A was done (dependency gate)</td><td class="ok">PASS</td><td>a_done_tick=1 b_first_run_tick=2</td></tr>
+<tr><td>A reached done</td><td class="ok">PASS</td><td>done</td></tr>
+<tr><td>B dispatched only after A done</td><td class="ok">PASS</td><td>A done @ tick 1, B first ran @ tick 2</td></tr></table></div>
+<div class="card"><h2>Tick timeline</h2><pre>tick 1: A=done B=todo A_runs=1 B_runs=0
+tick 2: A=done B=done A_runs=1 B_runs=1</pre></div></main></body></html>
