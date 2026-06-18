@@ -15,8 +15,11 @@ from chorus.ledger._models import OriginKind, Task, TaskPriority, TaskStatus
 from chorus.ledger.repos._base import from_iso, to_iso, utcnow_iso
 from chorus.lifecycle._transitions import assert_legal
 
-# Statuses from which a task may be checked out into agent-owned in_progress (spec 02 §2).
-_CLAIMABLE: tuple[str, ...] = ("backlog", "todo", "blocked", "in_review")
+# Statuses from which a task may be checked out into agent-owned in_progress (spec 02 §2). Includes
+# ``in_progress`` for the crash-recovery *continuation*: after reap frees the locks (``checkout_run_id``
+# IS NULL), the stranded ``in_progress`` task must be re-claimable — the NULL-lock guard below keeps a
+# *live* in_progress task (lock still held) safe from a double-dispatch (spec 02 §7).
+_CLAIMABLE: tuple[str, ...] = ("backlog", "todo", "blocked", "in_review", "in_progress")
 
 # Timestamp column stamped when entering a given status.
 _STATUS_STAMP: dict[str, str] = {
