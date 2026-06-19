@@ -30,7 +30,7 @@ from chorus.heartbeat import BeatRunner, IntegrateContextPacket
 from chorus.roles import RoleBeatConfig, RoleRegistry, role_beat_config
 from chorus.workforce import Employee
 from chorus.workspace import CompanyWorkspace, default_work_root
-from chorus_tools import AssignTaskTool, DecomposeTool, SubmitTaskTool
+from chorus_tools import AssignTaskTool, DecomposeTool, SubmitTaskTool, SubmitVerdictTool
 
 if TYPE_CHECKING:
     from chorus.ledger import SqliteLedger
@@ -93,6 +93,8 @@ def _capability_tool(name: str, ledger: SqliteLedger) -> BaseTool | None:
         return SubmitTaskTool(ledger)
     if name == "assign_task":
         return AssignTaskTool(ledger)
+    if name == "submit_verdict":
+        return SubmitVerdictTool(ledger)
     return None
 
 

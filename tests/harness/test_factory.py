@@ -187,6 +187,29 @@ def test_integrate_beat_over_a_complete_subtree_drops_all_mutating_tools(
         ledger.close()
 
 
+def test_reviewer_harness_registers_the_submit_verdict_capability_tool(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The Reviewer's one capability is the chorus `submit_verdict` tool — read-only on the filesystem,
+    # it mutates only the ledger DoD verdict. Registered when the factory has a ledger to bind it to.
+    ledger = SqliteLedger.open(":memory:")
+    try:
+        captured: dict[str, Any] = {}
+        monkeypatch.setattr(
+            _factory_mod.dream, "build_harness", lambda **kw: captured.update(kw) or object()
+        )
+        ledger.employees.create(Employee(id="rob", name="Rob", role="reviewer"))
+        factory = _factory_mod.EmployeeHarnessFactory(
+            api_key="k", base_url="https://x/openai/v1", deployment="gpt-x", company_id="acme",
+            roles=RoleRegistry.from_plugins(default_roles()), work_root=tmp_path, ledger=ledger,
+        )
+        factory.materialize(Employee(id="rob", name="Rob", role="reviewer"))
+        names = {t.name for t in captured["registry"].list_tools()}
+        assert names == {"read_file", "submit_verdict"}  # read-only inspection + the verdict capability
+    finally:
+        ledger.close()
+
+
 def test_manager_brief_is_rehydrated_with_its_team(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

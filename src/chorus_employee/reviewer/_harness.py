@@ -22,7 +22,9 @@ def reviewer_manifest() -> RoleManifest:
         system_prompt=REVIEWER_BRIEF,  # → roles/{planner,generator,evaluator}.toml system_prompt
         permission_mode=PermissionMode.PLAN,  # plan-only: it never writes edits
         # — build_harness(registry=…) —
-        tools=("read_file",),  # read-only: it inspects, it does not change
+        # read-only on the filesystem; ``submit_verdict`` is its one capability — it mutates only the
+        # ledger DoD verdict, never the work under review (Path A, M3 load-bearing Reviewer).
+        tools=("read_file", "submit_verdict"),
         # — build_harness(memory=…) —
         memory_scope=MemoryScope.PROJECT,
         # — trust posture (spec 04 §4) → .harness/sandbox.toml —
