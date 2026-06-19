@@ -229,7 +229,11 @@ def _fold_terminal_sources(ledger: SqliteLedger) -> list[str]:
     folded: list[str] = []
     for action in ledger.recovery_actions.all_open():
         source = ledger.tasks.get(action.source_task_id)
-        if source is None or source.status in (TaskStatus.DONE, TaskStatus.CANCELLED):
+        if source is None or source.status in (
+            TaskStatus.DONE,
+            TaskStatus.CANCELLED,
+            TaskStatus.REJECTED,
+        ):
             ledger.recovery_actions.fold(action.id, resolution_note="source terminal")
             folded.append(action.id)
     return folded

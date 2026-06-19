@@ -28,20 +28,26 @@ LEGAL_TRANSITIONS: dict[TaskStatus, frozenset[TaskStatus]] = {
         {TaskStatus.IN_PROGRESS, TaskStatus.BLOCKED, TaskStatus.CANCELLED}
     ),
     TaskStatus.IN_PROGRESS: frozenset(
-        {TaskStatus.IN_REVIEW, TaskStatus.BLOCKED, TaskStatus.DONE, TaskStatus.CANCELLED}
+        {TaskStatus.IN_REVIEW, TaskStatus.BLOCKED, TaskStatus.DONE, TaskStatus.CANCELLED,
+         TaskStatus.REJECTED}
     ),
     TaskStatus.IN_REVIEW: frozenset(
-        {TaskStatus.IN_PROGRESS, TaskStatus.DONE, TaskStatus.CANCELLED}
+        {TaskStatus.IN_PROGRESS, TaskStatus.DONE, TaskStatus.CANCELLED, TaskStatus.REJECTED}
     ),
     TaskStatus.BLOCKED: frozenset(
-        {TaskStatus.TODO, TaskStatus.IN_PROGRESS, TaskStatus.CANCELLED}
+        {TaskStatus.TODO, TaskStatus.IN_PROGRESS, TaskStatus.CANCELLED, TaskStatus.REJECTED}
     ),
     TaskStatus.DONE: frozenset(),
     TaskStatus.CANCELLED: frozenset(),
+    TaskStatus.REJECTED: frozenset(),
 }
 
-# Terminal statuses — no legal outgoing transition (spec 02 §2).
-TERMINAL: frozenset[TaskStatus] = frozenset({TaskStatus.DONE, TaskStatus.CANCELLED})
+# Terminal statuses — no legal outgoing transition (spec 02 §2). ``REJECTED`` is terminal-by-review:
+# the work attempt is closed (so a parent's ``children_done`` fires and the manager reacts with a fresh
+# ``submit_task`` rather than reopening the rejected attempt).
+TERMINAL: frozenset[TaskStatus] = frozenset(
+    {TaskStatus.DONE, TaskStatus.CANCELLED, TaskStatus.REJECTED}
+)
 
 # The ``*_at`` column stamped on entry into a status (spec 02 §2). Absent => no stamp.
 _ENTRY_STAMP: dict[TaskStatus, str] = {

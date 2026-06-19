@@ -36,7 +36,7 @@ from chorus.ledger import (
 if TYPE_CHECKING:
     from chorus.ledger import SqliteLedger
 
-_TERMINAL = frozenset({TaskStatus.DONE, TaskStatus.CANCELLED})
+_TERMINAL = frozenset({TaskStatus.DONE, TaskStatus.CANCELLED, TaskStatus.REJECTED})
 
 
 class GovernanceError(RuntimeError):

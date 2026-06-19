@@ -28,11 +28,23 @@ _LEGAL: dict[TaskStatus, set[TaskStatus]] = {
         TaskStatus.BLOCKED,
         TaskStatus.DONE,
         TaskStatus.CANCELLED,
+        TaskStatus.REJECTED,
     },
-    TaskStatus.IN_REVIEW: {TaskStatus.IN_PROGRESS, TaskStatus.DONE, TaskStatus.CANCELLED},
-    TaskStatus.BLOCKED: {TaskStatus.TODO, TaskStatus.IN_PROGRESS, TaskStatus.CANCELLED},
+    TaskStatus.IN_REVIEW: {
+        TaskStatus.IN_PROGRESS,
+        TaskStatus.DONE,
+        TaskStatus.CANCELLED,
+        TaskStatus.REJECTED,
+    },
+    TaskStatus.BLOCKED: {
+        TaskStatus.TODO,
+        TaskStatus.IN_PROGRESS,
+        TaskStatus.CANCELLED,
+        TaskStatus.REJECTED,
+    },
     TaskStatus.DONE: set(),
     TaskStatus.CANCELLED: set(),
+    TaskStatus.REJECTED: set(),
 }
 
 _ALL = list(TaskStatus)
@@ -59,7 +71,7 @@ def test_illegal_edges_rejected(src: TaskStatus, dst: TaskStatus) -> None:
         assert_legal(src, dst, via_checkout=True)
 
 
-@pytest.mark.parametrize("terminal", [TaskStatus.DONE, TaskStatus.CANCELLED])
+@pytest.mark.parametrize("terminal", [TaskStatus.DONE, TaskStatus.CANCELLED, TaskStatus.REJECTED])
 def test_terminal_states_have_no_exit(terminal: TaskStatus) -> None:
     assert not _LEGAL[terminal]
     for dst in _ALL:

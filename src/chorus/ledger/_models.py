@@ -26,6 +26,7 @@ class TaskStatus(StrEnum):
     BLOCKED = "blocked"
     DONE = "done"
     CANCELLED = "cancelled"
+    REJECTED = "rejected"  # terminal: a reviewer blocked the deliverable (M3 load-bearing Reviewer)
 
 
 class TaskPriority(StrEnum):

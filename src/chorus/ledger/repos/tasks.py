@@ -153,7 +153,7 @@ class TaskRepo:
         cursor = self._conn.execute(
             "UPDATE task SET assignee_employee_id = ?, assignee_user_id = NULL, "
             "status = CASE WHEN status = 'backlog' THEN 'todo' ELSE status END, updated_at = ? "
-            "WHERE id = ? AND status NOT IN ('done', 'cancelled')",
+            "WHERE id = ? AND status NOT IN ('done', 'cancelled', 'rejected')",
             (employee_id, now, task_id),
         )
         self._conn.commit()
@@ -174,14 +174,15 @@ class TaskRepo:
         return [_row_to_task(row) for row in rows]
 
     def all_children_terminal(self, parent_id: str) -> bool:
-        """True iff ``parent_id`` has children and every child is terminal (``done``/``cancelled``).
+        """True iff ``parent_id`` has children and every child is terminal (``done``/``cancelled``/``rejected``).
 
-        The ``children_done`` signal: false when the parent has no children, so a childless task
-        never spuriously wakes a parent.
+        The ``children_done`` signal: false when the parent has no children, so a childless task never
+        spuriously wakes a parent. A reviewer-``rejected`` child is terminal, so a manager integrates
+        (and reacts to the rejection) instead of parking forever.
         """
         row = self._conn.execute(
             "SELECT COUNT(*) AS total, "
-            "SUM(CASE WHEN status IN ('done', 'cancelled') THEN 1 ELSE 0 END) AS terminal "
+            "SUM(CASE WHEN status IN ('done', 'cancelled', 'rejected') THEN 1 ELSE 0 END) AS terminal "
             "FROM task WHERE parent_id = ?",
             (parent_id,),
         ).fetchone()

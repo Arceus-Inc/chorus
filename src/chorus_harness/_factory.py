@@ -228,6 +228,14 @@ class EmployeeHarnessFactory:
         """The :class:`~chorus.heartbeat.BeatRunnerFor` seam — the role-faithful runner for a beat."""
         return self.materialize(employee, task_id=task_id).runner
 
+    def review_runner_for(
+        self, reviewer: Employee, *, task_id: str, worktree_owner_id: str
+    ) -> BeatRunner:
+        """The review seam — a read-only reviewer runner pointed at the author's worktree (M3 Reviewer)."""
+        return self.materialize(
+            reviewer, task_id=task_id, review_worktree_of=worktree_owner_id
+        ).runner
+
     def materialize(
         self, employee: Employee, *, task_id: str | None = None, review_worktree_of: str | None = None
     ) -> EmployeeHarness:

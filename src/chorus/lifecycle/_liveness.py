@@ -77,7 +77,7 @@ def _classify(
     task: Task, ledger: SqliteLedger, *, now: datetime, seen: set[str]
 ) -> Liveness:
     # Universal short circuits (spec 02 §3): terminal, human-owned, parked.
-    if task.status in (TaskStatus.DONE, TaskStatus.CANCELLED):
+    if task.status in (TaskStatus.DONE, TaskStatus.CANCELLED, TaskStatus.REJECTED):
         return Liveness(Health.HEALTHY, "terminal")
     if task.assignee_user_id is not None:
         return Liveness(Health.HEALTHY, "human_owner")

@@ -142,7 +142,11 @@ class LedgerInspector:
         )
 
 
-_TERMINAL_STATUS_VALUES = {TaskStatus.DONE.value, TaskStatus.CANCELLED.value}
+_TERMINAL_STATUS_VALUES = {
+    TaskStatus.DONE.value,
+    TaskStatus.CANCELLED.value,
+    TaskStatus.REJECTED.value,
+}
 _FAILED_RUN_STATUSES = {RunStatus.FAILED, RunStatus.TIMED_OUT, RunStatus.CANCELLED}
 
 
