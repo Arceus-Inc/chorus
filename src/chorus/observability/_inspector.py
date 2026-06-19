@@ -90,6 +90,7 @@ class LedgerInspector:
             parent_intent=parent.intent,
             manager_id=parent.assignee_employee_id,
             iteration=packet.iteration,
+            recommended_action=packet.recommended_action,
             child_count=total,
             completed_children=completed,
             blocked_children=blocked,

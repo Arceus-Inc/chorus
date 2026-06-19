@@ -72,6 +72,8 @@ def test_integrate_context_packet_summarizes_child_feedback(
     assert loaded.parent_task_id == "P"
     assert loaded.parent_intent == "ship the pantry"
     assert loaded.iteration == 2
+    # every child is done with a passing DoD and no blockers → the kernel recommends ACCEPT
+    assert loaded.recommended_action == "accept"
     assert [(report.id, report.role) for report in loaded.available_reports] == [("lead", "manager")]
     child = loaded.children[0]
     assert child.task_id == "C1"
@@ -83,3 +85,21 @@ def test_integrate_context_packet_summarizes_child_feedback(
     assert child.latest_run_summary == "storage landed"
     assert child.artifact_type == "pr"
     assert child.artifact_ref == {"merged": True, "commit": "abc123"}
+
+
+def test_recommended_action_is_react_when_a_child_is_unresolved(
+    ledger: SqliteLedger, tmp_path: Path
+) -> None:
+    # A subtree with a still-blocked child is NOT complete — the kernel recommends the manager react
+    # (submit/assign), not accept. This is the mechanism nudge that curbs gratuitous over-submitting:
+    # when everything is green the recommendation is `accept`; only a real gap flips it to `react`.
+    ledger.employees.create(Employee(id="mgr", name="Mgr", role="manager"))
+    ledger.employees.create(Employee(id="ada", name="Ada", role="engineer", reports_to="mgr"))
+    ledger.tasks.submit(Task(id="P", intent="ship it", status=TaskStatus.BLOCKED, assignee_employee_id="mgr"))
+    ledger.runs.create(Run(id="run_p0", employee_id="mgr", task_id="P", status=RunStatus.SUCCEEDED, outcome={}))
+    ledger.tasks.submit(Task(id="C_ok", parent_id="P", intent="part a", status=TaskStatus.DONE, assignee_employee_id="ada"))
+    ledger.tasks.submit(Task(id="C_bad", parent_id="P", intent="part b", status=TaskStatus.BLOCKED, assignee_employee_id="ada"))
+
+    packet = IntegrateContextPacket.build(ledger, parent_task_id="P")
+
+    assert packet.recommended_action == "react"  # one child is blocked → not complete

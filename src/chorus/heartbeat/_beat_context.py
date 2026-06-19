@@ -94,6 +94,7 @@ class IntegrateContextPacket:
     parent_task_id: str
     parent_intent: str
     iteration: int
+    recommended_action: str
     available_reports: tuple[ReportContext, ...]
     children: tuple[ChildOutcomeContext, ...]
 
@@ -101,6 +102,24 @@ class IntegrateContextPacket:
     def path_in(working_dir: Path) -> Path:
         """The on-disk location of the integrate packet under an employee's working dir."""
         return working_dir / _INTEGRATE_RELATIVE_PATH
+
+    @staticmethod
+    def recommend(children: tuple[ChildOutcomeContext, ...]) -> str:
+        """The kernel's completeness verdict the manager reads before deciding accept vs react.
+
+        ``"accept"`` only when the whole delegated subtree is genuinely done — every child finished
+        (``done``), unblocked, and either passed its DoD or had none. Any unresolved child flips it to
+        ``"react"``. Derived from durable state so the manager is told whether work remains rather than
+        left to infer it (and over-submit out of caution)."""
+        if not children:
+            return "react"
+        complete = all(
+            child.status == TaskStatus.DONE.value
+            and not child.blockers
+            and child.dod_status in (None, "passed")
+            for child in children
+        )
+        return "accept" if complete else "react"
 
     @staticmethod
     def iteration_for(ledger: SqliteLedger, parent_task_id: str) -> int:
@@ -131,6 +150,7 @@ class IntegrateContextPacket:
             parent_task_id=parent.id,
             parent_intent=parent.intent,
             iteration=iteration,
+            recommended_action=cls.recommend(children),
             available_reports=reports,
             children=children,
         )
@@ -162,12 +182,14 @@ class IntegrateContextPacket:
     def read(cls, working_dir: Path) -> IntegrateContextPacket:
         """Load a persisted integrate packet."""
         data = json.loads(cls.path_in(working_dir).read_text(encoding="utf-8"))
+        children = tuple(ChildOutcomeContext(**item) for item in data["children"])
         return cls(
             parent_task_id=data["parent_task_id"],
             parent_intent=data["parent_intent"],
             iteration=int(data["iteration"]),
+            recommended_action=data.get("recommended_action") or cls.recommend(children),
             available_reports=tuple(ReportContext(**item) for item in data["available_reports"]),
-            children=tuple(ChildOutcomeContext(**item) for item in data["children"]),
+            children=children,
         )
 
 

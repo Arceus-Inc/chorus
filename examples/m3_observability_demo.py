@@ -62,7 +62,8 @@ def _render_org(org: OrgObservabilityReport) -> str:
 
 def _render_scrum(p: ScrumPacketView) -> str:
     lines = [
-        f"  goal {p.parent_task_id} (manager={p.manager_id})  ITERATION={p.iteration}",
+        f"  goal {p.parent_task_id} (manager={p.manager_id})  ITERATION={p.iteration}  "
+        f"recommend={p.recommended_action}",
         f"  intent: {p.parent_intent[:80]}",
         f"  children={p.child_count}  done={p.completed_children}  blocked={p.blocked_children}  "
         f"completion={p.completion_rate:.0%}",

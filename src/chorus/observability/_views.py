@@ -113,6 +113,7 @@ class ScrumPacketView:
     parent_intent: str
     manager_id: str | None
     iteration: int
+    recommended_action: str
     child_count: int
     completed_children: int
     blocked_children: int
