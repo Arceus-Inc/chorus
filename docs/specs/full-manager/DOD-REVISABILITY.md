@@ -1,7 +1,8 @@
 # §1 DoD revisability — tighten freely, loosen only with sign-off
 
-Status: spec (to implement on `dev/m1-dod-revisability`, branched off `main` — §5 governance now
-merged). Closes the §1 "DoD revisability" deferral in
+Status: **implemented** on `dev/m1-dod-revisability` (Slices 1–5, branched off `main`). Gate green —
+ruff + mypy `--strict` + full pytest. Suite: `examples/dod_revisability_suite.py` →
+`reports/m1-dod-revisability.html`. Closes the §1 "DoD revisability" deferral in
 [06.5-deferred-from-spec04.md](../divo/06.5-deferred-from-spec04.md). Builds on the §5 governed-action
 seam (`chorus/governance/_actions/`).
 

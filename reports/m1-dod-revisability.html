@@ -1,0 +1,63 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<title>§1 DoD revisability — tighten free, loosen with sign-off</title><style>
+body{font-family:ui-sans-serif,system-ui,sans-serif;margin:2rem;background:#0f1115;color:#e6e8eb}
+h1{font-size:1.4rem} .lead{color:#9aa0a6;max-width:78ch}
+table{width:100%;border-collapse:collapse;margin-top:1.2rem;font-size:.9rem}
+th{text-align:left;color:#9aa0a6;font-weight:500;font-size:.74rem;text-transform:uppercase;
+letter-spacing:.05em;padding:.4rem .5rem;border-bottom:1px solid #262b33}
+td{padding:.5rem .5rem;border-bottom:1px solid #1c2027;vertical-align:top}
+code{background:#16191f;padding:.1rem .4rem;border-radius:4px}
+code.ok{color:#4ade80} code.no{color:#f87171}
+.arrow{color:#6b7280;text-align:center} .note{color:#9aa0a6;font-size:.82rem}
+.summary{display:inline-block;margin-top:1rem;padding:.4rem .9rem;border-radius:999px;
+background:#0e3a23;color:#4ade80;font-weight:700}
+</style></head><body>
+<h1>§1 DoD revisability — a manager raises the bar freely; lowering it needs sign-off</h1>
+<p class="lead">A task's Definition-of-Done is revisable only through a typed, audited path. A
+<b>tighten</b> (adding an obligation) by the assignee's manager applies immediately; a <b>loosen</b> is
+staged behind a §5 <code>loosen_dod</code> gate while the old, stricter DoD stays in force — so the gate
+that verifies a worker's output can never be quietly weakened.</p>
+<div class="summary">5 scenarios · tighten immediate · loosen gated · all enforced</div>
+<table>
+<thead><tr><th>scenario</th><th>who</th><th>DoD before</th><th></th><th>DoD after</th>
+<th>what it shows</th></tr></thead>
+<tbody><tr>
+          <td>tighten (add a check)</td>
+          <td>manager</td>
+          <td><code>pytest</code></td>
+          <td class="arrow">&rarr;</td>
+          <td><code class="ok">pytest &amp;&amp; ruff check</code></td>
+          <td class="note">a manager raises the bar — applied immediately, no approval.</td>
+        </tr><tr>
+          <td>loosen (approved)</td>
+          <td>manager + sign-off</td>
+          <td><code>pytest &amp;&amp; ruff check</code></td>
+          <td class="arrow">&rarr;</td>
+          <td><code class="ok">pytest</code></td>
+          <td class="note">lowering the bar needs sign-off; approved -&gt; in force.</td>
+        </tr><tr>
+          <td>loosen (denied)</td>
+          <td>manager + sign-off</td>
+          <td><code>pytest &amp;&amp; ruff check</code></td>
+          <td class="arrow">&rarr;</td>
+          <td><code class="no">pytest &amp;&amp; ruff check</code></td>
+          <td class="note">denied -&gt; the stricter DoD is kept.</td>
+        </tr><tr>
+          <td>worker self-revise (blocked)</td>
+          <td>engineer (the worker)</td>
+          <td><code>pytest</code></td>
+          <td class="arrow">&rarr;</td>
+          <td><code class="no">pytest</code></td>
+          <td class="note">a worker cannot revise the gate that verifies its own work.</td>
+        </tr><tr>
+          <td>no-op edit (rejected)</td>
+          <td>manager</td>
+          <td><code>pytest</code></td>
+          <td class="arrow">&rarr;</td>
+          <td><code class="no">pytest</code></td>
+          <td class="note">an identical DoD is not a revision.</td>
+        </tr></tbody>
+</table>
+<footer class="note" style="margin-top:1.2rem">examples/dod_revisability_suite.py · chorus §1 DoD
+revisability (over §5 governance)</footer>
+</body></html>
