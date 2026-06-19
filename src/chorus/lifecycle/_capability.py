@@ -94,6 +94,10 @@ class RecordVerdictResult:
     self_review: bool = False
 
 
+# DoD kinds a Reviewer renders a verdict on (an objective ``command`` / a human approval are not).
+_REVIEWER_GATED_KINDS = frozenset({DoDKind.AGENT_REVIEW, DoDKind.REVIEWED_BUILD})
+
+
 def _child_id(parent_id: str, label: str) -> str:
     """A deterministic child id per ``(parent, label)`` so a re-fired decompose never duplicates."""
     digest = hashlib.sha1(f"{parent_id}::{label}".encode()).hexdigest()[:12]
@@ -221,23 +225,34 @@ class CapabilityService:
         return AssignTaskResult(assigned=True)
 
     def record_verdict(
-        self, *, task_id: str, run_id: str, reviewer_id: str, approve: bool, feedback: str
+        self,
+        *,
+        task_id: str,
+        run_id: str,
+        reviewer_id: str,
+        approve: bool,
+        feedback: str,
+        verify_command: str = "",
     ) -> RecordVerdictResult:
-        """Record a reviewer's verdict on ``task_id``'s ``agent_review`` DoD (approve→PASSED, block→FAILED).
+        """Record a reviewer's verdict on a task's reviewer-gated DoD (approve→PASSED, block→FAILED).
 
-        The verdict IS the DoD's verdict: it does not itself transition the task — the kernel reads the
-        recorded DoD status after the reviewer beat and lands (approve) or routes the block. Fails closed
-        on a non-``agent_review`` DoD or a reviewer verifying its own work (``reviewer_id`` == author)."""
+        The verdict IS the DoD's verdict — it does not itself transition the task. The kernel reads the
+        recorded DoD status after the reviewer beat and lands (approve) or routes the block. For a
+        ``reviewed_build`` DoD the reviewer also reports ``verify_command`` (the project's verify command
+        the kernel then runs); a PASSED here means "quality approved", with the objective run still to
+        come. Fails closed on a non reviewer-gated DoD or a reviewer verifying its own work."""
         task = self._ledger.tasks.get(task_id)
         if task is None:
             raise KeyError(task_id)
         dod = self._ledger.dod.get_for_task(task_id)
-        if dod is None or DoDKind(dod.kind) is not DoDKind.AGENT_REVIEW:
+        if dod is None or DoDKind(dod.kind) not in _REVIEWER_GATED_KINDS:
             return RecordVerdictResult(not_reviewable=True)
         if reviewer_id == task.assignee_employee_id:
             return RecordVerdictResult(self_review=True)
         status = DodStatus.PASSED if approve else DodStatus.FAILED
         verdict: dict[str, object] = {"approve": approve, "feedback": feedback, "reviewer": reviewer_id}
+        if verify_command:  # only a reviewed_build carries a command for the kernel to run
+            verdict["verify_command"] = verify_command
         self._ledger.dod.record_verdict(dod.id, status, verdict=verdict, run_id=run_id)
         record_activity(
             self._ledger,

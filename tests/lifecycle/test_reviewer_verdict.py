@@ -67,6 +67,25 @@ def test_reviewer_cannot_verify_its_own_work(ledger: SqliteLedger) -> None:
     assert dod is not None and dod.status is DodStatus.PENDING  # untouched
 
 
+def test_verdict_records_the_discovered_verify_command(ledger: SqliteLedger) -> None:
+    # For a reviewed build the reviewer reports the project's verify command; the kernel runs it later.
+    ledger.employees.create(Employee(id="rev", name="Rob", role="reviewer"))
+    ledger.employees.create(Employee(id="ada", name="Ada", role="engineer"))
+    ledger.tasks.submit(Task(id="code", intent="build", status=TaskStatus.IN_PROGRESS, assignee_employee_id="ada"))
+    ledger.dod.create("code", Verifier.reviewed_build(artifact_class="pr"))
+    ledger.runs.create(Run(id=_REVIEW_RUN, employee_id="rev", task_id="code", status=RunStatus.RUNNING))
+
+    result = CapabilityService(ledger).record_verdict(
+        task_id="code", run_id=_REVIEW_RUN, reviewer_id="rev", approve=True,
+        feedback="clean", verify_command="npm ci && npm test",
+    )
+    assert result.recorded is True and result.approved is True
+    dod = ledger.dod.get_for_task("code")
+    assert dod is not None and dod.verdict == {
+        "approve": True, "feedback": "clean", "reviewer": "rev", "verify_command": "npm ci && npm test"
+    }
+
+
 def test_a_non_agent_review_dod_is_not_reviewable(ledger: SqliteLedger) -> None:
     ledger.employees.create(Employee(id="ada", name="Ada", role="engineer"))
     ledger.employees.create(Employee(id="rev", name="Rob", role="reviewer"))

@@ -26,6 +26,14 @@ class SubmitVerdictInput(BaseModel):
     feedback: str = Field(
         description="concrete reasons for the verdict; when blocking, say exactly what must change"
     )
+    verify_command: str = Field(
+        default="",
+        description=(
+            "for a code task: the project's verify command to run (e.g. 'npm ci && npm test', "
+            "'cargo test', 'pytest -q'), discovered from the project's files. The kernel runs it as the "
+            "objective gate. Leave empty for a non-code review."
+        ),
+    )
 
 
 class SubmitVerdictTool(BaseTool):
@@ -52,6 +60,7 @@ class SubmitVerdictTool(BaseTool):
             reviewer_id=beat.employee_id,
             approve=args.approve,
             feedback=args.feedback,
+            verify_command=args.verify_command,
         )
         if result.not_reviewable:
             return ToolResult(
