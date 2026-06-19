@@ -90,6 +90,24 @@ class GovernanceResolver:
             self._audit(ActivityVerb.GATED, opened, actor=None)
         return opened
 
+    def open_plan_gate(self, parent_id: str, *, reason: str) -> Approval:
+        """Hold a freshly-decomposed parent's children ``blocked`` and open its plan-approval gate.
+
+        Called right after a manager decomposes when ``policy.plan_gate_required`` — the children were
+        created ``todo`` + assignment-waked, so each is demoted to ``blocked`` and its queued wake
+        dropped, parking the plan until a human signs it off (approve releases them again)."""
+        for child in self._ledger.tasks.children(parent_id):
+            if child.status is TaskStatus.TODO:
+                self._ledger.tasks.set_status(child.id, TaskStatus.BLOCKED)
+                if child.assignee_employee_id is not None:
+                    self._ledger.wakes.drop_queued(employee_id=child.assignee_employee_id)
+        return self.open(
+            action=ApprovalAction.PLAN_APPROVAL,
+            subject_kind=ApprovalSubjectKind.TASK,
+            subject_id=parent_id,
+            reason=reason,
+        )
+
     def open_task_gate(self, task_id: str, *, gate_kind: ApprovalGate, reason: str) -> Approval:
         """Open a task acceptance/authorization gate (the ``human_approval`` DoD hook + CLI path)."""
         task = self._ledger.tasks.get(task_id)
