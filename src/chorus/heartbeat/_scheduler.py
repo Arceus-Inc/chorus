@@ -138,6 +138,7 @@ class Scheduler:
         lease_ttl_s: float = 300.0,
         max_repair_attempts: int = 2,
         transient_retries: int = 2,
+        max_integrate_iterations: int = 3,
         memory_writer: MemoryWriter | None = None,
         ledger: SqliteLedger | None = None,
         workforce: Workforce | None = None,
@@ -157,6 +158,9 @@ class Scheduler:
         # In-beat retry budget for *transient* engine faults (a planner/evaluator parse blip): re-run the
         # beat this many times before stranding it onto the recovery ladder (spec 05 §5).
         self.transient_retries = transient_retries
+        # How many adaptive integrate beats a manager gets per goal before the kernel forces
+        # acceptance of the completed subtree — bounds the submit→re-integrate loop (spec M3 §5).
+        self.max_integrate_iterations = max_integrate_iterations
         self._ledger = ledger
         self._workforce = workforce
         # The beat seam is per-employee (resolve a role-faithful runner for the dispatched employee). A
@@ -438,11 +442,18 @@ class Scheduler:
             )
         )
 
+        # Integrate-iteration cap (M3 §5): a manager that keeps spawning follow-ups would re-park /
+        # re-integrate forever, bounded only by budget. Past the cap, accept the completed subtree
+        # mechanically — no further adaptive beat — so the loop is bounded.
+        if await self._maybe_cap_integrate(ledger, wake=wake, run_id=run_id, task=task, employee=employee):
+            return
+
         observer = self._event_bus.emit if self._event_bus is not None else None
         verifier = None
         try:
-            # Resolve the runner whose harness is materialized for *this* employee's role (spec 06 §2).
-            beat_runner = beat_runner_for.runner_for(employee)
+            # Resolve the runner for *this* employee's role + beat phase (an integrate beat — the task
+            # already has children — is materialized without ``decompose``, spec 06 §2 / M3 §5).
+            beat_runner = beat_runner_for.runner_for(employee, task_id=task_id)
             if ledger.tasks.has_children(task_id) and ledger.tasks.all_children_terminal(task_id):
                 self._write_integrate_packet(ledger, beat_runner=beat_runner, task_id=task_id)
             # Intake DoD (spec 04 §1 / 06 §2): a task with no explicit DoD inherits its assignee role's, so
@@ -533,7 +544,37 @@ class Scheduler:
         working_dir = getattr(beat_runner, "working_dir", None)
         if working_dir is None:
             return
-        IntegrateContextPacket.build(ledger, parent_task_id=task_id).write(Path(working_dir))
+        iteration = self._integrate_iteration(ledger, task_id)
+        IntegrateContextPacket.build(ledger, parent_task_id=task_id, iteration=iteration).write(
+            Path(working_dir)
+        )
+
+    def _integrate_iteration(self, ledger: SqliteLedger, task_id: str) -> int:
+        """1-based count of integrate beats this parent has had (its runs minus the kickoff)."""
+        return max(1, len(ledger.runs.for_task(task_id)) - 1)
+
+    async def _maybe_cap_integrate(
+        self, ledger: SqliteLedger, *, wake: Wake, run_id: str, task: Task, employee: Employee
+    ) -> bool:
+        """At the integrate-iteration cap, accept the completed subtree mechanically — no model beat.
+
+        Returns ``True`` when it handled (and landed) the beat, so ``run_beat`` returns early. Only a
+        re-invocation whose subtree is already complete can be capped; a kickoff or engineer beat
+        (no terminal subtree) always returns ``False``.
+        """
+        if not (ledger.tasks.has_children(task.id) and ledger.tasks.all_children_terminal(task.id)):
+            return False
+        if self._integrate_iteration(ledger, task.id) <= self.max_integrate_iterations:
+            return False
+        verifier = ledger.dod.verifier_for_task(task.id)
+        ledger.runs.finish(run_id, RunStatus.SUCCEEDED, outcome=None)
+        await self._land_passed(
+            task.id, run_id=run_id, verifier=verifier, verdict=None, employee=employee,
+            result=BeatOutcome(passed=True, outcome={}, summary="integrated (iteration cap reached)"),
+        )
+        ledger.tasks.release_locks(task.id, run_id=run_id)
+        ledger.wakes.mark_done(wake.id)
+        return True
 
     def _memory_scope(self, employee: Employee) -> str:
         """The employee's write scope — its role's ``memory_scope`` (``project`` when unknown)."""

@@ -220,15 +220,32 @@ class EmployeeHarnessFactory:
         """The org's workspace root (``.chorus/work/{org}/``) — where landers find the worktrees."""
         return self._company_root
 
-    def runner_for(self, employee: Employee) -> BeatRunner:
+    def runner_for(self, employee: Employee, *, task_id: str | None = None) -> BeatRunner:
         """The :class:`~chorus.heartbeat.BeatRunnerFor` seam — the role-faithful runner for a beat."""
-        return self.materialize(employee).runner
+        return self.materialize(employee, task_id=task_id).runner
 
-    def materialize(self, employee: Employee) -> EmployeeHarness:
-        """Resolve ``employee``'s role into a configured dream harness in its isolated worktree."""
+    def materialize(self, employee: Employee, *, task_id: str | None = None) -> EmployeeHarness:
+        """Resolve ``employee``'s role into a configured dream harness in its isolated worktree.
+
+        ``task_id`` shapes the harness to the beat's phase: a manager's **integrate** beat (its task
+        already has children) is materialized **without** ``decompose``, so the model can react with
+        ``submit_task`` / ``assign_task`` but cannot re-decompose a delegated subtree (M3 §5). The
+        kickoff beat (no children yet) keeps ``decompose``.
+        """
         if employee.role not in self._roles:
             raise ValueError(f"role {employee.role!r} for {employee.id!r} is not a registered role")
         config = role_beat_config(self._roles.get(employee.role).manifest)
+
+        # Structural over-decompose guard: on an integrate beat the parent already owns children, so
+        # ``decompose`` is dropped from the toolset entirely — the model never sees it (M3 §5). Brief
+        # discipline alone is not enough; under load a manager re-decomposes and balloons the subtree.
+        if (
+            task_id is not None
+            and self._ledger is not None
+            and "decompose" in config.tools
+            and self._ledger.tasks.has_children(task_id)
+        ):
+            config = replace(config, tools=tuple(t for t in config.tools if t != "decompose"))
 
         # Team rehydration: a delegating role (decompose/submit/assign) gets its reports appended to its
         # brief, read live from the workforce — so the model assigns to real employee ids, not invented.

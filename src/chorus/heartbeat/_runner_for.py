@@ -20,9 +20,14 @@ if TYPE_CHECKING:
 
 @runtime_checkable
 class BeatRunnerFor(Protocol):
-    """Resolve the :class:`BeatRunner` for a dispatched employee (the role-faithful execution seam)."""
+    """Resolve the :class:`BeatRunner` for a dispatched employee (the role-faithful execution seam).
 
-    def runner_for(self, employee: Employee) -> BeatRunner: ...
+    ``task_id`` is the task this beat will run, so a resolver can shape the harness to the beat's
+    *phase* — e.g. a manager's integrate beat (its task already has children) is materialized without
+    the ``decompose`` tool, so the model cannot re-decompose a delegated subtree (M3 §5).
+    """
+
+    def runner_for(self, employee: Employee, *, task_id: str | None = None) -> BeatRunner: ...
 
 
 @dataclass(frozen=True)
@@ -31,7 +36,7 @@ class _Single:
 
     runner: BeatRunner
 
-    def runner_for(self, employee: Employee) -> BeatRunner:
+    def runner_for(self, employee: Employee, *, task_id: str | None = None) -> BeatRunner:
         return self.runner
 
 

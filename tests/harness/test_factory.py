@@ -122,6 +122,36 @@ def test_manager_harness_registers_the_decompose_capability_tool(
         ledger.close()
 
 
+def test_integrate_beat_harness_drops_the_decompose_tool(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # Structural over-decompose guard (M3 §5): an integrate beat — the manager's task already has
+    # children — is materialized WITHOUT `decompose`, so the model can react with submit_task /
+    # assign_task but cannot re-decompose (and balloon) a delegated subtree. Brief discipline alone
+    # is not enough; under load a manager re-decomposes.
+    from chorus.ledger import Task, TaskStatus
+
+    ledger = SqliteLedger.open(":memory:")
+    try:
+        captured: dict[str, Any] = {}
+        monkeypatch.setattr(
+            _factory_mod.dream, "build_harness", lambda **kw: captured.update(kw) or object()
+        )
+        ledger.employees.create(Employee(id="moe", name="Moe", role="manager"))
+        ledger.tasks.submit(Task(id="goal", intent="ship it", status=TaskStatus.TODO))
+        ledger.tasks.submit(Task(id="kid", intent="a part", status=TaskStatus.TODO, parent_id="goal"))
+        factory = _factory_mod.EmployeeHarnessFactory(
+            api_key="k", base_url="https://x/openai/v1", deployment="gpt-x", company_id="acme",
+            roles=RoleRegistry.from_plugins(default_roles()), work_root=tmp_path, ledger=ledger,
+        )
+        factory.materialize(Employee(id="moe", name="Moe", role="manager"), task_id="goal")
+        names = {t.name for t in captured["registry"].list_tools()}
+        assert "decompose" not in names  # cannot re-decompose a delegated subtree
+        assert {"read_file", "submit_task", "assign_task"} <= names  # the reactive toolset remains
+    finally:
+        ledger.close()
+
+
 def test_manager_brief_is_rehydrated_with_its_team(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

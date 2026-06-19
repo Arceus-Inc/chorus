@@ -42,12 +42,12 @@ class _PerEmployee:
     def __init__(self) -> None:
         self.runners: dict[str, _TaggedBeat] = {}
 
-    def runner_for(self, employee: Employee) -> _TaggedBeat:
+    def runner_for(self, employee: Employee, *, task_id: str | None = None) -> _TaggedBeat:
         return self.runners.setdefault(employee.id, _TaggedBeat(employee.id))
 
 
 class _BrokenFactory:
-    def runner_for(self, employee: Employee) -> _TaggedBeat:
+    def runner_for(self, employee: Employee, *, task_id: str | None = None) -> _TaggedBeat:
         raise RecursionError("copy loop")
 
 

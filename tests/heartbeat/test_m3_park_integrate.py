@@ -121,3 +121,119 @@ async def test_full_loop_decompose_then_children_then_integrate_to_done(
     assert {c["id"] for c in subtree.resource_ref["children"]} == {  # type: ignore[union-attr,index]
         c.id for c in ledger.tasks.children("M")
     }
+
+
+class _AdaptiveBeat:
+    """Decompose on kickoff; on integrate #1 submit ONE follow-up child; on integrate #2 accept."""
+
+    def __init__(self, ledger: SqliteLedger, *, parent: str) -> None:
+        self._ledger = ledger
+        self._parent = parent
+        self.ran: list[str] = []
+        self.integrate_packets: list[IntegrateContextPacket] = []
+        self.working_dir: object = None
+        self._integrates = 0
+
+    async def run_task(
+        self, *, task_id: str, intent: str, verification: object = (),
+        observer: object = None, run_id: str | None = None,
+    ) -> BeatOutcome:
+        self.ran.append(task_id)
+        svc = CapabilityService(self._ledger)
+        if task_id != self._parent:
+            return BeatOutcome(passed=True, outcome={}, summary="ok", model="m")  # an engineer child
+        if not self._ledger.tasks.has_children(self._parent):  # kickoff beat
+            svc.decompose(parent_id=self._parent, revision=str(run_id), children=[
+                ChildPlan(label="api", intent="api", assignee="ada"),
+                ChildPlan(label="ui", intent="ui", assignee="bob"),
+            ])
+            return BeatOutcome(passed=False, outcome={}, summary="delegated", model="m")
+        self._integrates += 1
+        from pathlib import Path
+        self.integrate_packets.append(IntegrateContextPacket.read(Path(str(self.working_dir))))
+        if self._integrates == 1:  # react: one concrete follow-up
+            svc.submit_one(parent_id=self._parent, revision=str(run_id),
+                           child=ChildPlan(label="polish", intent="polish", assignee="ada"))
+            return BeatOutcome(passed=False, outcome={}, summary="submitted follow-up", model="m")
+        return BeatOutcome(passed=True, outcome={}, summary="accepted", model="m")  # integrate #2
+
+
+class _AlwaysSubmitBeat:
+    """A misbehaving manager: decompose on kickoff, then submit a fresh follow-up on EVERY integrate."""
+
+    def __init__(self, ledger: SqliteLedger, *, parent: str) -> None:
+        self._ledger = ledger
+        self._parent = parent
+        self.ran: list[str] = []
+        self.working_dir: object = None
+        self._n = 0
+
+    async def run_task(
+        self, *, task_id: str, intent: str, verification: object = (),
+        observer: object = None, run_id: str | None = None,
+    ) -> BeatOutcome:
+        self.ran.append(task_id)
+        svc = CapabilityService(self._ledger)
+        if task_id != self._parent:
+            return BeatOutcome(passed=True, outcome={}, summary="ok", model="m")
+        if not self._ledger.tasks.has_children(self._parent):
+            svc.decompose(parent_id=self._parent, revision=str(run_id),
+                          children=[ChildPlan(label="c0", intent="c0", assignee="ada")])
+            return BeatOutcome(passed=False, outcome={}, summary="delegated", model="m")
+        self._n += 1
+        svc.submit_one(parent_id=self._parent, revision=str(run_id),
+                       child=ChildPlan(label=f"more{self._n}", intent="more", assignee="ada"))
+        return BeatOutcome(passed=False, outcome={}, summary="never accepts", model="m")
+
+
+def _adaptive_sched(ledger: SqliteLedger, beat: object, root: object, *, cap: int = 3) -> Scheduler:
+    from pathlib import Path
+
+    beat.working_dir = Path(str(root))  # type: ignore[attr-defined]
+    return Scheduler(
+        ledger=ledger, workforce=LedgerWorkforce(ledger.employees), beat_runner=beat,  # type: ignore[arg-type]
+        roles=RoleRegistry.from_plugins(default_roles()),
+        landers=default_landers(Path(str(root)), ledger=ledger),
+        clock=lambda: _NOW, max_concurrent_runs=4, max_integrate_iterations=cap,
+    )
+
+
+async def test_adaptive_integrate_submits_a_follow_up_then_re_integrates_to_done(
+    ledger: SqliteLedger, tmp_path: object
+) -> None:
+    _team(ledger)
+    ledger.tasks.submit(Task(id="M", intent="ship the feature", status=TaskStatus.TODO))
+    assign_task(ledger, "M", "mgr")
+    beat = _AdaptiveBeat(ledger, parent="M")
+    sched = _adaptive_sched(ledger, beat, tmp_path)
+
+    for _ in range(12):  # kickoff → api,ui → integrate#1 (submit polish) → polish → integrate#2 (accept)
+        await sched.tick_once()
+        await sched.drain()
+
+    assert ledger.tasks.get("M").status is TaskStatus.DONE  # type: ignore[union-attr]
+    assert len(ledger.tasks.children("M")) == 3  # api, ui, + the submitted polish
+    assert ledger.tasks.all_children_terminal("M")
+    # the manager REACTED: kickoff + integrate#1 (submitted) + integrate#2 (accepted) = 3 model beats
+    assert beat.ran.count("M") == 3
+    # the real iteration count is threaded into the packet
+    assert [p.iteration for p in beat.integrate_packets] == [1, 2]
+
+
+async def test_adaptive_integrate_is_bounded_by_the_iteration_cap(
+    ledger: SqliteLedger, tmp_path: object
+) -> None:
+    _team(ledger)
+    ledger.tasks.submit(Task(id="M", intent="ship the feature", status=TaskStatus.TODO))
+    assign_task(ledger, "M", "mgr")
+    beat = _AlwaysSubmitBeat(ledger, parent="M")
+    sched = _adaptive_sched(ledger, beat, tmp_path, cap=2)  # bound the loop at 2 adaptive integrates
+
+    for _ in range(30):  # a manager that never accepts must still terminate
+        await sched.tick_once()
+        await sched.drain()
+
+    # the kernel forced acceptance at the cap — the subtree is done, not looping forever
+    assert ledger.tasks.get("M").status is TaskStatus.DONE  # type: ignore[union-attr]
+    # kickoff + exactly cap(=2) adaptive integrate beats; the 3rd integrate was capped (mechanical, no beat)
+    assert beat.ran.count("M") == 3
