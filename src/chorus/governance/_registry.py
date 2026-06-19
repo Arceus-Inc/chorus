@@ -10,7 +10,12 @@ from __future__ import annotations
 from collections.abc import Iterable
 from typing import TYPE_CHECKING
 
-from chorus.governance._actions import HireEmployeeAction, PlanApprovalAction, TaskGateAction
+from chorus.governance._actions import (
+    BoardApprovalAction,
+    HireEmployeeAction,
+    PlanApprovalAction,
+    TaskGateAction,
+)
 from chorus.governance._errors import GovernanceError
 from chorus.governance._types import GovernedAction
 from chorus.ledger import ApprovalAction
@@ -50,7 +55,12 @@ class GovernanceRegistry:
 
 def default_actions(ledger: SqliteLedger) -> list[GovernedAction]:
     """The built-in governed actions, bound to ``ledger`` (extended one handler per slice)."""
-    return [TaskGateAction(ledger), HireEmployeeAction(ledger), PlanApprovalAction(ledger)]
+    return [
+        TaskGateAction(ledger),
+        HireEmployeeAction(ledger),
+        PlanApprovalAction(ledger),
+        BoardApprovalAction(ledger),
+    ]
 
 
 __all__ = ["GovernanceRegistry", "UnregisteredAction", "default_actions"]

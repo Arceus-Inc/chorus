@@ -38,6 +38,12 @@ class ArtifactRepo:
         self._conn.commit()
         return artifact
 
+    def get(self, artifact_id: str) -> Artifact | None:
+        row = self._conn.execute(
+            "SELECT * FROM artifact WHERE id = ?", (artifact_id,)
+        ).fetchone()
+        return _row_to_artifact(row) if row is not None else None
+
     def list_for_task(self, task_id: str) -> list[Artifact]:
         rows = self._conn.execute(
             "SELECT * FROM artifact WHERE task_id = ? ORDER BY created_at", (task_id,)

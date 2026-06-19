@@ -245,6 +245,24 @@ class Chorus:
         )
         return HireRequest(employee=employee, approval=approval)
 
+    def request_promotion(self, artifact_id: str) -> Approval | None:
+        """Promote a landed artifact to the board, gated by policy (spec 04 §5 ``board_approval``).
+
+        When ``governance_policy.board_gate_required(<artifact class>)``, opens a ``board_approval``
+        gate on the artifact (a human approves the promotion); otherwise returns ``None`` (promotion is
+        ungated). Raises ``OrgInvariantViolation`` if the artifact is unknown."""
+        artifact = self._ledger.artifacts.get(artifact_id)
+        if artifact is None:
+            raise OrgInvariantViolation(f"no such artifact {artifact_id!r}")
+        if not self._governance_policy.board_gate_required(artifact.type.value):
+            return None
+        return GovernanceResolver(self._ledger).open(
+            action=ApprovalAction.BOARD_APPROVAL,
+            subject_kind=ApprovalSubjectKind.ARTIFACT,
+            subject_id=artifact_id,
+            reason=f"promote {artifact.type.value} to the board",
+        )
+
     def _create_employee_budget(self, employee_id: str, amount_cents: int) -> None:
         self._ledger.budget_policies.create(
             BudgetPolicy(
