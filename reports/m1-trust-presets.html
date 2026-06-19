@@ -1,0 +1,58 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<title>§4 trust presets — standard / low_trust_review, fail-closed</title><style>
+body{font-family:ui-sans-serif,system-ui,sans-serif;margin:2rem;background:#0f1115;color:#e6e8eb}
+h1{font-size:1.4rem} .lead{color:#9aa0a6;max-width:78ch}
+table{width:100%;border-collapse:collapse;margin-top:1.2rem;font-size:.9rem}
+th{text-align:left;color:#9aa0a6;font-weight:500;font-size:.74rem;text-transform:uppercase;
+letter-spacing:.05em;padding:.4rem .5rem;border-bottom:1px solid #262b33}
+td{padding:.5rem .5rem;border-bottom:1px solid #1c2027;vertical-align:top}
+code{background:#16191f;padding:.1rem .4rem;border-radius:4px}
+code.ok{color:#4ade80} code.no{color:#f87171}
+.arrow{color:#6b7280;text-align:center} .note{color:#9aa0a6;font-size:.82rem}
+.summary{display:inline-block;margin-top:1rem;padding:.4rem .9rem;border-radius:999px;
+background:#0e3a23;color:#4ade80;font-weight:700}
+</style></head><body>
+<h1>§4 trust presets — a hostile-input beat is boxed in; ambiguity is denied</h1>
+<p class="lead">A task's effective trust is the intersection of the employee, task, and run layers
+(narrower wins), applied at chorus's per-beat materialize boundary. <code>standard</code> keeps the
+role's posture; <code>low_trust_review</code> clamps to read-only + plan-mode + no-net; and anything
+ambiguous — a low-trust beat with no concrete boundary, or a raw inline secret — is denied, not run.</p>
+<div class="summary">5 scenarios · standard untouched · low-trust contained · fail-closed</div>
+<table>
+<thead><tr><th>scenario</th><th>sandbox / mode before</th><th></th><th>after</th>
+<th>what it shows</th></tr></thead>
+<tbody><tr>
+          <td>standard task</td>
+          <td><code>unrestricted / default</code></td>
+          <td class="arrow">&rarr;</td>
+          <td><code class="muted">unrestricted / default</code></td>
+          <td class="note">a trusted task keeps the role&#x27;s full posture — untouched.</td>
+        </tr><tr>
+          <td>explicit low_trust_review</td>
+          <td><code>unrestricted / default</code></td>
+          <td class="arrow">&rarr;</td>
+          <td><code class="ok">read-only / plan</code></td>
+          <td class="note">a hostile-input task is boxed in: read-only + plan-mode, no network.</td>
+        </tr><tr>
+          <td>policy-derived low-trust</td>
+          <td><code>unrestricted / default</code></td>
+          <td class="arrow">&rarr;</td>
+          <td><code class="ok">read-only / plan</code></td>
+          <td class="note">the policy auto-contains a flagged origin — no explicit preset needed.</td>
+        </tr><tr>
+          <td>low-trust, no boundary</td>
+          <td><code>unrestricted / default</code></td>
+          <td class="arrow">&rarr;</td>
+          <td><code class="no">DENIED — low_trust_review requires a concrete boundary — none supplied</code></td>
+          <td class="note">fail-closed: low-trust with no concrete scope is denied, not run.</td>
+        </tr><tr>
+          <td>low-trust, inline secret</td>
+          <td><code>unrestricted / default</code></td>
+          <td class="arrow">&rarr;</td>
+          <td><code class="no">DENIED — inline secret in &#x27;AWS_SECRET&#x27; — a low-trust beat must use a ref: handle</code></td>
+          <td class="note">fail-closed: a raw secret in env is rejected — low-trust needs a ref: handle.</td>
+        </tr></tbody>
+</table>
+<footer class="note" style="margin-top:1.2rem">examples/trust_presets_suite.py · chorus §4 trust
+presets (applied at the existing materialize boundary — no dream change)</footer>
+</body></html>

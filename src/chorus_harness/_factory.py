@@ -28,8 +28,10 @@ from dream.tools.builtin import default_registry
 from chorus.adapters import DreamBeatRunner, TokenPricing
 from chorus.heartbeat import BeatRunner, IntegrateContextPacket
 from chorus.roles import RoleBeatConfig, RoleRegistry, role_beat_config
+from chorus.trust import TrustPolicy
 from chorus.workforce import Employee
 from chorus.workspace import CompanyWorkspace, default_work_root
+from chorus_harness._trust import apply_trust
 from chorus_tools import AssignTaskTool, DecomposeTool, SubmitTaskTool, SubmitVerdictTool
 
 if TYPE_CHECKING:
@@ -203,6 +205,7 @@ class EmployeeHarnessFactory:
         work_root: Path | None = None,
         timeout_s: float | None = 90.0,
         ledger: SqliteLedger | None = None,
+        trust_policy: TrustPolicy | None = None,
     ) -> None:
         self._api_key = api_key
         self._base_url = base_url
@@ -211,6 +214,9 @@ class EmployeeHarnessFactory:
         self._pricing = pricing
         self._seed = seed
         self._timeout_s = timeout_s
+        # §4 trust: the resolved per-beat preset narrows the harness at materialize (the empty default
+        # gates nothing). It needs the live ledger to read the task's preset/boundary.
+        self._trust_policy = trust_policy or TrustPolicy()
         # Capability tools (e.g. the manager's ``decompose``) mutate this ledger live during a beat.
         # Absent it, a role asking for one simply gets it dropped (fails closed, never crashes).
         self._ledger = ledger
@@ -253,6 +259,15 @@ class EmployeeHarnessFactory:
         if employee.role not in self._roles:
             raise ValueError(f"role {employee.role!r} for {employee.id!r} is not a registered role")
         config = role_beat_config(self._roles.get(employee.role).manifest)
+
+        # §4 trust: narrow the harness to the task's effective preset (read-only / plan for a low-trust
+        # beat) and assert containment. A TrustDenied propagates — an uncontained beat is not built.
+        task = (
+            self._ledger.tasks.get(task_id)
+            if task_id is not None and self._ledger is not None
+            else None
+        )
+        config = apply_trust(config, task=task, policy=self._trust_policy)
 
         # Structural over-decompose guard: on an integrate beat the parent already owns children, so
         # ``decompose`` is dropped from the toolset entirely — the model never sees it (M3 §5). Brief
