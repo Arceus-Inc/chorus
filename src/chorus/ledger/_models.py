@@ -84,6 +84,7 @@ class ArtifactType(StrEnum):
     FINDING = "finding"
     ARTIFACT = "artifact"
     WORKSPACE_FILE = "workspace_file"
+    VERDICT = "verdict"
 
 
 @dataclass(frozen=True)
