@@ -8,6 +8,7 @@ self-report. Three tiers:
     Verifier(kind) = Command        # objective gate: a shell command exits 0
                    | AgentReview    # judgment gate: a Reviewer employee verdicts
                    | HumanApproval  # a person decides (the approval primitive)
+                   | ReviewedBuild  # a Reviewer discovers + judges; the kernel runs the command
 """
 
 from __future__ import annotations
@@ -22,6 +23,7 @@ class DoDKind(StrEnum):
     COMMAND = "command"
     AGENT_REVIEW = "agent_review"
     HUMAN_APPROVAL = "human_approval"
+    REVIEWED_BUILD = "reviewed_build"
 
 
 @dataclass(frozen=True)
@@ -47,8 +49,23 @@ class HumanApproval:
     approver: str = "board"
 
 
+@dataclass(frozen=True)
+class ReviewedBuild:
+    """Reviewed build — language-agnostic, judgment-aware engineer gate (M3 reviewed-build).
+
+    A read-only Reviewer *discovers* the project's verify command and *judges* the diff; the kernel runs
+    that command as the deterministic objective floor. So the engineer's own beat runs no hardcoded
+    command (no language-lock), and ``done`` means the discovered command exits 0 *and* the reviewer
+    approved the diff.
+    """
+
+    reviewer_role: str = "reviewer"
+    rubric: str = ""
+    verify_timeout_s: int = 600
+
+
 # The DoD spec union (spec 04 §1).
-DoDSpec = Command | AgentReview | HumanApproval
+DoDSpec = Command | AgentReview | HumanApproval | ReviewedBuild
 
 
 @dataclass(frozen=True)
@@ -89,11 +106,27 @@ class Verifier:
     def human_approval(cls, *, approver: str = "board", artifact_class: str = "decision") -> Verifier:
         return cls(DoDKind.HUMAN_APPROVAL, HumanApproval(approver), artifact_class)
 
+    @classmethod
+    def reviewed_build(
+        cls,
+        *,
+        reviewer_role: str = "reviewer",
+        rubric: str = "",
+        artifact_class: str = "pr",
+        verify_timeout_s: int = 600,
+    ) -> Verifier:
+        return cls(
+            DoDKind.REVIEWED_BUILD,
+            ReviewedBuild(reviewer_role, rubric, verify_timeout_s),
+            artifact_class,
+        )
+
     def verification_steps(self) -> tuple[VerificationStep, ...]:
         """The objective checks dream's evaluator should run — the ``Command`` gate, else none.
 
-        ``AgentReview`` and ``HumanApproval`` are chorus-orchestrated (a Reviewer beat / an approval),
-        not subprocesses dream runs, so they contribute no verification steps.
+        ``AgentReview``, ``HumanApproval``, and ``ReviewedBuild`` are chorus-orchestrated (a Reviewer
+        beat / an approval / a reviewer-discovered command the kernel runs), not subprocesses dream runs
+        at the worker's own beat, so they contribute no verification steps.
         """
         if isinstance(self.spec, Command):
             return (VerificationStep(command=self.spec.command, timeout_s=self.spec.timeout_s),)
@@ -106,6 +139,7 @@ __all__ = [
     "DoDKind",
     "DoDSpec",
     "HumanApproval",
+    "ReviewedBuild",
     "VerificationStep",
     "Verifier",
 ]
