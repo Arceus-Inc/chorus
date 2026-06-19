@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 from chorus.governance._actions import (
     BoardApprovalAction,
     HireEmployeeAction,
+    LoosenDodAction,
     PlanApprovalAction,
     TaskGateAction,
 )
@@ -60,6 +61,7 @@ def default_actions(ledger: SqliteLedger) -> list[GovernedAction]:
         HireEmployeeAction(ledger),
         PlanApprovalAction(ledger),
         BoardApprovalAction(ledger),
+        LoosenDodAction(ledger),
     ]
 
 

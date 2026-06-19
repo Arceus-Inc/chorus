@@ -9,14 +9,14 @@ from __future__ import annotations
 
 import pytest
 
-from chorus.ledger import ActivityVerb, DodStatus, SqliteLedger, Task, TaskStatus
+from chorus.ledger import ActivityVerb, ApprovalAction, DodStatus, SqliteLedger, Task, TaskStatus
 from chorus.lifecycle import assign_task
 from chorus.lifecycle._revise_dod import (
     NoRevision,
     RevisionAuthorityError,
     revise_dod,
 )
-from chorus.outcomes import DoDKind, RevisionDirection, Verifier
+from chorus.outcomes import RevisionDirection, Verifier
 from chorus.workforce import Employee
 
 pytestmark = pytest.mark.integration
@@ -74,8 +74,8 @@ def test_tighten_does_not_rejudge_a_recorded_verdict(ledger: SqliteLedger) -> No
     assert after is not None and after.verdict == {"ok": True}  # the in-flight invariant
 
 
-def test_loosen_stages_the_proposal(ledger: SqliteLedger) -> None:
-    # Slice 3: a loosen is staged (the old DoD stays in force); Slice 4 opens its §5 gate.
+def test_loosen_stages_the_proposal_and_opens_a_gate(ledger: SqliteLedger) -> None:
+    # a loosen stages the proposal (old DoD stays in force) and opens a §5 loosen_dod gate.
     _task_with_manager(ledger, Verifier.command("pytest && ruff check"))
 
     outcome = revise_dod(
@@ -83,7 +83,11 @@ def test_loosen_stages_the_proposal(ledger: SqliteLedger) -> None:
     )
 
     assert outcome.direction is RevisionDirection.LOOSEN and outcome.applied is False
+    assert outcome.approval_id is not None  # the loosen_dod gate
     dod = ledger.dod.get_for_task("t1")
     assert dod is not None and dod.proposed_revision is not None
-    assert ledger.dod.verifier_for_task("t1").kind is DoDKind.COMMAND  # still in force  # type: ignore[union-attr]
-    assert dod.revision == 1  # not bumped — the loosen is not applied
+    assert dod.revision == 1  # not bumped — the loosen is not applied yet
+    # the in-force DoD is still the stricter one (both conjuncts).
+    steps = ledger.dod.verifier_for_task("t1").verification_steps()  # type: ignore[union-attr]
+    assert steps[0].command == "pytest && ruff check"
+    assert [a.action for a in ledger.approvals.pending()] == [ApprovalAction.LOOSEN_DOD]

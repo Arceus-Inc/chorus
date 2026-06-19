@@ -11,7 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from chorus.ledger._models import ActivityVerb
+from chorus.ledger._models import ActivityVerb, ApprovalAction, ApprovalSubjectKind
 from chorus.lifecycle._audit import record_activity
 from chorus.outcomes import RevisionDirection, Verifier, classify
 
@@ -59,9 +59,27 @@ def revise_dod(
         )
         return ReviseOutcome(direction, applied=True)
 
-    # LOOSEN — stage the proposal; the old (stricter) DoD stays in force until a §5 grant (Slice 4).
+    # LOOSEN — stage the proposal and open a §5 loosen_dod gate; the old (stricter) DoD stays in force
+    # until a human approves (a worker can never weaken its own gate unilaterally).
+    from chorus.governance import (
+        GovernanceResolver,  # local import avoids a lifecycle↔governance cycle
+    )
+
     ledger.dod.propose_revision(task_id, new_verifier)
-    return ReviseOutcome(direction, applied=False)
+    approval = GovernanceResolver(ledger).open(
+        action=ApprovalAction.LOOSEN_DOD,
+        subject_kind=ApprovalSubjectKind.TASK,
+        subject_id=task_id,
+        reason=f"loosen the DoD for task {task_id}",
+    )
+    record_activity(
+        ledger,
+        verb=ActivityVerb.DOD_REVISED,
+        subject_id=task_id,
+        actor_employee_id=revised_by,
+        payload={"direction": direction.value, "gate": approval.id},
+    )
+    return ReviseOutcome(direction, applied=False, approval_id=approval.id)
 
 
 def _require_manager_authority(ledger: SqliteLedger, task_id: str, revised_by: str) -> None:
