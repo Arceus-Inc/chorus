@@ -52,7 +52,14 @@ class GitWorkforce:
 
     # -- writes ---------------------------------------------------------------
 
-    def hire(self, *, name: str, role: str, reports_to: str | None = None) -> Employee:
+    def hire(
+        self,
+        *,
+        name: str,
+        role: str,
+        reports_to: str | None = None,
+        status: EmployeeStatus = EmployeeStatus.IDLE,
+    ) -> Employee:
         slug = slugify(name)
         if not slug:
             raise OrgInvariantViolation(f"name {name!r} produces an empty slug")
@@ -68,7 +75,7 @@ class GitWorkforce:
             role=role,
             reports_to=reports_to,
             memory_scope="project",
-            status=EmployeeStatus.IDLE,
+            status=status,
         )
         self._write(employee)
         return employee

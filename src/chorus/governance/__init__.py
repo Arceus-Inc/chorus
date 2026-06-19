@@ -15,6 +15,9 @@ from chorus.governance._registry import (
     UnregisteredAction,
     default_actions,
 )
+from chorus.governance._actions import HireEmployeeAction, TaskGateAction
+from chorus.governance._actions._hire import HireError
+from chorus.governance._policy import GovernancePolicy
 from chorus.governance._resolver import GovernanceError, GovernanceResolver, ResolveOutcome
 from chorus.governance._types import ActionOutcome, ApprovalDecision, GovernedAction
 
@@ -22,10 +25,14 @@ __all__ = [
     "ActionOutcome",
     "ApprovalDecision",
     "GovernanceError",
+    "GovernancePolicy",
     "GovernanceRegistry",
     "GovernanceResolver",
     "GovernedAction",
+    "HireEmployeeAction",
+    "HireError",
     "ResolveOutcome",
+    "TaskGateAction",
     "UnregisteredAction",
     "default_actions",
 ]

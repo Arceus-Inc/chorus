@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Protocol, runtime_checkable
 
-from chorus.workforce._models import Employee
+from chorus.workforce._models import Employee, EmployeeStatus
 
 
 @runtime_checkable
@@ -15,8 +15,17 @@ class Workforce(Protocol):
         """Fetch one employee row."""
         ...
 
-    def hire(self, *, name: str, role: str, reports_to: str | None = None) -> Employee:
-        """Add an employee; rejects a ``reports_to`` cycle (``OrgInvariantViolation``)."""
+    def hire(
+        self,
+        *,
+        name: str,
+        role: str,
+        reports_to: str | None = None,
+        status: EmployeeStatus = EmployeeStatus.IDLE,
+    ) -> Employee:
+        """Add an employee; rejects a ``reports_to`` cycle (``OrgInvariantViolation``).
+
+        ``status`` is ``idle`` for a direct hire, ``pending`` for a governed one (spec 04 §5)."""
         ...
 
     def terminate(self, employee_id: str) -> None:

@@ -47,7 +47,16 @@ class LedgerWorkforce:
             raise UnknownEmployee(f"no employee {employee_id!r}")
         return employee
 
-    def hire(self, *, name: str, role: str, reports_to: str | None = None) -> Employee:
+    def hire(
+        self,
+        *,
+        name: str,
+        role: str,
+        reports_to: str | None = None,
+        status: EmployeeStatus = EmployeeStatus.IDLE,
+    ) -> Employee:
+        """Add an employee. ``status`` is ``idle`` for a direct hire, ``pending`` for a governed one
+        (it stays uninvokable until a ``hire_employee`` approval activates it — spec 04 §5)."""
         slug = slugify(name)
         if not slug:
             raise OrgInvariantViolation(f"name {name!r} produces an empty slug")
@@ -64,7 +73,7 @@ class LedgerWorkforce:
                 role=role,
                 reports_to=reports_to,
                 memory_scope="project",
-                status=EmployeeStatus.IDLE,
+                status=status,
             )
         )
         return self.get(slug)  # read-after-write: return the canonical persisted row
