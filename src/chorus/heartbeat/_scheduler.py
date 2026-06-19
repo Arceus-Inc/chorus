@@ -50,7 +50,7 @@ from chorus.ledger._models import (
 )
 from chorus.lifecycle import TERMINAL, record_activity
 from chorus.memory import SprintDelta
-from chorus.outcomes import AgentReview, DoDKind, Verifier
+from chorus.outcomes import AgentReview, DoDKind, ReviewedBuild, Verifier
 from chorus.recovery import reconcile
 from chorus.workforce._models import EmployeeStatus
 
@@ -143,6 +143,16 @@ def _as_text(value: str | bytes | None) -> str:
 # An employee can't take a review beat while paused or terminated; idle/active/running/error are all
 # dispatchable (the kernel leases and runs them).
 _UNINVOKABLE_EMPLOYEE_STATUSES = frozenset({EmployeeStatus.PAUSED, EmployeeStatus.TERMINATED})
+
+# Leaf DoD kinds the kernel gates with a read-only Reviewer beat (M3 Reviewer / reviewed-build).
+_REVIEWER_GATED_DODS = frozenset({DoDKind.AGENT_REVIEW, DoDKind.REVIEWED_BUILD})
+
+
+def _reviewer_role_and_rubric(spec: object) -> tuple[str, str]:
+    """The reviewer role + rubric a reviewer-gated DoD carries (``AgentReview`` or ``ReviewedBuild``)."""
+    if isinstance(spec, AgentReview | ReviewedBuild):
+        return spec.reviewer_role, spec.rubric
+    return "reviewer", ""
 
 
 _OUTCOME_BY_DISPOSITION: dict[BeatDisposition, str] = {
@@ -693,12 +703,11 @@ class Scheduler:
             return
         if (
             verifier is not None
-            and verifier.kind is DoDKind.AGENT_REVIEW
-            and isinstance(verifier.spec, AgentReview)
+            and verifier.kind in _REVIEWER_GATED_DODS
             and not ledger.tasks.has_children(task_id)
         ):
             await self._run_review(
-                task_id, review=verifier.spec, author=employee, work_result=result, now=now
+                task_id, verifier=verifier, author=employee, work_result=result, now=now
             )
             return
         await self._land_outcome(task_id, employee=employee, result=result)
@@ -710,20 +719,22 @@ class Scheduler:
         self,
         task_id: str,
         *,
-        review: AgentReview,
+        verifier: Verifier,
         author: Employee,
         work_result: BeatOutcome,
         now: datetime,
     ) -> None:
-        """Dispatch a read-only Reviewer beat as the verification step for an ``agent_review`` DoD.
+        """Dispatch a read-only Reviewer beat as the verification step for a reviewer-gated DoD.
 
         The reviewer inspects the work in the author's worktree and calls ``submit_verdict``, recording
-        the work task's DoD verdict. The kernel reads it back: ``approve`` → land the author's deliverable
-        + finalise ``done``; ``block`` → route per :meth:`_route_block`. No reviewer hired → a recovery
-        card (the deliverable can't be verified, so it must not silently pass).
+        the work task's DoD verdict. The kernel reads it back: a quality ``approve`` lands the deliverable
+        (for a ``reviewed_build`` it first runs the reviewer-discovered command as the objective floor); a
+        ``block`` routes per :meth:`_route_block`. No reviewer hired → a recovery card (the deliverable
+        can't be verified, so it must not silently pass).
         """
         ledger = self._require_ledger()
-        reviewer = self._resolve_reviewer(reviewer_role=review.reviewer_role, author_id=author.id)
+        reviewer_role, rubric = _reviewer_role_and_rubric(verifier.spec)
+        reviewer = self._resolve_reviewer(reviewer_role=reviewer_role, author_id=author.id)
         if reviewer is None:
             ledger.tasks.set_status(task_id, TaskStatus.BLOCKED)
             self._open_review_recovery(task_id, cause="no_reviewer", owner_id=author.id)
@@ -740,16 +751,15 @@ class Scheduler:
                 started_at=now,
             )
         )
-        if isinstance(runner, _RunnerWithWorkingDir) and runner.working_dir is not None:
-            BeatContext(task_id=task_id, run_id=review_run_id, employee_id=reviewer.id).write(
-                runner.working_dir
-            )
+        worktree = runner.working_dir if isinstance(runner, _RunnerWithWorkingDir) else None
+        if worktree is not None:
+            BeatContext(task_id=task_id, run_id=review_run_id, employee_id=reviewer.id).write(worktree)
         observer = self._event_bus.emit if self._event_bus is not None else None
         try:
             result = await runner.run_task(
                 task_id=task_id,
                 run_id=review_run_id,
-                intent=self._review_intent(task_id, review),
+                intent=self._review_intent(task_id, verifier, rubric),
                 observer=observer,
             )
         except Exception as exc:
@@ -763,14 +773,63 @@ class Scheduler:
             ledger.tasks.set_status(task_id, TaskStatus.BLOCKED)
             self._open_review_recovery(task_id, cause="no_verdict", owner_id=reviewer.id)
             return
-        await self._land_outcome(task_id, employee=reviewer, result=result)  # the `verdict` artifact
-        if dod.status is DodStatus.PASSED:
-            await self._land_outcome(task_id, employee=author, result=work_result)
-            ledger.finalize_beat(
-                task_id=task_id, run_id=review_run_id, dod_status=DodStatus.PASSED, verdict=dod.verdict
-            )
-        else:
+        if dod.status is not DodStatus.PASSED:  # the reviewer blocked on quality
+            await self._land_outcome(task_id, employee=reviewer, result=result)
             self._route_block(task_id, author=author)
+            return
+        # Quality approved. A reviewed_build still has an objective floor: the kernel runs the
+        # reviewer-discovered command — passing it never depends on the model's word.
+        if verifier.kind is DoDKind.REVIEWED_BUILD and not self._reviewed_build_passes(
+            task_id, dod_id=dod.id, run_id=review_run_id, verifier=verifier, verdict=dod.verdict,
+            worktree=worktree,
+        ):
+            await self._land_outcome(task_id, employee=reviewer, result=result)
+            self._route_block(task_id, author=author)
+            return
+        await self._land_outcome(task_id, employee=reviewer, result=result)  # the `verdict` artifact
+        await self._land_outcome(task_id, employee=author, result=work_result)
+        dod_after = ledger.dod.get_for_task(task_id)
+        ledger.finalize_beat(
+            task_id=task_id, run_id=review_run_id, dod_status=DodStatus.PASSED,
+            verdict=dod_after.verdict if dod_after is not None else dod.verdict,
+        )
+
+    def _reviewed_build_passes(
+        self,
+        task_id: str,
+        *,
+        dod_id: str,
+        run_id: str,
+        verifier: Verifier,
+        verdict: dict[str, object] | None,
+        worktree: Path | None,
+    ) -> bool:
+        """Run the reviewer-discovered verify command as the objective floor; record the evidence.
+
+        Returns ``True`` iff the command exits 0. On a missing command (the reviewer approved without one)
+        or a non-zero exit, records the failure on the DoD verdict and returns ``False`` (→ block)."""
+        ledger = self._require_ledger()
+        command = str((verdict or {}).get("verify_command", "")).strip()
+        timeout_s = verifier.spec.verify_timeout_s if isinstance(verifier.spec, ReviewedBuild) else 600
+        if not command or worktree is None:
+            reason = "reviewer approved but supplied no verify command" if not command else (
+                "no worktree to run the verify command in"
+            )
+            ledger.dod.record_verdict(
+                dod_id, DodStatus.FAILED,
+                verdict={**(verdict or {}), "build_passed": False, "build_output": reason},
+                run_id=run_id,
+            )
+            return False
+        exit_code, output = _run_verify_command(worktree, command, timeout_s=timeout_s)
+        ledger.dod.record_verdict(
+            dod_id,
+            DodStatus.PASSED if exit_code == 0 else DodStatus.FAILED,
+            verdict={**(verdict or {}), "build_passed": exit_code == 0, "build_exit": exit_code,
+                     "build_output": output},
+            run_id=run_id,
+        )
+        return exit_code == 0
 
     def _route_block(self, task_id: str, *, author: Employee) -> None:
         """Route a reviewer ``block`` — escalate to a manager parent, else bounded author self-repair.
@@ -797,12 +856,10 @@ class Scheduler:
                     )
                 )
             return
-        blocks = sum(
-            1
-            for a in ledger.activity.by_subject("task", task_id)
-            if a.verb is ActivityVerb.REVIEW_VERDICT and a.payload.get("approve") is False
-        )
-        if blocks <= self.max_review_rounds:
+        # Count the author's actual rework attempts — robust whether the rejection was a quality block
+        # or a failed build (a build-fail is the reviewer approving + the kernel-run command failing).
+        attempts = sum(1 for run in ledger.runs.for_task(task_id) if run.employee_id == author.id)
+        if attempts <= self.max_review_rounds:
             ledger.tasks.set_status(task_id, TaskStatus.TODO)  # re-dispatch the author to fix it
             ledger.wakes.enqueue(
                 Wake(
@@ -847,15 +904,28 @@ class Scheduler:
             )
         return beat_runner_for.runner_for(reviewer, task_id=task_id)
 
-    def _review_intent(self, task_id: str, review: AgentReview) -> str:
-        """The reviewer beat's instruction: judge the work in the worktree against the rubric."""
+    def _review_intent(self, task_id: str, verifier: Verifier, rubric: str) -> str:
+        """The reviewer beat's instruction: judge the work in the worktree against the rubric.
+
+        For a ``reviewed_build`` the reviewer also discovers the project's verify command and passes it
+        as ``verify_command`` — the kernel runs it as the objective floor, so the reviewer never runs it.
+        """
         ledger = self._require_ledger()
         task = ledger.tasks.get(task_id)
         goal = task.intent if task is not None else task_id
-        rubric = review.rubric or "the task is complete, correct, and meets its stated intent"
+        rubric_line = rubric or "the task is complete, correct, and meets its stated intent"
+        build = ""
+        if verifier.kind is DoDKind.REVIEWED_BUILD:
+            build = (
+                "This is a code task: inspect the project's files (package.json / Cargo.toml / "
+                "pyproject.toml / Makefile / go.mod, etc.) to determine the correct command that builds + "
+                "tests it, and pass that as `verify_command` (e.g. 'npm ci && npm test', 'cargo test', "
+                "'pytest -q'). The kernel runs it as the objective gate — you do not run it yourself.\n"
+            )
         return (
             f"You are reviewing the work in this worktree for the task: {goal}\n"
-            f"Rubric: {rubric}\n"
+            f"Rubric: {rubric_line}\n"
+            f"{build}"
             "Read the relevant files to judge it. You MUST finish by calling the `submit_verdict` tool "
             "exactly once — that tool call IS your review and the ONLY way to complete this task. Pass "
             "approve=true to accept or approve=false to block, with concrete feedback. Do NOT just write "

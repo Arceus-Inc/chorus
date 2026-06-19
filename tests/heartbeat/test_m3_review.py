@@ -44,19 +44,25 @@ class _Worker(_Runner):
 
 
 class _Reviewer(_Runner):
-    """A reviewer that records a verdict via the real CapabilityService. ``decide(task_id)`` → approve?"""
+    """A reviewer that records a verdict via the real CapabilityService. ``decide(task_id)`` → approve?
 
-    def __init__(self, ledger: SqliteLedger, *, reviewer_id: str, decide: object, working_dir: Path) -> None:
+    ``verify_command`` (when set) is reported on the verdict — the kernel runs it as the objective floor.
+    """
+
+    def __init__(self, ledger: SqliteLedger, *, reviewer_id: str, decide: object, working_dir: Path,
+                 verify_command: str = "") -> None:
         super().__init__(working_dir)
         self._ledger = ledger
         self._id = reviewer_id
         self._decide = decide
+        self._verify_command = verify_command
 
     async def run_task(self, *, task_id: str, intent: str, verification: object = (),
                        observer: object = None, run_id: str | None = None) -> BeatOutcome:
         approve = bool(self._decide(task_id))  # type: ignore[operator]
         CapabilityService(self._ledger).record_verdict(
-            task_id=task_id, run_id=str(run_id), reviewer_id=self._id, approve=approve, feedback="fb"
+            task_id=task_id, run_id=str(run_id), reviewer_id=self._id, approve=approve, feedback="fb",
+            verify_command=self._verify_command,
         )
         return BeatOutcome(passed=True, outcome={}, summary="reviewed", model="m")
 
@@ -95,12 +101,13 @@ class _Org:
     """A fake harness factory: a role-faithful fake runner per employee, plus the review seam."""
 
     def __init__(self, ledger: SqliteLedger, *, decide: object, root: Path, parent: str = "M",
-                 silent: bool = False) -> None:
+                 silent: bool = False, verify_command: str = "") -> None:
         self._ledger = ledger
         self._decide = decide
         self._root = root
         self._parent = parent
         self._silent = silent
+        self._verify_command = verify_command
 
     def runner_for(self, employee: Employee, *, task_id: str | None = None) -> object:
         return self._for(employee)
@@ -112,7 +119,8 @@ class _Org:
         if employee.role == "reviewer":
             if self._silent:
                 return _SilentReviewer(self._root)
-            return _Reviewer(self._ledger, reviewer_id=employee.id, decide=self._decide, working_dir=self._root)
+            return _Reviewer(self._ledger, reviewer_id=employee.id, decide=self._decide,
+                             working_dir=self._root, verify_command=self._verify_command)
         if employee.role == "manager":
             return _Manager(self._ledger, parent=self._parent, working_dir=self._root)
         return _Worker(self._root)
@@ -192,6 +200,63 @@ async def test_a_reviewer_that_renders_no_verdict_opens_a_recovery_card(
     assert ledger.tasks.get("spec").status is TaskStatus.BLOCKED  # type: ignore[union-attr]
     assert ledger.recovery_actions.active_for_source("spec") is not None
     assert not [a for a in ledger.artifacts.list_for_task("spec") if a.type.value == "verdict"]  # no empty verdict
+
+
+def _reviewed_build_task(ledger: SqliteLedger) -> None:
+    from chorus.outcomes import Verifier
+
+    ledger.employees.create(Employee(id="dev", name="Dev", role="engineer"))
+    ledger.employees.create(Employee(id="rob", name="Rob", role="reviewer"))
+    ledger.tasks.submit(Task(id="code", intent="build the widget", status=TaskStatus.TODO))
+    assign_task(ledger, "code", "dev")
+    ledger.dod.create("code", Verifier.reviewed_build(artifact_class="pr"))  # the engineer's gate
+
+
+async def test_reviewed_build_approve_and_passing_command_lands_done(
+    ledger: SqliteLedger, tmp_path: Path
+) -> None:
+    _reviewed_build_task(ledger)
+    org = _Org(ledger, decide=lambda _tid: True, root=tmp_path, verify_command="true")  # exit 0
+    sched = _sched(ledger, org, tmp_path)
+
+    await sched.tick_once()
+    await sched.drain()
+
+    assert ledger.tasks.get("code").status is TaskStatus.DONE  # type: ignore[union-attr]
+    dod = ledger.dod.get_for_task("code")
+    assert dod is not None and dod.verdict is not None and dod.verdict["build_passed"] is True
+
+
+async def test_reviewed_build_failing_command_does_not_land(ledger: SqliteLedger, tmp_path: Path) -> None:
+    # The reviewer liked the diff, but the kernel-run command fails → the build is NOT done (the floor
+    # is un-rationalizable). Standalone → bounded self-repair, never a silent pass.
+    _reviewed_build_task(ledger)
+    org = _Org(ledger, decide=lambda _tid: True, root=tmp_path, verify_command="false")  # exit 1
+    sched = _sched(ledger, org, tmp_path, max_review_rounds=1)
+
+    for _ in range(6):
+        await sched.tick_once()
+        await sched.drain()
+
+    assert ledger.tasks.get("code").status is not TaskStatus.DONE  # type: ignore[union-attr]
+    dod = ledger.dod.get_for_task("code")
+    assert dod is not None and dod.verdict is not None and dod.verdict["build_passed"] is False
+    assert ledger.recovery_actions.active_for_source("code") is not None  # bounded → human
+
+
+async def test_reviewed_build_quality_block_skips_the_command(ledger: SqliteLedger, tmp_path: Path) -> None:
+    _reviewed_build_task(ledger)
+    # the reviewer blocks on quality; the command never runs (no build_passed recorded)
+    org = _Org(ledger, decide=lambda _tid: False, root=tmp_path, verify_command="true")
+    sched = _sched(ledger, org, tmp_path, max_review_rounds=1)
+
+    for _ in range(4):
+        await sched.tick_once()
+        await sched.drain()
+
+    assert ledger.tasks.get("code").status is not TaskStatus.DONE  # type: ignore[union-attr]
+    dod = ledger.dod.get_for_task("code")
+    assert dod is not None and dod.verdict is not None and "build_passed" not in dod.verdict
 
 
 async def test_manager_parented_block_escalates_and_manager_reacts(ledger: SqliteLedger, tmp_path: Path) -> None:
