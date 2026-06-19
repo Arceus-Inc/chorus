@@ -72,3 +72,30 @@ A read-only reviewer must always be able to record its verdict.
 After the fix the live reviewer works end to end: `examples/m3_reviewer_keyed.py` — the PM writes a spec,
 the **live** reviewer reads it, approves with real feedback, the verdict records, and the task reaches
 `done` in one tick. (The kernel still fails safe to a recovery card if a reviewer ever renders no verdict.)
+
+## Live reviewer: the worktree-manifest fix
+
+A second live failure surfaced on a real code task: the reviewer ran, but judged a *non-empty* worktree
+"empty" and blocked clean code. Root cause is the reviewer's toolset — `(read_file, submit_verdict)` —
+has **no directory-listing tool**. It can read a file *by path* but cannot enumerate the worktree, so it
+guessed standard filenames (`pyproject.toml`, `package.json`, `tests/…`), missed the author's actual
+files (`app.py`, `test_app.py`), and concluded there was nothing there.
+
+The fix: the kernel embeds the worktree's **file manifest** in the review intent
+(`_worktree_file_manifest` in `chorus/heartbeat/_scheduler.py`) — a sorted listing of the author's files
+with harness/VCS plumbing (`.git`, `.dream`, `.harness`) excluded. A code review *is* a diff review; the
+kernel already holds the worktree, so it hands the reviewer the authoritative inventory rather than making
+a list-less model guess.
+
+Two follow-on review-intent tunings (both general, not demo-specific):
+
+- **Trust the kernel's build.** The reviewer is read-only and *cannot* run the tests, so it was blocking
+  correct code "because I could not verify the build." The intent now states plainly: do not block merely
+  because you could not execute the tests — judge the diff by reading it; the kernel runs the
+  `verify_command` and fails the build if the tests fail. Reserve `approve=false` for a nameable defect.
+- **Flag/feedback consistency** (reviewer brief): the live model sometimes wrote approving prose then set
+  `approve=false`. The brief now requires the `approve` flag to match the assessment.
+
+`examples/m3_org_reviewed_live.py` (manager + 2 engineers + **live** reviewer over 3 goals) exercises the
+whole suite for real: clean code approved first pass → built → `done`; buggy + stub work blocked →
+`REJECTED` → manager reacts → fix approved + built → `done`. Report: `reports/m3-org-reviewed-live.html`.

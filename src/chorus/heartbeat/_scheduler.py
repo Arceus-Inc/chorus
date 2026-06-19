@@ -140,6 +140,38 @@ def _as_text(value: str | bytes | None) -> str:
     return value if isinstance(value, str) else value.decode("utf-8", "replace")
 
 
+_MANIFEST_MAX_FILES = 200
+# Top-level dirs that are infrastructure, not the author's deliverable: git plumbing and the kernel's
+# own per-beat harness injection (role overlays, sandbox config, cron). A diff review never inspects
+# these — they are identical in every worktree — so they are excluded to keep the manifest signal-rich.
+_MANIFEST_EXCLUDED_ROOTS = frozenset({".git", ".dream", ".harness"})
+
+
+def _worktree_file_manifest(worktree: Path | None, *, max_files: int = _MANIFEST_MAX_FILES) -> str:
+    """The relative paths of the author's files in ``worktree`` — what a list-less reviewer can't see.
+
+    A read-only Reviewer's toolset is ``(read_file, submit_verdict)``: it can read a file by path but has
+    no way to enumerate a directory. Without this it guesses standard manifest names, misses the author's
+    actual files, and wrongly judges the worktree empty. The kernel hands it the listing so it reviews
+    what is really there. Harness/VCS plumbing (:data:`_MANIFEST_EXCLUDED_ROOTS`) is dropped; the list is
+    sorted and capped.
+    """
+    if worktree is None or not worktree.is_dir():
+        return ""
+    paths: list[str] = []
+    for path in sorted(worktree.rglob("*")):
+        if not path.is_file():
+            continue
+        rel = path.relative_to(worktree)
+        if rel.parts and rel.parts[0] in _MANIFEST_EXCLUDED_ROOTS:
+            continue
+        paths.append(rel.as_posix())
+        if len(paths) >= max_files:
+            paths.append(f"… (listing truncated at {max_files} files)")
+            break
+    return "\n".join(paths)
+
+
 # An employee can't take a review beat while paused or terminated; idle/active/running/error are all
 # dispatchable (the kernel leases and runs them).
 _UNINVOKABLE_EMPLOYEE_STATUSES = frozenset({EmployeeStatus.PAUSED, EmployeeStatus.TERMINATED})
@@ -759,7 +791,7 @@ class Scheduler:
             result = await runner.run_task(
                 task_id=task_id,
                 run_id=review_run_id,
-                intent=self._review_intent(task_id, verifier, rubric),
+                intent=self._review_intent(task_id, verifier, rubric, worktree=worktree),
                 observer=observer,
             )
         except Exception as exc:
@@ -904,11 +936,17 @@ class Scheduler:
             )
         return beat_runner_for.runner_for(reviewer, task_id=task_id)
 
-    def _review_intent(self, task_id: str, verifier: Verifier, rubric: str) -> str:
+    def _review_intent(
+        self, task_id: str, verifier: Verifier, rubric: str, *, worktree: Path | None = None
+    ) -> str:
         """The reviewer beat's instruction: judge the work in the worktree against the rubric.
 
         For a ``reviewed_build`` the reviewer also discovers the project's verify command and passes it
         as ``verify_command`` — the kernel runs it as the objective floor, so the reviewer never runs it.
+
+        The reviewer has no directory-listing tool, so the kernel embeds the worktree's file manifest:
+        without it the reviewer guesses standard filenames, misses the author's actual files, and wrongly
+        judges the work empty.
         """
         ledger = self._require_ledger()
         task = ledger.tasks.get(task_id)
@@ -920,11 +958,23 @@ class Scheduler:
                 "This is a code task: inspect the project's files (package.json / Cargo.toml / "
                 "pyproject.toml / Makefile / go.mod, etc.) to determine the correct command that builds + "
                 "tests it, and pass that as `verify_command` (e.g. 'npm ci && npm test', 'cargo test', "
-                "'pytest -q'). The kernel runs it as the objective gate — you do not run it yourself.\n"
+                "'pytest -q'). The kernel runs it as the objective gate — you do not run it yourself, and "
+                "you CANNOT run it (you are read-only). Do NOT block merely because you could not execute "
+                "the tests: judge the diff's correctness against the contract by reading it; if the code is "
+                "correct, approve=true and pass the command — the kernel runs it and will fail the build if "
+                "the tests do not pass. Reserve approve=false for a concrete correctness defect you can name.\n"
             )
+        manifest = _worktree_file_manifest(worktree)
+        files = (
+            "Files in this worktree (read the relevant ones with `read_file`; you have no listing tool, "
+            f"so this is the authoritative inventory of what is here):\n{manifest}\n"
+            if manifest
+            else ""
+        )
         return (
             f"You are reviewing the work in this worktree for the task: {goal}\n"
             f"Rubric: {rubric_line}\n"
+            f"{files}"
             f"{build}"
             "Read the relevant files to judge it. You MUST finish by calling the `submit_verdict` tool "
             "exactly once — that tool call IS your review and the ONLY way to complete this task. Pass "

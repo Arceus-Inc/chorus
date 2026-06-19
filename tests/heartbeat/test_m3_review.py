@@ -285,3 +285,36 @@ async def test_manager_parented_block_escalates_and_manager_reacts(ledger: Sqlit
     assert children["draft"].status is TaskStatus.REJECTED  # reviewer blocked it → terminal-rejected
     assert children["redraft"].status is TaskStatus.DONE  # the manager's fix, approved on review
     assert ledger.tasks.get("M").status is TaskStatus.DONE  # type: ignore[union-attr]  # integrated
+
+
+def test_worktree_file_manifest_lists_the_files_a_listless_reviewer_cannot_see(tmp_path: Path) -> None:
+    # The reviewer's toolset is (read_file, submit_verdict) — no directory listing. The kernel must hand
+    # it the actual file manifest, or it guesses standard manifest names, never finds app.py/test_app.py,
+    # and wrongly declares the worktree empty (the live-reviewer-blocks-clean-code bug).
+    from chorus.heartbeat._scheduler import _worktree_file_manifest
+
+    (tmp_path / "app.py").write_text("def slugify(s): return s\n")
+    (tmp_path / "test_app.py").write_text("from app import slugify\n")
+    (tmp_path / "pkg").mkdir()
+    (tmp_path / "pkg" / "util.py").write_text("x = 1\n")
+    (tmp_path / ".git").mkdir()
+    (tmp_path / ".git" / "HEAD").write_text("ref: refs/heads/main\n")
+    (tmp_path / ".harness" / "roles").mkdir(parents=True)  # kernel-injected, not the author's work
+    (tmp_path / ".harness" / "roles" / "reviewer.toml").write_text("x = 1\n")
+    (tmp_path / ".dream").mkdir()
+    (tmp_path / ".dream" / "registry.json").write_text("{}\n")
+
+    manifest = _worktree_file_manifest(tmp_path)
+
+    assert "app.py" in manifest
+    assert "test_app.py" in manifest
+    assert "pkg/util.py" in manifest
+    assert ".git" not in manifest  # internal git plumbing is never review material
+    assert ".harness" not in manifest  # kernel harness injection is identical in every worktree
+    assert ".dream" not in manifest
+
+
+def test_worktree_file_manifest_is_empty_for_no_worktree() -> None:
+    from chorus.heartbeat._scheduler import _worktree_file_manifest
+
+    assert _worktree_file_manifest(None) == ""
