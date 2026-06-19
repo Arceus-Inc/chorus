@@ -20,7 +20,7 @@ import uuid
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import TYPE_CHECKING, TypeVar
+from typing import TYPE_CHECKING, Protocol, TypeVar, runtime_checkable
 
 from chorus.adapters._failure import failure_outcome
 from chorus.cron._fire import fire_routine
@@ -67,6 +67,19 @@ if TYPE_CHECKING:
     from chorus.workforce import Employee, Workforce
 
 _T = TypeVar("_T")
+
+
+@runtime_checkable
+class _RunnerWithWorkingDir(Protocol):
+    """A beat runner that exposes its worktree — where the kernel drops per-beat context files.
+
+    Not every :class:`~chorus.heartbeat.BeatRunner` runs in a working dir (a fake/in-memory runner
+    has none), so this is a narrow capability the kernel checks for before writing the integrate
+    packet — typed, rather than a structural ``getattr`` probe.
+    """
+
+    @property
+    def working_dir(self) -> Path | None: ...
 
 
 def _utc_now() -> datetime:
@@ -540,13 +553,15 @@ class Scheduler:
     def _write_integrate_packet(
         self, ledger: SqliteLedger, *, beat_runner: BeatRunner, task_id: str
     ) -> None:
-        """Write the manager's child-feedback packet when the runner has a working directory."""
-        working_dir = getattr(beat_runner, "working_dir", None)
+        """Write the manager's child-feedback packet when the runner exposes a working directory."""
+        if not isinstance(beat_runner, _RunnerWithWorkingDir):
+            return
+        working_dir = beat_runner.working_dir
         if working_dir is None:
             return
         iteration = self._integrate_iteration(ledger, task_id)
         IntegrateContextPacket.build(ledger, parent_task_id=task_id, iteration=iteration).write(
-            Path(working_dir)
+            working_dir
         )
 
     def _integrate_iteration(self, ledger: SqliteLedger, task_id: str) -> int:
