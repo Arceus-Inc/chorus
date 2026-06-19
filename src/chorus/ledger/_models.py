@@ -123,6 +123,10 @@ class Task:
     started_at: datetime | None = None
     completed_at: datetime | None = None
     cancelled_at: datetime | None = None
+    # §4 trust posture — the preset *value* (kept a plain str so the model stays trust-module-free);
+    # ``None`` lets the TrustPolicy derive it. ``trust_boundary`` is the JSON {secret_ref_allowlist}.
+    trust_preset: str | None = None
+    trust_boundary: dict[str, object] | None = None
 
 
 @dataclass(frozen=True)
