@@ -23,6 +23,12 @@ from chorus.lifecycle._disposition import (
     reconcile_disposition,
 )
 from chorus.lifecycle._liveness import Health, Liveness, classify
+from chorus.lifecycle._revise_dod import (
+    NoRevision,
+    ReviseOutcome,
+    RevisionAuthorityError,
+    revise_dod,
+)
 from chorus.lifecycle._transitions import (
     LEGAL_TRANSITIONS,
     TERMINAL,
@@ -47,6 +53,9 @@ __all__ = [
     "Health",
     "IllegalTransition",
     "Liveness",
+    "NoRevision",
+    "ReviseOutcome",
+    "RevisionAuthorityError",
     "assert_legal",
     "assign_task",
     "classify",
@@ -56,4 +65,5 @@ __all__ = [
     "is_legal",
     "reconcile_disposition",
     "record_activity",
+    "revise_dod",
 ]

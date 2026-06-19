@@ -43,9 +43,12 @@ from chorus.lifecycle import (
     DEFAULT_REQUEST_DEPTH_CAP,
     ChildSpec,
     DepthCapped,
+    NoRevision,
+    RevisionAuthorityError,
     assign_task,
     decompose,
     deliver_message,
+    revise_dod,
 )
 from chorus.observability import LedgerInspector
 from chorus.outcomes import DoDKind, Verifier
@@ -1441,12 +1444,42 @@ def _dod_set(ctx: CommandContext, args: tuple[str, ...]) -> LoopSignal:
     return LoopSignal.CONTINUE
 
 
-@REGISTRY.command("dod", summary="set a task's Definition of Done", usage=_DOD, hidden=True)
-def _dod(ctx: CommandContext) -> LoopSignal:
-    if not ctx.args or ctx.args[0] != "set":
-        ctx.out.error(f"usage: {_DOD}")
+_DOD_REVISE = "dod revise <task_id> <manager_id> <command|human_approval|agent_review> [args…]"
+
+
+def _dod_revise(ctx: CommandContext, args: tuple[str, ...]) -> LoopSignal:
+    if len(args) < 3:
+        ctx.out.error(f"usage: {_DOD_REVISE}")
         return LoopSignal.CONTINUE
-    return _dod_set(ctx, ctx.args[1:])
+    task_id, revised_by = args[0], args[1]
+    verifier = _build_verifier(args[2], args[3:], ctx.out)
+    if verifier is None:
+        return LoopSignal.CONTINUE
+    try:
+        outcome = revise_dod(
+            ctx.session.ledger, task_id=task_id, new_verifier=verifier, revised_by=revised_by
+        )
+    except (RevisionAuthorityError, NoRevision) as exc:
+        ctx.out.error(str(exc))
+        return LoopSignal.CONTINUE
+    if outcome.applied:
+        ctx.out.line(f"tightened {task_id}'s DoD -> {verifier.kind.value} (applied now)")
+    else:
+        ctx.out.line(
+            f"loosen staged on {task_id} -> opened gate {outcome.approval_id} "
+            "(resolve with `approval approve|deny|revise`)"
+        )
+    return LoopSignal.CONTINUE
+
+
+@REGISTRY.command("dod", summary="set or revise a task's Definition of Done", usage=_DOD, hidden=True)
+def _dod(ctx: CommandContext) -> LoopSignal:
+    if ctx.args and ctx.args[0] == "set":
+        return _dod_set(ctx, ctx.args[1:])
+    if ctx.args and ctx.args[0] == "revise":
+        return _dod_revise(ctx, ctx.args[1:])
+    ctx.out.error(f"usage: {_DOD}")
+    return LoopSignal.CONTINUE
 
 
 REGISTRY.alias("?", of="help")

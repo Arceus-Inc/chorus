@@ -33,7 +33,13 @@ from chorus.ledger import (
     SqliteLedger,
     Task,
 )
-from chorus.lifecycle import DEFAULT_REQUEST_DEPTH_CAP, assign_task, deliver_message
+from chorus.lifecycle import (
+    DEFAULT_REQUEST_DEPTH_CAP,
+    ReviseOutcome,
+    assign_task,
+    deliver_message,
+    revise_dod,
+)
 from chorus.memory import AppendOnlyMemoryWriter
 from chorus.observability import EventBus, LedgerInspector, TaskView, WorkforceStatus
 from chorus.outcomes import Verifier
@@ -211,6 +217,17 @@ class Chorus:
         if role not in self._roles:
             raise OrgInvariantViolation(f"unknown role {role!r}")
         return self._workforce.hire(name=name, role=role, reports_to=reports_to)
+
+    def revise_dod(
+        self, task_id: str, new_verifier: Verifier, *, revised_by: str
+    ) -> ReviseOutcome:
+        """Revise a task's DoD (spec 04 §1): a manager tighten applies now; a loosen opens a §5 gate.
+
+        Raises ``RevisionAuthorityError`` if ``revised_by`` is not the assignee's manager, or
+        ``NoRevision`` if the task has no DoD / the edit is a no-op."""
+        return revise_dod(
+            self._ledger, task_id=task_id, new_verifier=new_verifier, revised_by=revised_by
+        )
 
     def request_hire(
         self,

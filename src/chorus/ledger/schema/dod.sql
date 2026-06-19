@@ -11,7 +11,8 @@ CREATE TABLE dod (
     verdict            TEXT,
     verified_by_run_id TEXT REFERENCES run(id),
     created_at         TEXT NOT NULL,
-    updated_at         TEXT NOT NULL
+    updated_at         TEXT NOT NULL,
+    proposed_revision  TEXT
 );
 
 CREATE UNIQUE INDEX dod_task_uq ON dod(task_id);
