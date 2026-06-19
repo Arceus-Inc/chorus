@@ -114,6 +114,23 @@ async def test_paused_employee_holds_the_wake(ledger: SqliteLedger) -> None:
     assert report.invokability_cancelled == 0
 
 
+async def test_pending_employee_holds_the_wake(ledger: SqliteLedger) -> None:
+    # A pending hire (not yet approved) is uninvokable; its wake is held (released), not cancelled.
+    beat = _FakeBeat()
+    sched = _wired(ledger, beat, _employee("e1", status=EmployeeStatus.PENDING))
+    _assigned_wake(ledger, task_id="t1", employee_id="e1", wake_id="w1")
+
+    report = await sched.tick(_NOW)
+    await sched.drain()
+
+    assert beat.calls == []
+    assert [w.id for w in ledger.wakes.queued(employee_id="e1")] == ["w1"]  # still waiting
+    task = ledger.tasks.get("t1")
+    assert task is not None and task.status is TaskStatus.TODO
+    assert report.invokability_skipped == 1
+    assert report.invokability_cancelled == 0
+
+
 async def test_unknown_employee_cancels_the_wake(ledger: SqliteLedger) -> None:
     beat = _FakeBeat()
     sched = _wired(ledger, beat)  # workforce knows nobody

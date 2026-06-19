@@ -616,6 +616,23 @@ class ApprovalSubjectKind(StrEnum):
     BUDGET_INCIDENT = "budget_incident"
     TASK = "task"
     ARTIFACT = "artifact"
+    EMPLOYEE = "employee"
+
+
+class ApprovalAction(StrEnum):
+    """The governed action an :class:`Approval` represents — the spec-04 §5 ``type`` (§5 governance).
+
+    Orthogonal to :class:`ApprovalSubjectKind` (*what* is gated): ``action`` is *which org mutation*
+    resolving the gate performs. The :class:`~chorus.governance.GovernanceResolver` dispatches on it to
+    a registered handler. ``BUDGET_OVERRIDE`` is modelled for completeness but keeps resolving via the
+    §3 budget enforcer.
+    """
+
+    HIRE_EMPLOYEE = "hire_employee"
+    PLAN_APPROVAL = "plan_approval"
+    BOARD_APPROVAL = "board_approval"
+    BUDGET_OVERRIDE = "budget_override"
+    TASK_GATE = "task_gate"
 
 
 class ApprovalStatus(StrEnum):
@@ -624,6 +641,7 @@ class ApprovalStatus(StrEnum):
     PENDING = "pending"
     APPROVED = "approved"
     DENIED = "denied"
+    REVISION_REQUESTED = "revision_requested"
     EXPIRED = "expired"
 
 
@@ -652,6 +670,7 @@ class Approval:
     subject_kind: ApprovalSubjectKind
     subject_id: str
     reason: str
+    action: ApprovalAction = ApprovalAction.TASK_GATE
     status: ApprovalStatus = ApprovalStatus.PENDING
     gate_kind: ApprovalGate | None = None
     decided_by_user_id: str | None = None
