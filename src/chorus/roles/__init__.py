@@ -9,7 +9,13 @@ from __future__ import annotations
 
 from chorus.roles._beat_config import RoleBeatConfig, role_beat_config
 from chorus.roles._defaults import default_roles
-from chorus.roles._manifest import Isolation, MemoryScope, PermissionMode, RoleManifest
+from chorus.roles._manifest import (
+    Isolation,
+    MemoryScope,
+    PermissionMode,
+    RoleManifest,
+    SandboxTier,
+)
 from chorus.roles._overlay import ManifestOverlay, resolve_manifest
 from chorus.roles._plugin import DoDGenerator, Role, RolePlugin
 from chorus.roles._registry import RoleRegistry
@@ -27,6 +33,7 @@ __all__ = [
     "RolePlugin",
     "RoleRegistry",
     "RoleSurfaceOverride",
+    "SandboxTier",
     "apply_role_surface_overrides",
     "default_roles",
     "resolve_manifest",
