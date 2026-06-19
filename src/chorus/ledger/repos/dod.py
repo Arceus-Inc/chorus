@@ -89,12 +89,75 @@ class DodRepo:
         )
         self._conn.commit()
 
+    # -- revisability (spec 04 §1) ----------------------------------------------------------------
+
+    def apply_revision(self, task_id: str, verifier: Verifier) -> None:
+        """Swap the in-force verifier and bump ``revision`` — leaves the recorded verdict untouched.
+
+        The verdict/run evidence is preserved (the in-flight invariant: a revision never re-judges an
+        already-recorded evaluation); the next evaluator pass uses the new verifier (spec 04 §1)."""
+        self._conn.execute(
+            "UPDATE dod SET kind = ?, spec = ?, artifact_class = ?, revision = revision + 1, "
+            "proposed_revision = NULL, updated_at = ? WHERE task_id = ?",
+            (
+                verifier.kind.value,
+                dumps(asdict(verifier.spec)),
+                verifier.artifact_class,
+                utcnow_iso(),
+                task_id,
+            ),
+        )
+        self._conn.commit()
+
+    def propose_revision(self, task_id: str, verifier: Verifier) -> None:
+        """Stage a *loosen* verifier for approval — the in-force verifier and revision are unchanged."""
+        self._conn.execute(
+            "UPDATE dod SET proposed_revision = ?, updated_at = ? WHERE task_id = ?",
+            (dumps(_verifier_to_payload(verifier)), utcnow_iso(), task_id),
+        )
+        self._conn.commit()
+
+    def apply_proposed_revision(self, task_id: str) -> None:
+        """Promote the staged loosen to in-force (bump revision, clear the staging) — §5 grant path."""
+        dod = self.get_for_task(task_id)
+        if dod is None or dod.proposed_revision is None:
+            return
+        self.apply_revision(task_id, _verifier_from_payload(dod.proposed_revision))
+
+    def clear_proposed(self, task_id: str) -> None:
+        """Drop a staged loosen without applying it (a denied / withdrawn revision)."""
+        self._conn.execute(
+            "UPDATE dod SET proposed_revision = NULL, updated_at = ? WHERE task_id = ?",
+            (utcnow_iso(), task_id),
+        )
+        self._conn.commit()
+
+
+def _verifier_to_payload(verifier: Verifier) -> dict[str, object]:
+    """Serialise a full verifier to ``{kind, spec, artifact_class}`` (the staged-revision shape)."""
+    return {
+        "kind": verifier.kind.value,
+        "spec": asdict(verifier.spec),
+        "artifact_class": verifier.artifact_class,
+    }
+
+
+def _verifier_from_payload(payload: dict[str, object]) -> Verifier:
+    """Rebuild a verifier from a :func:`_verifier_to_payload` blob (the staged proposed revision)."""
+    return _verifier_from_parts(
+        str(payload["kind"]),
+        cast("dict[str, object]", payload["spec"]),
+        str(payload.get("artifact_class") or ""),
+    )
+
 
 def _verifier_from_dod(dod: Dod) -> Verifier:
     """Rebuild the typed verifier from a persisted ``dod`` row (the reverse of serialisation)."""
-    kind = DoDKind(dod.kind)
-    spec = dod.spec
-    artifact_class = dod.artifact_class or ""
+    return _verifier_from_parts(dod.kind, dod.spec, dod.artifact_class or "")
+
+
+def _verifier_from_parts(kind_value: str, spec: dict[str, object], artifact_class: str) -> Verifier:
+    kind = DoDKind(kind_value)
     if kind is DoDKind.COMMAND:
         return Verifier(
             kind, Command(str(spec["command"]), cast("int", spec["timeout_s"])), artifact_class
@@ -127,4 +190,5 @@ def _row_to_dod(row: sqlite3.Row) -> Dod:
         status=DodStatus(row["status"]),
         verdict=loads(row["verdict"]),
         verified_by_run_id=row["verified_by_run_id"],
+        proposed_revision=loads(row["proposed_revision"]),
     )

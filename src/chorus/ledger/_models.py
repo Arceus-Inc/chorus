@@ -319,6 +319,7 @@ class Dod:
     status: DodStatus = DodStatus.PENDING
     verdict: dict[str, object] | None = None
     verified_by_run_id: str | None = None
+    proposed_revision: dict[str, object] | None = None  # a loosen staged for §5 approval (§1)
 
 
 @dataclass(frozen=True)
@@ -590,6 +591,7 @@ class ActivityVerb(StrEnum):
     DENIED = "denied"
     REVISION_REQUESTED = "revision_requested"
     PROMOTED = "promoted"
+    DOD_REVISED = "dod_revised"
     REVIEW_VERDICT = "review_verdict"
 
 
@@ -634,6 +636,7 @@ class ApprovalAction(StrEnum):
     PLAN_APPROVAL = "plan_approval"
     BOARD_APPROVAL = "board_approval"
     BUDGET_OVERRIDE = "budget_override"
+    LOOSEN_DOD = "loosen_dod"
     TASK_GATE = "task_gate"
 
 
