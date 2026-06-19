@@ -588,6 +588,8 @@ class ActivityVerb(StrEnum):
     FIRED = "fired"
     APPROVED = "approved"
     DENIED = "denied"
+    REVISION_REQUESTED = "revision_requested"
+    PROMOTED = "promoted"
     REVIEW_VERDICT = "review_verdict"
 
 

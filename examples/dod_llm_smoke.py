@@ -24,7 +24,7 @@ from pathlib import Path
 import dream  # type: ignore[import-not-found]
 
 from chorus.adapters import DreamBeatRunner
-from chorus.governance import GovernanceResolver
+from chorus.governance import ApprovalDecision, GovernanceResolver
 from chorus.heartbeat import Scheduler
 from chorus.ledger import SqliteLedger, Task
 from chorus.lifecycle import assign_task
@@ -83,7 +83,7 @@ def main() -> int:
             if pending:
                 print(f"  beat ran → 'sign' is {sign_status}, approval {pending[0].id} opened")
                 GovernanceResolver(ledger).resolve(
-                    pending[0].id, approve=True, decided_by_user_id="board", now=_NOW
+                    pending[0].id, decision=ApprovalDecision.APPROVE, decided_by_user_id="board", now=_NOW
                 )
                 print(f"  board approved → 'sign' is {ledger.tasks.get('sign').status.value}")  # type: ignore[union-attr]
             else:

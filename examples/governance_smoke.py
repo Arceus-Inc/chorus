@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from chorus.governance import GovernanceResolver
+from chorus.governance import ApprovalDecision, GovernanceResolver
 from chorus.ledger import ApprovalGate, SqliteLedger, Task, TaskStatus
 from chorus.workforce import Employee
 
@@ -35,8 +35,8 @@ def main() -> int:
         gate = resolver.open_task_gate("spec", gate_kind=ApprovalGate.ACCEPTANCE,
                                        reason="board signs off the spec")
         print(f"opened {gate.id} — 'spec' is now {ledger.tasks.get('spec').status.value}")  # type: ignore[union-attr]
-        accept = resolver.resolve(gate.id, approve=True, decided_by_user_id=_USER, now=_NOW)
-        print(f"approved → 'spec' is {accept.task_status.value}; "
+        accept = resolver.resolve(gate.id, decision=ApprovalDecision.APPROVE, decided_by_user_id=_USER, now=_NOW)
+        print(f"approved → 'spec' is {accept.subject_status}; "
               f"{accept.wakes_fired} downstream wake(s) fired (build can start)")
 
         # Authorization gate: sign-off BEFORE doing the work; denied → the task is cancelled.
@@ -44,8 +44,8 @@ def main() -> int:
                                  status=TaskStatus.IN_PROGRESS, assignee_employee_id="alice"))
         gate2 = resolver.open_task_gate("risky", gate_kind=ApprovalGate.AUTHORIZATION,
                                         reason="authorise a Friday deploy")
-        deny = resolver.resolve(gate2.id, approve=False, decided_by_user_id=_USER, now=_NOW)
-        print(f"denied  → 'risky' is {deny.task_status.value}")
+        deny = resolver.resolve(gate2.id, decision=ApprovalDecision.DENY, decided_by_user_id=_USER, now=_NOW)
+        print(f"denied  → 'risky' is {deny.subject_status}")
 
         ok = (
             ledger.tasks.get("spec").status is TaskStatus.DONE  # type: ignore[union-attr]

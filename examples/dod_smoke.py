@@ -13,7 +13,7 @@ from __future__ import annotations
 import asyncio
 from datetime import UTC, datetime
 
-from chorus.governance import GovernanceResolver
+from chorus.governance import ApprovalDecision, GovernanceResolver
 from chorus.heartbeat import Scheduler, Wake, WakeReason
 from chorus.heartbeat._beat import BeatOutcome
 from chorus.ledger import SqliteLedger, Task, TaskStatus
@@ -72,7 +72,7 @@ def main() -> int:
         gate = ledger.approvals.pending()[0]
         print(f"human-approval: beat ran → task 'spec' is "
               f"{ledger.tasks.get('spec').status.value}, approval {gate.id} opened")  # type: ignore[union-attr]
-        GovernanceResolver(ledger).resolve(gate.id, approve=True, decided_by_user_id="board", now=_NOW)
+        GovernanceResolver(ledger).resolve(gate.id, decision=ApprovalDecision.APPROVE, decided_by_user_id="board", now=_NOW)
         print(f"  board approved → 'spec' is {ledger.tasks.get('spec').status.value}")  # type: ignore[union-attr]
 
         # 2) Command DoD that keeps failing: re-wake for self-repair, then escalate (budget = 1).
