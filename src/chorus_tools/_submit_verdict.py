@@ -45,7 +45,13 @@ class SubmitVerdictTool(BaseTool):
         "rubric, approve=false to block it. Always give concrete feedback; when blocking, state exactly "
         "what must change so the work can be fixed."
     )
-    declaration = ToolDeclaration(risk="mutating", tier_required=1, timeout_seconds=30.0)
+    # risk="safe" + tier_required=0: ``risk`` is dream's *sandbox* axis (repo/system mutation). The
+    # verdict touches no files / commands / network — it writes only the ledger — so from the sandbox's
+    # view it is safe, exactly like dream's working-memory journaling (also risk="safe", tier 0, and
+    # explicitly allowed under a read-only repo tier). A read-only Reviewer must always be able to record
+    # its verdict; classifying it "mutating" makes the read-only sandbox *deny the call at execution*
+    # (the model emits the tool call, dream refuses it), which silently strands the review.
+    declaration = ToolDeclaration(risk="safe", tier_required=0, timeout_seconds=30.0)
     input_model = SubmitVerdictInput
 
     def __init__(self, ledger: SqliteLedger) -> None:

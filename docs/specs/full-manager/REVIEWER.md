@@ -52,11 +52,23 @@ the factory registration + cross-worktree materialization, and the lander.
 
 `examples/m3_reviewer_keyed.py` is the keyed live e2e.
 
-## Known live-tuning follow-up
+## Live reviewer: the sandbox-tier fix
 
-In the keyed run the reviewer beat reliably runs and inspects the author's worktree, but the current
-dream harness flow does **not** consistently make the model emit the `submit_verdict` tool call (it
-answers textually). When that happens the kernel **fails safe** — blocks the task and opens a recovery
-card, never a silent pass. Making the reviewer reliably call the tool is a dream-harness/prompt-flow
-tuning task (the same kind of live tuning `decompose` needed in Slice 1), independent of the kernel
-orchestration, which is complete and proven deterministically.
+Early keyed runs showed the live reviewer beat running + inspecting the worktree but never recording a
+verdict (the task fell to the safe `no_verdict` recovery). Root cause was **two sandbox bugs** in
+`submit_verdict`'s tool declaration — both about dream's *sandbox* axis, not the reviewer's logic:
+
+1. **`tier_required=1`** — dream's per-role toolset filter keeps only tools with
+   `tier_required <= sandbox_tier`. The reviewer's `READ_ONLY` sandbox is tier **0**, so `submit_verdict`
+   (tier 1) was **filtered out of the reviewer's toolset entirely** — the model never had the tool.
+2. **`risk="mutating"`** — even once in the toolset, a `mutating` tool is **denied at execution** under a
+   read-only sandbox (the model emits the call, dream refuses it).
+
+The fix: `submit_verdict` is `risk="safe", tier_required=0`. `risk` is dream's *repo/system* axis, and
+the verdict touches **only the ledger** — no files, commands, or network — exactly like dream's
+`working_memory` journaling tools (also `safe`, tier 0, explicitly allowed under a read-only repo tier).
+A read-only reviewer must always be able to record its verdict.
+
+After the fix the live reviewer works end to end: `examples/m3_reviewer_keyed.py` — the PM writes a spec,
+the **live** reviewer reads it, approves with real feedback, the verdict records, and the task reaches
+`done` in one tick. (The kernel still fails safe to a recovery card if a reviewer ever renders no verdict.)
