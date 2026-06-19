@@ -210,6 +210,20 @@ def test_reviewer_harness_registers_the_submit_verdict_capability_tool(
         ledger.close()
 
 
+def test_reviewer_can_be_materialized_at_the_worker_s_worktree(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The reviewer inspects the work IN PLACE: pointed at the worker's worktree as its (read-only)
+    # working dir, so the verdict is rendered on the real diff. Its read-only sandbox keeps it look-only.
+    factory, _ = _factory(monkeypatch, tmp_path)
+    review = factory.materialize(
+        Employee(id="rob", name="Rob", role="reviewer"), review_worktree_of="ada"
+    )
+    assert review.working_dir == tmp_path / "acme" / "worktrees" / "ada"  # ada's worktree, not rob's
+    sandbox = (review.working_dir / ".harness" / "sandbox.toml").read_text(encoding="utf-8")
+    assert 'tier = "read-only"' in sandbox
+
+
 def test_manager_brief_is_rehydrated_with_its_team(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
