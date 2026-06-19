@@ -117,7 +117,72 @@ def test_manager_harness_registers_the_decompose_capability_tool(
         )
         factory.materialize(Employee(id="moe", name="Moe", role="manager"))
         names = {t.name for t in captured["registry"].list_tools()}
-        assert names == {"read_file", "decompose"}  # built-in read + the chorus capability
+        assert names == {"read_file", "decompose", "submit_task", "assign_task"}
+    finally:
+        ledger.close()
+
+
+def test_integrate_beat_harness_drops_the_decompose_tool(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # Structural over-decompose guard (M3 §5): an integrate beat — the manager's task already has
+    # children — is materialized WITHOUT `decompose`, so the model can react with submit_task /
+    # assign_task but cannot re-decompose (and balloon) a delegated subtree. Brief discipline alone
+    # is not enough; under load a manager re-decomposes.
+    from chorus.ledger import Task, TaskStatus
+
+    ledger = SqliteLedger.open(":memory:")
+    try:
+        captured: dict[str, Any] = {}
+        monkeypatch.setattr(
+            _factory_mod.dream, "build_harness", lambda **kw: captured.update(kw) or object()
+        )
+        ledger.employees.create(Employee(id="moe", name="Moe", role="manager"))
+        ledger.tasks.submit(Task(id="goal", intent="ship it", status=TaskStatus.TODO))
+        ledger.tasks.submit(Task(id="kid", intent="a part", status=TaskStatus.TODO, parent_id="goal"))
+        factory = _factory_mod.EmployeeHarnessFactory(
+            api_key="k", base_url="https://x/openai/v1", deployment="gpt-x", company_id="acme",
+            roles=RoleRegistry.from_plugins(default_roles()), work_root=tmp_path, ledger=ledger,
+        )
+        factory.materialize(Employee(id="moe", name="Moe", role="manager"), task_id="goal")
+        names = {t.name for t in captured["registry"].list_tools()}
+        assert "decompose" not in names  # cannot re-decompose a delegated subtree
+        assert {"read_file", "submit_task", "assign_task"} <= names  # the reactive toolset remains
+    finally:
+        ledger.close()
+
+
+def test_integrate_beat_over_a_complete_subtree_drops_all_mutating_tools(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The strongest over-submit guard (M3 §5): when EVERY child is already done with a passing DoD, the
+    # delegated work is complete — the kernel's recommendation is `accept`, so the integrate harness is
+    # materialized WITHOUT submit_task/assign_task. The manager literally cannot bolt on redundant work;
+    # its only move is to accept. (A live gpt-class manager over-submits even when told to accept — brief
+    # discipline is not enough, so the tools are withheld structurally.)
+    from chorus.ledger import DodStatus, Task, TaskStatus
+    from chorus.outcomes import Verifier
+
+    ledger = SqliteLedger.open(":memory:")
+    try:
+        captured: dict[str, Any] = {}
+        monkeypatch.setattr(
+            _factory_mod.dream, "build_harness", lambda **kw: captured.update(kw) or object()
+        )
+        ledger.employees.create(Employee(id="moe", name="Moe", role="manager"))
+        ledger.tasks.submit(Task(id="goal", intent="ship it", status=TaskStatus.BLOCKED))
+        ledger.tasks.submit(Task(id="kid", intent="a part", status=TaskStatus.DONE, parent_id="goal"))
+        dod = ledger.dod.create("kid", Verifier.command("pytest", artifact_class="file"))
+        ledger.dod.record_verdict(dod.id, DodStatus.PASSED, verdict={}, run_id=None)
+        factory = _factory_mod.EmployeeHarnessFactory(
+            api_key="k", base_url="https://x/openai/v1", deployment="gpt-x", company_id="acme",
+            roles=RoleRegistry.from_plugins(default_roles()), work_root=tmp_path, ledger=ledger,
+        )
+        factory.materialize(Employee(id="moe", name="Moe", role="manager"), task_id="goal")
+        names = {t.name for t in captured["registry"].list_tools()}
+        assert "decompose" not in names
+        assert "submit_task" not in names and "assign_task" not in names  # cannot over-submit a done subtree
+        assert names == {"read_file"}  # only read remains — the manager reviews, then accepts
     finally:
         ledger.close()
 
@@ -132,8 +197,9 @@ def test_manager_brief_is_rehydrated_with_its_team(
         from chorus.workforce import Employee as _Emp
 
         ledger.employees.create(_Emp(id="moe", name="Moe", role="manager"))
-        ledger.employees.create(_Emp(id="ada", name="Ada", role="engineer"))
-        ledger.employees.create(_Emp(id="bob", name="Bob", role="engineer"))
+        ledger.employees.create(_Emp(id="ada", name="Ada", role="engineer", reports_to="moe"))
+        ledger.employees.create(_Emp(id="bob", name="Bob", role="engineer", reports_to="moe"))
+        ledger.employees.create(_Emp(id="eve", name="Eve", role="engineer"))
         captured: dict[str, Any] = {}
         monkeypatch.setattr(
             _factory_mod.dream, "build_harness", lambda **kw: captured.update(kw) or object()
@@ -145,6 +211,7 @@ def test_manager_brief_is_rehydrated_with_its_team(
         mat = factory.materialize(ledger.employees.get("moe"))  # type: ignore[arg-type]
         generator = (mat.working_dir / ".harness" / "roles" / "generator.toml").read_text("utf-8")
         assert "ada (engineer)" in generator and "bob (engineer)" in generator
+        assert "eve (engineer)" not in generator
         assert "moe" not in generator.split("Your reports")[1]  # the manager isn't its own report
     finally:
         ledger.close()

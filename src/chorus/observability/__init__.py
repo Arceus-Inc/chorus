@@ -12,7 +12,10 @@ from chorus.observability._inspector import Inspector, LedgerInspector
 from chorus.observability._views import (
     EmployeeView,
     IncidentView,
+    OrgObservabilityReport,
     RunView,
+    ScrumChildView,
+    ScrumPacketView,
     TaskView,
     WorkforceStatus,
 )
@@ -25,7 +28,10 @@ __all__ = [
     "IncidentView",
     "Inspector",
     "LedgerInspector",
+    "OrgObservabilityReport",
     "RunView",
+    "ScrumChildView",
+    "ScrumPacketView",
     "Subscriber",
     "TaskView",
     "WorkforceStatus",

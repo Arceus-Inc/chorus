@@ -19,12 +19,14 @@ import asyncio
 import uuid
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
-from typing import TYPE_CHECKING, TypeVar
+from pathlib import Path
+from typing import TYPE_CHECKING, Protocol, TypeVar, runtime_checkable
 
 from chorus.adapters._failure import failure_outcome
 from chorus.cron._fire import fire_routine
 from chorus.governance import GovernanceResolver
 from chorus.heartbeat._beat import BeatDisposition, BeatOutcome
+from chorus.heartbeat._beat_context import IntegrateContextPacket
 from chorus.heartbeat._invokability import invokability_block
 from chorus.heartbeat._runner_for import single
 from chorus.heartbeat._wake import TickReport, Wake
@@ -65,6 +67,19 @@ if TYPE_CHECKING:
     from chorus.workforce import Employee, Workforce
 
 _T = TypeVar("_T")
+
+
+@runtime_checkable
+class _RunnerWithWorkingDir(Protocol):
+    """A beat runner that exposes its worktree — where the kernel drops per-beat context files.
+
+    Not every :class:`~chorus.heartbeat.BeatRunner` runs in a working dir (a fake/in-memory runner
+    has none), so this is a narrow capability the kernel checks for before writing the integrate
+    packet — typed, rather than a structural ``getattr`` probe.
+    """
+
+    @property
+    def working_dir(self) -> Path | None: ...
 
 
 def _utc_now() -> datetime:
@@ -136,6 +151,7 @@ class Scheduler:
         lease_ttl_s: float = 300.0,
         max_repair_attempts: int = 2,
         transient_retries: int = 2,
+        max_integrate_iterations: int = 3,
         memory_writer: MemoryWriter | None = None,
         ledger: SqliteLedger | None = None,
         workforce: Workforce | None = None,
@@ -155,6 +171,9 @@ class Scheduler:
         # In-beat retry budget for *transient* engine faults (a planner/evaluator parse blip): re-run the
         # beat this many times before stranding it onto the recovery ladder (spec 05 §5).
         self.transient_retries = transient_retries
+        # How many adaptive integrate beats a manager gets per goal before the kernel forces
+        # acceptance of the completed subtree — bounds the submit→re-integrate loop (spec M3 §5).
+        self.max_integrate_iterations = max_integrate_iterations
         self._ledger = ledger
         self._workforce = workforce
         # The beat seam is per-employee (resolve a role-faithful runner for the dispatched employee). A
@@ -436,27 +455,20 @@ class Scheduler:
             )
         )
 
-        # Mechanical integrate (M3 §5): a re-invocation whose delegated subtree is already complete is
-        # landed by the kernel — NOT a model beat. Running a manager beat here would re-plan and let the
-        # model call ``decompose`` again, ballooning the subtree and starving later work; the integrate
-        # is mechanical by definition ("all children terminal"). Slice 2 replaces this with a real,
-        # deliberately-scoped reacting integrate beat.
-        if ledger.tasks.has_children(task_id) and ledger.tasks.all_children_terminal(task_id):
-            verifier = ledger.dod.verifier_for_task(task_id)
-            ledger.runs.finish(run_id, RunStatus.SUCCEEDED, outcome=None)
-            await self._land_passed(
-                task_id, run_id=run_id, verifier=verifier, verdict=None,
-                employee=employee, result=BeatOutcome(passed=True, outcome={}, summary="integrated"),
-            )
-            ledger.tasks.release_locks(task_id, run_id=run_id)
-            ledger.wakes.mark_done(wake.id)
+        # Integrate-iteration cap (M3 §5): a manager that keeps spawning follow-ups would re-park /
+        # re-integrate forever, bounded only by budget. Past the cap, accept the completed subtree
+        # mechanically — no further adaptive beat — so the loop is bounded.
+        if await self._maybe_cap_integrate(ledger, wake=wake, run_id=run_id, task=task, employee=employee):
             return
 
         observer = self._event_bus.emit if self._event_bus is not None else None
         verifier = None
         try:
-            # Resolve the runner whose harness is materialized for *this* employee's role (spec 06 §2).
-            beat_runner = beat_runner_for.runner_for(employee)
+            # Resolve the runner for *this* employee's role + beat phase (an integrate beat — the task
+            # already has children — is materialized without ``decompose``, spec 06 §2 / M3 §5).
+            beat_runner = beat_runner_for.runner_for(employee, task_id=task_id)
+            if ledger.tasks.has_children(task_id) and ledger.tasks.all_children_terminal(task_id):
+                self._write_integrate_packet(ledger, beat_runner=beat_runner, task_id=task_id)
             # Intake DoD (spec 04 §1 / 06 §2): a task with no explicit DoD inherits its assignee role's, so
             # a beat is always held to the role's gate — the engineer to its tests, etc. A DoD a human set
             # via ``dod set`` always wins (only filled when absent). Persisted so ``task <id>`` shows it.
@@ -537,6 +549,40 @@ class Scheduler:
             scope=self._memory_scope(employee), now=now,
         )
         await self._memory_writer.apply(delta.to_memory_delta())
+
+    def _write_integrate_packet(
+        self, ledger: SqliteLedger, *, beat_runner: BeatRunner, task_id: str
+    ) -> None:
+        """Write the manager's child-feedback packet when the runner exposes a working directory."""
+        if not isinstance(beat_runner, _RunnerWithWorkingDir):
+            return
+        working_dir = beat_runner.working_dir
+        if working_dir is None:
+            return
+        IntegrateContextPacket.build(ledger, parent_task_id=task_id).write(working_dir)
+
+    async def _maybe_cap_integrate(
+        self, ledger: SqliteLedger, *, wake: Wake, run_id: str, task: Task, employee: Employee
+    ) -> bool:
+        """At the integrate-iteration cap, accept the completed subtree mechanically — no model beat.
+
+        Returns ``True`` when it handled (and landed) the beat, so ``run_beat`` returns early. Only a
+        re-invocation whose subtree is already complete can be capped; a kickoff or engineer beat
+        (no terminal subtree) always returns ``False``.
+        """
+        if not (ledger.tasks.has_children(task.id) and ledger.tasks.all_children_terminal(task.id)):
+            return False
+        if IntegrateContextPacket.iteration_for(ledger, task.id) <= self.max_integrate_iterations:
+            return False
+        verifier = ledger.dod.verifier_for_task(task.id)
+        ledger.runs.finish(run_id, RunStatus.SUCCEEDED, outcome=None)
+        await self._land_passed(
+            task.id, run_id=run_id, verifier=verifier, verdict=None, employee=employee,
+            result=BeatOutcome(passed=True, outcome={}, summary="integrated (iteration cap reached)"),
+        )
+        ledger.tasks.release_locks(task.id, run_id=run_id)
+        ledger.wakes.mark_done(wake.id)
+        return True
 
     def _memory_scope(self, employee: Employee) -> str:
         """The employee's write scope — its role's ``memory_scope`` (``project`` when unknown)."""

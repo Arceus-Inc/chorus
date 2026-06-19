@@ -32,6 +32,7 @@ def assign_task(
     together. Returns the enqueued wake, or ``None`` if the task is unknown or already terminal.
     """
     with ledger.transaction():
+        before = ledger.tasks.get(task_id)
         if not ledger.tasks.assign(task_id, employee_id):
             return None
         wake = ledger.wakes.enqueue(
@@ -47,7 +48,13 @@ def assign_task(
             verb=ActivityVerb.ASSIGNED,
             subject_id=task_id,
             actor_employee_id=assigned_by,
-            payload={"assignee": employee_id},
+            payload={
+                "assignee": employee_id,
+                "previous_assignee": before.assignee_employee_id if before is not None else None,
+                "reassigned": before is not None
+                and before.assignee_employee_id is not None
+                and before.assignee_employee_id != employee_id,
+            },
         )
     return wake
 

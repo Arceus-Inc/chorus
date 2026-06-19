@@ -26,11 +26,11 @@ from dream.tools._registry import ToolRegistry, ToolSource
 from dream.tools.builtin import default_registry
 
 from chorus.adapters import DreamBeatRunner, TokenPricing
-from chorus.heartbeat import BeatRunner
+from chorus.heartbeat import BeatRunner, IntegrateContextPacket
 from chorus.roles import RoleBeatConfig, RoleRegistry, role_beat_config
 from chorus.workforce import Employee
 from chorus.workspace import CompanyWorkspace, default_work_root
-from chorus_tools import DecomposeTool
+from chorus_tools import AssignTaskTool, DecomposeTool, SubmitTaskTool
 
 if TYPE_CHECKING:
     from chorus.ledger import SqliteLedger
@@ -43,9 +43,8 @@ _DREAM_ROLES: tuple[Literal["planner", "generator", "evaluator"], ...] = (
 )
 
 # chorus role tool names → dream built-in names. ``run_command`` is dream's ``bash``. chorus-only
-# capability tools (decompose / submit_task / assign_task / query_data) have no built-in: ``decompose``
-# is registered from ``chorus_tools`` (it needs the ledger — see ``_capability_tool``); the rest are
-# Slice 2 and still dropped.
+# capability tools (decompose / submit_task / assign_task / query_data) have no built-in: M3 tools are
+# registered from ``chorus_tools`` because they need the ledger — see ``_capability_tool``.
 _CHORUS_TO_DREAM_TOOL: dict[str, str] = {
     "read_file": "read_file",
     "write_file": "write_file",
@@ -90,16 +89,22 @@ def _capability_tool(name: str, ledger: SqliteLedger) -> BaseTool | None:
     """Build the chorus capability tool for ``name`` (ledger-bound), or ``None`` if it isn't one."""
     if name == "decompose":
         return DecomposeTool(ledger)
+    if name == "submit_task":
+        return SubmitTaskTool(ledger)
+    if name == "assign_task":
+        return AssignTaskTool(ledger)
     return None
 
 
 # Capability tools that route work to *other* employees — a role holding one needs to know its reports.
 _DELEGATING_TOOLS = frozenset({"decompose", "submit_task", "assign_task"})
+# The manager's reactive tools on an integrate beat — withheld once the subtree is already complete.
+_REACTIVE_TOOLS = frozenset({"submit_task", "assign_task"})
 
 
 def _team_roster(ledger: SqliteLedger, *, exclude: str) -> str:
-    """The org's other employees (id + role) as a brief section, so a delegator names valid assignees."""
-    reports = [emp for emp in ledger.employees.list() if emp.id != exclude]
+    """The employee's direct reports (id + role), so a delegator names valid assignees."""
+    reports = [emp for emp in ledger.employees.list() if emp.reports_to == exclude]
     lines = [f"- {emp.id} ({emp.role})" for emp in reports]
     body = "\n".join(lines) if lines else "(no other employees are currently hired)"
     return (
@@ -217,15 +222,40 @@ class EmployeeHarnessFactory:
         """The org's workspace root (``.chorus/work/{org}/``) — where landers find the worktrees."""
         return self._company_root
 
-    def runner_for(self, employee: Employee) -> BeatRunner:
+    def runner_for(self, employee: Employee, *, task_id: str | None = None) -> BeatRunner:
         """The :class:`~chorus.heartbeat.BeatRunnerFor` seam — the role-faithful runner for a beat."""
-        return self.materialize(employee).runner
+        return self.materialize(employee, task_id=task_id).runner
 
-    def materialize(self, employee: Employee) -> EmployeeHarness:
-        """Resolve ``employee``'s role into a configured dream harness in its isolated worktree."""
+    def materialize(self, employee: Employee, *, task_id: str | None = None) -> EmployeeHarness:
+        """Resolve ``employee``'s role into a configured dream harness in its isolated worktree.
+
+        ``task_id`` shapes the harness to the beat's phase: a manager's **integrate** beat (its task
+        already has children) is materialized **without** ``decompose``, so the model can react with
+        ``submit_task`` / ``assign_task`` but cannot re-decompose a delegated subtree (M3 §5). The
+        kickoff beat (no children yet) keeps ``decompose``.
+        """
         if employee.role not in self._roles:
             raise ValueError(f"role {employee.role!r} for {employee.id!r} is not a registered role")
         config = role_beat_config(self._roles.get(employee.role).manifest)
+
+        # Structural over-decompose guard: on an integrate beat the parent already owns children, so
+        # ``decompose`` is dropped from the toolset entirely — the model never sees it (M3 §5). Brief
+        # discipline alone is not enough; under load a manager re-decomposes and balloons the subtree.
+        if (
+            task_id is not None
+            and self._ledger is not None
+            and "decompose" in config.tools
+            and self._ledger.tasks.has_children(task_id)
+        ):
+            config = replace(config, tools=tuple(t for t in config.tools if t != "decompose"))
+            # Structural over-submit guard: when the kernel's verdict is `accept` — every child done,
+            # unblocked, and passing — the delegated work is complete, so submit_task/assign_task are
+            # withheld too. The manager can only review and accept; it cannot bolt on redundant work.
+            # (A live gpt-class manager over-submits even when the brief + packet tell it to accept.)
+            if IntegrateContextPacket.recommended_for(self._ledger, task_id) == "accept":
+                config = replace(
+                    config, tools=tuple(t for t in config.tools if t not in _REACTIVE_TOOLS)
+                )
 
         # Team rehydration: a delegating role (decompose/submit/assign) gets its reports appended to its
         # brief, read live from the workforce — so the model assigns to real employee ids, not invented.

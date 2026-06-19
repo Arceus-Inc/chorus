@@ -47,6 +47,7 @@ from chorus.lifecycle import (
     decompose,
     deliver_message,
 )
+from chorus.observability import LedgerInspector
 from chorus.outcomes import DoDKind, Verifier
 from chorus.roles import RoleRegistry, role_beat_config
 from chorus.workforce import EmployeeStatus, GitWorkforce, LedgerWorkforce, copy_org
@@ -364,18 +365,59 @@ def _assign_task_minimal(ctx: CommandContext) -> LoopSignal:
     return LoopSignal.CONTINUE
 
 
-_CHECK = "check memory | check ledger | check <employee_name>"
+_CHECK = "check memory | check ledger | check org | check scrum <task_id> | check <employee_name>"
 
 
 @REGISTRY.command("check", summary="inspect memory, ledger, or employee latest-task actions", usage=_CHECK)
 def _check(ctx: CommandContext) -> LoopSignal:
     _maybe_bootstrap_employee(ctx)
     _ensure_heartbeat(ctx)
-    if len(ctx.args) != 1:
+    if not 1 <= len(ctx.args) <= 2:
         ctx.out.error(f"usage: {_CHECK}")
         return LoopSignal.CONTINUE
     target = ctx.args[0]
     ledger = ctx.session.ledger
+    if target == "scrum":
+        if len(ctx.args) != 2:
+            ctx.out.error(f"usage: {_CHECK}")
+            return LoopSignal.CONTINUE
+        try:
+            packet = LedgerInspector(ledger).scrum_packet(ctx.args[1])
+        except KeyError:
+            ctx.out.error(f"no such task: {ctx.args[1]!r}")
+            return LoopSignal.CONTINUE
+        ctx.out.kv(
+            {
+                "parent_task": packet.parent_task_id,
+                "manager": _fmt(packet.manager_id),
+                "children": packet.child_count,
+                "completed_children": packet.completed_children,
+                "completion_rate": f"{packet.completion_rate:.0%}",
+                "dependency_edges": packet.dependency_edges,
+                "assignments": packet.assignment_count,
+                "reassignments": packet.reassignments,
+            }
+        )
+        ctx.out.table(
+            ("label", "task", "assignee", "status", "blockers", "dod", "run", "artifact"),
+            [
+                (
+                    child.label,
+                    child.task_id,
+                    _fmt(child.assignee),
+                    child.status,
+                    ",".join(child.blockers) if child.blockers else "-",
+                    _fmt(child.dod_status),
+                    _fmt(child.latest_run_status),
+                    _fmt(child.artifact_type),
+                )
+                for child in packet.children
+            ],
+        )
+        return LoopSignal.CONTINUE
+    if len(ctx.args) != 1:
+        ctx.out.error(f"usage: {_CHECK}")
+        return LoopSignal.CONTINUE
     if target == "memory":
         employees = ledger.employees.list()
         if not employees:
@@ -414,6 +456,41 @@ def _check(ctx: CommandContext) -> LoopSignal:
                 [
                     (str(a.occurred_at), a.verb.value, a.subject_kind, a.subject_id)
                     for a in recent
+                ],
+            )
+        return LoopSignal.CONTINUE
+    if target == "org":
+        report = LedgerInspector(ledger).org_report()
+        ctx.out.kv(
+            {
+                "employees": report.employees,
+                "managers": report.managers,
+                "leaves": report.leaves,
+                "tasks_total": report.tasks_total,
+                "tasks_done": report.tasks_done,
+                "tasks_blocked": report.tasks_blocked,
+                "completion_rate": f"{report.completion_rate:.0%}",
+                "running_beats": report.running_beats,
+                "failed_runs": report.failed_runs,
+                "decomposition_count": report.decomposition_count,
+                "assignment_count": report.assignment_count,
+                "reassignment_count": report.reassignment_count,
+                "dependency_edges": report.dependency_edges,
+            }
+        )
+        if report.manager_packets:
+            ctx.out.table(
+                ("manager", "parent_task", "children", "completion", "deps", "reassignments"),
+                [
+                    (
+                        _fmt(packet.manager_id),
+                        packet.parent_task_id,
+                        packet.child_count,
+                        f"{packet.completion_rate:.0%}",
+                        packet.dependency_edges,
+                        packet.reassignments,
+                    )
+                    for packet in report.manager_packets
                 ],
             )
         return LoopSignal.CONTINUE

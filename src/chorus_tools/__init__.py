@@ -9,6 +9,20 @@ dream ``BaseTool`` wrapping a dream-free chorus service. The dream import lives 
 from __future__ import annotations
 
 from chorus_tools._decompose import DecomposeInput, DecomposeTool
+from chorus_tools._manager_actions import (
+	AssignTaskInput,
+	AssignTaskTool,
+	SubmitTaskInput,
+	SubmitTaskTool,
+)
 from chorus_tools._registry import chorus_tool_registry
 
-__all__ = ["DecomposeInput", "DecomposeTool", "chorus_tool_registry"]
+__all__ = [
+	"AssignTaskInput",
+	"AssignTaskTool",
+	"DecomposeInput",
+	"DecomposeTool",
+	"SubmitTaskInput",
+	"SubmitTaskTool",
+	"chorus_tool_registry",
+]

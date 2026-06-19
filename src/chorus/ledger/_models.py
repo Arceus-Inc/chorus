@@ -579,6 +579,7 @@ class ActivityVerb(StrEnum):
 
     ASSIGNED = "assigned"
     DECOMPOSED = "decomposed"
+    SCRUM_PACKET = "scrum_packet"
     RECOVERED = "recovered"
     GATED = "gated"
     HIRED = "hired"

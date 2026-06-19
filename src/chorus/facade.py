@@ -116,7 +116,7 @@ class Chorus:
             memory_writer=AppendOnlyMemoryWriter(memory_repo),
             scheduler=scheduler,
             event_bus=event_bus,
-            inspector=LedgerInspector(),
+            inspector=LedgerInspector(ledger),
             dream=dream,
             roles=registry,
             caps=the_caps,

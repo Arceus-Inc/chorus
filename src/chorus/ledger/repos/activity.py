@@ -57,6 +57,11 @@ class ActivityRepo:
         ).fetchall()
         return [_row_to_activity(row) for row in rows]
 
+    def all(self) -> list[Activity]:
+        """Every audit row, oldest first — for read-model rollups."""
+        rows = self._conn.execute("SELECT * FROM activity ORDER BY occurred_at, id").fetchall()
+        return [_row_to_activity(row) for row in rows]
+
     def recent(self, *, limit: int) -> list[Activity]:
         """The global audit tail, newest first. ``limit`` must be positive.
 
