@@ -152,6 +152,41 @@ def test_integrate_beat_harness_drops_the_decompose_tool(
         ledger.close()
 
 
+def test_integrate_beat_over_a_complete_subtree_drops_all_mutating_tools(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The strongest over-submit guard (M3 §5): when EVERY child is already done with a passing DoD, the
+    # delegated work is complete — the kernel's recommendation is `accept`, so the integrate harness is
+    # materialized WITHOUT submit_task/assign_task. The manager literally cannot bolt on redundant work;
+    # its only move is to accept. (A live gpt-class manager over-submits even when told to accept — brief
+    # discipline is not enough, so the tools are withheld structurally.)
+    from chorus.ledger import DodStatus, Task, TaskStatus
+    from chorus.outcomes import Verifier
+
+    ledger = SqliteLedger.open(":memory:")
+    try:
+        captured: dict[str, Any] = {}
+        monkeypatch.setattr(
+            _factory_mod.dream, "build_harness", lambda **kw: captured.update(kw) or object()
+        )
+        ledger.employees.create(Employee(id="moe", name="Moe", role="manager"))
+        ledger.tasks.submit(Task(id="goal", intent="ship it", status=TaskStatus.BLOCKED))
+        ledger.tasks.submit(Task(id="kid", intent="a part", status=TaskStatus.DONE, parent_id="goal"))
+        dod = ledger.dod.create("kid", Verifier.command("pytest", artifact_class="file"))
+        ledger.dod.record_verdict(dod.id, DodStatus.PASSED, verdict={}, run_id=None)
+        factory = _factory_mod.EmployeeHarnessFactory(
+            api_key="k", base_url="https://x/openai/v1", deployment="gpt-x", company_id="acme",
+            roles=RoleRegistry.from_plugins(default_roles()), work_root=tmp_path, ledger=ledger,
+        )
+        factory.materialize(Employee(id="moe", name="Moe", role="manager"), task_id="goal")
+        names = {t.name for t in captured["registry"].list_tools()}
+        assert "decompose" not in names
+        assert "submit_task" not in names and "assign_task" not in names  # cannot over-submit a done subtree
+        assert names == {"read_file"}  # only read remains — the manager reviews, then accepts
+    finally:
+        ledger.close()
+
+
 def test_manager_brief_is_rehydrated_with_its_team(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

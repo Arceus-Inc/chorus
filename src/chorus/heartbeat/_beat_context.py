@@ -121,6 +121,18 @@ class IntegrateContextPacket:
         )
         return "accept" if complete else "react"
 
+    @classmethod
+    def recommended_for(cls, ledger: SqliteLedger, parent_task_id: str) -> str:
+        """The completeness verdict for a parent, derived straight from the ledger.
+
+        Lets a caller that does not need the whole packet — e.g. the harness factory, deciding whether
+        to withhold the manager's mutating tools on an integrate beat — share the exact same rule."""
+        return cls.recommend(cls._children_for(ledger, parent_task_id))
+
+    @classmethod
+    def _children_for(cls, ledger: SqliteLedger, parent_task_id: str) -> tuple[ChildOutcomeContext, ...]:
+        return tuple(_child_outcome(ledger, child.id) for child in ledger.tasks.children(parent_task_id))
+
     @staticmethod
     def iteration_for(ledger: SqliteLedger, parent_task_id: str) -> int:
         """1-based count of integrate beats this parent has had (its runs minus the kickoff beat).
@@ -145,7 +157,7 @@ class IntegrateContextPacket:
             for emp in ledger.employees.list()
             if manager_id is not None and emp.reports_to == manager_id
         )
-        children = tuple(_child_outcome(ledger, child.id) for child in ledger.tasks.children(parent_task_id))
+        children = cls._children_for(ledger, parent_task_id)
         packet = cls(
             parent_task_id=parent.id,
             parent_intent=parent.intent,

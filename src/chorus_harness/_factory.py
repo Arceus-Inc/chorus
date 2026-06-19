@@ -26,7 +26,7 @@ from dream.tools._registry import ToolRegistry, ToolSource
 from dream.tools.builtin import default_registry
 
 from chorus.adapters import DreamBeatRunner, TokenPricing
-from chorus.heartbeat import BeatRunner
+from chorus.heartbeat import BeatRunner, IntegrateContextPacket
 from chorus.roles import RoleBeatConfig, RoleRegistry, role_beat_config
 from chorus.workforce import Employee
 from chorus.workspace import CompanyWorkspace, default_work_root
@@ -98,6 +98,8 @@ def _capability_tool(name: str, ledger: SqliteLedger) -> BaseTool | None:
 
 # Capability tools that route work to *other* employees — a role holding one needs to know its reports.
 _DELEGATING_TOOLS = frozenset({"decompose", "submit_task", "assign_task"})
+# The manager's reactive tools on an integrate beat — withheld once the subtree is already complete.
+_REACTIVE_TOOLS = frozenset({"submit_task", "assign_task"})
 
 
 def _team_roster(ledger: SqliteLedger, *, exclude: str) -> str:
@@ -246,6 +248,14 @@ class EmployeeHarnessFactory:
             and self._ledger.tasks.has_children(task_id)
         ):
             config = replace(config, tools=tuple(t for t in config.tools if t != "decompose"))
+            # Structural over-submit guard: when the kernel's verdict is `accept` — every child done,
+            # unblocked, and passing — the delegated work is complete, so submit_task/assign_task are
+            # withheld too. The manager can only review and accept; it cannot bolt on redundant work.
+            # (A live gpt-class manager over-submits even when the brief + packet tell it to accept.)
+            if IntegrateContextPacket.recommended_for(self._ledger, task_id) == "accept":
+                config = replace(
+                    config, tools=tuple(t for t in config.tools if t not in _REACTIVE_TOOLS)
+                )
 
         # Team rehydration: a delegating role (decompose/submit/assign) gets its reports appended to its
         # brief, read live from the workforce — so the model assigns to real employee ids, not invented.
