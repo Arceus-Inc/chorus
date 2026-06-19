@@ -815,10 +815,12 @@ class Scheduler:
         goal = task.intent if task is not None else task_id
         rubric = review.rubric or "the task is complete, correct, and meets its stated intent"
         return (
-            f"Review the work in this worktree for the task: {goal}\n"
+            f"You are reviewing the work in this worktree for the task: {goal}\n"
             f"Rubric: {rubric}\n"
-            "Inspect the files, then call submit_verdict exactly once (approve=true to accept, "
-            "approve=false to block) with concrete feedback."
+            "Read the relevant files to judge it. You MUST finish by calling the `submit_verdict` tool "
+            "exactly once — that tool call IS your review and the ONLY way to complete this task. Pass "
+            "approve=true to accept or approve=false to block, with concrete feedback. Do NOT just write "
+            "your verdict as text; an un-recorded verdict does not count."
         )
 
     def _open_review_recovery(self, task_id: str, *, cause: str, owner_id: str) -> None:
