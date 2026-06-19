@@ -20,7 +20,10 @@ def reviewer_manifest() -> RoleManifest:
     return RoleManifest(
         # — per-role overlay —
         system_prompt=REVIEWER_BRIEF,  # → roles/{planner,generator,evaluator}.toml system_prompt
-        permission_mode=PermissionMode.PLAN,  # plan-only: it never writes edits
+        # DEFAULT (not PLAN): the reviewer must be able to call its one mutating tool, ``submit_verdict``.
+        # Its read-only-ness is enforced structurally — no file-writing tools below + the READ_ONLY
+        # sandbox tier — so it can record a verdict but can never touch the work under review.
+        permission_mode=PermissionMode.DEFAULT,
         # — build_harness(registry=…) —
         # read-only on the filesystem; ``submit_verdict`` is its one capability — it mutates only the
         # ledger DoD verdict, never the work under review (Path A, M3 load-bearing Reviewer).

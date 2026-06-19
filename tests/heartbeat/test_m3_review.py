@@ -61,6 +61,14 @@ class _Reviewer(_Runner):
         return BeatOutcome(passed=True, outcome={}, summary="reviewed", model="m")
 
 
+class _SilentReviewer(_Runner):
+    """A reviewer that runs but never calls submit_verdict (renders no verdict)."""
+
+    async def run_task(self, *, task_id: str, intent: str, verification: object = (),
+                       observer: object = None, run_id: str | None = None) -> BeatOutcome:
+        return BeatOutcome(passed=True, outcome={}, summary="said nothing", model="m")
+
+
 class _Manager(_Runner):
     """Decompose on kickoff; on integrate, react when the kernel recommends it, else accept."""
 
@@ -86,11 +94,13 @@ class _Manager(_Runner):
 class _Org:
     """A fake harness factory: a role-faithful fake runner per employee, plus the review seam."""
 
-    def __init__(self, ledger: SqliteLedger, *, decide: object, root: Path, parent: str = "M") -> None:
+    def __init__(self, ledger: SqliteLedger, *, decide: object, root: Path, parent: str = "M",
+                 silent: bool = False) -> None:
         self._ledger = ledger
         self._decide = decide
         self._root = root
         self._parent = parent
+        self._silent = silent
 
     def runner_for(self, employee: Employee, *, task_id: str | None = None) -> object:
         return self._for(employee)
@@ -100,6 +110,8 @@ class _Org:
 
     def _for(self, employee: Employee) -> object:
         if employee.role == "reviewer":
+            if self._silent:
+                return _SilentReviewer(self._root)
             return _Reviewer(self._ledger, reviewer_id=employee.id, decide=self._decide, working_dir=self._root)
         if employee.role == "manager":
             return _Manager(self._ledger, parent=self._parent, working_dir=self._root)
@@ -159,6 +171,27 @@ async def test_standalone_block_self_repairs_then_opens_recovery(ledger: SqliteL
 
     assert ledger.tasks.get("spec").status is TaskStatus.BLOCKED  # type: ignore[union-attr]
     assert ledger.recovery_actions.active_for_source("spec") is not None  # bounded, then a human
+
+
+async def test_a_reviewer_that_renders_no_verdict_opens_a_recovery_card(
+    ledger: SqliteLedger, tmp_path: Path
+) -> None:
+    # The deliverable must never silently pass, nor loop forever, when the reviewer beat fails to
+    # render a verdict (the live bug this guards): the task blocks and a human is paged.
+    ledger.employees.create(Employee(id="pen", name="Pen", role="pm"))
+    ledger.employees.create(Employee(id="rob", name="Rob", role="reviewer"))
+    ledger.tasks.submit(Task(id="spec", intent="write the spec", status=TaskStatus.TODO))
+    assign_task(ledger, "spec", "pen")
+    org = _Org(ledger, decide=lambda _tid: True, root=tmp_path, silent=True)
+    sched = _sched(ledger, org, tmp_path)
+
+    for _ in range(4):
+        await sched.tick_once()
+        await sched.drain()
+
+    assert ledger.tasks.get("spec").status is TaskStatus.BLOCKED  # type: ignore[union-attr]
+    assert ledger.recovery_actions.active_for_source("spec") is not None
+    assert not [a for a in ledger.artifacts.list_for_task("spec") if a.type.value == "verdict"]  # no empty verdict
 
 
 async def test_manager_parented_block_escalates_and_manager_reacts(ledger: SqliteLedger, tmp_path: Path) -> None:

@@ -716,10 +716,16 @@ class Scheduler:
         except Exception as exc:
             result = failure_outcome(exc)
         ledger.runs.finish(review_run_id, RunStatus.SUCCEEDED, outcome=result.outcome or None)
-        await self._land_outcome(task_id, employee=reviewer, result=result)  # the `verdict` artifact
 
         dod = ledger.dod.get_for_task(task_id)
-        if dod is not None and dod.status is DodStatus.PASSED:
+        if dod is None or dod.status is DodStatus.PENDING:
+            # The reviewer beat rendered no verdict (it never called ``submit_verdict``). Don't silently
+            # pass it and don't loop self-repair forever — a human looks at why the reviewer stalled.
+            ledger.tasks.set_status(task_id, TaskStatus.BLOCKED)
+            self._open_review_recovery(task_id, cause="no_verdict", owner_id=reviewer.id)
+            return
+        await self._land_outcome(task_id, employee=reviewer, result=result)  # the `verdict` artifact
+        if dod.status is DodStatus.PASSED:
             await self._land_outcome(task_id, employee=author, result=work_result)
             ledger.finalize_beat(
                 task_id=task_id, run_id=review_run_id, dod_status=DodStatus.PASSED, verdict=dod.verdict

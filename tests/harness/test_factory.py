@@ -85,11 +85,13 @@ def test_reviewer_materializes_a_read_only_harness(
 ) -> None:
     factory, captured = _factory(monkeypatch, tmp_path)
     mat = factory.materialize(Employee(id="rob", name="Rob", role="reviewer"))
-    # the headline win: a reviewer is read-only EVERYWHERE — not just in chat
+    # the headline win: a reviewer is read-only EVERYWHERE — not just in chat. Its only tool with no
+    # ledger is read_file (submit_verdict needs a ledger to bind to, registered in the ledger-bound test).
     names = {t.name for t in captured["registry"].list_tools()}
     assert names == {"read_file"}
-    assert mat.config.permission_mode == "plan"
-    # and a read-only trust posture — it never mutates
+    # DEFAULT permission so it can call its ledger-only verdict tool; its read-only-ness is structural —
+    # no file-writing tool + the read-only sandbox tier.
+    assert mat.config.permission_mode == "default"
     sandbox = (mat.working_dir / ".harness" / "sandbox.toml").read_text(encoding="utf-8")
     assert 'tier = "read-only"' in sandbox
     assert "confirm_unrestricted" not in sandbox
