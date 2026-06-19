@@ -1,6 +1,8 @@
 # §4 Trust presets — `standard` / `low_trust_review`, fail-closed
 
-Status: spec (implement on `dev/m1-trust-presets`, branched off `main`). Closes the §4 deferral in
+Status: **implemented** on `dev/m1-trust-presets` (Slices 1–6, branched off `main`). Gate green — ruff +
+mypy `--strict` + full pytest. Suite: `examples/trust_presets_suite.py` →
+`reports/m1-trust-presets.html`. Closes the §4 deferral in
 [06.5-deferred-from-spec04.md](../divo/06.5-deferred-from-spec04.md). Pure-chorus: the resolved preset
 rides the **existing per-beat materialize boundary** (the factory already writes `sandbox.toml` +
 `permission_mode` + env every beat), so **no dream change** is needed.
