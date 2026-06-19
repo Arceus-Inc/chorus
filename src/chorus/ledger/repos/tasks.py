@@ -130,6 +130,16 @@ class TaskRepo:
             )
         self._conn.commit()
 
+    def set_trust(
+        self, task_id: str, *, preset: str | None, boundary: dict[str, object] | None
+    ) -> None:
+        """Set a task's §4 trust posture — the preset value + boundary JSON (spec 04 §4)."""
+        self._conn.execute(
+            "UPDATE task SET trust_preset = ?, trust_boundary = ?, updated_at = ? WHERE id = ?",
+            (preset, dumps(boundary) if boundary is not None else None, utcnow_iso(), task_id),
+        )
+        self._conn.commit()
+
     def transition(self, task_id: str, target: TaskStatus) -> None:
         """Guarded status PATCH — reject an illegal edge before writing (spec 02 §2).
 

@@ -26,7 +26,9 @@ from chorus.budgets import BudgetEnforcer, BudgetWindow, window_start
 from chorus.errors import OrgInvariantViolation, UnknownEmployee
 from chorus.governance import ApprovalDecision, GovernanceError, GovernanceResolver
 from chorus.ledger import (
+    ApprovalAction,
     ApprovalGate,
+    ApprovalSubjectKind,
     Artifact,
     ArtifactRevision,
     ArtifactType,
@@ -52,7 +54,19 @@ from chorus.lifecycle import (
 )
 from chorus.observability import LedgerInspector
 from chorus.outcomes import DoDKind, Verifier
-from chorus.roles import RoleRegistry, role_beat_config
+from chorus.roles import (
+    PermissionMode,
+    RoleRegistry,
+    SandboxTier,
+    default_roles,
+    role_beat_config,
+)
+from chorus.trust import (
+    TrustBoundary,
+    TrustDenied,
+    TrustPreset,
+    resolve_trust,
+)
 from chorus.workforce import EmployeeStatus, GitWorkforce, LedgerWorkforce, copy_org
 from chorus.workspace import CompanyWorkspace, WorkspaceError, default_work_root
 from chorus_cli._chat import ChatRenderBus, run_chat
@@ -1472,13 +1486,152 @@ def _dod_revise(ctx: CommandContext, args: tuple[str, ...]) -> LoopSignal:
     return LoopSignal.CONTINUE
 
 
-@REGISTRY.command("dod", summary="set or revise a task's Definition of Done", usage=_DOD, hidden=True)
+def _dod_show(ctx: CommandContext, args: tuple[str, ...]) -> LoopSignal:
+    if len(args) != 1:
+        ctx.out.error("usage: dod show <task_id>")
+        return LoopSignal.CONTINUE
+    dod = ctx.session.ledger.dod.get_for_task(args[0])
+    if dod is None:
+        ctx.out.error(f"task {args[0]!r} has no DoD")
+        return LoopSignal.CONTINUE
+    line = f"{args[0]}: {dod.kind} DoD (rev {dod.revision}, {dod.status.value})"
+    if dod.proposed_revision is not None:
+        line += f" — loosen staged: {dod.proposed_revision.get('kind')} (awaiting approval)"
+    ctx.out.line(line)
+    return LoopSignal.CONTINUE
+
+
+@REGISTRY.command("dod", summary="set, revise, or show a task's Definition of Done", usage=_DOD, hidden=True)
 def _dod(ctx: CommandContext) -> LoopSignal:
     if ctx.args and ctx.args[0] == "set":
         return _dod_set(ctx, ctx.args[1:])
     if ctx.args and ctx.args[0] == "revise":
         return _dod_revise(ctx, ctx.args[1:])
+    if ctx.args and ctx.args[0] == "show":
+        return _dod_show(ctx, ctx.args[1:])
     ctx.out.error(f"usage: {_DOD}")
+    return LoopSignal.CONTINUE
+
+
+# -- §4 trust presets -------------------------------------------------------------------------------
+
+_TRUST = "trust [set <task_id> <standard|low_trust_review> [secret_ref…] | show <task_id>]"
+
+
+def _trust_set(ctx: CommandContext, args: tuple[str, ...]) -> LoopSignal:
+    if len(args) < 2:
+        ctx.out.error("usage: trust set <task_id> <standard|low_trust_review> [secret_ref…]")
+        return LoopSignal.CONTINUE
+    task_id, raw_preset, refs = args[0], args[1], args[2:]
+    if ctx.session.ledger.tasks.get(task_id) is None:
+        ctx.out.error(f"no such task: {task_id!r}")
+        return LoopSignal.CONTINUE
+    try:
+        preset = TrustPreset(raw_preset)
+    except ValueError:
+        choices = ", ".join(p.value for p in TrustPreset)
+        ctx.out.error(f"unknown preset {raw_preset!r}; choose one of: {choices}")
+        return LoopSignal.CONTINUE
+    boundary: dict[str, object] | None = {"secret_ref_allowlist": list(refs)} if refs else None
+    ctx.session.ledger.tasks.set_trust(task_id, preset=preset.value, boundary=boundary)
+    scope = f"{len(refs)} secret ref(s)" if refs else "no boundary"
+    ctx.out.line(f"set {preset.value} on {task_id} ({scope})")
+    return LoopSignal.CONTINUE
+
+
+def _trust_show(ctx: CommandContext, args: tuple[str, ...]) -> LoopSignal:
+    if len(args) != 1:
+        ctx.out.error("usage: trust show <task_id>")
+        return LoopSignal.CONTINUE
+    task = ctx.session.ledger.tasks.get(args[0])
+    if task is None:
+        ctx.out.error(f"no such task: {args[0]!r}")
+        return LoopSignal.CONTINUE
+    role_sandbox, role_mode = _assignee_posture(ctx, task.assignee_employee_id)
+    preset = TrustPreset(task.trust_preset) if task.trust_preset is not None else TrustPreset.STANDARD
+    boundary = _boundary_of(task.trust_boundary)
+    try:
+        resolved = resolve_trust(
+            role_sandbox=role_sandbox, role_permission_mode=role_mode,
+            task_preset=preset, boundary=boundary,
+        )
+    except TrustDenied as exc:
+        ctx.out.error(f"{args[0]}: DENIED — {exc}")
+        return LoopSignal.CONTINUE
+    ctx.out.line(
+        f"{args[0]}: preset={resolved.preset.value} -> sandbox={resolved.sandbox.value}, "
+        f"permission_mode={resolved.permission_mode.value}, net={resolved.net_allowed}"
+    )
+    return LoopSignal.CONTINUE
+
+
+def _assignee_posture(
+    ctx: CommandContext, assignee_id: str | None
+) -> tuple[SandboxTier, PermissionMode]:
+    """The role posture of a task's assignee, or an unrestricted default when unassigned."""
+    if assignee_id is not None:
+        employee = ctx.session.ledger.employees.get(assignee_id)
+        if employee is not None:
+            roles = RoleRegistry.from_plugins(default_roles())
+            if employee.role in roles:
+                manifest = roles.get(employee.role).manifest
+                return manifest.sandbox, manifest.permission_mode
+    return SandboxTier.UNRESTRICTED, PermissionMode.DEFAULT
+
+
+def _boundary_of(raw: dict[str, object] | None) -> TrustBoundary | None:
+    if raw is None:
+        return None
+    allow = raw.get("secret_ref_allowlist", [])
+    refs = frozenset(str(r) for r in allow) if isinstance(allow, list) else frozenset()
+    return TrustBoundary(secret_ref_allowlist=refs)
+
+
+@REGISTRY.command("trust", summary="set or show a task's §4 trust posture", usage=_TRUST, hidden=True)
+def _trust(ctx: CommandContext) -> LoopSignal:
+    if ctx.args and ctx.args[0] == "set":
+        return _trust_set(ctx, ctx.args[1:])
+    if ctx.args and ctx.args[0] == "show":
+        return _trust_show(ctx, ctx.args[1:])
+    ctx.out.error(f"usage: {_TRUST}")
+    return LoopSignal.CONTINUE
+
+
+# -- §5 governed hire -------------------------------------------------------------------------------
+
+_REQUEST_HIRE = "request-hire <name> <role> [reports_to]"
+
+
+@REGISTRY.command(
+    "request-hire", summary="hire an employee behind a governance gate", usage=_REQUEST_HIRE, hidden=True
+)
+def _request_hire(ctx: CommandContext) -> LoopSignal:
+    if len(ctx.args) < 2:
+        ctx.out.error(f"usage: {_REQUEST_HIRE}")
+        return LoopSignal.CONTINUE
+    name, role = ctx.args[0], ctx.args[1]
+    reports_to = ctx.args[2] if len(ctx.args) > 2 else None
+    if role not in RoleRegistry.from_plugins(default_roles()):
+        ctx.out.error(f"unknown role {role!r}")
+        return LoopSignal.CONTINUE
+    workforce = LedgerWorkforce(ctx.session.ledger.employees)
+    try:
+        employee = workforce.hire(
+            name=name, role=role, reports_to=reports_to, status=EmployeeStatus.PENDING
+        )
+    except (OrgInvariantViolation, UnknownEmployee) as exc:
+        ctx.out.error(str(exc))
+        return LoopSignal.CONTINUE
+    approval = GovernanceResolver(ctx.session.ledger).open(
+        action=ApprovalAction.HIRE_EMPLOYEE,
+        subject_kind=ApprovalSubjectKind.EMPLOYEE,
+        subject_id=employee.id,
+        reason=f"hire {name} as {role}",
+    )
+    ctx.out.line(
+        f"requested hire of {employee.id} (pending) -> gate {approval.id}; "
+        "activate with `approval approve <id>` (or `deny`)"
+    )
     return LoopSignal.CONTINUE
 
 
