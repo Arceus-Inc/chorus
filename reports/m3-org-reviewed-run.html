@@ -1,0 +1,45 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<title>manager + 2 engineers + reviewer — reviewed-build run</title><style>
+body{font-family:ui-sans-serif,system-ui,sans-serif;margin:2rem;background:#0f1115;color:#e6e8eb}
+h1{font-size:1.45rem} .lead{color:#9aa0a6;max-width:74ch}
+.overall{display:inline-block;padding:.4rem .9rem;border-radius:999px;font-weight:800;margin:1rem 0}
+.overall.ok{background:#0e3a23;color:#4ade80} .overall.no{background:#3a0e12;color:#f87171}
+.card{background:#16191f;border:1px solid #262b33;border-radius:12px;padding:1rem 1.3rem;margin-bottom:1.3rem}
+.head{display:flex;justify-content:space-between;align-items:center} h2{font-size:1.15rem;margin:.2rem 0}
+h3{font-size:.72rem;text-transform:uppercase;letter-spacing:.06em;color:#9aa0a6;margin:.9rem 0 .3rem}
+.goal{color:#cbd5e1} .cols{display:flex;gap:2rem;flex-wrap:wrap} .cols>div{flex:1;min-width:280px}
+ul{margin:.2rem 0;padding-left:1.1rem;font-size:.88rem} ul.v li{font-family:ui-monospace,monospace;font-size:.8rem}
+table{width:100%;border-collapse:collapse;font-size:.85rem} td{padding:.25rem .4rem;border-bottom:1px solid #262b33}
+code{background:#0f1115;padding:.1rem .3rem;border-radius:4px} .muted{color:#6b7280;font-size:.82rem}
+.ok{color:#4ade80;font-weight:800} .no{color:#f87171;font-weight:800}
+</style></head><body>
+<h1>manager + 2 engineers + reviewer — 3 goals through the reviewed-build suite</h1>
+<p class="lead">Real kernel, real worktrees, real <code>pytest</code> builds. The manager decomposes;
+engineers build; a read-only reviewer discovers the verify command + judges; the <b>kernel runs the
+command</b> as the objective floor; a block (quality or failed build) becomes a <code>REJECTED</code>
+child the manager reacts to. Model beats are scripted; every build + kernel decision is real.</p>
+<div class="overall ok">ALL 3 GOALS COMPLETED</div>
+
+        <section class="card"><div class="head"><h2>Goal 1 · clean build</h2><span class='ok'>DONE</span></div>
+          <p class="goal">Build a slugify utility with a unit test.</p>
+          <div class="cols">
+            <div><h3>timeline</h3><ul><li><b>manager</b>: decomposed into [&#x27;slugify&#x27;, &#x27;shout&#x27;]</li><li><b>engineer</b>: built (clean): implement slugify with a test</li><li><b>engineer</b>: built (clean): implement shout with a test</li><li><b>manager</b>: accepted the completed subtree</li></ul><h3>reviewer verdicts</h3><ul class="v"><li>approve · cmd=`python -m pytest -q` · You are reviewing the work in this workt</li><li>approve · cmd=`python -m pytest -q` · You are reviewing the work in this workt</li></ul></div>
+            <div><h3>children (final)</h3><table><tr><td><code>slugify</code></td><td>done</td></tr><tr><td><code>shout</code></td><td>done</td></tr></table>
+                 <p class="muted">manager beats: 2</p></div>
+          </div></section>
+        <section class="card"><div class="head"><h2>Goal 2 · failing build → manager reacts</h2><span class='ok'>DONE</span></div>
+          <p class="goal">Build a parser; the first cut has a failing test.</p>
+          <div class="cols">
+            <div><h3>timeline</h3><ul><li><b>manager</b>: decomposed into [&#x27;core&#x27;]</li><li><b>engineer</b>: built (buggy): implement the buggy parser core with a test</li><li><b>manager</b>: reacted to a rejection → submit_task(&#x27;fix&#x27; → bob)</li><li><b>engineer</b>: built (clean): fix the rejected work</li></ul><h3>reviewer verdicts</h3><ul class="v"><li>approve · cmd=`python -m pytest -q` · You are reviewing the work in this workt</li><li>approve · cmd=`python -m pytest -q` · You are reviewing the work in this workt</li></ul></div>
+            <div><h3>children (final)</h3><table><tr><td><code>core</code></td><td>rejected</td></tr><tr><td><code>fix</code></td><td>done</td></tr></table>
+                 <p class="muted">manager beats: 3</p></div>
+          </div></section>
+        <section class="card"><div class="head"><h2>Goal 3 · quality block → manager reacts</h2><span class='ok'>DONE</span></div>
+          <p class="goal">Write a validator; the first diff is too weak.</p>
+          <div class="cols">
+            <div><h3>timeline</h3><ul><li><b>manager</b>: decomposed into [&#x27;weak&#x27;]</li><li><b>engineer</b>: built (clean): implement a weak validator with a test</li><li><b>manager</b>: reacted to a rejection → submit_task(&#x27;fix&#x27; → bob)</li><li><b>engineer</b>: built (clean): fix the rejected work</li></ul><h3>reviewer verdicts</h3><ul class="v"><li>BLOCK · cmd=`python -m pytest -q` · You are reviewing the work in this workt</li><li>approve · cmd=`python -m pytest -q` · You are reviewing the work in this workt</li></ul></div>
+            <div><h3>children (final)</h3><table><tr><td><code>weak</code></td><td>rejected</td></tr><tr><td><code>fix</code></td><td>done</td></tr></table>
+                 <p class="muted">manager beats: 3</p></div>
+          </div></section>
+<footer class="muted">Generated by examples/m3_org_reviewed_run.py · chorus M3 reviewed-build</footer>
+</body></html>
