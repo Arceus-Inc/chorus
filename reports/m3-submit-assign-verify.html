@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>M3 — submit_task / assign_task live verification</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { font-family: ui-sans-serif, system-ui, -apple-system, sans-serif; margin: 0; padding: 2rem;
+          background: #0f1115; color: #e6e8eb; line-height: 1.5; }
+  h1 { font-size: 1.5rem; margin: 0 0 .25rem; }
+  .lead { color: #9aa0a6; margin: 0 0 1.5rem; max-width: 70ch; }
+  .overall { display: inline-block; padding: .4rem .9rem; border-radius: 999px; font-weight: 700;
+              letter-spacing: .03em; margin-bottom: 2rem; }
+  .overall.pass { background: #0e3a23; color: #4ade80; }
+  .overall.fail { background: #3a0e12; color: #f87171; }
+  .card { background: #16191f; border: 1px solid #262b33; border-radius: 12px; padding: 1.25rem 1.5rem;
+           margin-bottom: 1.5rem; }
+  .card-head { display: flex; align-items: center; justify-content: space-between; }
+  h2 { font-size: 1.2rem; margin: 0; }
+  h3 { font-size: .8rem; text-transform: uppercase; letter-spacing: .06em; color: #9aa0a6;
+        margin: 1.2rem 0 .4rem; }
+  .badge { padding: .2rem .7rem; border-radius: 999px; font-weight: 700; font-size: .85rem; }
+  .badge.pass { background: #0e3a23; color: #4ade80; }
+  .badge.fail { background: #3a0e12; color: #f87171; }
+  .sub, .goal { margin: .3rem 0; }
+  .goal { background: #0f1115; border-left: 3px solid #3b82f6; padding: .6rem .8rem; border-radius: 4px; }
+  ul.staged { margin: .3rem 0; padding-left: 1.2rem; }
+  table { width: 100%; border-collapse: collapse; font-size: .85rem; }
+  th, td { text-align: left; padding: .4rem .5rem; border-bottom: 1px solid #262b33; vertical-align: top; }
+  th { color: #9aa0a6; font-weight: 600; }
+  code { background: #0f1115; padding: .1rem .3rem; border-radius: 4px; font-size: .82em;
+          word-break: break-word; }
+  tr.okrow td:nth-child(3) { color: #4ade80; }
+  tr.err td:nth-child(3) { color: #f87171; }
+  .verdict { margin-top: 1rem; }
+  .muted { color: #6b7280; font-size: .85rem; }
+  footer { color: #6b7280; font-size: .8rem; margin-top: 2rem; }
+</style></head>
+<body>
+  <h1>M3 — <code>submit_task</code> / <code>assign_task</code> live verification</h1>
+  <p class="lead">A real manager (gpt deployment) reacting to a broken subtree. These reactive tools are
+  withheld by the structural guard when work is complete, so each probe stages a genuine problem and runs
+  one live manager beat against it, then checks the ledger actually changed.</p>
+  <div class="overall pass">ALL PROBES PASSED</div>
+  <p class="lead"><strong>Scenario:</strong> Build a Python text-utilities library with four functions: slugify, shout, snake_case, and truncate — each in its own module with a unit test.</p>
+  
+        <section class="card">
+          <div class="card-head">
+            <h2>Probe SUBMIT — patch a cancelled deliverable</h2>
+            <span class="badge pass">PASS</span>
+          </div>
+          <p class="sub">Tool under test: <code>submit_task</code></p>
+          <p class="goal"><strong>Goal given to the manager:</strong><br>Build a Python text-utilities library with four functions: slugify, shout, snake_case, and truncate — each in its own module with a unit test.</p>
+          <h3>Staged subtree (the problem the manager faced)</h3>
+          <ul class="staged"><li>slugify — done, DoD passed (ada)</li><li>shout — done, DoD passed (bob)</li><li>snake_case — done, DoD passed (ada)</li><li>truncate — CANCELLED: the assigned report could not finish it</li></ul>
+          <h3>Live manager tool calls</h3>
+          <table>
+            <thead><tr><th>tool</th><th>input</th><th>result</th><th>detail</th></tr></thead>
+            <tbody><tr class='err'><td><code>read_file</code></td><td><code>{&#x27;path&#x27;: &#x27;docs/exec-plans/ledger.md&#x27;, &#x27;limit&#x27;: 2000}</code></td><td>error</td><td><code></code></td></tr><tr class='err'><td><code>read_file</code></td><td><code>{&#x27;path&#x27;: &#x27;docs/exec-plans/brief.md&#x27;, &#x27;limit&#x27;: 2000}</code></td><td>error</td><td><code></code></td></tr><tr class='err'><td><code>read_file</code></td><td><code>{&#x27;path&#x27;: &#x27;docs/exec-plans/ledger.json&#x27;, &#x27;limit&#x27;: 2000}</code></td><td>error</td><td><code></code></td></tr><tr class='err'><td><code>read_file</code></td><td><code>{&#x27;path&#x27;: &#x27;docs/exec-plans/ledger.md&#x27;, &#x27;limit&#x27;: 2000}</code></td><td>error</td><td><code></code></td></tr><tr class='okrow'><td><code>submit_task</code></td><td><code>{&#x27;label&#x27;: &#x27;slugify_fn_and_tests&#x27;, &#x27;intent&#x27;: &#x27;Create an importable module implementing slugify(value: str) within the existing single package (e.g., text_utils_lib/slugify.py or equivalent). Behavior: produce URL-safe slug: lowercase, strip leading/trailing whitespace, convert runs of non-alphanumeric to single hyphen, remove leading/trailing hyphens, keep ASCII letters/digits; return empty string </code></td><td>ok</td><td><code></code></td></tr><tr class='okrow'><td><code>submit_task</code></td><td><code>{&#x27;label&#x27;: &#x27;shout_fn_and_tests&#x27;, &#x27;intent&#x27;: &#x27;Create an importable module implementing shout(value: str) in its own module within the package. Behavior: strip leading/trailing whitespace, uppercase the content, ensure exactly one trailing exclamation mark; if value is empty or only whitespace, return &quot;!&quot;. Preserve internal punctuation except trailing exclamations should collapse to one. Add dedicated</code></td><td>ok</td><td><code></code></td></tr><tr class='okrow'><td><code>submit_task</code></td><td><code>{&#x27;label&#x27;: &#x27;snake_case_fn_and_tests&#x27;, &#x27;intent&#x27;: &#x27;Create an importable module implementing snake_case(value: str) in its own module within the package. Behavior: convert input to lowercase snake_case; treat spaces/hyphens/periods and other non-alphanumerics as word separators; collapse multiple separators to single underscore; trim leading/trailing underscores; split camelCase/PascalCase boundaries </code></td><td>ok</td><td><code></code></td></tr><tr class='okrow'><td><code>submit_task</code></td><td><code>{&#x27;label&#x27;: &#x27;truncate_fn_and_tests&#x27;, &#x27;intent&#x27;: &#x27;Create an importable module implementing truncate(value: str, max_length: int, suffix: str = &quot;...&quot;) in its own module within the package. Behavior: if len(value) &lt;= max_length return value unchanged; else return value truncated to fit max_length including suffix (so prefix length = max_length - len(suffix)); if max_length &lt; len(suffix), return suffix[:</code></td><td>ok</td><td><code></code></td></tr><tr class='okrow'><td><code>read_file</code></td><td><code>{&#x27;path&#x27;: &#x27;.harness/integrate-context.json&#x27;}</code></td><td>ok</td><td><code></code></td></tr><tr class='err'><td><code>submit_task</code></td><td><code>{&#x27;label&#x27;: &#x27;truncate-followup&#x27;, &#x27;intent&#x27;: &#x27;Implement function truncate(value: str, max_length: int, suffix: str = &quot;...&quot;) in its own importable module within the package, plus a dedicated pytest module covering typical and edge cases (no truncation, truncation with default suffix, custom suffix, max_length &lt;= len(suffix), empty string). Ensure `pytest -q` and `ruff check .` pass.&#x27;, &#x27;assignee&#x27;: &#x27;bob&#x27;</code></td><td>error</td><td><code></code></td></tr></tbody>
+          </table>
+          <p class="verdict"><strong>Verdict:</strong> submit_task called 4x (ok); subtree grew 4→5</p>
+          <p class="muted">subtree size 4 → 5 · manager said: “plan incomplete: 0/1 done, 0 blocked”</p>
+        </section>
+        <section class="card">
+          <div class="card-head">
+            <h2>Probe ASSIGN — reroute a stuck child</h2>
+            <span class="badge pass">PASS</span>
+          </div>
+          <p class="sub">Tool under test: <code>assign_task</code></p>
+          <p class="goal"><strong>Goal given to the manager:</strong><br>Build a config loader: a parser module and a validator module, each with a test. Your report ada is stuck on the existing validator child task and cannot finish it — route that existing task to your other report, bob.</p>
+          <h3>Staged subtree (the problem the manager faced)</h3>
+          <ul class="staged"><li>parser — done, DoD passed (ada)</li><li>validator — BLOCKED, still assigned to ada (the report is stuck)</li></ul>
+          <h3>Live manager tool calls</h3>
+          <table>
+            <thead><tr><th>tool</th><th>input</th><th>result</th><th>detail</th></tr></thead>
+            <tbody><tr class='err'><td><code>assign_task</code></td><td><code>{&#x27;task_id&#x27;: &#x27;validator&#x27;, &#x27;assignee&#x27;: &#x27;bob&#x27;}</code></td><td>error</td><td><code></code></td></tr><tr class='err'><td><code>assign_task</code></td><td><code>{&#x27;task_id&#x27;: &#x27;validator&#x27;, &#x27;assignee&#x27;: &#x27;bob&#x27;}</code></td><td>error</td><td><code></code></td></tr><tr class='okrow'><td><code>submit_task</code></td><td><code>{&#x27;label&#x27;: &#x27;parser_module&#x27;, &#x27;intent&#x27;: &#x27;Create config parser module that loads configuration data from file and string into an in-memory representation. Add pytest tests for parser covering at least one valid parse and one failure case. Ensure code passes `pytest -q` and `ruff check .`.&#x27;, &#x27;assignee&#x27;: &#x27;ada&#x27;}</code></td><td>ok</td><td><code></code></td></tr><tr class='okrow'><td><code>submit_task</code></td><td><code>{&#x27;label&#x27;: &#x27;validator_module&#x27;, &#x27;intent&#x27;: &#x27;Create separate validator module that validates loaded configuration and raises/returns clear errors for invalid configs. Add pytest tests for validator covering both a valid config and an invalid config case. Ensure code passes `pytest -q` and `ruff check .`.&#x27;, &#x27;assignee&#x27;: &#x27;bob&#x27;}</code></td><td>ok</td><td><code></code></td></tr><tr class='okrow'><td><code>submit_task</code></td><td><code>{&#x27;label&#x27;: &#x27;integration_smoke&#x27;, &#x27;intent&#x27;: &#x27;After parser and validator modules exist, add/adjust any minimal package wiring (e.g., __init__.py exports) so modules are importable by tests without modifying existing child-owned files. Run `pytest -q` and `ruff check .` to confirm everything passes; fix any import/path issues in a new, separate file if needed.&#x27;, &#x27;assignee&#x27;: &#x27;ada&#x27;}</code></td><td>ok</td><td><code></code></td></tr><tr class='okrow'><td><code>read_file</code></td><td><code>{&#x27;path&#x27;: &#x27;.harness/integrate-context.json&#x27;}</code></td><td>ok</td><td><code></code></td></tr><tr class='okrow'><td><code>assign_task</code></td><td><code>{&#x27;task_id&#x27;: &#x27;task_a35c386815e6&#x27;, &#x27;assignee&#x27;: &#x27;bob&#x27;}</code></td><td>ok</td><td><code></code></td></tr><tr class='okrow'><td><code>read_file</code></td><td><code>{&#x27;path&#x27;: &#x27;.harness/integrate-context.json&#x27;}</code></td><td>ok</td><td><code></code></td></tr><tr class='okrow'><td><code>read_file</code></td><td><code>{&#x27;path&#x27;: &#x27;.harness/integrate-context.json&#x27;}</code></td><td>ok</td><td><code></code></td></tr><tr class='okrow'><td><code>read_file</code></td><td><code>{&#x27;path&#x27;: &#x27;.harness/integrate-context.json&#x27;}</code></td><td>ok</td><td><code></code></td></tr><tr class='okrow'><td><code>read_file</code></td><td><code>{&#x27;path&#x27;: &#x27;.harness/integrate-context.json&#x27;}</code></td><td>ok</td><td><code></code></td></tr><tr class='err'><td><code>assign_task</code></td><td><code>{&#x27;task_id&#x27;: &#x27;task_a35c386815e6&#x27;, &#x27;assignee&#x27;: &#x27;bob&#x27;}</code></td><td>error</td><td><code></code></td></tr></tbody>
+          </table>
+          <p class="verdict"><strong>Verdict:</strong> assign_task called 1x (ok); child task_a35c386815e6 now owned by &#x27;bob&#x27;</p>
+          <p class="muted">subtree size 2 → 3 · manager said: “plan incomplete: 0/2 done, 0 blocked”</p>
+        </section>
+  <footer>Generated by examples/m3_submit_assign_verify.py · chorus M3 Slice 2</footer>
+</body></html>
