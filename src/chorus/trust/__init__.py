@@ -15,12 +15,16 @@ from chorus.trust._preset import (
     profile_for,
     sandbox_rank,
 )
+from chorus.trust._resolver import ResolvedTrust, TrustDenied, resolve_trust
 
 __all__ = [
+    "ResolvedTrust",
     "TrustBoundary",
+    "TrustDenied",
     "TrustPolicy",
     "TrustPreset",
     "TrustProfile",
     "profile_for",
+    "resolve_trust",
     "sandbox_rank",
 ]
