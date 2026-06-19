@@ -16,6 +16,7 @@ assignment, ``fire_downstream_wakes``, and the outcome/DoD seam.
 from __future__ import annotations
 
 import asyncio
+import subprocess
 import uuid
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
@@ -99,6 +100,44 @@ class _ReviewRunnerFor(Protocol):
 
 def _utc_now() -> datetime:
     return datetime.now(UTC)
+
+
+# How much of a verify command's combined stdout+stderr the kernel keeps as durable evidence.
+_VERIFY_OUTPUT_TAIL = 4000
+# Exit codes the kernel synthesizes when the command never produces one of its own.
+_VERIFY_TIMEOUT_EXIT = 124
+_VERIFY_SPAWN_FAILED_EXIT = 127
+
+
+def _run_verify_command(worktree: Path, command: str, *, timeout_s: int) -> tuple[int, str]:
+    """Run a reviewer-discovered verify command in ``worktree`` — the kernel's objective floor.
+
+    Returns ``(exit_code, output_tail)``. A timeout or a spawn failure is a *non-zero* exit (treated as a
+    failing build), so a build can never pass by failing to run. Runs in the engineer's already-isolated,
+    already-unrestricted worktree — the same trust tier the engineer itself executes at (M3 reviewed-build).
+    """
+    try:
+        completed = subprocess.run(
+            command,
+            shell=True,
+            cwd=worktree,
+            capture_output=True,
+            text=True,
+            timeout=timeout_s,
+        )
+    except subprocess.TimeoutExpired as exc:
+        captured = _as_text(exc.stdout) + _as_text(exc.stderr)
+        return _VERIFY_TIMEOUT_EXIT, f"timeout after {timeout_s}s\n{captured}"[-_VERIFY_OUTPUT_TAIL:]
+    except OSError as exc:
+        return _VERIFY_SPAWN_FAILED_EXIT, f"failed to run {command!r}: {exc}"[-_VERIFY_OUTPUT_TAIL:]
+    return completed.returncode, (completed.stdout + completed.stderr)[-_VERIFY_OUTPUT_TAIL:]
+
+
+def _as_text(value: str | bytes | None) -> str:
+    """Coerce subprocess output (which the stdlib types as ``str | bytes | None``) to text."""
+    if value is None:
+        return ""
+    return value if isinstance(value, str) else value.decode("utf-8", "replace")
 
 
 # An employee can't take a review beat while paused or terminated; idle/active/running/error are all
