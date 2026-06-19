@@ -65,6 +65,23 @@ def _team(ledger: SqliteLedger) -> None:
     ledger.employees.create(Employee(id="bob", name="Bob", role="engineer", reports_to="mgr"))
 
 
+def _objective_roles() -> RoleRegistry:
+    """Default roles, but the engineer is gated by an objective command — these tests exercise park /
+    integrate, not the engineer's reviewed-build review gate (covered in test_m3_review)."""
+    from chorus.outcomes import Verifier
+    from chorus.roles._plugin import RolePlugin
+
+    base = default_roles()
+    engineer = next(p for p in base if p.name == "engineer")
+    others = tuple(p for p in base if p.name != "engineer")
+    objective = RolePlugin(
+        name="engineer", manifest=engineer.manifest,
+        dod_generator=lambda intent: Verifier.command("true", artifact_class="pr"),
+        outcome_kind=engineer.outcome_kind,
+    )
+    return RoleRegistry.from_plugins((*others, objective))
+
+
 def _sched(ledger: SqliteLedger, beat: _TeamBeat, *, tmp_path: object = None) -> Scheduler:
     from pathlib import Path
 
@@ -72,7 +89,7 @@ def _sched(ledger: SqliteLedger, beat: _TeamBeat, *, tmp_path: object = None) ->
     beat.working_dir = root
     return Scheduler(
         ledger=ledger, workforce=LedgerWorkforce(ledger.employees), beat_runner=beat,
-        roles=RoleRegistry.from_plugins(default_roles()),
+        roles=_objective_roles(),
         landers=default_landers(root, ledger=ledger),  # the manager lands a subtree artifact on integrate
         clock=lambda: _NOW, max_concurrent_runs=4,
     )
@@ -192,7 +209,7 @@ def _adaptive_sched(ledger: SqliteLedger, beat: object, root: object, *, cap: in
     beat.working_dir = Path(str(root))  # type: ignore[attr-defined]
     return Scheduler(
         ledger=ledger, workforce=LedgerWorkforce(ledger.employees), beat_runner=beat,  # type: ignore[arg-type]
-        roles=RoleRegistry.from_plugins(default_roles()),
+        roles=_objective_roles(),
         landers=default_landers(Path(str(root)), ledger=ledger),
         clock=lambda: _NOW, max_concurrent_runs=4, max_integrate_iterations=cap,
     )

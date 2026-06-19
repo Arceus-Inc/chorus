@@ -120,10 +120,13 @@ async def test_intake_applies_the_assignee_role_dod_when_none_set(ledger: Sqlite
     await sched.tick(_NOW)
     await sched.drain()
 
-    # the engineer's role DoD (pytest + ruff) was inherited, persisted, and enforced in the beat
-    dod = ledger.dod.get_for_task("t1")
-    assert dod is not None
-    assert beat.verification == (VerificationStep(command="pytest -q && ruff check ."),)
+    # the engineer's role DoD (a reviewed build) was inherited + persisted; it runs no objective step at
+    # the engineer's OWN beat — the gate is a reviewer beat + a kernel-run command (M3 reviewed-build).
+    from chorus.outcomes import DoDKind
+
+    verifier = ledger.dod.verifier_for_task("t1")
+    assert verifier is not None and verifier.kind is DoDKind.REVIEWED_BUILD
+    assert beat.verification == ()
 
 
 async def test_intake_does_not_override_an_explicit_dod(ledger: SqliteLedger) -> None:
