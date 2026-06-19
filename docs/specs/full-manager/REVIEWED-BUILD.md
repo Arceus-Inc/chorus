@@ -1,7 +1,9 @@
 # Reviewed Build — a language-agnostic, review-gated engineer DoD
 
-Status: **design approved, not yet implemented.** Builds on the load-bearing Reviewer
-([REVIEWER.md](REVIEWER.md)). Target branch: continue on `dev/m3-reviewer` (or a follow-on).
+Status: **implemented** on `dev/m3-reviewer` (RB1–RB6), gate green — ruff + mypy `--strict` + full
+pytest. Builds on the load-bearing Reviewer ([REVIEWER.md](REVIEWER.md)). Deterministic e2e in
+`tests/heartbeat/test_m3_review.py`; a real-build reviewer report at
+`examples/m3_reviewed_build_report.py` → `reports/m3-reviewed-build.html`.
 
 ## Problem
 
