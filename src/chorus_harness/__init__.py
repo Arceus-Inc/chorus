@@ -19,10 +19,12 @@ from chorus_harness._factory import (
     write_role_overlays,
     write_sandbox_config,
 )
+from chorus_harness._trust import apply_trust
 
 __all__ = [
     "EmployeeHarness",
     "EmployeeHarnessFactory",
+    "apply_trust",
     "dream_tool_names",
     "write_role_overlays",
     "write_sandbox_config",
