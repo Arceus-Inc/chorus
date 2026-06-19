@@ -586,6 +586,7 @@ class ActivityVerb(StrEnum):
     FIRED = "fired"
     APPROVED = "approved"
     DENIED = "denied"
+    REVIEW_VERDICT = "review_verdict"
 
 
 @dataclass(frozen=True)
