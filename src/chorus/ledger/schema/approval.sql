@@ -9,7 +9,8 @@ CREATE TABLE approval (
     decided_at         TEXT,
     expires_at         TEXT,
     created_at         TEXT NOT NULL,
-    gate_kind          TEXT
+    gate_kind          TEXT,
+    action             TEXT NOT NULL DEFAULT 'task_gate'
 );
 
 CREATE UNIQUE INDEX approval_subject_pending_uq

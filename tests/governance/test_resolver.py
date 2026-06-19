@@ -10,7 +10,12 @@ from datetime import UTC, datetime
 
 import pytest
 
-from chorus.governance import GovernanceError, GovernanceResolver, ResolveOutcome
+from chorus.governance import (
+    ApprovalDecision,
+    GovernanceError,
+    GovernanceResolver,
+    ResolveOutcome,
+)
 from chorus.ledger import (
     Approval,
     ApprovalGate,
@@ -77,11 +82,11 @@ def test_acceptance_approve_marks_done_and_fires_dependents(ledger: SqliteLedger
     res = _resolver(ledger)
     approval = res.open_task_gate("t1", gate_kind=ApprovalGate.ACCEPTANCE, reason="sign off")
 
-    outcome = res.resolve(approval.id, approve=True, decided_by_user_id=_USER, now=_NOW)
+    outcome = res.resolve(approval.id, decision=ApprovalDecision.APPROVE, decided_by_user_id=_USER, now=_NOW)
 
     assert isinstance(outcome, ResolveOutcome)
     assert outcome.decision is ApprovalStatus.APPROVED
-    assert outcome.task_status is TaskStatus.DONE
+    assert outcome.subject_status == TaskStatus.DONE.value
     assert ledger.tasks.get("t1").status is TaskStatus.DONE  # type: ignore[union-attr]
     assert outcome.wakes_fired == 1  # deps_resolved for t2
     assert any(w.payload.get("task_id") == "t2" for w in ledger.wakes.queued())
@@ -93,10 +98,10 @@ def test_acceptance_deny_stays_blocked_and_records_failed(ledger: SqliteLedger) 
     res = _resolver(ledger)
     approval = res.open_task_gate("t1", gate_kind=ApprovalGate.ACCEPTANCE, reason="sign off")
 
-    outcome = res.resolve(approval.id, approve=False, decided_by_user_id=_USER, now=_NOW)
+    outcome = res.resolve(approval.id, decision=ApprovalDecision.DENY, decided_by_user_id=_USER, now=_NOW)
 
     assert outcome.decision is ApprovalStatus.DENIED
-    assert outcome.task_status is TaskStatus.BLOCKED
+    assert outcome.subject_status == TaskStatus.BLOCKED.value
     assert ledger.tasks.get("t1").status is TaskStatus.BLOCKED  # type: ignore[union-attr]
     assert ledger.dod.get_for_task("t1").status is DodStatus.FAILED  # type: ignore[union-attr]
 
@@ -109,9 +114,9 @@ def test_authorization_approve_unblocks_to_todo_and_wakes_assignee(ledger: Sqlit
     res = _resolver(ledger)
     approval = res.open_task_gate("t1", gate_kind=ApprovalGate.AUTHORIZATION, reason="board sign-off")
 
-    outcome = res.resolve(approval.id, approve=True, decided_by_user_id=_USER, now=_NOW)
+    outcome = res.resolve(approval.id, decision=ApprovalDecision.APPROVE, decided_by_user_id=_USER, now=_NOW)
 
-    assert outcome.task_status is TaskStatus.TODO
+    assert outcome.subject_status == TaskStatus.TODO.value
     assert ledger.tasks.get("t1").status is TaskStatus.TODO  # type: ignore[union-attr]
     assert outcome.wakes_fired == 1
     assert any(w.employee_id == "alice" for w in ledger.wakes.queued())
@@ -121,8 +126,8 @@ def test_authorization_approve_without_assignee_fires_no_wake(ledger: SqliteLedg
     _task(ledger, "t1", assignee=None)
     res = _resolver(ledger)
     approval = res.open_task_gate("t1", gate_kind=ApprovalGate.AUTHORIZATION, reason="x")
-    outcome = res.resolve(approval.id, approve=True, decided_by_user_id=_USER, now=_NOW)
-    assert outcome.task_status is TaskStatus.TODO and outcome.wakes_fired == 0
+    outcome = res.resolve(approval.id, decision=ApprovalDecision.APPROVE, decided_by_user_id=_USER, now=_NOW)
+    assert outcome.subject_status == TaskStatus.TODO.value and outcome.wakes_fired == 0
 
 
 def test_authorization_deny_cancels(ledger: SqliteLedger) -> None:
@@ -130,9 +135,9 @@ def test_authorization_deny_cancels(ledger: SqliteLedger) -> None:
     res = _resolver(ledger)
     approval = res.open_task_gate("t1", gate_kind=ApprovalGate.AUTHORIZATION, reason="x")
 
-    outcome = res.resolve(approval.id, approve=False, decided_by_user_id=_USER, now=_NOW)
+    outcome = res.resolve(approval.id, decision=ApprovalDecision.DENY, decided_by_user_id=_USER, now=_NOW)
 
-    assert outcome.task_status is TaskStatus.CANCELLED
+    assert outcome.subject_status == TaskStatus.CANCELLED.value
     assert ledger.tasks.get("t1").status is TaskStatus.CANCELLED  # type: ignore[union-attr]
 
 
@@ -141,16 +146,16 @@ def test_authorization_deny_cancels(ledger: SqliteLedger) -> None:
 
 def test_resolve_unknown_errors(ledger: SqliteLedger) -> None:
     with pytest.raises(GovernanceError):
-        _resolver(ledger).resolve("ghost", approve=True, decided_by_user_id=_USER, now=_NOW)
+        _resolver(ledger).resolve("ghost", decision=ApprovalDecision.APPROVE, decided_by_user_id=_USER, now=_NOW)
 
 
 def test_resolve_already_decided_errors(ledger: SqliteLedger) -> None:
     _task(ledger, "t1")
     res = _resolver(ledger)
     approval = res.open_task_gate("t1", gate_kind=ApprovalGate.AUTHORIZATION, reason="x")
-    res.resolve(approval.id, approve=True, decided_by_user_id=_USER, now=_NOW)
+    res.resolve(approval.id, decision=ApprovalDecision.APPROVE, decided_by_user_id=_USER, now=_NOW)
     with pytest.raises(GovernanceError):
-        res.resolve(approval.id, approve=True, decided_by_user_id=_USER, now=_NOW)
+        res.resolve(approval.id, decision=ApprovalDecision.APPROVE, decided_by_user_id=_USER, now=_NOW)
 
 
 def test_resolve_non_task_subject_errors(ledger: SqliteLedger) -> None:
@@ -159,7 +164,7 @@ def test_resolve_non_task_subject_errors(ledger: SqliteLedger) -> None:
                  reason="hard cap")
     )
     with pytest.raises(GovernanceError):
-        _resolver(ledger).resolve("a1", approve=True, decided_by_user_id=_USER, now=_NOW)
+        _resolver(ledger).resolve("a1", decision=ApprovalDecision.APPROVE, decided_by_user_id=_USER, now=_NOW)
 
 
 def test_resolve_task_gate_without_kind_errors(ledger: SqliteLedger) -> None:
@@ -168,4 +173,4 @@ def test_resolve_task_gate_without_kind_errors(ledger: SqliteLedger) -> None:
         Approval(id="a1", subject_kind=ApprovalSubjectKind.TASK, subject_id="t1", reason="x")
     )
     with pytest.raises(GovernanceError):
-        _resolver(ledger).resolve("a1", approve=True, decided_by_user_id=_USER, now=_NOW)
+        _resolver(ledger).resolve("a1", decision=ApprovalDecision.APPROVE, decided_by_user_id=_USER, now=_NOW)

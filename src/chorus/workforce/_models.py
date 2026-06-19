@@ -9,6 +9,7 @@ from enum import StrEnum
 class EmployeeStatus(StrEnum):
     """An employee's lifecycle (spec 01 Cluster D ``employee.status``)."""
 
+    PENDING = "pending"  # hired but not yet approved (§5 hire_employee gate) — uninvokable
     IDLE = "idle"
     ACTIVE = "active"
     RUNNING = "running"

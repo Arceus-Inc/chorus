@@ -6,7 +6,7 @@ from datetime import datetime
 
 import pytest
 
-from chorus.governance import GovernanceResolver
+from chorus.governance import ApprovalDecision, GovernanceResolver
 from chorus.heartbeat import Scheduler, Wake, WakeReason
 from chorus.heartbeat._beat import BeatOutcome
 from chorus.ledger import ApprovalGate, SqliteLedger, Task, TaskStatus
@@ -178,7 +178,7 @@ async def test_human_approval_dod_opens_an_approval_instead_of_marking_done(
     assert len(pending) == 1 and pending[0].gate_kind is ApprovalGate.ACCEPTANCE
     # and a human signing off lands the task done
     GovernanceResolver(ledger).resolve(
-        pending[0].id, approve=True, decided_by_user_id="board", now=_NOW
+        pending[0].id, decision=ApprovalDecision.APPROVE, decided_by_user_id="board", now=_NOW
     )
     assert ledger.tasks.get("t1").status is TaskStatus.DONE  # type: ignore[union-attr]
 

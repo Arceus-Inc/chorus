@@ -1,13 +1,38 @@
-"""Approvals & governance gates (spec 04 §5).
+"""Approvals & governance gates (spec 04 §5) — the generalized governed-action queue (Approach A).
 
-A resolved ``approval`` performs an org mutation. Today the governed action is the **task gate** —
-:class:`GovernanceResolver` opens one (parking the task ``blocked``) and resolves it (approve / deny)
-into the task's outcome per its :class:`~chorus.ledger.ApprovalGate`. Budget-incident approvals are
-resolved by the §3 enforcer; ``hire_employee`` / ``plan_approval`` ride later with spec 06.
+A resolved ``approval`` performs an org mutation. :class:`GovernanceResolver` is a thin, atomic,
+audited dispatcher: it opens a gate (parking/flagging its subject) and resolves it (approve / deny /
+request-revision) by delegating to the :class:`GovernedAction` handler registered for the approval's
+:class:`~chorus.ledger.ApprovalAction`. The task gate is one such handler; ``hire_employee`` /
+``plan_approval`` / ``board_approval`` ride later slices. Budget-incident approvals stay with the §3
+enforcer.
 """
 
 from __future__ import annotations
 
+from chorus.governance._actions import HireEmployeeAction, TaskGateAction
+from chorus.governance._actions._hire import HireError
+from chorus.governance._policy import GovernancePolicy
+from chorus.governance._registry import (
+    GovernanceRegistry,
+    UnregisteredAction,
+    default_actions,
+)
 from chorus.governance._resolver import GovernanceError, GovernanceResolver, ResolveOutcome
+from chorus.governance._types import ActionOutcome, ApprovalDecision, GovernedAction
 
-__all__ = ["GovernanceError", "GovernanceResolver", "ResolveOutcome"]
+__all__ = [
+    "ActionOutcome",
+    "ApprovalDecision",
+    "GovernanceError",
+    "GovernancePolicy",
+    "GovernanceRegistry",
+    "GovernanceResolver",
+    "GovernedAction",
+    "HireEmployeeAction",
+    "HireError",
+    "ResolveOutcome",
+    "TaskGateAction",
+    "UnregisteredAction",
+    "default_actions",
+]

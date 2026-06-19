@@ -28,6 +28,7 @@ class InvokabilityReason(StrEnum):
     """Why an employee is not invokable this pulse (spec 06 §3)."""
 
     PAUSED = "paused"
+    PENDING = "pending"
     TERMINATED = "terminated"
     INVALID_ORG_CHAIN = "invalid_org_chain"
 
@@ -56,6 +57,9 @@ def invokability_block(workforce: Workforce, employee_id: str) -> InvokabilityBl
         return InvokabilityBlock(InvokabilityReason.TERMINATED, cancels=True)
     if employee.status is EmployeeStatus.PAUSED:
         return InvokabilityBlock(InvokabilityReason.PAUSED, cancels=False)
+    # A pending hire is not yet approved — hold its wakes (release, don't cancel) until activation.
+    if employee.status is EmployeeStatus.PENDING:
+        return InvokabilityBlock(InvokabilityReason.PENDING, cancels=False)
 
     # Walk up the reports-to chain: a missing, cyclic, or terminated manager orphans the report.
     seen = {employee.id}

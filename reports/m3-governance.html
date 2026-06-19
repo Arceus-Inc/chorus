@@ -1,0 +1,87 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<title>§5 governance — the governed-action queue</title><style>
+body{font-family:ui-sans-serif,system-ui,sans-serif;margin:2rem;background:#0f1115;color:#e6e8eb}
+h1{font-size:1.4rem} .lead{color:#9aa0a6;max-width:76ch}
+table{width:100%;border-collapse:collapse;margin-top:1.2rem;font-size:.9rem}
+th{text-align:left;color:#9aa0a6;font-weight:500;font-size:.74rem;text-transform:uppercase;
+letter-spacing:.05em;padding:.4rem .5rem;border-bottom:1px solid #262b33}
+td{padding:.5rem .5rem;border-bottom:1px solid #1c2027;vertical-align:top}
+code{background:#16191f;padding:.1rem .4rem;border-radius:4px}
+.pill{padding:.1rem .55rem;border-radius:999px;font-weight:600;font-size:.78rem}
+.pill.ok{background:#0e3a23;color:#4ade80} .pill.no{background:#3a0e12;color:#f87171}
+.pill.rev{background:#3a300e;color:#fbbf24}
+.muted{color:#6b7280} .arrow{color:#6b7280;text-align:center} .note{color:#9aa0a6;font-size:.82rem}
+.summary{display:inline-block;margin-top:1rem;padding:.4rem .9rem;border-radius:999px;
+background:#0e3a23;color:#4ade80;font-weight:700}
+</style></head><body>
+<h1>§5 governance — the generalized governed-action queue</h1>
+<p class="lead">One resolver dispatches every governed action to its handler over one atomic, audited
+ledger transaction. Each row is a real gate opened and resolved through the live
+<code>GovernanceResolver</code> — the subject's status before and after the human decision.</p>
+<div class="summary">7 gates · 4 actions · 3 decisions ·
+all resolved</div>
+<table>
+<thead><tr><th>action</th><th>decision</th><th>subject</th><th>before</th><th></th><th>after</th>
+<th>what it does</th></tr></thead>
+<tbody><tr>
+          <td><code>hire_employee</code></td>
+          <td><span class="pill ok">approve</span></td>
+          <td>employee ada</td>
+          <td class="muted">pending</td>
+          <td class="arrow">&rarr;</td>
+          <td><b>active</b></td>
+          <td class="note">approve activates the pending hire; deny terminates it.</td>
+        </tr><tr>
+          <td><code>hire_employee</code></td>
+          <td><span class="pill no">deny</span></td>
+          <td>employee ada</td>
+          <td class="muted">pending</td>
+          <td class="arrow">&rarr;</td>
+          <td><b>terminated</b></td>
+          <td class="note">approve activates the pending hire; deny terminates it.</td>
+        </tr><tr>
+          <td><code>plan_approval</code></td>
+          <td><span class="pill ok">approve</span></td>
+          <td>task G plan</td>
+          <td class="muted">children blocked</td>
+          <td class="arrow">&rarr;</td>
+          <td><b>api=todo, ui=todo</b></td>
+          <td class="note">approve releases the children; revise cancels them and re-plans.</td>
+        </tr><tr>
+          <td><code>plan_approval</code></td>
+          <td><span class="pill rev">request_revision</span></td>
+          <td>task G plan</td>
+          <td class="muted">children blocked</td>
+          <td class="arrow">&rarr;</td>
+          <td><b>api=cancelled, ui=cancelled</b></td>
+          <td class="note">approve releases the children; revise cancels them and re-plans.</td>
+        </tr><tr>
+          <td><code>board_approval</code></td>
+          <td><span class="pill ok">approve</span></td>
+          <td>artifact ar1 (pr)</td>
+          <td class="muted">landed</td>
+          <td class="arrow">&rarr;</td>
+          <td><b>promoted</b></td>
+          <td class="note">approve promotes the deliverable to the board.</td>
+        </tr><tr>
+          <td><code>task_gate</code></td>
+          <td><span class="pill ok">approve</span></td>
+          <td>task t1 (acceptance)</td>
+          <td class="muted">blocked</td>
+          <td class="arrow">&rarr;</td>
+          <td><b>done</b></td>
+          <td class="note">the human acceptance gate; revise sends the work back to todo.</td>
+        </tr><tr>
+          <td><code>task_gate</code></td>
+          <td><span class="pill rev">request_revision</span></td>
+          <td>task t1 (acceptance)</td>
+          <td class="muted">blocked</td>
+          <td class="arrow">&rarr;</td>
+          <td><b>todo</b></td>
+          <td class="note">the human acceptance gate; revise sends the work back to todo.</td>
+        </tr></tbody>
+</table>
+<p class="note" style="margin-top:1.4rem">actions: board_approval, hire_employee, plan_approval, task_gate · the empty default
+policy gates nothing, so every existing run is unchanged until an org opts in.</p>
+<footer class="note">examples/governance_suite.py · chorus §5 governance (Approach A)</footer>
+</body></html>

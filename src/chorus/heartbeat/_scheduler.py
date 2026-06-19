@@ -174,7 +174,9 @@ def _worktree_file_manifest(worktree: Path | None, *, max_files: int = _MANIFEST
 
 # An employee can't take a review beat while paused or terminated; idle/active/running/error are all
 # dispatchable (the kernel leases and runs them).
-_UNINVOKABLE_EMPLOYEE_STATUSES = frozenset({EmployeeStatus.PAUSED, EmployeeStatus.TERMINATED})
+_UNINVOKABLE_EMPLOYEE_STATUSES = frozenset(
+    {EmployeeStatus.PENDING, EmployeeStatus.PAUSED, EmployeeStatus.TERMINATED}
+)
 
 # Leaf DoD kinds the kernel gates with a read-only Reviewer beat (M3 Reviewer / reviewed-build).
 _REVIEWER_GATED_DODS = frozenset({DoDKind.AGENT_REVIEW, DoDKind.REVIEWED_BUILD})

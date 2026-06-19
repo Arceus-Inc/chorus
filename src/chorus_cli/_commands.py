@@ -24,7 +24,7 @@ from pathlib import Path
 
 from chorus.budgets import BudgetEnforcer, BudgetWindow, window_start
 from chorus.errors import OrgInvariantViolation, UnknownEmployee
-from chorus.governance import GovernanceError, GovernanceResolver
+from chorus.governance import ApprovalDecision, GovernanceError, GovernanceResolver
 from chorus.ledger import (
     ApprovalGate,
     Artifact,
@@ -1310,9 +1310,9 @@ def _resolver(ctx: CommandContext) -> GovernanceResolver:
 def _approval_list(ctx: CommandContext) -> LoopSignal:
     pending = ctx.session.ledger.approvals.pending()
     ctx.out.table(
-        ("approval", "subject", "id", "gate", "reason"),
+        ("approval", "action", "subject", "id", "gate", "reason"),
         [
-            (a.id, a.subject_kind.value, a.subject_id,
+            (a.id, a.action.value, a.subject_kind.value, a.subject_id,
              _fmt(a.gate_kind.value if a.gate_kind else None), _preview(a.reason))
             for a in pending
         ],
@@ -1339,30 +1339,46 @@ def _approval_open(ctx: CommandContext, args: tuple[str, ...]) -> LoopSignal:
     return LoopSignal.CONTINUE
 
 
-def _approval_resolve(ctx: CommandContext, args: tuple[str, ...], *, approve: bool) -> LoopSignal:
-    usage = _APPROVAL_APPROVE if approve else _APPROVAL_DENY
+_RESOLVE_USAGE: dict[ApprovalDecision, str] = {
+    ApprovalDecision.APPROVE: "approval approve <approval_id>",
+    ApprovalDecision.DENY: "approval deny <approval_id>",
+    ApprovalDecision.REQUEST_REVISION: "approval revise <approval_id>",
+}
+_RESOLVE_VERB: dict[ApprovalDecision, str] = {
+    ApprovalDecision.APPROVE: "approved",
+    ApprovalDecision.DENY: "denied",
+    ApprovalDecision.REQUEST_REVISION: "revision requested on",
+}
+
+
+def _approval_resolve(
+    ctx: CommandContext, args: tuple[str, ...], *, decision: ApprovalDecision
+) -> LoopSignal:
     if len(args) != 1:
-        ctx.out.error(f"usage: {usage}")
+        ctx.out.error(f"usage: {_RESOLVE_USAGE[decision]}")
         return LoopSignal.CONTINUE
     try:
         outcome = _resolver(ctx).resolve(
-            args[0], approve=approve, decided_by_user_id=_OPERATOR, now=ctx.session.clock()
+            args[0], decision=decision, decided_by_user_id=_OPERATOR, now=ctx.session.clock()
         )
     except GovernanceError as exc:
         ctx.out.error(str(exc))
         return LoopSignal.CONTINUE
-    verb = "approved" if approve else "denied"
     ctx.out.line(
-        f"{verb} {outcome.approval_id} -> task {outcome.task_id} is "
-        f"{outcome.task_status.value} ({outcome.wakes_fired} wakes)"
+        f"{_RESOLVE_VERB[decision]} {outcome.approval_id} -> {outcome.subject_id} is "
+        f"{outcome.subject_status} ({outcome.wakes_fired} wakes)"
     )
     return LoopSignal.CONTINUE
 
 
 _APPROVAL_OPEN = "approval open <task_id> <acceptance|authorization> <reason…>"
-_APPROVAL_APPROVE = "approval approve <approval_id>"
-_APPROVAL_DENY = "approval deny <approval_id>"
-_APPROVAL = "approval [list | open … | approve <id> | deny <id>]"
+_APPROVAL = "approval [list | open … | approve <id> | deny <id> | revise <id>]"
+
+_APPROVAL_DECISIONS: dict[str, ApprovalDecision] = {
+    "approve": ApprovalDecision.APPROVE,
+    "deny": ApprovalDecision.DENY,
+    "revise": ApprovalDecision.REQUEST_REVISION,
+}
 
 
 @REGISTRY.command("approval", summary="view or resolve approval gates", usage=_APPROVAL, hidden=True)
@@ -1373,10 +1389,9 @@ def _approval(ctx: CommandContext) -> LoopSignal:
     rest = ctx.args[1:]
     if sub == "open":
         return _approval_open(ctx, rest)
-    if sub == "approve":
-        return _approval_resolve(ctx, rest, approve=True)
-    if sub == "deny":
-        return _approval_resolve(ctx, rest, approve=False)
+    decision = _APPROVAL_DECISIONS.get(sub)
+    if decision is not None:
+        return _approval_resolve(ctx, rest, decision=decision)
     ctx.out.error(f"unknown approval subcommand {sub!r}; usage: {_APPROVAL}")
     return LoopSignal.CONTINUE
 
