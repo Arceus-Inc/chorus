@@ -102,14 +102,24 @@ class IntegrateContextPacket:
         """The on-disk location of the integrate packet under an employee's working dir."""
         return working_dir / _INTEGRATE_RELATIVE_PATH
 
+    @staticmethod
+    def iteration_for(ledger: SqliteLedger, parent_task_id: str) -> int:
+        """1-based count of integrate beats this parent has had (its runs minus the kickoff beat).
+
+        The single source of truth for the loop depth — used both by the kernel (to write the packet
+        and enforce the integrate cap) and by the inspector (so ``check scrum`` reports the real count).
+        """
+        return max(1, len(ledger.runs.for_task(parent_task_id)) - 1)
+
     @classmethod
     def build(
-        cls, ledger: SqliteLedger, *, parent_task_id: str, iteration: int = 1, audit: bool = True
+        cls, ledger: SqliteLedger, *, parent_task_id: str, audit: bool = True
     ) -> IntegrateContextPacket:
         """Build the packet from durable ledger state for the manager's integrate beat."""
         parent = ledger.tasks.get(parent_task_id)
         if parent is None:
             raise KeyError(parent_task_id)
+        iteration = cls.iteration_for(ledger, parent_task_id)
         manager_id = parent.assignee_employee_id
         reports = tuple(
             ReportContext(id=emp.id, role=emp.role, status=emp.status.value)

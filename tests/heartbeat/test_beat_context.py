@@ -30,6 +30,11 @@ def test_integrate_context_packet_summarizes_child_feedback(
     ledger.employees.create(Employee(id="lead", name="Lead", role="manager", reports_to="mgr"))
     ledger.employees.create(Employee(id="ada", name="Ada", role="engineer", reports_to="lead"))
     ledger.tasks.submit(Task(id="P", intent="ship the pantry", status=TaskStatus.BLOCKED, assignee_employee_id="mgr"))
+    # The parent's own beats define the loop depth: 1 kickoff + 2 integrate beats → iteration == 2.
+    for n, status in enumerate(("kickoff", "integrate1", "integrate2")):
+        ledger.runs.create(
+            Run(id=f"run_p{n}", employee_id="mgr", task_id="P", status=RunStatus.SUCCEEDED, outcome={"summary": status})
+        )
     ledger.tasks.submit(
         Task(
             id="C1",
@@ -60,7 +65,7 @@ def test_integrate_context_packet_summarizes_child_feedback(
         )
     )
 
-    packet = IntegrateContextPacket.build(ledger, parent_task_id="P", iteration=2)
+    packet = IntegrateContextPacket.build(ledger, parent_task_id="P")
     packet.write(tmp_path)
     loaded = IntegrateContextPacket.read(tmp_path)
 

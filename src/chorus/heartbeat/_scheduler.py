@@ -559,14 +559,7 @@ class Scheduler:
         working_dir = beat_runner.working_dir
         if working_dir is None:
             return
-        iteration = self._integrate_iteration(ledger, task_id)
-        IntegrateContextPacket.build(ledger, parent_task_id=task_id, iteration=iteration).write(
-            working_dir
-        )
-
-    def _integrate_iteration(self, ledger: SqliteLedger, task_id: str) -> int:
-        """1-based count of integrate beats this parent has had (its runs minus the kickoff)."""
-        return max(1, len(ledger.runs.for_task(task_id)) - 1)
+        IntegrateContextPacket.build(ledger, parent_task_id=task_id).write(working_dir)
 
     async def _maybe_cap_integrate(
         self, ledger: SqliteLedger, *, wake: Wake, run_id: str, task: Task, employee: Employee
@@ -579,7 +572,7 @@ class Scheduler:
         """
         if not (ledger.tasks.has_children(task.id) and ledger.tasks.all_children_terminal(task.id)):
             return False
-        if self._integrate_iteration(ledger, task.id) <= self.max_integrate_iterations:
+        if IntegrateContextPacket.iteration_for(ledger, task.id) <= self.max_integrate_iterations:
             return False
         verifier = ledger.dod.verifier_for_task(task.id)
         ledger.runs.finish(run_id, RunStatus.SUCCEEDED, outcome=None)
