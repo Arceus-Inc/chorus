@@ -1,8 +1,10 @@
 # §5 governance — the generalized governed-action queue
 
-Status: spec (to implement on `dev/m3-governance`, branched off `main`). Closes the §5 deferrals in
+Status: **implemented** on `dev/m3-governance` (Slices 1–6, branched off `main`). Gate green — ruff +
+mypy `--strict` + full pytest. Closes the §5 deferrals in
 [06.5-deferred-from-spec04.md](../divo/06.5-deferred-from-spec04.md): `hire_employee`, `plan_approval`,
-`board_approval`, and the third resolution `revision_requested`.
+`board_approval`, and the third resolution `revision_requested`. Suite:
+`examples/governance_suite.py` → `reports/m3-governance.html`.
 
 ## What exists, what's missing
 
