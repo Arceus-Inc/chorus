@@ -26,6 +26,7 @@ class TaskStatus(StrEnum):
     BLOCKED = "blocked"
     DONE = "done"
     CANCELLED = "cancelled"
+    REJECTED = "rejected"  # terminal: a reviewer blocked the deliverable (M3 load-bearing Reviewer)
 
 
 class TaskPriority(StrEnum):
@@ -84,6 +85,7 @@ class ArtifactType(StrEnum):
     FINDING = "finding"
     ARTIFACT = "artifact"
     WORKSPACE_FILE = "workspace_file"
+    VERDICT = "verdict"
 
 
 @dataclass(frozen=True)
@@ -586,6 +588,7 @@ class ActivityVerb(StrEnum):
     FIRED = "fired"
     APPROVED = "approved"
     DENIED = "denied"
+    REVIEW_VERDICT = "review_verdict"
 
 
 @dataclass(frozen=True)

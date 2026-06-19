@@ -17,7 +17,7 @@ import pytest
 from chorus.heartbeat import Scheduler, Wake, WakeReason
 from chorus.heartbeat._beat import BeatOutcome
 from chorus.ledger import SqliteLedger, Task, TaskStatus
-from chorus.outcomes import Artifact, ArtifactType, LanderRegistry
+from chorus.outcomes import Artifact, ArtifactType, LanderRegistry, Verifier
 from chorus.roles import RoleRegistry, default_roles
 from chorus.workforce import Employee
 from chorus.workspace import CompanyWorkspace
@@ -61,6 +61,9 @@ def _seed(ledger: SqliteLedger) -> Employee:
     ledger.tasks.submit(
         Task(id="t1", intent="ship", status=TaskStatus.TODO, assignee_employee_id="e1")
     )
+    # An explicit objective DoD so the beat lands directly — these tests exercise the landing path, not
+    # the engineer's reviewed-build gate (that is covered in tests/heartbeat/test_m3_review.py).
+    ledger.dod.create("t1", Verifier.command("true"))
     ledger.wakes.enqueue(
         Wake(id="w1", employee_id="e1", reason=WakeReason.TASK_ASSIGNED, payload={"task_id": "t1"})
     )

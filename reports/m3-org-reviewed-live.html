@@ -1,0 +1,57 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<title>manager + 2 engineers + LIVE reviewer</title><style>
+body{font-family:ui-sans-serif,system-ui,sans-serif;margin:2rem;background:#0f1115;color:#e6e8eb}
+h1{font-size:1.45rem} .lead{color:#9aa0a6;max-width:74ch}
+.overall{display:inline-block;padding:.4rem .9rem;border-radius:999px;font-weight:800;margin:1rem 0}
+.overall.ok{background:#0e3a23;color:#4ade80} .overall.no{background:#3a0e12;color:#f87171}
+.card{background:#16191f;border:1px solid #262b33;border-radius:12px;padding:1rem 1.3rem;margin-bottom:1.3rem}
+.head{display:flex;justify-content:space-between;align-items:center} h2{font-size:1.15rem;margin:.2rem 0}
+h3{font-size:.72rem;text-transform:uppercase;letter-spacing:.06em;color:#9aa0a6;margin:.9rem 0 .3rem}
+.goal{color:#cbd5e1} ul{margin:.2rem 0;padding-left:1.1rem;font-size:.88rem}
+.verdict{background:#0f1115;border-left:3px solid #3b82f6;padding:.5rem .7rem;border-radius:4px;margin:.4rem 0;font-size:.86rem}
+.fb{color:#9aa0a6;margin-top:.3rem;font-size:.82rem;white-space:pre-wrap}
+table{width:100%;border-collapse:collapse;font-size:.85rem} td{padding:.25rem .4rem;border-bottom:1px solid #262b33}
+code{background:#0f1115;padding:.1rem .3rem;border-radius:4px} .muted{color:#6b7280}
+.ok{color:#4ade80;font-weight:800} .no{color:#f87171;font-weight:800}
+</style></head><body>
+<h1>manager + 2 engineers + <em>live</em> reviewer — 3 goals, reviewed-build suite</h1>
+<p class="lead">Manager + engineers are scripted (engineers write real code); the <b>reviewer is a live
+model</b> that reads the real diff, discovers the verify command, and renders the verdict. The kernel
+runs that command for real. The verdicts + feedback below are the model's own words.</p>
+<div class="overall ok">ALL 3 GOALS COMPLETED (live reviewer)</div>
+
+        <section class="card"><div class="head"><h2>Goal 1 · clean code</h2><span class='ok'>DONE</span></div>
+          <p class="goal">Build a slugify utility. Implement slugify(s) in app.py with this exact contract: lowercase the input, replace every run of non-alphanumeric characters (whitespace, punctuation, underscores) with a single hyphen, and strip leading and trailing hyphens. Examples: &#x27; Hi There &#x27; -&gt; &#x27;hi-there&#x27;; &#x27;Hello, World!&#x27; -&gt; &#x27;hello-world&#x27;; &#x27;foo_bar  baz&#x27; -&gt; &#x27;foo-bar-baz&#x27;; &#x27;--A__B--&#x27; -&gt; &#x27;a-b&#x27;. Add a pytest test in test_app.py covering whitespace, punctuation, and underscores.</p>
+          <h3>timeline</h3><ul><li>manager decomposed into [&#x27;slugify&#x27;]</li><li>engineer built (initial): Implement slugify(s) in app.py with this exact con</li><li>manager accepted the completed subtree</li></ul>
+          <h3>LIVE reviewer verdicts</h3><div class='verdict'><b>slugify</b> — <span class='ok'>approve</span> · cmd <code>pytest -q</code> · build pass<div class='fb'>Checked app.py: slugify lowercases, strips outer whitespace, replaces each contiguous run of non-alphanumeric chars (including whitespace/punctuation/underscores) via `re.sub(r&quot;[^a-z0-9]+&quot;, &quot;-&quot;, ...)`, then strips leading/trailing hyphens. This matches all required examples.
+
+Checked test_app.py: tests cover whitespace (`&#x27; Hi There &#x27;`), punctuation (`&#x27;Hello, World!&#x27;`), underscores and mixed separa</div></div>
+          <h3>children (final)</h3><table><tr><td><code>slugify</code></td><td>done</td></tr></table>
+        </section>
+        <section class="card"><div class="head"><h2>Goal 2 · buggy build</h2><span class='ok'>DONE</span></div>
+          <p class="goal">Build slugify; the first cut has a failing test. Implement slugify(s) in app.py with this exact contract: lowercase the input, replace every run of non-alphanumeric characters (whitespace, punctuation, underscores) with a single hyphen, and strip leading and trailing hyphens. Examples: &#x27; Hi There &#x27; -&gt; &#x27;hi-there&#x27;; &#x27;Hello, World!&#x27; -&gt; &#x27;hello-world&#x27;; &#x27;foo_bar  baz&#x27; -&gt; &#x27;foo-bar-baz&#x27;; &#x27;--A__B--&#x27; -&gt; &#x27;a-b&#x27;. Add a pytest test in test_app.py covering whitespace, punctuation, and underscores.</p>
+          <h3>timeline</h3><ul><li>manager decomposed into [&#x27;core&#x27;]</li><li>engineer built (initial): Implement slugify(s) in app.py with this exact con</li><li>manager reacted to a rejection → submit_task(&#x27;fix&#x27; → bob)</li><li>engineer built (initial): Fix the rejected work. Implement slugify(s) in app</li></ul>
+          <h3>LIVE reviewer verdicts</h3><div class='verdict'><b>core</b> — <span class='no'>BLOCK</span> · cmd <code>pytest -q</code><div class='fb'>Blocking: slugify(s) is unimplemented (currently returns input unchanged), so it does not (1) lowercase, (2) collapse maximal runs of non-alphanumeric chars (including whitespace/punctuation/underscores) to a single hyphen, or (3) strip leading/trailing hyphens. Implement slugify accordingly (likely via regex: lower(), re.sub(r&#x27;[^0-9a-z]+&#x27;,&#x27;-&#x27;, ...), then strip(&#x27;-&#x27;)).
+
+Tests are insufficient: test</div></div><div class='verdict'><b>fix</b> — <span class='ok'>approve</span> · cmd <code>pytest -q</code> · build pass<div class='fb'>Checked `app.py`: `slugify(s)` lowercases (`s.strip().lower()`), replaces each contiguous run of non-alphanumeric chars (regex `[^a-z0-9]+` covers whitespace, punctuation, underscores) with a single `-`, and strips leading/trailing hyphens (`.strip(&quot;-&quot;)`).
+
+Checked `test_app.py`: tests cover whitespace, punctuation, underscores, and include all specified examples:
+- &#x27; Hi There &#x27; -&gt; &#x27;hi-there&#x27;
+- &#x27;H</div></div>
+          <h3>children (final)</h3><table><tr><td><code>core</code></td><td>rejected</td></tr><tr><td><code>fix</code></td><td>done</td></tr></table>
+        </section>
+        <section class="card"><div class="head"><h2>Goal 3 · incomplete stub</h2><span class='ok'>DONE</span></div>
+          <p class="goal">Build slugify; the first diff is an unfinished stub. Implement slugify(s) in app.py with this exact contract: lowercase the input, replace every run of non-alphanumeric characters (whitespace, punctuation, underscores) with a single hyphen, and strip leading and trailing hyphens. Examples: &#x27; Hi There &#x27; -&gt; &#x27;hi-there&#x27;; &#x27;Hello, World!&#x27; -&gt; &#x27;hello-world&#x27;; &#x27;foo_bar  baz&#x27; -&gt; &#x27;foo-bar-baz&#x27;; &#x27;--A__B--&#x27; -&gt; &#x27;a-b&#x27;. Add a pytest test in test_app.py covering whitespace, punctuation, and underscores.</p>
+          <h3>timeline</h3><ul><li>manager decomposed into [&#x27;stub&#x27;]</li><li>engineer built (initial): Implement slugify(s) in app.py with this exact con</li><li>manager reacted to a rejection → submit_task(&#x27;fix&#x27; → bob)</li><li>engineer built (initial): Fix the rejected work. Implement slugify(s) in app</li></ul>
+          <h3>LIVE reviewer verdicts</h3><div class='verdict'><b>stub</b> — <span class='no'>BLOCK</span> · cmd <code>pytest -q</code><div class='fb'>Blocking: requirements not met.
+
+Findings:
+- app.py: slugify(s) is unimplemented (raises NotImplementedError). This fails the normalization contract: lowercase, collapse each run of non-alphanumeric chars (including whitespace/punctuation/underscores) into a single hyphen, and strip leading/trailing hyphens. Therefore it also cannot satisfy the required examples.
+- test_app.py is missing entirely,</div></div><div class='verdict'><b>fix</b> — <span class='ok'>approve</span> · cmd <code>pytest -q</code> · build pass<div class='fb'>Reviewed app.py and test_app.py.
+
+- app.py implements slugify(s) by lowercasing, collapsing any run of non-alphanumeric characters (regex [^a-z0-9]+, which includes whitespace, punctuation, and underscores) into a single hyphen, and stripping leading/trailing hyphens.
+- test_app.py includes coverage for whitespace (&quot; Hi There &quot;), punctuation (&quot;Hello, World!&quot;), underscores and mixed separators (&quot;fo</div></div>
+          <h3>children (final)</h3><table><tr><td><code>stub</code></td><td>rejected</td></tr><tr><td><code>fix</code></td><td>done</td></tr></table>
+        </section>
+<footer class="muted">examples/m3_org_reviewed_live.py · chorus M3 reviewed-build (live reviewer)</footer>
+</body></html>

@@ -30,7 +30,7 @@ from chorus.heartbeat import BeatRunner, IntegrateContextPacket
 from chorus.roles import RoleBeatConfig, RoleRegistry, role_beat_config
 from chorus.workforce import Employee
 from chorus.workspace import CompanyWorkspace, default_work_root
-from chorus_tools import AssignTaskTool, DecomposeTool, SubmitTaskTool
+from chorus_tools import AssignTaskTool, DecomposeTool, SubmitTaskTool, SubmitVerdictTool
 
 if TYPE_CHECKING:
     from chorus.ledger import SqliteLedger
@@ -93,6 +93,8 @@ def _capability_tool(name: str, ledger: SqliteLedger) -> BaseTool | None:
         return SubmitTaskTool(ledger)
     if name == "assign_task":
         return AssignTaskTool(ledger)
+    if name == "submit_verdict":
+        return SubmitVerdictTool(ledger)
     return None
 
 
@@ -226,13 +228,27 @@ class EmployeeHarnessFactory:
         """The :class:`~chorus.heartbeat.BeatRunnerFor` seam — the role-faithful runner for a beat."""
         return self.materialize(employee, task_id=task_id).runner
 
-    def materialize(self, employee: Employee, *, task_id: str | None = None) -> EmployeeHarness:
+    def review_runner_for(
+        self, reviewer: Employee, *, task_id: str, worktree_owner_id: str
+    ) -> BeatRunner:
+        """The review seam — a read-only reviewer runner pointed at the author's worktree (M3 Reviewer)."""
+        return self.materialize(
+            reviewer, task_id=task_id, review_worktree_of=worktree_owner_id
+        ).runner
+
+    def materialize(
+        self, employee: Employee, *, task_id: str | None = None, review_worktree_of: str | None = None
+    ) -> EmployeeHarness:
         """Resolve ``employee``'s role into a configured dream harness in its isolated worktree.
 
         ``task_id`` shapes the harness to the beat's phase: a manager's **integrate** beat (its task
         already has children) is materialized **without** ``decompose``, so the model can react with
         ``submit_task`` / ``assign_task`` but cannot re-decompose a delegated subtree (M3 §5). The
         kickoff beat (no children yet) keeps ``decompose``.
+
+        ``review_worktree_of`` points a (read-only) reviewer at another employee's worktree as its
+        working dir, so it inspects the work under review *in place* — the verdict is rendered on the
+        real diff, and the reviewer's read-only sandbox makes the borrowed worktree look-but-don't-touch.
         """
         if employee.role not in self._roles:
             raise ValueError(f"role {employee.role!r} for {employee.id!r} is not a registered role")
@@ -269,7 +285,8 @@ class EmployeeHarnessFactory:
         workspace: CompanyWorkspace | None = None
         if config.isolation == "worktree":
             workspace = CompanyWorkspace(self._company_root, seed=self._seed)
-            root = workspace.worktree_for(employee.id).path
+            worktree_owner = review_worktree_of if review_worktree_of is not None else employee.id
+            root = workspace.worktree_for(worktree_owner).path
         else:
             root = self._company_root / employee.id
         root.mkdir(parents=True, exist_ok=True)

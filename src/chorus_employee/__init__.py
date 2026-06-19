@@ -18,6 +18,7 @@ from chorus.outcomes import LanderRegistry, OutcomeLander
 from chorus.roles._plugin import RolePlugin
 from chorus_employee.engineer import engineer_lander, engineer_plugin
 from chorus_employee.manager import manager_lander
+from chorus_employee.reviewer import reviewer_lander
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -36,6 +37,7 @@ def default_landers(company_root: Path, *, ledger: SqliteLedger | None = None) -
     landers: list[OutcomeLander] = [engineer_lander(company_root)]
     if ledger is not None:
         landers.append(manager_lander(ledger))
+        landers.append(reviewer_lander(ledger))  # the `verdict` lander reads the recorded verdict
     return LanderRegistry.from_landers(landers)
 
 

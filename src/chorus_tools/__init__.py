@@ -16,6 +16,7 @@ from chorus_tools._manager_actions import (
 	SubmitTaskTool,
 )
 from chorus_tools._registry import chorus_tool_registry
+from chorus_tools._submit_verdict import SubmitVerdictInput, SubmitVerdictTool
 
 __all__ = [
 	"AssignTaskInput",
@@ -24,5 +25,7 @@ __all__ = [
 	"DecomposeTool",
 	"SubmitTaskInput",
 	"SubmitTaskTool",
+	"SubmitVerdictInput",
+	"SubmitVerdictTool",
 	"chorus_tool_registry",
 ]

@@ -6,8 +6,8 @@ that harness, one component per module:
 - :mod:`._brief`   — the operating brief (system prompt).
 - :mod:`._harness` — the :class:`~chorus.roles.RoleManifest`: every ``build_harness`` component.
 - :mod:`._dod`     — the Definition of Done (intent → typed :class:`~chorus.outcomes.Verifier`).
+- :mod:`._lander`  — the ``verdict`` outcome lander (records the verdict artifact).
 
-(The ``verdict`` outcome lander is M3 wiring, not built yet — there is no ``_lander`` module.)
 :func:`reviewer_plugin` assembles the role triple. This is the **single source** of the Reviewer:
 ``chorus.roles.default_roles`` imports the plugin from here rather than re-declaring it.
 """
@@ -17,6 +17,7 @@ from __future__ import annotations
 from chorus.roles._plugin import RolePlugin
 from chorus_employee.reviewer._dod import reviewer_dod
 from chorus_employee.reviewer._harness import reviewer_manifest
+from chorus_employee.reviewer._lander import ReviewerLander, reviewer_lander
 
 
 def reviewer_plugin() -> RolePlugin:
@@ -29,4 +30,4 @@ def reviewer_plugin() -> RolePlugin:
     )
 
 
-__all__ = ["reviewer_plugin"]
+__all__ = ["ReviewerLander", "reviewer_lander", "reviewer_plugin"]

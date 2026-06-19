@@ -14,6 +14,7 @@ from dream.contracts import MemoryDelta, MemoryRecord, MemoryScope, MemoryType
 from chorus.heartbeat import Scheduler, Wake, WakeReason
 from chorus.heartbeat._beat import BeatDisposition, BeatOutcome
 from chorus.ledger import SqliteLedger, Task, TaskStatus
+from chorus.outcomes import Verifier
 from chorus.roles import RoleRegistry, default_roles
 from chorus.workforce import Employee, LedgerWorkforce
 
@@ -57,6 +58,7 @@ class _Beat:
 def _dispatch(ledger: SqliteLedger, beat: _Beat, writer: _RecordingWriter | None) -> Scheduler:
     ledger.employees.create(Employee(id="ada", name="Ada", role="engineer"))
     ledger.tasks.submit(Task(id="t1", intent="add subtract", status=TaskStatus.TODO, assignee_employee_id="ada"))
+    ledger.dod.create("t1", Verifier.command("true"))  # objective DoD: land directly, not via review
     ledger.wakes.enqueue(Wake(id="w1", employee_id="ada", reason=WakeReason.MANUAL, payload={"task_id": "t1"}))
     return Scheduler(
         ledger=ledger, workforce=LedgerWorkforce(ledger.employees), beat_runner=beat,

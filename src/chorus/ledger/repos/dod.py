@@ -14,7 +14,7 @@ from typing import cast
 
 from chorus.ledger._models import Dod, DodStatus
 from chorus.ledger.repos._base import dumps, loads, utcnow_iso
-from chorus.outcomes import AgentReview, Command, DoDKind, HumanApproval, Verifier
+from chorus.outcomes import AgentReview, Command, DoDKind, HumanApproval, ReviewedBuild, Verifier
 
 
 class DodRepo:
@@ -102,6 +102,16 @@ def _verifier_from_dod(dod: Dod) -> Verifier:
     if kind is DoDKind.AGENT_REVIEW:
         return Verifier(
             kind, AgentReview(str(spec["reviewer_role"]), str(spec["rubric"])), artifact_class
+        )
+    if kind is DoDKind.REVIEWED_BUILD:
+        return Verifier(
+            kind,
+            ReviewedBuild(
+                str(spec["reviewer_role"]),
+                str(spec["rubric"]),
+                int(cast("int", spec["verify_timeout_s"])),
+            ),
+            artifact_class,
         )
     return Verifier(kind, HumanApproval(str(spec["approver"])), artifact_class)
 

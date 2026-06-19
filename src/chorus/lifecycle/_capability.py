@@ -18,15 +18,19 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from chorus.ledger._models import (
+    ActivityVerb,
     Artifact,
     ArtifactRevision,
     ArtifactType,
+    DodStatus,
     OriginKind,
     Task,
     TaskStatus,
 )
+from chorus.lifecycle._audit import record_activity
 from chorus.lifecycle._coordination import assign_task
 from chorus.lifecycle._decompose import ChildSpec, DepthCapped, decompose
+from chorus.outcomes import DoDKind
 
 if TYPE_CHECKING:
     from chorus.ledger import SqliteLedger
@@ -74,6 +78,24 @@ class AssignTaskResult:
     unknown_assignee: str | None = None
     not_child: bool = False
     terminal_or_missing: bool = False
+
+
+@dataclass(frozen=True)
+class RecordVerdictResult:
+    """The outcome of a reviewer rendering its approve/block verdict on a task's ``agent_review`` DoD.
+
+    A clean record sets ``recorded`` with ``approved`` reflecting the decision. Exactly one fail-closed
+    reason is set otherwise: ``not_reviewable`` when the task has no ``agent_review`` DoD to verdict, or
+    ``self_review`` when the reviewer is the task's own author (a worker can't verify its own work)."""
+
+    recorded: bool = False
+    approved: bool = False
+    not_reviewable: bool = False
+    self_review: bool = False
+
+
+# DoD kinds a Reviewer renders a verdict on (an objective ``command`` / a human approval are not).
+_REVIEWER_GATED_KINDS = frozenset({DoDKind.AGENT_REVIEW, DoDKind.REVIEWED_BUILD})
 
 
 def _child_id(parent_id: str, label: str) -> str:
@@ -201,6 +223,45 @@ class CapabilityService:
         if assign_task(self._ledger, task_id, assignee, assigned_by=assigned_by) is None:
             return AssignTaskResult(terminal_or_missing=True)
         return AssignTaskResult(assigned=True)
+
+    def record_verdict(
+        self,
+        *,
+        task_id: str,
+        run_id: str,
+        reviewer_id: str,
+        approve: bool,
+        feedback: str,
+        verify_command: str = "",
+    ) -> RecordVerdictResult:
+        """Record a reviewer's verdict on a task's reviewer-gated DoD (approve→PASSED, block→FAILED).
+
+        The verdict IS the DoD's verdict — it does not itself transition the task. The kernel reads the
+        recorded DoD status after the reviewer beat and lands (approve) or routes the block. For a
+        ``reviewed_build`` DoD the reviewer also reports ``verify_command`` (the project's verify command
+        the kernel then runs); a PASSED here means "quality approved", with the objective run still to
+        come. Fails closed on a non reviewer-gated DoD or a reviewer verifying its own work."""
+        task = self._ledger.tasks.get(task_id)
+        if task is None:
+            raise KeyError(task_id)
+        dod = self._ledger.dod.get_for_task(task_id)
+        if dod is None or DoDKind(dod.kind) not in _REVIEWER_GATED_KINDS:
+            return RecordVerdictResult(not_reviewable=True)
+        if reviewer_id == task.assignee_employee_id:
+            return RecordVerdictResult(self_review=True)
+        status = DodStatus.PASSED if approve else DodStatus.FAILED
+        verdict: dict[str, object] = {"approve": approve, "feedback": feedback, "reviewer": reviewer_id}
+        if verify_command:  # only a reviewed_build carries a command for the kernel to run
+            verdict["verify_command"] = verify_command
+        self._ledger.dod.record_verdict(dod.id, status, verdict=verdict, run_id=run_id)
+        record_activity(
+            self._ledger,
+            verb=ActivityVerb.REVIEW_VERDICT,
+            subject_id=task_id,
+            actor_employee_id=reviewer_id,
+            payload={"approve": approve, "feedback": feedback},
+        )
+        return RecordVerdictResult(recorded=True, approved=approve)
 
     def _unknown_assignees(
         self, children: Sequence[ChildPlan], *, manager_id: str | None

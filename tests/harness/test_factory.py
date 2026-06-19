@@ -85,11 +85,13 @@ def test_reviewer_materializes_a_read_only_harness(
 ) -> None:
     factory, captured = _factory(monkeypatch, tmp_path)
     mat = factory.materialize(Employee(id="rob", name="Rob", role="reviewer"))
-    # the headline win: a reviewer is read-only EVERYWHERE — not just in chat
+    # the headline win: a reviewer is read-only EVERYWHERE — not just in chat. Its only tool with no
+    # ledger is read_file (submit_verdict needs a ledger to bind to, registered in the ledger-bound test).
     names = {t.name for t in captured["registry"].list_tools()}
     assert names == {"read_file"}
-    assert mat.config.permission_mode == "plan"
-    # and a read-only trust posture — it never mutates
+    # DEFAULT permission so it can call its ledger-only verdict tool; its read-only-ness is structural —
+    # no file-writing tool + the read-only sandbox tier.
+    assert mat.config.permission_mode == "default"
     sandbox = (mat.working_dir / ".harness" / "sandbox.toml").read_text(encoding="utf-8")
     assert 'tier = "read-only"' in sandbox
     assert "confirm_unrestricted" not in sandbox
@@ -185,6 +187,43 @@ def test_integrate_beat_over_a_complete_subtree_drops_all_mutating_tools(
         assert names == {"read_file"}  # only read remains — the manager reviews, then accepts
     finally:
         ledger.close()
+
+
+def test_reviewer_harness_registers_the_submit_verdict_capability_tool(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The Reviewer's one capability is the chorus `submit_verdict` tool — read-only on the filesystem,
+    # it mutates only the ledger DoD verdict. Registered when the factory has a ledger to bind it to.
+    ledger = SqliteLedger.open(":memory:")
+    try:
+        captured: dict[str, Any] = {}
+        monkeypatch.setattr(
+            _factory_mod.dream, "build_harness", lambda **kw: captured.update(kw) or object()
+        )
+        ledger.employees.create(Employee(id="rob", name="Rob", role="reviewer"))
+        factory = _factory_mod.EmployeeHarnessFactory(
+            api_key="k", base_url="https://x/openai/v1", deployment="gpt-x", company_id="acme",
+            roles=RoleRegistry.from_plugins(default_roles()), work_root=tmp_path, ledger=ledger,
+        )
+        factory.materialize(Employee(id="rob", name="Rob", role="reviewer"))
+        names = {t.name for t in captured["registry"].list_tools()}
+        assert names == {"read_file", "submit_verdict"}  # read-only inspection + the verdict capability
+    finally:
+        ledger.close()
+
+
+def test_reviewer_can_be_materialized_at_the_worker_s_worktree(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The reviewer inspects the work IN PLACE: pointed at the worker's worktree as its (read-only)
+    # working dir, so the verdict is rendered on the real diff. Its read-only sandbox keeps it look-only.
+    factory, _ = _factory(monkeypatch, tmp_path)
+    review = factory.materialize(
+        Employee(id="rob", name="Rob", role="reviewer"), review_worktree_of="ada"
+    )
+    assert review.working_dir == tmp_path / "acme" / "worktrees" / "ada"  # ada's worktree, not rob's
+    sandbox = (review.working_dir / ".harness" / "sandbox.toml").read_text(encoding="utf-8")
+    assert 'tier = "read-only"' in sandbox
 
 
 def test_manager_brief_is_rehydrated_with_its_team(
