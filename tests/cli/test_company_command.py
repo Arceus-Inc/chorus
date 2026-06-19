@@ -61,7 +61,12 @@ def test_company_init_seeds_from_a_directory(tmp_path: Path, monkeypatch: pytest
     assert (tmp_path / ".chorus" / "work" / "acme" / "repo" / "calc.py").exists()
 
 
-def test_dispatch_preserves_windows_paths() -> None:
+def test_dispatch_preserves_windows_paths(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Backslash-as-escape only matters on Windows; force the win32 split path so the assertion holds
+    # regardless of the host running the suite (on POSIX, shlex correctly treats `\` as an escape).
+    import sys
+
+    monkeypatch.setattr(sys, "platform", "win32")
     path = r"C:\Users\me\tmp\org"
     assert _split_line(f"export {path}") == ["export", path]
 

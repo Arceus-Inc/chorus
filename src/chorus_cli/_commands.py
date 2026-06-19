@@ -47,8 +47,8 @@ from chorus.lifecycle import (
     decompose,
     deliver_message,
 )
-from chorus.outcomes import DoDKind, Verifier
 from chorus.observability import LedgerInspector
+from chorus.outcomes import DoDKind, Verifier
 from chorus.roles import RoleRegistry, role_beat_config
 from chorus.workforce import EmployeeStatus, GitWorkforce, LedgerWorkforce, copy_org
 from chorus.workspace import CompanyWorkspace, WorkspaceError, default_work_root

@@ -7,7 +7,16 @@ from pathlib import Path
 import pytest
 
 from chorus.heartbeat import IntegrateContextPacket
-from chorus.ledger import Artifact, ArtifactType, DodStatus, Run, RunStatus, SqliteLedger, Task, TaskStatus
+from chorus.ledger import (
+    Artifact,
+    ArtifactType,
+    DodStatus,
+    Run,
+    RunStatus,
+    SqliteLedger,
+    Task,
+    TaskStatus,
+)
 from chorus.outcomes import Verifier
 from chorus.workforce import Employee
 

@@ -7,7 +7,16 @@ from collections.abc import Iterator
 import pytest
 
 from chorus.heartbeat import IntegrateContextPacket
-from chorus.ledger import Artifact, ArtifactType, DodStatus, Run, RunStatus, SqliteLedger, Task, TaskStatus
+from chorus.ledger import (
+    Artifact,
+    ArtifactType,
+    DodStatus,
+    Run,
+    RunStatus,
+    SqliteLedger,
+    Task,
+    TaskStatus,
+)
 from chorus.lifecycle import CapabilityService, ChildPlan
 from chorus.observability import LedgerInspector
 from chorus.outcomes import Verifier
