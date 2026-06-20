@@ -782,6 +782,10 @@ class Scheduler:
                 employee_id=reviewer.id,
                 task_id=task_id,
                 status=RunStatus.RUNNING,
+                # A lease, like every other running beat: a null lease reads as crash debris to the
+                # stale-run reaper (a concurrent RECOVER under run_forever, or another Arceus worker),
+                # which would reap this in-flight review and strand the deliverable (spec 03 §5).
+                lease_expires_at=now + timedelta(seconds=self.lease_ttl_s),
                 started_at=now,
             )
         )
