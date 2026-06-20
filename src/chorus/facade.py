@@ -249,6 +249,16 @@ class Chorus:
         """One kernel pulse, stamped with the kernel clock (spec 03 §3)."""
         return await self._scheduler.tick_once()
 
+    async def drain(self) -> None:
+        """Await every beat this pulse dispatched (spec 03 §3).
+
+        :meth:`tick` returns as soon as it has *dispatched* — the beats run on. ``await org.tick();
+        await org.drain()`` is the deterministic step: it runs one pulse and blocks until that pulse's
+        beats finish, so a caller can advance a multi-beat flow (build → review → integrate) one
+        settled step at a time. :meth:`run_forever` does this for every pulse internally.
+        """
+        await self._scheduler.drain()
+
     async def run_forever(self) -> None:
         """Run the heartbeat until :meth:`stop` (or cancellation), draining beats on exit (spec 03 §3)."""
         await self._scheduler.run()

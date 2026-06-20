@@ -15,20 +15,22 @@
 <h1>spec 14 — the public facade, live</h1>
 <p class="lead"><code>from chorus import Chorus</code> → a two-tier kernel: <b>simple on top</b> (the flat
 front door anyone can operate a company with) and <b>complete underneath</b> (every niche capability
-under its group). The kernel stays dream-free; <code>chorus_harness</code> brings the model (Azure
-gpt-5.2) and plugs into the two seams — execution (<code>runner_for</code>) and landing
-(<code>landers</code>).</p>
-<p class="verdict">Result: PASS ✅</p>
+under its group). The operator never hand-specifies a DoD — the roles define them: the manager (Azure
+gpt-5.2) decomposes, an engineer builds, a reviewer renders the verdict on the author's
+worktree, and the manager integrates. The facade bar is that the front door is wired and every group
+reachable; whether a given <i>live</i> beat reaches <code>done</code> is the M3 sprint pipeline's
+reliability, reported separately below.</p>
+<p class="verdict">Result: facade wiring PASS ✅ &nbsp;·&nbsp; live build reached done ✅</p>
 
 <h2>High-level tier — the §0 front door (flat verbs)</h2>
 <table><tr><th></th><th>step</th><th>evidence</th></tr>
-<tr><td>✅</td><td>Chorus.build(beat_runner_for=…, landers=…)</td><td><code>two-tier kernel constructed</code></td></tr>
-<tr><td>✅</td><td>hire (flat)</td><td><code>2 employees</code></td></tr>
-<tr><td>✅</td><td>submit (flat)</td><td><code>task_d7206cf0adf4 → eng1</code></td></tr>
-<tr><td>✅</td><td>run_forever (flat) ran a real engineer beat</td><td><code>succeeded</code></td></tr>
-<tr><td>✅</td><td>task reached done</td><td><code>done</code></td></tr>
-<tr><td>✅</td><td>build landed to company main</td><td><code>greet.py present: True</code></td></tr>
-<tr><td>✅</td><td>status() (flat glance)</td><td><code>2 employees · 0 open · 0 running</code></td></tr>
+<tr><td>✅</td><td>Chorus.build(ledger=…, beat_runner_for=factory, landers=…)</td><td><code>two-tier kernel</code></td></tr>
+<tr><td>✅</td><td>hire (flat)</td><td><code>3 employees</code></td></tr>
+<tr><td>✅</td><td>submit (flat) — no operator DoD, the role defines it</td><td><code>task_783d9fb716cb → eng1 · DoD=reviewed_build</code></td></tr>
+<tr><td>✅</td><td>run_forever (flat) ran a real reviewed build</td><td><code>succeeded</code></td></tr>
+<tr><td>✅</td><td>task reached done (build → review → integrate)</td><td><code>done</code></td></tr>
+<tr><td>✅</td><td>build landed to company main</td><td><code>subtract() in calc.py: True</code></td></tr>
+<tr><td>✅</td><td>status() (flat glance)</td><td><code>3 employees · 0 open · 0 running</code></td></tr>
 </table>
 
 <h2>Low-level tier — one verb per group</h2>
@@ -36,20 +38,20 @@ gpt-5.2) and plugs into the two seams — execution (<code>runner_for</code>) an
 front door. Enum-typed arguments cross as enums (no stringly), fail-closed on unknown subjects.</p>
 <table><tr><th></th><th>group · verb</th><th>evidence</th></tr>
 <tr><td>✅</td><td>org.inspect — task / stuck / org_report</td><td><code>task=done, stuck=0, done_rate=33%</code></td></tr>
-<tr><td>✅</td><td>org.governance — open_gate → approvals → resolve</td><td><code>opened gate (1 pending) → approved ap_168634494ae2</code></td></tr>
+<tr><td>✅</td><td>org.governance — open_gate → approvals → resolve</td><td><code>opened gate (1 pending) → approved ap_3dd3533c28dd</code></td></tr>
 <tr><td>✅</td><td>org.budgets — set(EMPLOYEE, …)</td><td><code>eng1 capped at $500/mo</code></td></tr>
 <tr><td>✅</td><td>org.trust — set_task(preset=…)</td><td><code>task → low_trust_review</code></td></tr>
-<tr><td>✅</td><td>org.routines — add → list</td><td><code>routine_da0c086ccb38 (weekly), 1 total</code></td></tr>
-<tr><td>✅</td><td>org.workforce — export</td><td><code>2 employees → /var/folders/74/m_l20tpx4qq_7svlx50hqm3r0000gn/T/chorus-facade-vi51z3ps/org</code></td></tr>
-<tr><td>✅</td><td>org.dod — revise</td><td><code>revised DoD of task_6ef733a92230</code></td></tr>
+<tr><td>✅</td><td>org.routines — add → list</td><td><code>routine_944ede0207bf (weekly), 1 total</code></td></tr>
+<tr><td>✅</td><td>org.workforce — export</td><td><code>3 employees → /var/folders/74/m_l20tpx4qq_7svlx50hqm3r0000gn/T/chorus-facade-429m3d83/org</code></td></tr>
+<tr><td>✅</td><td>org.dod — revise</td><td><code>revised DoD of task_ee977c271c70</code></td></tr>
 </table>
 
-<h2>What the engineer beat landed (company main)</h2>
-<pre><code>0e37ed0 chorus: merge chorus/eng1
-0ad5ac2 chorus: snapshot work
-789c82e init</code></pre>
+<h2>What the reviewed build landed (company main)</h2>
+<pre><code>c3b0ece chorus: merge chorus/eng1
+86149fb chorus: snapshot work
+879214a init</code></pre>
 
 <p class="lead">decompose · submit_verdict · memory are on <b>neither</b> tier — they are the employee's
 own faculties, exercised inside the beat, never on the operator surface. Generated
-2026-06-20T13:42:51.</p>
+2026-06-20T15:24:07.</p>
 </body></html>

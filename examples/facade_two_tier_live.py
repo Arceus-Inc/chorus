@@ -34,7 +34,6 @@ import os
 import subprocess
 import sys
 import tempfile
-import time
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -96,7 +95,7 @@ def _seed_repo(path: Path) -> None:
 
 @dataclass
 class GroupProbe:
-    """One low-level group verb, exercised after the heartbeat is stopped (pure ledger ops)."""
+    """One low-level group verb, exercised after the task settles (pure ledger ops, no new beats)."""
 
     group: str
     verb: str
@@ -113,25 +112,22 @@ def _probe(group: str, verb: str, call: object) -> GroupProbe:
         return GroupProbe(group, verb, False, f"{type(exc).__name__}: {exc}")
 
 
-async def _run_until_terminal(org: Chorus, task_id: str, *, timeout_s: float) -> TaskView:
-    """Drive the public heartbeat (``run_forever``) until the task is terminal or the cap elapses.
+async def _run_until_terminal(org: Chorus, task_id: str, *, max_pulses: int) -> TaskView:
+    """Advance the public heartbeat one settled pulse at a time until the task is terminal.
 
-    A reviewed build parks ``blocked`` between rounds (engineer build → reviewer verdict → floor); that
-    is not terminal, so the heartbeat keeps ticking and the next pulse dispatches the reviewer wake.
+    A reviewed build parks ``blocked`` between steps (engineer build → reviewer verdict → objective
+    floor); that is not terminal, so each ``tick`` + ``drain`` runs the next step to completion and the
+    following pulse dispatches the review/floor it queued. (``run_forever`` is the production driver;
+    ``tick``/``drain`` is the deterministic one every keyed example uses.)
     """
-    runner = asyncio.create_task(org.run_forever())
-    start = time.monotonic()
-    try:
-        while time.monotonic() - start < timeout_s:
-            await asyncio.sleep(3.0)
-            view = org.inspect.task(task_id)
-            beat = view.latest_run.status if view.latest_run is not None else "-"
-            _log(f"   … status={view.status.value} beat={beat}")
-            if view.status in _TERMINAL:
-                break
-    finally:
-        org.stop()
-        await runner
+    for _ in range(max_pulses):
+        await org.tick()
+        await org.drain()
+        view = org.inspect.task(task_id)
+        beat = view.latest_run.status if view.latest_run is not None else "-"
+        _log(f"   … status={view.status.value} beat={beat}")
+        if view.status in _TERMINAL:
+            break
     return org.inspect.task(task_id)
 
 
@@ -172,15 +168,15 @@ def main() -> int:
 
     _log(f"deployment={deployment}")
     _log("=" * 72)
-    _log("§0 FRONT DOOR — build → hire → submit → run_forever → status")
+    _log("§0 FRONT DOOR — build → hire → submit → tick/drain → status")
 
     org.hire(name="moe", role="manager")
     org.hire(name="eng1", role="engineer", reports_to="moe")
     org.hire(name="ria", role="reviewer", reports_to="moe")
-    task = org.submit(_INTENT, assignee="moe")  # to the manager, who decomposes → engineer → reviewer
-    _log(f"   hired moe/eng1/ria; submitted {task.id} → moe (manager decomposes; no operator DoD)")
+    task = org.submit(_INTENT, assignee="eng1")  # no operator DoD — the engineer's role IS reviewed_build
+    _log(f"   hired moe/eng1/ria; submitted {task.id} → eng1 (role DoD = reviewed_build)")
 
-    final = asyncio.run(_run_until_terminal(org, task.id, timeout_s=600.0))
+    final = asyncio.run(_run_until_terminal(org, task.id, max_pulses=12))
     status: WorkforceStatus = org.status()
     beat_ran = final.latest_run is not None
     done = final.status is TaskStatus.DONE
@@ -284,11 +280,11 @@ def _render(
     front = "\n".join([
         row("Chorus.build(ledger=…, beat_runner_for=factory, landers=…)", True, "two-tier kernel"),
         row("hire (flat)", len(status.employees) >= 3, f"{len(status.employees)} employees"),
-        row("submit (flat) — no operator DoD, roles define them", True,
-            f"{esc(final.id)} → {esc(final.assignee or '-')} (manager)"),
-        row("run_forever (flat) ran the manager→engineer→reviewer pipeline", beat_ran,
+        row("submit (flat) — no operator DoD, the role defines it", True,
+            f"{esc(final.id)} → {esc(final.assignee or '-')} · DoD={_dod_kind(final)}"),
+        row("run_forever (flat) ran a real reviewed build", beat_ran,
             final.latest_run.status if final.latest_run is not None else "-"),
-        row("task reached done (decompose → build → review → integrate)", done, final.status.value),
+        row("task reached done (build → review → integrate)", done, final.status.value),
         row("build landed to company main", landed, f"subtract() in calc.py: {landed}"),
         row("status() (flat glance)", True,
             f"{len(status.employees)} employees · {status.open_tasks} open · {status.running_beats} running"),
