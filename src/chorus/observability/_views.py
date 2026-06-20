@@ -13,6 +13,14 @@ from dataclasses import dataclass, field
 from datetime import datetime
 
 from chorus.ledger import TaskStatus
+from chorus.ledger._models import (
+    RoutineCatchUp,
+    RoutineConcurrency,
+    RoutineRunStatus,
+    RoutineStatus,
+    RoutineTarget,
+    TriggerKind,
+)
 from chorus.outcomes import Verifier
 
 
@@ -144,10 +152,54 @@ class OrgObservabilityReport:
     manager_packets: tuple[ScrumPacketView, ...] = ()
 
 
+@dataclass(frozen=True)
+class RoutineTriggerView:
+    """One routine trigger, resolved for reading (spec 13 §7 — the clock behind a routine)."""
+
+    id: str
+    kind: TriggerKind
+    cron_expression: str | None
+    timezone: str
+    next_run_at: datetime | None
+    last_fired_at: datetime | None
+
+
+@dataclass(frozen=True)
+class RoutineRunView:
+    """One firing, resolved for reading — so a coalesced/suppressed firing is observable (spec 13 §7)."""
+
+    id: str
+    status: RoutineRunStatus
+    linked_task_id: str | None
+    coalesced_into_run_id: str | None
+
+
+@dataclass(frozen=True)
+class RoutineView:
+    """A routine resolved for reading: its definition, its triggers, and recent firings (spec 13 §7).
+
+    The caller-facing shape of a routine — the persistence splits it across ``routine`` /
+    ``routine_trigger`` / ``routine_run``; this fuses them so a consumer never re-joins the tables.
+    """
+
+    id: str
+    employee_id: str
+    intent_template: str
+    target: RoutineTarget
+    concurrency_policy: RoutineConcurrency
+    catch_up_policy: RoutineCatchUp
+    status: RoutineStatus
+    triggers: tuple[RoutineTriggerView, ...] = ()
+    recent_runs: tuple[RoutineRunView, ...] = ()
+
+
 __all__ = [
     "EmployeeView",
     "IncidentView",
     "OrgObservabilityReport",
+    "RoutineRunView",
+    "RoutineTriggerView",
+    "RoutineView",
     "RunView",
     "ScrumChildView",
     "ScrumPacketView",

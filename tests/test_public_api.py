@@ -18,14 +18,15 @@ EXPECTED_PUBLIC_API: frozenset[str] = frozenset({
     "Task", "TaskStatus", "ExecPlan", "Employee",
     # heartbeat
     "Wake", "WakeReason", "TickReport",
-    # cron
-    "Routine", "parse_cron",
+    # cron / routines
+    "Routine", "RoutineConcurrency", "RoutineCatchUp", "RoutineTarget", "RoutineStatus",
+    "parse_cron",
     # outcomes (DoD)
     "Verifier", "Command", "AgentReview", "HumanApproval",
     # events
     "Event", "EventKind",
     # read model
-    "WorkforceStatus", "TaskView", "EmployeeView", "RunView", "IncidentView",
+    "WorkforceStatus", "TaskView", "EmployeeView", "RunView", "IncidentView", "RoutineView",
     # errors
     "ChorusError", "InvalidIntake", "UnknownEmployee", "OrgInvariantViolation",
     "RolePluginInvalid", "RolePluginConflict", "BudgetBlocked", "PackageImportError",
