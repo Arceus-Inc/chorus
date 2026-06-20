@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pytest
 
-from chorus.cron._revise import (
+from chorus.cron import (
     NoRoutineRevision,
     RoutineRevisionAuthorityError,
     restore_routine,

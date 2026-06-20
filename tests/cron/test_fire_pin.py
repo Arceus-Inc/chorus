@@ -12,8 +12,8 @@ from datetime import datetime
 
 import pytest
 
+from chorus.cron import revise_routine
 from chorus.cron._fire import fire_routine
-from chorus.cron._revise import revise_routine
 from chorus.ledger import SqliteLedger
 from chorus.ledger._models import (
     Routine,

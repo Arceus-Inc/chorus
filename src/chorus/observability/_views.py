@@ -189,6 +189,7 @@ class RoutineView:
     concurrency_policy: RoutineConcurrency
     catch_up_policy: RoutineCatchUp
     status: RoutineStatus
+    latest_revision_no: int = 1
     triggers: tuple[RoutineTriggerView, ...] = ()
     recent_runs: tuple[RoutineRunView, ...] = ()
 
