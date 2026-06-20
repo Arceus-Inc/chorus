@@ -74,7 +74,7 @@ def test_revision_no_is_unique_per_routine() -> None:
         ledger.routine_revisions.append(
             RoutineRevision(id="rev1", routine_id="r1", revision_no=1, intent_template="v1")
         )
-        with pytest.raises(Exception):  # noqa: B017 — the unique index rejects a duplicate revision_no
+        with pytest.raises(Exception):
             ledger.routine_revisions.append(
                 RoutineRevision(id="rev1b", routine_id="r1", revision_no=1, intent_template="dup")
             )
@@ -82,20 +82,21 @@ def test_revision_no_is_unique_per_routine() -> None:
         ledger.close()
 
 
-def test_set_head_advances_the_pointer() -> None:
+def test_set_head_advances_the_pointer_and_mirrors_the_definition() -> None:
     ledger = _ledger()
     try:
         ledger.routines.create(
             Routine(id="r1", employee_id="e1", intent_template="v1", latest_revision_no=1)
         )
-        ledger.routine_revisions.append(
+        rev2 = ledger.routine_revisions.append(
             RoutineRevision(id="rev2", routine_id="r1", revision_no=2, intent_template="v2")
         )
-        ledger.routines.set_head("r1", revision_id="rev2", revision_no=2)
+        ledger.routines.set_head("r1", rev2)
         got = ledger.routines.get("r1")
         assert got is not None
         assert got.latest_revision_id == "rev2"
         assert got.latest_revision_no == 2
+        assert got.intent_template == "v2"  # the row mirrors the head's definition
     finally:
         ledger.close()
 

@@ -8,6 +8,7 @@ from chorus.ledger._models import (
     Routine,
     RoutineCatchUp,
     RoutineConcurrency,
+    RoutineRevision,
     RoutineStatus,
     RoutineTarget,
 )
@@ -50,12 +51,25 @@ class RoutineRepo:
         assert created is not None  # just inserted in this transaction
         return created
 
-    def set_head(self, routine_id: str, *, revision_id: str, revision_no: int) -> None:
-        """Advance the live revision pointer (spec 13 §2.2) — one atomic write after a revise/restore."""
+    def set_head(self, routine_id: str, revision: RoutineRevision) -> None:
+        """Make ``revision`` the live head (spec 13 §2.2): advance the pointer **and** mirror the
+        revision's definition onto the routine row, so the row always reflects the current
+        definition while ``routine_revision`` keeps the immutable history. One atomic write."""
         self._conn.execute(
-            "UPDATE routine SET latest_revision_id = ?, latest_revision_no = ?, updated_at = ? "
-            "WHERE id = ?",
-            (revision_id, revision_no, utcnow_iso(), routine_id),
+            "UPDATE routine SET intent_template = ?, target = ?, concurrency_policy = ?, "
+            "catch_up_policy = ?, env = ?, latest_revision_id = ?, latest_revision_no = ?, "
+            "updated_at = ? WHERE id = ?",
+            (
+                revision.intent_template,
+                revision.target.value,
+                revision.concurrency_policy.value,
+                revision.catch_up_policy.value,
+                dumps(revision.env) if revision.env is not None else None,
+                revision.id,
+                revision.revision_no,
+                utcnow_iso(),
+                routine_id,
+            ),
         )
         self._conn.commit()
 
