@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from _common import offline_org
 
-from chorus import InvalidIntake
+from chorus import InvalidIntake, Schedule, Weekday
 
 
 def main() -> None:
@@ -30,7 +30,7 @@ def main() -> None:
     view = org.routines.add(
         employee="eng1",
         intent_template="run the weekly dependency bump",
-        schedule="0 9 * * 1",
+        schedule=Schedule.weekly(Weekday.MONDAY, at="09:00"),  # typed builder, not raw "0 9 * * 1"
         routine_key="weekly-dep-bump",
         env={"GITHUB_TOKEN": "ref:github_token"},
     )
@@ -55,7 +55,7 @@ def main() -> None:
     # fail-closed env guard — a secret-looking key must use a ref:, never a raw value.
     try:
         org.routines.add(
-            employee="eng1", intent_template="leaky", schedule="0 9 * * 1",
+            employee="eng1", intent_template="leaky", schedule=Schedule.daily(at="09:00"),
             env={"GITHUB_TOKEN": "ghp_a_raw_secret"},
         )
     except InvalidIntake as exc:

@@ -11,13 +11,16 @@ from chorus.roles._routine_declaration import RoutineDeclaration
 from chorus_employee.pm._brief import PM_PLAN_DOC
 
 # A weekly planning review, filed every Monday 09:00.
+# (Built-in plugins use the raw cron string — they load during chorus.roles init, before chorus.cron
+# finishes importing, so they can't import the Schedule helper. Consumers and plugins registered after
+# startup should prefer ``chorus.Schedule.weekly(Weekday.MONDAY, at="09:00")``.)
 PM_WEEKLY_PLANNING = RoutineDeclaration(
     routine_key="pm-weekly-planning-review",
     intent_template=(
         "Weekly planning review: assess the current goals and open work, then write or update the "
         f"plan in `{PM_PLAN_DOC}` with the priorities and next steps for the coming week."
     ),
-    schedule="0 9 * * 1",  # 09:00 every Monday
+    schedule="0 9 * * 1",  # == Schedule.weekly(Weekday.MONDAY, at="09:00")
 )
 
 PM_ROUTINES: tuple[RoutineDeclaration, ...] = (PM_WEEKLY_PLANNING,)

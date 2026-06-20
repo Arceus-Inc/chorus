@@ -15,7 +15,7 @@ chorus depends on dream; nothing depends sideways (spec 00 §5).
 from __future__ import annotations
 
 from chorus.budgets import BudgetWindow
-from chorus.cron import parse_cron
+from chorus.cron import Schedule, Weekday, parse_cron
 from chorus.errors import (
     BudgetBlocked,
     ChorusError,
@@ -127,6 +127,7 @@ __all__ = [
     "RoutineView",
     "RoutinesFacade",
     "RunView",
+    "Schedule",
     "ScrumPacketView",
     # ledger
     "Task",
@@ -142,6 +143,7 @@ __all__ = [
     # heartbeat
     "Wake",
     "WakeReason",
+    "Weekday",
     "WorkforceFacade",
     # read model
     "WorkforceStatus",

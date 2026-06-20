@@ -43,13 +43,34 @@ and able to come bundled with a role so the org schedules itself as it grows.**
 
 Everything is offline-safe (no model needed) on the data surface. Enums are typed; no stringly args.
 
+### Schedules without raw cron — `Schedule`
+
+Hand-writing `"0 9 * * 1"` is opaque. The typed **`Schedule`** builder emits the same cron string from
+named, validated parameters — use it anywhere a `schedule=` is taken:
+
+```python
+from chorus import Schedule, Weekday
+
+Schedule.daily(at="09:00")                  # "0 9 * * *"
+Schedule.weekly(Weekday.MONDAY, at="09:00") # "0 9 * * 1"
+Schedule.weekdays(at="09:00")               # "0 9 * * 1-5"  (Mon–Fri)
+Schedule.hourly(minute=30)                  # "30 * * * *"
+Schedule.every_minutes(15)                  # "*/15 * * * *"
+Schedule.every_hours(6)                     # "0 */6 * * *"
+Schedule.monthly(day=1, at="09:00")         # "0 9 1 * *"
+Schedule.cron("0 9 * * 1")                  # raw escape hatch (still validated)
+```
+
+It returns a plain `str`, so storage and firing are unchanged. Bad input (`at="25:00"`,
+`every_minutes(60)`, …) raises `ValueError` up front.
+
 ### Add (S1 + S3)
 
 ```python
 view = org.routines.add(
     employee="eng1",
     intent_template="run the weekly dependency bump",
-    schedule="0 9 * * 1",                 # 5-field cron — 09:00 every Monday
+    schedule=Schedule.weekly(Weekday.MONDAY, at="09:00"),  # typed, not raw "0 9 * * 1"
     routine_key="weekly-dep-bump",        # stable identity (used by S6 reconcile)
     env={"GITHUB_TOKEN": "ref:github_token"},  # secret *ref*, never a raw value
 )

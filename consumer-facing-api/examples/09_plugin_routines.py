@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from _common import offline_org
 
-from chorus import RoutineDeclaration
+from chorus import RoutineDeclaration, Schedule
 from chorus.outcomes import Verifier
 from chorus.roles import MemoryScope, RoleManifest, RolePlugin
 
@@ -38,7 +38,7 @@ def main() -> None:
     nightly_audit = RoutineDeclaration(
         routine_key="widget-nightly-audit",
         intent_template="audit the widget inventory and open issues for anomalies",
-        schedule="0 2 * * *",  # 02:00 daily
+        schedule=Schedule.daily(at="02:00"),  # typed builder, not raw "0 2 * * *"
     )
     widget = RolePlugin(
         name="widget",

@@ -23,7 +23,7 @@ EXPECTED_PUBLIC_API: frozenset[str] = frozenset({
     "Wake", "WakeReason", "TickReport",
     # cron / routines
     "Routine", "RoutineConcurrency", "RoutineCatchUp", "RoutineTarget", "RoutineStatus",
-    "parse_cron",
+    "parse_cron", "Schedule", "Weekday",
     # outcomes (DoD)
     "Verifier", "Command", "AgentReview", "HumanApproval",
     # governance (spec 14 §5.1)

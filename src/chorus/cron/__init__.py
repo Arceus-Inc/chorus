@@ -15,11 +15,14 @@ from chorus.cron._revise import (
     revise_routine,
 )
 from chorus.cron._routine import parse_cron
+from chorus.cron._schedule import Schedule, Weekday
 
 __all__ = [
     "NoRoutineRevision",
     "ReconcileResult",
     "RoutineRevisionAuthorityError",
+    "Schedule",
+    "Weekday",
     "add_routine",
     "parse_cron",
     "reconcile_declared_routines",
