@@ -6,6 +6,7 @@ Everything you need to operate a company of agents on `chorus`, in one place.
 |---|---|
 | [QUICKSTART.md](QUICKSTART.md) | Zero to a running company in five minutes. |
 | [CONCEPTS.md](CONCEPTS.md) | The concept map: every idea (employee, task, DoD, decompose, reviewer, budget, approval, trust, routine, the heartbeat) and the one verb that drives it. |
+| [ROUTINES.md](ROUTINES.md) | Deep dive on recurring work: what a routine is, why it exists, and how add / revise / role-declared routines work in the code. |
 | [examples/](examples/) | One runnable script per concept, plus the full team-goal demo. |
 
 ## The 10-second version

@@ -19,16 +19,26 @@ from chorus_employee.pm._brief import PM_BRIEF, PM_PLAN_DOC
 from chorus_employee.pm._dod import pm_dod
 from chorus_employee.pm._harness import pm_manifest
 from chorus_employee.pm._lander import PmLander, pm_lander
+from chorus_employee.pm._routines import PM_ROUTINES, PM_WEEKLY_PLANNING
 
 
 def pm_plugin() -> RolePlugin:
-    """The registrable PM role — manifest + DoD + outcome kind (spec 06 §2)."""
+    """The registrable PM role — manifest + DoD + outcome kind + its weekly routine (spec 06 §2)."""
     return RolePlugin(
         name="pm",
         manifest=pm_manifest(),
         dod_generator=pm_dod,
         outcome_kind="doc",
+        declared_routines=PM_ROUTINES,
     )
 
 
-__all__ = ["PM_BRIEF", "PM_PLAN_DOC", "PmLander", "pm_lander", "pm_plugin"]
+__all__ = [
+    "PM_BRIEF",
+    "PM_PLAN_DOC",
+    "PM_ROUTINES",
+    "PM_WEEKLY_PLANNING",
+    "PmLander",
+    "pm_lander",
+    "pm_plugin",
+]

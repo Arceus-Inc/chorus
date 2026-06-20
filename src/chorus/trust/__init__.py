@@ -9,7 +9,7 @@ chorus's existing per-beat materialize boundary — no dream change.
 from __future__ import annotations
 
 from chorus.trust._boundary import TrustBoundary, TrustPolicy
-from chorus.trust._containment import assert_contained
+from chorus.trust._containment import assert_contained, assert_no_inline_secrets
 from chorus.trust._preset import (
     TrustPreset,
     TrustProfile,
@@ -26,6 +26,7 @@ __all__ = [
     "TrustPreset",
     "TrustProfile",
     "assert_contained",
+    "assert_no_inline_secrets",
     "profile_for",
     "resolve_trust",
     "sandbox_rank",

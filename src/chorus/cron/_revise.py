@@ -19,6 +19,7 @@ from chorus.ledger._models import (
     RoutineRevision,
     RoutineTarget,
 )
+from chorus.trust import assert_no_inline_secrets
 
 if TYPE_CHECKING:
     from chorus.ledger import SqliteLedger
@@ -58,6 +59,7 @@ def revise_routine(
     base = _head(ledger, routine_id)
 
     new_env = base.env if env is _UNSET else cast("dict[str, str] | None", env)
+    assert_no_inline_secrets(new_env)  # fail-closed: env binds refs, never raw secrets (spec 13 §3)
     proposed = RoutineRevision(
         id=f"rrev_{uuid.uuid4().hex[:12]}",
         routine_id=routine_id,

@@ -7,20 +7,13 @@ from the flat ``add_routine`` … verbs (spec 14 'migrate all').
 
 from __future__ import annotations
 
-import uuid
-from datetime import UTC, datetime
-
-from chorus.cron import parse_cron, restore_routine, revise_routine
+from chorus.cron import add_routine, restore_routine, revise_routine
 from chorus.ledger import (
-    Routine,
     RoutineCatchUp,
     RoutineConcurrency,
-    RoutineRevision,
     RoutineStatus,
     RoutineTarget,
-    RoutineTrigger,
     SqliteLedger,
-    TriggerKind,
 )
 from chorus.observability import LedgerInspector, RoutineView
 from chorus.workforce import Workforce, slugify
@@ -52,46 +45,20 @@ class RoutinesFacade:
         """Create a cron routine owned by ``employee``, seed its revision 1, and add its due trigger
         (spec 13 §3.1).
 
-        ``employee`` is resolved by slug (fail-closed). The cron is parsed *before* any write, so a bad
-        schedule leaves no orphan routine; the tick's CRON step picks it up from ``next_run_at``.
-        Revision 1 snapshots the definition and becomes the live head a firing pins against."""
+        ``employee`` is resolved by slug (fail-closed), then delegated to the kernel-side
+        :func:`~chorus.cron.add_routine` — the same create path the plugin reconciler uses."""
         employee_id = self._workforce.get(slugify(employee)).id  # fail-closed on unknown
-        next_run_at = parse_cron(schedule, base=datetime.now(UTC), timezone=timezone)
-        routine = self._ledger.routines.create(
-            Routine(
-                id=f"routine_{uuid.uuid4().hex[:12]}",
-                employee_id=employee_id,
-                intent_template=intent_template,
-                target=target,
-                concurrency_policy=concurrency,
-                catch_up_policy=catch_up,
-                env=env,
-                routine_key=routine_key,
-            )
-        )
-        rev1 = self._ledger.routine_revisions.append(
-            RoutineRevision(
-                id=f"rrev_{uuid.uuid4().hex[:12]}",
-                routine_id=routine.id,
-                revision_no=1,
-                intent_template=intent_template,
-                target=target,
-                concurrency_policy=concurrency,
-                catch_up_policy=catch_up,
-                env=env,
-                change_summary="created",
-            )
-        )
-        self._ledger.routines.set_head(routine.id, rev1)
-        self._ledger.routine_triggers.create(
-            RoutineTrigger(
-                id=f"trig_{uuid.uuid4().hex[:12]}",
-                routine_id=routine.id,
-                kind=TriggerKind.CRON,
-                cron_expression=schedule,
-                timezone=timezone,
-                next_run_at=next_run_at,
-            )
+        routine = add_routine(
+            self._ledger,
+            employee_id=employee_id,
+            intent_template=intent_template,
+            schedule=schedule,
+            target=target,
+            concurrency=concurrency,
+            catch_up=catch_up,
+            env=env,
+            routine_key=routine_key,
+            timezone=timezone,
         )
         return self._inspector.routine(routine.id)
 

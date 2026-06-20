@@ -20,6 +20,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from chorus.budgets import BudgetEnforcer
+from chorus.cron import reconcile_declared_routines
 from chorus.errors import OrgInvariantViolation
 from chorus.governance import GovernancePolicy
 from chorus.groups import (
@@ -300,7 +301,15 @@ class Chorus:
         """
         if role not in self._roles:
             raise OrgInvariantViolation(f"unknown role {role!r}")
-        return self._workforce.hire(name=name, role=role, reports_to=reports_to)
+        employee = self._workforce.hire(name=name, role=role, reports_to=reports_to)
+        # Provision the role's standing schedule for the new employee (spec 13 §5). Role-agnostic and
+        # idempotent; a no-op for roles that declare none, so the kernel never names a role.
+        declarations = self._roles.get(role).declared_routines
+        if declarations:
+            reconcile_declared_routines(
+                self._ledger, employee_id=employee.id, declarations=declarations
+            )
+        return employee
 
     @property
     def routines(self) -> RoutinesFacade:

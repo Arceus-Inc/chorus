@@ -15,7 +15,7 @@ chorus depends on dream; nothing depends sideways (spec 00 §5).
 from __future__ import annotations
 
 from chorus.budgets import BudgetWindow
-from chorus.cron import parse_cron
+from chorus.cron import Schedule, Weekday, parse_cron
 from chorus.errors import (
     BudgetBlocked,
     ChorusError,
@@ -65,7 +65,13 @@ from chorus.observability import (
     WorkforceStatus,
 )
 from chorus.outcomes import AgentReview, Command, HumanApproval, Verifier
-from chorus.roles import Role, RoleManifest, RolePlugin, default_roles
+from chorus.roles import (
+    Role,
+    RoleManifest,
+    RolePlugin,
+    RoutineDeclaration,
+    default_roles,
+)
 from chorus.trust import TrustPreset
 from chorus.workforce import Employee
 
@@ -115,11 +121,13 @@ __all__ = [
     "Routine",
     "RoutineCatchUp",
     "RoutineConcurrency",
+    "RoutineDeclaration",
     "RoutineStatus",
     "RoutineTarget",
     "RoutineView",
     "RoutinesFacade",
     "RunView",
+    "Schedule",
     "ScrumPacketView",
     # ledger
     "Task",
@@ -135,6 +143,7 @@ __all__ = [
     # heartbeat
     "Wake",
     "WakeReason",
+    "Weekday",
     "WorkforceFacade",
     # read model
     "WorkforceStatus",

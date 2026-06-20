@@ -77,6 +77,16 @@ class RoutineRepo:
         row = self._conn.execute("SELECT * FROM routine WHERE id = ?", (routine_id,)).fetchone()
         return _row_to_routine(row) if row is not None else None
 
+    def by_key(self, employee_id: str, routine_key: str) -> Routine | None:
+        """The routine an employee owns under ``routine_key`` (the plugin-reconcile identity), or None.
+
+        Backed by the partial-unique ``routine_employee_key_uq`` index, so at most one row matches."""
+        row = self._conn.execute(
+            "SELECT * FROM routine WHERE employee_id = ? AND routine_key = ?",
+            (employee_id, routine_key),
+        ).fetchone()
+        return _row_to_routine(row) if row is not None else None
+
     def list_active(self) -> list[Routine]:
         """All active routines, oldest first."""
         rows = self._conn.execute(

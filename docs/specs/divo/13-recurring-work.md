@@ -335,10 +335,10 @@ Each slice is RED → GREEN → REFACTOR, gated by `uv run ruff check` + `uv run
 | **S0** | **Regression floor** — characterization tests pinning the *current* `fire_routine` (concurrency, catch-up, exact-once, typed origin) before any change | existing engine behaviour is locked green |
 | **S1** | **Reachability** — implement `add_routine` (wire `routines.create` + `triggers.create` + `parse_cron`); `routine` CLI noun; flip default → `coalesce` | `routine add` → tick fires it → spawns a task → dispatch runs it (keyed e2e) |
 | **S2** ✅ | **Revisions** — migration 0019 (`routine_revision` + `routine.env`/`latest_revision_*` + `routine_run.routine_revision_id` + `routine.routine_key`); `revise/restore`; run pins revision | edit a routine mid-flight → the live run keeps the pinned definition; restore writes a new head |
-| **S3** | **Env bindings** — `routine.env` validated at `add_routine` + applied at materialize via §4 boundary | inline-secret env rejected; allow-listed `ref:` passes; spawned task can resolve it |
+| **S3** ◑ | **Env bindings** — `routine.env` validated at `add_routine`/`revise`/registration (fail-closed `assert_no_inline_secrets`, done); allow-list resolution at materialize (deferred) | inline-secret env rejected (done); allow-listed `ref:` resolved at materialize (deferred) |
 | **S4** | **PM plugin** — `chorus_employee/pm` (brief, DoD, lander) + registry | a PM routine fires → lands a `plan_doc` artifact |
 | **S5** | **Analyst plugin** — `chorus_employee/analyst` (brief, DoD, lander) + registry | an Analyst routine fires → lands a `findings_doc` artifact |
-| **S6** | **Plugin-declared routines** — `RoutineDeclaration` + `reconcile_declared_routines`; PM ships a weekly routine | importing the plugin + reconciling creates a firing routine **with no diff under `src/chorus/`** |
+| **S6** ✅ | **Plugin-declared routines** — `RoutineDeclaration` + `reconcile_declared_routines` (hire-time); PM ships a weekly routine | a fresh plugin + hire creates a firing routine **with no diff under `src/chorus/`** |
 | **S7** | **Portability** — `copy_org` carries routines + triggers + current revision; secret-binding re-prompt list | `export → import` round-trips routines + triggers; unresolved refs surface, never drop |
 | **S8** | **Acceptance + HTML report** — one keyed e2e run | create → coalesce + backfill_one across ticks → spawn → dispatch → land; plugin-declared routine schedules; export→import round-trip — all in one report |
 

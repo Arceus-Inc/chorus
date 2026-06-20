@@ -8,8 +8,9 @@ this (it is trusted) and short-circuits.
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 
+from chorus.errors import InvalidIntake
 from chorus.roles import Isolation
 from chorus.trust._preset import TrustPreset
 from chorus.trust._resolver import ResolvedTrust, TrustDenied
@@ -17,6 +18,19 @@ from chorus.trust._resolver import ResolvedTrust, TrustDenied
 _REF_PREFIX = "ref:"
 # An env key whose name implies a secret — its value must be an approved ref, never a raw value.
 _SECRET_MARKERS: tuple[str, ...] = ("TOKEN", "SECRET", "PASSWORD", "PASSWD", "KEY", "CREDENTIAL", "API")
+
+
+def assert_no_inline_secrets(env: Mapping[str, str] | None) -> None:
+    """Raise :class:`InvalidIntake` if any secret-looking key holds a raw value (spec 13 §3).
+
+    The fail-closed half of the trust boundary, pushed to *where env is written* (routine add / revise
+    / reconcile / plugin registration) so a plaintext credential can never land in a row. Key-heuristic:
+    a key whose name implies a secret must use a ``ref:`` handle; plain non-secret config is untouched.
+    The allow-list membership of those refs is checked later, at beat materialize (``assert_contained``).
+    """
+    for key, value in (env or {}).items():
+        if _looks_secret(key) and not value.startswith(_REF_PREFIX):
+            raise InvalidIntake(f"inline secret in {key!r} — env must bind a ref: handle, not a value")
 
 
 def assert_contained(
@@ -41,4 +55,4 @@ def _looks_secret(key: str) -> bool:
     return any(marker in upper for marker in _SECRET_MARKERS)
 
 
-__all__ = ["assert_contained"]
+__all__ = ["assert_contained", "assert_no_inline_secrets"]

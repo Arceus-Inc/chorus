@@ -126,6 +126,22 @@ def test_restore_unknown_revision_raises() -> None:
         ledger.close()
 
 
+def test_revise_rejects_an_inline_secret_in_env() -> None:
+    from chorus.errors import InvalidIntake
+
+    ledger = _ledger()
+    try:
+        _seed(ledger)
+        with pytest.raises(InvalidIntake, match="inline secret"):
+            revise_routine(
+                ledger, routine_id="r1", revised_by="e1", env={"GITHUB_TOKEN": "ghp_rawvalue"}
+            )
+        # fail-closed: nothing written
+        assert [r.revision_no for r in ledger.routine_revisions.by_routine("r1")] == [1]
+    finally:
+        ledger.close()
+
+
 def test_owner_and_manager_may_revise_but_a_stranger_may_not() -> None:
     ledger = _ledger()
     try:

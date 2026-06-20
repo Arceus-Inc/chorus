@@ -16,14 +16,14 @@ EXPECTED_PUBLIC_API: frozenset[str] = frozenset({
     "BudgetsFacade", "DodFacade", "GovernanceFacade", "InspectFacade",
     "RoutinesFacade", "TrustFacade", "WorkforceFacade", "HireRequest",
     # roles
-    "Role", "RoleManifest", "RolePlugin", "default_roles",
+    "Role", "RoleManifest", "RolePlugin", "RoutineDeclaration", "default_roles",
     # ledger
     "Task", "TaskStatus", "TaskPriority", "ExecPlan", "Employee",
     # heartbeat
     "Wake", "WakeReason", "TickReport",
     # cron / routines
     "Routine", "RoutineConcurrency", "RoutineCatchUp", "RoutineTarget", "RoutineStatus",
-    "parse_cron",
+    "parse_cron", "Schedule", "Weekday",
     # outcomes (DoD)
     "Verifier", "Command", "AgentReview", "HumanApproval",
     # governance (spec 14 §5.1)
