@@ -353,6 +353,8 @@ class Chorus:
         that lets a routine be *created*; the tick's CRON step picks it up from ``next_run_at``.
         """
         employee_id = self._workforce.get(slugify(employee)).id  # fail-closed on unknown
+        # Resolve the first edge *before* any write so a bad cron leaves no orphan routine.
+        next_run_at = parse_cron(schedule, base=datetime.now(UTC), timezone=timezone)
         routine = self._ledger.routines.create(
             Routine(
                 id=f"routine_{uuid.uuid4().hex[:12]}",
@@ -370,7 +372,7 @@ class Chorus:
                 kind=TriggerKind.CRON,
                 cron_expression=schedule,
                 timezone=timezone,
-                next_run_at=parse_cron(schedule, base=datetime.now(UTC), timezone=timezone),
+                next_run_at=next_run_at,
             )
         )
         return self._inspector.routine(routine.id)
