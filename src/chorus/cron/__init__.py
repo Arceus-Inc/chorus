@@ -6,6 +6,7 @@ engine is :func:`chorus.cron._fire.fire_routine`. This package's public surface 
 
 from __future__ import annotations
 
+from chorus.cron._add import add_routine
 from chorus.cron._revise import (
     NoRoutineRevision,
     RoutineRevisionAuthorityError,
@@ -17,6 +18,7 @@ from chorus.cron._routine import parse_cron
 __all__ = [
     "NoRoutineRevision",
     "RoutineRevisionAuthorityError",
+    "add_routine",
     "parse_cron",
     "restore_routine",
     "revise_routine",
