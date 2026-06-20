@@ -7,6 +7,7 @@ front door. Each group is a thin, typed delegation over the same backends the co
 
 from __future__ import annotations
 
+from chorus.groups._governance import GovernanceFacade, HireRequest
 from chorus.groups._inspect import InspectFacade
 
-__all__ = ["InspectFacade"]
+__all__ = ["GovernanceFacade", "HireRequest", "InspectFacade"]

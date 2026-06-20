@@ -22,15 +22,10 @@ from typing import Any
 from chorus.budgets import BudgetEnforcer
 from chorus.cron import parse_cron
 from chorus.errors import OrgInvariantViolation
-from chorus.governance import GovernancePolicy, GovernanceResolver
-from chorus.groups import InspectFacade
+from chorus.governance import GovernancePolicy
+from chorus.groups import GovernanceFacade, InspectFacade
 from chorus.heartbeat import BeatRunner, BeatRunnerFor, Scheduler, TickReport, Wake
 from chorus.ledger import (
-    Approval,
-    ApprovalAction,
-    ApprovalSubjectKind,
-    BudgetPolicy,
-    BudgetScope,
     Message,
     Routine,
     RoutineCatchUp,
@@ -56,7 +51,6 @@ from chorus.outcomes import Verifier
 from chorus.roles import RolePlugin, RoleRegistry, default_roles
 from chorus.workforce import (
     Employee,
-    EmployeeStatus,
     GitWorkforce,
     LedgerWorkforce,
     Workforce,
@@ -72,17 +66,6 @@ class Caps:
     max_concurrent_runs: int = 4
     request_depth_cap: int = DEFAULT_REQUEST_DEPTH_CAP
     tick_interval_s: float = 1.0
-
-
-@dataclass(frozen=True)
-class HireRequest:
-    """The result of :meth:`Chorus.request_hire` (spec 04 §5 ``hire_employee``).
-
-    ``approval`` is the pending ``hire_employee`` gate when the policy required sign-off, else ``None``
-    (the employee was hired directly and is already active)."""
-
-    employee: Employee
-    approval: Approval | None
 
 
 class Chorus:
@@ -114,6 +97,7 @@ class Chorus:
         self._governance_policy = governance_policy or GovernancePolicy()
         # Low-level grouped surfaces (spec 14 §2.2) — built once over the same backends.
         self._inspect = InspectFacade(inspector, event_bus)
+        self._governance = GovernanceFacade(ledger, workforce, roles, self._governance_policy)
 
     # -- construction ---------------------------------------------------------
 
@@ -255,66 +239,10 @@ class Chorus:
             self._ledger, task_id=task_id, new_verifier=new_verifier, revised_by=revised_by
         )
 
-    def request_hire(
-        self,
-        *,
-        name: str,
-        role: str,
-        reports_to: str | None = None,
-        budget_cents: int | None = None,
-    ) -> HireRequest:
-        """Hire an employee, gated by policy (spec 04 §5 ``hire_employee``).
-
-        When ``governance_policy.hire_gate_required()``, the employee is created ``pending``
-        (uninvokable) with its budget policy and a ``hire_employee`` approval is opened — a human
-        approves (→ ``active``) or denies (→ ``terminated``). Otherwise the employee is hired directly,
-        exactly as :meth:`hire` (the empty default policy reproduces today's behaviour)."""
-        if role not in self._roles:
-            raise OrgInvariantViolation(f"unknown role {role!r}")
-        gated = self._governance_policy.hire_gate_required()
-        status = EmployeeStatus.PENDING if gated else EmployeeStatus.IDLE
-        employee = self._workforce.hire(
-            name=name, role=role, reports_to=reports_to, status=status
-        )
-        if budget_cents is not None:
-            self._create_employee_budget(employee.id, budget_cents)
-        if not gated:
-            return HireRequest(employee=employee, approval=None)
-        approval = GovernanceResolver(self._ledger).open(
-            action=ApprovalAction.HIRE_EMPLOYEE,
-            subject_kind=ApprovalSubjectKind.EMPLOYEE,
-            subject_id=employee.id,
-            reason=f"hire {name} as {role}",
-        )
-        return HireRequest(employee=employee, approval=approval)
-
-    def request_promotion(self, artifact_id: str) -> Approval | None:
-        """Promote a landed artifact to the board, gated by policy (spec 04 §5 ``board_approval``).
-
-        When ``governance_policy.board_gate_required(<artifact class>)``, opens a ``board_approval``
-        gate on the artifact (a human approves the promotion); otherwise returns ``None`` (promotion is
-        ungated). Raises ``OrgInvariantViolation`` if the artifact is unknown."""
-        artifact = self._ledger.artifacts.get(artifact_id)
-        if artifact is None:
-            raise OrgInvariantViolation(f"no such artifact {artifact_id!r}")
-        if not self._governance_policy.board_gate_required(artifact.type.value):
-            return None
-        return GovernanceResolver(self._ledger).open(
-            action=ApprovalAction.BOARD_APPROVAL,
-            subject_kind=ApprovalSubjectKind.ARTIFACT,
-            subject_id=artifact_id,
-            reason=f"promote {artifact.type.value} to the board",
-        )
-
-    def _create_employee_budget(self, employee_id: str, amount_cents: int) -> None:
-        self._ledger.budget_policies.create(
-            BudgetPolicy(
-                id=f"bp_{uuid.uuid4().hex[:12]}",
-                scope_type=BudgetScope.EMPLOYEE,
-                scope_id=employee_id,
-                amount=amount_cents,
-            )
-        )
+    @property
+    def governance(self) -> GovernanceFacade:
+        """``org.governance`` — request/open gates, resolve them (approve/deny), read the open inbox."""
+        return self._governance
 
     def terminate(self, employee_id: str) -> None:
         """Irreversibly terminate an employee; cancel its in-flight work (spec 06 §3).
