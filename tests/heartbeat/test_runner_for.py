@@ -13,7 +13,7 @@ import pytest
 
 from chorus.heartbeat import Scheduler, Wake, WakeReason
 from chorus.heartbeat._beat import BeatOutcome
-from chorus.heartbeat._runner_for import single
+from chorus.heartbeat._runner_for import runner_from, single
 from chorus.ledger import RunStatus, SqliteLedger, Task, TaskStatus
 from chorus.workforce import Employee
 
@@ -76,6 +76,21 @@ def test_single_returns_the_one_runner_for_any_employee() -> None:
     seam = single(runner)
     assert seam.runner_for(Employee(id="a", name="a", role="engineer")) is runner
     assert seam.runner_for(Employee(id="b", name="b", role="reviewer")) is runner
+
+
+def test_runner_from_wraps_a_callable_as_the_seam() -> None:
+    """A bare callable (e.g. ``factory.runner_for``) becomes a :class:`BeatRunnerFor` — the §0 form."""
+    runner = _TaggedBeat("fn")
+    seen: list[tuple[str, str | None]] = []
+
+    def resolve(employee: Employee, *, task_id: str | None = None) -> _TaggedBeat:
+        seen.append((employee.id, task_id))
+        return runner
+
+    seam = runner_from(resolve)
+    got = seam.runner_for(Employee(id="a", name="a", role="engineer"), task_id="t1")
+    assert got is runner
+    assert seen == [("a", "t1")]
 
 
 async def test_scheduler_resolves_a_distinct_runner_per_employee(ledger: SqliteLedger) -> None:

@@ -30,7 +30,15 @@ from chorus.groups import (
     TrustFacade,
     WorkforceFacade,
 )
-from chorus.heartbeat import BeatRunner, BeatRunnerFor, Scheduler, TickReport, Wake
+from chorus.heartbeat import (
+    BeatRunner,
+    BeatRunnerFor,
+    BeatRunnerForFn,
+    Scheduler,
+    TickReport,
+    Wake,
+    runner_from,
+)
 from chorus.ledger import (
     Message,
     SqliteLedger,
@@ -44,7 +52,7 @@ from chorus.lifecycle import (
 )
 from chorus.memory import AppendOnlyMemoryWriter
 from chorus.observability import EventBus, LedgerInspector, WorkforceStatus
-from chorus.outcomes import Verifier
+from chorus.outcomes import LanderRegistry, Verifier
 from chorus.roles import RolePlugin, RoleRegistry, default_roles
 from chorus.trust import TrustPreset
 from chorus.workforce import (
@@ -112,7 +120,8 @@ class Chorus:
         memory_repo: str,
         dream: Any,
         beat_runner: BeatRunner | None = None,
-        beat_runner_for: BeatRunnerFor | None = None,
+        beat_runner_for: BeatRunnerFor | BeatRunnerForFn | None = None,
+        landers: LanderRegistry | None = None,
         roles: Sequence[RolePlugin] | None = None,
         caps: Caps | None = None,
         company_id: str = "company",
@@ -122,12 +131,21 @@ class Chorus:
         ``dream`` is the dream SDK facade/module — the single seam chorus calls
         for the planner→sprint→evaluator loop. ``beat_runner`` is the concrete dream
         adapter the scheduler runs each beat through; until it is supplied the kernel
-        ticks (recover/cron/monitors/dispatch) but cannot execute a beat. ``roles``
-        defaults to :func:`chorus.roles.default_roles`; extra roles register through
-        the same validated path (spec 09 §1).
+        ticks (recover/cron/monitors/dispatch) but cannot execute a beat. ``landers`` is the
+        symmetric *landing* seam — the registry the kernel lands a passed beat's deliverable
+        through (the consumer passes ``factory.landers``); unset, a passed beat still completes
+        but records no role artifact. ``roles`` defaults to :func:`chorus.roles.default_roles`;
+        extra roles register through the same validated path (spec 09 §1).
         """
         the_caps = caps or Caps()
         registry = RoleRegistry.from_plugins(roles if roles is not None else default_roles())
+        # The seam accepts either the resolver object or its bound method (the §0 front-door form,
+        # ``beat_runner_for=factory.runner_for``) — a bare callable is wrapped to the protocol.
+        resolved_runner_for: BeatRunnerFor | None
+        if beat_runner_for is None or isinstance(beat_runner_for, BeatRunnerFor):
+            resolved_runner_for = beat_runner_for
+        else:
+            resolved_runner_for = runner_from(beat_runner_for)
         ledger = SqliteLedger.open(db_path)
         # The live workforce is the ledger employee table — the single source of truth every
         # assignment FK points at (spec 06 §3). ``org_repo`` is the portable git-markdown
@@ -140,11 +158,12 @@ class Chorus:
             ledger=ledger,
             workforce=workforce,
             beat_runner=beat_runner,
-            beat_runner_for=beat_runner_for,  # role-faithful per-employee runners (spec 06 §2)
+            beat_runner_for=resolved_runner_for,  # role-faithful per-employee runners (spec 06 §2)
             event_bus=event_bus,
             # budgets are inert until a policy is created — injecting the enforcer just arms the gates
             budget_enforcer=BudgetEnforcer(ledger, company_id=company_id),
             roles=registry,  # a task inherits its assignee role's DoD at intake (spec 04 §1 / 06 §2)
+            landers=landers,  # the landing seam — a passed beat lands its role artifact (spec 04 §2)
         )
         return cls(
             ledger=ledger,

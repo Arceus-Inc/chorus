@@ -27,10 +27,12 @@ from dream.tools.builtin import default_registry
 
 from chorus.adapters import DreamBeatRunner, TokenPricing
 from chorus.heartbeat import BeatRunner, IntegrateContextPacket
+from chorus.outcomes import LanderRegistry
 from chorus.roles import RoleBeatConfig, RoleRegistry, role_beat_config
 from chorus.trust import TrustPolicy
 from chorus.workforce import Employee
 from chorus.workspace import CompanyWorkspace, default_work_root
+from chorus_employee import default_landers
 from chorus_harness._trust import apply_trust
 from chorus_tools import AssignTaskTool, DecomposeTool, SubmitTaskTool, SubmitVerdictTool
 
@@ -229,6 +231,18 @@ class EmployeeHarnessFactory:
     def company_root(self) -> Path:
         """The org's workspace root (``.chorus/work/{org}/``) — where landers find the worktrees."""
         return self._company_root
+
+    @property
+    def landers(self) -> LanderRegistry:
+        """The landing seam — the ``LanderRegistry`` the kernel lands passed beats through (spec 04 §2).
+
+        Symmetric with :meth:`runner_for`: the factory owns execution, so it owns how each employee's
+        deliverable lands. The consumer wires both at once —
+        ``Chorus.build(..., beat_runner_for=factory.runner_for, landers=factory.landers)`` — instead of
+        hand-building ``default_landers`` at every call site. The manager/reviewer landers come online
+        only when the factory holds the live ledger they read from.
+        """
+        return default_landers(self._company_root, ledger=self._ledger)
 
     def runner_for(self, employee: Employee, *, task_id: str | None = None) -> BeatRunner:
         """The :class:`~chorus.heartbeat.BeatRunnerFor` seam — the role-faithful runner for a beat."""

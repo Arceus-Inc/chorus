@@ -40,13 +40,15 @@ import dream
 
 factory = EmployeeHarnessFactory(company_root="./work", creds=...)
 org = Chorus.build(db_path="company.db", org_repo="./org", memory_repo="./memory",
-                   dream=dream, beat_runner_for=factory.runner_for)
+                   dream=dream,
+                   beat_runner_for=factory.runner_for,   # how a beat runs
+                   landers=factory.landers)              # how its output lands
 
 org.hire(name="moe", role="manager")
 org.hire(name="eng1", role="engineer", reports_to="moe")
-task = org.submit("build a login page", assignee="moe")   # ← stub today
+task = org.submit("build a login page", assignee="moe")
 await org.run_forever()                                   # the background heartbeat rolls it
-org.status()                                              # ← stub today
+org.status()
 ```
 
 The niche surfaces sit one level down, for power users / Arceus / the CLI:
@@ -230,13 +232,25 @@ implemented on the inspector.
 
 ---
 
-## 6. The construction contract (unchanged)
+## 6. The construction contract (two injection seams)
 
-This spec does **not** change how `Chorus` is built. `Chorus.build(..., beat_runner_for=…)` stays the
-single entry; the consumer supplies the execution engine via `chorus_harness` (which owns dream +
-creds), keeping chorus core dream-free and the four-repo boundary intact. A batteries-included
-`chorus_harness.build_company(creds=…)` wrapper (the default factory wired in ~3 lines) is a legitimate
-**separate, optional** follow-up — noted, not built.
+`Chorus.build(...)` stays the single entry; the consumer supplies the execution engine via
+`chorus_harness` (which owns dream + creds), keeping chorus core dream-free and the four-repo boundary
+intact. Two **symmetric injection seams** plug the harness into the dream-free kernel, both
+consumer-supplied (the kernel never imports `chorus_employee` or dream):
+
+- **Execution** — `beat_runner_for=factory.runner_for`: how a dispatched beat *runs* (the
+  role-faithful per-employee runner). The seam accepts either the resolver object or its bound method
+  (a bare callable is wrapped to the `BeatRunnerFor` protocol via `runner_from`), so the §0 front door
+  reads `beat_runner_for=factory.runner_for`.
+- **Landing** — `landers=factory.landers`: how a passed beat's deliverable *lands* (the engineer's PR
+  snapshot, the manager's subtree merge). The factory autowires `default_landers(company_root, ledger)`
+  and exposes it as a property; unset, a passed beat still completes but records no role artifact.
+
+Without the landing seam the §0 example would run a real beat whose output goes nowhere — so wiring it
+is part of completing the front door, not a construction-contract change in spirit. A batteries-included
+`chorus_harness.build_company(creds=…)` wrapper (both seams wired from one factory in ~3 lines) is a
+legitimate **separate, optional** follow-up — noted, not built.
 
 ---
 

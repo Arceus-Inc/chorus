@@ -30,6 +30,16 @@ class BeatRunnerFor(Protocol):
     def runner_for(self, employee: Employee, *, task_id: str | None = None) -> BeatRunner: ...
 
 
+class BeatRunnerForFn(Protocol):
+    """The callable form of the seam — ``factory.runner_for`` (a bound method) or any function.
+
+    Lets the composition root accept the resolver *function* directly, so the §0 front door reads
+    ``Chorus.build(..., beat_runner_for=factory.runner_for)`` instead of passing the whole factory.
+    """
+
+    def __call__(self, employee: Employee, *, task_id: str | None = None) -> BeatRunner: ...
+
+
 @dataclass(frozen=True)
 class _Single:
     """A :class:`BeatRunnerFor` that returns one fixed runner regardless of the employee."""
@@ -40,9 +50,24 @@ class _Single:
         return self.runner
 
 
+@dataclass(frozen=True)
+class _FromCallable:
+    """A :class:`BeatRunnerFor` backed by a resolver callable (e.g. a bound ``factory.runner_for``)."""
+
+    fn: BeatRunnerForFn
+
+    def runner_for(self, employee: Employee, *, task_id: str | None = None) -> BeatRunner:
+        return self.fn(employee, task_id=task_id)
+
+
 def single(runner: BeatRunner) -> BeatRunnerFor:
     """Wrap one :class:`BeatRunner` as a :class:`BeatRunnerFor` (one harness for every employee)."""
     return _Single(runner)
 
 
-__all__ = ["BeatRunnerFor", "single"]
+def runner_from(fn: BeatRunnerForFn) -> BeatRunnerFor:
+    """Adapt a resolver callable into a :class:`BeatRunnerFor` (the callable-seam form, §0)."""
+    return _FromCallable(fn)
+
+
+__all__ = ["BeatRunnerFor", "BeatRunnerForFn", "runner_from", "single"]
