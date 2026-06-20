@@ -350,6 +350,7 @@ class EmployeeHarnessFactory:
             runner=DreamBeatRunner(
                 harness,
                 pricing=self._pricing,
+                max_sprints=config.max_sprints,  # the role's per-beat sprint budget (spec 05)
                 timeout_s=self._timeout_s,
                 working_dir=root,
                 employee_id=employee.id,  # stamped into each beat's context for capability tools

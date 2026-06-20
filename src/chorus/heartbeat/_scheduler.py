@@ -1025,13 +1025,15 @@ class Scheduler:
     ) -> None:
         """A failed beat climbs the bounded self-repair ladder, owning the task's status (spec 04 §1).
 
-        Rung 1 (``Command`` DoD, budget left) — keep the task ``todo`` and re-wake the same assignee
-        to retry: a live wake means the recovery sweep leaves it alone. Rung 3 (budget spent) — set
-        ``blocked`` + a ``recovery_action`` for a human (no further retry). A non-Command failure has
-        no objective gate to retry, so it goes straight to ``blocked``.
+        A ``needs-changes`` beat means the step isn't done yet — so re-wake the same assignee to resume
+        it: a ``Command`` DoD re-runs its objective gate, a ``reviewed_build``/``agent_review`` continues
+        its (multi-sprint) build (spec 05, one-beat-one-sprint). Rung 1 (budget left) keeps the task
+        ``todo`` with a live recovery wake, so the recovery sweep leaves it alone; rung 3 (budget spent)
+        sets ``blocked`` + a ``recovery_action`` for a human. A task with **no** DoD has no objective
+        step to resume, so it blocks straight away.
         """
         ledger = self._require_ledger()
-        if verifier is None or verifier.kind is not DoDKind.COMMAND:
+        if verifier is None:
             ledger.tasks.set_status(task_id, TaskStatus.BLOCKED)
             return
         failures = sum(1 for run in ledger.runs.for_task(task_id) if run.status is RunStatus.FAILED)

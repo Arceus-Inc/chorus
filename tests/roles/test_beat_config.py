@@ -31,6 +31,14 @@ def test_projects_the_manifest_fields_the_beat_needs() -> None:
     assert config.sandbox == "repo-write"  # the trust posture (dream sandbox tier), as a plain string
 
 
+def test_max_sprints_defaults_to_one_and_projects_from_the_manifest() -> None:
+    """One beat = one sprint by default (spec 05); a role may widen its per-beat sprint budget so a
+    multi-sprint build finishes in a single beat instead of stranding on needs-changes."""
+    assert role_beat_config(RoleManifest(system_prompt="x")).max_sprints == 1
+    widened = RoleManifest(system_prompt="x", max_sprints=6)
+    assert role_beat_config(widened).max_sprints == 6
+
+
 def test_permission_modes_map_to_dream_strings() -> None:
     for mode, expected in [
         (PermissionMode.DEFAULT, "default"),

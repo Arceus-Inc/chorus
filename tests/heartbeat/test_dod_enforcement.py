@@ -237,4 +237,34 @@ async def test_failure_without_a_command_dod_just_blocks(ledger: SqliteLedger) -
     await _tick(ledger, _RecordingBeat(passed=False), employee)
 
     assert ledger.tasks.get("t1").status is TaskStatus.BLOCKED  # type: ignore[union-attr]
-    assert _recovery_wakes(ledger) == []  # self-repair is Command-DoD only
+    assert _recovery_wakes(ledger) == []  # no DoD → no objective step to resume → block
+
+
+async def test_non_command_dod_needs_changes_rewakes_to_continue(ledger: SqliteLedger) -> None:
+    """A reviewed_build/agent_review ``needs-changes`` beat means the (multi-sprint) build isn't done —
+    the kernel re-dispatches the assignee (bounded) to resume it, rather than stranding it ``blocked``
+    where no later beat can finish it (spec 04 §1, spec 05 one-beat-one-sprint)."""
+    employee = _seed(ledger)
+    ledger.dod.create("t1", Verifier.agent_review(reviewer_role="reviewer", rubric="correct"))
+
+    await _tick(ledger, _RecordingBeat(passed=False), employee)  # needs-changes, not done yet
+
+    assert ledger.tasks.get("t1").status is TaskStatus.TODO  # type: ignore[union-attr]
+    assert [w.payload.get("task_id") for w in _recovery_wakes(ledger)] == ["t1"]  # re-dispatched
+    assert ledger.recovery_actions.active_for_source("t1") is None  # not escalated yet
+
+
+async def test_non_command_dod_escalates_when_repair_budget_is_spent(ledger: SqliteLedger) -> None:
+    employee = _seed(ledger)
+    ledger.dod.create("t1", Verifier.agent_review(reviewer_role="reviewer", rubric="correct"))
+    beat = _RecordingBeat(passed=False)
+    sched = _scheduler(ledger, beat, employee, max_repair_attempts=1)
+
+    await sched.tick(_NOW)  # tick 1: needs-changes → 1 ≤ 1 → re-wake
+    await sched.drain()
+    assert _recovery_wakes(ledger)
+
+    await sched.tick(_NOW)  # tick 2: claims retry → needs-changes → 2 > 1 → escalate
+    await sched.drain()
+    assert ledger.recovery_actions.active_for_source("t1") is not None
+    assert ledger.tasks.get("t1").status is TaskStatus.BLOCKED  # type: ignore[union-attr]

@@ -48,6 +48,11 @@ def engineer_manifest() -> RoleManifest:
         wake_model=None,  # no cheaper wake model override
         # — build_harness(max_turns=…) —
         max_turns=12,  # coding is multi-step; a deeper budget than dream's default 8
+        # — per-beat sprint budget (spec 05) —
+        # A build is multi-sprint (dream needs up to NEEDS_CHANGES_LIMIT sprints to land a step): widen
+        # the budget so one engineer beat runs the build to pass, instead of stopping after one sprint
+        # with `needs-changes` and depending on re-dispatch to continue.
+        max_sprints=6,
         # — build_harness(mcp=…) / build_harness(plugins=…) —
         mcp=False,  # admit the working dir's MCP allowlist only when explicitly enabled
         plugins=False,  # load repo-local plugins only when explicitly enabled
