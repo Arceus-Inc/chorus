@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The little robot — heartbeat, checklist & cron, explained like you're 5</title>
+<style>
+  :root {
+    --ink: #1c1c1c;
+    --muted: #6b6b6b;
+    --line: #e3e3df;
+    --paper: #faf9f6;
+    --card: #ffffff;
+    --good: #2f7d54;
+    --good-bg: #eaf3ea;
+    --note: #fff8e1;
+    --note-edge: #e8b91f;
+    --beat: #c83b52;
+    --beat-bg: #fde7ea;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    color: var(--ink);
+    background: var(--paper);
+    line-height: 1.6;
+  }
+  .wrap { max-width: 860px; margin: 0 auto; padding: 40px 24px 80px; }
+  header h1 { font-size: 30px; margin: 0 0 6px; }
+  header p.sub { color: var(--muted); margin: 0 0 28px; font-size: 16px; }
+  .figure {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    padding: 18px;
+    margin: 0 0 36px;
+  }
+  .figure svg { width: 100%; height: auto; display: block; }
+  section { margin: 0 0 30px; }
+  h2 { font-size: 21px; margin: 0 0 8px; display: flex; align-items: center; gap: 10px; }
+  h2 .num {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 30px; height: 30px; border-radius: 50%;
+    background: #eef2f7; color: #3c5468; font-size: 15px; font-weight: 700; flex: none;
+  }
+  p { margin: 0 0 12px; font-size: 16px; }
+  .quote {
+    border-left: 4px solid var(--note-edge);
+    background: var(--note);
+    padding: 12px 16px; border-radius: 0 10px 10px 0;
+    font-size: 16px; margin: 12px 0;
+  }
+  pre {
+    background: #1e2430; color: #e6edf3; border-radius: 12px;
+    padding: 16px 18px; overflow-x: auto; font-size: 13.5px; line-height: 1.5;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  .callout {
+    background: var(--good-bg); border: 1px solid #a9d8bf;
+    border-radius: 14px; padding: 18px 20px; margin: 30px 0 0;
+  }
+  .callout h2 { color: var(--good); }
+  .callout .yes { color: var(--good); font-weight: 700; }
+  .callout .no { color: var(--beat); font-weight: 700; }
+  .pill {
+    display: inline-block; background: #fff; border: 1px solid var(--line);
+    border-radius: 999px; padding: 2px 10px; font-size: 13px; color: var(--muted);
+  }
+  footer { margin-top: 40px; color: var(--muted); font-size: 13px; text-align: center; }
+
+  .steps { display: flex; flex-direction: column; gap: 14px; margin: 14px 0 4px; }
+  .step {
+    background: var(--card); border: 1px solid var(--line);
+    border-left: 6px solid var(--s, #b7c2cb); border-radius: 12px; padding: 14px 18px;
+  }
+  .step h3 { margin: 0 0 4px; font-size: 17px; display: flex; align-items: center; gap: 9px; }
+  .step h3 .emoji { font-size: 20px; }
+  .step h3 .robot-word {
+    margin-left: auto; font-size: 12px; font-weight: 700; letter-spacing: .04em;
+    text-transform: lowercase; background: #eef2f7; color: #3c5468;
+    border-radius: 999px; padding: 3px 11px;
+  }
+  .step p { margin: 6px 0 0; font-size: 15px; }
+  .step .robot-says { color: var(--muted); font-size: 13.5px; margin-top: 8px; }
+  .step1 { --s: #e0a35a; } .step2 { --s: #e8b91f; }
+  .step3 { --s: #7a9ec4; } .step4 { --s: #4caf7d; }
+  .why {
+    background: #f4f1fb; border: 1px solid #d9cef0; border-radius: 14px;
+    padding: 16px 20px; margin-top: 18px;
+  }
+  .why h3 { margin: 0 0 8px; font-size: 16px; color: #5b3fa0; }
+  .why ol { margin: 0; padding-left: 20px; }
+  .why li { font-size: 15px; margin-bottom: 6px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <h1>🏠 The little robot who keeps the house running</h1>
+    <p class="sub">Heartbeat, checklist, and cron routines — explained as if you were five.</p>
+  </header>
+
+  <!-- ===== THE PICTURE ===== -->
+  <div class="figure">
+    <svg viewBox="0 0 780 600" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="t d">
+      <title id="t">How the robot, its checklist, and the fridge sticky-notes work together</title>
+      <desc id="d">A robot wakes up on each heartbeat beep, reads a 4-item checklist, and step 2 checks the fridge for cron sticky-notes. The fridge has one note but no pen, which is the M4 gap.</desc>
+      <defs>
+        <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0 0 L10 5 L0 10 z" fill="#4a90d9"/>
+        </marker>
+      </defs>
+
+      <text x="390" y="34" text-anchor="middle" font-size="22" font-weight="700" fill="#1c1c1c">The little robot who keeps the house running</text>
+
+      <!-- BEEP -->
+      <rect x="40" y="70" width="150" height="46" rx="23" fill="#fde7ea" stroke="#e0566b" stroke-width="2"/>
+      <text x="86" y="99" font-size="22">💓</text>
+      <text x="150" y="100" text-anchor="middle" font-size="17" font-weight="700" fill="#c83b52">BEEP!</text>
+      <text x="115" y="138" text-anchor="middle" font-size="12.5" fill="#6b6b6b">heartbeat — every 5 min</text>
+      <path d="M115 150 L115 178" stroke="#4a90d9" stroke-width="2.5" marker-end="url(#arrow)"/>
+
+      <!-- ROBOT -->
+      <line x1="115" y1="200" x2="115" y2="182" stroke="#6f93b3" stroke-width="3"/>
+      <text x="108" y="180" font-size="16">💗</text>
+      <rect x="72" y="198" width="86" height="64" rx="14" fill="#9bb8d3" stroke="#6f93b3" stroke-width="2.5"/>
+      <circle cx="98" cy="228" r="9" fill="#fff"/><circle cx="98" cy="228" r="4" fill="#1c1c1c"/>
+      <circle cx="132" cy="228" r="9" fill="#fff"/><circle cx="132" cy="228" r="4" fill="#1c1c1c"/>
+      <path d="M100 246 Q115 256 130 246" stroke="#3c5468" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+      <rect x="64" y="268" width="102" height="74" rx="12" fill="#b7d0e6" stroke="#6f93b3" stroke-width="2.5"/>
+      <text x="115" y="312" text-anchor="middle" font-size="13" font-weight="700" fill="#3c5468">🤖 robot</text>
+      <rect x="44" y="276" width="16" height="48" rx="8" fill="#9bb8d3" stroke="#6f93b3" stroke-width="2"/>
+      <rect x="170" y="276" width="16" height="48" rx="8" fill="#9bb8d3" stroke="#6f93b3" stroke-width="2"/>
+      <text x="115" y="364" text-anchor="middle" font-size="12.5" fill="#6b6b6b">wakes up, grabs checklist</text>
+      <path d="M192 300 L250 300" stroke="#4a90d9" stroke-width="2.5" marker-end="url(#arrow)"/>
+
+      <!-- CHECKLIST -->
+      <rect x="256" y="150" width="252" height="298" rx="12" fill="#f6f5f2" stroke="#cfcfcf" stroke-width="2"/>
+      <rect x="350" y="142" width="64" height="20" rx="6" fill="#c9c9c4" stroke="#a8a8a2" stroke-width="2"/>
+      <text x="382" y="186" text-anchor="middle" font-size="15" font-weight="700" fill="#1c1c1c">My checklist</text>
+      <text x="382" y="205" text-anchor="middle" font-size="11.5" fill="#6b6b6b">same 4 things, every beep — boring on purpose</text>
+
+      <rect x="272" y="220" width="220" height="44" rx="9" fill="#ffffff" stroke="#cfcfcf" stroke-width="1.5"/>
+      <text x="288" y="247" font-size="15">🩹</text>
+      <text x="312" y="240" font-size="13" font-weight="600" fill="#1c1c1c">1. Anyone stuck? Help them</text>
+      <text x="312" y="256" font-size="10.5" fill="#6b6b6b">recover</text>
+
+      <rect x="272" y="272" width="220" height="44" rx="9" fill="#fff8e1" stroke="#e8b91f" stroke-width="2"/>
+      <text x="288" y="299" font-size="15">🗒️</text>
+      <text x="312" y="292" font-size="13" font-weight="700" fill="#1c1c1c">2. Any sticky-note due? Do it</text>
+      <text x="312" y="308" font-size="10.5" fill="#a8851a" font-weight="600">cron routines  →  check the fridge</text>
+
+      <rect x="272" y="324" width="220" height="44" rx="9" fill="#ffffff" stroke="#cfcfcf" stroke-width="1.5"/>
+      <text x="288" y="351" font-size="15">⏰</text>
+      <text x="312" y="344" font-size="13" font-weight="600" fill="#1c1c1c">3. Any “wake me later” notes?</text>
+      <text x="312" y="360" font-size="10.5" fill="#6b6b6b">monitors</text>
+
+      <rect x="272" y="376" width="220" height="44" rx="9" fill="#ffffff" stroke="#cfcfcf" stroke-width="1.5"/>
+      <text x="288" y="403" font-size="15">🛠️</text>
+      <text x="312" y="396" font-size="13" font-weight="600" fill="#1c1c1c">4. Anyone ready? Go work</text>
+      <text x="312" y="412" font-size="10.5" fill="#6b6b6b">dispatch</text>
+
+      <path d="M494 294 L556 294" stroke="#4a90d9" stroke-width="2.5" marker-end="url(#arrow)"/>
+
+      <!-- FRIDGE -->
+      <rect x="560" y="150" width="170" height="298" rx="14" fill="#eef1f3" stroke="#b7c2cb" stroke-width="2.5"/>
+      <line x1="560" y1="232" x2="730" y2="232" stroke="#b7c2cb" stroke-width="2.5"/>
+      <rect x="700" y="174" width="9" height="34" rx="4" fill="#9aa7b0"/>
+      <rect x="700" y="250" width="9" height="40" rx="4" fill="#9aa7b0"/>
+      <text x="645" y="172" text-anchor="middle" font-size="12.5" font-weight="700" fill="#6b6b6b">the fridge</text>
+
+      <g transform="rotate(-4 624 300)">
+        <rect x="582" y="262" width="98" height="86" rx="4" fill="#ffd34d" stroke="#e8b91f" stroke-width="1.5"/>
+        <text x="631" y="286" text-anchor="middle" font-size="13">🪴</text>
+        <text x="631" y="306" text-anchor="middle" font-size="11" font-weight="700" fill="#6b5310">water</text>
+        <text x="631" y="321" text-anchor="middle" font-size="11" font-weight="700" fill="#6b5310">plants</text>
+        <text x="631" y="338" text-anchor="middle" font-size="10.5" fill="#8a6f1a">every 9am</text>
+      </g>
+      <text x="645" y="376" text-anchor="middle" font-size="11" fill="#6b6b6b">= a cron routine</text>
+
+      <rect x="585" y="392" width="120" height="42" rx="6" fill="none" stroke="#c0c0bb" stroke-width="1.5" stroke-dasharray="5 4"/>
+      <text x="645" y="410" text-anchor="middle" font-size="11" fill="#6b6b6b">empty slot…</text>
+      <text x="645" y="426" text-anchor="middle" font-size="11" font-weight="700" fill="#c83b52">🖊️ but no pen!</text>
+
+      <!-- BOTTOM BAND -->
+      <rect x="40" y="486" width="700" height="92" rx="14" fill="#eaf3ea" stroke="#4caf7d" stroke-width="2"/>
+      <text x="64" y="520" font-size="15" font-weight="700" fill="#2f7d54">The confusing bit, solved:</text>
+      <text x="64" y="544" font-size="13.5" fill="#1c1c1c">✅ The robot already checks the fridge every beep — that part works.</text>
+      <text x="64" y="566" font-size="13.5" fill="#1c1c1c">❌ But there’s no pen to write a sticky-note with, so the fridge is always empty.</text>
+      <text x="486" y="520" font-size="14" font-weight="700" fill="#2f7d54">M4 = give the house a pen 🖊️</text>
+      <text x="486" y="541" font-size="12" fill="#6b6b6b">(that’s the add_routine</text>
+      <text x="486" y="557" font-size="12" fill="#6b6b6b">verb — write the first note)</text>
+    </svg>
+  </div>
+
+  <!-- ===== THE WORDS ===== -->
+  <section>
+    <p>The house is your company. A little robot lives in it, and its whole job is to keep the
+    house running. But here's the thing about this robot: <strong>it can't think all the time.</strong>
+    It sleeps. Then it wakes up, does a quick round, and goes back to sleep. Over and over, forever.</p>
+  </section>
+
+  <section>
+    <h2><span class="num">1</span> The heartbeat = the robot waking up</h2>
+    <p>Every 5 minutes an alarm goes <em>beep</em>. The robot wakes up. 💓</p>
+    <p>That <strong>beep</strong> is the <strong>heartbeat</strong>. One beep = one wake-up = the robot
+    opens its eyes, does a round of chores, and goes back to sleep. If the alarm ever stopped, the robot
+    would sleep forever and <strong>nothing would ever get done</strong>. The beep is what makes the
+    house <em>alive</em> instead of a frozen room full of stuff.</p>
+    <div class="quote">One beep is called a <strong>tick</strong>. Beep = tick = “robot does one round.”</div>
+  </section>
+
+  <section>
+    <h2><span class="num">2</span> The checklist = what it does each time it wakes</h2>
+    <p>The robot is not clever. It doesn't improvise. Every time it wakes up it reads the
+    <strong>same little checklist</strong> and does the items <strong>in the same order</strong>:</p>
+    <pre>🤖 My checklist (I do this EVERY beep):
+   1. Did anyone fall down and get stuck? → help them up      (recover)
+   2. Is it time for any "every-day chores"? → start them     (cron)
+   3. Did anyone leave a note "wake me at 3pm"? → wake them    (monitors)
+   4. Is anyone ready to work? → tell them to go work          (dispatch)</pre>
+    <p>That's the <strong>checklist</strong> (in the code it's called the <em>tick</em>). Same 4 things,
+    same order, every beep. Boring = reliable.</p>
+  </section>
+
+  <section>
+    <h2><span class="num">3</span> A cron routine = a sticky-note on the fridge</h2>
+    <p>Item <strong>2</strong> of the checklist (“every-day chores”) is where <strong>cron routines</strong>
+    come in. A cron routine is just a <strong>sticky-note</strong> on the fridge:</p>
+    <div class="quote">🟨 <em>“Water the plants every morning at 9am.”</em></div>
+    <p>The robot doesn't water the plants because it's smart. It waters them because <strong>every time
+    it wakes up, item 2 says “check the fridge — is any chore due right now?”</strong> At 9am one morning
+    it wakes, reads the note, sees “yep, 9am,” and starts the plant-watering job.</p>
+    <ul>
+      <li>The <strong>sticky-note</strong> = the cron routine (the standing instruction).</li>
+      <li>The <strong>“9am every morning”</strong> = the <strong>cron</strong> (the schedule — <em>when</em>).</li>
+      <li>The robot <strong>reading the notes on its round</strong> = the scheduler's cron step.</li>
+    </ul>
+  </section>
+
+  <div class="callout">
+    <h2>The one confusing bit, made simple</h2>
+    <p><span class="yes">✅ The robot already checks the fridge</span> for sticky-notes every round —
+    that part works.</p>
+    <p><span class="no">❌ But there's no pen in the house</span> to write a sticky-note with. So the
+    fridge is always empty, and the robot keeps checking nothing.</p>
+    <p style="margin-bottom:0"><strong>M4 is just: give the house a pen</strong> 🖊️ so you can finally
+    write a note (“water the plants at 9am”). The moment you write one, the robot — who's been checking
+    the empty fridge this whole time — starts doing it. That “pen” is the
+    <span class="pill">add_routine</span> verb.</p>
+  </div>
+
+  <section>
+    <h2><span class="num">4</span> The round, one chore at a time</h2>
+    <p>Remember the robot's checklist has 4 items, and it always does them <strong>in this exact
+    order</strong>: <strong>recover → cron → monitors → dispatch</strong>. Here's what each one really
+    means, in house words.</p>
+
+    <div class="steps">
+
+      <div class="step step1">
+        <h3><span class="emoji">🩹</span> 1. Pick up anyone who fell down <span class="robot-word">recover</span></h3>
+        <p>Imagine someone was carrying a tall pile of laundry, tripped, and is now stuck on the floor
+        under it. <strong>Before</strong> starting anything new, the robot looks around: did anyone get
+        stuck mid-chore? If so, it helps them up and puts their half-done work back where everyone can
+        see it. You do this <em>first</em> — because if you start new chores while someone's stuck under
+        the laundry, you'll just trip over them and make a bigger mess.</p>
+        <p class="robot-says">🤖 In robot words: a worker was doing a job but its “beat” froze or died.
+        Recover makes that lost work <em>visible</em> again so it isn't forgotten forever.</p>
+      </div>
+
+      <div class="step step2">
+        <h3><span class="emoji">🗒️</span> 2. Do the chores that are due now <span class="robot-word">cron</span></h3>
+        <p>Now the robot reads the <strong>fridge sticky-notes</strong> (the cron routines). Is any one
+        of them due right this minute? If it's 9am and the note says “water the plants every 9am,” the
+        robot starts that chore. Notes that aren't due yet are left alone for a later round.</p>
+        <p class="robot-says">🤖 In robot words: check every routine's schedule; for each one that's
+        due, <em>fire</em> it — which creates a fresh task. (This is the step that was always checking an
+        empty fridge until we add a pen!)</p>
+      </div>
+
+      <div class="step step3">
+        <h3><span class="emoji">⏰</span> 3. Wake the people who asked to be woken <span class="robot-word">monitors</span></h3>
+        <p>Earlier, someone said: “I can't frost the cake until it finishes baking — come poke me in 30
+        minutes.” That's a <strong>personal alarm they set for themselves</strong>. The robot checks: has
+        it been 30 minutes yet? If yes, it goes and pokes them so they can carry on.</p>
+        <p class="robot-says">🤖 In robot words: a task parked itself with “wake me later.” A monitor is
+        that snooze alarm. <em>How is this different from cron?</em> Cron is a <strong>repeating</strong>
+        note on the fridge for everyone (“every 9am, forever”). A monitor is a <strong>one-time</strong>
+        “wake <em>me</em> at this moment” that a single worker left for itself.</p>
+      </div>
+
+      <div class="step step4">
+        <h3><span class="emoji">🛠️</span> 4. Send everyone who's ready off to work <span class="robot-word">dispatch</span></h3>
+        <p>Finally, the robot looks around the tidied-up house: who is awake, has a job to do, and has
+        nothing blocking them? It taps each of them on the shoulder — “you, go do your job now” — and
+        they get to work. <strong>This is the only step where the actual work happens</strong>; the first
+        three were all getting-ready.</p>
+        <p class="robot-says">🤖 In robot words: find every task that's eligible right now and start a
+        <em>beat</em> for it — the real call where an employee actually does something.</p>
+      </div>
+
+    </div>
+
+    <div class="why">
+      <h3>🧠 Why this exact order? (it's not random)</h3>
+      <ol>
+        <li><strong>Recover first</strong> — pick up the fallen person before anything, or you'll keep
+        tripping over them.</li>
+        <li><strong>Cron second</strong> — start the timed chores so a 9am job never gets missed.</li>
+        <li><strong>Monitors third</strong> — poke awake anyone whose snooze alarm just went off.</li>
+        <li><strong>Dispatch last</strong> — only <em>now</em> send people to work, because steps 1–3
+        may have just freed a stuck worker or created brand-new jobs. Doing “go work” last means the
+        robot acts on the <strong>freshest, tidiest picture</strong> of the house.</li>
+      </ol>
+    </div>
+  </section>
+
+  <footer>chorus · explainer · heartbeat &amp; cron routines, for humans of any age</footer>
+</div>
+</body>
+</html>

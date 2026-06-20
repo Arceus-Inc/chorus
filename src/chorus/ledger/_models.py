@@ -227,7 +227,7 @@ class Routine:
     goal_id: str | None = None
     parent_task_id: str | None = None
     target: RoutineTarget = RoutineTarget.SPAWN_TASK
-    concurrency_policy: RoutineConcurrency = RoutineConcurrency.SKIP_IF_ACTIVE
+    concurrency_policy: RoutineConcurrency = RoutineConcurrency.COALESCE  # M4 S1: safe-by-default
     catch_up_policy: RoutineCatchUp = RoutineCatchUp.SKIP_MISSED
     status: RoutineStatus = RoutineStatus.ACTIVE
     created_at: datetime | None = None
