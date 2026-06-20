@@ -147,10 +147,11 @@ a recorded verdict") applied to routines.
 
 ### 2.4 Migration
 
-One migration `0018_routine_revisions.sql` (the rename-rebuild parity pattern, cf. 0014–0017):
+One migration `0019_routine_revisions.sql` (the rename-rebuild parity pattern, cf. 0014–0018):
 adds `routine.env` / `latest_revision_id` / `latest_revision_no` / `routine_key` (+ the
-`(employee_id, routine_key)` unique index of §5.2), adds `routine_run.routine_revision_id`, creates
-`routine_revision`, and flips the `routine.concurrency_policy` default to `coalesce`.
+`(employee_id, routine_key)` unique index of §5.2), adds `routine_run.routine_revision_id`, and
+creates `routine_revision`. (S1 already shipped `0018` as the coalesce-default flip, so the revision
+schema lands as `0019` — `routine` and `routine_run` are both rebuilt for clean column placement.)
 Existing routines (none in a fresh DB; defensively, any seeded) get a synthesized revision 1 from
 their current columns. Parity test `tests/ledger/test_schema_parity.py` compares migrated DDL to the
 declarative `schema/*.sql`.
@@ -333,7 +334,7 @@ Each slice is RED → GREEN → REFACTOR, gated by `uv run ruff check` + `uv run
 |---|---|---|
 | **S0** | **Regression floor** — characterization tests pinning the *current* `fire_routine` (concurrency, catch-up, exact-once, typed origin) before any change | existing engine behaviour is locked green |
 | **S1** | **Reachability** — implement `add_routine` (wire `routines.create` + `triggers.create` + `parse_cron`); `routine` CLI noun; flip default → `coalesce` | `routine add` → tick fires it → spawns a task → dispatch runs it (keyed e2e) |
-| **S2** | **Revisions** — migration 0018 (`routine_revision` + `routine.env`/`latest_revision_*` + `routine_run.routine_revision_id` + `routine.routine_key`); `revise/restore`; run pins revision | edit a routine mid-flight → the live run keeps the pinned definition; restore writes a new head |
+| **S2** ✅ | **Revisions** — migration 0019 (`routine_revision` + `routine.env`/`latest_revision_*` + `routine_run.routine_revision_id` + `routine.routine_key`); `revise/restore`; run pins revision | edit a routine mid-flight → the live run keeps the pinned definition; restore writes a new head |
 | **S3** | **Env bindings** — `routine.env` validated at `add_routine` + applied at materialize via §4 boundary | inline-secret env rejected; allow-listed `ref:` passes; spawned task can resolve it |
 | **S4** | **PM plugin** — `chorus_employee/pm` (brief, DoD, lander) + registry | a PM routine fires → lands a `plan_doc` artifact |
 | **S5** | **Analyst plugin** — `chorus_employee/analyst` (brief, DoD, lander) + registry | an Analyst routine fires → lands a `findings_doc` artifact |
