@@ -59,6 +59,11 @@ _DISPATCH_RECOVERY: dict[str, str] = {
 }
 
 
+# A blocker in one of these terminal states can never become ``done`` — a task waiting on it can
+# never run, so the dependency is permanently unsatisfiable (spec 02 §2).
+_FAILED_BLOCKER = frozenset({TaskStatus.REJECTED, TaskStatus.CANCELLED})
+
+
 @dataclass(frozen=True)
 class ReconcileReport:
     """What one :func:`reconcile` pass did - empty lists mean a quiet, fully-recovered ledger."""
@@ -67,15 +72,104 @@ class ReconcileReport:
     recovered: list[str] = field(default_factory=list)
     opened: list[str] = field(default_factory=list)
     folded: list[str] = field(default_factory=list)
+    cascaded: list[str] = field(default_factory=list)
 
 
 def reconcile(ledger: SqliteLedger, *, now: datetime) -> ReconcileReport:
     """Run one ordered recovery sweep over the ledger (spec 02 §7); see module docstring."""
     reaped = _reap_orphaned_runs(ledger, now=now)
+    cascaded = _cascade_failed_prerequisites(ledger)
+    cascaded += _terminalize_stranded_children(ledger)
     recovered, opened = _reconcile_stranded(ledger, now=now)
     folded = _fold_terminal_sources(ledger)
     return ReconcileReport(
-        reaped_runs=reaped, recovered=recovered, opened=opened, folded=folded
+        reaped_runs=reaped, recovered=recovered, opened=opened, folded=folded, cascaded=cascaded
+    )
+
+
+def _terminalize_stranded_children(ledger: SqliteLedger) -> list[str]:
+    """Terminalize a *child* stranded on a recovery card so its parent can integrate (spec 02 §6).
+
+    A child whose automatic recovery is spent sits ``blocked`` behind a ``recovery_action`` waiting for a
+    human. With no human in the loop (an autonomous ``org.start()`` company) that deadlocks its parent's
+    integration forever — the subtree never goes wholly terminal, so the manager never gets its react
+    beat. Reject the dead child (a failed deliverable the manager reacts to / the bounded integrate cap
+    absorbs) and wake the parent. A *top-level* task (no parent) is **not** auto-killed: its failure is a
+    human's to resolve, so it keeps escalating, unchanged."""
+    terminalized: list[str] = []
+    for task in ledger.tasks.agent_owned_open():
+        if task.status is not TaskStatus.BLOCKED or task.parent_id is None:
+            continue
+        if ledger.recovery_actions.active_for_source(task.id) is None:
+            continue
+        with ledger.transaction():
+            ledger.tasks.set_status(task.id, TaskStatus.REJECTED)
+            record_activity(
+                ledger,
+                verb=ActivityVerb.RECOVERED,
+                subject_id=task.id,
+                actor_employee_id=task.assignee_employee_id,
+                payload={"cause": "stranded_child_terminalized"},
+            )
+        _wake_parent_if_subtree_terminal(ledger, parent_id=task.parent_id)
+        terminalized.append(task.id)
+    return terminalized
+
+
+# -- failed-prerequisite cascade (don't deadlock a subtree on a rejected child) ------------------
+
+
+def _cascade_failed_prerequisites(ledger: SqliteLedger) -> list[str]:
+    """Cancel any open task whose blocker reached a terminal-but-not-``done`` state (spec 02 §2/§6).
+
+    A reviewer block (``rejected``) or a cancel leaves the dependency permanently unsatisfiable: the
+    dependent can neither dispatch (its blocker never resolves) nor finish (it stays ``todo``), so the
+    parent subtree never terminalizes and a manager never gets its integrate/react beat — a deadlock.
+    Cancelling the doomed dependent terminalizes the subtree and wakes the parent (``children_done``),
+    handing the decision back to the manager, whose ``submit_task`` / ``assign_task`` redo the branch.
+    """
+    cascaded: list[str] = []
+    for task in ledger.tasks.agent_owned_open():
+        failed = [
+            blocker_id
+            for blocker_id in ledger.dependencies.blockers(task.id)
+            if (blocker := ledger.tasks.get(blocker_id)) is not None
+            and blocker.status in _FAILED_BLOCKER
+            # A parent gates on its *own* child (``gates_parent``): a rejected child is the manager's
+            # to *react* to (integrate sees ``react``), never a reason to cancel the parent. Only a
+            # failed *sibling / external* prerequisite — one the task can't itself redo — cascades.
+            and blocker.parent_id != task.id
+        ]
+        if not failed:
+            continue
+        with ledger.transaction():
+            ledger.tasks.set_status(task.id, TaskStatus.CANCELLED)
+            record_activity(
+                ledger,
+                verb=ActivityVerb.RECOVERED,
+                subject_id=task.id,
+                actor_employee_id=task.assignee_employee_id,
+                payload={"cause": "prerequisite_failed", "failed_blockers": failed},
+            )
+        _wake_parent_if_subtree_terminal(ledger, parent_id=task.parent_id)
+        cascaded.append(task.id)
+    return cascaded
+
+
+def _wake_parent_if_subtree_terminal(ledger: SqliteLedger, *, parent_id: str | None) -> None:
+    """A ``children_done`` wake to the parent once its subtree is wholly terminal — its react beat."""
+    if parent_id is None or not ledger.tasks.all_children_terminal(parent_id):
+        return
+    parent = ledger.tasks.get(parent_id)
+    if parent is None or parent.assignee_employee_id is None:
+        return
+    ledger.wakes.enqueue(
+        Wake(
+            id=f"wake_{uuid.uuid4().hex[:12]}",
+            employee_id=parent.assignee_employee_id,
+            reason=WakeReason.CHILDREN_DONE,
+            payload={"task_id": parent_id},
+        )
     )
 
 

@@ -39,6 +39,7 @@ class RoleBeatConfig:
     sandbox: str = "repo-write"
     model: str | None = None
     max_turns: int = 8
+    max_sprints: int = 1  # per-beat sprint budget (spec 05): 1 = one beat is one sprint
     working_memory: bool = False
     wake_model: str | None = None
     mcp: bool = False
@@ -58,6 +59,7 @@ def role_beat_config(manifest: RoleManifest) -> RoleBeatConfig:
         sandbox=manifest.sandbox.value,
         model=manifest.model,
         max_turns=manifest.max_turns,
+        max_sprints=manifest.max_sprints,
         working_memory=manifest.working_memory,
         wake_model=manifest.wake_model,
         mcp=manifest.mcp,

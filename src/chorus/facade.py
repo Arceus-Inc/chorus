@@ -13,53 +13,53 @@ below; the behavior is stubbed pending implementation (M1+, spec 11 build plan).
 
 from __future__ import annotations
 
+import asyncio
 import uuid
-from collections.abc import Iterator, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import UTC, datetime
 from typing import Any
 
 from chorus.budgets import BudgetEnforcer
-from chorus.cron import parse_cron
 from chorus.errors import OrgInvariantViolation
-from chorus.events import Event
-from chorus.governance import GovernancePolicy, GovernanceResolver
-from chorus.heartbeat import BeatRunner, BeatRunnerFor, Scheduler, TickReport, Wake
+from chorus.governance import GovernancePolicy
+from chorus.groups import (
+    BudgetsFacade,
+    DodFacade,
+    GovernanceFacade,
+    InspectFacade,
+    RoutinesFacade,
+    TrustFacade,
+    WorkforceFacade,
+)
+from chorus.heartbeat import (
+    BeatRunner,
+    BeatRunnerFor,
+    BeatRunnerForFn,
+    Scheduler,
+    TickReport,
+    Wake,
+    runner_from,
+)
 from chorus.ledger import (
-    Approval,
-    ApprovalAction,
-    ApprovalSubjectKind,
-    BudgetPolicy,
-    BudgetScope,
     Message,
-    Routine,
-    RoutineCatchUp,
-    RoutineConcurrency,
-    RoutineStatus,
-    RoutineTarget,
-    RoutineTrigger,
     SqliteLedger,
     Task,
-    TriggerKind,
+    TaskPriority,
 )
 from chorus.lifecycle import (
     DEFAULT_REQUEST_DEPTH_CAP,
-    ReviseOutcome,
     assign_task,
     deliver_message,
-    revise_dod,
 )
 from chorus.memory import AppendOnlyMemoryWriter
-from chorus.observability import EventBus, LedgerInspector, RoutineView, TaskView, WorkforceStatus
-from chorus.outcomes import Verifier
+from chorus.observability import EventBus, LedgerInspector, WorkforceStatus
+from chorus.outcomes import LanderRegistry, Verifier
 from chorus.roles import RolePlugin, RoleRegistry, default_roles
+from chorus.trust import TrustPreset
 from chorus.workforce import (
     Employee,
-    EmployeeStatus,
-    GitWorkforce,
     LedgerWorkforce,
     Workforce,
-    copy_org,
     slugify,
 )
 
@@ -71,17 +71,6 @@ class Caps:
     max_concurrent_runs: int = 4
     request_depth_cap: int = DEFAULT_REQUEST_DEPTH_CAP
     tick_interval_s: float = 1.0
-
-
-@dataclass(frozen=True)
-class HireRequest:
-    """The result of :meth:`Chorus.request_hire` (spec 04 §5 ``hire_employee``).
-
-    ``approval`` is the pending ``hire_employee`` gate when the policy required sign-off, else ``None``
-    (the employee was hired directly and is already active)."""
-
-    employee: Employee
-    approval: Approval | None
 
 
 class Chorus:
@@ -100,6 +89,7 @@ class Chorus:
         roles: RoleRegistry,
         caps: Caps,
         governance_policy: GovernancePolicy | None = None,
+        company_id: str = "company",
     ) -> None:
         self._ledger = ledger
         self._workforce = workforce
@@ -111,6 +101,15 @@ class Chorus:
         self._roles = roles
         self._caps = caps
         self._governance_policy = governance_policy or GovernancePolicy()
+        # Low-level grouped surfaces (spec 14 §2.2) — built once over the same backends.
+        self._inspect = InspectFacade(inspector, event_bus)
+        self._governance = GovernanceFacade(ledger, workforce, roles, self._governance_policy)
+        self._budgets = BudgetsFacade(ledger, company_id=company_id)
+        self._trust = TrustFacade(ledger)
+        self._routines = RoutinesFacade(ledger, workforce, inspector)
+        self._workforce_grp = WorkforceFacade(workforce, roles)
+        self._dod = DodFacade(ledger)
+        self._heartbeat: asyncio.Task[None] | None = None  # the managed always-on runner (start/stop)
 
     # -- construction ---------------------------------------------------------
 
@@ -118,12 +117,14 @@ class Chorus:
     def build(
         cls,
         *,
-        db_path: str,
+        db_path: str | None = None,
+        ledger: SqliteLedger | None = None,
         org_repo: str,
         memory_repo: str,
         dream: Any,
         beat_runner: BeatRunner | None = None,
-        beat_runner_for: BeatRunnerFor | None = None,
+        beat_runner_for: BeatRunnerFor | BeatRunnerForFn | None = None,
+        landers: LanderRegistry | None = None,
         roles: Sequence[RolePlugin] | None = None,
         caps: Caps | None = None,
         company_id: str = "company",
@@ -133,40 +134,61 @@ class Chorus:
         ``dream`` is the dream SDK facade/module — the single seam chorus calls
         for the planner→sprint→evaluator loop. ``beat_runner`` is the concrete dream
         adapter the scheduler runs each beat through; until it is supplied the kernel
-        ticks (recover/cron/monitors/dispatch) but cannot execute a beat. ``roles``
-        defaults to :func:`chorus.roles.default_roles`; extra roles register through
-        the same validated path (spec 09 §1).
+        ticks (recover/cron/monitors/dispatch) but cannot execute a beat. ``landers`` is the
+        symmetric *landing* seam — the registry the kernel lands a passed beat's deliverable
+        through (the consumer passes ``factory.landers``); unset, a passed beat still completes
+        but records no role artifact. Pass **exactly one** of ``db_path`` (open a fresh store) or
+        ``ledger`` (share an already-open store with the harness factory, so a reviewer's verdict
+        and the factory's capability tools land in *one* ledger, not two). ``roles`` defaults to
+        :func:`chorus.roles.default_roles`; extra roles register through the same validated path
+        (spec 09 §1).
         """
+        if db_path is not None and ledger is not None:
+            raise ValueError("provide either db_path or ledger, not both")
         the_caps = caps or Caps()
         registry = RoleRegistry.from_plugins(roles if roles is not None else default_roles())
-        ledger = SqliteLedger.open(db_path)
+        # The seam accepts either the resolver object or its bound method (the §0 front-door form,
+        # ``beat_runner_for=factory.runner_for``) — a bare callable is wrapped to the protocol.
+        resolved_runner_for: BeatRunnerFor | None
+        if beat_runner_for is None or isinstance(beat_runner_for, BeatRunnerFor):
+            resolved_runner_for = beat_runner_for
+        else:
+            resolved_runner_for = runner_from(beat_runner_for)
+        if ledger is not None:
+            store = ledger
+        elif db_path is not None:
+            store = SqliteLedger.open(db_path)
+        else:
+            raise ValueError("provide exactly one of db_path or ledger")
         # The live workforce is the ledger employee table — the single source of truth every
         # assignment FK points at (spec 06 §3). ``org_repo`` is the portable git-markdown
         # export/import location (spec 09 §3, the GitWorkforce codec), not a second live store.
-        workforce = LedgerWorkforce(ledger.employees)
+        workforce = LedgerWorkforce(store.employees)
         event_bus = EventBus()
         scheduler = Scheduler(
             tick_interval_s=the_caps.tick_interval_s,
             max_concurrent_runs=the_caps.max_concurrent_runs,
-            ledger=ledger,
+            ledger=store,
             workforce=workforce,
             beat_runner=beat_runner,
-            beat_runner_for=beat_runner_for,  # role-faithful per-employee runners (spec 06 §2)
+            beat_runner_for=resolved_runner_for,  # role-faithful per-employee runners (spec 06 §2)
             event_bus=event_bus,
             # budgets are inert until a policy is created — injecting the enforcer just arms the gates
-            budget_enforcer=BudgetEnforcer(ledger, company_id=company_id),
+            budget_enforcer=BudgetEnforcer(store, company_id=company_id),
             roles=registry,  # a task inherits its assignee role's DoD at intake (spec 04 §1 / 06 §2)
+            landers=landers,  # the landing seam — a passed beat lands its role artifact (spec 04 §2)
         )
         return cls(
-            ledger=ledger,
+            ledger=store,
             workforce=workforce,
             memory_writer=AppendOnlyMemoryWriter(memory_repo),
             scheduler=scheduler,
             event_bus=event_bus,
-            inspector=LedgerInspector(ledger),
+            inspector=LedgerInspector(store),
             dream=dream,
             roles=registry,
             caps=the_caps,
+            company_id=company_id,
         )
 
     # -- intake (horizon handoff seam, spec 10 §5) ----------------------------
@@ -178,14 +200,35 @@ class Chorus:
         assignee: str | None = None,
         dod: Verifier | None = None,
         depends_on: Sequence[str] = (),
+        priority: TaskPriority = TaskPriority.MEDIUM,
+        trust_preset: TrustPreset | None = None,
+        trust_boundary: dict[str, object] | None = None,
     ) -> Task:
-        """Create a flat ``depth=0`` intake task (spec 10 §5).
+        """Create a flat ``depth=0`` intake task, optionally wired in one call (spec 10 §5 / 14 §3).
 
-        The reserved intake seam: today the stub; when horizon ships it becomes
-        the writer of intake and drives this same path. chorus never grows a
-        second intake door.
+        The high-level front door: ``submit("build a login page", assignee="moe")`` creates the task,
+        sets its DoD + dependencies if given, and hands it to its owner (``backlog`` → ``todo`` + a
+        wake). ``assignee`` is resolved by slug and fail-closed (an unknown employee raises
+        ``UnknownEmployee`` before anything is written). The reserved intake seam: when horizon ships
+        it drives this same path — chorus never grows a second intake door.
         """
-        raise NotImplementedError("spec 10 §5: intake stub → task(depth=0)")
+        employee_id = self._workforce.get(slugify(assignee)).id if assignee is not None else None
+        task = self._ledger.tasks.submit(
+            Task(
+                id=f"task_{uuid.uuid4().hex[:12]}",
+                intent=intent,
+                priority=priority,
+                trust_preset=trust_preset.value if trust_preset is not None else None,
+                trust_boundary=trust_boundary,
+            )
+        )
+        if dod is not None:
+            self._ledger.dod.create(task.id, dod)
+        for blocker in depends_on:
+            self._ledger.dependencies.add(task.id, blocker)
+        if employee_id is not None:
+            assign_task(self._ledger, task.id, employee_id)
+        return task
 
     def assign(
         self, task_id: str, employee_id: str, *, assigned_by: str | None = None
@@ -208,13 +251,44 @@ class Chorus:
         """One kernel pulse, stamped with the kernel clock (spec 03 §3)."""
         return await self._scheduler.tick_once()
 
+    async def drain(self) -> None:
+        """Await every beat this pulse dispatched (spec 03 §3).
+
+        :meth:`tick` returns as soon as it has *dispatched* — the beats run on. ``await org.tick();
+        await org.drain()`` is the deterministic step: it runs one pulse and blocks until that pulse's
+        beats finish, so a caller can advance a multi-beat flow (build → review → integrate) one
+        settled step at a time. :meth:`run_forever` does this for every pulse internally.
+        """
+        await self._scheduler.drain()
+
     async def run_forever(self) -> None:
         """Run the heartbeat until :meth:`stop` (or cancellation), draining beats on exit (spec 03 §3)."""
         await self._scheduler.run()
 
-    def stop(self) -> None:
-        """Signal :meth:`run_forever` to exit after the current pulse (spec 03 §3)."""
+    def start(self) -> None:
+        """Start the heartbeat as a managed background task — the concurrent always-on runner (spec 03 §3).
+
+        Returns immediately and the kernel pulses in the background, running up to
+        ``Caps.max_concurrent_runs`` beats at once with no per-pulse barrier (a freed slot is filled the
+        next pulse — strictly more concurrent than a drain-per-pulse loop). Idempotent: a second
+        ``start`` while one is live is a no-op. Pair with :meth:`stop`. Requires a running event loop
+        (the facade is async-native); for a single deterministic advance use :meth:`tick` + :meth:`drain`.
+        """
+        if self._heartbeat is not None and not self._heartbeat.done():
+            return
+        self._heartbeat = asyncio.create_task(self._scheduler.run())
+
+    async def stop(self) -> None:
+        """Stop the heartbeat after the current pulse and await its in-flight beats (spec 03 §3).
+
+        Signals the loop to exit, then awaits the managed :meth:`start` task so its beats drain before
+        ``stop`` returns. A no-op-safe signal when the heartbeat was never started (e.g. a caller driving
+        :meth:`run_forever` itself just gets the stop signal and awaits its own task).
+        """
         self._scheduler.stop()
+        if self._heartbeat is not None:
+            await self._heartbeat
+            self._heartbeat = None
 
     # -- org as data (spec 06 §3) ---------------------------------------------
 
@@ -228,77 +302,35 @@ class Chorus:
             raise OrgInvariantViolation(f"unknown role {role!r}")
         return self._workforce.hire(name=name, role=role, reports_to=reports_to)
 
-    def revise_dod(
-        self, task_id: str, new_verifier: Verifier, *, revised_by: str
-    ) -> ReviseOutcome:
-        """Revise a task's DoD (spec 04 §1): a manager tighten applies now; a loosen opens a §5 gate.
+    @property
+    def routines(self) -> RoutinesFacade:
+        """``org.routines`` — recurring work: add / list / get / pause / resume (spec 13)."""
+        return self._routines
 
-        Raises ``RevisionAuthorityError`` if ``revised_by`` is not the assignee's manager, or
-        ``NoRevision`` if the task has no DoD / the edit is a no-op."""
-        return revise_dod(
-            self._ledger, task_id=task_id, new_verifier=new_verifier, revised_by=revised_by
-        )
+    @property
+    def workforce(self) -> WorkforceFacade:
+        """``org.workforce`` — register_role + portable export/import_ (spec 09)."""
+        return self._workforce_grp
 
-    def request_hire(
-        self,
-        *,
-        name: str,
-        role: str,
-        reports_to: str | None = None,
-        budget_cents: int | None = None,
-    ) -> HireRequest:
-        """Hire an employee, gated by policy (spec 04 §5 ``hire_employee``).
+    @property
+    def dod(self) -> DodFacade:
+        """``org.dod`` — revise a task's Definition of Done (spec 04 §1)."""
+        return self._dod
 
-        When ``governance_policy.hire_gate_required()``, the employee is created ``pending``
-        (uninvokable) with its budget policy and a ``hire_employee`` approval is opened — a human
-        approves (→ ``active``) or denies (→ ``terminated``). Otherwise the employee is hired directly,
-        exactly as :meth:`hire` (the empty default policy reproduces today's behaviour)."""
-        if role not in self._roles:
-            raise OrgInvariantViolation(f"unknown role {role!r}")
-        gated = self._governance_policy.hire_gate_required()
-        status = EmployeeStatus.PENDING if gated else EmployeeStatus.IDLE
-        employee = self._workforce.hire(
-            name=name, role=role, reports_to=reports_to, status=status
-        )
-        if budget_cents is not None:
-            self._create_employee_budget(employee.id, budget_cents)
-        if not gated:
-            return HireRequest(employee=employee, approval=None)
-        approval = GovernanceResolver(self._ledger).open(
-            action=ApprovalAction.HIRE_EMPLOYEE,
-            subject_kind=ApprovalSubjectKind.EMPLOYEE,
-            subject_id=employee.id,
-            reason=f"hire {name} as {role}",
-        )
-        return HireRequest(employee=employee, approval=approval)
+    @property
+    def governance(self) -> GovernanceFacade:
+        """``org.governance`` — request/open gates, resolve them (approve/deny), read the open inbox."""
+        return self._governance
 
-    def request_promotion(self, artifact_id: str) -> Approval | None:
-        """Promote a landed artifact to the board, gated by policy (spec 04 §5 ``board_approval``).
+    @property
+    def budgets(self) -> BudgetsFacade:
+        """``org.budgets`` — set token-salary caps, raise_/dismiss after a breach (spec 04 §3)."""
+        return self._budgets
 
-        When ``governance_policy.board_gate_required(<artifact class>)``, opens a ``board_approval``
-        gate on the artifact (a human approves the promotion); otherwise returns ``None`` (promotion is
-        ungated). Raises ``OrgInvariantViolation`` if the artifact is unknown."""
-        artifact = self._ledger.artifacts.get(artifact_id)
-        if artifact is None:
-            raise OrgInvariantViolation(f"no such artifact {artifact_id!r}")
-        if not self._governance_policy.board_gate_required(artifact.type.value):
-            return None
-        return GovernanceResolver(self._ledger).open(
-            action=ApprovalAction.BOARD_APPROVAL,
-            subject_kind=ApprovalSubjectKind.ARTIFACT,
-            subject_id=artifact_id,
-            reason=f"promote {artifact.type.value} to the board",
-        )
-
-    def _create_employee_budget(self, employee_id: str, amount_cents: int) -> None:
-        self._ledger.budget_policies.create(
-            BudgetPolicy(
-                id=f"bp_{uuid.uuid4().hex[:12]}",
-                scope_type=BudgetScope.EMPLOYEE,
-                scope_id=employee_id,
-                amount=amount_cents,
-            )
-        )
+    @property
+    def trust(self) -> TrustFacade:
+        """``org.trust`` — set a task's trust preset + boundary (spec 04 §4)."""
+        return self._trust
 
     def terminate(self, employee_id: str) -> None:
         """Irreversibly terminate an employee; cancel its in-flight work (spec 06 §3).
@@ -310,107 +342,16 @@ class Chorus:
         self._ledger.runs.cancel_running(employee_id=employee_id)
         self._ledger.wakes.drop_queued(employee_id=employee_id)
 
-    def register_role(self, plugin: RolePlugin, *, replace: bool = False) -> None:
-        """Register a role plugin — fail-closed + idempotent (spec 09 §1)."""
-        self._roles.register(plugin, replace=replace)
-
-    # -- portability: org as data (spec 09 §3) --------------------------------
-
-    def export_workforce(self, org_repo: str) -> int:
-        """Serialize the live ledger org to a portable git-markdown tree (spec 09 §3).
-
-        Writes ``<org_repo>/employees/<slug>/role.md`` for every non-terminated employee — the
-        portable package is the *serialization* of the live store, not a second store. Returns the
-        number of employees exported.
-        """
-        return copy_org(self._workforce, GitWorkforce(org_repo))
-
-    def import_workforce(self, org_repo: str) -> int:
-        """Materialize a git-markdown org into the live ledger store (spec 09 §3).
-
-        Re-hires every employee under ``<org_repo>/employees/`` into the ledger (managers first, so
-        each ``reports_to`` edge resolves as it lands). Returns the number imported.
-        """
-        return copy_org(GitWorkforce(org_repo), self._workforce)
-
-    # -- cron (spec 03 §4) ----------------------------------------------------
-
-    def add_routine(
-        self,
-        *,
-        employee: str,
-        intent_template: str,
-        schedule: str,
-        target: RoutineTarget = RoutineTarget.SPAWN_TASK,
-        concurrency: RoutineConcurrency = RoutineConcurrency.COALESCE,
-        catch_up: RoutineCatchUp = RoutineCatchUp.SKIP_MISSED,
-        timezone: str = "UTC",
-    ) -> RoutineView:
-        """Create a cron routine owned by ``employee`` and its due trigger (spec 13 §3.1).
-
-        ``employee`` is resolved by slug (fail-closed: an unknown employee raises ``UnknownEmployee``
-        before anything is written). The firing engine already exists — this is the reachability seam
-        that lets a routine be *created*; the tick's CRON step picks it up from ``next_run_at``.
-        """
-        employee_id = self._workforce.get(slugify(employee)).id  # fail-closed on unknown
-        # Resolve the first edge *before* any write so a bad cron leaves no orphan routine.
-        next_run_at = parse_cron(schedule, base=datetime.now(UTC), timezone=timezone)
-        routine = self._ledger.routines.create(
-            Routine(
-                id=f"routine_{uuid.uuid4().hex[:12]}",
-                employee_id=employee_id,
-                intent_template=intent_template,
-                target=target,
-                concurrency_policy=concurrency,
-                catch_up_policy=catch_up,
-            )
-        )
-        self._ledger.routine_triggers.create(
-            RoutineTrigger(
-                id=f"trig_{uuid.uuid4().hex[:12]}",
-                routine_id=routine.id,
-                kind=TriggerKind.CRON,
-                cron_expression=schedule,
-                timezone=timezone,
-                next_run_at=next_run_at,
-            )
-        )
-        return self._inspector.routine(routine.id)
-
-    def list_routines(self, *, employee: str | None = None) -> list[RoutineView]:
-        """Every routine, optionally scoped to one employee (resolved by slug) (spec 13 §7)."""
-        employee_id = None if employee is None else self._workforce.get(slugify(employee)).id
-        return self._inspector.list_routines(employee_id=employee_id)
-
-    def routine(self, routine_id: str) -> RoutineView:
-        """One routine resolved for reading — definition + triggers + recent firings (spec 13 §7)."""
-        return self._inspector.routine(routine_id)
-
-    def pause_routine(self, routine_id: str) -> None:
-        """Stop a routine from firing (a paused routine drops out of the tick's CRON scan) (spec 13 §3.2)."""
-        self._ledger.routines.set_status(routine_id, RoutineStatus.PAUSED)
-
-    def resume_routine(self, routine_id: str) -> None:
-        """Resume a paused routine — its trigger's ``next_run_at`` starts selecting again (spec 13 §3.2)."""
-        self._ledger.routines.set_status(routine_id, RoutineStatus.ACTIVE)
-
-    # -- inspection (read model, spec 08) -------------------------------------
+    # -- inspection (read model, spec 08 / spec 14 §4) ------------------------
 
     def status(self) -> WorkforceStatus:
-        """The company at a glance (spec 08 §2)."""
-        raise NotImplementedError("spec 08 §3: delegate to Inspector.status")
+        """The company at a glance — the high-level glance (spec 08 §2). Detail is ``inspect``."""
+        return self._inspector.status()
 
-    def task(self, task_id: str) -> TaskView:
-        """One task, resolved for reading (spec 10 §1)."""
-        raise NotImplementedError("spec 08 §3: delegate to Inspector.task")
-
-    def events(self, *, after: str | None = None) -> Iterator[Event]:
-        """Replay the event stream from ``after`` (spec 08 §1)."""
-        raise NotImplementedError("spec 08 §1: delegate to EventBus.replay")
-
-    def stuck(self) -> list[TaskView]:
-        """The blocked inbox — stuck tasks, ranked (spec 08 §2)."""
-        raise NotImplementedError("spec 08 §2: delegate to Inspector.stuck")
+    @property
+    def inspect(self) -> InspectFacade:
+        """``org.inspect`` — detailed reads: task / stuck / events / scrum_packet / org_report."""
+        return self._inspect
 
 
 __all__ = [

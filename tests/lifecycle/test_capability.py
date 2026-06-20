@@ -50,6 +50,29 @@ def test_decompose_creates_assigned_children_gated_to_parent(ledger: SqliteLedge
     assert res.depth_capped is False
 
 
+def test_decompose_rejects_a_deliverable_assigned_to_a_reviewer(ledger: SqliteLedger) -> None:
+    """A reviewer reviews (via the review beat); it can't *own* deliverable work (read-only + a
+    human-approval DoD → it would strand). So decompose fails closed, naming the reviewer, and the
+    manager reassigns the work to an engineer — nothing is created on the rejected path."""
+    svc = _service(ledger)
+    ledger.employees.create(Employee(id="rev", name="Rev", role="reviewer", reports_to="mgr"))
+    res = svc.decompose(parent_id="M", revision=REV, children=[
+        ChildPlan(label="impl", intent="build it", assignee="ada"),
+        ChildPlan(label="qa", intent="run pytest + ruff", assignee="rev"),  # deliverable → a reviewer
+    ])
+    assert res.reviewer_assignees == ("rev",)
+    assert res.child_ids == {}  # fail-closed: nothing created
+    assert ledger.tasks.children("M") == []
+
+
+def test_submit_one_rejects_a_deliverable_assigned_to_a_reviewer(ledger: SqliteLedger) -> None:
+    svc = _service(ledger)
+    ledger.employees.create(Employee(id="rev", name="Rev", role="reviewer", reports_to="mgr"))
+    res = svc.submit_one(parent_id="M", revision=REV, child=ChildPlan(label="qa", intent="checks", assignee="rev"))
+    assert res.reviewer_assignees == ("rev",)
+    assert res.child_id is None
+
+
 def test_idempotent_within_a_revision(ledger: SqliteLedger) -> None:
     svc = _service(ledger)
     plan = [ChildPlan(label="api", intent="build the api", assignee="ada")]

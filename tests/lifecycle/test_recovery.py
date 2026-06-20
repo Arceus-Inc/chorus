@@ -78,6 +78,88 @@ def _run(
     )
 
 
+# -- failed-prerequisite cascade (a rejected child must not deadlock the subtree) --
+
+
+def _child(ledger: SqliteLedger, task_id: str, status: TaskStatus) -> Task:
+    return ledger.tasks.submit(
+        Task(id=task_id, intent=task_id, status=status, assignee_employee_id="emp_1", parent_id="goal")
+    )
+
+
+def test_cascade_cancels_a_task_blocked_by_a_failed_prerequisite(ledger: SqliteLedger) -> None:
+    """A dependent whose blocker is terminal-but-not-``done`` (rejected/cancelled) can never run.
+
+    reconcile cancels it so the subtree terminalizes and the manager gets a ``children_done`` beat to
+    react (re-submit the failed branch) — instead of the whole goal deadlocking on a stuck ``todo``.
+    """
+    ledger.employees.create(Employee(id="moe", name="moe", role="manager"))
+    ledger.tasks.submit(
+        Task(id="goal", intent="goal", status=TaskStatus.BLOCKED, assignee_employee_id="moe")
+    )
+    _child(ledger, "A", TaskStatus.REJECTED)  # the reviewer blocked the impl (terminal, not done)
+    _child(ledger, "B", TaskStatus.DONE)
+    c = _child(ledger, "C", TaskStatus.TODO)  # depends on A → its blocker can never resolve
+    ledger.dependencies.add(c.id, "A")
+
+    reconcile(ledger, now=NOW)
+
+    assert ledger.tasks.get("C").status is TaskStatus.CANCELLED  # the doomed dependent is cancelled
+    woken = [w for w in ledger.wakes.queued() if w.payload.get("task_id") == "goal"]
+    assert [w.reason for w in woken] == [WakeReason.CHILDREN_DONE]  # manager gets its react beat
+
+
+def _open_recovery(ledger: SqliteLedger, task_id: str, owner: str = "emp_1") -> None:
+    ledger.recovery_actions.open(RecoveryAction(
+        id=f"rec_{task_id}", source_task_id=task_id, kind=RecoveryKind.STALE_RUN_WATCHDOG,
+        owner_employee_id=owner, cause="run_task_error", fingerprint="x", next_action="fix",
+    ))
+
+
+def test_stranded_child_terminalizes_so_the_parent_can_integrate(ledger: SqliteLedger) -> None:
+    """A child stranded on a recovery card (auto-recovery exhausted) would block its parent's integration
+    forever with no human to clear it. reconcile terminalizes it (rejected) so the manager integrates and
+    reacts — the autonomous org self-heals instead of deadlocking on a dead child."""
+    ledger.employees.create(Employee(id="moe", name="moe", role="manager"))
+    ledger.tasks.submit(
+        Task(id="goal", intent="goal", status=TaskStatus.BLOCKED, assignee_employee_id="moe")
+    )
+    _child(ledger, "A", TaskStatus.DONE)
+    _child(ledger, "C", TaskStatus.BLOCKED)
+    _open_recovery(ledger, "C")  # its retries are spent; only a human could move it
+
+    reconcile(ledger, now=NOW)
+
+    assert ledger.tasks.get("C").status is TaskStatus.REJECTED  # type: ignore[union-attr]
+    woken = [w for w in ledger.wakes.queued() if w.payload.get("task_id") == "goal"]
+    assert [w.reason for w in woken] == [WakeReason.CHILDREN_DONE]  # manager gets its react beat
+
+
+def test_stranded_top_level_task_keeps_escalating_to_a_human(ledger: SqliteLedger) -> None:
+    """A stranded *top-level* task (no parent) is a human's to resolve — it stays blocked, not auto-killed."""
+    _task(ledger, TaskStatus.BLOCKED, task_id="solo")
+    _open_recovery(ledger, "solo")
+
+    reconcile(ledger, now=NOW)
+
+    assert ledger.tasks.get("solo").status is TaskStatus.BLOCKED  # type: ignore[union-attr]
+
+
+def test_cascade_leaves_a_task_with_a_still_pending_blocker_alone(ledger: SqliteLedger) -> None:
+    """Only a *failed* prerequisite cascades — a blocker still in flight just keeps the dependent waiting."""
+    ledger.employees.create(Employee(id="moe", name="moe", role="manager"))
+    ledger.tasks.submit(
+        Task(id="goal", intent="goal", status=TaskStatus.BLOCKED, assignee_employee_id="moe")
+    )
+    _child(ledger, "A", TaskStatus.IN_PROGRESS)  # still working — not a failure
+    c = _child(ledger, "C", TaskStatus.TODO)
+    ledger.dependencies.add(c.id, "A")
+
+    reconcile(ledger, now=NOW)
+
+    assert ledger.tasks.get("C").status is TaskStatus.TODO  # untouched — its blocker may still succeed
+
+
 # -- §7 step 1: reap orphaned running runs (lease passed) ----------------------
 
 

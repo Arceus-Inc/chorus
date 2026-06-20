@@ -13,7 +13,7 @@ from chorus.heartbeat._beat_context import (
     IntegrateContextPacket,
     ReportContext,
 )
-from chorus.heartbeat._runner_for import BeatRunnerFor, single
+from chorus.heartbeat._runner_for import BeatRunnerFor, BeatRunnerForFn, runner_from, single
 from chorus.heartbeat._scheduler import PRIORITY_RANK, Scheduler
 from chorus.heartbeat._wake import TickReport, Wake, WakeReason, WakeStatus
 
@@ -24,6 +24,7 @@ __all__ = [
     "BeatOutcome",
     "BeatRunner",
     "BeatRunnerFor",
+    "BeatRunnerForFn",
     "ChildOutcomeContext",
     "IntegrateContextPacket",
     "ReportContext",
@@ -32,5 +33,6 @@ __all__ = [
     "Wake",
     "WakeReason",
     "WakeStatus",
+    "runner_from",
     "single",
 ]

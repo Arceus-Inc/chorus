@@ -23,9 +23,11 @@ classifiers = [
 ]
 dependencies = [
   # chorus depends on dream; nothing depends sideways (spec 00 §5).
-  # Budget gates price dream's per-model token usage, so a dream that surfaces
-  # RunTaskResult.usage_by_model is required (dream c1ff39e / >=0.2.0). Older pins
-  # degrade gracefully — the field defaults to {}, so cost_cents = 0 (no crash).
+  # Requires dream >= cb30e60 (on main): the capability-aware evaluator that judges on
+  # evidence instead of withholding a pass for being unable to run verification itself —
+  # without it, reviewed-build flows strand correct work on `needs-changes`. That commit
+  # also surfaces RunTaskResult.usage_by_model (c1ff39e), which the budget gates price;
+  # older pins degrade gracefully there (the field defaults to {}, so cost_cents = 0).
   "dream",
   "croniter>=2.0",
   "pyyaml>=6.0",

@@ -71,11 +71,30 @@ async def test_run_forever_delegates_to_scheduler() -> None:
     assert sched.ran is True
 
 
-def test_stop_delegates_to_scheduler() -> None:
+async def test_stop_delegates_to_scheduler() -> None:
     sched = _FakeScheduler()
     chorus = _chorus(sched)
-    chorus.stop()
+    await chorus.stop()
+    assert sched.stopped is True  # a stop with no managed heartbeat just signals the loop
+
+
+async def test_start_launches_a_background_heartbeat_and_stop_awaits_it() -> None:
+    sched = _FakeScheduler()
+    chorus = _chorus(sched)
+    chorus.start()  # returns immediately — the heartbeat runs in the background
+    await chorus.stop()  # signals + awaits the managed task so its beats drain
+    assert sched.ran is True
     assert sched.stopped is True
+
+
+async def test_start_is_idempotent_while_the_heartbeat_is_live() -> None:
+    sched = _FakeScheduler()
+    chorus = _chorus(sched)
+    chorus.start()
+    first = chorus._heartbeat
+    chorus.start()  # a second start while live is a no-op — same task, not a second loop
+    assert chorus._heartbeat is first
+    await chorus.stop()
 
 
 def _chorus_on(ledger: SqliteLedger) -> Chorus:
@@ -178,7 +197,7 @@ def test_register_role_then_hire_into_it(tmp_path: Path) -> None:
     with pytest.raises(OrgInvariantViolation):
         chorus.hire(name="Early", role="engineer")
     (plugin,) = (p for p in default_roles() if p.name == "engineer")
-    chorus.register_role(plugin)
+    chorus.workforce.register_role(plugin)
     assert chorus.hire(name="Ada", role="engineer").role == "engineer"
 
 
@@ -204,11 +223,11 @@ def test_export_then_import_workforce_round_trips_through_the_ledger(tmp_path: P
         chorus.hire(name="Boss", role="manager")
         chorus.hire(name="Alice", role="engineer", reports_to="boss")
         org = str(tmp_path / "org")
-        assert chorus.export_workforce(org) == 2
+        assert chorus.workforce.export(org) == 2
 
         fresh = SqliteLedger.open(":memory:")
         try:
-            assert _chorus_io(fresh).import_workforce(org) == 2
+            assert _chorus_io(fresh).workforce.import_(org) == 2
             alice = fresh.employees.get("alice")
             assert alice is not None and alice.reports_to == "boss"
         finally:

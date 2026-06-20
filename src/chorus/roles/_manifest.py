@@ -86,6 +86,8 @@ class RoleManifest:
     # Engine scalars — the non-capability ``build_harness`` knobs (carried through overlays).
     model: str | None = None  # None → use the deployment model the composition root supplies
     max_turns: int = 8  # dream's per-role turn budget default
+    max_sprints: int = 1  # per-beat sprint budget: 1 = one beat is one sprint (spec 05); a role that
+    # does multi-sprint work (an engineer build) widens this so a step finishes in a single beat
     working_memory: bool = False  # the in-task scratchpad memory tier
     wake_model: str | None = None  # a cheaper model for heartbeat/wake turns
     mcp: bool = False  # admit the working dir's MCP allowlist (opt-in)

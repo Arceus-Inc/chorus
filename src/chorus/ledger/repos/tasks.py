@@ -113,6 +113,17 @@ class TaskRepo:
         )
         self._conn.commit()
 
+    def set_trust(
+        self, task_id: str, preset: str, boundary: dict[str, object] | None = None
+    ) -> None:
+        """Set a task's trust posture (spec 04 §4). ``preset`` is the enum *value* — the ledger stays
+        trust-module-free (the trust group resolves the enum)."""
+        self._conn.execute(
+            "UPDATE task SET trust_preset = ?, trust_boundary = ?, updated_at = ? WHERE id = ?",
+            (preset, dumps(boundary) if boundary is not None else None, utcnow_iso(), task_id),
+        )
+        self._conn.commit()
+
     def set_status(self, task_id: str, status: TaskStatus) -> None:
         """Transition a task, stamping the matching ``*_at`` column (spec 02 §2)."""
         now = utcnow_iso()

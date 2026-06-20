@@ -124,7 +124,7 @@ def test_facade_request_promotion_gated_opens_a_board_gate(ledger: SqliteLedger)
     _landed_artifact(ledger)
     chorus = _chorus(ledger, GovernancePolicy(board_artifact_classes=frozenset({"pr"})))
 
-    approval = chorus.request_promotion("ar1")
+    approval = chorus.governance.request_promotion("ar1")
 
     assert approval is not None and approval.action is ApprovalAction.BOARD_APPROVAL
 
@@ -133,5 +133,5 @@ def test_facade_request_promotion_ungated_returns_none(ledger: SqliteLedger) -> 
     _landed_artifact(ledger)
     chorus = _chorus(ledger, GovernancePolicy())  # "pr" not in board classes
 
-    assert chorus.request_promotion("ar1") is None
+    assert chorus.governance.request_promotion("ar1") is None
     assert ledger.approvals.pending() == []
