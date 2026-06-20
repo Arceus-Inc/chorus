@@ -10,5 +10,6 @@ from __future__ import annotations
 from chorus.groups._budgets import BudgetsFacade
 from chorus.groups._governance import GovernanceFacade, HireRequest
 from chorus.groups._inspect import InspectFacade
+from chorus.groups._trust import TrustFacade
 
-__all__ = ["BudgetsFacade", "GovernanceFacade", "HireRequest", "InspectFacade"]
+__all__ = ["BudgetsFacade", "GovernanceFacade", "HireRequest", "InspectFacade", "TrustFacade"]

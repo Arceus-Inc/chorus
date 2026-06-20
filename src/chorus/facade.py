@@ -23,7 +23,7 @@ from chorus.budgets import BudgetEnforcer
 from chorus.cron import parse_cron
 from chorus.errors import OrgInvariantViolation
 from chorus.governance import GovernancePolicy
-from chorus.groups import BudgetsFacade, GovernanceFacade, InspectFacade
+from chorus.groups import BudgetsFacade, GovernanceFacade, InspectFacade, TrustFacade
 from chorus.heartbeat import BeatRunner, BeatRunnerFor, Scheduler, TickReport, Wake
 from chorus.ledger import (
     Message,
@@ -49,6 +49,7 @@ from chorus.memory import AppendOnlyMemoryWriter
 from chorus.observability import EventBus, LedgerInspector, RoutineView, WorkforceStatus
 from chorus.outcomes import Verifier
 from chorus.roles import RolePlugin, RoleRegistry, default_roles
+from chorus.trust import TrustPreset
 from chorus.workforce import (
     Employee,
     GitWorkforce,
@@ -100,6 +101,7 @@ class Chorus:
         self._inspect = InspectFacade(inspector, event_bus)
         self._governance = GovernanceFacade(ledger, workforce, roles, self._governance_policy)
         self._budgets = BudgetsFacade(ledger, company_id=company_id)
+        self._trust = TrustFacade(ledger)
 
     # -- construction ---------------------------------------------------------
 
@@ -169,6 +171,8 @@ class Chorus:
         dod: Verifier | None = None,
         depends_on: Sequence[str] = (),
         priority: TaskPriority = TaskPriority.MEDIUM,
+        trust_preset: TrustPreset | None = None,
+        trust_boundary: dict[str, object] | None = None,
     ) -> Task:
         """Create a flat ``depth=0`` intake task, optionally wired in one call (spec 10 §5 / 14 §3).
 
@@ -180,7 +184,13 @@ class Chorus:
         """
         employee_id = self._workforce.get(slugify(assignee)).id if assignee is not None else None
         task = self._ledger.tasks.submit(
-            Task(id=f"task_{uuid.uuid4().hex[:12]}", intent=intent, priority=priority)
+            Task(
+                id=f"task_{uuid.uuid4().hex[:12]}",
+                intent=intent,
+                priority=priority,
+                trust_preset=trust_preset.value if trust_preset is not None else None,
+                trust_boundary=trust_boundary,
+            )
         )
         if dod is not None:
             self._ledger.dod.create(task.id, dod)
@@ -251,6 +261,11 @@ class Chorus:
     def budgets(self) -> BudgetsFacade:
         """``org.budgets`` — set token-salary caps, raise_/dismiss after a breach (spec 04 §3)."""
         return self._budgets
+
+    @property
+    def trust(self) -> TrustFacade:
+        """``org.trust`` — set a task's trust preset + boundary (spec 04 §4)."""
+        return self._trust
 
     def terminate(self, employee_id: str) -> None:
         """Irreversibly terminate an employee; cancel its in-flight work (spec 06 §3).
