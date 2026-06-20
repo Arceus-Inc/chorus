@@ -4,7 +4,7 @@
 import Chorus`, `Chorus.build(...)`, then call methods. Today it is **half-wired**: the basic-loop
 verbs work, but **intake (`submit`) and the read model (`status`/`task`/`stuck`/`events`) are
 `NotImplementedError` stubs**, and several *built* capabilities (governance resolution, budgets,
-trust, memory) have no facade verb at all — reachable only by importing their modules.
+trust) have no facade verb at all — reachable only by importing their modules.
 
 This spec closes that **as two tiers**:
 
@@ -12,13 +12,14 @@ This spec closes that **as two tiers**:
   `run_forever`, `status`, `stop`, `assign`. Reads exactly like the example in §0.
 - **Low-level (grouped accessors)** — every niche capability, namespaced so it never clutters the
   simple story: `org.governance.*`, `org.budgets.*`, `org.trust.*`, `org.inspect.*`, `org.routines.*`,
-  `org.workforce.*`, `org.dod.*`, `org.memory.*`.
+  `org.workforce.*`, `org.dod.*`.
 
 The work the **agents own** (decompose, verdict) is on **neither** tier — it lives inside the beat (§5).
 
 It is spec 10 (public API) made complete, touching [08 — Observability](08-observability.md) (the read
 model), [04 — Outcomes & governance](04-outcomes-and-governance.md) (governance/budgets/trust),
-[02 — Lifecycle](02-lifecycle-and-recovery.md) (intake), and [07 — Memory](07-memory.md) (read).
+and [02 — Lifecycle](02-lifecycle-and-recovery.md) (intake). Memory is **not** on the facade — it is
+the employee's own faculty (§5/§1).
 
 ---
 
@@ -78,7 +79,7 @@ consistent — `request_hire`/`request_promotion` → `org.governance`, `export/
 |---|---|
 | **`decompose` / `submit_verdict` on either tier** | **employee tools**, not operator verbs — a manager decomposes via the decompose `BaseTool` mid-beat, a reviewer records a verdict through the review beat. Work the agents own stays inside the beat; the facade never grows a door into it (§5). |
 | **A batteries-included constructor** (`build_company(creds=…)`) | the construction contract (bring-your-own execution via `chorus_harness`) is unchanged; a convenience wrapper is a separate, optional follow-up (§6). |
-| **Memory *writing* as a public verb** | beats author memory through the injected `MemoryWriter`; `org.memory.read` only reads it (§5.7). |
+| **`org.memory` (read *or* write)** | memory is the **employee's own faculty**, not an operator surface — a beat reads its memory scope when it rehydrates and writes a sprint delta after it runs, both inside the beat lifecycle. Exposing read or write on the facade would lift an internal employee mechanism onto the operator surface (same category as decompose/verdict). If memory-*inspection* is ever wanted it is an observability concern (`org.inspect`), not an employee-faculty verb. |
 | **`horizon` intake / `lattice` consolidation** | sibling-repo seams; `submit` and `MemoryWriter` are the reserved slots they plug into, not things this spec fills. |
 
 ---
@@ -113,7 +114,6 @@ Each group is a thin facade object reached by a property on `Chorus` (`org.budge
 | `org.routines` | ✦ `add(...)` · ✦ `list(*, employee=None)` · ✦ `get(id)` · ✦ `pause(id)` · ✦ `resume(id)` | M4 S1 engine (migrated from the flat `add_routine` …) |
 | `org.workforce` | ✦ `register_role(plugin)` · ✦ `export(org_repo)` · ✦ `import_(org_repo)` | workforce / `copy_org` |
 | `org.dod` | ✦ `revise(task_id, new_verifier, *, by)` | `lifecycle.revise_dod` |
-| `org.memory` | 🔴 `read(*, employee=None)` | `MemoryStore` (read) |
 
 **No stringly.** Every enum-typed argument crosses as its enum (`TaskPriority`, `ApprovalDecision`,
 `ApprovalGate`, `BudgetScope`, `BudgetWindow`, `TrustPreset`), never a string. **Fail-closed**: an
@@ -214,9 +214,12 @@ implemented on the inspector.
 - `revise(task_id, new_verifier, *, by)` re-homed from flat `revise_dod` (manager-authority + in-flight
   rules unchanged, spec 04 §1).
 
-### 5.7 `org.memory` — read only (spec 07)
-- `read(*, employee=None)` → the injected `MemoryStore` read path (sprint deltas / durable knowledge,
-  optionally scoped to one employee). Writing stays internal to beats.
+> **Not on the facade — memory is the employee's faculty.** A beat *reads* its memory scope when it
+> rehydrates at the start of a run, and *writes* a sprint delta (derived from the run, not
+> self-authored) when it finishes — both inside the beat lifecycle, driven by the harness, not by an
+> operator. Putting `read` or `write` on the facade would lift an internal employee mechanism onto the
+> operator surface. Inspecting stored memory, if ever wanted, is an observability concern for
+> `org.inspect`, not an `org.memory` faculty verb.
 
 > **On neither tier — `decompose` and `submit_verdict` are employee tools.** A manager *decomposes* by
 > calling the decompose `BaseTool` mid-beat (`chorus_tools`, spec 02 §4); a reviewer *records a verdict*
@@ -240,7 +243,7 @@ creds), keeping chorus core dream-free and the four-repo boundary intact. A batt
 ## 7. Build plan (TDD slices)
 
 Each slice RED→GREEN→REFACTOR, gated `uv run ruff check` + `uv run mypy --strict src` + `uv run pytest
--q`. Order: **F1 → F2 → (F3 · F4 · F5 · F6 in parallel) → F7 → F8.**
+-q`. Order: **F1 → F2 → (F3 · F4 · F5 in parallel) → F6 → F7.**
 
 | # | Slice | Checkpoint acceptance |
 |---|---|---|
@@ -249,16 +252,15 @@ Each slice RED→GREEN→REFACTOR, gated `uv run ruff check` + `uv run mypy --st
 | **F3** | **`org.governance`** — group accessor; `open_gate` · `open_plan_gate` · `resolve` · `approvals` + migrate `request_hire`/`request_promotion` | open a gate → `resolve(APPROVE)` performs the mutation; deny leaves it gated |
 | **F4** | **`org.budgets`** — `set` · `raise` · `dismiss_incident` | set a cap → breach pauses → `raise` resumes; `dismiss_incident` keeps it paused |
 | **F5** | **`org.trust`** — `tasks.set_trust` + `set_task` + `submit(trust=…)` | a low-trust preset round-trips; inline-secret boundary still fails closed downstream |
-| **F6** | **`org.memory`** — `read` | a beat's sprint delta is readable through the facade, scoped to its employee |
-| **F7** | **Migrate groups** — re-home `org.routines.*` (+ CLI noun) · `org.workforce.*` · `org.dod.*` from their flat verbs | the migrated verbs work under their group; CLI green; old flat names gone |
-| **F8** | **Public API + e2e** — export the group types; update `tests/test_public_api.py`; one deterministic e2e running the §0 high-level snippet **and** touching one verb per group | `import chorus` → the front door reads like §0, every group is reachable, no `NotImplementedError` remains |
+| **F6** | **Migrate groups** — re-home `org.routines.*` (+ CLI noun) · `org.workforce.*` · `org.dod.*` from their flat verbs | the migrated verbs work under their group; CLI green; old flat names gone |
+| **F7** | **Public API + e2e** — export the group types; update `tests/test_public_api.py`; one deterministic e2e running the §0 high-level snippet **and** touching one verb per group | `import chorus` → the front door reads like §0, every group is reachable, no `NotImplementedError` remains |
 
 ### Acceptance (the one bar)
-**`import chorus` gives a two-tier kernel that's simple on top and complete underneath.** After F8: the
+**`import chorus` gives a two-tier kernel that's simple on top and complete underneath.** After F7: the
 §0 high-level example runs unchanged (`hire`/`submit`/`run_forever`/`status` flat — anyone can use it);
 every niche capability is reachable under its group (`org.governance/budgets/trust/inspect/routines/
-workforce/dod/memory`); there is **no `NotImplementedError`** on `Chorus` or `LedgerInspector`; and
-work the **agents own** (decompose, verdict) is on neither tier — it stays inside the beat.
+workforce/dod`); there is **no `NotImplementedError`** on `Chorus` or `LedgerInspector`; and the
+employee's own faculties — decompose, verdict, memory — are on neither tier, staying inside the beat.
 
 ---
 
@@ -266,6 +268,8 @@ work the **agents own** (decompose, verdict) is on neither tier — it stays ins
 
 - **Batteries-included constructor** (`build_company(creds=…)`) — a `chorus_harness` convenience over
   the unchanged `Chorus.build`; optional, separate.
-- **Memory writing as a public verb** — beats author memory; operators read it.
+- **Memory on the facade (read or write)** — memory is the employee's faculty (a beat reads it at
+  rehydration, writes it after running), not an operator surface; inspection, if ever wanted, is an
+  `org.inspect` concern (§5).
 - **`horizon` / `lattice`** — `submit` and `MemoryWriter` are the reserved seams; the siblings fill
   them without a kernel change (spec 11 H1/L1).
