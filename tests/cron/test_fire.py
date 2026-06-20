@@ -85,6 +85,21 @@ def test_fire_spawns_a_task_assigned_to_the_routine_owner(ledger: SqliteLedger) 
     assert task.origin_id == "r1"
 
 
+def test_fire_stamps_the_routine_execution_origin_fingerprint(ledger: SqliteLedger) -> None:
+    # S0 regression floor: the spawned task carries the firing's idempotency key as its
+    # origin fingerprint, so "this task came from routine r1, this exact edge" is durable.
+    trig = _routine(ledger)
+    task_id = fire_routine(ledger, trig, now=_NOW)
+    assert task_id is not None
+    task = ledger.tasks.get(task_id)
+    assert task is not None
+    run = ledger.routine_runs.by_routine("r1")[0]
+    assert task.origin_kind is OriginKind.ROUTINE_EXECUTION
+    assert task.origin_id == "r1"
+    assert task.origin_fingerprint == run.idempotency_key
+    assert task.origin_fingerprint == f"r1:{trig.id}:{_NOW.isoformat()}"
+
+
 def test_fire_enqueues_a_cron_due_wake(ledger: SqliteLedger) -> None:
     trig = _routine(ledger)
     task_id = fire_routine(ledger, trig, now=_NOW)
