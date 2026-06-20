@@ -108,7 +108,7 @@ re-judges it), and `restore` rolls back through a new head without rewriting his
 
 A **role** can also carry its own routines: a plugin declares `RoutineDeclaration`s, and **hiring** an
 employee of that role provisions them automatically — a new role schedules recurring work with no kernel
-change. → `examples/09`
+change. → `examples/09`. Full deep dive (why + how it works in code): [ROUTINES.md](ROUTINES.md).
 
 ## The read model — `org.status` / `org.inspect`
 
