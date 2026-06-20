@@ -65,7 +65,13 @@ from chorus.observability import (
     WorkforceStatus,
 )
 from chorus.outcomes import AgentReview, Command, HumanApproval, Verifier
-from chorus.roles import Role, RoleManifest, RolePlugin, default_roles
+from chorus.roles import (
+    Role,
+    RoleManifest,
+    RolePlugin,
+    RoutineDeclaration,
+    default_roles,
+)
 from chorus.trust import TrustPreset
 from chorus.workforce import Employee
 
@@ -115,6 +121,7 @@ __all__ = [
     "Routine",
     "RoutineCatchUp",
     "RoutineConcurrency",
+    "RoutineDeclaration",
     "RoutineStatus",
     "RoutineTarget",
     "RoutineView",

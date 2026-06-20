@@ -16,7 +16,7 @@ EXPECTED_PUBLIC_API: frozenset[str] = frozenset({
     "BudgetsFacade", "DodFacade", "GovernanceFacade", "InspectFacade",
     "RoutinesFacade", "TrustFacade", "WorkforceFacade", "HireRequest",
     # roles
-    "Role", "RoleManifest", "RolePlugin", "default_roles",
+    "Role", "RoleManifest", "RolePlugin", "RoutineDeclaration", "default_roles",
     # ledger
     "Task", "TaskStatus", "TaskPriority", "ExecPlan", "Employee",
     # heartbeat
