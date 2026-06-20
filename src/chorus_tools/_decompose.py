@@ -74,6 +74,17 @@ class DecomposeTool(BaseTool):
             for child in args.children
         ]
         result = self._service.decompose(parent_id=beat.task_id, revision=beat.run_id, children=plans)
+        if result.reviewer_assignees:
+            joined = ", ".join(result.reviewer_assignees)
+            return ToolResult(
+                content=(
+                    f"refused: {joined} is a reviewer — reviewers review your team's work, they don't "
+                    "own deliverable tasks. No subtasks created — assign build / test / quality work to "
+                    "an engineer report and call decompose again."
+                ),
+                is_error=True,
+                structured={"reviewer_assignees": list(result.reviewer_assignees)},
+            )
         if result.unknown_assignees:
             joined = ", ".join(result.unknown_assignees)
             return ToolResult(

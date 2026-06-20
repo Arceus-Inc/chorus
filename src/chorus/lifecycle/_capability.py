@@ -59,6 +59,7 @@ class DecomposeResult:
     child_ids: dict[str, str] = field(default_factory=dict)
     depth_capped: bool = False
     unknown_assignees: tuple[str, ...] = ()
+    reviewer_assignees: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -66,6 +67,7 @@ class SubmitTaskResult:
     """The outcome of a manager submitting one follow-up child task."""
 
     child_id: str | None = None
+    reviewer_assignees: tuple[str, ...] = ()
     depth_capped: bool = False
     unknown_assignees: tuple[str, ...] = ()
 
@@ -125,6 +127,9 @@ class CapabilityService:
         parent = self._ledger.tasks.get(parent_id)
         if parent is None:
             raise KeyError(parent_id)
+        reviewers = self._reviewer_assignees(children)
+        if reviewers:
+            return DecomposeResult(reviewer_assignees=reviewers)
         unknown = self._unknown_assignees(children, manager_id=parent.assignee_employee_id)
         if unknown:  # fail closed at the boundary — a bad report id never half-applies a fan-out
             return DecomposeResult(unknown_assignees=unknown)
@@ -175,6 +180,9 @@ class CapabilityService:
         parent = self._ledger.tasks.get(parent_id)
         if parent is None:
             raise KeyError(parent_id)
+        reviewers = self._reviewer_assignees((child,))
+        if reviewers:
+            return SubmitTaskResult(reviewer_assignees=reviewers)
         unknown = self._unknown_assignees((child,), manager_id=parent.assignee_employee_id)
         if unknown:
             return SubmitTaskResult(unknown_assignees=unknown)
@@ -272,6 +280,21 @@ class CapabilityService:
             if child.assignee is None:
                 continue
             if not self._is_direct_report(child.assignee, manager_id=manager_id):
+                seen.setdefault(child.assignee, None)
+        return tuple(seen)
+
+    def _reviewer_assignees(self, children: Sequence[ChildPlan]) -> tuple[str, ...]:
+        """Assignees that are reviewers — ordered and deduplicated.
+
+        A reviewer *reviews* (the kernel auto-dispatches it for a reviewer-gated DoD); it never *owns*
+        deliverable work — its role is read-only with a human-approval DoD, so a deliverable routed to
+        one would strand. Fail closed so the manager reassigns the work to an engineer."""
+        seen: dict[str, None] = {}
+        for child in children:
+            if child.assignee is None:
+                continue
+            employee = self._ledger.employees.get(child.assignee)
+            if employee is not None and employee.role == "reviewer":
                 seen.setdefault(child.assignee, None)
         return tuple(seen)
 

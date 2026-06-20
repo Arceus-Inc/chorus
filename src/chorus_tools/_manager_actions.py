@@ -50,6 +50,16 @@ class SubmitTaskTool(BaseTool):
             revision=beat.run_id,
             child=ChildPlan(label=args.label, intent=args.intent, assignee=args.assignee),
         )
+        if result.reviewer_assignees:
+            joined = ", ".join(result.reviewer_assignees)
+            return ToolResult(
+                content=(
+                    f"refused: {joined} is a reviewer — reviewers review, they don't own deliverable "
+                    "tasks. No task created — assign it to an engineer report instead."
+                ),
+                structured={"reviewer_assignees": list(result.reviewer_assignees)},
+                is_error=True,
+            )
         if result.unknown_assignees:
             joined = ", ".join(result.unknown_assignees)
             return ToolResult(
