@@ -14,7 +14,7 @@ below; the behavior is stubbed pending implementation (M1+, spec 11 build plan).
 from __future__ import annotations
 
 import uuid
-from collections.abc import Iterator, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
@@ -22,8 +22,8 @@ from typing import Any
 from chorus.budgets import BudgetEnforcer
 from chorus.cron import parse_cron
 from chorus.errors import OrgInvariantViolation
-from chorus.events import Event
 from chorus.governance import GovernancePolicy, GovernanceResolver
+from chorus.groups import InspectFacade
 from chorus.heartbeat import BeatRunner, BeatRunnerFor, Scheduler, TickReport, Wake
 from chorus.ledger import (
     Approval,
@@ -50,7 +50,7 @@ from chorus.lifecycle import (
     revise_dod,
 )
 from chorus.memory import AppendOnlyMemoryWriter
-from chorus.observability import EventBus, LedgerInspector, RoutineView, TaskView, WorkforceStatus
+from chorus.observability import EventBus, LedgerInspector, RoutineView, WorkforceStatus
 from chorus.outcomes import Verifier
 from chorus.roles import RolePlugin, RoleRegistry, default_roles
 from chorus.workforce import (
@@ -111,6 +111,8 @@ class Chorus:
         self._roles = roles
         self._caps = caps
         self._governance_policy = governance_policy or GovernancePolicy()
+        # Low-level grouped surfaces (spec 14 §2.2) — built once over the same backends.
+        self._inspect = InspectFacade(inspector, event_bus)
 
     # -- construction ---------------------------------------------------------
 
@@ -394,23 +396,16 @@ class Chorus:
         """Resume a paused routine — its trigger's ``next_run_at`` starts selecting again (spec 13 §3.2)."""
         self._ledger.routines.set_status(routine_id, RoutineStatus.ACTIVE)
 
-    # -- inspection (read model, spec 08) -------------------------------------
+    # -- inspection (read model, spec 08 / spec 14 §4) ------------------------
 
     def status(self) -> WorkforceStatus:
-        """The company at a glance (spec 08 §2)."""
-        raise NotImplementedError("spec 08 §3: delegate to Inspector.status")
+        """The company at a glance — the high-level glance (spec 08 §2). Detail is ``inspect``."""
+        return self._inspector.status()
 
-    def task(self, task_id: str) -> TaskView:
-        """One task, resolved for reading (spec 10 §1)."""
-        raise NotImplementedError("spec 08 §3: delegate to Inspector.task")
-
-    def events(self, *, after: str | None = None) -> Iterator[Event]:
-        """Replay the event stream from ``after`` (spec 08 §1)."""
-        raise NotImplementedError("spec 08 §1: delegate to EventBus.replay")
-
-    def stuck(self) -> list[TaskView]:
-        """The blocked inbox — stuck tasks, ranked (spec 08 §2)."""
-        raise NotImplementedError("spec 08 §2: delegate to Inspector.stuck")
+    @property
+    def inspect(self) -> InspectFacade:
+        """``org.inspect`` — detailed reads: task / stuck / events / scrum_packet / org_report."""
+        return self._inspect
 
 
 __all__ = [

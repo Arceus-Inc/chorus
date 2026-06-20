@@ -9,15 +9,21 @@ Arceus) the web board are both views over this projection.
 
 from __future__ import annotations
 
+from collections.abc import Callable
+from datetime import UTC, datetime
 from typing import Protocol, runtime_checkable
 
 from chorus.heartbeat import IntegrateContextPacket
 from chorus.ledger import ActivityVerb, RunStatus, TaskStatus
+from chorus.lifecycle import classify
 from chorus.observability._views import (
+    EmployeeView,
+    IncidentView,
     OrgObservabilityReport,
     RoutineRunView,
     RoutineTriggerView,
     RoutineView,
+    RunView,
     ScrumChildView,
     ScrumPacketView,
     TaskView,
@@ -26,9 +32,14 @@ from chorus.observability._views import (
 
 if False:  # pragma: no cover - typing only without runtime import cost
     from chorus.ledger import SqliteLedger
-    from chorus.ledger._models import Routine
+    from chorus.ledger._models import Routine, Run, Task
 
 _RECENT_RUNS = 5  # how many of a routine's most-recent firings the read model surfaces
+_TERMINAL = frozenset({TaskStatus.DONE, TaskStatus.CANCELLED, TaskStatus.REJECTED})
+
+
+def _utc_now() -> datetime:
+    return datetime.now(UTC)
 
 
 @runtime_checkable
@@ -67,17 +78,99 @@ class Inspector(Protocol):
 class LedgerInspector:
     """The default :class:`Inspector` over the SQLite ledger + event log (spec 08 §3)."""
 
-    def __init__(self, ledger: SqliteLedger) -> None:
+    def __init__(self, ledger: SqliteLedger, *, clock: Callable[[], datetime] = _utc_now) -> None:
         self._ledger = ledger
+        self._clock = clock  # liveness compares run leases to ``now`` — injected for determinism
 
     def status(self) -> WorkforceStatus:
-        raise NotImplementedError("spec 08 §3: project employees/tasks/runs/incidents")
+        now = self._clock()
+        tasks = self._ledger.tasks.all()
+        employees = tuple(
+            EmployeeView(id=employee.id, name=employee.name, role=employee.role,
+                         status=employee.status.value)
+            for employee in self._ledger.employees.list()
+        )
+        running = sum(
+            1
+            for task in tasks
+            for run in self._ledger.runs.for_task(task.id)
+            if run.status is RunStatus.RUNNING
+        )
+        blocked = tuple(self._task_view(task, now) for task in tasks if self._is_stuck(task, now))
+        return WorkforceStatus(
+            employees=employees,
+            open_tasks=sum(1 for task in tasks if task.status not in _TERMINAL),
+            running_beats=running,
+            blocked=blocked,
+            open_incidents=self._open_incidents(),
+        )
 
     def task(self, task_id: str) -> TaskView:
-        raise NotImplementedError("spec 08 §3: resolve names + derive liveness + blockers")
+        task = self._ledger.tasks.get(task_id)
+        if task is None:
+            raise KeyError(task_id)
+        return self._task_view(task, self._clock())
 
     def stuck(self) -> list[TaskView]:
-        raise NotImplementedError("spec 08 §2: the stuck query (non-terminal, no live path)")
+        now = self._clock()
+        return [
+            self._task_view(task, now)
+            for task in self._ledger.tasks.all()
+            if self._is_stuck(task, now)
+        ]
+
+    def _is_stuck(self, task: Task, now: datetime) -> bool:
+        """Non-terminal and stalled — no action-path primitive (spec 08 §2), per ``classify``."""
+        return task.status not in _TERMINAL and classify(task, self._ledger, now=now).stalled
+
+    def _task_view(self, task: Task, now: datetime) -> TaskView:
+        assignee = None
+        if task.assignee_employee_id is not None:
+            employee = self._ledger.employees.get(task.assignee_employee_id)
+            assignee = employee.name if employee is not None else task.assignee_employee_id
+        runs = self._ledger.runs.for_task(task.id)
+        return TaskView(
+            id=task.id,
+            intent=task.intent,
+            status=task.status,
+            priority=task.priority.value,
+            assignee=assignee,
+            goal_id=task.goal_id,
+            depth=task.depth,
+            request_depth=task.request_depth,
+            dod=self._ledger.dod.verifier_for_task(task.id),
+            latest_run=self._run_view(runs[-1]) if runs else None,
+            liveness=classify(task, self._ledger, now=now).health.value,
+            blockers=tuple(self._ledger.dependencies.unresolved_blockers(task.id)),
+        )
+
+    @staticmethod
+    def _run_view(run: Run) -> RunView:
+        return RunView(
+            id=run.id,
+            task_id=run.task_id,
+            employee_id=run.employee_id,
+            status=run.status.value,
+            liveness_state=run.liveness_state,
+            started_at=run.started_at,
+            finished_at=run.finished_at,
+        )
+
+    def _open_incidents(self) -> tuple[IncidentView, ...]:
+        """The decisions a human owes: open budget incidents + open recovery actions (spec 08 §3)."""
+        incidents = [
+            IncidentView(id=incident.id, kind="budget", subject_id=incident.policy_id,
+                         cause=incident.threshold_type.value,
+                         next_action="raise the budget to resume")
+            for policy in self._ledger.budget_policies.all()
+            for incident in self._ledger.budget_incidents.open_for_policy(policy.id)
+        ]
+        incidents.extend(
+            IncidentView(id=action.id, kind="recovery", subject_id=action.source_task_id,
+                         cause=action.kind.value, owner=action.owner_employee_id)
+            for action in self._ledger.recovery_actions.all_open()
+        )
+        return tuple(incidents)
 
     def scrum_packet(self, parent_task_id: str) -> ScrumPacketView:
         parent = self._ledger.tasks.get(parent_task_id)

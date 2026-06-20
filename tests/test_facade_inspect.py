@@ -1,0 +1,89 @@
+"""The facade read-model tier (spec 14 F1) — flat ``status()`` + the ``org.inspect`` group.
+
+``status()`` is the high-level one-call glance (flat on ``Chorus``); the finer reads live behind
+``org.inspect`` (task / stuck / events / scrum_packet / org_report). Both delegate to the same
+``LedgerInspector`` the composition root holds.
+"""
+
+from __future__ import annotations
+
+import pytest
+
+from chorus.facade import Caps, Chorus
+from chorus.ledger import SqliteLedger, Task, TaskStatus
+from chorus.observability import EventBus, LedgerInspector, TaskView, WorkforceStatus
+from chorus.roles import RoleRegistry, default_roles
+from chorus.workforce import Employee, LedgerWorkforce
+
+pytestmark = pytest.mark.integration
+
+
+def _chorus(ledger: SqliteLedger) -> Chorus:
+    return Chorus(
+        ledger=ledger,
+        workforce=LedgerWorkforce(ledger.employees),
+        memory_writer=None,  # type: ignore[arg-type]
+        scheduler=None,  # type: ignore[arg-type]
+        event_bus=EventBus(),
+        inspector=LedgerInspector(ledger),
+        dream=None,
+        roles=RoleRegistry.from_plugins(default_roles()),
+        caps=Caps(),
+    )
+
+
+def _seed(ledger: SqliteLedger) -> None:
+    ledger.employees.create(Employee(id="ada", name="Ada", role="engineer"))
+    ledger.tasks.submit(Task(id="t1", intent="ship it", status=TaskStatus.IN_PROGRESS,
+                             assignee_employee_id="ada"))
+
+
+def test_status_is_flat_and_projects_the_company() -> None:
+    ledger = SqliteLedger.open(":memory:")
+    try:
+        _seed(ledger)
+        status = _chorus(ledger).status()
+        assert isinstance(status, WorkforceStatus)
+        assert {e.id for e in status.employees} == {"ada"}
+        assert status.open_tasks == 1
+    finally:
+        ledger.close()
+
+
+def test_inspect_group_task_resolves_a_view() -> None:
+    ledger = SqliteLedger.open(":memory:")
+    try:
+        _seed(ledger)
+        view = _chorus(ledger).inspect.task("t1")
+        assert isinstance(view, TaskView)
+        assert view.assignee == "Ada"
+    finally:
+        ledger.close()
+
+
+def test_inspect_group_stuck_lists_stalled_tasks() -> None:
+    ledger = SqliteLedger.open(":memory:")
+    try:
+        _seed(ledger)  # t1 is in-progress with no live run → stalled
+        assert [v.id for v in _chorus(ledger).inspect.stuck()] == ["t1"]
+    finally:
+        ledger.close()
+
+
+def test_inspect_group_events_replays_the_stream() -> None:
+    ledger = SqliteLedger.open(":memory:")
+    try:
+        _seed(ledger)
+        # no events emitted on this bus → empty replay, but the method is wired (no stub)
+        assert list(_chorus(ledger).inspect.events()) == []
+    finally:
+        ledger.close()
+
+
+def test_task_unknown_raises_through_the_group() -> None:
+    ledger = SqliteLedger.open(":memory:")
+    try:
+        with pytest.raises(KeyError):
+            _chorus(ledger).inspect.task("nope")
+    finally:
+        ledger.close()
