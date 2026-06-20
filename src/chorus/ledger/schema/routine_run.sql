@@ -1,4 +1,5 @@
 -- Cluster C: routine_run (one firing -> one task). Declarative; applied via migrations/.
+-- routine_revision_id pins the routine definition this firing fired under (spec 13 §2.3).
 CREATE TABLE routine_run (
     id                    TEXT PRIMARY KEY,
     routine_id            TEXT NOT NULL REFERENCES routine(id),
@@ -8,6 +9,7 @@ CREATE TABLE routine_run (
     idempotency_key       TEXT,
     linked_task_id        TEXT REFERENCES task(id),
     coalesced_into_run_id TEXT,
+    routine_revision_id   TEXT REFERENCES routine_revision(id),
     created_at            TEXT NOT NULL
 );
 

@@ -51,6 +51,12 @@ def fire_routine(
     if routine is None or routine.status is not RoutineStatus.ACTIVE:
         return None
 
+    # Pin the live revision: the run records which definition it fired under and the spawned task's
+    # intent is sourced from it, so an edit while this firing is in flight never re-judges it (§2.3).
+    pinned_id = routine.latest_revision_id
+    pinned = ledger.routine_revisions.get(pinned_id) if pinned_id is not None else None
+    intent = pinned.intent_template if pinned is not None else routine.intent_template
+
     edge = trigger.next_run_at
     # Catch-up policy (spec 03 §4): skip_missed jumps the edge past ``now`` (dropping every window
     # missed while chorus was down); backfill_one advances a single cron step from the edge, so each
@@ -77,15 +83,19 @@ def fire_routine(
             _record(
                 ledger, run_id, routine, trigger, idempotency_key,
                 RoutineRunStatus.COALESCED,
+                routine_revision_id=pinned_id,
                 coalesced_into_run_id=_latest_dispatched_run(ledger, routine.id),
             )
         else:  # skip_if_active
             _record(
-                ledger, run_id, routine, trigger, idempotency_key, RoutineRunStatus.SUPPRESSED
+                ledger, run_id, routine, trigger, idempotency_key, RoutineRunStatus.SUPPRESSED,
+                routine_revision_id=pinned_id,
             )
         return None
 
-    if _record(ledger, run_id, routine, trigger, idempotency_key) is None:
+    if _record(
+        ledger, run_id, routine, trigger, idempotency_key, routine_revision_id=pinned_id
+    ) is None:
         return None  # a duplicate firing already landed this edge
 
     if routine.target is RoutineTarget.SPAWN_TASK:
@@ -93,7 +103,7 @@ def fire_routine(
         ledger.tasks.submit(
             Task(
                 id=task_id,
-                intent=routine.intent_template,
+                intent=intent,
                 status=TaskStatus.TODO,
                 assignee_employee_id=routine.employee_id,
                 goal_id=routine.goal_id,
@@ -120,7 +130,7 @@ def fire_routine(
             id=f"wake_{uuid.uuid4().hex[:12]}",
             employee_id=routine.employee_id,
             reason=WakeReason.CRON_DUE,
-            payload={"note": routine.intent_template},
+            payload={"note": intent},
         )
     )
     return None
@@ -134,6 +144,7 @@ def _record(
     idempotency_key: str,
     status: RoutineRunStatus = RoutineRunStatus.RECEIVED,
     *,
+    routine_revision_id: str | None = None,
     coalesced_into_run_id: str | None = None,
 ) -> str | None:
     """Register the firing exact-once; ``None`` if the idempotency key already fired this edge."""
@@ -145,6 +156,7 @@ def _record(
                 trigger_id=trigger.id,
                 status=status,
                 idempotency_key=idempotency_key,
+                routine_revision_id=routine_revision_id,
                 coalesced_into_run_id=coalesced_into_run_id,
             )
         )

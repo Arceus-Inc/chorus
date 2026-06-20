@@ -24,8 +24,8 @@ class RoutineRunRepo:
         now = utcnow_iso()
         self._conn.execute(
             "INSERT INTO routine_run (id, routine_id, trigger_id, status, dispatch_fingerprint, "
-            "idempotency_key, linked_task_id, coalesced_into_run_id, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "idempotency_key, linked_task_id, coalesced_into_run_id, routine_revision_id, "
+            "created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 run.id,
                 run.routine_id,
@@ -35,6 +35,7 @@ class RoutineRunRepo:
                 run.idempotency_key,
                 run.linked_task_id,
                 run.coalesced_into_run_id,
+                run.routine_revision_id,
                 now,
             ),
         )
@@ -76,5 +77,6 @@ def _row_to_run(row: sqlite3.Row) -> RoutineRun:
         idempotency_key=row["idempotency_key"],
         linked_task_id=row["linked_task_id"],
         coalesced_into_run_id=row["coalesced_into_run_id"],
+        routine_revision_id=row["routine_revision_id"],
         created_at=from_iso(row["created_at"]),
     )

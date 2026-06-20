@@ -290,6 +290,7 @@ class LedgerInspector:
             concurrency_policy=routine.concurrency_policy,
             catch_up_policy=routine.catch_up_policy,
             status=routine.status,
+            latest_revision_no=routine.latest_revision_no,
             triggers=triggers,
             recent_runs=runs,
         )

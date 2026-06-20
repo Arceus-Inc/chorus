@@ -219,7 +219,12 @@ class RoutineRunStatus(StrEnum):
 
 @dataclass(frozen=True)
 class Routine:
-    """A cron template + owner + policies (spec 01 Cluster C ``routine``)."""
+    """A cron template + owner + policies + revision head (spec 01 Cluster C ``routine``).
+
+    ``env`` binds secret *refs* (never raw values, spec 13 §2.1); ``routine_key`` is the stable
+    identity a plugin reconcile upserts on (spec 13 §5); ``latest_revision_id`` / ``latest_revision_no``
+    point at the live ``routine_revision`` head (spec 13 §2.2).
+    """
 
     id: str
     employee_id: str
@@ -230,8 +235,34 @@ class Routine:
     concurrency_policy: RoutineConcurrency = RoutineConcurrency.COALESCE  # M4 S1: safe-by-default
     catch_up_policy: RoutineCatchUp = RoutineCatchUp.SKIP_MISSED
     status: RoutineStatus = RoutineStatus.ACTIVE
+    env: dict[str, str] | None = None
+    routine_key: str | None = None
+    latest_revision_id: str | None = None
+    latest_revision_no: int = 1
     created_at: datetime | None = None
     updated_at: datetime | None = None
+
+
+@dataclass(frozen=True)
+class RoutineRevision:
+    """One immutable version of a routine's definition (spec 01 Cluster C ``routine_revision``).
+
+    Append-only: ``revise`` writes a new ``revision_no = head + 1``; ``restore`` writes a new head
+    copied from an earlier revision with ``restored_from_revision_id`` recording the provenance. A
+    firing pins the revision it ran under, so an edit never re-judges work already in flight.
+    """
+
+    id: str
+    routine_id: str
+    revision_no: int
+    intent_template: str
+    target: RoutineTarget = RoutineTarget.SPAWN_TASK
+    concurrency_policy: RoutineConcurrency = RoutineConcurrency.COALESCE
+    catch_up_policy: RoutineCatchUp = RoutineCatchUp.SKIP_MISSED
+    env: dict[str, str] | None = None
+    change_summary: str | None = None
+    restored_from_revision_id: str | None = None
+    created_at: datetime | None = None
 
 
 @dataclass(frozen=True)
@@ -268,6 +299,7 @@ class RoutineRun:
     idempotency_key: str | None = None
     linked_task_id: str | None = None
     coalesced_into_run_id: str | None = None
+    routine_revision_id: str | None = None  # the routine_revision this firing fired under (§2.3)
     created_at: datetime | None = None
 
 
