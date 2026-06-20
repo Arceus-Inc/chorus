@@ -100,7 +100,15 @@ keeps the role's powers). Set it at `submit(trust_preset=…)` or later with `or
 ## Routine — `org.routines`
 
 Recurring work: a cron schedule that spawns a task each time it fires. The heartbeat's CRON step fires due
-routines through the same dispatch path. Add / list / get / pause / resume. → `examples/07`
+routines through the same dispatch path. **add** (with a secret-ref `env` binding + a stable
+`routine_key`) / list / get / pause / resume, plus **revise** and **restore** — a routine is *versioned*:
+each edit writes a new head revision, a firing pins the revision it ran under (an in-flight edit never
+re-judges it), and `restore` rolls back through a new head without rewriting history. `env` binds secret
+**refs, never raw values** — an inline secret is rejected fail-closed at write time. → `examples/07`
+
+A **role** can also carry its own routines: a plugin declares `RoutineDeclaration`s, and **hiring** an
+employee of that role provisions them automatically — a new role schedules recurring work with no kernel
+change. → `examples/09`
 
 ## The read model — `org.status` / `org.inspect`
 

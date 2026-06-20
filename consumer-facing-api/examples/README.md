@@ -6,7 +6,7 @@ read as plain `chorus` usage.
 
 Two kinds:
 
-- **offline** (`03`–`08`) touch only the kernel's *data surfaces* — no model, no API keys. They build
+- **offline** (`03`–`09`) touch only the kernel's *data surfaces* — no model, no API keys. They build
   with `offline_org()` and never dispatch a beat, so every group verb and the read model run instantly
   against an in-memory SQLite ledger.
 - **live** (`01`, `02`) dispatch real beats through `chorus_harness` against an OpenAI-compatible
@@ -121,14 +121,48 @@ effect bites on a live run; offline, the script just attaches and re-sets the po
 **Teaches:** `submit(trust_preset=…)` and `org.trust.set_task`; `TrustPreset`.
 **Watch for:** the preset attached, then changed to standard.
 
-## `07_routines.py` — recurring work  *(offline)*
+## `07_routines.py` — recurring work: routines, revisions, env  *(offline)*
 
-Creates a cron routine with `org.routines.add(employee=…, intent_template=…, schedule="0 9 * * 1")`,
-lists them, then `pause`s and `resume`s its firing. When the heartbeat runs, the tick's CRON step fires
-any due routine and spawns its task through the normal dispatch path.
+Walks the whole routine lifecycle on the data surface. `org.routines.add(…, routine_key=…,
+env={"GITHUB_TOKEN": "ref:github_token"})` creates a routine at **revision 1** with a secret-ref `env`
+binding. `revise(by=…, intent_template=…)` writes a **new head revision** (the live row tracks the
+head); `restore(revision_no=1, by=…)` rolls back through a *new* head — history is never rewritten.
+`pause`/`resume` toggle firing. Finally it shows the **fail-closed env guard**: an inline secret
+(`GITHUB_TOKEN="ghp_…"`) raises `InvalidIntake` before it can ever be stored. When the heartbeat runs,
+the tick's CRON step fires any due routine and pins the revision it fired under (see 01/02 for live
+dispatch).
 
-**Teaches:** `org.routines.add` / `list` / `get` / `pause` / `resume`.
-**Watch for:** `status=active → paused → active`.
+**Teaches:** `org.routines.add` (`env`/`routine_key`) / `revise` / `restore` / `pause` / `resume`;
+revisions + the secret-ref guard.
+**Watch for:** `rev=1 → 2 → 3` across revise/restore, `active → paused → active`, and the rejected
+inline secret.
+
+## `08_inspect.py` — the read model  *(offline)*
+
+Hires a small org and submits three tasks — one owned, one **dependent** (`depends_on` the first), one
+unowned in the backlog — then reads the kernel back: `org.status()` (the one-call glance),
+`org.inspect.task(id)` (assignee, liveness, **blockers**), `org.inspect.stuck()` (the blocked inbox), and
+`org.inspect.org_report()` (the rollup). "Working vs stuck" is answered structurally from the ledger,
+never guessed from timing.
+
+**Teaches:** `org.status` + `org.inspect.task` / `stuck` / `org_report`; dependency blockers in a task view.
+**Watch for:** the dependent task listing the first task in its `blockers`, and the org report's
+`completion_rate`.
+
+## `09_plugin_routines.py` — roles that schedule themselves  *(offline)*
+
+Plugin-declared routines: a **role** carries its own standing schedule, and **hiring** an employee of
+that role provisions it automatically — no operator `add`. Two halves. First a built-in role: hiring a
+PM (`org.hire(role="pm")`) auto-creates its weekly planning routine, visible immediately in
+`org.routines.list(employee=…)`. Then a role the kernel never knew about — a `widget` `RolePlugin` with
+a `declared_routines=(RoutineDeclaration(…),)`, defined right in the script. `org.workforce.register_role`
++ `org.hire` and its nightly routine schedules itself, with **zero change under `src/chorus/`** — the
+reconciler never names a role. This is the "a new role schedules with no kernel change" property.
+
+**Teaches:** `RoutineDeclaration` + `RolePlugin.declared_routines`; hire-time provisioning;
+`org.workforce.register_role`.
+**Watch for:** the PM's weekly routine present right after hire, and the brand-new `widget` role's
+routine scheduling itself on hire.
 
 ## `08_inspect.py` — the read model  *(offline)*
 
@@ -148,5 +182,5 @@ never guessed from timing.
 
 `01` and `02` cost model calls and take time (`02` is a multi-beat pipeline — minutes). They're
 deterministic in *what they exercise* but not in *exactly how the model decomposes/builds*, so two runs
-can differ in the child structure while both reaching `done`. The offline scripts (`03`–`08`) are fully
+can differ in the child structure while both reaching `done`. The offline scripts (`03`–`09`) are fully
 deterministic and free — start there to learn the surface.
