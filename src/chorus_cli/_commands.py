@@ -1556,7 +1556,7 @@ def _routine_add(ctx: CommandContext, args: tuple[str, ...]) -> LoopSignal:
         catch_up = parsed_catch
     employee, intent = args[0], " ".join(args[1:])
     try:
-        view = _routine_facade(ctx).add_routine(
+        view = _routine_facade(ctx).routines.add(
             employee=employee,
             intent_template=intent,
             schedule=raw_schedule,
@@ -1579,7 +1579,7 @@ def _routine_add(ctx: CommandContext, args: tuple[str, ...]) -> LoopSignal:
 def _routine_list(ctx: CommandContext, args: tuple[str, ...]) -> LoopSignal:
     raw_employee, _ = _pop_flag(args, "employee")
     try:
-        views = _routine_facade(ctx).list_routines(employee=raw_employee)
+        views = _routine_facade(ctx).routines.list(employee=raw_employee)
     except UnknownEmployee as exc:
         ctx.out.error(str(exc))
         return LoopSignal.CONTINUE
@@ -1602,7 +1602,7 @@ def _routine_show(ctx: CommandContext, args: tuple[str, ...]) -> LoopSignal:
         ctx.out.error("usage: routine show <routine_id>")
         return LoopSignal.CONTINUE
     try:
-        view = _routine_facade(ctx).routine(args[0])
+        view = _routine_facade(ctx).routines.get(args[0])
     except KeyError:
         ctx.out.error(f"no routine {args[0]!r}")
         return LoopSignal.CONTINUE
@@ -1647,10 +1647,10 @@ def _routine_toggle(ctx: CommandContext, args: tuple[str, ...], *, verb: str) ->
         return LoopSignal.CONTINUE
     facade = _routine_facade(ctx)
     if verb == "pause":
-        facade.pause_routine(routine_id)
+        facade.routines.pause(routine_id)
         ctx.out.line(f"paused {routine_id}")
     else:
-        facade.resume_routine(routine_id)
+        facade.routines.resume(routine_id)
         ctx.out.line(f"resumed {routine_id}")
     return LoopSignal.CONTINUE
 

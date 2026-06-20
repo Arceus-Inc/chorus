@@ -33,7 +33,7 @@ _ANALYST_BRIEF = "You produce a data finding, persisted somewhere a Reviewer can
 def default_roles() -> tuple[RolePlugin, ...]:
     """The canonical v0 workforce roles, registered at boot (spec 06 §2).
 
-    A consumer adds a sixth role with ``chorus.register_role(...)`` — never by
+    A consumer adds a sixth role with ``chorus.workforce.register_role(...)`` — never by
     editing the kernel (spec 09 §1).
     """
     return (

@@ -41,7 +41,7 @@ def test_add_routine_persists_a_routine_and_its_cron_trigger() -> None:
     try:
         chorus = _chorus(ledger)
         chorus.hire(name="Moe", role="manager")
-        view = chorus.add_routine(
+        view = chorus.routines.add(
             employee="Moe", intent_template="weekly review", schedule="0 9 * * 1"
         )
         stored = ledger.routines.get(view.id)
@@ -64,7 +64,7 @@ def test_add_routine_resolves_a_name_to_its_slug() -> None:
     try:
         chorus = _chorus(ledger)
         chorus.hire(name="Big Moe", role="manager")
-        view = chorus.add_routine(
+        view = chorus.routines.add(
             employee="Big Moe", intent_template="x", schedule="0 * * * *"
         )
         assert view.employee_id == "big-moe"
@@ -76,7 +76,7 @@ def test_add_routine_for_an_unknown_employee_is_fail_closed() -> None:
     ledger = SqliteLedger.open(":memory:")
     try:
         with pytest.raises(UnknownEmployee):
-            _chorus(ledger).add_routine(
+            _chorus(ledger).routines.add(
                 employee="ghost", intent_template="x", schedule="0 * * * *"
             )
         # nothing persisted on the failed path
@@ -90,7 +90,7 @@ def test_add_routine_honours_an_explicit_concurrency_enum() -> None:
     try:
         chorus = _chorus(ledger)
         chorus.hire(name="Moe", role="manager")
-        view = chorus.add_routine(
+        view = chorus.routines.add(
             employee="Moe",
             intent_template="x",
             schedule="0 * * * *",
@@ -107,10 +107,10 @@ def test_list_routines_filters_by_employee() -> None:
         chorus = _chorus(ledger)
         chorus.hire(name="Moe", role="manager")
         chorus.hire(name="Ada", role="engineer", reports_to="moe")
-        chorus.add_routine(employee="Moe", intent_template="m", schedule="0 * * * *")
-        chorus.add_routine(employee="Ada", intent_template="a", schedule="0 * * * *")
-        assert {v.employee_id for v in chorus.list_routines()} == {"moe", "ada"}
-        assert [v.employee_id for v in chorus.list_routines(employee="Ada")] == ["ada"]
+        chorus.routines.add(employee="Moe", intent_template="m", schedule="0 * * * *")
+        chorus.routines.add(employee="Ada", intent_template="a", schedule="0 * * * *")
+        assert {v.employee_id for v in chorus.routines.list()} == {"moe", "ada"}
+        assert [v.employee_id for v in chorus.routines.list(employee="Ada")] == ["ada"]
     finally:
         ledger.close()
 
@@ -120,8 +120,8 @@ def test_routine_view_carries_triggers_and_recent_runs() -> None:
     try:
         chorus = _chorus(ledger)
         chorus.hire(name="Moe", role="manager")
-        view = chorus.add_routine(employee="Moe", intent_template="x", schedule="0 * * * *")
-        shown = chorus.routine(view.id)
+        view = chorus.routines.add(employee="Moe", intent_template="x", schedule="0 * * * *")
+        shown = chorus.routines.get(view.id)
         assert len(shown.triggers) == 1
         assert shown.recent_runs == ()  # nothing has fired yet
     finally:
@@ -133,14 +133,14 @@ def test_pause_then_resume_toggles_the_firing_status() -> None:
     try:
         chorus = _chorus(ledger)
         chorus.hire(name="Moe", role="manager")
-        view = chorus.add_routine(employee="Moe", intent_template="x", schedule="0 * * * *")
+        view = chorus.routines.add(employee="Moe", intent_template="x", schedule="0 * * * *")
 
-        chorus.pause_routine(view.id)
-        assert chorus.routine(view.id).status is RoutineStatus.PAUSED
+        chorus.routines.pause(view.id)
+        assert chorus.routines.get(view.id).status is RoutineStatus.PAUSED
         assert ledger.routines.list_active() == []  # paused routines drop out of the firing set
 
-        chorus.resume_routine(view.id)
-        assert chorus.routine(view.id).status is RoutineStatus.ACTIVE
+        chorus.routines.resume(view.id)
+        assert chorus.routines.get(view.id).status is RoutineStatus.ACTIVE
         assert [r.id for r in ledger.routines.list_active()] == [view.id]
     finally:
         ledger.close()

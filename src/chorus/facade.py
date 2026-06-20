@@ -16,46 +16,41 @@ from __future__ import annotations
 import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import UTC, datetime
 from typing import Any
 
 from chorus.budgets import BudgetEnforcer
-from chorus.cron import parse_cron
 from chorus.errors import OrgInvariantViolation
 from chorus.governance import GovernancePolicy
-from chorus.groups import BudgetsFacade, GovernanceFacade, InspectFacade, TrustFacade
+from chorus.groups import (
+    BudgetsFacade,
+    DodFacade,
+    GovernanceFacade,
+    InspectFacade,
+    RoutinesFacade,
+    TrustFacade,
+    WorkforceFacade,
+)
 from chorus.heartbeat import BeatRunner, BeatRunnerFor, Scheduler, TickReport, Wake
 from chorus.ledger import (
     Message,
-    Routine,
-    RoutineCatchUp,
-    RoutineConcurrency,
-    RoutineStatus,
-    RoutineTarget,
-    RoutineTrigger,
     SqliteLedger,
     Task,
     TaskPriority,
-    TriggerKind,
 )
 from chorus.lifecycle import (
     DEFAULT_REQUEST_DEPTH_CAP,
-    ReviseOutcome,
     assign_task,
     deliver_message,
-    revise_dod,
 )
 from chorus.memory import AppendOnlyMemoryWriter
-from chorus.observability import EventBus, LedgerInspector, RoutineView, WorkforceStatus
+from chorus.observability import EventBus, LedgerInspector, WorkforceStatus
 from chorus.outcomes import Verifier
 from chorus.roles import RolePlugin, RoleRegistry, default_roles
 from chorus.trust import TrustPreset
 from chorus.workforce import (
     Employee,
-    GitWorkforce,
     LedgerWorkforce,
     Workforce,
-    copy_org,
     slugify,
 )
 
@@ -102,6 +97,9 @@ class Chorus:
         self._governance = GovernanceFacade(ledger, workforce, roles, self._governance_policy)
         self._budgets = BudgetsFacade(ledger, company_id=company_id)
         self._trust = TrustFacade(ledger)
+        self._routines = RoutinesFacade(ledger, workforce, inspector)
+        self._workforce_grp = WorkforceFacade(workforce, roles)
+        self._dod = DodFacade(ledger)
 
     # -- construction ---------------------------------------------------------
 
@@ -241,16 +239,20 @@ class Chorus:
             raise OrgInvariantViolation(f"unknown role {role!r}")
         return self._workforce.hire(name=name, role=role, reports_to=reports_to)
 
-    def revise_dod(
-        self, task_id: str, new_verifier: Verifier, *, revised_by: str
-    ) -> ReviseOutcome:
-        """Revise a task's DoD (spec 04 §1): a manager tighten applies now; a loosen opens a §5 gate.
+    @property
+    def routines(self) -> RoutinesFacade:
+        """``org.routines`` — recurring work: add / list / get / pause / resume (spec 13)."""
+        return self._routines
 
-        Raises ``RevisionAuthorityError`` if ``revised_by`` is not the assignee's manager, or
-        ``NoRevision`` if the task has no DoD / the edit is a no-op."""
-        return revise_dod(
-            self._ledger, task_id=task_id, new_verifier=new_verifier, revised_by=revised_by
-        )
+    @property
+    def workforce(self) -> WorkforceFacade:
+        """``org.workforce`` — register_role + portable export/import_ (spec 09)."""
+        return self._workforce_grp
+
+    @property
+    def dod(self) -> DodFacade:
+        """``org.dod`` — revise a task's Definition of Done (spec 04 §1)."""
+        return self._dod
 
     @property
     def governance(self) -> GovernanceFacade:
@@ -276,90 +278,6 @@ class Chorus:
         self._workforce.terminate(employee_id)
         self._ledger.runs.cancel_running(employee_id=employee_id)
         self._ledger.wakes.drop_queued(employee_id=employee_id)
-
-    def register_role(self, plugin: RolePlugin, *, replace: bool = False) -> None:
-        """Register a role plugin — fail-closed + idempotent (spec 09 §1)."""
-        self._roles.register(plugin, replace=replace)
-
-    # -- portability: org as data (spec 09 §3) --------------------------------
-
-    def export_workforce(self, org_repo: str) -> int:
-        """Serialize the live ledger org to a portable git-markdown tree (spec 09 §3).
-
-        Writes ``<org_repo>/employees/<slug>/role.md`` for every non-terminated employee — the
-        portable package is the *serialization* of the live store, not a second store. Returns the
-        number of employees exported.
-        """
-        return copy_org(self._workforce, GitWorkforce(org_repo))
-
-    def import_workforce(self, org_repo: str) -> int:
-        """Materialize a git-markdown org into the live ledger store (spec 09 §3).
-
-        Re-hires every employee under ``<org_repo>/employees/`` into the ledger (managers first, so
-        each ``reports_to`` edge resolves as it lands). Returns the number imported.
-        """
-        return copy_org(GitWorkforce(org_repo), self._workforce)
-
-    # -- cron (spec 03 §4) ----------------------------------------------------
-
-    def add_routine(
-        self,
-        *,
-        employee: str,
-        intent_template: str,
-        schedule: str,
-        target: RoutineTarget = RoutineTarget.SPAWN_TASK,
-        concurrency: RoutineConcurrency = RoutineConcurrency.COALESCE,
-        catch_up: RoutineCatchUp = RoutineCatchUp.SKIP_MISSED,
-        timezone: str = "UTC",
-    ) -> RoutineView:
-        """Create a cron routine owned by ``employee`` and its due trigger (spec 13 §3.1).
-
-        ``employee`` is resolved by slug (fail-closed: an unknown employee raises ``UnknownEmployee``
-        before anything is written). The firing engine already exists — this is the reachability seam
-        that lets a routine be *created*; the tick's CRON step picks it up from ``next_run_at``.
-        """
-        employee_id = self._workforce.get(slugify(employee)).id  # fail-closed on unknown
-        # Resolve the first edge *before* any write so a bad cron leaves no orphan routine.
-        next_run_at = parse_cron(schedule, base=datetime.now(UTC), timezone=timezone)
-        routine = self._ledger.routines.create(
-            Routine(
-                id=f"routine_{uuid.uuid4().hex[:12]}",
-                employee_id=employee_id,
-                intent_template=intent_template,
-                target=target,
-                concurrency_policy=concurrency,
-                catch_up_policy=catch_up,
-            )
-        )
-        self._ledger.routine_triggers.create(
-            RoutineTrigger(
-                id=f"trig_{uuid.uuid4().hex[:12]}",
-                routine_id=routine.id,
-                kind=TriggerKind.CRON,
-                cron_expression=schedule,
-                timezone=timezone,
-                next_run_at=next_run_at,
-            )
-        )
-        return self._inspector.routine(routine.id)
-
-    def list_routines(self, *, employee: str | None = None) -> list[RoutineView]:
-        """Every routine, optionally scoped to one employee (resolved by slug) (spec 13 §7)."""
-        employee_id = None if employee is None else self._workforce.get(slugify(employee)).id
-        return self._inspector.list_routines(employee_id=employee_id)
-
-    def routine(self, routine_id: str) -> RoutineView:
-        """One routine resolved for reading — definition + triggers + recent firings (spec 13 §7)."""
-        return self._inspector.routine(routine_id)
-
-    def pause_routine(self, routine_id: str) -> None:
-        """Stop a routine from firing (a paused routine drops out of the tick's CRON scan) (spec 13 §3.2)."""
-        self._ledger.routines.set_status(routine_id, RoutineStatus.PAUSED)
-
-    def resume_routine(self, routine_id: str) -> None:
-        """Resume a paused routine — its trigger's ``next_run_at`` starts selecting again (spec 13 §3.2)."""
-        self._ledger.routines.set_status(routine_id, RoutineStatus.ACTIVE)
 
     # -- inspection (read model, spec 08 / spec 14 §4) ------------------------
 

@@ -115,7 +115,7 @@ def main() -> int:
         _log(f"deployment={deployment}")
 
         # 1. CREATE the routine through the facade — the seam S1 adds (was a NotImplementedError stub).
-        view = _facade(ledger, registry).add_routine(
+        view = _facade(ledger, registry).routines.add(
             employee="Ada", intent_template=_INTENT, schedule=_SCHEDULE
         )
         (trigger,) = view.triggers
