@@ -156,7 +156,16 @@ def write_role_overlays(harness_dir: Path, config: RoleBeatConfig) -> None:
             f'system_prompt = "{_toml_escape(prompt)}"',
             f'permission_mode = "{config.permission_mode}"',
         ]
-        if role in ("planner", "evaluator"):
+        # The planner runs toolless on purpose. Given read-only tools and ``tool_choice="auto"``
+        # (dream hardcodes auto), weaker models like gpt-5.4-mini emit a tool call and ZERO text —
+        # so ``run_task`` finds no ``<spec>`` and fails with "planner reply missing <spec>".
+        # (Verified directly against gpt-5.4-mini: tools+auto -> finish_reason=tool_calls, content
+        # len 0; no tools / tool_choice=none -> a clean <spec>.) A toolless planner has nothing to
+        # call, so it must emit the contract; the generator does the real exploration. The evaluator
+        # keeps its read-only surfaces (it needs them to verify).
+        if role == "planner":
+            lines.append("tools = []")
+        elif role == "evaluator":
             lines.append(f"tools = {_toml_string_list(_read_only_role_tools(role, config))}")
         (roles_dir / f"{role}.toml").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
@@ -286,12 +295,13 @@ class EmployeeHarnessFactory:
         # Structural over-decompose guard: on an integrate beat the parent already owns children, so
         # ``decompose`` is dropped from the toolset entirely — the model never sees it (M3 §5). Brief
         # discipline alone is not enough; under load a manager re-decomposes and balloons the subtree.
-        if (
+        is_integrate_beat = (
             task_id is not None
             and self._ledger is not None
-            and "decompose" in config.tools
             and self._ledger.tasks.has_children(task_id)
-        ):
+        )
+        if is_integrate_beat and "decompose" in config.tools:
+            assert task_id is not None and self._ledger is not None  # narrowed by is_integrate_beat
             config = replace(config, tools=tuple(t for t in config.tools if t != "decompose"))
             # Structural over-submit guard: when the kernel's verdict is `accept` — every child done,
             # unblocked, and passing — the delegated work is complete, so submit_task/assign_task are
@@ -315,6 +325,12 @@ class EmployeeHarnessFactory:
         if config.isolation == "worktree":
             workspace = CompanyWorkspace(self._company_root, seed=self._seed)
             worktree_owner = review_worktree_of if review_worktree_of is not None else employee.id
+            # Integrate beat: the manager delegated, so its worktree still sits at the ``main`` it
+            # branched from — blind to the children's deliverables that have since landed. Sync it to
+            # ``main`` first so the manager reviews the real, merged subtree instead of an empty tree
+            # (read_file on the children's files would otherwise error and the verdict be vacuous).
+            if is_integrate_beat and review_worktree_of is None:
+                workspace.sync_to_main(worktree_owner)
             root = workspace.worktree_for(worktree_owner).path
         else:
             root = self._company_root / employee.id

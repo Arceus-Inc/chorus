@@ -223,6 +223,29 @@ class CompanyWorkspace:
             detail=(done.stderr or done.stdout).strip(),
         )
 
+    def sync_to_main(self, employee_id: str) -> bool:
+        """Bring ``employee_id``'s worktree up to the current company ``main``; return whether it synced.
+
+        A manager that delegated never edited code, so its worktree still sits at the ``main`` it
+        branched from — blind to the children's deliverables that have since landed there. Merging
+        ``main`` into the branch (a fast-forward, since a delegating manager has no own commits) makes
+        the integrated subtree visible in the worktree, so the manager's integrate beat reviews the real
+        merged result instead of an empty tree. A divergent branch that cannot merge cleanly is left
+        untouched (the beat falls back to its stale worktree) rather than raised — sync is best-effort.
+        """
+        wt = self.worktree_for(employee_id)
+        done = subprocess.run(
+            ["git", "-C", str(wt.path), *_COMMIT_IDENTITY, "merge", "main",
+             "-m", f"chorus: sync {wt.branch} to main"],
+            capture_output=True,
+            text=True,
+        )
+        if done.returncode == 0:
+            return True
+        if "CONFLICT" in (done.stdout + done.stderr):
+            self._run(wt.path, "merge", "--abort")
+        return False
+
     def snapshot(self, employee_id: str) -> str:
         """Commit any uncommitted work in the employee's worktree; return its branch HEAD commit sha.
 
