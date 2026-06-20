@@ -23,7 +23,7 @@ from chorus.budgets import BudgetEnforcer
 from chorus.cron import parse_cron
 from chorus.errors import OrgInvariantViolation
 from chorus.governance import GovernancePolicy
-from chorus.groups import GovernanceFacade, InspectFacade
+from chorus.groups import BudgetsFacade, GovernanceFacade, InspectFacade
 from chorus.heartbeat import BeatRunner, BeatRunnerFor, Scheduler, TickReport, Wake
 from chorus.ledger import (
     Message,
@@ -84,6 +84,7 @@ class Chorus:
         roles: RoleRegistry,
         caps: Caps,
         governance_policy: GovernancePolicy | None = None,
+        company_id: str = "company",
     ) -> None:
         self._ledger = ledger
         self._workforce = workforce
@@ -98,6 +99,7 @@ class Chorus:
         # Low-level grouped surfaces (spec 14 §2.2) — built once over the same backends.
         self._inspect = InspectFacade(inspector, event_bus)
         self._governance = GovernanceFacade(ledger, workforce, roles, self._governance_policy)
+        self._budgets = BudgetsFacade(ledger, company_id=company_id)
 
     # -- construction ---------------------------------------------------------
 
@@ -154,6 +156,7 @@ class Chorus:
             dream=dream,
             roles=registry,
             caps=the_caps,
+            company_id=company_id,
         )
 
     # -- intake (horizon handoff seam, spec 10 §5) ----------------------------
@@ -243,6 +246,11 @@ class Chorus:
     def governance(self) -> GovernanceFacade:
         """``org.governance`` — request/open gates, resolve them (approve/deny), read the open inbox."""
         return self._governance
+
+    @property
+    def budgets(self) -> BudgetsFacade:
+        """``org.budgets`` — set token-salary caps, raise_/dismiss after a breach (spec 04 §3)."""
+        return self._budgets
 
     def terminate(self, employee_id: str) -> None:
         """Irreversibly terminate an employee; cancel its in-flight work (spec 06 §3).
