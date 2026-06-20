@@ -56,6 +56,25 @@ class RoutineRepo:
         ).fetchall()
         return [_row_to_routine(row) for row in rows]
 
+    def list(self, *, employee_id: str | None = None) -> list[Routine]:
+        """All routines (any status), oldest first; scoped to one employee when given."""
+        if employee_id is None:
+            rows = self._conn.execute("SELECT * FROM routine ORDER BY created_at, id").fetchall()
+        else:
+            rows = self._conn.execute(
+                "SELECT * FROM routine WHERE employee_id = ? ORDER BY created_at, id",
+                (employee_id,),
+            ).fetchall()
+        return [_row_to_routine(row) for row in rows]
+
+    def set_status(self, routine_id: str, status: RoutineStatus) -> None:
+        """Pause or resume a routine — the only mutable field on a routine row (spec 13 §3.2)."""
+        self._conn.execute(
+            "UPDATE routine SET status = ?, updated_at = ? WHERE id = ?",
+            (status.value, utcnow_iso(), routine_id),
+        )
+        self._conn.commit()
+
 
 def _row_to_routine(row: sqlite3.Row) -> Routine:
     return Routine(

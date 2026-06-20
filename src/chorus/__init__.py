@@ -14,7 +14,7 @@ chorus depends on dream; nothing depends sideways (spec 00 §5).
 
 from __future__ import annotations
 
-from chorus.cron import Routine, parse_cron
+from chorus.cron import parse_cron
 from chorus.errors import (
     BudgetBlocked,
     ChorusError,
@@ -28,10 +28,20 @@ from chorus.errors import (
 from chorus.events import Event, EventKind
 from chorus.facade import Caps, Chorus
 from chorus.heartbeat import TickReport, Wake, WakeReason
-from chorus.ledger import ExecPlan, Task, TaskStatus
+from chorus.ledger import (
+    ExecPlan,
+    Routine,
+    RoutineCatchUp,
+    RoutineConcurrency,
+    RoutineStatus,
+    RoutineTarget,
+    Task,
+    TaskStatus,
+)
 from chorus.observability import (
     EmployeeView,
     IncidentView,
+    RoutineView,
     RunView,
     TaskView,
     WorkforceStatus,
@@ -68,8 +78,13 @@ __all__ = [
     "RolePlugin",
     "RolePluginConflict",
     "RolePluginInvalid",
-    # cron
+    # cron / routines
     "Routine",
+    "RoutineCatchUp",
+    "RoutineConcurrency",
+    "RoutineStatus",
+    "RoutineTarget",
+    "RoutineView",
     "RunView",
     # ledger
     "Task",

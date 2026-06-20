@@ -47,6 +47,14 @@ class RoutineTriggerRepo:
         ).fetchone()
         return _row_to_trigger(row) if row is not None else None
 
+    def by_routine(self, routine_id: str) -> list[RoutineTrigger]:
+        """A routine's triggers, oldest first (the read-model surface, spec 08 / 13 §7)."""
+        rows = self._conn.execute(
+            "SELECT * FROM routine_trigger WHERE routine_id = ? ORDER BY created_at, id",
+            (routine_id,),
+        ).fetchall()
+        return [_row_to_trigger(row) for row in rows]
+
     def due(self, *, now: datetime) -> list[RoutineTrigger]:
         """Triggers whose ``next_run_at`` has arrived, oldest first."""
         rows = self._conn.execute(

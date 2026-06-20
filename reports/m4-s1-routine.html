@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>M4 S1 — recurring work (live)</title>
+<style>
+ html { background: #ffffff; }
+ body { font: 15px/1.6 ui-sans-serif, system-ui, sans-serif; max-width: 820px; margin: 40px auto;
+        color: #1c1c1c; background: #ffffff; padding: 0 20px; }
+ h1 { font-size: 24px; } h2 { font-size: 18px; margin-top: 32px; }
+ table { border-collapse: collapse; width: 100%; margin: 12px 0; }
+ td, th { border: 1px solid #e3e3df; padding: 7px 10px; text-align: left; vertical-align: top; }
+ code { background: #f6f5f2; padding: 1px 5px; border-radius: 4px; font-size: 13px; }
+ .lead { color: #555; }
+</style></head><body>
+<h1>M4 S1 — recurring work, live 🟨</h1>
+<p class="lead">A cron <b>routine</b> created through <code>Chorus.add_routine</code> fired on the
+heartbeat's CRON step and spawned a task that a real engineer beat (Azure gpt-5.2)
+carried to done — the firing engine already existed; S1 made routines <i>creatable</i>.</p>
+
+<h2>The S1 chain, asserted</h2>
+<table>
+<tr><th></th><th>step</th><th>evidence</th></tr>
+<tr><td>✅</td><td>routine created (facade.add_routine)</td><td><code>routine_7e0531361204</code></td></tr>
+<tr><td>✅</td><td>fired exact-once across ticks</td><td><code>1 routine_run(s)</code></td></tr>
+<tr><td>✅</td><td>firing dispatched + linked a task</td><td><code>dispatched</code></td></tr>
+<tr><td>✅</td><td>task carries routine_execution origin</td><td><code>routine_execution</code></td></tr>
+<tr><td>✅</td><td>a real engineer beat was dispatched + ran</td><td><code>1 beat(s)</code></td></tr>
+</table>
+
+<h2>Beyond S1 — into the live reviewed-build pipeline</h2>
+<p class="lead">The firing flows straight into the real M3 engineer→reviewer flow; whether a single
+live beat reaches <code>done</code> is M3's reliability, not what S1 adds.</p>
+<table>
+<tr><th></th><th>step</th><th>evidence</th></tr>
+<tr><td>❌</td><td>task reached done via reviewed-build</td><td><code>blocked</code></td></tr>
+<tr><td>❌</td><td>artifact landed (PR)</td><td><code>-</code></td></tr>
+<tr><td>❌</td><td>shipped to company main</td><td><code>subtract() in main: False</code></td></tr>
+</table>
+
+<h2>The routine</h2>
+<table>
+<tr><th>field</th><th>value</th></tr>
+<tr><td>id</td><td><code>routine_7e0531361204</code></td></tr>
+<tr><td>owner</td><td><code>ada</code></td></tr>
+<tr><td>intent</td><td>In calc.py add a function subtract(a, b) that returns a - b. In test_calc.py add a test test_subtract asserting subtract(3, 1) == 2. Keep the existing add function and its test. Make the changes directly in those files.</td></tr>
+<tr><td>schedule</td><td><code>* * * * *</code></td></tr>
+<tr><td>concurrency</td><td><code>coalesce</code> (S1 safe default)</td></tr>
+<tr><td>catch-up</td><td><code>skip_missed</code></td></tr>
+</table>
+
+<h2>What landed</h2>
+<pre><code>ac7d0ba init</code></pre>
+<p class="lead">Generated 2026-06-20T12:24:41.</p>
+</body></html>

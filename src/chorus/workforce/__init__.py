@@ -22,6 +22,7 @@ from chorus.workforce._ledger import EmployeeStore, LedgerWorkforce
 from chorus.workforce._models import Employee, EmployeeStatus
 from chorus.workforce._package import copy_org
 from chorus.workforce._protocol import Workforce
+from chorus.workforce._slug import slugify
 
 __all__ = [
     "Employee",
@@ -31,4 +32,5 @@ __all__ = [
     "LedgerWorkforce",
     "Workforce",
     "copy_org",
+    "slugify",
 ]

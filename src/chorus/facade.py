@@ -16,9 +16,11 @@ from __future__ import annotations
 import uuid
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Any
 
 from chorus.budgets import BudgetEnforcer
+from chorus.cron import parse_cron
 from chorus.errors import OrgInvariantViolation
 from chorus.events import Event
 from chorus.governance import GovernancePolicy, GovernanceResolver
@@ -30,8 +32,15 @@ from chorus.ledger import (
     BudgetPolicy,
     BudgetScope,
     Message,
+    Routine,
+    RoutineCatchUp,
+    RoutineConcurrency,
+    RoutineStatus,
+    RoutineTarget,
+    RoutineTrigger,
     SqliteLedger,
     Task,
+    TriggerKind,
 )
 from chorus.lifecycle import (
     DEFAULT_REQUEST_DEPTH_CAP,
@@ -41,7 +50,7 @@ from chorus.lifecycle import (
     revise_dod,
 )
 from chorus.memory import AppendOnlyMemoryWriter
-from chorus.observability import EventBus, LedgerInspector, TaskView, WorkforceStatus
+from chorus.observability import EventBus, LedgerInspector, RoutineView, TaskView, WorkforceStatus
 from chorus.outcomes import Verifier
 from chorus.roles import RolePlugin, RoleRegistry, default_roles
 from chorus.workforce import (
@@ -51,6 +60,7 @@ from chorus.workforce import (
     LedgerWorkforce,
     Workforce,
     copy_org,
+    slugify,
 )
 
 
@@ -331,10 +341,58 @@ class Chorus:
         employee: str,
         intent_template: str,
         schedule: str,
-        target: str = "spawn_task",
-    ) -> Any:
-        """Add a cron routine owned by ``employee`` (spec 03 §4)."""
-        raise NotImplementedError("spec 03 §4: persist routine + trigger")
+        target: RoutineTarget = RoutineTarget.SPAWN_TASK,
+        concurrency: RoutineConcurrency = RoutineConcurrency.COALESCE,
+        catch_up: RoutineCatchUp = RoutineCatchUp.SKIP_MISSED,
+        timezone: str = "UTC",
+    ) -> RoutineView:
+        """Create a cron routine owned by ``employee`` and its due trigger (spec 13 §3.1).
+
+        ``employee`` is resolved by slug (fail-closed: an unknown employee raises ``UnknownEmployee``
+        before anything is written). The firing engine already exists — this is the reachability seam
+        that lets a routine be *created*; the tick's CRON step picks it up from ``next_run_at``.
+        """
+        employee_id = self._workforce.get(slugify(employee)).id  # fail-closed on unknown
+        # Resolve the first edge *before* any write so a bad cron leaves no orphan routine.
+        next_run_at = parse_cron(schedule, base=datetime.now(UTC), timezone=timezone)
+        routine = self._ledger.routines.create(
+            Routine(
+                id=f"routine_{uuid.uuid4().hex[:12]}",
+                employee_id=employee_id,
+                intent_template=intent_template,
+                target=target,
+                concurrency_policy=concurrency,
+                catch_up_policy=catch_up,
+            )
+        )
+        self._ledger.routine_triggers.create(
+            RoutineTrigger(
+                id=f"trig_{uuid.uuid4().hex[:12]}",
+                routine_id=routine.id,
+                kind=TriggerKind.CRON,
+                cron_expression=schedule,
+                timezone=timezone,
+                next_run_at=next_run_at,
+            )
+        )
+        return self._inspector.routine(routine.id)
+
+    def list_routines(self, *, employee: str | None = None) -> list[RoutineView]:
+        """Every routine, optionally scoped to one employee (resolved by slug) (spec 13 §7)."""
+        employee_id = None if employee is None else self._workforce.get(slugify(employee)).id
+        return self._inspector.list_routines(employee_id=employee_id)
+
+    def routine(self, routine_id: str) -> RoutineView:
+        """One routine resolved for reading — definition + triggers + recent firings (spec 13 §7)."""
+        return self._inspector.routine(routine_id)
+
+    def pause_routine(self, routine_id: str) -> None:
+        """Stop a routine from firing (a paused routine drops out of the tick's CRON scan) (spec 13 §3.2)."""
+        self._ledger.routines.set_status(routine_id, RoutineStatus.PAUSED)
+
+    def resume_routine(self, routine_id: str) -> None:
+        """Resume a paused routine — its trigger's ``next_run_at`` starts selecting again (spec 13 §3.2)."""
+        self._ledger.routines.set_status(routine_id, RoutineStatus.ACTIVE)
 
     # -- inspection (read model, spec 08) -------------------------------------
 

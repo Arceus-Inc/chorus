@@ -15,6 +15,9 @@ from chorus.heartbeat import IntegrateContextPacket
 from chorus.ledger import ActivityVerb, RunStatus, TaskStatus
 from chorus.observability._views import (
     OrgObservabilityReport,
+    RoutineRunView,
+    RoutineTriggerView,
+    RoutineView,
     ScrumChildView,
     ScrumPacketView,
     TaskView,
@@ -23,6 +26,9 @@ from chorus.observability._views import (
 
 if False:  # pragma: no cover - typing only without runtime import cost
     from chorus.ledger import SqliteLedger
+    from chorus.ledger._models import Routine
+
+_RECENT_RUNS = 5  # how many of a routine's most-recent firings the read model surfaces
 
 
 @runtime_checkable
@@ -47,6 +53,14 @@ class Inspector(Protocol):
 
     def org_report(self) -> OrgObservabilityReport:
         """Combined manager + leaf observability rollup."""
+        ...
+
+    def routine(self, routine_id: str) -> RoutineView:
+        """One routine, resolved: definition + triggers + recent firings (spec 13 §7)."""
+        ...
+
+    def list_routines(self, *, employee_id: str | None = None) -> list[RoutineView]:
+        """Every routine (any status), optionally scoped to one employee (spec 13 §7)."""
         ...
 
 
@@ -139,6 +153,52 @@ class LedgerInspector:
             reassignment_count=sum(1 for a in assignment_activities if a.payload.get("reassigned") is True),
             dependency_edges=sum(len(self._ledger.dependencies.blockers(task.id)) for task in tasks),
             manager_packets=packets,
+        )
+
+    def routine(self, routine_id: str) -> RoutineView:
+        routine = self._ledger.routines.get(routine_id)
+        if routine is None:
+            raise KeyError(routine_id)
+        return self._routine_view(routine)
+
+    def list_routines(self, *, employee_id: str | None = None) -> list[RoutineView]:
+        return [
+            self._routine_view(routine)
+            for routine in self._ledger.routines.list(employee_id=employee_id)
+        ]
+
+    def _routine_view(self, routine: Routine) -> RoutineView:
+        triggers = tuple(
+            RoutineTriggerView(
+                id=trigger.id,
+                kind=trigger.kind,
+                cron_expression=trigger.cron_expression,
+                timezone=trigger.timezone,
+                next_run_at=trigger.next_run_at,
+                last_fired_at=trigger.last_fired_at,
+            )
+            for trigger in self._ledger.routine_triggers.by_routine(routine.id)
+        )
+        recent = self._ledger.routine_runs.by_routine(routine.id)[-_RECENT_RUNS:]
+        runs = tuple(
+            RoutineRunView(
+                id=run.id,
+                status=run.status,
+                linked_task_id=run.linked_task_id,
+                coalesced_into_run_id=run.coalesced_into_run_id,
+            )
+            for run in reversed(recent)  # newest firing first
+        )
+        return RoutineView(
+            id=routine.id,
+            employee_id=routine.employee_id,
+            intent_template=routine.intent_template,
+            target=routine.target,
+            concurrency_policy=routine.concurrency_policy,
+            catch_up_policy=routine.catch_up_policy,
+            status=routine.status,
+            triggers=triggers,
+            recent_runs=runs,
         )
 
 
