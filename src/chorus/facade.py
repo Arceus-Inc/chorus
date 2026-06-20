@@ -13,6 +13,7 @@ below; the behavior is stubbed pending implementation (M1+, spec 11 build plan).
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -108,6 +109,7 @@ class Chorus:
         self._routines = RoutinesFacade(ledger, workforce, inspector)
         self._workforce_grp = WorkforceFacade(workforce, roles)
         self._dod = DodFacade(ledger)
+        self._heartbeat: asyncio.Task[None] | None = None  # the managed always-on runner (start/stop)
 
     # -- construction ---------------------------------------------------------
 
@@ -263,9 +265,30 @@ class Chorus:
         """Run the heartbeat until :meth:`stop` (or cancellation), draining beats on exit (spec 03 §3)."""
         await self._scheduler.run()
 
-    def stop(self) -> None:
-        """Signal :meth:`run_forever` to exit after the current pulse (spec 03 §3)."""
+    def start(self) -> None:
+        """Start the heartbeat as a managed background task — the concurrent always-on runner (spec 03 §3).
+
+        Returns immediately and the kernel pulses in the background, running up to
+        ``Caps.max_concurrent_runs`` beats at once with no per-pulse barrier (a freed slot is filled the
+        next pulse — strictly more concurrent than a drain-per-pulse loop). Idempotent: a second
+        ``start`` while one is live is a no-op. Pair with :meth:`stop`. Requires a running event loop
+        (the facade is async-native); for a single deterministic advance use :meth:`tick` + :meth:`drain`.
+        """
+        if self._heartbeat is not None and not self._heartbeat.done():
+            return
+        self._heartbeat = asyncio.create_task(self._scheduler.run())
+
+    async def stop(self) -> None:
+        """Stop the heartbeat after the current pulse and await its in-flight beats (spec 03 §3).
+
+        Signals the loop to exit, then awaits the managed :meth:`start` task so its beats drain before
+        ``stop`` returns. A no-op-safe signal when the heartbeat was never started (e.g. a caller driving
+        :meth:`run_forever` itself just gets the stop signal and awaits its own task).
+        """
         self._scheduler.stop()
+        if self._heartbeat is not None:
+            await self._heartbeat
+            self._heartbeat = None
 
     # -- org as data (spec 06 §3) ---------------------------------------------
 

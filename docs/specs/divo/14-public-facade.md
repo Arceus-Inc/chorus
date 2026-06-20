@@ -47,7 +47,9 @@ org = Chorus.build(db_path="company.db", org_repo="./org", memory_repo="./memory
 org.hire(name="moe", role="manager")
 org.hire(name="eng1", role="engineer", reports_to="moe")
 task = org.submit("build a login page", assignee="moe")
-await org.run_forever()                                   # the background heartbeat rolls it
+org.start()                                               # the concurrent always-on heartbeat
+...                                                       # employees work in the background
+await org.stop()                                          # signal + drain in-flight beats
 org.status()
 ```
 
@@ -98,7 +100,7 @@ The minimal "operate a company" set. 🟢 already wired · 🔴 this spec.
 | `hire(name, role, reports_to=None)` · `terminate(employee_id)` | 🟢 | org as data |
 | `submit(intent, *, assignee=None, dod=None, depends_on=(), priority=TaskPriority.MEDIUM, trust_preset=None, trust_boundary=None)` | 🔴 | depth-0 intake (§3) |
 | `assign(task_id, employee_id, *, assigned_by=None)` · `send_message(message)` | 🟢 | the async handoffs |
-| `tick()` · `run_forever()` · `stop()` | 🟢 | the heartbeat |
+| `start()` · `stop()` · `tick()` · `drain()` · `run_forever()` | 🟢 | the heartbeat — `start`/`stop` is the concurrent always-on runner (up to `Caps.max_concurrent_runs` beats at once, no per-pulse barrier); `tick`/`drain` single-steps it deterministically |
 | `status()` | 🔴 | the one-call company glance → `WorkforceStatus` |
 
 ### 2.2 Low-level — grouped accessors

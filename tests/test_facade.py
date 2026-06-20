@@ -71,11 +71,30 @@ async def test_run_forever_delegates_to_scheduler() -> None:
     assert sched.ran is True
 
 
-def test_stop_delegates_to_scheduler() -> None:
+async def test_stop_delegates_to_scheduler() -> None:
     sched = _FakeScheduler()
     chorus = _chorus(sched)
-    chorus.stop()
+    await chorus.stop()
+    assert sched.stopped is True  # a stop with no managed heartbeat just signals the loop
+
+
+async def test_start_launches_a_background_heartbeat_and_stop_awaits_it() -> None:
+    sched = _FakeScheduler()
+    chorus = _chorus(sched)
+    chorus.start()  # returns immediately — the heartbeat runs in the background
+    await chorus.stop()  # signals + awaits the managed task so its beats drain
+    assert sched.ran is True
     assert sched.stopped is True
+
+
+async def test_start_is_idempotent_while_the_heartbeat_is_live() -> None:
+    sched = _FakeScheduler()
+    chorus = _chorus(sched)
+    chorus.start()
+    first = chorus._heartbeat
+    chorus.start()  # a second start while live is a no-op — same task, not a second loop
+    assert chorus._heartbeat is first
+    await chorus.stop()
 
 
 def _chorus_on(ledger: SqliteLedger) -> Chorus:

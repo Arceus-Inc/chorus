@@ -12,13 +12,18 @@ This script proves both against a real model — the front door reads exactly li
     org.hire(name="eng1", role="engineer", reports_to="moe")
     org.hire(name="ria",  role="reviewer", reports_to="moe")
     task = org.submit("…", assignee="eng1")   # no DoD — the engineer's role defines reviewed_build
-    await org.run_forever() ; org.status()
+    org.start() ; ... ; await org.stop()      # the concurrent always-on heartbeat, then drain
+    org.status()
 
 The engineer's *role* sets the DoD (a reviewed build), so the operator never hand-specifies one: the
 beat builds, a real reviewer renders the verdict on the author's worktree, the objective floor runs, and
 the work lands on company main. The factory and the kernel share **one** ledger so the reviewer's
 verdict and the factory's capability tools write to the same store. Then one verb on each low-level
 group is exercised. Writes ``reports/m1-public-facade.html``.
+
+In production the heartbeat is the concurrent always-on ``org.start()`` / ``await org.stop()`` runner
+(up to ``Caps.max_concurrent_runs`` beats at once); this script instead single-steps it with
+``tick`` + ``drain`` so the run is deterministic and reaches ``done`` in a bounded number of pulses.
 
     set -a; eval "$(grep -E '^AZURE_OPENAI_(API_KEY|BASE_URL|DEPLOYMENT)=' .env)"; set +a
     uv run python examples/facade_two_tier_live.py
