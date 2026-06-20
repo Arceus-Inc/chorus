@@ -19,6 +19,7 @@ from chorus.roles._manifest import (
 from chorus.roles._overlay import ManifestOverlay, resolve_manifest
 from chorus.roles._plugin import DoDGenerator, Role, RolePlugin
 from chorus.roles._registry import RoleRegistry
+from chorus.roles._routine_declaration import RoutineDeclaration
 from chorus.roles._surfaces import RoleSurfaceOverride, apply_role_surface_overrides
 
 __all__ = [
@@ -33,6 +34,7 @@ __all__ = [
     "RolePlugin",
     "RoleRegistry",
     "RoleSurfaceOverride",
+    "RoutineDeclaration",
     "SandboxTier",
     "apply_role_surface_overrides",
     "default_roles",

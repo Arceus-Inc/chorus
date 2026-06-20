@@ -24,6 +24,7 @@ from chorus.errors import RolePluginConflict, RolePluginInvalid
 from chorus.outcomes import Verifier
 from chorus.roles._manifest import Isolation, MemoryScope, PermissionMode
 from chorus.roles._plugin import RolePlugin
+from chorus.roles._routine_declaration import RoutineDeclaration
 
 _PROBE_INTENT = "probe: does this role generate a typed DoD?"
 
@@ -130,6 +131,33 @@ class RoleRegistry:
             raise RolePluginInvalid(
                 f"role {plugin.name!r} dod_generator must return a typed Verifier, got {type(probe)}"
             )
+        for decl in plugin.declared_routines:
+            _validate_declaration(plugin.name, decl)
+
+
+def _validate_declaration(role: str, decl: RoutineDeclaration) -> None:
+    """Fail-closed at registration: a declared routine's cron must parse and its env must hold no
+    inline secret. Imported locally because ``chorus.cron``/``chorus.trust`` import ``chorus.roles``
+    (the validators would otherwise form a cycle at module load)."""
+    from datetime import UTC, datetime
+
+    from chorus.cron import parse_cron
+    from chorus.errors import InvalidIntake
+    from chorus.trust import assert_no_inline_secrets
+
+    try:
+        parse_cron(decl.schedule, base=datetime.now(UTC))
+    except Exception as exc:
+        raise RolePluginInvalid(
+            f"role {role!r} routine {decl.routine_key!r} has an invalid schedule "
+            f"{decl.schedule!r}: {exc}"
+        ) from exc
+    try:
+        assert_no_inline_secrets(decl.env)
+    except InvalidIntake as exc:
+        raise RolePluginInvalid(
+            f"role {role!r} routine {decl.routine_key!r} env: {exc}"
+        ) from exc
 
 
 def _same_definition(a: RolePlugin, b: RolePlugin) -> bool:

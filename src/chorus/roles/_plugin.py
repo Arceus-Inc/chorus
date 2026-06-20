@@ -18,10 +18,11 @@ fail-closed and idempotent (spec 09 §1): an unknown tool, an illegal enum, a
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from chorus.outcomes import Verifier
 from chorus.roles._manifest import RoleManifest
+from chorus.roles._routine_declaration import RoutineDeclaration
 
 # intent -> typed Verifier, evaluated at intake by the assignee's role (spec 04).
 DoDGenerator = Callable[[str], Verifier]
@@ -50,6 +51,7 @@ class RolePlugin:
     manifest: RoleManifest
     dod_generator: DoDGenerator
     outcome_kind: str
+    declared_routines: tuple[RoutineDeclaration, ...] = field(default_factory=tuple)
     replace: bool = False
 
     @property
