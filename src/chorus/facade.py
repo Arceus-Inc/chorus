@@ -40,6 +40,7 @@ from chorus.ledger import (
     RoutineTrigger,
     SqliteLedger,
     Task,
+    TaskPriority,
     TriggerKind,
 )
 from chorus.lifecycle import (
@@ -180,14 +181,27 @@ class Chorus:
         assignee: str | None = None,
         dod: Verifier | None = None,
         depends_on: Sequence[str] = (),
+        priority: TaskPriority = TaskPriority.MEDIUM,
     ) -> Task:
-        """Create a flat ``depth=0`` intake task (spec 10 §5).
+        """Create a flat ``depth=0`` intake task, optionally wired in one call (spec 10 §5 / 14 §3).
 
-        The reserved intake seam: today the stub; when horizon ships it becomes
-        the writer of intake and drives this same path. chorus never grows a
-        second intake door.
+        The high-level front door: ``submit("build a login page", assignee="moe")`` creates the task,
+        sets its DoD + dependencies if given, and hands it to its owner (``backlog`` → ``todo`` + a
+        wake). ``assignee`` is resolved by slug and fail-closed (an unknown employee raises
+        ``UnknownEmployee`` before anything is written). The reserved intake seam: when horizon ships
+        it drives this same path — chorus never grows a second intake door.
         """
-        raise NotImplementedError("spec 10 §5: intake stub → task(depth=0)")
+        employee_id = self._workforce.get(slugify(assignee)).id if assignee is not None else None
+        task = self._ledger.tasks.submit(
+            Task(id=f"task_{uuid.uuid4().hex[:12]}", intent=intent, priority=priority)
+        )
+        if dod is not None:
+            self._ledger.dod.create(task.id, dod)
+        for blocker in depends_on:
+            self._ledger.dependencies.add(task.id, blocker)
+        if employee_id is not None:
+            assign_task(self._ledger, task.id, employee_id)
+        return task
 
     def assign(
         self, task_id: str, employee_id: str, *, assigned_by: str | None = None
