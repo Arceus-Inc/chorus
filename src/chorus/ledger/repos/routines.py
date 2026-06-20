@@ -11,7 +11,7 @@ from chorus.ledger._models import (
     RoutineStatus,
     RoutineTarget,
 )
-from chorus.ledger.repos._base import utcnow_iso
+from chorus.ledger.repos._base import dumps, loads, utcnow_iso
 
 
 class RoutineRepo:
@@ -24,8 +24,9 @@ class RoutineRepo:
         now = utcnow_iso()
         self._conn.execute(
             "INSERT INTO routine (id, employee_id, goal_id, parent_task_id, intent_template, "
-            "target, concurrency_policy, catch_up_policy, status, created_at, updated_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "target, concurrency_policy, catch_up_policy, status, env, routine_key, "
+            "latest_revision_id, latest_revision_no, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 routine.id,
                 routine.employee_id,
@@ -36,6 +37,10 @@ class RoutineRepo:
                 routine.concurrency_policy.value,
                 routine.catch_up_policy.value,
                 routine.status.value,
+                dumps(routine.env) if routine.env is not None else None,
+                routine.routine_key,
+                routine.latest_revision_id,
+                routine.latest_revision_no,
                 now,
                 now,
             ),
@@ -44,6 +49,15 @@ class RoutineRepo:
         created = self.get(routine.id)
         assert created is not None  # just inserted in this transaction
         return created
+
+    def set_head(self, routine_id: str, *, revision_id: str, revision_no: int) -> None:
+        """Advance the live revision pointer (spec 13 §2.2) — one atomic write after a revise/restore."""
+        self._conn.execute(
+            "UPDATE routine SET latest_revision_id = ?, latest_revision_no = ?, updated_at = ? "
+            "WHERE id = ?",
+            (revision_id, revision_no, utcnow_iso(), routine_id),
+        )
+        self._conn.commit()
 
     def get(self, routine_id: str) -> Routine | None:
         row = self._conn.execute("SELECT * FROM routine WHERE id = ?", (routine_id,)).fetchone()
@@ -87,4 +101,8 @@ def _row_to_routine(row: sqlite3.Row) -> Routine:
         concurrency_policy=RoutineConcurrency(row["concurrency_policy"]),
         catch_up_policy=RoutineCatchUp(row["catch_up_policy"]),
         status=RoutineStatus(row["status"]),
+        env=loads(row["env"]),
+        routine_key=row["routine_key"],
+        latest_revision_id=row["latest_revision_id"],
+        latest_revision_no=row["latest_revision_no"],
     )
