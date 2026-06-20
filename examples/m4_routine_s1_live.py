@@ -252,8 +252,9 @@ def _render(
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><title>M4 S1 — recurring work (live)</title>
 <style>
+ html {{ background: #ffffff; }}
  body {{ font: 15px/1.6 ui-sans-serif, system-ui, sans-serif; max-width: 820px; margin: 40px auto;
-        color: #1c1c1c; padding: 0 20px; }}
+        color: #1c1c1c; background: #ffffff; padding: 0 20px; }}
  h1 {{ font-size: 24px; }} h2 {{ font-size: 18px; margin-top: 32px; }}
  table {{ border-collapse: collapse; width: 100%; margin: 12px 0; }}
  td, th {{ border: 1px solid #e3e3df; padding: 7px 10px; text-align: left; vertical-align: top; }}
