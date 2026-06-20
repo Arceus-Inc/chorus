@@ -79,11 +79,41 @@ def reconcile(ledger: SqliteLedger, *, now: datetime) -> ReconcileReport:
     """Run one ordered recovery sweep over the ledger (spec 02 §7); see module docstring."""
     reaped = _reap_orphaned_runs(ledger, now=now)
     cascaded = _cascade_failed_prerequisites(ledger)
+    cascaded += _terminalize_stranded_children(ledger)
     recovered, opened = _reconcile_stranded(ledger, now=now)
     folded = _fold_terminal_sources(ledger)
     return ReconcileReport(
         reaped_runs=reaped, recovered=recovered, opened=opened, folded=folded, cascaded=cascaded
     )
+
+
+def _terminalize_stranded_children(ledger: SqliteLedger) -> list[str]:
+    """Terminalize a *child* stranded on a recovery card so its parent can integrate (spec 02 §6).
+
+    A child whose automatic recovery is spent sits ``blocked`` behind a ``recovery_action`` waiting for a
+    human. With no human in the loop (an autonomous ``org.start()`` company) that deadlocks its parent's
+    integration forever — the subtree never goes wholly terminal, so the manager never gets its react
+    beat. Reject the dead child (a failed deliverable the manager reacts to / the bounded integrate cap
+    absorbs) and wake the parent. A *top-level* task (no parent) is **not** auto-killed: its failure is a
+    human's to resolve, so it keeps escalating, unchanged."""
+    terminalized: list[str] = []
+    for task in ledger.tasks.agent_owned_open():
+        if task.status is not TaskStatus.BLOCKED or task.parent_id is None:
+            continue
+        if ledger.recovery_actions.active_for_source(task.id) is None:
+            continue
+        with ledger.transaction():
+            ledger.tasks.set_status(task.id, TaskStatus.REJECTED)
+            record_activity(
+                ledger,
+                verb=ActivityVerb.RECOVERED,
+                subject_id=task.id,
+                actor_employee_id=task.assignee_employee_id,
+                payload={"cause": "stranded_child_terminalized"},
+            )
+        _wake_parent_if_subtree_terminal(ledger, parent_id=task.parent_id)
+        terminalized.append(task.id)
+    return terminalized
 
 
 # -- failed-prerequisite cascade (don't deadlock a subtree on a rejected child) ------------------
