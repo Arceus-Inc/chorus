@@ -115,7 +115,8 @@ class Chorus:
     def build(
         cls,
         *,
-        db_path: str,
+        db_path: str | None = None,
+        ledger: SqliteLedger | None = None,
         org_repo: str,
         memory_repo: str,
         dream: Any,
@@ -134,9 +135,14 @@ class Chorus:
         ticks (recover/cron/monitors/dispatch) but cannot execute a beat. ``landers`` is the
         symmetric *landing* seam — the registry the kernel lands a passed beat's deliverable
         through (the consumer passes ``factory.landers``); unset, a passed beat still completes
-        but records no role artifact. ``roles`` defaults to :func:`chorus.roles.default_roles`;
-        extra roles register through the same validated path (spec 09 §1).
+        but records no role artifact. Pass **exactly one** of ``db_path`` (open a fresh store) or
+        ``ledger`` (share an already-open store with the harness factory, so a reviewer's verdict
+        and the factory's capability tools land in *one* ledger, not two). ``roles`` defaults to
+        :func:`chorus.roles.default_roles`; extra roles register through the same validated path
+        (spec 09 §1).
         """
+        if db_path is not None and ledger is not None:
+            raise ValueError("provide either db_path or ledger, not both")
         the_caps = caps or Caps()
         registry = RoleRegistry.from_plugins(roles if roles is not None else default_roles())
         # The seam accepts either the resolver object or its bound method (the §0 front-door form,
@@ -146,32 +152,37 @@ class Chorus:
             resolved_runner_for = beat_runner_for
         else:
             resolved_runner_for = runner_from(beat_runner_for)
-        ledger = SqliteLedger.open(db_path)
+        if ledger is not None:
+            store = ledger
+        elif db_path is not None:
+            store = SqliteLedger.open(db_path)
+        else:
+            raise ValueError("provide exactly one of db_path or ledger")
         # The live workforce is the ledger employee table — the single source of truth every
         # assignment FK points at (spec 06 §3). ``org_repo`` is the portable git-markdown
         # export/import location (spec 09 §3, the GitWorkforce codec), not a second live store.
-        workforce = LedgerWorkforce(ledger.employees)
+        workforce = LedgerWorkforce(store.employees)
         event_bus = EventBus()
         scheduler = Scheduler(
             tick_interval_s=the_caps.tick_interval_s,
             max_concurrent_runs=the_caps.max_concurrent_runs,
-            ledger=ledger,
+            ledger=store,
             workforce=workforce,
             beat_runner=beat_runner,
             beat_runner_for=resolved_runner_for,  # role-faithful per-employee runners (spec 06 §2)
             event_bus=event_bus,
             # budgets are inert until a policy is created — injecting the enforcer just arms the gates
-            budget_enforcer=BudgetEnforcer(ledger, company_id=company_id),
+            budget_enforcer=BudgetEnforcer(store, company_id=company_id),
             roles=registry,  # a task inherits its assignee role's DoD at intake (spec 04 §1 / 06 §2)
             landers=landers,  # the landing seam — a passed beat lands its role artifact (spec 04 §2)
         )
         return cls(
-            ledger=ledger,
+            ledger=store,
             workforce=workforce,
             memory_writer=AppendOnlyMemoryWriter(memory_repo),
             scheduler=scheduler,
             event_bus=event_bus,
-            inspector=LedgerInspector(ledger),
+            inspector=LedgerInspector(store),
             dream=dream,
             roles=registry,
             caps=the_caps,

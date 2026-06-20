@@ -1,16 +1,23 @@
 """The public facade, live — the §0 front door + every group, end to end (spec 14 F7).
 
 The whole point of spec 14: ``from chorus import Chorus`` gives a two-tier kernel that is *simple on
-top* (anyone can operate a company) and *complete underneath* (every niche capability is reachable
-under its group). This script proves both against a real model:
+top* (anyone can operate a company) and *complete underneath* (every niche capability under its group).
+This script proves both against a real model — the front door reads exactly like §0:
 
-    org = Chorus.build(..., beat_runner_for=factory.runner_for, landers=factory.landers)
-    org.hire(...) ; task = org.submit(...) ; await org.run_forever() ; org.status()   # the front door
-    org.inspect / governance / budgets / trust / routines / workforce / dod           # the groups
+    ledger = SqliteLedger.open("company.db")
+    factory = EmployeeHarnessFactory(..., ledger=ledger)          # the execution layer (dream + creds)
+    org = Chorus.build(ledger=ledger, org_repo=..., memory_repo=..., dream=dream,
+                       beat_runner_for=factory, landers=factory.landers)
+    org.hire(name="moe", role="manager")
+    org.hire(name="eng1", role="engineer", reports_to="moe")
+    org.hire(name="ria",  role="reviewer", reports_to="moe")
+    task = org.submit("…", assignee="eng1")   # no DoD — the engineer's role defines reviewed_build
+    await org.run_forever() ; org.status()
 
-``chorus`` (the kernel) stays dream-free; ``chorus_harness`` (the execution layer) brings dream + creds
-and plugs into the two injection seams — execution (``runner_for``) and landing (``landers``). A real
-engineer beat runs the submitted task to ``done`` and its build lands; then one verb on each low-level
+The engineer's *role* sets the DoD (a reviewed build), so the operator never hand-specifies one: the
+beat builds, a real reviewer renders the verdict on the author's worktree, the objective floor runs, and
+the work lands on company main. The factory and the kernel share **one** ledger so the reviewer's
+verdict and the factory's capability tools write to the same store. Then one verb on each low-level
 group is exercised. Writes ``reports/m1-public-facade.html``.
 
     set -a; eval "$(grep -E '^AZURE_OPENAI_(API_KEY|BASE_URL|DEPLOYMENT)=' .env)"; set +a
@@ -47,6 +54,7 @@ from chorus import (
     WorkforceStatus,
     default_roles,
 )
+from chorus.ledger import SqliteLedger
 from chorus.roles import RoleRegistry
 from chorus_cli._beats import default_pricing_from_env
 from chorus_harness import EmployeeHarnessFactory
@@ -54,11 +62,10 @@ from chorus_harness import EmployeeHarnessFactory
 _REPORT = Path(__file__).resolve().parents[1] / "reports" / "m1-public-facade.html"
 _TERMINAL = frozenset({TaskStatus.DONE, TaskStatus.CANCELLED, TaskStatus.REJECTED})
 _INTENT = (
-    "Create a file greet.py containing exactly this and nothing else:\n\n"
-    "def greet(name):\n    return f'hello {name}'\n\n"
-    "Make the change directly in greet.py in the repository root."
+    "In calc.py add a function subtract(a, b) that returns a - b. "
+    "In test_calc.py add a test test_subtract asserting subtract(3, 1) == 2. "
+    "Keep the existing add function and its test. Make the changes directly in those files."
 )
-_DOD = Verifier.command("python -c \"import greet; assert greet.greet('moe') == 'hello moe'\"")
 
 
 def _log(msg: str = "") -> None:
@@ -75,7 +82,10 @@ def _git(repo: Path, *args: str) -> str:
 def _seed_repo(path: Path) -> None:
     path.mkdir(parents=True)
     subprocess.run(["git", "-C", str(path), "init", "-b", "trunk"], check=True, capture_output=True)
-    (path / "README.md").write_text("# greetings\n", encoding="utf-8")
+    (path / "calc.py").write_text("def add(a, b):\n    return a + b\n", encoding="utf-8")
+    (path / "test_calc.py").write_text(
+        "from calc import add\n\n\ndef test_add():\n    assert add(1, 2) == 3\n", encoding="utf-8"
+    )
     subprocess.run(["git", "-C", str(path), "add", "-A"], check=True, capture_output=True)
     subprocess.run(
         ["git", "-C", str(path), "-c", "user.name=s", "-c", "user.email=s@x", "commit", "-m", "init"],
@@ -104,12 +114,16 @@ def _probe(group: str, verb: str, call: object) -> GroupProbe:
 
 
 async def _run_until_terminal(org: Chorus, task_id: str, *, timeout_s: float) -> TaskView:
-    """Drive the public heartbeat (``run_forever``) until the task is terminal or the cap elapses."""
+    """Drive the public heartbeat (``run_forever``) until the task is terminal or the cap elapses.
+
+    A reviewed build parks ``blocked`` between rounds (engineer build → reviewer verdict → floor); that
+    is not terminal, so the heartbeat keeps ticking and the next pulse dispatches the reviewer wake.
+    """
     runner = asyncio.create_task(org.run_forever())
     start = time.monotonic()
     try:
         while time.monotonic() - start < timeout_s:
-            await asyncio.sleep(2.0)
+            await asyncio.sleep(3.0)
             view = org.inspect.task(task_id)
             beat = view.latest_run.status if view.latest_run is not None else "-"
             _log(f"   … status={view.status.value} beat={beat}")
@@ -134,24 +148,24 @@ def main() -> int:
     seed = base / "source"
     _seed_repo(seed)
     org_repo = str(base / "org")
-    memory_repo = str(base / "memory")
 
-    # ── the execution layer: dream + creds + worktrees + landing (sibling to the dream-free kernel) ──
+    # ── one ledger, shared by the execution layer and the kernel ──────────────────────────────────
+    ledger = SqliteLedger.open(str(base / "company.db"))
     registry = RoleRegistry.from_plugins(default_roles())
     factory = EmployeeHarnessFactory(
         api_key=api_key, base_url=base_url, deployment=deployment,
         company_id="acme", roles=registry, pricing=default_pricing_from_env(),
-        seed=seed, work_root=base / "work",
+        seed=seed, work_root=base / "work", ledger=ledger,
     )
 
-    # ── the front door (spec 14 §0): build once, then operate the company with flat verbs ──
+    # ── the front door (spec 14 §0): build once, then operate with flat verbs ─────────────────────
     org = Chorus.build(
-        db_path=str(base / "company.db"),
+        ledger=ledger,
         org_repo=org_repo,
-        memory_repo=memory_repo,
+        memory_repo=str(base / "memory"),
         dream=dream,
-        beat_runner_for=factory.runner_for,   # ← the execution seam plugs in here
-        landers=factory.landers,              # ← the landing seam rides along with it
+        beat_runner_for=factory,          # how a beat runs (+ how a reviewer reads the author's worktree)
+        landers=factory.landers,          # how the deliverable lands
         caps=Caps(tick_interval_s=0.5),
         company_id="acme",
     )
@@ -162,20 +176,23 @@ def main() -> int:
 
     org.hire(name="moe", role="manager")
     org.hire(name="eng1", role="engineer", reports_to="moe")
-    task = org.submit(_INTENT, assignee="eng1", dod=_DOD)
-    _log(f"   hired moe (manager) + eng1 (engineer); submitted {task.id} → eng1")
+    org.hire(name="ria", role="reviewer", reports_to="moe")
+    task = org.submit(_INTENT, assignee="moe")  # to the manager, who decomposes → engineer → reviewer
+    _log(f"   hired moe/eng1/ria; submitted {task.id} → moe (manager decomposes; no operator DoD)")
 
-    final = asyncio.run(_run_until_terminal(org, task.id, timeout_s=240.0))
+    final = asyncio.run(_run_until_terminal(org, task.id, timeout_s=600.0))
     status: WorkforceStatus = org.status()
     beat_ran = final.latest_run is not None
     done = final.status is TaskStatus.DONE
     company_main = factory.company_root / "repo"
-    landed = (company_main / "greet.py").exists()
-    _log(f"   final: status={final.status.value} beat_ran={beat_ran} landed_to_main={landed}")
+    calc = company_main / "calc.py"
+    landed = calc.exists() and "subtract" in calc.read_text(encoding="utf-8")
+    _log(f"   final: status={final.status.value} dod={_dod_kind(final)} "
+         f"beat_ran={beat_ran} landed_to_main={landed}")
     _log(f"   status(): {len(status.employees)} employees, {status.open_tasks} open, "
          f"{status.running_beats} running")
 
-    # ── the groups (spec 14 §2.2): one verb each, after the heartbeat is stopped (no new beats) ──
+    # ── the groups (spec 14 §2.2): one verb each, after the heartbeat is stopped (no new beats) ───
     _log("")
     _log("LOW-LEVEL GROUPS — one verb on each of the seven accessors")
     gate_target = org.submit("authorize the staging deploy")          # a backlog task to gate
@@ -238,7 +255,12 @@ def main() -> int:
     )
     _log("")
     _log(f"facade two-tier {'OK ✅' if accepted else 'INCOMPLETE ❌'}   report → {_REPORT}")
+    ledger.close()
     return 0 if accepted else 1
+
+
+def _dod_kind(view: TaskView) -> str:
+    return view.dod.kind.value if view.dod is not None else "-"
 
 
 def _render(
@@ -260,21 +282,22 @@ def _render(
         return f"<tr><td>{'✅' if ok else '❌'}</td><td>{esc(label)}</td><td><code>{esc(detail)}</code></td></tr>"
 
     front = "\n".join([
-        row("Chorus.build(beat_runner_for=…, landers=…)", True, "two-tier kernel constructed"),
-        row("hire (flat)", len(status.employees) >= 2, f"{len(status.employees)} employees"),
-        row("submit (flat)", True, f"{esc(final.id)} → {esc(final.assignee or '-')}"),
-        row("run_forever (flat) ran a real engineer beat", beat_ran,
+        row("Chorus.build(ledger=…, beat_runner_for=factory, landers=…)", True, "two-tier kernel"),
+        row("hire (flat)", len(status.employees) >= 3, f"{len(status.employees)} employees"),
+        row("submit (flat) — no operator DoD, roles define them", True,
+            f"{esc(final.id)} → {esc(final.assignee or '-')} (manager)"),
+        row("run_forever (flat) ran the manager→engineer→reviewer pipeline", beat_ran,
             final.latest_run.status if final.latest_run is not None else "-"),
-        row("task reached done", done, final.status.value),
-        row("build landed to company main", landed, f"greet.py present: {landed}"),
+        row("task reached done (decompose → build → review → integrate)", done, final.status.value),
+        row("build landed to company main", landed, f"subtract() in calc.py: {landed}"),
         row("status() (flat glance)", True,
             f"{len(status.employees)} employees · {status.open_tasks} open · {status.running_beats} running"),
     ])
-    groups = "\n".join(
-        row(f"{p.group} — {p.verb}", p.ok, p.detail) for p in probes
-    )
+    groups = "\n".join(row(f"{p.group} — {p.verb}", p.ok, p.detail) for p in probes)
     log = _git(company_main, "log", "--oneline", "-4") or "(no commits on company main yet)"
-    verdict = "PASS ✅" if accepted else "INCOMPLETE ❌"
+    facade = "PASS ✅" if accepted else "INCOMPLETE ❌"
+    pipeline = "reached done ✅" if done else f"{final.status.value} (live M3 sprint reliability)"
+    verdict = f"facade wiring {facade} &nbsp;·&nbsp; live build {pipeline}"
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><title>spec 14 — the public facade (live)</title>
 <style>
@@ -292,9 +315,11 @@ def _render(
 <h1>spec 14 — the public facade, live</h1>
 <p class="lead"><code>from chorus import Chorus</code> → a two-tier kernel: <b>simple on top</b> (the flat
 front door anyone can operate a company with) and <b>complete underneath</b> (every niche capability
-under its group). The kernel stays dream-free; <code>chorus_harness</code> brings the model (Azure
-{esc(deployment)}) and plugs into the two seams — execution (<code>runner_for</code>) and landing
-(<code>landers</code>).</p>
+under its group). The operator never hand-specifies a DoD — the roles define them: the manager (Azure
+{esc(deployment)}) decomposes, an engineer builds, a reviewer renders the verdict on the author's
+worktree, and the manager integrates. The facade bar is that the front door is wired and every group
+reachable; whether a given <i>live</i> beat reaches <code>done</code> is the M3 sprint pipeline's
+reliability, reported separately below.</p>
 <p class="verdict">Result: {verdict}</p>
 
 <h2>High-level tier — the §0 front door (flat verbs)</h2>
@@ -309,7 +334,7 @@ front door. Enum-typed arguments cross as enums (no stringly), fail-closed on un
 {groups}
 </table>
 
-<h2>What the engineer beat landed (company main)</h2>
+<h2>What the reviewed build landed (company main)</h2>
 <pre><code>{esc(log)}</code></pre>
 
 <p class="lead">decompose · submit_verdict · memory are on <b>neither</b> tier — they are the employee's
