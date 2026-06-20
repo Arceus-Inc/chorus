@@ -19,6 +19,7 @@ from chorus_employee.analyst._brief import ANALYST_BRIEF, ANALYST_FINDINGS_DOC
 from chorus_employee.analyst._dod import analyst_dod
 from chorus_employee.analyst._harness import analyst_manifest
 from chorus_employee.analyst._lander import AnalystLander, analyst_lander
+from chorus_employee.analyst._routines import ANALYST_ROUTINES
 
 
 def analyst_plugin() -> RolePlugin:
@@ -28,12 +29,14 @@ def analyst_plugin() -> RolePlugin:
         manifest=analyst_manifest(),
         dod_generator=analyst_dod,
         outcome_kind="finding",
+        declared_routines=ANALYST_ROUTINES,
     )
 
 
 __all__ = [
     "ANALYST_BRIEF",
     "ANALYST_FINDINGS_DOC",
+    "ANALYST_ROUTINES",
     "AnalystLander",
     "analyst_lander",
     "analyst_plugin",

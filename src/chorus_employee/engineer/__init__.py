@@ -19,6 +19,7 @@ from chorus.roles._plugin import RolePlugin
 from chorus_employee.engineer._dod import engineer_dod
 from chorus_employee.engineer._harness import engineer_manifest
 from chorus_employee.engineer._lander import EngineerLander, engineer_lander
+from chorus_employee.engineer._routines import ENGINEER_ROUTINES
 
 
 def engineer_plugin() -> RolePlugin:
@@ -28,7 +29,8 @@ def engineer_plugin() -> RolePlugin:
         manifest=engineer_manifest(),
         dod_generator=engineer_dod,
         outcome_kind="pr",
+        declared_routines=ENGINEER_ROUTINES,
     )
 
 
-__all__ = ["EngineerLander", "engineer_lander", "engineer_plugin"]
+__all__ = ["ENGINEER_ROUTINES", "EngineerLander", "engineer_lander", "engineer_plugin"]

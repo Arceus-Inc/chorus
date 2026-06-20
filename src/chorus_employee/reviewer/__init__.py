@@ -18,6 +18,7 @@ from chorus.roles._plugin import RolePlugin
 from chorus_employee.reviewer._dod import reviewer_dod
 from chorus_employee.reviewer._harness import reviewer_manifest
 from chorus_employee.reviewer._lander import ReviewerLander, reviewer_lander
+from chorus_employee.reviewer._routines import REVIEWER_ROUTINES
 
 
 def reviewer_plugin() -> RolePlugin:
@@ -27,7 +28,8 @@ def reviewer_plugin() -> RolePlugin:
         manifest=reviewer_manifest(),
         dod_generator=reviewer_dod,
         outcome_kind="verdict",
+        declared_routines=REVIEWER_ROUTINES,
     )
 
 
-__all__ = ["ReviewerLander", "reviewer_lander", "reviewer_plugin"]
+__all__ = ["REVIEWER_ROUTINES", "ReviewerLander", "reviewer_lander", "reviewer_plugin"]

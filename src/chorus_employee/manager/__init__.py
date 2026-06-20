@@ -18,6 +18,7 @@ from chorus.roles._plugin import RolePlugin
 from chorus_employee.manager._dod import manager_dod
 from chorus_employee.manager._harness import manager_manifest
 from chorus_employee.manager._lander import ManagerLander, manager_lander
+from chorus_employee.manager._routines import MANAGER_ROUTINES
 
 
 def manager_plugin() -> RolePlugin:
@@ -27,7 +28,8 @@ def manager_plugin() -> RolePlugin:
         manifest=manager_manifest(),
         dod_generator=manager_dod,
         outcome_kind="subtree",
+        declared_routines=MANAGER_ROUTINES,
     )
 
 
-__all__ = ["ManagerLander", "manager_lander", "manager_plugin"]
+__all__ = ["MANAGER_ROUTINES", "ManagerLander", "manager_lander", "manager_plugin"]
