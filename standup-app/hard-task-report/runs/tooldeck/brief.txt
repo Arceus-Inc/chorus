@@ -1,0 +1,1 @@
+Build a library `tooldeck` that turns Python functions into LLM tools: derive a JSON Schema from type hints + docstring, register/dispatch by name, validate arguments, and retry-or-error on malformed calls. Tests cover schema generation and validation failures.

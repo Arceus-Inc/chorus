@@ -1,0 +1,111 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>dpo_tune — Hard-Task Report</title><style>
+:root{--bg:#0d1117;--panel:#161b22;--panel2:#1c2330;--border:#30363d;--fg:#e6edf3;--muted:#8b949e;
+--accent:#58a6ff;--mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;--red:#f85149;
+--redbg:#2d1518;--amber:#d29922;--amberbg:#2a230f;--green:#3fb950;--greenbg:#12261a;--purple:#bc8cff;}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);
+font:15px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased}
+.wrap{max-width:980px;margin:0 auto;padding:48px 24px 96px}
+header{border-bottom:1px solid var(--border);padding-bottom:28px;margin-bottom:36px}
+.eyebrow{font:600 12px/1 var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--accent)}
+h1{margin:14px 0 8px;font-size:30px;letter-spacing:-.02em}
+.sub{color:var(--muted);font-size:15px;max-width:74ch}
+.meta{display:flex;flex-wrap:wrap;gap:10px;margin-top:20px}
+.chip{font:600 12px/1 var(--mono);color:var(--muted);background:var(--panel);border:1px solid var(--border);
+border-radius:999px;padding:7px 12px}.chip b{color:var(--fg)}
+.ok{color:var(--green)}.bad{color:var(--red)}.warn{color:var(--amber)}
+h2{font-size:13px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin:44px 0 18px;
+padding-bottom:10px;border-bottom:1px solid var(--border)}
+.card{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:18px 20px;margin:12px 0;
+position:relative;overflow:hidden}.card::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--red)}
+.card.fwk::before{background:var(--amber)}.card.info::before{background:var(--muted)}
+.card-head{display:flex;align-items:baseline;gap:12px;margin-bottom:6px}
+.code{flex:none;font:700 11px/1 var(--mono);color:var(--bg);background:var(--red);border-radius:6px;padding:5px 8px}
+.card.fwk .code{background:var(--amber)}.card.info .code{background:var(--muted)}
+.title{font-size:15px;font-weight:650}
+.detail{color:#c2ccd6;font-size:13.5px;margin-top:4px;font-family:var(--mono);white-space:pre-wrap;word-break:break-word}
+table{border-collapse:collapse;width:100%;margin:10px 0;font-size:13.5px}
+th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--border)}
+th{color:var(--muted);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.06em}
+td code,code.k{font:12.5px/1.5 var(--mono);background:var(--panel2);border:1px solid var(--border);border-radius:5px;
+padding:1px 6px;color:#d2a8ff}
+.pill{display:inline-block;font:600 11px/1 var(--mono);border-radius:5px;padding:4px 8px}
+.pill.done{color:var(--green);background:var(--greenbg);border:1px solid #1c5a32}
+.pill.blocked,.pill.rejected{color:var(--red);background:var(--redbg);border:1px solid #5c2326}
+.pill.other{color:var(--amber);background:var(--amberbg);border:1px solid #5a4818}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin:8px 0}
+.stat{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:14px}
+.stat .n{font-size:22px;font-weight:700}.stat .l{color:var(--muted);font-size:12px;margin-top:2px}
+a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
+footer{margin-top:56px;padding-top:22px;border-top:1px solid var(--border);color:var(--muted);font-size:13px}
+pre.log{background:#0b0f14;border:1px solid var(--border);border-radius:8px;padding:12px;overflow:auto;
+font:12px/1.5 var(--mono);color:#9db1c5;max-height:240px}
+</style></head><body><div class="wrap">
+<header><div class="eyebrow">Hard-Task Report · Python</div>
+<h1><code class="k" style="font-size:26px;color:var(--fg)">dpo_tune</code></h1>
+<p class="sub">Build a small Python library `dpo_tune` that wraps preference fine-tuning with DPO (Direct Preference Optimization): a `Trainer` with `fit()`, a chosen/rejected pair dataset interface, a reference-model KL term, config dataclasses, and pytest tests. Pure-Python, CPU-only, mock the policy/reference models.</p>
+<div class="meta">
+<span class="chip">goal: <b class=bad>blocked</b></span>
+<span class="chip">tasks: <b>23</b></span>
+<span class="chip">runs: <b>34</b></span>
+<span class="chip">elapsed: <b>1220s</b></span>
+<span class="chip">deliverable flaws: <b class=bad>7</b></span>
+<span class="chip">framework flaws: <b class=warn>5</b></span>
+</div></header>
+
+<h2>Run accounting</h2>
+<table><tr><th>top goal</th><td><span class="pill blocked">blocked</span></td></tr>
+<tr><th>task statuses</th><tr><td><span class="pill blocked">blocked</span> <b>3</b></td><td><span class="pill other">cancelled</span> <b>2</b></td><td><span class="pill done">done</span> <b>16</b></td><td><span class="pill rejected">rejected</span> <b>2</b></td></tr></table>
+<div class="grid">
+<div class="stat"><div class="n">11</div><div class="l">employees</div></div>
+<div class="stat"><div class="n">31</div><div class="l">files landed</div></div>
+<div class="stat"><div class="n">5</div><div class="l">merges on main</div></div>
+<div class="stat"><div class="n">0</div><div class="l">duplicate modules</div></div>
+</div>
+
+<h2>Build / test verification</h2>
+<table><tr><th>command</th><th>result</th><th>output tail</th></tr><tr><td><code>pytest -q</code></td><td><span class="ok">pass</span></td><td class="detail">.........                                                                [100%]
+</td></tr></table>
+
+<h2><span style="color:var(--accent)">A.</span> Deliverable flaws — the <code class="k">dpo_tune</code> deliverable (7)</h2>
+<p class="detail" style="font-family:inherit;color:var(--muted)">Defects in what the org actually produced — is it a real, usable, distributable artifact?</p>
+<div class="card crit"><div class="card-head"><span class="code">1</span><span class="title">Two different PreferenceDataset classes ship in one package</span><span style="margin-left:auto;font:600 10px/1 var(--mono);color:var(--muted)">DUP-DATASET</span></div><div class="detail">public.py defines PreferenceDataset that takes (prompt, chosen, rejected) tuples and yields PairBatch. dataset.py defines a SECOND PreferenceDataset that takes PreferenceExample objects and yields PreferenceBatch with differently-named fields (chosens/rejecteds vs chosen/rejected). dataset.py&#x27;s own docstring admits it: “This module intentionally provides a different PreferenceDataset than dpo_tune.public.PreferenceDataset… kept for backwards compatibility with earlier exercises.” __init__ re-exports the public one as PreferenceDataset plus the dataset one&#x27;s PreferenceExample/PreferenceBatch — so a user gets two incompatible batch shapes from a single import.</div></div>
+<div class="card crit"><div class="card-head"><span class="code">2</span><span class="title">TrainerConfig (the one with the real hyperparameters) is exported but never used</span><span style="margin-left:auto;font:600 10px/1 var(--mono);color:var(--muted)">DEAD-CONFIG</span></div><div class="detail">config.py defines TrainerConfig(beta, lr, batch_size, epochs, seed, ref_kl_coeff) — the real DPO knobs. But the actual Trainer (public.py) takes a DIFFERENT DPOConfig(seed, batch_size, shuffle, epochs) that has no beta, no lr, no ref_kl_coeff. The Trainer hard-codes beta=0.1 as a separate kwarg and never reads TrainerConfig. So lr and ref_kl_coeff are accepted by the public config type and silently ignored — dead configuration.</div></div>
+<div class="card crit"><div class="card-head"><span class="code">3</span><span class="title">The dedicated loss.py is orphaned — Trainer.fit re-implements the loss inline</span><span style="margin-left:auto;font:600 10px/1 var(--mono);color:var(--muted)">ORPHAN-LOSS</span></div><div class="detail">A whole task (“Add a new DPO loss implementation”) produced dpo_tune/loss.py with a proper dpo_loss(): the beta DPO term plus a symmetric KL proxy, with both torch and pure-scalar paths. But Trainer.fit() in public.py computes the loss inline as math.log1p(math.exp(-advantage)) and never imports loss.py. grep confirms loss.py is referenced nowhere in the package — only by its own test_loss.py. Two independent DPO-loss implementations; the polished one is unreachable.</div></div>
+<div class="card crit"><div class="card-head"><span class="code">4</span><span class="title">The brief&#x27;s required reference-model KL term never reaches training</span><span style="margin-left:auto;font:600 10px/1 var(--mono);color:var(--muted)">KL-UNREACHABLE</span></div><div class="detail">The brief demanded “a reference-model KL term.” loss.py HAS a kl_weight proxy — but that&#x27;s the orphaned module. The wired Trainer only computes the implicit-KL DPO term (beta*(pol_diff − ref_diff)) and exposes no KL coefficient at all (ref_kl_coeff lives on the dead TrainerConfig). The explicit KL knob the brief asked for exists in the repo but is unreachable through the public Trainer.</div></div>
+<div class="card crit"><div class="card-head"><span class="code">5</span><span class="title">pyproject.toml is a ruff config, not packaging</span><span style="margin-left:auto;font:600 10px/1 var(--mono);color:var(--muted)">PKG</span></div><div class="detail">98 bytes: only [tool.ruff] and [tool.ruff.lint]. No [project] table (no name, version, dependencies), no [build-system]. `pip install .` fails — there is nothing to build. The “Python library” is not installable or distributable.</div></div>
+<div class="card crit"><div class="card-head"><span class="code">6</span><span class="title">README is still the seed stub</span><span style="margin-left:auto;font:600 10px/1 var(--mono);color:var(--muted)">README</span></div><div class="detail">README.md is 15 bytes: “# company repo”. No install, no usage, no DPO explanation.</div></div>
+<div class="card crit"><div class="card-head"><span class="code">7</span><span class="title">Stray + leaked files in the deliverable</span><span style="margin-left:auto;font:600 10px/1 var(--mono);color:var(--muted)">STRAY</span></div><div class="detail">Root test_smoke.py (`assert True`) sits outside tests/. 20 harness-internal files leaked into the repo (docs/evals/*.json, docs/exec-plans/*.json/.md), plus a committed 0-byte lock file docs/exec-plans/tech-debt-tracker.md.lock.</div></div>
+
+<h2><span style="color:var(--accent)">B.</span> Framework / orchestration flaws — chorus behaviours this run exposed (5)</h2>
+<p class="detail" style="font-family:inherit;color:var(--muted)">Not the deliverable's fault — kernel/orchestration behaviours the run made visible.</p>
+<div class="card fwk"><div class="card-head"><span class="code">8</span><span class="title">Top goal ended blocked, not done</span><span style="margin-left:auto;font:600 10px/1 var(--mono);color:var(--muted)">BUG-007</span></div><div class="detail">22 tasks: 16 done, 2 rejected, 2 cancelled, 3 blocked. The director hit the 1200s wall-clock ceiling churning on the package without ever reaching a clean done verdict on the top goal.</div></div>
+<div class="card fwk"><div class="card-head"><span class="code">9</span><span class="title">done ≠ landed — two engineers&#x27; branches never integrated</span><span style="margin-left:auto;font:600 10px/1 var(--mono);color:var(--muted)">BUG-005</span></div><div class="detail">Four engineers were hired, but only two branches (chorus/di, chorus/bo) ever merged to company main. Tasks owned by the other two read done in the ledger while their work never landed — the same unmerged-author-branch bug seen in the GRPO run.</div></div>
+<div class="card fwk"><div class="card-head"><span class="code">10</span><span class="title">Deliverable work handed to the analyst → rejected</span><span style="margin-left:auto;font:600 10px/1 var(--mono);color:var(--muted)">BUG-006</span></div><div class="detail">“Inspect the Trainer.fit() implementation” and “Add unit tests under tests/” were assigned to the analyst (a non-coding role) and came back rejected/blocked instead of being routed to an engineer.</div></div>
+<div class="card fwk"><div class="card-head"><span class="code">11</span><span class="title">No cross-child file ownership — the direct cause of the split-brain</span><span style="margin-left:auto;font:600 10px/1 var(--mono);color:var(--muted)">NO-OWNERSHIP</span></div><div class="detail">The duplicate PreferenceDataset/config and the orphaned loss.py are the symptom: parallel engineers each authored their own slice (public.py vs dataset.py vs loss.py), and the integrate step merged the fragments without reconciling them into one coherent API. There is no global owner of the package&#x27;s public surface.</div></div>
+<div class="card fwk"><div class="card-head"><span class="code">12</span><span class="title">Tests pass but off-brief — the Command DoD went green on a fragmented package</span><span style="margin-left:auto;font:600 10px/1 var(--mono);color:var(--muted)">DOD-OFF-BRIEF</span></div><div class="detail">pytest -q → 9 passed. But the suite only exercises each fragment in isolation (test_loss.py imports the dead loss.py; test_trainer_fit.py the inline one), so a green suite coexists with two unreconciled APIs and an unreachable KL knob. The objective DoD verifies “tests pass,” not “the library is coherent and on-brief.”</div></div>
+
+<h2>Landed repo</h2>
+<p class="detail" style="font-family:inherit">Packaging expected: [&#x27;pyproject.toml&#x27;, &#x27;setup.py&#x27;, &#x27;setup.cfg&#x27;] ·
+present: [&#x27;pyproject.toml&#x27;]</p>
+<p style="margin:10px 0"><code class=k>README.md</code> <code class=k>docs/evals/run_0b650fca4d45490ca720a8507022bc4e/sprint-1.json</code> <code class=k>docs/evals/run_7a05797ee40f448897195523a585f2b7/sprint-1.json</code> <code class=k>docs/evals/run_81e0bbcf121d48e485a8582e8bb9effe/sprint-1.json</code> <code class=k>docs/evals/run_f3ac879eaf9c438597b4e8a3d60d2fd4/sprint-1.json</code> <code class=k>docs/evals/run_f915e0c8198d4652ae3c88277df771fe/sprint-1.json</code> <code class=k>docs/exec-plans/active/run_0b650fca4d45490ca720a8507022bc4e.json</code> <code class=k>docs/exec-plans/active/run_7a05797ee40f448897195523a585f2b7-sprint-1.json</code> <code class=k>docs/exec-plans/active/run_7a05797ee40f448897195523a585f2b7.json</code> <code class=k>docs/exec-plans/active/run_7a05797ee40f448897195523a585f2b7.md</code> <code class=k>docs/exec-plans/active/run_81e0bbcf121d48e485a8582e8bb9effe-sprint-1.json</code> <code class=k>docs/exec-plans/active/run_81e0bbcf121d48e485a8582e8bb9effe.json</code> <code class=k>docs/exec-plans/active/run_81e0bbcf121d48e485a8582e8bb9effe.md</code> <code class=k>docs/exec-plans/active/run_f3ac879eaf9c438597b4e8a3d60d2fd4-sprint-1.json</code> <code class=k>docs/exec-plans/active/run_f3ac879eaf9c438597b4e8a3d60d2fd4.json</code> <code class=k>docs/exec-plans/active/run_f3ac879eaf9c438597b4e8a3d60d2fd4.md</code> <code class=k>docs/exec-plans/active/run_f915e0c8198d4652ae3c88277df771fe-sprint-1.json</code> <code class=k>docs/exec-plans/active/run_f915e0c8198d4652ae3c88277df771fe.json</code> <code class=k>docs/exec-plans/active/run_f915e0c8198d4652ae3c88277df771fe.md</code> <code class=k>docs/exec-plans/tech-debt-tracker.md</code> <code class=k>docs/exec-plans/tech-debt-tracker.md.lock</code> <code class=k>dpo_tune/__init__.py</code> <code class=k>dpo_tune/config.py</code> <code class=k>dpo_tune/dataset.py</code> <code class=k>dpo_tune/loss.py</code> <code class=k>dpo_tune/public.py</code> <code class=k>pyproject.toml</code> <code class=k>test_smoke.py</code> <code class=k>tests/test_dpo_tune.py</code> <code class=k>tests/test_loss.py</code> <code class=k>tests/test_trainer_fit.py</code> </p>
+<h2>git log (company main)</h2>
+<pre class="log">d312c5c chorus: merge chorus/di
+45e40dc chorus: snapshot work
+e769dcc Add dpo_tune core config and dataset types
+794b0d8 chorus: merge chorus/di
+7d5f02d chorus: snapshot work
+cacba0f chorus: merge chorus/di
+406dc53 chorus: snapshot work
+86c1bba chorus: merge chorus/bo
+83f558e chorus: snapshot work
+fc8f4a4 Add configurable DPO+KL loss and deterministic tests
+7bb921e chorus: snapshot work
+4761d30 chorus: merge chorus/di
+77947f6 seed</pre>
+
+<footer>Generated by <code class="k">_probe.py</code> + <code class="k">_render.py</code> from a live
+<code class="k">Chorus.build --org</code> run. Workspace: <code class="k">/Users/divyansh/chorus/standup-app/hard-task-report/runs/dpo_tune/tmp/chorus-standup-uk5leyju</code>.
+Flaw codes cross-reference <a href="../post-dev-wiring.md">post-dev-wiring.md</a> (BUG-005/006/007).</footer>
+</div></body></html>

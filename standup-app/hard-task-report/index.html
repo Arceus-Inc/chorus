@@ -1,0 +1,66 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Hard Tasks — Holistic Report</title><style>
+:root{--bg:#0d1117;--panel:#161b22;--panel2:#1c2330;--border:#30363d;--fg:#e6edf3;--muted:#8b949e;
+--accent:#58a6ff;--mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;--red:#f85149;
+--redbg:#2d1518;--amber:#d29922;--amberbg:#2a230f;--green:#3fb950;--greenbg:#12261a;--purple:#bc8cff;}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);
+font:15px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased}
+.wrap{max-width:980px;margin:0 auto;padding:48px 24px 96px}
+header{border-bottom:1px solid var(--border);padding-bottom:28px;margin-bottom:36px}
+.eyebrow{font:600 12px/1 var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--accent)}
+h1{margin:14px 0 8px;font-size:30px;letter-spacing:-.02em}
+.sub{color:var(--muted);font-size:15px;max-width:74ch}
+.meta{display:flex;flex-wrap:wrap;gap:10px;margin-top:20px}
+.chip{font:600 12px/1 var(--mono);color:var(--muted);background:var(--panel);border:1px solid var(--border);
+border-radius:999px;padding:7px 12px}.chip b{color:var(--fg)}
+.ok{color:var(--green)}.bad{color:var(--red)}.warn{color:var(--amber)}
+h2{font-size:13px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin:44px 0 18px;
+padding-bottom:10px;border-bottom:1px solid var(--border)}
+.card{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:18px 20px;margin:12px 0;
+position:relative;overflow:hidden}.card::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--red)}
+.card.fwk::before{background:var(--amber)}.card.info::before{background:var(--muted)}
+.card-head{display:flex;align-items:baseline;gap:12px;margin-bottom:6px}
+.code{flex:none;font:700 11px/1 var(--mono);color:var(--bg);background:var(--red);border-radius:6px;padding:5px 8px}
+.card.fwk .code{background:var(--amber)}.card.info .code{background:var(--muted)}
+.title{font-size:15px;font-weight:650}
+.detail{color:#c2ccd6;font-size:13.5px;margin-top:4px;font-family:var(--mono);white-space:pre-wrap;word-break:break-word}
+table{border-collapse:collapse;width:100%;margin:10px 0;font-size:13.5px}
+th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--border)}
+th{color:var(--muted);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.06em}
+td code,code.k{font:12.5px/1.5 var(--mono);background:var(--panel2);border:1px solid var(--border);border-radius:5px;
+padding:1px 6px;color:#d2a8ff}
+.pill{display:inline-block;font:600 11px/1 var(--mono);border-radius:5px;padding:4px 8px}
+.pill.done{color:var(--green);background:var(--greenbg);border:1px solid #1c5a32}
+.pill.blocked,.pill.rejected{color:var(--red);background:var(--redbg);border:1px solid #5c2326}
+.pill.other{color:var(--amber);background:var(--amberbg);border:1px solid #5a4818}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin:8px 0}
+.stat{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:14px}
+.stat .n{font-size:22px;font-weight:700}.stat .l{color:var(--muted);font-size:12px;margin-top:2px}
+a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
+footer{margin-top:56px;padding-top:22px;border-top:1px solid var(--border);color:var(--muted);font-size:13px}
+pre.log{background:#0b0f14;border:1px solid var(--border);border-radius:8px;padding:12px;overflow:auto;
+font:12px/1.5 var(--mono);color:#9db1c5;max-height:240px}
+</style></head><body><div class="wrap">
+<header><div class="eyebrow">Hard-Task Org Stress · Holistic Report</div>
+<h1>15 hard goals through <code class="k" style="font-size:24px;color:var(--fg)">Chorus.build --org</code></h1>
+<p class="sub">Each goal was driven end-to-end by a live 3-level org (director → leads → engineers + reviewer).
+Every run was deep-probed: ledger accounting, the landed repo's shape, an actual build/test of the
+deliverable, and the recurring framework failure modes. One row per goal — click through for the full dissection.</p>
+<div class="grid">
+<div class="stat"><div class="n">6/15</div><div class="l">runs probed</div></div>
+<div class="stat"><div class="n bad">0</div><div class="l">closed <code>done</code></div></div>
+<div class="stat"><div class="n bad">20</div><div class="l">deliverable flaws</div></div>
+<div class="stat"><div class="n warn">18</div><div class="l">framework flaws</div></div>
+</div></header>
+<h2>Per-goal results</h2>
+<table><tr><th>goal</th><th>lang</th><th>top status</th><th>files</th><th>deliv. flaws</th><th>fwk flaws</th><th>elapsed</th></tr>
+<tr><td><a href="dpo_tune.html"><code class="k">dpo_tune</code></a></td><td>Python</td><td><span class="pill blocked">blocked</span></td><td>31</td><td class="bad">2</td><td class="warn">3</td><td>1220s</td></tr>
+<tr><td><a href="flowdag.html"><code class="k">flowdag</code></a></td><td>Go</td><td><span class="pill blocked">blocked</span></td><td>55</td><td class="bad">4</td><td class="warn">3</td><td>1246s</td></tr>
+<tr><td><a href="ppo_lite.html"><code class="k">ppo_lite</code></a></td><td>Python</td><td><span class="pill blocked">blocked</span></td><td>36</td><td class="bad">4</td><td class="warn">3</td><td>1233s</td></tr>
+<tr><td><a href="streamparse.html"><code class="k">streamparse</code></a></td><td>TypeScript</td><td><span class="pill blocked">blocked</span></td><td>42</td><td class="bad">4</td><td class="warn">3</td><td>1239s</td></tr>
+<tr><td><a href="tinyvec.html"><code class="k">tinyvec</code></a></td><td>Rust</td><td><span class="pill blocked">blocked</span></td><td>42</td><td class="bad">3</td><td class="warn">3</td><td>993s</td></tr>
+<tr><td><a href="tooldeck.html"><code class="k">tooldeck</code></a></td><td>Python</td><td><span class="pill blocked">blocked</span></td><td>42</td><td class="bad">3</td><td class="warn">3</td><td>1269s</td></tr></table>
+<footer>Holistic view; see <a href="../HARD_TASKS.md">HARD_TASKS.md</a> for the briefs and
+<a href="grpo.html">grpo.html</a> for the original probe that seeded this catalogue.</footer>
+</div></body></html>

@@ -1,0 +1,30 @@
+{
+  "deliverable": [
+    {"code": "DUP-DATASET", "sev": "CRITICAL", "title": "Two different PreferenceDataset classes ship in one package",
+     "detail": "public.py defines PreferenceDataset that takes (prompt, chosen, rejected) tuples and yields PairBatch. dataset.py defines a SECOND PreferenceDataset that takes PreferenceExample objects and yields PreferenceBatch with differently-named fields (chosens/rejecteds vs chosen/rejected). dataset.py's own docstring admits it: “This module intentionally provides a different PreferenceDataset than dpo_tune.public.PreferenceDataset… kept for backwards compatibility with earlier exercises.” __init__ re-exports the public one as PreferenceDataset plus the dataset one's PreferenceExample/PreferenceBatch — so a user gets two incompatible batch shapes from a single import."},
+    {"code": "DEAD-CONFIG", "sev": "CRITICAL", "title": "TrainerConfig (the one with the real hyperparameters) is exported but never used",
+     "detail": "config.py defines TrainerConfig(beta, lr, batch_size, epochs, seed, ref_kl_coeff) — the real DPO knobs. But the actual Trainer (public.py) takes a DIFFERENT DPOConfig(seed, batch_size, shuffle, epochs) that has no beta, no lr, no ref_kl_coeff. The Trainer hard-codes beta=0.1 as a separate kwarg and never reads TrainerConfig. So lr and ref_kl_coeff are accepted by the public config type and silently ignored — dead configuration."},
+    {"code": "ORPHAN-LOSS", "sev": "CRITICAL", "title": "The dedicated loss.py is orphaned — Trainer.fit re-implements the loss inline",
+     "detail": "A whole task (“Add a new DPO loss implementation”) produced dpo_tune/loss.py with a proper dpo_loss(): the beta DPO term plus a symmetric KL proxy, with both torch and pure-scalar paths. But Trainer.fit() in public.py computes the loss inline as math.log1p(math.exp(-advantage)) and never imports loss.py. grep confirms loss.py is referenced nowhere in the package — only by its own test_loss.py. Two independent DPO-loss implementations; the polished one is unreachable."},
+    {"code": "KL-UNREACHABLE", "sev": "CRITICAL", "title": "The brief's required reference-model KL term never reaches training",
+     "detail": "The brief demanded “a reference-model KL term.” loss.py HAS a kl_weight proxy — but that's the orphaned module. The wired Trainer only computes the implicit-KL DPO term (beta*(pol_diff − ref_diff)) and exposes no KL coefficient at all (ref_kl_coeff lives on the dead TrainerConfig). The explicit KL knob the brief asked for exists in the repo but is unreachable through the public Trainer."},
+    {"code": "PKG", "sev": "HIGH", "title": "pyproject.toml is a ruff config, not packaging",
+     "detail": "98 bytes: only [tool.ruff] and [tool.ruff.lint]. No [project] table (no name, version, dependencies), no [build-system]. `pip install .` fails — there is nothing to build. The “Python library” is not installable or distributable."},
+    {"code": "README", "sev": "HIGH", "title": "README is still the seed stub",
+     "detail": "README.md is 15 bytes: “# company repo”. No install, no usage, no DPO explanation."},
+    {"code": "STRAY", "sev": "HIGH", "title": "Stray + leaked files in the deliverable",
+     "detail": "Root test_smoke.py (`assert True`) sits outside tests/. 20 harness-internal files leaked into the repo (docs/evals/*.json, docs/exec-plans/*.json/.md), plus a committed 0-byte lock file docs/exec-plans/tech-debt-tracker.md.lock."}
+  ],
+  "framework": [
+    {"code": "BUG-007", "title": "Top goal ended blocked, not done",
+     "detail": "22 tasks: 16 done, 2 rejected, 2 cancelled, 3 blocked. The director hit the 1200s wall-clock ceiling churning on the package without ever reaching a clean done verdict on the top goal."},
+    {"code": "BUG-005", "title": "done ≠ landed — two engineers' branches never integrated",
+     "detail": "Four engineers were hired, but only two branches (chorus/di, chorus/bo) ever merged to company main. Tasks owned by the other two read done in the ledger while their work never landed — the same unmerged-author-branch bug seen in the GRPO run."},
+    {"code": "BUG-006", "title": "Deliverable work handed to the analyst → rejected",
+     "detail": "“Inspect the Trainer.fit() implementation” and “Add unit tests under tests/” were assigned to the analyst (a non-coding role) and came back rejected/blocked instead of being routed to an engineer."},
+    {"code": "NO-OWNERSHIP", "title": "No cross-child file ownership — the direct cause of the split-brain",
+     "detail": "The duplicate PreferenceDataset/config and the orphaned loss.py are the symptom: parallel engineers each authored their own slice (public.py vs dataset.py vs loss.py), and the integrate step merged the fragments without reconciling them into one coherent API. There is no global owner of the package's public surface."},
+    {"code": "DOD-OFF-BRIEF", "title": "Tests pass but off-brief — the Command DoD went green on a fragmented package",
+     "detail": "pytest -q → 9 passed. But the suite only exercises each fragment in isolation (test_loss.py imports the dead loss.py; test_trainer_fit.py the inline one), so a green suite coexists with two unreconciled APIs and an unreachable KL knob. The objective DoD verifies “tests pass,” not “the library is coherent and on-brief.”"}
+  ]
+}

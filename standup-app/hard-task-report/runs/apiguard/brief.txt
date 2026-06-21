@@ -1,0 +1,1 @@
+Build a library `apiguard` for wrapping API clients: a token-bucket rate limiter, exponential backoff with jitter on 429/5xx, and a circuit breaker that opens after N failures and half-opens after a cooldown. Deterministic tests with a fake injected clock.

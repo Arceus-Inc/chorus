@@ -1,0 +1,428 @@
+{
+  "name": "ppo_lite",
+  "lang": "Python",
+  "brief": "Build a library `ppo_lite` implementing PPO: a clipped surrogate objective, GAE(\u03bb) advantage estimation, a rollout buffer, and a `train(env)` loop against a mockable environment. Config dataclasses + deterministic tests.",
+  "meta": {
+    "name": "ppo_lite",
+    "rc": "0",
+    "elapsed_s": "1233",
+    "workspace": "/Users/divyansh/chorus/standup-app/hard-task-report/runs/ppo_lite/tmp/chorus-standup-9_vyd9wz",
+    "db": "/Users/divyansh/chorus/standup-app/hard-task-report/runs/ppo_lite/tmp/chorus-standup-9_vyd9wz/company.db",
+    "report": "/Users/divyansh/chorus/standup-app/hard-task-report/runs/ppo_lite/tmp/chorus-standup-9_vyd9wz/report.md"
+  },
+  "repo_path": "/Users/divyansh/chorus/standup-app/hard-task-report/runs/ppo_lite/tmp/chorus-standup-9_vyd9wz/work/acme/repo",
+  "ledger": {
+    "employees": [
+      {
+        "id": "vera",
+        "name": "vera",
+        "role": "manager"
+      },
+      {
+        "id": "moe",
+        "name": "moe",
+        "role": "manager"
+      },
+      {
+        "id": "max",
+        "name": "max",
+        "role": "manager"
+      },
+      {
+        "id": "ada",
+        "name": "ada",
+        "role": "engineer"
+      },
+      {
+        "id": "bo",
+        "name": "bo",
+        "role": "engineer"
+      },
+      {
+        "id": "ria",
+        "name": "ria",
+        "role": "reviewer"
+      },
+      {
+        "id": "pat",
+        "name": "pat",
+        "role": "pm"
+      },
+      {
+        "id": "cy",
+        "name": "cy",
+        "role": "engineer"
+      },
+      {
+        "id": "di",
+        "name": "di",
+        "role": "engineer"
+      },
+      {
+        "id": "rex",
+        "name": "rex",
+        "role": "reviewer"
+      },
+      {
+        "id": "ana",
+        "name": "ana",
+        "role": "analyst"
+      }
+    ],
+    "emp_by_role": {
+      "manager": 3,
+      "engineer": 4,
+      "reviewer": 2,
+      "pm": 1,
+      "analyst": 1
+    },
+    "n_tasks": 23,
+    "n_runs": 39,
+    "status_counts": {
+      "blocked": 2,
+      "done": 17,
+      "rejected": 3,
+      "todo": 1
+    },
+    "top_status": "blocked",
+    "top_intent": "Build a library `ppo_lite` implementing PPO: a clipped surrogate objective, GAE(\u03bb) advantage estimation, a rollout buffe",
+    "misassigned": [
+      {
+        "id": "task_0d12d59f589b",
+        "intent": "Implement ppo_lite/gae.py with compute_gae(rewards, dones, values, last_value, gamma, gae_",
+        "role": "analyst",
+        "status": "rejected"
+      },
+      {
+        "id": "task_d55f7663568d",
+        "intent": "Inspect existing project PPO losses module API/signatures expected by train loop (e.g., cl",
+        "role": "analyst",
+        "status": "rejected"
+      },
+      {
+        "id": "task_3532fb4d5868",
+        "intent": "Investigate why `.harness/integrate-context.json` output is truncated in manager view; ext",
+        "role": "analyst",
+        "status": "rejected"
+      }
+    ],
+    "recovery_cards": [
+      {
+        "id": "rec_be9aa4ee7154",
+        "kind": "stale_run_watchdog",
+        "source_task_id": "task_d55f7663568d",
+        "status": "folded"
+      },
+      {
+        "id": "rec_4cc077c4e18b",
+        "kind": "stale_run_watchdog",
+        "source_task_id": "task_3532fb4d5868",
+        "status": "folded"
+      }
+    ],
+    "done_tasks": [
+      {
+        "id": "task_62303ccafe08",
+        "intent": "Create importable Python package `ppo_lite` with core modules: `ppo_lite/config.py` (datac",
+        "role": "manager",
+        "emp": "max"
+      },
+      {
+        "id": "task_c674799e6b7e",
+        "intent": "Implement `ppo_lite/buffer.py` with an on-policy rollout buffer storing (obs, action, logp",
+        "role": "manager",
+        "emp": "moe"
+      },
+      {
+        "id": "task_03c0488bdfdf",
+        "intent": "Implement `ppo_lite/train.py` exposing `train(env, config, make_model=None)` with a determ",
+        "role": "manager",
+        "emp": "max"
+      },
+      {
+        "id": "task_52715497ee8c",
+        "intent": "Implement RolloutBuffer in ppo_lite/buffer.py with add(obs, action, logp, reward, done, va",
+        "role": "engineer",
+        "emp": "ada"
+      },
+      {
+        "id": "task_5df1264bdabe",
+        "intent": "Create tests/test_buffer.py to cover: (1) stored arrays and returned minibatch shapes, (2)",
+        "role": "engineer",
+        "emp": "bo"
+      },
+      {
+        "id": "task_1086b88e8216",
+        "intent": "Implement ppo_lite/losses.py with PPO clipped surrogate policy loss (clip_range), value lo",
+        "role": "engineer",
+        "emp": "ada"
+      },
+      {
+        "id": "task_8ab6d998a2bf",
+        "intent": "Create package directory ppo_lite/ with __init__.py and config.py. In ppo_lite/config.py d",
+        "role": "engineer",
+        "emp": "di"
+      },
+      {
+        "id": "task_a26c272fcd5d",
+        "intent": "Implement ppo_lite/seed.py with function seed_everything(seed: int, env: object | None = N",
+        "role": "engineer",
+        "emp": "cy"
+      },
+      {
+        "id": "task_696eb10288bc",
+        "intent": "Create ppo_lite/train.py implementing train(env, config, make_model=None). Requirements: d",
+        "role": "engineer",
+        "emp": "di"
+      },
+      {
+        "id": "task_03a04ad556b0",
+        "intent": "Add tests/test_train.py. Implement a tiny deterministic mock env with discrete actions and",
+        "role": "engineer",
+        "emp": "cy"
+      },
+      {
+        "id": "task_21af798c6537",
+        "intent": "Create package directory `ppo_lite/` with `__init__.py`, `config.py`, `seed.py`, and `gae.",
+        "role": "engineer",
+        "emp": "cy"
+      },
+      {
+        "id": "task_0a760eeeb8d4",
+        "intent": "Create ppo_lite/train.py implementing train(env, config, make_model=None): deterministic P",
+        "role": "engineer",
+        "emp": "cy"
+      },
+      {
+        "id": "task_500b99990b51",
+        "intent": "Create minimal importable package `ppo_lite/` with `__init__.py` exporting dataclass confi",
+        "role": "engineer",
+        "emp": "cy"
+      },
+      {
+        "id": "task_47dcb9b44afd",
+        "intent": "Open `.harness/integrate-context.json` and address the truncation issue that prevents the ",
+        "role": "engineer",
+        "emp": "cy"
+      },
+      {
+        "id": "task_509c6ff57eea",
+        "intent": "Create the `ppo_lite/` package with minimal public API. Add files: `ppo_lite/__init__.py`,",
+        "role": "engineer",
+        "emp": "cy"
+      },
+      {
+        "id": "task_735b3e09411d",
+        "intent": "Create new package directory `ppo_lite/` with `__init__.py` public API exports. Implement ",
+        "role": "engineer",
+        "emp": "di"
+      },
+      {
+        "id": "task_15ba8f422eb1",
+        "intent": "Implement `ppo_lite/gae.py` with `gae(rewards, values, dones, gamma, gae_lambda, last_valu",
+        "role": "engineer",
+        "emp": "cy"
+      }
+    ]
+  },
+  "repo": {
+    "n_files": 36,
+    "files": [
+      "README.md",
+      "docs/evals/run_489b3b60a77d40e0a597a252cb52b5d7/sprint-1.json",
+      "docs/evals/run_4ab0d68ee3a545a8b06d03fd4f33d948/sprint-1.json",
+      "docs/evals/run_4d672c9359614f12be385dffbb5aa0b1/sprint-1.json",
+      "docs/evals/run_5a8c956b75d8451d93b6d115566258dd/sprint-1.json",
+      "docs/evals/run_aeff992f3eb442a390fc0167c1b80a67/sprint-1.json",
+      "docs/evals/run_e5638c1b36044b158f837f67b598a330/sprint-1.json",
+      "docs/exec-plans/active/run_489b3b60a77d40e0a597a252cb52b5d7-sprint-1.json",
+      "docs/exec-plans/active/run_489b3b60a77d40e0a597a252cb52b5d7.json",
+      "docs/exec-plans/active/run_489b3b60a77d40e0a597a252cb52b5d7.md",
+      "docs/exec-plans/active/run_4ab0d68ee3a545a8b06d03fd4f33d948-sprint-1.json",
+      "docs/exec-plans/active/run_4ab0d68ee3a545a8b06d03fd4f33d948.json",
+      "docs/exec-plans/active/run_4ab0d68ee3a545a8b06d03fd4f33d948.md",
+      "docs/exec-plans/active/run_4d672c9359614f12be385dffbb5aa0b1-sprint-1.json",
+      "docs/exec-plans/active/run_4d672c9359614f12be385dffbb5aa0b1.json",
+      "docs/exec-plans/active/run_4d672c9359614f12be385dffbb5aa0b1.md",
+      "docs/exec-plans/active/run_5a8c956b75d8451d93b6d115566258dd.json",
+      "docs/exec-plans/active/run_aeff992f3eb442a390fc0167c1b80a67-sprint-1.json",
+      "docs/exec-plans/active/run_aeff992f3eb442a390fc0167c1b80a67.json",
+      "docs/exec-plans/active/run_aeff992f3eb442a390fc0167c1b80a67.md",
+      "docs/exec-plans/active/run_e5638c1b36044b158f837f67b598a330-sprint-1.json",
+      "docs/exec-plans/active/run_e5638c1b36044b158f837f67b598a330.json",
+      "docs/exec-plans/active/run_e5638c1b36044b158f837f67b598a330.md",
+      "docs/exec-plans/tech-debt-tracker.md",
+      "docs/exec-plans/tech-debt-tracker.md.lock",
+      "ppo_lite/__init__.py",
+      "ppo_lite/buffer.py",
+      "ppo_lite/config.py",
+      "ppo_lite/gae.py",
+      "ppo_lite/losses.py",
+      "ppo_lite/seed.py",
+      "ppo_lite/train.py",
+      "test_smoke.py",
+      "tests/test_buffer.py",
+      "tests/test_losses.py",
+      "tests/test_train.py"
+    ],
+    "sizes": {
+      "README.md": 15,
+      "docs/evals/run_489b3b60a77d40e0a597a252cb52b5d7/sprint-1.json": 352,
+      "docs/evals/run_4ab0d68ee3a545a8b06d03fd4f33d948/sprint-1.json": 389,
+      "docs/evals/run_4d672c9359614f12be385dffbb5aa0b1/sprint-1.json": 383,
+      "docs/evals/run_5a8c956b75d8451d93b6d115566258dd/sprint-1.json": 389,
+      "docs/evals/run_aeff992f3eb442a390fc0167c1b80a67/sprint-1.json": 372,
+      "docs/evals/run_e5638c1b36044b158f837f67b598a330/sprint-1.json": 387,
+      "docs/exec-plans/active/run_489b3b60a77d40e0a597a252cb52b5d7-sprint-1.json": 1776,
+      "docs/exec-plans/active/run_489b3b60a77d40e0a597a252cb52b5d7.json": 1098,
+      "docs/exec-plans/active/run_489b3b60a77d40e0a597a252cb52b5d7.md": 2683,
+      "docs/exec-plans/active/run_4ab0d68ee3a545a8b06d03fd4f33d948-sprint-1.json": 2970,
+      "docs/exec-plans/active/run_4ab0d68ee3a545a8b06d03fd4f33d948.json": 1041,
+      "docs/exec-plans/active/run_4ab0d68ee3a545a8b06d03fd4f33d948.md": 1915,
+      "docs/exec-plans/active/run_4d672c9359614f12be385dffbb5aa0b1-sprint-1.json": 3400,
+      "docs/exec-plans/active/run_4d672c9359614f12be385dffbb5aa0b1.json": 1733,
+      "docs/exec-plans/active/run_4d672c9359614f12be385dffbb5aa0b1.md": 2189,
+      "docs/exec-plans/active/run_5a8c956b75d8451d93b6d115566258dd.json": 1081,
+      "docs/exec-plans/active/run_aeff992f3eb442a390fc0167c1b80a67-sprint-1.json": 3021,
+      "docs/exec-plans/active/run_aeff992f3eb442a390fc0167c1b80a67.json": 943,
+      "docs/exec-plans/active/run_aeff992f3eb442a390fc0167c1b80a67.md": 2362,
+      "docs/exec-plans/active/run_e5638c1b36044b158f837f67b598a330-sprint-1.json": 2074,
+      "docs/exec-plans/active/run_e5638c1b36044b158f837f67b598a330.json": 892,
+      "docs/exec-plans/active/run_e5638c1b36044b158f837f67b598a330.md": 2203,
+      "docs/exec-plans/tech-debt-tracker.md": 263,
+      "docs/exec-plans/tech-debt-tracker.md.lock": 0,
+      "ppo_lite/__init__.py": 238,
+      "ppo_lite/buffer.py": 4013,
+      "ppo_lite/config.py": 987,
+      "ppo_lite/gae.py": 1806,
+      "ppo_lite/losses.py": 3213,
+      "ppo_lite/seed.py": 1999,
+      "ppo_lite/train.py": 2300,
+      "test_smoke.py": 34,
+      "tests/test_buffer.py": 265,
+      "tests/test_losses.py": 1464,
+      "tests/test_train.py": 1948
+    },
+    "log": [
+      "69c7b29 chorus: merge chorus/cy",
+      "33acfa9 chorus: snapshot work",
+      "d97a0b3 chorus: merge chorus/cy",
+      "c5ca93d chorus: snapshot work",
+      "ea66854 chorus: merge chorus/ada",
+      "a69feca chorus: snapshot work",
+      "feb61bf Implement PPO losses and clipping tests",
+      "4a5e1aa chorus: snapshot work",
+      "1671e2f chorus: merge chorus/cy",
+      "59b8d0e Add sprint execution plan artifacts",
+      "15ae43e Add seed_everything utility",
+      "27bf4c1 chorus: merge chorus/bo",
+      "16ae084 chorus: snapshot work",
+      "8c0747e chorus: snapshot work",
+      "a972ce3 chorus: merge chorus/ada",
+      "a5cb4fc Implement RolloutBuffer with GAE and deterministic minibatching",
+      "5ea0bae seed"
+    ],
+    "merges": [
+      "69c7b29 chorus: merge chorus/cy",
+      "d97a0b3 chorus: merge chorus/cy",
+      "ea66854 chorus: merge chorus/ada",
+      "1671e2f chorus: merge chorus/cy",
+      "27bf4c1 chorus: merge chorus/bo",
+      "a972ce3 chorus: merge chorus/ada"
+    ],
+    "merged_eids": [
+      "ada",
+      "bo",
+      "cy"
+    ],
+    "duplicates": {},
+    "empty_exports": [],
+    "harness_leak": [
+      "docs/evals/run_489b3b60a77d40e0a597a252cb52b5d7/sprint-1.json",
+      "docs/evals/run_4ab0d68ee3a545a8b06d03fd4f33d948/sprint-1.json",
+      "docs/evals/run_4d672c9359614f12be385dffbb5aa0b1/sprint-1.json",
+      "docs/evals/run_5a8c956b75d8451d93b6d115566258dd/sprint-1.json",
+      "docs/evals/run_aeff992f3eb442a390fc0167c1b80a67/sprint-1.json",
+      "docs/evals/run_e5638c1b36044b158f837f67b598a330/sprint-1.json",
+      "docs/exec-plans/active/run_489b3b60a77d40e0a597a252cb52b5d7-sprint-1.json",
+      "docs/exec-plans/active/run_489b3b60a77d40e0a597a252cb52b5d7.json",
+      "docs/exec-plans/active/run_489b3b60a77d40e0a597a252cb52b5d7.md",
+      "docs/exec-plans/active/run_4ab0d68ee3a545a8b06d03fd4f33d948-sprint-1.json",
+      "docs/exec-plans/active/run_4ab0d68ee3a545a8b06d03fd4f33d948.json",
+      "docs/exec-plans/active/run_4ab0d68ee3a545a8b06d03fd4f33d948.md",
+      "docs/exec-plans/active/run_4d672c9359614f12be385dffbb5aa0b1-sprint-1.json",
+      "docs/exec-plans/active/run_4d672c9359614f12be385dffbb5aa0b1.json",
+      "docs/exec-plans/active/run_4d672c9359614f12be385dffbb5aa0b1.md",
+      "docs/exec-plans/active/run_5a8c956b75d8451d93b6d115566258dd.json",
+      "docs/exec-plans/active/run_aeff992f3eb442a390fc0167c1b80a67-sprint-1.json",
+      "docs/exec-plans/active/run_aeff992f3eb442a390fc0167c1b80a67.json",
+      "docs/exec-plans/active/run_aeff992f3eb442a390fc0167c1b80a67.md",
+      "docs/exec-plans/active/run_e5638c1b36044b158f837f67b598a330-sprint-1.json",
+      "docs/exec-plans/active/run_e5638c1b36044b158f837f67b598a330.json",
+      "docs/exec-plans/active/run_e5638c1b36044b158f837f67b598a330.md",
+      "docs/exec-plans/tech-debt-tracker.md",
+      "docs/exec-plans/tech-debt-tracker.md.lock"
+    ],
+    "readme": "README.md",
+    "readme_stub": true,
+    "packaging_present": [],
+    "packaging_expected": [
+      "pyproject.toml",
+      "setup.py",
+      "setup.cfg"
+    ]
+  },
+  "build": {
+    "attempts": [
+      {
+        "cmd": "pytest -q",
+        "rc": 2,
+        "tail": "\n==================================== ERRORS ====================================\n_ ERROR collecting standup-app/hard-task-report/runs/ppo_lite/tmp/chorus-standup-9_vyd9wz/work/acme/repo/tests/test_losses.py _\nImportError while importing test module '/Users/divyansh/chorus/standup-app/hard-task-report/runs/ppo_lite/tmp/chorus-standup-9_vyd9wz/work/acme/repo/tests/test_losses.py'.\nHint: make sure your test modules/packages have valid Python names.\nTraceback:\n/opt/homebrew/Cellar/python@3.13/3.13.12_1/Frameworks/Python.framework/Versions/3.13/lib/python3.13/importlib/__init__.py:88: in import_module\n    return _bootstrap._gcd_import(name[level:], package, level)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\ntests/test_losses.py:5: in <module>\n    from ppo_lite.losses import ppo_losses\nppo_lite/__init__.py:6: in <module>\n    from .gae import compute_gae\nppo_lite/gae.py:7: in <module>\n    import numpy as np\nE   ModuleNotFoundError: No module named 'numpy'\n=========================== short test summary info ============================\nERROR tests/test_losses.py\n!!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!\n"
+      }
+    ]
+  },
+  "flaws": [
+    {
+      "sev": "FRAMEWORK",
+      "code": "BUG-007",
+      "title": "Top goal ended blocked, not done",
+      "detail": "The director hit the integrate cap / deadline without a clean done verdict."
+    },
+    {
+      "sev": "FRAMEWORK",
+      "code": "BUG-006",
+      "title": "Deliverable assigned to a non-engineer role",
+      "detail": "task_0d12d59f5\u2192analyst(rejected), task_d55f76635\u2192analyst(rejected), task_3532fb4d5\u2192analyst(rejected)"
+    },
+    {
+      "sev": "FRAMEWORK",
+      "code": "BUG-005",
+      "title": "done \u2260 landed \u2014 an author branch never integrated",
+      "detail": "3 employee(s) have done tasks but no merge on main: ['max', 'moe', 'di']"
+    },
+    {
+      "sev": "CRITICAL",
+      "code": "PKG",
+      "title": "No packaging manifest \u2014 not a distributable artifact",
+      "detail": "expected one of ['pyproject.toml', 'setup.py', 'setup.cfg'], found none"
+    },
+    {
+      "sev": "HIGH",
+      "code": "LEAK",
+      "title": "Harness-internal files leaked into the deliverable",
+      "detail": "24 files, e.g. ['docs/evals/run_489b3b60a77d40e0a597a252cb52b5d7/sprint-1.json', 'docs/evals/run_4ab0d68ee3a545a8b06d03fd4f33d948/sprint-1.json', 'docs/evals/run_4d672c9359614f12be385dffbb5aa0b1/sprint-1.json']"
+    },
+    {
+      "sev": "HIGH",
+      "code": "README",
+      "title": "README missing or still a stub",
+      "detail": "README.md"
+    },
+    {
+      "sev": "CRITICAL",
+      "code": "BUILD",
+      "title": "Deliverable fails `pytest -q` (rc=2)",
+      "detail": "from ppo_lite.losses import ppo_losses\nppo_lite/__init__.py:6: in <module>\n    from .gae import compute_gae\nppo_lite/gae.py:7: in <module>\n    import numpy as np\nE   ModuleNotFoundError: No module named 'numpy'\n=========================== short test summary info ============================\nERROR tests/test_losses.py\n!!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!\n"
+    }
+  ]
+}

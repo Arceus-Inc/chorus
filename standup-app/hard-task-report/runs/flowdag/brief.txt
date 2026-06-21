@@ -1,0 +1,1 @@
+Build a Go module `flowdag`: declare tasks with `DependsOn`, run them in topological order over a worker pool (bounded by a semaphore / `GOMAXPROCS`), per-task retries with backoff, and result caching via a typed map. Ship `go.mod` and an exported API in `flowdag.go`. `go test ./...` asserts ordering, that a failed dep skips its dependents, and cache hits; `go vet` is clean.

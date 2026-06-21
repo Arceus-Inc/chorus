@@ -51,3 +51,5 @@ events*.jsonl.gz
 
 # uv
 uv.lock
+standup-app/hard-task-report/runs/*/tmp/
+standup-app/hard-task-report/runs/*/run.log

@@ -1,0 +1,124 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>flowdag — Hard-Task Report</title><style>
+:root{--bg:#0d1117;--panel:#161b22;--panel2:#1c2330;--border:#30363d;--fg:#e6edf3;--muted:#8b949e;
+--accent:#58a6ff;--mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;--red:#f85149;
+--redbg:#2d1518;--amber:#d29922;--amberbg:#2a230f;--green:#3fb950;--greenbg:#12261a;--purple:#bc8cff;}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);
+font:15px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased}
+.wrap{max-width:980px;margin:0 auto;padding:48px 24px 96px}
+header{border-bottom:1px solid var(--border);padding-bottom:28px;margin-bottom:36px}
+.eyebrow{font:600 12px/1 var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--accent)}
+h1{margin:14px 0 8px;font-size:30px;letter-spacing:-.02em}
+.sub{color:var(--muted);font-size:15px;max-width:74ch}
+.meta{display:flex;flex-wrap:wrap;gap:10px;margin-top:20px}
+.chip{font:600 12px/1 var(--mono);color:var(--muted);background:var(--panel);border:1px solid var(--border);
+border-radius:999px;padding:7px 12px}.chip b{color:var(--fg)}
+.ok{color:var(--green)}.bad{color:var(--red)}.warn{color:var(--amber)}
+h2{font-size:13px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin:44px 0 18px;
+padding-bottom:10px;border-bottom:1px solid var(--border)}
+.card{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:18px 20px;margin:12px 0;
+position:relative;overflow:hidden}.card::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--red)}
+.card.fwk::before{background:var(--amber)}.card.info::before{background:var(--muted)}
+.card-head{display:flex;align-items:baseline;gap:12px;margin-bottom:6px}
+.code{flex:none;font:700 11px/1 var(--mono);color:var(--bg);background:var(--red);border-radius:6px;padding:5px 8px}
+.card.fwk .code{background:var(--amber)}.card.info .code{background:var(--muted)}
+.title{font-size:15px;font-weight:650}
+.detail{color:#c2ccd6;font-size:13.5px;margin-top:4px;font-family:var(--mono);white-space:pre-wrap;word-break:break-word}
+table{border-collapse:collapse;width:100%;margin:10px 0;font-size:13.5px}
+th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--border)}
+th{color:var(--muted);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.06em}
+td code,code.k{font:12.5px/1.5 var(--mono);background:var(--panel2);border:1px solid var(--border);border-radius:5px;
+padding:1px 6px;color:#d2a8ff}
+.pill{display:inline-block;font:600 11px/1 var(--mono);border-radius:5px;padding:4px 8px}
+.pill.done{color:var(--green);background:var(--greenbg);border:1px solid #1c5a32}
+.pill.blocked,.pill.rejected{color:var(--red);background:var(--redbg);border:1px solid #5c2326}
+.pill.other{color:var(--amber);background:var(--amberbg);border:1px solid #5a4818}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin:8px 0}
+.stat{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:14px}
+.stat .n{font-size:22px;font-weight:700}.stat .l{color:var(--muted);font-size:12px;margin-top:2px}
+a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
+footer{margin-top:56px;padding-top:22px;border-top:1px solid var(--border);color:var(--muted);font-size:13px}
+pre.log{background:#0b0f14;border:1px solid var(--border);border-radius:8px;padding:12px;overflow:auto;
+font:12px/1.5 var(--mono);color:#9db1c5;max-height:240px}
+</style></head><body><div class="wrap">
+<header><div class="eyebrow">Hard-Task Report · Go</div>
+<h1><code class="k" style="font-size:26px;color:var(--fg)">flowdag</code></h1>
+<p class="sub">Build a Go module `flowdag`: declare tasks with `DependsOn`, run them in topological order over a worker pool (bounded by a semaphore / `GOMAXPROCS`), per-task retries with backoff, and result caching via a typed map. Ship `go.mod` and an exported API in `flowdag.go`. `go test ./...` asserts ordering, that a failed dep skips its dependents, and cache hits; `go vet` is clean.</p>
+<div class="meta">
+<span class="chip">goal: <b class=bad>blocked</b></span>
+<span class="chip">tasks: <b>24</b></span>
+<span class="chip">runs: <b>41</b></span>
+<span class="chip">elapsed: <b>1246s</b></span>
+<span class="chip">deliverable flaws: <b class=bad>5</b></span>
+<span class="chip">framework flaws: <b class=warn>4</b></span>
+</div></header>
+
+<h2>Run accounting</h2>
+<table><tr><th>top goal</th><td><span class="pill blocked">blocked</span></td></tr>
+<tr><th>task statuses</th><tr><td><span class="pill blocked">blocked</span> <b>2</b></td><td><span class="pill done">done</span> <b>18</b></td><td><span class="pill rejected">rejected</span> <b>3</b></td><td><span class="pill other">todo</span> <b>1</b></td></tr></table>
+<div class="grid">
+<div class="stat"><div class="n">11</div><div class="l">employees</div></div>
+<div class="stat"><div class="n">55</div><div class="l">files landed</div></div>
+<div class="stat"><div class="n">10</div><div class="l">merges on main</div></div>
+<div class="stat"><div class="n">0</div><div class="l">duplicate modules</div></div>
+</div>
+
+<h2>Build / test verification</h2>
+<table><tr><th>command</th><th>result</th><th>output tail</th></tr><tr><td><code>go build ./...</code></td><td><span class="bad">fail (rc=1)</span></td><td class="detail"># flowdag
+./flowdag.go:520:29: syntax error: method must have no type parameters
+</td></tr>
+<tr><td><code>go test ./...</code></td><td><span class="bad">fail (rc=1)</span></td><td class="detail">FAIL	flowdag [build failed]
+FAIL
+# flowdag [flowdag.test]
+./flowdag.go:520:29: syntax error: method must have no type parameters
+</td></tr></table>
+
+<h2><span style="color:var(--accent)">A.</span> Deliverable flaws — the <code class="k">flowdag</code> deliverable (5)</h2>
+<p class="detail" style="font-family:inherit;color:var(--muted)">Defects in what the org actually produced — is it a real, usable, distributable artifact?</p>
+<div class="card crit"><div class="card-head"><span class="code">1</span><span class="title">The library is implemented twice — once in Go, once in Python</span><span style="margin-left:auto;font:600 10px/1 var(--mono);color:var(--muted)">CROSS-LANG-SPLIT-BRAIN</span></div><div class="detail">The brief asked for a Go module. The repo ships flowdag.go (12 KB, Go) AND flowdag.py (10 KB, a full Python re-implementation), each with its own tests (flowdag_test.go + dag_skip_test.go vs test_flowdag.py). flowdag.py&#x27;s own docstring admits the divergence: &#x27;The sprint task asks for flowdag.go; this repository is Python-only (tests run via pytest), so we implement the requested exported API in a Python module.&#x27; One engineer wrote Go; another decided the repo was Python and rewrote the whole thing; integrate merged both. This is split-brain across LANGUAGES, not just modules.</div></div>
+<div class="card crit"><div class="card-head"><span class="code">2</span><span class="title">The Go module does not compile</span><span style="margin-left:auto;font:600 10px/1 var(--mono);color:var(--muted)">GO-BUILD-BROKEN</span></div><div class="detail">`go build ./...` fails rc=1: flowdag.go:520:29: syntax error: method must have no type parameters. The code declares `func (r *Resolver) ResolveAs[T any](ctx, taskID) (T, error)` — Go does not allow type parameters on methods (generic methods are unsupported). The required deliverable — the Go module — is not buildable.</div></div>
+<div class="card crit"><div class="card-head"><span class="code">3</span><span class="title">go test fails (build failed)</span><span style="margin-left:auto;font:600 10px/1 var(--mono);color:var(--muted)">GO-TEST-BROKEN</span></div><div class="detail">`go test ./...` exits rc=1 with &#x27;FAIL flowdag [build failed]&#x27; — the same syntax error blocks the test binary. The Go test suite (flowdag_test.go, dag_skip_test.go) cannot run at all.</div></div>
+<div class="card crit"><div class="card-head"><span class="code">4</span><span class="title">The DoD validated the Python rival, not the Go deliverable</span><span style="margin-left:auto;font:600 10px/1 var(--mono);color:var(--muted)">WRONG-DOD-TARGET</span></div><div class="detail">The objective gate ran pytest (test_flowdag.py imports the Python flowdag), which passes — while `go build` of the actual brief deliverable fails to compile. The org&#x27;s DoD checked the wrong language entirely, so a non-compiling Go module passed because its accidental Python twin&#x27;s tests were green. (Same wrong-toolchain failure mode as the streamparse run.)</div></div>
+<div class="card crit"><div class="card-head"><span class="code">5</span><span class="title">README stub + stray smoke test + leaked harness files</span><span style="margin-left:auto;font:600 10px/1 var(--mono);color:var(--muted)">STRAY</span></div><div class="detail">README.md is the 15-byte &#x27;# company repo&#x27; stub. Root test_smoke.py (`assert True`) is committed. Harness-internal files leaked (docs/evals/*.json, docs/exec-plans/*).</div></div>
+
+<h2><span style="color:var(--accent)">B.</span> Framework / orchestration flaws — chorus behaviours this run exposed (4)</h2>
+<p class="detail" style="font-family:inherit;color:var(--muted)">Not the deliverable's fault — kernel/orchestration behaviours the run made visible.</p>
+<div class="card fwk"><div class="card-head"><span class="code">6</span><span class="title">Top goal ended blocked, not done</span><span style="margin-left:auto;font:600 10px/1 var(--mono);color:var(--muted)">BUG-007</span></div><div class="detail">24 tasks: 18 done, 3 rejected, 2 blocked, 1 left in todo (never started). The director hit the ceiling without closing the goal; a task stranded in todo shows the schedule never drained.</div></div>
+<div class="card fwk"><div class="card-head"><span class="code">7</span><span class="title">Deliverable tasks handed to non-coding roles (analyst ×2 + pm ×1) → all rejected</span><span style="margin-left:auto;font:600 10px/1 var(--mono);color:var(--muted)">BUG-006</span></div><div class="detail">Three implementation tasks went to non-coding roles — twice to the analyst and once to the PM — and all three were rejected. A new variant: the mis-route reached the PM as well as the analyst this run.</div></div>
+<div class="card fwk"><div class="card-head"><span class="code">8</span><span class="title">No owner of the language/contract — the cause of the two-language split</span><span style="margin-left:auto;font:600 10px/1 var(--mono);color:var(--muted)">NO-OWNERSHIP</span></div><div class="detail">Nobody owned the fact that the deliverable is a GO module. One engineer wrote Go, another wrote Python on the belief the repo was &#x27;Python-only&#x27;, and integrate merged both languages side by side. The split-brain is the symptom of an unowned public contract — here, even the implementation language was contested.</div></div>
+<div class="card fwk"><div class="card-head"><span class="code">9</span><span class="title">pytest passed while `go build` failed</span><span style="margin-left:auto;font:600 10px/1 var(--mono);color:var(--muted)">DOD-WRONG-TOOLCHAIN</span></div><div class="detail">The Command DoD ran whatever command exited 0 (pytest over the Python twin) rather than building and testing the deliverable in its declared toolchain (go build/test). Direct evidence for spec 15: the coherence gate must build AND test in the deliverable&#x27;s OWN toolchain against the declared surface. (BUG-005 did NOT occur here — all four engineer branches ada/bo/cy/di merged.)</div></div>
+
+<h2>Landed repo</h2>
+<p class="detail" style="font-family:inherit">Packaging expected: [&#x27;go.mod&#x27;] ·
+present: [&#x27;go.mod&#x27;]</p>
+<p style="margin:10px 0"><code class=k>README.md</code> <code class=k>dag_skip_test.go</code> <code class=k>docs/evals/run_0fd23917a12c4110a00526f4656b9535/sprint-1.json</code> <code class=k>docs/evals/run_4735a88deeff44068da17929441d32c4/sprint-1.json</code> <code class=k>docs/evals/run_4735a88deeff44068da17929441d32c4/sprint-2.json</code> <code class=k>docs/evals/run_7d070fff62ad4fef99cae21e0dfd3666/sprint-1.json</code> <code class=k>docs/evals/run_836b8fa69960450dbef3c0c5ce7db559/sprint-1.json</code> <code class=k>docs/evals/run_954c951b6b9141d894d7d8fecdb36458/sprint-1.json</code> <code class=k>docs/evals/run_968cb6de5c1243dd945e96f0b9033a39/sprint-1.json</code> <code class=k>docs/evals/run_a2cfd4425077468bb1f6a608bd123505/sprint-1.json</code> <code class=k>docs/evals/run_a2db22f8a4ab47079d08a14ff6591e9a/sprint-1.json</code> <code class=k>docs/evals/run_a85dcfa3ff9b4abab0bf32e1df334321/sprint-1.json</code> <code class=k>docs/evals/run_a85dcfa3ff9b4abab0bf32e1df334321/sprint-2.json</code> <code class=k>docs/evals/run_f4545632d7c945d1ad20327d3914f7ba/sprint-1.json</code> <code class=k>docs/evals/run_f4545632d7c945d1ad20327d3914f7ba/sprint-2.json</code> <code class=k>docs/exec-plans/active/run_0fd23917a12c4110a00526f4656b9535-sprint-1.json</code> <code class=k>docs/exec-plans/active/run_0fd23917a12c4110a00526f4656b9535.json</code> <code class=k>docs/exec-plans/active/run_0fd23917a12c4110a00526f4656b9535.md</code> <code class=k>docs/exec-plans/active/run_4735a88deeff44068da17929441d32c4-sprint-2.json</code> <code class=k>docs/exec-plans/active/run_4735a88deeff44068da17929441d32c4.json</code> <code class=k>docs/exec-plans/active/run_7d070fff62ad4fef99cae21e0dfd3666-sprint-2.json</code> <code class=k>docs/exec-plans/active/run_7d070fff62ad4fef99cae21e0dfd3666.json</code> <code class=k>docs/exec-plans/active/run_836b8fa69960450dbef3c0c5ce7db559-sprint-1.json</code> <code class=k>docs/exec-plans/active/run_836b8fa69960450dbef3c0c5ce7db559.json</code> <code class=k>docs/exec-plans/active/run_836b8fa69960450dbef3c0c5ce7db559.md</code> <code class=k>docs/exec-plans/active/run_954c951b6b9141d894d7d8fecdb36458-sprint-1.json</code> <code class=k>docs/exec-plans/active/run_954c951b6b9141d894d7d8fecdb36458-sprint-2.json</code> <code class=k>docs/exec-plans/active/run_954c951b6b9141d894d7d8fecdb36458.json</code> <code class=k>docs/exec-plans/active/run_954c951b6b9141d894d7d8fecdb36458.md</code> <code class=k>docs/exec-plans/active/run_968cb6de5c1243dd945e96f0b9033a39-sprint-1.json</code> <code class=k>docs/exec-plans/active/run_968cb6de5c1243dd945e96f0b9033a39.json</code> <code class=k>docs/exec-plans/active/run_968cb6de5c1243dd945e96f0b9033a39.md</code> <code class=k>docs/exec-plans/active/run_a2cfd4425077468bb1f6a608bd123505.json</code> <code class=k>docs/exec-plans/active/run_a2db22f8a4ab47079d08a14ff6591e9a-sprint-1.json</code> <code class=k>docs/exec-plans/active/run_a2db22f8a4ab47079d08a14ff6591e9a.json</code> <code class=k>docs/exec-plans/active/run_a2db22f8a4ab47079d08a14ff6591e9a.md</code> <code class=k>docs/exec-plans/active/run_a85dcfa3ff9b4abab0bf32e1df334321-sprint-1.json</code> <code class=k>docs/exec-plans/active/run_a85dcfa3ff9b4abab0bf32e1df334321-sprint-2.json</code> <code class=k>docs/exec-plans/active/run_a85dcfa3ff9b4abab0bf32e1df334321.json</code> <code class=k>docs/exec-plans/active/run_a85dcfa3ff9b4abab0bf32e1df334321.md</code> <code class=k>docs/exec-plans/active/run_ced87bbc009b4fc8a5ddb5dbffb2ab8f-sprint-1.json</code> <code class=k>docs/exec-plans/active/run_ced87bbc009b4fc8a5ddb5dbffb2ab8f.json</code> <code class=k>docs/exec-plans/active/run_ced87bbc009b4fc8a5ddb5dbffb2ab8f.md</code> <code class=k>docs/exec-plans/active/run_f4545632d7c945d1ad20327d3914f7ba-sprint-1.json</code> <code class=k>docs/exec-plans/active/run_f4545632d7c945d1ad20327d3914f7ba-sprint-2.json</code> <code class=k>docs/exec-plans/active/run_f4545632d7c945d1ad20327d3914f7ba.json</code> <code class=k>docs/exec-plans/active/run_f4545632d7c945d1ad20327d3914f7ba.md</code> <code class=k>docs/exec-plans/tech-debt-tracker.md</code> <code class=k>docs/exec-plans/tech-debt-tracker.md.lock</code> <code class=k>flowdag.go</code> <code class=k>flowdag.py</code> <code class=k>flowdag_test.go</code> <code class=k>go.mod</code> <code class=k>test_flowdag.py</code> <code class=k>test_smoke.py</code> </p>
+<h2>git log (company main)</h2>
+<pre class="log">0581833 chorus: merge chorus/cy
+9c40cd0 chorus: snapshot work
+c4ead53 chorus: merge chorus/cy
+d854196 chorus: snapshot work
+69bc9e5 chorus: merge chorus/di
+bf5b4d5 chorus: snapshot work
+3e018dd chorus: snapshot work
+7826893 chorus: merge chorus/cy
+8ecbe86 chorus: snapshot work
+78bfe0e chorus: merge chorus/cy
+ca47b53 chorus: snapshot work
+ea3fd4c chorus: merge chorus/cy
+9e87701 chorus: snapshot work
+30b259e chorus: merge chorus/bo
+f5e1872 chorus: snapshot work
+c0e738c chorus: merge chorus/bo
+8de5d6e chorus: snapshot work
+2398450 Add deterministic DAG test for skip-on-failure
+61fe46b chorus: merge chorus/di
+c5bebcc chorus: snapshot work
+f7cfdbf chorus: merge chorus/ada
+3a6f6ea chorus: snapshot work
+0d1705b seed</pre>
+
+<footer>Generated by <code class="k">_probe.py</code> + <code class="k">_render.py</code> from a live
+<code class="k">Chorus.build --org</code> run. Workspace: <code class="k">/Users/divyansh/chorus/standup-app/hard-task-report/runs/flowdag/tmp/chorus-standup-b36knyqq</code>.
+Flaw codes cross-reference <a href="../post-dev-wiring.md">post-dev-wiring.md</a> (BUG-005/006/007).</footer>
+</div></body></html>

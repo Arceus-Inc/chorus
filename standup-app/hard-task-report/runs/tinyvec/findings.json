@@ -1,0 +1,28 @@
+{
+  "deliverable": [
+    {"code": "API-SPLIT-BRAIN", "sev": "CRITICAL", "title": "The implementation and its own test file disagree on the public API",
+     "detail": "lib.rs exposes TinyVec::new(dim) + query(q, k, metric) — the metric is chosen PER QUERY. tests/bruteforce.rs calls TinyVec::new(dim, Metric::Cosine) + query(q, k) — the metric is fixed AT CONSTRUCTION. These are two incompatible API designs: the impl-author put the metric on the query, the test-author put it on the constructor, and integrate merged both without reconciling. This is the split-brain in its purest form — except here it's between a module and its own tests."},
+    {"code": "TEST-BROKEN", "sev": "CRITICAL", "title": "cargo test does not compile (rc=101)",
+     "detail": "Direct consequence of the API split-brain: `cargo test` fails with error[E0061] — 'this function takes 1 argument but 2 arguments were supplied' (the new(dim, Metric) calls) and 'this method takes 3 arguments but 2 arguments were supplied' (the query(q, k) calls), repeated across every test. Crucially `cargo build --release` PASSES (the library compiles in isolation), which masks that the test target is broken. A build-only gate would have called this green."},
+    {"code": "MISSING-ANN", "sev": "CRITICAL", "title": "The HNSW-style ANN index — the core deliverable — is absent",
+     "detail": "The brief required a navigable-small-world (HNSW-style) approximate index whose recall is asserted against brute-force. lib.rs is PURE BRUTE FORCE: top_k() iterates every vector, scores it, sorts, truncates. There is no graph, no index, no approximate search. The entire point of the task (ANN beats brute-force on speed while matching it on recall) is not implemented — and therefore the recall-vs-brute-force comparison the brief asked for cannot exist."},
+    {"code": "MISSING-PERSIST", "sev": "CRITICAL", "title": "bincode disk persistence is absent",
+     "detail": "The brief required bincode disk persistence (save/load). Cargo.toml's [dependencies] section is EMPTY — no bincode, no serde. lib.rs has no save/load, no serialization of any kind, no disk I/O. A second of the four headline deliverables is simply missing."},
+    {"code": "TARGET-COMMITTED", "sev": "HIGH", "title": "The entire target/ build cache is committed (~1.4 MB)",
+     "detail": "git tracks target/debug/, target/.rustc_info.json, *.rmeta, and the incremental build cache — dep-graph.bin (861 KB), query-cache.bin (496 KB), fingerprints, lockfiles. There is no .gitignore. Rust build output must never be committed; this is the Rust analog of the harness-artifact leak, but it is the crate's own compiled cruft."},
+    {"code": "STRAY-PY", "sev": "HIGH", "title": "A Python smoke test sits in a Rust crate",
+     "detail": "test_smoke.py (`def test_smoke(): assert True`) — a PYTHON file — is committed at the root of a Rust crate, leaked from the harness seed. Nothing runs it (cargo ignores it). Alongside it, 22 harness-internal files leaked (docs/evals/*.json, docs/exec-plans/*)."},
+    {"code": "README", "sev": "HIGH", "title": "README is the seed stub",
+     "detail": "README.md is 15 bytes: '# company repo'. None of the four required features (metrics, ANN index, persistence, query API) are documented, and there is no build/usage guidance."}
+  ],
+  "framework": [
+    {"code": "BUG-007", "title": "Top goal ended blocked, not done",
+     "detail": "14 tasks: 11 done, 1 rejected, 1 blocked, and 1 left in todo (never started). The director hit the ceiling without closing the goal, and a task stranded in todo shows the schedule never fully drained."},
+    {"code": "BUG-006", "title": "A deliverable task handed to the analyst → rejected",
+     "detail": "The analyst (a non-coding role) was assigned an implementation task and rejected it — the same mis-route seen in every run, here once."},
+    {"code": "NO-OWNERSHIP", "title": "No owner of the public API — the cause of the impl/test split-brain",
+     "detail": "Nobody owned TinyVec's signature. The implementation beat chose a per-query metric; the test beat chose a construction-time metric; integrate merged both. Rust's compiler caught the divergence (cargo test won't build) where Python would have silently shipped two rival call shapes — but the org still landed it blocked rather than reconciling to one API."},
+    {"code": "DOD-BUILD-ONLY", "title": "The DoD passed on `cargo build` while the deliverable was half-missing and its tests were broken",
+     "detail": "`cargo build --release` is green, so a build-only floor would accept this — yet cargo test does not compile AND two of the four brief features (ANN index, persistence) are entirely absent. This is the sharpest evidence for spec 15's coherence DoD: the gate must BUILD AND TEST in a clean env and check the deliverable against the declared surface, not just compile the library in isolation. (Note: unlike the grpo/dpo/ppo runs, BUG-005 did NOT occur here — all four engineer branches ada/bo/cy/di merged; the only unmerged 'done' rows are managers, which is expected.)"}
+  ]
+}

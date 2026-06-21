@@ -1,0 +1,427 @@
+{
+  "name": "tooldeck",
+  "lang": "Python",
+  "brief": "Build a library `tooldeck` that turns Python functions into LLM tools: derive a JSON Schema from type hints + docstring, register/dispatch by name, validate arguments, and retry-or-error on malformed calls. Tests cover schema generation and validation failures.",
+  "meta": {
+    "name": "tooldeck",
+    "rc": "0",
+    "elapsed_s": "1269",
+    "workspace": "/Users/divyansh/chorus/standup-app/hard-task-report/runs/tooldeck/tmp/chorus-standup-isj1i1xv",
+    "db": "/Users/divyansh/chorus/standup-app/hard-task-report/runs/tooldeck/tmp/chorus-standup-isj1i1xv/company.db",
+    "report": "/Users/divyansh/chorus/standup-app/hard-task-report/runs/tooldeck/tmp/chorus-standup-isj1i1xv/report.md"
+  },
+  "repo_path": "/Users/divyansh/chorus/standup-app/hard-task-report/runs/tooldeck/tmp/chorus-standup-isj1i1xv/work/acme/repo",
+  "ledger": {
+    "employees": [
+      {
+        "id": "vera",
+        "name": "vera",
+        "role": "manager"
+      },
+      {
+        "id": "moe",
+        "name": "moe",
+        "role": "manager"
+      },
+      {
+        "id": "max",
+        "name": "max",
+        "role": "manager"
+      },
+      {
+        "id": "ada",
+        "name": "ada",
+        "role": "engineer"
+      },
+      {
+        "id": "bo",
+        "name": "bo",
+        "role": "engineer"
+      },
+      {
+        "id": "ria",
+        "name": "ria",
+        "role": "reviewer"
+      },
+      {
+        "id": "pat",
+        "name": "pat",
+        "role": "pm"
+      },
+      {
+        "id": "cy",
+        "name": "cy",
+        "role": "engineer"
+      },
+      {
+        "id": "di",
+        "name": "di",
+        "role": "engineer"
+      },
+      {
+        "id": "rex",
+        "name": "rex",
+        "role": "reviewer"
+      },
+      {
+        "id": "ana",
+        "name": "ana",
+        "role": "analyst"
+      }
+    ],
+    "emp_by_role": {
+      "manager": 3,
+      "engineer": 4,
+      "reviewer": 2,
+      "pm": 1,
+      "analyst": 1
+    },
+    "n_tasks": 20,
+    "n_runs": 33,
+    "status_counts": {
+      "blocked": 2,
+      "done": 16,
+      "rejected": 2
+    },
+    "top_status": "blocked",
+    "top_intent": "Build a library `tooldeck` that turns Python functions into LLM tools: derive a JSON Schema from type hints + docstring,",
+    "misassigned": [
+      {
+        "id": "task_e86da8c8bbcd",
+        "intent": "Review repository context (existing dispatch/tool call parsing/validation) and suggest min",
+        "role": "analyst",
+        "status": "rejected"
+      },
+      {
+        "id": "task_720f4ea9b028",
+        "intent": "Add unit tests in `tests/test_registry_dispatch.py` to cover: register tool, fetch schema ",
+        "role": "analyst",
+        "status": "rejected"
+      }
+    ],
+    "recovery_cards": [
+      {
+        "id": "rec_daedc91c9208",
+        "kind": "stale_run_watchdog",
+        "source_task_id": "task_e86da8c8bbcd",
+        "status": "folded"
+      },
+      {
+        "id": "rec_df8bff39d6d1",
+        "kind": "stale_run_watchdog",
+        "source_task_id": "task_720f4ea9b028",
+        "status": "folded"
+      }
+    ],
+    "done_tasks": [
+      {
+        "id": "task_0605aee01279",
+        "intent": "Implement minimal `tooldeck` package core registry + decorator to register callables as na",
+        "role": "manager",
+        "emp": "max"
+      },
+      {
+        "id": "task_91988cee84da",
+        "intent": "Implement deterministic JSON Schema derivation from type hints + docstring parameter descr",
+        "role": "manager",
+        "emp": "moe"
+      },
+      {
+        "id": "task_caadc879c2c4",
+        "intent": "Implement argument validation against derived schema and retry-or-error handling for malfo",
+        "role": "manager",
+        "emp": "max"
+      },
+      {
+        "id": "task_6dfb684c9cc5",
+        "intent": "Create tooldeck/registry.py implementing ToolRegistry with register(func, name=None) and d",
+        "role": "engineer",
+        "emp": "cy"
+      },
+      {
+        "id": "task_f5c29ae37170",
+        "intent": "Add tests in tests/test_registry_dispatch.py covering: registering 1-2 simple functions wi",
+        "role": "engineer",
+        "emp": "di"
+      },
+      {
+        "id": "task_42002ccf372c",
+        "intent": "Create tooldeck/schema.py implementing schema_for(func)->dict that produces deterministic ",
+        "role": "engineer",
+        "emp": "ada"
+      },
+      {
+        "id": "task_58d10a1a7501",
+        "intent": "Add tests in tests/test_schema_derivation.py for schema_for: representative functions cove",
+        "role": "engineer",
+        "emp": "bo"
+      },
+      {
+        "id": "task_649a4092d242",
+        "intent": "Implement typed exceptions ToolCallMalformedError and ToolArgumentValidationError plus val",
+        "role": "engineer",
+        "emp": "cy"
+      },
+      {
+        "id": "task_90f1e4ace863",
+        "intent": "Create tests/test_validation_retry.py covering: (1) parse/dispatch retries expected number",
+        "role": "engineer",
+        "emp": "di"
+      },
+      {
+        "id": "task_655e7b3d2d1e",
+        "intent": "Create/modify tooldeck/validation.py to define ToolCallMalformedError and ToolArgumentVali",
+        "role": "engineer",
+        "emp": "cy"
+      },
+      {
+        "id": "task_c2164cab9d2a",
+        "intent": "Investigate why `.harness/integrate-context.json` preview is truncated and not readable vi",
+        "role": "engineer",
+        "emp": "cy"
+      },
+      {
+        "id": "task_28cbc4412e6b",
+        "intent": "In tooldeck/validation.py (or tooldeck/call.py if more appropriate), define ToolCallMalfor",
+        "role": "engineer",
+        "emp": "cy"
+      },
+      {
+        "id": "task_004e82c83e09",
+        "intent": "Create `tooldeck/__init__.py` and `tooldeck/runtime.py` implementing: a ToolRegistry that ",
+        "role": "engineer",
+        "emp": "cy"
+      },
+      {
+        "id": "task_40e4d6b4effb",
+        "intent": "Create `tooldeck/schema.py` implementing JSON Schema derivation from a callable\u2019s Python t",
+        "role": "engineer",
+        "emp": "di"
+      },
+      {
+        "id": "task_e44571032732",
+        "intent": "Create tooldeck registry with register(name, fn), dispatch(name, args), get_schema(name). ",
+        "role": "engineer",
+        "emp": "cy"
+      },
+      {
+        "id": "task_9b99a69170aa",
+        "intent": "Create core ToolRegistry implementation with registration, name dispatch, schema derivatio",
+        "role": "engineer",
+        "emp": "cy"
+      }
+    ]
+  },
+  "repo": {
+    "n_files": 42,
+    "files": [
+      "README.md",
+      "docs/evals/run_2d0848e0d8a946c1bb93c6daf36f477d/sprint-1.json",
+      "docs/evals/run_8e5ec28ba9584754843599adaf396435/sprint-1.json",
+      "docs/evals/run_94e5f8d9494f419494470480c9583660/sprint-1.json",
+      "docs/evals/run_94e5f8d9494f419494470480c9583660/sprint-2.json",
+      "docs/evals/run_afb124ed34174f3b97f02f0c6b5283cb/sprint-1.json",
+      "docs/evals/run_d82dbc9b550b44c9a9e7088eb247ed6a/sprint-1.json",
+      "docs/evals/run_d82dbc9b550b44c9a9e7088eb247ed6a/sprint-2.json",
+      "docs/evals/run_f920e714f8024f31bcfa42c915b57a44/sprint-1.json",
+      "docs/exec-plans/active/run_2d0848e0d8a946c1bb93c6daf36f477d-sprint-1.json",
+      "docs/exec-plans/active/run_2d0848e0d8a946c1bb93c6daf36f477d.json",
+      "docs/exec-plans/active/run_2d0848e0d8a946c1bb93c6daf36f477d.md",
+      "docs/exec-plans/active/run_8e5ec28ba9584754843599adaf396435-sprint-1.json",
+      "docs/exec-plans/active/run_8e5ec28ba9584754843599adaf396435.json",
+      "docs/exec-plans/active/run_8e5ec28ba9584754843599adaf396435.md",
+      "docs/exec-plans/active/run_94e5f8d9494f419494470480c9583660-sprint-1.json",
+      "docs/exec-plans/active/run_94e5f8d9494f419494470480c9583660-sprint-2.json",
+      "docs/exec-plans/active/run_94e5f8d9494f419494470480c9583660.json",
+      "docs/exec-plans/active/run_94e5f8d9494f419494470480c9583660.md",
+      "docs/exec-plans/active/run_afb124ed34174f3b97f02f0c6b5283cb-sprint-1.json",
+      "docs/exec-plans/active/run_afb124ed34174f3b97f02f0c6b5283cb.json",
+      "docs/exec-plans/active/run_afb124ed34174f3b97f02f0c6b5283cb.md",
+      "docs/exec-plans/active/run_d82dbc9b550b44c9a9e7088eb247ed6a-sprint-1.json",
+      "docs/exec-plans/active/run_d82dbc9b550b44c9a9e7088eb247ed6a-sprint-2.json",
+      "docs/exec-plans/active/run_d82dbc9b550b44c9a9e7088eb247ed6a.json",
+      "docs/exec-plans/active/run_d82dbc9b550b44c9a9e7088eb247ed6a.md",
+      "docs/exec-plans/active/run_f920e714f8024f31bcfa42c915b57a44-sprint-1.json",
+      "docs/exec-plans/active/run_f920e714f8024f31bcfa42c915b57a44.json",
+      "docs/exec-plans/active/run_f920e714f8024f31bcfa42c915b57a44.md",
+      "docs/exec-plans/tech-debt-tracker.md",
+      "docs/exec-plans/tech-debt-tracker.md.lock",
+      "test_schema.py",
+      "test_smoke.py",
+      "test_tool_registry.py",
+      "tests/test_registry_dispatch.py",
+      "tests/test_validation_retry.py",
+      "tool_registry.py",
+      "tooldeck/__init__.py",
+      "tooldeck/call.py",
+      "tooldeck/registry.py",
+      "tooldeck/schema.py",
+      "tooldeck/validation.py"
+    ],
+    "sizes": {
+      "README.md": 15,
+      "docs/evals/run_2d0848e0d8a946c1bb93c6daf36f477d/sprint-1.json": 463,
+      "docs/evals/run_8e5ec28ba9584754843599adaf396435/sprint-1.json": 325,
+      "docs/evals/run_94e5f8d9494f419494470480c9583660/sprint-1.json": 1373,
+      "docs/evals/run_94e5f8d9494f419494470480c9583660/sprint-2.json": 1046,
+      "docs/evals/run_afb124ed34174f3b97f02f0c6b5283cb/sprint-1.json": 429,
+      "docs/evals/run_d82dbc9b550b44c9a9e7088eb247ed6a/sprint-1.json": 831,
+      "docs/evals/run_d82dbc9b550b44c9a9e7088eb247ed6a/sprint-2.json": 407,
+      "docs/evals/run_f920e714f8024f31bcfa42c915b57a44/sprint-1.json": 395,
+      "docs/exec-plans/active/run_2d0848e0d8a946c1bb93c6daf36f477d-sprint-1.json": 2508,
+      "docs/exec-plans/active/run_2d0848e0d8a946c1bb93c6daf36f477d.json": 1432,
+      "docs/exec-plans/active/run_2d0848e0d8a946c1bb93c6daf36f477d.md": 2324,
+      "docs/exec-plans/active/run_8e5ec28ba9584754843599adaf396435-sprint-1.json": 2018,
+      "docs/exec-plans/active/run_8e5ec28ba9584754843599adaf396435.json": 930,
+      "docs/exec-plans/active/run_8e5ec28ba9584754843599adaf396435.md": 2148,
+      "docs/exec-plans/active/run_94e5f8d9494f419494470480c9583660-sprint-1.json": 1977,
+      "docs/exec-plans/active/run_94e5f8d9494f419494470480c9583660-sprint-2.json": 4359,
+      "docs/exec-plans/active/run_94e5f8d9494f419494470480c9583660.json": 1416,
+      "docs/exec-plans/active/run_94e5f8d9494f419494470480c9583660.md": 2854,
+      "docs/exec-plans/active/run_afb124ed34174f3b97f02f0c6b5283cb-sprint-1.json": 2689,
+      "docs/exec-plans/active/run_afb124ed34174f3b97f02f0c6b5283cb.json": 1209,
+      "docs/exec-plans/active/run_afb124ed34174f3b97f02f0c6b5283cb.md": 2720,
+      "docs/exec-plans/active/run_d82dbc9b550b44c9a9e7088eb247ed6a-sprint-1.json": 2254,
+      "docs/exec-plans/active/run_d82dbc9b550b44c9a9e7088eb247ed6a-sprint-2.json": 2916,
+      "docs/exec-plans/active/run_d82dbc9b550b44c9a9e7088eb247ed6a.json": 1206,
+      "docs/exec-plans/active/run_d82dbc9b550b44c9a9e7088eb247ed6a.md": 1579,
+      "docs/exec-plans/active/run_f920e714f8024f31bcfa42c915b57a44-sprint-1.json": 2503,
+      "docs/exec-plans/active/run_f920e714f8024f31bcfa42c915b57a44.json": 1226,
+      "docs/exec-plans/active/run_f920e714f8024f31bcfa42c915b57a44.md": 3695,
+      "docs/exec-plans/tech-debt-tracker.md": 374,
+      "docs/exec-plans/tech-debt-tracker.md.lock": 0,
+      "test_schema.py": 1394,
+      "test_smoke.py": 34,
+      "test_tool_registry.py": 817,
+      "tests/test_registry_dispatch.py": 1231,
+      "tests/test_validation_retry.py": 1082,
+      "tool_registry.py": 3068,
+      "tooldeck/__init__.py": 483,
+      "tooldeck/call.py": 864,
+      "tooldeck/registry.py": 1508,
+      "tooldeck/schema.py": 7829,
+      "tooldeck/validation.py": 3775
+    },
+    "log": [
+      "f49c783 chorus: merge chorus/di",
+      "542a826 chorus: snapshot work",
+      "af9a6dc chorus: merge chorus/cy",
+      "b1e2fdb chorus: snapshot work",
+      "e0bb0e0 Add typed tool call parsing and arg validation",
+      "3b5c16d chorus: merge chorus/ada",
+      "65e66d1 chorus: snapshot work",
+      "ed22c30 chorus: snapshot work",
+      "8c7b511 chorus: merge chorus/di",
+      "6591ef3 Add schema_for JSON Schema generator",
+      "a22e06c chorus: merge chorus/bo",
+      "719848a chorus: snapshot work",
+      "356b72c chorus: snapshot work",
+      "46e3740 chorus: merge chorus/cy",
+      "323cf9a Add tool registry and decorator",
+      "04a2351 seed"
+    ],
+    "merges": [
+      "f49c783 chorus: merge chorus/di",
+      "af9a6dc chorus: merge chorus/cy",
+      "3b5c16d chorus: merge chorus/ada",
+      "8c7b511 chorus: merge chorus/di",
+      "a22e06c chorus: merge chorus/bo",
+      "46e3740 chorus: merge chorus/cy"
+    ],
+    "merged_eids": [
+      "ada",
+      "bo",
+      "cy",
+      "di"
+    ],
+    "duplicates": {},
+    "empty_exports": [],
+    "harness_leak": [
+      "docs/evals/run_2d0848e0d8a946c1bb93c6daf36f477d/sprint-1.json",
+      "docs/evals/run_8e5ec28ba9584754843599adaf396435/sprint-1.json",
+      "docs/evals/run_94e5f8d9494f419494470480c9583660/sprint-1.json",
+      "docs/evals/run_94e5f8d9494f419494470480c9583660/sprint-2.json",
+      "docs/evals/run_afb124ed34174f3b97f02f0c6b5283cb/sprint-1.json",
+      "docs/evals/run_d82dbc9b550b44c9a9e7088eb247ed6a/sprint-1.json",
+      "docs/evals/run_d82dbc9b550b44c9a9e7088eb247ed6a/sprint-2.json",
+      "docs/evals/run_f920e714f8024f31bcfa42c915b57a44/sprint-1.json",
+      "docs/exec-plans/active/run_2d0848e0d8a946c1bb93c6daf36f477d-sprint-1.json",
+      "docs/exec-plans/active/run_2d0848e0d8a946c1bb93c6daf36f477d.json",
+      "docs/exec-plans/active/run_2d0848e0d8a946c1bb93c6daf36f477d.md",
+      "docs/exec-plans/active/run_8e5ec28ba9584754843599adaf396435-sprint-1.json",
+      "docs/exec-plans/active/run_8e5ec28ba9584754843599adaf396435.json",
+      "docs/exec-plans/active/run_8e5ec28ba9584754843599adaf396435.md",
+      "docs/exec-plans/active/run_94e5f8d9494f419494470480c9583660-sprint-1.json",
+      "docs/exec-plans/active/run_94e5f8d9494f419494470480c9583660-sprint-2.json",
+      "docs/exec-plans/active/run_94e5f8d9494f419494470480c9583660.json",
+      "docs/exec-plans/active/run_94e5f8d9494f419494470480c9583660.md",
+      "docs/exec-plans/active/run_afb124ed34174f3b97f02f0c6b5283cb-sprint-1.json",
+      "docs/exec-plans/active/run_afb124ed34174f3b97f02f0c6b5283cb.json",
+      "docs/exec-plans/active/run_afb124ed34174f3b97f02f0c6b5283cb.md",
+      "docs/exec-plans/active/run_d82dbc9b550b44c9a9e7088eb247ed6a-sprint-1.json",
+      "docs/exec-plans/active/run_d82dbc9b550b44c9a9e7088eb247ed6a-sprint-2.json",
+      "docs/exec-plans/active/run_d82dbc9b550b44c9a9e7088eb247ed6a.json",
+      "docs/exec-plans/active/run_d82dbc9b550b44c9a9e7088eb247ed6a.md",
+      "docs/exec-plans/active/run_f920e714f8024f31bcfa42c915b57a44-sprint-1.json",
+      "docs/exec-plans/active/run_f920e714f8024f31bcfa42c915b57a44.json",
+      "docs/exec-plans/active/run_f920e714f8024f31bcfa42c915b57a44.md",
+      "docs/exec-plans/tech-debt-tracker.md",
+      "docs/exec-plans/tech-debt-tracker.md.lock"
+    ],
+    "readme": "README.md",
+    "readme_stub": true,
+    "packaging_present": [],
+    "packaging_expected": [
+      "pyproject.toml",
+      "setup.py",
+      "setup.cfg"
+    ]
+  },
+  "build": {
+    "attempts": [
+      {
+        "cmd": "pytest -q",
+        "rc": 0,
+        "tail": "............                                                             [100%]\n"
+      }
+    ]
+  },
+  "flaws": [
+    {
+      "sev": "FRAMEWORK",
+      "code": "BUG-007",
+      "title": "Top goal ended blocked, not done",
+      "detail": "The director hit the integrate cap / deadline without a clean done verdict."
+    },
+    {
+      "sev": "FRAMEWORK",
+      "code": "BUG-006",
+      "title": "Deliverable assigned to a non-engineer role",
+      "detail": "task_e86da8c8b\u2192analyst(rejected), task_720f4ea9b\u2192analyst(rejected)"
+    },
+    {
+      "sev": "FRAMEWORK",
+      "code": "BUG-005",
+      "title": "done \u2260 landed \u2014 an author branch never integrated",
+      "detail": "2 employee(s) have done tasks but no merge on main: ['max', 'moe']"
+    },
+    {
+      "sev": "CRITICAL",
+      "code": "PKG",
+      "title": "No packaging manifest \u2014 not a distributable artifact",
+      "detail": "expected one of ['pyproject.toml', 'setup.py', 'setup.cfg'], found none"
+    },
+    {
+      "sev": "HIGH",
+      "code": "LEAK",
+      "title": "Harness-internal files leaked into the deliverable",
+      "detail": "30 files, e.g. ['docs/evals/run_2d0848e0d8a946c1bb93c6daf36f477d/sprint-1.json', 'docs/evals/run_8e5ec28ba9584754843599adaf396435/sprint-1.json', 'docs/evals/run_94e5f8d9494f419494470480c9583660/sprint-1.json']"
+    },
+    {
+      "sev": "HIGH",
+      "code": "README",
+      "title": "README missing or still a stub",
+      "detail": "README.md"
+    }
+  ]
+}

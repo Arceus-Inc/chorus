@@ -1,0 +1,379 @@
+{
+  "name": "tinyvec",
+  "lang": "Rust",
+  "brief": "Build a Rust crate `tinyvec`: an in-memory vector store with cosine/dot/L2 similarity, a navigable-small-world (HNSW-style) approximate index, `bincode` disk persistence, and a `query(&[f32], k)` API. Ship a real `Cargo.toml` and a clean `lib.rs` public surface. `cargo test` asserts recall vs brute-force; the crate must build under `cargo build --release`.",
+  "meta": {
+    "name": "tinyvec",
+    "rc": "0",
+    "elapsed_s": "993",
+    "workspace": "/Users/divyansh/chorus/standup-app/hard-task-report/runs/tinyvec/tmp/chorus-standup-yoqmxzx9",
+    "db": "/Users/divyansh/chorus/standup-app/hard-task-report/runs/tinyvec/tmp/chorus-standup-yoqmxzx9/company.db",
+    "report": "/Users/divyansh/chorus/standup-app/hard-task-report/runs/tinyvec/tmp/chorus-standup-yoqmxzx9/report.md"
+  },
+  "repo_path": "/Users/divyansh/chorus/standup-app/hard-task-report/runs/tinyvec/tmp/chorus-standup-yoqmxzx9/work/acme/repo",
+  "ledger": {
+    "employees": [
+      {
+        "id": "vera",
+        "name": "vera",
+        "role": "manager"
+      },
+      {
+        "id": "moe",
+        "name": "moe",
+        "role": "manager"
+      },
+      {
+        "id": "max",
+        "name": "max",
+        "role": "manager"
+      },
+      {
+        "id": "ada",
+        "name": "ada",
+        "role": "engineer"
+      },
+      {
+        "id": "bo",
+        "name": "bo",
+        "role": "engineer"
+      },
+      {
+        "id": "ria",
+        "name": "ria",
+        "role": "reviewer"
+      },
+      {
+        "id": "pat",
+        "name": "pat",
+        "role": "pm"
+      },
+      {
+        "id": "cy",
+        "name": "cy",
+        "role": "engineer"
+      },
+      {
+        "id": "di",
+        "name": "di",
+        "role": "engineer"
+      },
+      {
+        "id": "rex",
+        "name": "rex",
+        "role": "reviewer"
+      },
+      {
+        "id": "ana",
+        "name": "ana",
+        "role": "analyst"
+      }
+    ],
+    "emp_by_role": {
+      "manager": 3,
+      "engineer": 4,
+      "reviewer": 2,
+      "pm": 1,
+      "analyst": 1
+    },
+    "n_tasks": 14,
+    "n_runs": 22,
+    "status_counts": {
+      "blocked": 1,
+      "done": 11,
+      "rejected": 1,
+      "todo": 1
+    },
+    "top_status": "blocked",
+    "top_intent": "Build a Rust crate `tinyvec`: an in-memory vector store with cosine/dot/L2 similarity, a navigable-small-world (HNSW-sty",
+    "misassigned": [
+      {
+        "id": "task_06d0d1ea6fce",
+        "intent": "Add tests/recall.rs and tests/persist.rs. recall.rs: fixed-seed random dataset, build stor",
+        "role": "analyst",
+        "status": "rejected"
+      }
+    ],
+    "recovery_cards": [
+      {
+        "id": "rec_c5b61e55afdc",
+        "kind": "stale_run_watchdog",
+        "source_task_id": "task_06d0d1ea6fce",
+        "status": "folded"
+      }
+    ],
+    "done_tasks": [
+      {
+        "id": "task_32bb00d07de1",
+        "intent": "Create Rust crate skeleton for `tinyvec`: add `Cargo.toml` (name=tinyvec, edition 2021, li",
+        "role": "manager",
+        "emp": "max"
+      },
+      {
+        "id": "task_ab81ca061539",
+        "intent": "Implement in-memory storage and metric scoring + brute-force exact top-k query with stable",
+        "role": "manager",
+        "emp": "moe"
+      },
+      {
+        "id": "task_74654e846257",
+        "intent": "Create Rust crate skeleton: add Cargo.toml (crate name tinyvec, edition 2021, lib target) ",
+        "role": "engineer",
+        "emp": "cy"
+      },
+      {
+        "id": "task_a6aa694019e4",
+        "intent": "Add a basic integration test under tests/ (e.g., tests/basic.rs) that constructs store wit",
+        "role": "engineer",
+        "emp": "di"
+      },
+      {
+        "id": "task_fac792829821",
+        "intent": "In src/lib.rs, implement an in-memory vector store that: stores f32 vectors, assigns stabl",
+        "role": "engineer",
+        "emp": "ada"
+      },
+      {
+        "id": "task_a4962ab8492b",
+        "intent": "Create tests/bruteforce.rs with unit tests that exercise the in-memory store API in src/li",
+        "role": "engineer",
+        "emp": "bo"
+      },
+      {
+        "id": "task_5463045af485",
+        "intent": "Add an HNSW-style approximate nearest-neighbor index to the `tinyvec` crate and integrate ",
+        "role": "manager",
+        "emp": "max"
+      },
+      {
+        "id": "task_6561744e5863",
+        "intent": "Implement minimal NSW/HNSW-style graph ANN index in tinyvec. Refactor into src/index.rs if",
+        "role": "engineer",
+        "emp": "cy"
+      },
+      {
+        "id": "task_ecdfd01ba32a",
+        "intent": "Add bincode persistence: public save_to_path(...) and load_from_path(...) (or equivalent) ",
+        "role": "engineer",
+        "emp": "di"
+      },
+      {
+        "id": "task_6fca4d449508",
+        "intent": "Implement minimal NSW/HNSW-style graph index inside TinyVec store with undirected adjacenc",
+        "role": "engineer",
+        "emp": "cy"
+      },
+      {
+        "id": "task_a9d91f4c8ee9",
+        "intent": "Implement minimal NSW/HNSW-style undirected graph ANN index in tinyvec. Store params (m, e",
+        "role": "engineer",
+        "emp": "cy"
+      }
+    ]
+  },
+  "repo": {
+    "n_files": 42,
+    "files": [
+      "Cargo.lock",
+      "Cargo.toml",
+      "README.md",
+      "docs/evals/run_51c8ca0557574164b940512e134f1f94/sprint-1.json",
+      "docs/evals/run_6426785f86c34d5fa9b4a1ae1a472b66/sprint-1.json",
+      "docs/evals/run_86ce31dbd6824b618e73f7d447b4fccb/sprint-1.json",
+      "docs/evals/run_86ce31dbd6824b618e73f7d447b4fccb/sprint-2.json",
+      "docs/evals/run_aa78011282d64872bc97c98eb6e9d3ad/sprint-1.json",
+      "docs/evals/run_adbf76801acd413d8d05e64a452b2e95/sprint-1.json",
+      "docs/exec-plans/active/run_51c8ca0557574164b940512e134f1f94.json",
+      "docs/exec-plans/active/run_6426785f86c34d5fa9b4a1ae1a472b66-sprint-1.json",
+      "docs/exec-plans/active/run_6426785f86c34d5fa9b4a1ae1a472b66.json",
+      "docs/exec-plans/active/run_6426785f86c34d5fa9b4a1ae1a472b66.md",
+      "docs/exec-plans/active/run_86ce31dbd6824b618e73f7d447b4fccb-sprint-1.json",
+      "docs/exec-plans/active/run_86ce31dbd6824b618e73f7d447b4fccb-sprint-2.json",
+      "docs/exec-plans/active/run_86ce31dbd6824b618e73f7d447b4fccb.json",
+      "docs/exec-plans/active/run_86ce31dbd6824b618e73f7d447b4fccb.md",
+      "docs/exec-plans/active/run_aa78011282d64872bc97c98eb6e9d3ad-sprint-1.json",
+      "docs/exec-plans/active/run_aa78011282d64872bc97c98eb6e9d3ad.json",
+      "docs/exec-plans/active/run_aa78011282d64872bc97c98eb6e9d3ad.md",
+      "docs/exec-plans/active/run_adbf76801acd413d8d05e64a452b2e95-sprint-1.json",
+      "docs/exec-plans/active/run_adbf76801acd413d8d05e64a452b2e95.json",
+      "docs/exec-plans/active/run_adbf76801acd413d8d05e64a452b2e95.md",
+      "docs/exec-plans/tech-debt-tracker.md",
+      "docs/exec-plans/tech-debt-tracker.md.lock",
+      "src/lib.rs",
+      "target/.rustc_info.json",
+      "target/CACHEDIR.TAG",
+      "target/debug/.cargo-lock",
+      "target/debug/.fingerprint/tinyvec-293f03664aebac85/dep-lib-tinyvec",
+      "target/debug/.fingerprint/tinyvec-293f03664aebac85/invoked.timestamp",
+      "target/debug/.fingerprint/tinyvec-293f03664aebac85/lib-tinyvec",
+      "target/debug/.fingerprint/tinyvec-293f03664aebac85/lib-tinyvec.json",
+      "target/debug/deps/libtinyvec-293f03664aebac85.rmeta",
+      "target/debug/deps/tinyvec-293f03664aebac85.d",
+      "target/debug/incremental/tinyvec-3j03l9iyonlva/s-hjoju40rmt-05ntn06-2ol07uxcjbadxwhwbn3283xcm/dep-graph.bin",
+      "target/debug/incremental/tinyvec-3j03l9iyonlva/s-hjoju40rmt-05ntn06-2ol07uxcjbadxwhwbn3283xcm/metadata.rmeta",
+      "target/debug/incremental/tinyvec-3j03l9iyonlva/s-hjoju40rmt-05ntn06-2ol07uxcjbadxwhwbn3283xcm/query-cache.bin",
+      "target/debug/incremental/tinyvec-3j03l9iyonlva/s-hjoju40rmt-05ntn06-2ol07uxcjbadxwhwbn3283xcm/work-products.bin",
+      "target/debug/incremental/tinyvec-3j03l9iyonlva/s-hjoju40rmt-05ntn06.lock",
+      "test_smoke.py",
+      "tests/bruteforce.rs"
+    ],
+    "sizes": {
+      "Cargo.lock": 151,
+      "Cargo.toml": 105,
+      "README.md": 15,
+      "docs/evals/run_51c8ca0557574164b940512e134f1f94/sprint-1.json": 411,
+      "docs/evals/run_6426785f86c34d5fa9b4a1ae1a472b66/sprint-1.json": 354,
+      "docs/evals/run_86ce31dbd6824b618e73f7d447b4fccb/sprint-1.json": 1115,
+      "docs/evals/run_86ce31dbd6824b618e73f7d447b4fccb/sprint-2.json": 446,
+      "docs/evals/run_aa78011282d64872bc97c98eb6e9d3ad/sprint-1.json": 483,
+      "docs/evals/run_adbf76801acd413d8d05e64a452b2e95/sprint-1.json": 388,
+      "docs/exec-plans/active/run_51c8ca0557574164b940512e134f1f94.json": 1067,
+      "docs/exec-plans/active/run_6426785f86c34d5fa9b4a1ae1a472b66-sprint-1.json": 2265,
+      "docs/exec-plans/active/run_6426785f86c34d5fa9b4a1ae1a472b66.json": 1017,
+      "docs/exec-plans/active/run_6426785f86c34d5fa9b4a1ae1a472b66.md": 1852,
+      "docs/exec-plans/active/run_86ce31dbd6824b618e73f7d447b4fccb-sprint-1.json": 2306,
+      "docs/exec-plans/active/run_86ce31dbd6824b618e73f7d447b4fccb-sprint-2.json": 3460,
+      "docs/exec-plans/active/run_86ce31dbd6824b618e73f7d447b4fccb.json": 1384,
+      "docs/exec-plans/active/run_86ce31dbd6824b618e73f7d447b4fccb.md": 2229,
+      "docs/exec-plans/active/run_aa78011282d64872bc97c98eb6e9d3ad-sprint-1.json": 3004,
+      "docs/exec-plans/active/run_aa78011282d64872bc97c98eb6e9d3ad.json": 1172,
+      "docs/exec-plans/active/run_aa78011282d64872bc97c98eb6e9d3ad.md": 1670,
+      "docs/exec-plans/active/run_adbf76801acd413d8d05e64a452b2e95-sprint-1.json": 2641,
+      "docs/exec-plans/active/run_adbf76801acd413d8d05e64a452b2e95.json": 1143,
+      "docs/exec-plans/active/run_adbf76801acd413d8d05e64a452b2e95.md": 2395,
+      "docs/exec-plans/tech-debt-tracker.md": 564,
+      "docs/exec-plans/tech-debt-tracker.md.lock": 0,
+      "src/lib.rs": 3683,
+      "target/.rustc_info.json": 1671,
+      "target/CACHEDIR.TAG": 177,
+      "target/debug/.cargo-lock": 0,
+      "target/debug/.fingerprint/tinyvec-293f03664aebac85/dep-lib-tinyvec": 30,
+      "target/debug/.fingerprint/tinyvec-293f03664aebac85/invoked.timestamp": 48,
+      "target/debug/.fingerprint/tinyvec-293f03664aebac85/lib-tinyvec": 16,
+      "target/debug/.fingerprint/tinyvec-293f03664aebac85/lib-tinyvec.json": 347,
+      "target/debug/deps/libtinyvec-293f03664aebac85.rmeta": 12096,
+      "target/debug/deps/tinyvec-293f03664aebac85.d": 369,
+      "target/debug/incremental/tinyvec-3j03l9iyonlva/s-hjoju40rmt-05ntn06-2ol07uxcjbadxwhwbn3283xcm/dep-graph.bin": 861544,
+      "target/debug/incremental/tinyvec-3j03l9iyonlva/s-hjoju40rmt-05ntn06-2ol07uxcjbadxwhwbn3283xcm/metadata.rmeta": 12096,
+      "target/debug/incremental/tinyvec-3j03l9iyonlva/s-hjoju40rmt-05ntn06-2ol07uxcjbadxwhwbn3283xcm/query-cache.bin": 496005,
+      "target/debug/incremental/tinyvec-3j03l9iyonlva/s-hjoju40rmt-05ntn06-2ol07uxcjbadxwhwbn3283xcm/work-products.bin": 111,
+      "target/debug/incremental/tinyvec-3j03l9iyonlva/s-hjoju40rmt-05ntn06.lock": 0,
+      "test_smoke.py": 34,
+      "tests/bruteforce.rs": 3030
+    },
+    "log": [
+      "f721a19 chorus: merge chorus/di",
+      "9d36113 chorus: snapshot work",
+      "e1ad50d chorus: merge chorus/ada",
+      "e12e5d4 chorus: snapshot work",
+      "465d934 chorus: merge chorus/bo",
+      "29b3172 chorus: snapshot work",
+      "de55942 Add brute-force in-memory store integration tests",
+      "570c57c chorus: merge chorus/cy",
+      "557d7fd chorus: snapshot work",
+      "8d64660 Add tinyvec crate with brute-force vector store",
+      "c36f59f chorus: snapshot work",
+      "77640aa chorus: merge chorus/di",
+      "2787342 seed"
+    ],
+    "merges": [
+      "f721a19 chorus: merge chorus/di",
+      "e1ad50d chorus: merge chorus/ada",
+      "465d934 chorus: merge chorus/bo",
+      "570c57c chorus: merge chorus/cy",
+      "77640aa chorus: merge chorus/di"
+    ],
+    "merged_eids": [
+      "ada",
+      "bo",
+      "cy",
+      "di"
+    ],
+    "duplicates": {},
+    "empty_exports": [],
+    "harness_leak": [
+      "docs/evals/run_51c8ca0557574164b940512e134f1f94/sprint-1.json",
+      "docs/evals/run_6426785f86c34d5fa9b4a1ae1a472b66/sprint-1.json",
+      "docs/evals/run_86ce31dbd6824b618e73f7d447b4fccb/sprint-1.json",
+      "docs/evals/run_86ce31dbd6824b618e73f7d447b4fccb/sprint-2.json",
+      "docs/evals/run_aa78011282d64872bc97c98eb6e9d3ad/sprint-1.json",
+      "docs/evals/run_adbf76801acd413d8d05e64a452b2e95/sprint-1.json",
+      "docs/exec-plans/active/run_51c8ca0557574164b940512e134f1f94.json",
+      "docs/exec-plans/active/run_6426785f86c34d5fa9b4a1ae1a472b66-sprint-1.json",
+      "docs/exec-plans/active/run_6426785f86c34d5fa9b4a1ae1a472b66.json",
+      "docs/exec-plans/active/run_6426785f86c34d5fa9b4a1ae1a472b66.md",
+      "docs/exec-plans/active/run_86ce31dbd6824b618e73f7d447b4fccb-sprint-1.json",
+      "docs/exec-plans/active/run_86ce31dbd6824b618e73f7d447b4fccb-sprint-2.json",
+      "docs/exec-plans/active/run_86ce31dbd6824b618e73f7d447b4fccb.json",
+      "docs/exec-plans/active/run_86ce31dbd6824b618e73f7d447b4fccb.md",
+      "docs/exec-plans/active/run_aa78011282d64872bc97c98eb6e9d3ad-sprint-1.json",
+      "docs/exec-plans/active/run_aa78011282d64872bc97c98eb6e9d3ad.json",
+      "docs/exec-plans/active/run_aa78011282d64872bc97c98eb6e9d3ad.md",
+      "docs/exec-plans/active/run_adbf76801acd413d8d05e64a452b2e95-sprint-1.json",
+      "docs/exec-plans/active/run_adbf76801acd413d8d05e64a452b2e95.json",
+      "docs/exec-plans/active/run_adbf76801acd413d8d05e64a452b2e95.md",
+      "docs/exec-plans/tech-debt-tracker.md",
+      "docs/exec-plans/tech-debt-tracker.md.lock"
+    ],
+    "readme": "README.md",
+    "readme_stub": true,
+    "packaging_present": [
+      "Cargo.toml"
+    ],
+    "packaging_expected": [
+      "Cargo.toml"
+    ]
+  },
+  "build": {
+    "attempts": [
+      {
+        "cmd": "cargo build --release",
+        "rc": 0,
+        "tail": "   Compiling tinyvec v0.1.0 (/Users/divyansh/chorus/standup-app/hard-task-report/runs/tinyvec/tmp/chorus-standup-yoqmxzx9/work/acme/repo)\n    Finished `release` profile [optimized] target(s) in 0.55s\n"
+      },
+      {
+        "cmd": "cargo test",
+        "rc": 101,
+        "tail": " = TinyVec::new(2, Metric::Dot);\n    |                  ^^^^^^^^^^^^    ----------- unexpected argument #2 of type `tinyvec::Metric`\n    |\nnote: associated function defined here\n   --> src/lib.rs:28:12\n    |\n 28 |     pub fn new(dim: usize) -> Self {\n    |            ^^^\nhelp: remove the extra argument\n    |\n111 -     let mut tv = TinyVec::new(2, Metric::Dot);\n111 +     let mut tv = TinyVec::new(2);\n    |\n\nerror[E0061]: this method takes 3 arguments but 2 arguments were supplied\n   --> tests/bruteforce.rs:113:8\n    |\n113 |     tv.query(&[1.0, 2.0, 3.0], 1);\n    |        ^^^^^--------------------- argument #3 of type `tinyvec::Metric` is missing\n    |\nnote: method defined here\n   --> src/lib.rs:98:12\n    |\n 98 |     pub fn query(&self, query: &[f32], k: usize, metric: Metric) -> Vec<(usize, f32)> {\n    |            ^^^^^\nhelp: provide the argument\n    |\n113 |     tv.query(&[1.0, 2.0, 3.0], 1, /* tinyvec::Metric */);\n    |                                 +++++++++++++++++++++++\n\nFor more information about this error, try `rustc --explain E0061`.\nerror: could not compile `tinyvec` (test \"bruteforce\") due to 13 previous errors\nwarning: build failed, waiting for other jobs to finish...\n"
+      }
+    ]
+  },
+  "flaws": [
+    {
+      "sev": "FRAMEWORK",
+      "code": "BUG-007",
+      "title": "Top goal ended blocked, not done",
+      "detail": "The director hit the integrate cap / deadline without a clean done verdict."
+    },
+    {
+      "sev": "FRAMEWORK",
+      "code": "BUG-006",
+      "title": "Deliverable assigned to a non-engineer role",
+      "detail": "task_06d0d1ea6\u2192analyst(rejected)"
+    },
+    {
+      "sev": "FRAMEWORK",
+      "code": "BUG-005",
+      "title": "done \u2260 landed \u2014 an author branch never integrated",
+      "detail": "2 employee(s) have done tasks but no merge on main: ['moe', 'max']"
+    },
+    {
+      "sev": "HIGH",
+      "code": "LEAK",
+      "title": "Harness-internal files leaked into the deliverable",
+      "detail": "22 files, e.g. ['docs/evals/run_51c8ca0557574164b940512e134f1f94/sprint-1.json', 'docs/evals/run_6426785f86c34d5fa9b4a1ae1a472b66/sprint-1.json', 'docs/evals/run_86ce31dbd6824b618e73f7d447b4fccb/sprint-1.json']"
+    },
+    {
+      "sev": "HIGH",
+      "code": "README",
+      "title": "README missing or still a stub",
+      "detail": "README.md"
+    },
+    {
+      "sev": "CRITICAL",
+      "code": "BUILD",
+      "title": "Deliverable fails `cargo test` (rc=101)",
+      "detail": " f32)> {\n    |            ^^^^^\nhelp: provide the argument\n    |\n113 |     tv.query(&[1.0, 2.0, 3.0], 1, /* tinyvec::Metric */);\n    |                                 +++++++++++++++++++++++\n\nFor more information about this error, try `rustc --explain E0061`.\nerror: could not compile `tinyvec` (test \"bruteforce\") due to 13 previous errors\nwarning: build failed, waiting for other jobs to finish...\n"
+    }
+  ]
+}

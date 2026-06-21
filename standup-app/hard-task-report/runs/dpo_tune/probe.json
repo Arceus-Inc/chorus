@@ -1,0 +1,392 @@
+{
+  "name": "dpo_tune",
+  "lang": "Python",
+  "brief": "Build a small Python library `dpo_tune` that wraps preference fine-tuning with DPO (Direct Preference Optimization): a `Trainer` with `fit()`, a chosen/rejected pair dataset interface, a reference-model KL term, config dataclasses, and pytest tests. Pure-Python, CPU-only, mock the policy/reference models.",
+  "meta": {
+    "name": "dpo_tune",
+    "rc": "0",
+    "elapsed_s": "1220",
+    "workspace": "/Users/divyansh/chorus/standup-app/hard-task-report/runs/dpo_tune/tmp/chorus-standup-uk5leyju",
+    "db": "/Users/divyansh/chorus/standup-app/hard-task-report/runs/dpo_tune/tmp/chorus-standup-uk5leyju/company.db",
+    "report": "/Users/divyansh/chorus/standup-app/hard-task-report/runs/dpo_tune/tmp/chorus-standup-uk5leyju/report.md"
+  },
+  "repo_path": "/Users/divyansh/chorus/standup-app/hard-task-report/runs/dpo_tune/tmp/chorus-standup-uk5leyju/work/acme/repo",
+  "ledger": {
+    "employees": [
+      {
+        "id": "vera",
+        "name": "vera",
+        "role": "manager"
+      },
+      {
+        "id": "moe",
+        "name": "moe",
+        "role": "manager"
+      },
+      {
+        "id": "max",
+        "name": "max",
+        "role": "manager"
+      },
+      {
+        "id": "ada",
+        "name": "ada",
+        "role": "engineer"
+      },
+      {
+        "id": "bo",
+        "name": "bo",
+        "role": "engineer"
+      },
+      {
+        "id": "ria",
+        "name": "ria",
+        "role": "reviewer"
+      },
+      {
+        "id": "pat",
+        "name": "pat",
+        "role": "pm"
+      },
+      {
+        "id": "cy",
+        "name": "cy",
+        "role": "engineer"
+      },
+      {
+        "id": "di",
+        "name": "di",
+        "role": "engineer"
+      },
+      {
+        "id": "rex",
+        "name": "rex",
+        "role": "reviewer"
+      },
+      {
+        "id": "ana",
+        "name": "ana",
+        "role": "analyst"
+      }
+    ],
+    "emp_by_role": {
+      "manager": 3,
+      "engineer": 4,
+      "reviewer": 2,
+      "pm": 1,
+      "analyst": 1
+    },
+    "n_tasks": 23,
+    "n_runs": 34,
+    "status_counts": {
+      "blocked": 3,
+      "done": 16,
+      "rejected": 2,
+      "cancelled": 2
+    },
+    "top_status": "blocked",
+    "top_intent": "Build a small Python library `dpo_tune` that wraps preference fine-tuning with DPO (Direct Preference Optimization): a `",
+    "misassigned": [
+      {
+        "id": "task_2159c72ae0e6",
+        "intent": "Inspect the existing Trainer.fit() implementation and its expected inputs/outputs/logging ",
+        "role": "analyst",
+        "status": "rejected"
+      },
+      {
+        "id": "task_92812ab74c08",
+        "intent": "Add unit tests under `tests/` verifying: (1) `PreferenceDataset` yields expected `Preferen",
+        "role": "analyst",
+        "status": "blocked"
+      }
+    ],
+    "recovery_cards": [
+      {
+        "id": "rec_06df0b758edf",
+        "kind": "stale_run_watchdog",
+        "source_task_id": "task_2159c72ae0e6",
+        "status": "folded"
+      },
+      {
+        "id": "rec_f892972f4cb8",
+        "kind": "stranded",
+        "source_task_id": "task_959ad5c04bde",
+        "status": "folded"
+      },
+      {
+        "id": "rec_5adcbfac9c5d",
+        "kind": "stale_run_watchdog",
+        "source_task_id": "task_92812ab74c08",
+        "status": "active"
+      }
+    ],
+    "done_tasks": [
+      {
+        "id": "task_469079e7d2f8",
+        "intent": "Create the `dpo_tune` package with public API exports in `dpo_tune/__init__.py`, implement",
+        "role": "manager",
+        "emp": "max"
+      },
+      {
+        "id": "task_899b1a057831",
+        "intent": "Implement dataset abstraction and DPO loss with reference KL term. Create `dpo_tune/datase",
+        "role": "manager",
+        "emp": "moe"
+      },
+      {
+        "id": "task_6c3079b87e6b",
+        "intent": "Add end-to-end pytest covering `Trainer.fit()` on a tiny synthetic dataset using determini",
+        "role": "manager",
+        "emp": "max"
+      },
+      {
+        "id": "task_bb90b0a86812",
+        "intent": "Create package directory `dpo_tune/` with `__init__.py` exporting the public API. Ensure i",
+        "role": "engineer",
+        "emp": "di"
+      },
+      {
+        "id": "task_3afce3ab502e",
+        "intent": "Add `dpo_tune/config.py` defining `DPOConfig` as a `@dataclass` with fields: beta, learnin",
+        "role": "engineer",
+        "emp": "cy"
+      },
+      {
+        "id": "task_9f2dc3c3410c",
+        "intent": "Add `dpo_tune/trainer.py` implementing `Trainer` class initialized with `DPOConfig`. Imple",
+        "role": "engineer",
+        "emp": "cy"
+      },
+      {
+        "id": "task_6fe357105739",
+        "intent": "Create `dpo_tune/dataset.py` implementing a small dataset abstraction: accept a sequence o",
+        "role": "engineer",
+        "emp": "ada"
+      },
+      {
+        "id": "task_4f6498c264fd",
+        "intent": "Create `dpo_tune/loss.py` implementing DPO loss. Define a config dataclass with at least `",
+        "role": "engineer",
+        "emp": "bo"
+      },
+      {
+        "id": "task_a9a836635b74",
+        "intent": "Add `tests/test_dataset_and_loss.py` covering: (1) dataset validation failures: missing fi",
+        "role": "engineer",
+        "emp": "ada"
+      },
+      {
+        "id": "task_327132bfbd44",
+        "intent": "Create tests/test_trainer_fit.py. Implement deterministic CPU-only mock policy and referen",
+        "role": "engineer",
+        "emp": "di"
+      },
+      {
+        "id": "task_877e129af835",
+        "intent": "Create tests/test_trainer_fit.py implementing an end-to-end pytest that runs Trainer.fit()",
+        "role": "engineer",
+        "emp": "cy"
+      },
+      {
+        "id": "task_31a3995f6e6c",
+        "intent": "Create pure-Python CPU-only package dpo_tune with: config dataclasses (TrainerConfig); dat",
+        "role": "manager",
+        "emp": "max"
+      },
+      {
+        "id": "task_91ab4933b7b6",
+        "intent": "Create pure-stdlib package `dpo_tune` with modules: `dpo_tune/config.py` defining `Trainer",
+        "role": "engineer",
+        "emp": "cy"
+      },
+      {
+        "id": "task_f0f05bb6754f",
+        "intent": "Add minimal pytest coverage in `tests/test_dpo_tune.py` verifying: (1) `PreferenceDataset`",
+        "role": "engineer",
+        "emp": "di"
+      },
+      {
+        "id": "task_36ce7f0bb8a4",
+        "intent": "Create pure-Python package `dpo_tune` with `__init__.py` and core types. Implement config ",
+        "role": "engineer",
+        "emp": "di"
+      },
+      {
+        "id": "task_9ee90505139c",
+        "intent": "Implement DPO loss with reference regularization and a minimal model/logprob protocol. Add",
+        "role": "engineer",
+        "emp": "cy"
+      }
+    ]
+  },
+  "repo": {
+    "n_files": 31,
+    "files": [
+      "README.md",
+      "docs/evals/run_0b650fca4d45490ca720a8507022bc4e/sprint-1.json",
+      "docs/evals/run_7a05797ee40f448897195523a585f2b7/sprint-1.json",
+      "docs/evals/run_81e0bbcf121d48e485a8582e8bb9effe/sprint-1.json",
+      "docs/evals/run_f3ac879eaf9c438597b4e8a3d60d2fd4/sprint-1.json",
+      "docs/evals/run_f915e0c8198d4652ae3c88277df771fe/sprint-1.json",
+      "docs/exec-plans/active/run_0b650fca4d45490ca720a8507022bc4e.json",
+      "docs/exec-plans/active/run_7a05797ee40f448897195523a585f2b7-sprint-1.json",
+      "docs/exec-plans/active/run_7a05797ee40f448897195523a585f2b7.json",
+      "docs/exec-plans/active/run_7a05797ee40f448897195523a585f2b7.md",
+      "docs/exec-plans/active/run_81e0bbcf121d48e485a8582e8bb9effe-sprint-1.json",
+      "docs/exec-plans/active/run_81e0bbcf121d48e485a8582e8bb9effe.json",
+      "docs/exec-plans/active/run_81e0bbcf121d48e485a8582e8bb9effe.md",
+      "docs/exec-plans/active/run_f3ac879eaf9c438597b4e8a3d60d2fd4-sprint-1.json",
+      "docs/exec-plans/active/run_f3ac879eaf9c438597b4e8a3d60d2fd4.json",
+      "docs/exec-plans/active/run_f3ac879eaf9c438597b4e8a3d60d2fd4.md",
+      "docs/exec-plans/active/run_f915e0c8198d4652ae3c88277df771fe-sprint-1.json",
+      "docs/exec-plans/active/run_f915e0c8198d4652ae3c88277df771fe.json",
+      "docs/exec-plans/active/run_f915e0c8198d4652ae3c88277df771fe.md",
+      "docs/exec-plans/tech-debt-tracker.md",
+      "docs/exec-plans/tech-debt-tracker.md.lock",
+      "dpo_tune/__init__.py",
+      "dpo_tune/config.py",
+      "dpo_tune/dataset.py",
+      "dpo_tune/loss.py",
+      "dpo_tune/public.py",
+      "pyproject.toml",
+      "test_smoke.py",
+      "tests/test_dpo_tune.py",
+      "tests/test_loss.py",
+      "tests/test_trainer_fit.py"
+    ],
+    "sizes": {
+      "README.md": 15,
+      "docs/evals/run_0b650fca4d45490ca720a8507022bc4e/sprint-1.json": 427,
+      "docs/evals/run_7a05797ee40f448897195523a585f2b7/sprint-1.json": 402,
+      "docs/evals/run_81e0bbcf121d48e485a8582e8bb9effe/sprint-1.json": 376,
+      "docs/evals/run_f3ac879eaf9c438597b4e8a3d60d2fd4/sprint-1.json": 379,
+      "docs/evals/run_f915e0c8198d4652ae3c88277df771fe/sprint-1.json": 508,
+      "docs/exec-plans/active/run_0b650fca4d45490ca720a8507022bc4e.json": 1445,
+      "docs/exec-plans/active/run_7a05797ee40f448897195523a585f2b7-sprint-1.json": 2992,
+      "docs/exec-plans/active/run_7a05797ee40f448897195523a585f2b7.json": 1483,
+      "docs/exec-plans/active/run_7a05797ee40f448897195523a585f2b7.md": 1671,
+      "docs/exec-plans/active/run_81e0bbcf121d48e485a8582e8bb9effe-sprint-1.json": 2624,
+      "docs/exec-plans/active/run_81e0bbcf121d48e485a8582e8bb9effe.json": 1130,
+      "docs/exec-plans/active/run_81e0bbcf121d48e485a8582e8bb9effe.md": 2115,
+      "docs/exec-plans/active/run_f3ac879eaf9c438597b4e8a3d60d2fd4-sprint-1.json": 1575,
+      "docs/exec-plans/active/run_f3ac879eaf9c438597b4e8a3d60d2fd4.json": 800,
+      "docs/exec-plans/active/run_f3ac879eaf9c438597b4e8a3d60d2fd4.md": 1549,
+      "docs/exec-plans/active/run_f915e0c8198d4652ae3c88277df771fe-sprint-1.json": 2889,
+      "docs/exec-plans/active/run_f915e0c8198d4652ae3c88277df771fe.json": 1606,
+      "docs/exec-plans/active/run_f915e0c8198d4652ae3c88277df771fe.md": 2162,
+      "docs/exec-plans/tech-debt-tracker.md": 651,
+      "docs/exec-plans/tech-debt-tracker.md.lock": 0,
+      "dpo_tune/__init__.py": 486,
+      "dpo_tune/config.py": 392,
+      "dpo_tune/dataset.py": 1952,
+      "dpo_tune/loss.py": 3040,
+      "dpo_tune/public.py": 4756,
+      "pyproject.toml": 98,
+      "test_smoke.py": 34,
+      "tests/test_dpo_tune.py": 2711,
+      "tests/test_loss.py": 1755,
+      "tests/test_trainer_fit.py": 5159
+    },
+    "log": [
+      "d312c5c chorus: merge chorus/di",
+      "45e40dc chorus: snapshot work",
+      "e769dcc Add dpo_tune core config and dataset types",
+      "794b0d8 chorus: merge chorus/di",
+      "7d5f02d chorus: snapshot work",
+      "cacba0f chorus: merge chorus/di",
+      "406dc53 chorus: snapshot work",
+      "86c1bba chorus: merge chorus/bo",
+      "83f558e chorus: snapshot work",
+      "fc8f4a4 Add configurable DPO+KL loss and deterministic tests",
+      "7bb921e chorus: snapshot work",
+      "4761d30 chorus: merge chorus/di",
+      "77947f6 seed"
+    ],
+    "merges": [
+      "d312c5c chorus: merge chorus/di",
+      "794b0d8 chorus: merge chorus/di",
+      "cacba0f chorus: merge chorus/di",
+      "86c1bba chorus: merge chorus/bo",
+      "4761d30 chorus: merge chorus/di"
+    ],
+    "merged_eids": [
+      "bo",
+      "di"
+    ],
+    "duplicates": {},
+    "empty_exports": [],
+    "harness_leak": [
+      "docs/evals/run_0b650fca4d45490ca720a8507022bc4e/sprint-1.json",
+      "docs/evals/run_7a05797ee40f448897195523a585f2b7/sprint-1.json",
+      "docs/evals/run_81e0bbcf121d48e485a8582e8bb9effe/sprint-1.json",
+      "docs/evals/run_f3ac879eaf9c438597b4e8a3d60d2fd4/sprint-1.json",
+      "docs/evals/run_f915e0c8198d4652ae3c88277df771fe/sprint-1.json",
+      "docs/exec-plans/active/run_0b650fca4d45490ca720a8507022bc4e.json",
+      "docs/exec-plans/active/run_7a05797ee40f448897195523a585f2b7-sprint-1.json",
+      "docs/exec-plans/active/run_7a05797ee40f448897195523a585f2b7.json",
+      "docs/exec-plans/active/run_7a05797ee40f448897195523a585f2b7.md",
+      "docs/exec-plans/active/run_81e0bbcf121d48e485a8582e8bb9effe-sprint-1.json",
+      "docs/exec-plans/active/run_81e0bbcf121d48e485a8582e8bb9effe.json",
+      "docs/exec-plans/active/run_81e0bbcf121d48e485a8582e8bb9effe.md",
+      "docs/exec-plans/active/run_f3ac879eaf9c438597b4e8a3d60d2fd4-sprint-1.json",
+      "docs/exec-plans/active/run_f3ac879eaf9c438597b4e8a3d60d2fd4.json",
+      "docs/exec-plans/active/run_f3ac879eaf9c438597b4e8a3d60d2fd4.md",
+      "docs/exec-plans/active/run_f915e0c8198d4652ae3c88277df771fe-sprint-1.json",
+      "docs/exec-plans/active/run_f915e0c8198d4652ae3c88277df771fe.json",
+      "docs/exec-plans/active/run_f915e0c8198d4652ae3c88277df771fe.md",
+      "docs/exec-plans/tech-debt-tracker.md",
+      "docs/exec-plans/tech-debt-tracker.md.lock"
+    ],
+    "readme": "README.md",
+    "readme_stub": true,
+    "packaging_present": [
+      "pyproject.toml"
+    ],
+    "packaging_expected": [
+      "pyproject.toml",
+      "setup.py",
+      "setup.cfg"
+    ]
+  },
+  "build": {
+    "attempts": [
+      {
+        "cmd": "pytest -q",
+        "rc": 0,
+        "tail": ".........                                                                [100%]\n"
+      }
+    ]
+  },
+  "flaws": [
+    {
+      "sev": "FRAMEWORK",
+      "code": "BUG-007",
+      "title": "Top goal ended blocked, not done",
+      "detail": "The director hit the integrate cap / deadline without a clean done verdict."
+    },
+    {
+      "sev": "FRAMEWORK",
+      "code": "BUG-006",
+      "title": "Deliverable assigned to a non-engineer role",
+      "detail": "task_2159c72ae\u2192analyst(rejected), task_92812ab74\u2192analyst(blocked)"
+    },
+    {
+      "sev": "FRAMEWORK",
+      "code": "BUG-005",
+      "title": "done \u2260 landed \u2014 an author branch never integrated",
+      "detail": "4 employee(s) have done tasks but no merge on main: ['cy', 'ada', 'moe', 'max']"
+    },
+    {
+      "sev": "HIGH",
+      "code": "LEAK",
+      "title": "Harness-internal files leaked into the deliverable",
+      "detail": "20 files, e.g. ['docs/evals/run_0b650fca4d45490ca720a8507022bc4e/sprint-1.json', 'docs/evals/run_7a05797ee40f448897195523a585f2b7/sprint-1.json', 'docs/evals/run_81e0bbcf121d48e485a8582e8bb9effe/sprint-1.json']"
+    },
+    {
+      "sev": "HIGH",
+      "code": "README",
+      "title": "README missing or still a stub",
+      "detail": "README.md"
+    }
+  ]
+}

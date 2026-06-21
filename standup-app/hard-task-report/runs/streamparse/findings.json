@@ -1,0 +1,28 @@
+{
+  "deliverable": [
+    {"code": "ENTRY-PLACEHOLDER", "sev": "CRITICAL", "title": "The package entry exports a hello-world placeholder, not the parser",
+     "detail": "src/index.ts — the package main — is exactly `export const hello = 'world' as const;`. The real StreamEvent type and the fold-a-stream-into-events parser live in src/streamParser.ts, but index.ts never re-exports them. `import { ... } from 'streamparse'` yields only `hello`. The brief's entire public surface is unreachable through the entry point."},
+    {"code": "TSC-BROKEN", "sev": "CRITICAL", "title": "tsc does not typecheck — the package does not build",
+     "detail": "tsc --noEmit exits rc=2 with error TS2304: Cannot find name 'ReadableStream' (multiple sites). tsconfig sets lib: [\"ES2020\"], which omits DOM/WebWorker, yet streamParser.ts builds on ReadableStream<Uint8Array>. The required Web-Streams type is used but never made available — so the deliverable fails its own toolchain's build."},
+    {"code": "FICTIONAL-EXPORTS", "sev": "CRITICAL", "title": "package.json exports reference files the source can never produce",
+     "detail": "package.json declares main: ./dist/index.js and an exports map with ./parser → ./dist/parser.js and ./StreamEvent → ./dist/StreamEvent.js. The source is src/index.ts + src/streamParser.ts — there is no parser.ts or StreamEvent.ts. tsc would emit dist/index.js + dist/streamParser.js, never dist/parser.js or dist/StreamEvent.js. The manifest's public surface is a fiction unrelated to the code."},
+    {"code": "PYTHON-TESTS", "sev": "CRITICAL", "title": "The tests are Python and only assert a file exists",
+     "detail": "package.json sets \"test\": \"pytest -q\" — a Python runner for a TypeScript package — and the test files are Python. test_stream_parser.py in full: `assert pathlib.Path(\"src/streamParser.ts\").exists()`. It never imports, compiles, or exercises the parser; it checks the .ts file is on disk. The brief required vitest feeding canned chunk sequences and asserting reconstructed events. 'Tests pass' here means nothing about the parser's behaviour."},
+    {"code": "WRONG-NAME", "sev": "HIGH", "title": "The package is named after the engineer, not the deliverable",
+     "detail": "package.json \"name\": \"ada\" — the id of the engineer whose branch won the manifest — instead of \"streamparse\". The published package would carry the author's name, not the product's."},
+    {"code": "STRAY", "sev": "HIGH", "title": "Stray Python files + README stub + leaked harness files",
+     "detail": "Root test_smoke.py (`assert True`) and test_stream_parser.py — Python files in a TS package. README.md is the 15-byte '# company repo' stub. Harness-internal files leaked (docs/evals/*.json, docs/exec-plans/*)."}
+  ],
+  "framework": [
+    {"code": "BUG-007", "title": "Top goal ended blocked, not done",
+     "detail": "24 tasks: 16 done, 4 rejected, 2 cancelled, 2 blocked. The director churned to the ceiling without closing the goal."},
+    {"code": "BUG-005", "title": "done ≠ landed — engineer bo's branch never merged",
+     "detail": "Engineer bo has done tasks, but only ada/cy/di branches merged to company main (bo absent from the merge log). bo's work reads done in the ledger while it never integrated — the unmerged-author-branch bug, present here (unlike the tinyvec/tooldeck runs where all engineers merged)."},
+    {"code": "BUG-006", "title": "Three deliverable tasks handed to the analyst → all rejected/cancelled",
+     "detail": "The analyst (a non-coding role) was assigned three implementation tasks; two were rejected and one cancelled. The same mis-route, three times."},
+    {"code": "NO-OWNERSHIP", "title": "No owner of the package surface — entry, manifest, and impl all disagree",
+     "detail": "index.ts exports a placeholder, package.json exports point at non-existent dist files, and the real parser sits in a third file no one wired up. Three views of the public surface, authored on different branches, merged without anyone owning 'the entry point exports the parser and the manifest matches the build output'."},
+    {"code": "DOD-WRONG-TOOLCHAIN", "title": "The DoD for a TypeScript package was pytest — and it passed trivially",
+     "detail": "The objective Command DoD ran `pytest -q` against a TypeScript npm package, and the one Python test merely asserts the .ts file exists — so it passed while `tsc` (the real build) fails and the entry exports a placeholder. This is the sharpest evidence for spec 15: the coherence gate must build AND test in the deliverable's OWN toolchain, reconciled to the declared surface — not run whatever command happens to exit 0."}
+  ]
+}

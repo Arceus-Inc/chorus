@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Hard-Task Org Stress — Wholistic Report</title>
+<style>
+  :root {
+    --bg: #0d1117; --panel: #161b22; --panel2: #1c2330; --border: #30363d;
+    --fg: #e6edf3; --muted: #8b949e; --accent: #58a6ff; --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+    --red: #f85149; --redbg: #2d1518; --amber: #d29922; --amberbg: #2a230f; --green: #3fb950; --greenbg:#12261a; --purple: #bc8cff;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg);
+    font: 15px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; -webkit-font-smoothing: antialiased; }
+  .wrap { max-width: 1000px; margin: 0 auto; padding: 48px 24px 96px; }
+  header { border-bottom: 1px solid var(--border); padding-bottom: 28px; margin-bottom: 8px; }
+  .eyebrow { font: 600 12px/1 var(--mono); letter-spacing: .14em; text-transform: uppercase; color: var(--accent); }
+  h1 { margin: 14px 0 8px; font-size: 32px; letter-spacing: -.02em; }
+  .sub { color: var(--muted); font-size: 15px; max-width: 76ch; }
+  .meta { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 22px; }
+  .stat { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 14px 18px; min-width: 120px; }
+  .stat .n { font-size: 24px; font-weight: 750; letter-spacing: -.02em; }
+  .stat .l { color: var(--muted); font: 600 11px/1.3 var(--mono); text-transform: uppercase; letter-spacing: .06em; margin-top: 4px; }
+  .bad { color: var(--red); } .warn { color: var(--amber); } .ok { color: var(--green); }
+  h2 { font-size: 13px; letter-spacing: .12em; text-transform: uppercase; color: var(--muted);
+    margin: 48px 0 8px; padding-bottom: 10px; border-bottom: 1px solid var(--border); }
+  h2 .n { color: var(--accent); }
+  .lead { color: var(--muted); font-size: 13.5px; margin: 6px 0 18px; max-width: 80ch; }
+  table { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 13.5px; }
+  th, td { text-align: left; padding: 9px 11px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { color: var(--muted); font: 600 11px/1.3 var(--mono); text-transform: uppercase; letter-spacing: .06em; }
+  td code, code.k { font: 12.5px/1.5 var(--mono); background: var(--panel2); border: 1px solid var(--border);
+    border-radius: 5px; padding: 1px 6px; color: #d2a8ff; white-space: nowrap; }
+  .tick { text-align: center; color: var(--red); font-weight: 700; }
+  .no { text-align: center; color: #394150; }
+  .pill { display:inline-block; font:600 11px/1 var(--mono); border-radius:5px; padding:4px 8px; }
+  .pill.blocked { color: var(--red); background: var(--redbg); border: 1px solid #5c2326; }
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 16px 20px; margin: 10px 0; position: relative; overflow: hidden; }
+  .card::before { content:""; position:absolute; left:0; top:0; bottom:0; width:4px; background: var(--red); }
+  .card.fw::before { background: var(--amber); }
+  .card.root::before { background: var(--purple); }
+  .card h3 { margin: 0 0 4px; font-size: 15px; font-weight: 650; display:flex; gap:10px; align-items:baseline; }
+  .freq { margin-left: auto; font: 700 11px/1 var(--mono); color: var(--bg); background: var(--red); border-radius: 5px; padding: 4px 7px; }
+  .card.fw .freq { background: var(--amber); }
+  .card p { margin: 4px 0 0; color: #c2ccd6; font-size: 13.5px; }
+  .runs { font: 600 11px/1 var(--mono); color: var(--muted); margin-top: 8px; }
+  .runs b { color: var(--fg); }
+  a { color: var(--accent); text-decoration: none; } a:hover { text-decoration: underline; }
+  footer { margin-top: 56px; padding-top: 22px; border-top: 1px solid var(--border); color: var(--muted); font-size: 13px; }
+  .band { font:600 11px/1 var(--mono); letter-spacing:.08em; color:var(--muted); text-transform:uppercase; margin:20px 0 6px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div class="eyebrow">Hard-Task Org Stress · Wholistic Report</div>
+    <h1>7 hard goals through <code class="k" style="font-size:26px;color:var(--fg)">Chorus.build --org</code></h1>
+    <p class="sub">Each goal was driven end-to-end by a live 3-level org (director → leads → engineers + reviewer),
+      then deep-probed: ledger accounting, the landed repo's shape, an <b>actual build/test in the deliverable's own
+      toolchain</b>, and the recurring failure modes. This is the synthesis; each row links to its full dissection.</p>
+    <div class="meta">
+      <div class="stat"><div class="n">7</div><div class="l">runs probed</div></div>
+      <div class="stat"><div class="n bad">0</div><div class="l">closed done</div></div>
+      <div class="stat"><div class="n bad">7</div><div class="l">ended blocked</div></div>
+      <div class="stat"><div class="n bad">7/7</div><div class="l">split-brain</div></div>
+      <div class="stat"><div class="n">49</div><div class="l">deliverable flaws</div></div>
+      <div class="stat"><div class="n warn">32</div><div class="l">framework flaws</div></div>
+    </div>
+  </header>
+
+  <h2><span class="n">01.</span> The verdict</h2>
+  <p class="lead">Seven goals, four languages, zero coherent deliverables. <b>Every single run ended <span class="bad">blocked</span></b>,
+    and <b>every single deliverable shipped a split-brain</b> — two rival copies of the core thing, merged without anyone
+    owning the result. The objective DoD went green at the leaf level in all seven while the integrated whole was incoherent.</p>
+
+  <table>
+    <tr><th>#</th><th>goal</th><th>lang</th><th>top</th><th>the split-brain</th><th>how the DoD missed it</th><th>report</th></tr>
+    <tr><td>—</td><td><code class="k">grpo</code></td><td>Python</td><td><span class="pill blocked">blocked</span></td><td>two Trainers, the real one orphaned outside the package</td><td>tests pass over a stub</td><td><a href="grpo.html">grpo.html</a></td></tr>
+    <tr><td>1</td><td><code class="k">dpo_tune</code></td><td>Python</td><td><span class="pill blocked">blocked</span></td><td>two PreferenceDataset, dead config, orphan loss.py</td><td>tests pass over fragments</td><td><a href="dpo_tune.html">dpo_tune.html</a></td></tr>
+    <tr><td>2</td><td><code class="k">ppo_lite</code></td><td>Python</td><td><span class="pill blocked">blocked</span></td><td>two GAEs (torch vs numpy); train() is REINFORCE, not PPO</td><td>import-broken in a clean env</td><td><a href="ppo_lite.html">ppo_lite.html</a></td></tr>
+    <tr><td>3</td><td><code class="k">tinyvec</code></td><td>Rust</td><td><span class="pill blocked">blocked</span></td><td>impl vs its own tests disagree on the API</td><td><code>cargo build</code>✓ but <code>cargo test</code>✗</td><td><a href="tinyvec.html">tinyvec.html</a></td></tr>
+    <tr><td>4</td><td><code class="k">tooldeck</code></td><td>Python</td><td><span class="pill blocked">blocked</span></td><td>two rival ToolRegistry (reversed register args)</td><td>green via both-universe imports</td><td><a href="tooldeck.html">tooldeck.html</a></td></tr>
+    <tr><td>5</td><td><code class="k">streamparse</code></td><td>TypeScript</td><td><span class="pill blocked">blocked</span></td><td>entry exports a placeholder; manifest exports fiction</td><td><b>DoD was pytest for a TS package</b></td><td><a href="streamparse.html">streamparse.html</a></td></tr>
+    <tr><td>6</td><td><code class="k">flowdag</code></td><td>Go</td><td><span class="pill blocked">blocked</span></td><td><b>the library written twice — Go and Python</b></td><td><b>DoD was pytest for a Go module</b></td><td><a href="flowdag.html">flowdag.html</a></td></tr>
+  </table>
+
+  <h2><span class="n">02.</span> Common issues — recurring in ≥ 4 of 7</h2>
+  <p class="lead">Systemic. These are the failure modes the kernel reproduces structurally, run after run. Tick columns are
+    <code class="k">g d p t k s f</code> = grpo · dpo_tune · ppo_lite · tinyvec · tooldeck · streamparse · flowdag.</p>
+
+  <div class="band">7/7 — present in every run</div>
+  <div class="card root"><h3>Split-brain — a duplicate/rival module, symbol, or whole implementation <span class="freq">7/7</span></h3>
+    <p>Two Trainers · two datasets · two GAEs · impl-vs-test API · two registries · entry-vs-impl · a Go+Python twin. Two copies of the core thing, merged without reconciliation.</p>
+    <div class="runs">runs: <b>g d p t k s f</b></div></div>
+  <div class="card root"><h3>No cross-child ownership of the public surface <span class="freq">7/7</span></h3>
+    <p>The root cause. Each engineer authored a slice on its own branch; integrate merged the fragments, and nobody owned "there is ONE public surface and it is coherent."</p>
+    <div class="runs">runs: <b>g d p t k s f</b></div></div>
+  <div class="card"><h3>The DoD passed over off-brief / insufficient work <span class="freq">7/7</span></h3>
+    <p>The "tests-pass" illusion — a gate that checks "some command exits 0" rather than "the declared deliverable builds, imports, and is exercised in its own toolchain."</p>
+    <div class="runs">runs: <b>g d p t k s f</b></div></div>
+  <div class="card fw"><h3>Top goal ended blocked, not done — BUG-007 <span class="freq">7/7</span></h3>
+    <p>The director churned to the integrate cap / deadline without ever closing the goal. Green leaves, blocked top.</p>
+    <div class="runs">runs: <b>g d p t k s f</b></div></div>
+  <div class="card fw"><h3>Deliverable handed to a non-coding role → rejected — BUG-006 <span class="freq">7/7</span></h3>
+    <p>A code task assigned to the analyst (once also the pm), rejected, sometimes repeatedly — wasted beats every run.</p>
+    <div class="runs">runs: <b>g d p t k s f</b></div></div>
+  <div class="card"><h3>README is still the <code class="k"># company repo</code> seed stub <span class="freq">7/7</span></h3>
+    <p>Zero usage, install, or feature documentation in any run.</p>
+    <div class="runs">runs: <b>g d p t k s f</b></div></div>
+  <div class="card"><h3>Stray <code class="k">test_smoke.py</code> + leaked harness/build files <span class="freq">7/7</span></h3>
+    <p>The seed smoke test, plus 20–32 harness JSON files (docs/evals · exec-plans) — and in Rust, the committed <code class="k">target/</code> cache.</p>
+    <div class="runs">runs: <b>g d p t k s f</b></div></div>
+
+  <div class="band">5/7</div>
+  <div class="card"><h3>No / fake / broken packaging-or-manifest <span class="freq">5/7</span></h3>
+    <p>None · ruff-only · none · none · fictional <code class="k">exports</code> + <code class="k">name:"ada"</code>. Not installable. (tinyvec & flowdag had valid manifests.)</p>
+    <div class="runs">runs: <b>g d p k s</b></div></div>
+
+  <div class="band">4/7</div>
+  <div class="card"><h3>Entry point exports the wrong / empty / placeholder API <span class="freq">4/7</span></h3>
+    <p><code class="k">__init__</code> empty · exports the rivals · omits the required surfaces · <code class="k">index</code> exports <code class="k">hello</code>.</p>
+    <div class="runs">runs: <b>g d p s</b></div></div>
+  <div class="card"><h3>Orphaned / unreachable module <span class="freq">4/7</span></h3>
+    <p>Real code imported by nothing, or living outside the importable package (the polished implementation that never ships).</p>
+    <div class="runs">runs: <b>g d p k</b></div></div>
+  <div class="card"><h3>Build / typecheck / test broken in a clean environment <span class="freq">4/7</span></h3>
+    <p>Import crash (numpy undeclared) · <code class="k">cargo test</code> fail · <code class="k">tsc</code> fail · <code class="k">go build</code> fail. The leaf DoD never tried it in a fresh checkout.</p>
+    <div class="runs">runs: <b>p t s f</b></div></div>
+  <div class="card fw"><h3>done ≠ landed — an engineer's branch never merged — BUG-005 <span class="freq">4/7</span></h3>
+    <p>Tasks read <code class="k">done</code> in the ledger while the author's branch never integrated to company main.</p>
+    <div class="runs">runs: <b>g d p s</b></div></div>
+  <div class="card"><h3>A brief-required headline feature is missing <span class="freq">4/7</span></h3>
+    <p>Real GRPO unreachable · KL term unreachable · train() not PPO · no ANN index + no persistence.</p>
+    <div class="runs">runs: <b>g d p t</b></div></div>
+
+  <h2><span class="n">03.</span> Other issues — fewer than 4 of 7</h2>
+  <p class="lead">Shape-dependent or one-off — but a couple matter out of proportion to their frequency.</p>
+  <div class="band">3/7</div>
+  <div class="card"><h3>Dead config — exported but unused by the implementation <span class="freq">3/7</span></h3>
+    <p><code class="k">TrainerConfig</code>×2 · dead <code class="k">TrainerConfig</code> · dead <code class="k">PPOConfig</code>.</p>
+    <div class="runs">runs: <b>g d p</b></div></div>
+  <div class="card fw"><h3>A task stranded in <code class="k">todo</code> — never started <span class="freq">3/7</span></h3>
+    <p>Created during decompose and never picked up before the goal closed — the schedule didn't fully drain.</p>
+    <div class="runs">runs: <b>p t f</b></div></div>
+  <div class="band">2/7 — low frequency, high severity</div>
+  <div class="card"><h3>Wrong-toolchain DoD — the gate ran a different language's tests <span class="freq">2/7</span></h3>
+    <p><code class="k">pytest</code> for a TypeScript package; <code class="k">pytest</code> for a Go module. It passed trivially while the real build (<code class="k">tsc</code> / <code class="k">go build</code>) failed. It only <i>can</i> appear on non-Python runs — and it hit 2 of the 3 that had a real twin.</p>
+    <div class="runs">runs: <b>s f</b></div></div>
+  <div class="band">1/7 — notable singletons</div>
+  <div class="card"><h3>Singletons <span class="freq">1/7</span></h3>
+    <p><b>Cross-language twin</b> — the whole library in Go + Python (<code class="k">f</code>) · <b>package named after the engineer</b> (<code class="k">s</code>) · <b>committed <code class="k">target/</code> build cache</b> (<code class="k">t</code>) · <b>numeric-substrate split</b> torch/numpy/pure-python (<code class="k">p</code>) · <b>reversed API args</b> across rivals (<code class="k">k</code>) · <b>config-knob name mismatch</b> (<code class="k">d p</code>).</p>
+  </div>
+
+  <h2><span class="n">04.</span> Reading — two root causes, one amplifier</h2>
+  <div class="card root"><h3>Root cause A — no one owns the shared surface</h3>
+    <p>Drives split-brain, wrong/empty exports, orphaned modules, and the missing-feature gap. Engineers parallelize cleanly but there is no canonical declaration of the public surface and no one reconciling the merged fragments into one coherent whole.</p></div>
+  <div class="card fw"><h3>Root cause B — the ledger trusts finish-state, not landed reality</h3>
+    <p>Drives <code class="k">blocked</code> tops, <code class="k">done</code> ≠ landed, and the analyst mis-assignment loop. The manager ships when its children <i>finish</i>, and a task reads <code class="k">done</code> before its branch merges.</p></div>
+  <div class="card"><h3>The amplifier — a DoD that checks the wrong thing</h3>
+    <p>A gate that verifies "some command exits 0" — instead of "the declared deliverable builds, imports, and is exercised in its own toolchain, reconciled to a declared surface" — let every one of these ship green at the leaf level while the integrated whole was incoherent. The fix is specified in
+      <a href="../../docs/specs/divo/15-cross-child-coherence.md">spec 15 — Cross-child coherence via AGENTS.md</a>.</p></div>
+
+  <footer>
+    Generated from 7 live <code class="k">Chorus.build --org</code> runs (grpo · dpo_tune · ppo_lite · tinyvec · tooldeck · streamparse · flowdag).
+    Per-run dissections linked above; the markdown synthesis is <a href="issues.md">issues.md</a>; the table view is <a href="index.html">index.html</a>.
+  </footer>
+
+</div>
+</body>
+</html>

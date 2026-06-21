@@ -1,0 +1,1 @@
+Build a Rust crate `tinyvec`: an in-memory vector store with cosine/dot/L2 similarity, a navigable-small-world (HNSW-style) approximate index, `bincode` disk persistence, and a `query(&[f32], k)` API. Ship a real `Cargo.toml` and a clean `lib.rs` public surface. `cargo test` asserts recall vs brute-force; the crate must build under `cargo build --release`.

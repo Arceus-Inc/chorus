@@ -1,0 +1,511 @@
+{
+  "name": "flowdag",
+  "lang": "Go",
+  "brief": "Build a Go module `flowdag`: declare tasks with `DependsOn`, run them in topological order over a worker pool (bounded by a semaphore / `GOMAXPROCS`), per-task retries with backoff, and result caching via a typed map. Ship `go.mod` and an exported API in `flowdag.go`. `go test ./...` asserts ordering, that a failed dep skips its dependents, and cache hits; `go vet` is clean.",
+  "meta": {
+    "name": "flowdag",
+    "rc": "0",
+    "elapsed_s": "1246",
+    "workspace": "/Users/divyansh/chorus/standup-app/hard-task-report/runs/flowdag/tmp/chorus-standup-b36knyqq",
+    "db": "/Users/divyansh/chorus/standup-app/hard-task-report/runs/flowdag/tmp/chorus-standup-b36knyqq/company.db",
+    "report": "/Users/divyansh/chorus/standup-app/hard-task-report/runs/flowdag/tmp/chorus-standup-b36knyqq/report.md"
+  },
+  "repo_path": "/Users/divyansh/chorus/standup-app/hard-task-report/runs/flowdag/tmp/chorus-standup-b36knyqq/work/acme/repo",
+  "ledger": {
+    "employees": [
+      {
+        "id": "vera",
+        "name": "vera",
+        "role": "manager"
+      },
+      {
+        "id": "moe",
+        "name": "moe",
+        "role": "manager"
+      },
+      {
+        "id": "max",
+        "name": "max",
+        "role": "manager"
+      },
+      {
+        "id": "ada",
+        "name": "ada",
+        "role": "engineer"
+      },
+      {
+        "id": "bo",
+        "name": "bo",
+        "role": "engineer"
+      },
+      {
+        "id": "ria",
+        "name": "ria",
+        "role": "reviewer"
+      },
+      {
+        "id": "pat",
+        "name": "pat",
+        "role": "pm"
+      },
+      {
+        "id": "cy",
+        "name": "cy",
+        "role": "engineer"
+      },
+      {
+        "id": "di",
+        "name": "di",
+        "role": "engineer"
+      },
+      {
+        "id": "rex",
+        "name": "rex",
+        "role": "reviewer"
+      },
+      {
+        "id": "ana",
+        "name": "ana",
+        "role": "analyst"
+      }
+    ],
+    "emp_by_role": {
+      "manager": 3,
+      "engineer": 4,
+      "reviewer": 2,
+      "pm": 1,
+      "analyst": 1
+    },
+    "n_tasks": 24,
+    "n_runs": 41,
+    "status_counts": {
+      "blocked": 2,
+      "done": 18,
+      "rejected": 3,
+      "todo": 1
+    },
+    "top_status": "blocked",
+    "top_intent": "Build a Go module `flowdag`: declare tasks with `DependsOn`, run them in topological order over a worker pool (bounded b",
+    "misassigned": [
+      {
+        "id": "task_803dae5e9cb5",
+        "intent": "Inspect existing flowdag/task execution API to determine how to construct DAGs, run them, ",
+        "role": "pm",
+        "status": "rejected"
+      },
+      {
+        "id": "task_aa5d48ca94da",
+        "intent": "Add unit tests (new *_test.go files) covering: missing dependency validation error, determ",
+        "role": "analyst",
+        "status": "rejected"
+      },
+      {
+        "id": "task_573652cb7321",
+        "intent": "Review for adherence to acceptance criteria, run `go vet ./...` and `go test ./...` locall",
+        "role": "analyst",
+        "status": "rejected"
+      }
+    ],
+    "recovery_cards": [
+      {
+        "id": "rec_1944a47a42f2",
+        "kind": "stale_run_watchdog",
+        "source_task_id": "task_803dae5e9cb5",
+        "status": "folded"
+      },
+      {
+        "id": "rec_521a25c1deeb",
+        "kind": "stale_run_watchdog",
+        "source_task_id": "task_aa5d48ca94da",
+        "status": "folded"
+      }
+    ],
+    "done_tasks": [
+      {
+        "id": "task_f50a199ea0fb",
+        "intent": "Create Go module files go.mod (module path \"flowdag\") and flowdag.go implementing exported",
+        "role": "manager",
+        "emp": "max"
+      },
+      {
+        "id": "task_3b60666f0dd7",
+        "intent": "Add Go tests (e.g., flowdag_test.go) that run via `go test ./...` asserting (1) ordering c",
+        "role": "manager",
+        "emp": "moe"
+      },
+      {
+        "id": "task_9748e2297af4",
+        "intent": "Add Go tests verifying (3) per-task retries with backoff occur (inject a fake sleeper/back",
+        "role": "manager",
+        "emp": "moe"
+      },
+      {
+        "id": "task_35807ba7cdb2",
+        "intent": "Create a new Go test file (e.g., flowdag_ordering_test.go) under the appropriate package t",
+        "role": "engineer",
+        "emp": "ada"
+      },
+      {
+        "id": "task_a2d06938c7d9",
+        "intent": "Create a new Go test file (or extend the same new test file if allowed without edit confli",
+        "role": "engineer",
+        "emp": "bo"
+      },
+      {
+        "id": "task_b62b3a0f95ab",
+        "intent": "Create go.mod at repo root declaring module path \"flowdag\" and a supported Go version (e.g",
+        "role": "engineer",
+        "emp": "di"
+      },
+      {
+        "id": "task_243b98834011",
+        "intent": "Add flowdag.go implementing exported API for defining tasks, adding DependsOn edges, valid",
+        "role": "engineer",
+        "emp": "cy"
+      },
+      {
+        "id": "task_b2ab03334b95",
+        "intent": "Add a Go unit test verifying per-task retry attempts occur with backoff using an injected ",
+        "role": "engineer",
+        "emp": "ada"
+      },
+      {
+        "id": "task_a98590722285",
+        "intent": "Add a Go unit test verifying result caching: repeated runs/invocations return cached resul",
+        "role": "engineer",
+        "emp": "bo"
+      },
+      {
+        "id": "task_b3bb2d4ba116",
+        "intent": "Add a new deterministic Go test file (e.g., flowdag/flowdag_test.go or similar package loc",
+        "role": "engineer",
+        "emp": "ada"
+      },
+      {
+        "id": "task_841e68029876",
+        "intent": "Create flowdag.go implementing minimal exported DAG API: task declaration, DependsOn edges",
+        "role": "engineer",
+        "emp": "cy"
+      },
+      {
+        "id": "task_ec5b36d1880a",
+        "intent": "Create deterministic Go test file (e.g., flowdag_test.go) that builds a small DAG and asse",
+        "role": "engineer",
+        "emp": "ada"
+      },
+      {
+        "id": "task_9023f2fa5944",
+        "intent": "Create a deterministic Go test file (e.g., flowdag_test.go) under the flowdag package that",
+        "role": "engineer",
+        "emp": "ada"
+      },
+      {
+        "id": "task_56889db07ba0",
+        "intent": "Create go.mod (module \"flowdag\" with a supported Go version) and implement flowdag.go as p",
+        "role": "engineer",
+        "emp": "cy"
+      },
+      {
+        "id": "task_ca2c1528bba7",
+        "intent": "Create go.mod (module path \"flowdag\") and implement flowdag.go exporting the DAG task API.",
+        "role": "engineer",
+        "emp": "cy"
+      },
+      {
+        "id": "task_e5a1d9d9e0e5",
+        "intent": "Create root go.mod declaring module path \"flowdag\" (go 1.22+), add any minimal go.sum if n",
+        "role": "engineer",
+        "emp": "di"
+      },
+      {
+        "id": "task_faff49252ee9",
+        "intent": "Implement `flowdag/flowdag.go` (package flowdag) exporting API for defining tasks with exp",
+        "role": "engineer",
+        "emp": "cy"
+      },
+      {
+        "id": "task_7e2fbc4612bd",
+        "intent": "Create flowdag.go implementing package flowdag with exported types/API to declare DAG task",
+        "role": "engineer",
+        "emp": "cy"
+      }
+    ]
+  },
+  "repo": {
+    "n_files": 55,
+    "files": [
+      "README.md",
+      "dag_skip_test.go",
+      "docs/evals/run_0fd23917a12c4110a00526f4656b9535/sprint-1.json",
+      "docs/evals/run_4735a88deeff44068da17929441d32c4/sprint-1.json",
+      "docs/evals/run_4735a88deeff44068da17929441d32c4/sprint-2.json",
+      "docs/evals/run_7d070fff62ad4fef99cae21e0dfd3666/sprint-1.json",
+      "docs/evals/run_836b8fa69960450dbef3c0c5ce7db559/sprint-1.json",
+      "docs/evals/run_954c951b6b9141d894d7d8fecdb36458/sprint-1.json",
+      "docs/evals/run_968cb6de5c1243dd945e96f0b9033a39/sprint-1.json",
+      "docs/evals/run_a2cfd4425077468bb1f6a608bd123505/sprint-1.json",
+      "docs/evals/run_a2db22f8a4ab47079d08a14ff6591e9a/sprint-1.json",
+      "docs/evals/run_a85dcfa3ff9b4abab0bf32e1df334321/sprint-1.json",
+      "docs/evals/run_a85dcfa3ff9b4abab0bf32e1df334321/sprint-2.json",
+      "docs/evals/run_f4545632d7c945d1ad20327d3914f7ba/sprint-1.json",
+      "docs/evals/run_f4545632d7c945d1ad20327d3914f7ba/sprint-2.json",
+      "docs/exec-plans/active/run_0fd23917a12c4110a00526f4656b9535-sprint-1.json",
+      "docs/exec-plans/active/run_0fd23917a12c4110a00526f4656b9535.json",
+      "docs/exec-plans/active/run_0fd23917a12c4110a00526f4656b9535.md",
+      "docs/exec-plans/active/run_4735a88deeff44068da17929441d32c4-sprint-2.json",
+      "docs/exec-plans/active/run_4735a88deeff44068da17929441d32c4.json",
+      "docs/exec-plans/active/run_7d070fff62ad4fef99cae21e0dfd3666-sprint-2.json",
+      "docs/exec-plans/active/run_7d070fff62ad4fef99cae21e0dfd3666.json",
+      "docs/exec-plans/active/run_836b8fa69960450dbef3c0c5ce7db559-sprint-1.json",
+      "docs/exec-plans/active/run_836b8fa69960450dbef3c0c5ce7db559.json",
+      "docs/exec-plans/active/run_836b8fa69960450dbef3c0c5ce7db559.md",
+      "docs/exec-plans/active/run_954c951b6b9141d894d7d8fecdb36458-sprint-1.json",
+      "docs/exec-plans/active/run_954c951b6b9141d894d7d8fecdb36458-sprint-2.json",
+      "docs/exec-plans/active/run_954c951b6b9141d894d7d8fecdb36458.json",
+      "docs/exec-plans/active/run_954c951b6b9141d894d7d8fecdb36458.md",
+      "docs/exec-plans/active/run_968cb6de5c1243dd945e96f0b9033a39-sprint-1.json",
+      "docs/exec-plans/active/run_968cb6de5c1243dd945e96f0b9033a39.json",
+      "docs/exec-plans/active/run_968cb6de5c1243dd945e96f0b9033a39.md",
+      "docs/exec-plans/active/run_a2cfd4425077468bb1f6a608bd123505.json",
+      "docs/exec-plans/active/run_a2db22f8a4ab47079d08a14ff6591e9a-sprint-1.json",
+      "docs/exec-plans/active/run_a2db22f8a4ab47079d08a14ff6591e9a.json",
+      "docs/exec-plans/active/run_a2db22f8a4ab47079d08a14ff6591e9a.md",
+      "docs/exec-plans/active/run_a85dcfa3ff9b4abab0bf32e1df334321-sprint-1.json",
+      "docs/exec-plans/active/run_a85dcfa3ff9b4abab0bf32e1df334321-sprint-2.json",
+      "docs/exec-plans/active/run_a85dcfa3ff9b4abab0bf32e1df334321.json",
+      "docs/exec-plans/active/run_a85dcfa3ff9b4abab0bf32e1df334321.md",
+      "docs/exec-plans/active/run_ced87bbc009b4fc8a5ddb5dbffb2ab8f-sprint-1.json",
+      "docs/exec-plans/active/run_ced87bbc009b4fc8a5ddb5dbffb2ab8f.json",
+      "docs/exec-plans/active/run_ced87bbc009b4fc8a5ddb5dbffb2ab8f.md",
+      "docs/exec-plans/active/run_f4545632d7c945d1ad20327d3914f7ba-sprint-1.json",
+      "docs/exec-plans/active/run_f4545632d7c945d1ad20327d3914f7ba-sprint-2.json",
+      "docs/exec-plans/active/run_f4545632d7c945d1ad20327d3914f7ba.json",
+      "docs/exec-plans/active/run_f4545632d7c945d1ad20327d3914f7ba.md",
+      "docs/exec-plans/tech-debt-tracker.md",
+      "docs/exec-plans/tech-debt-tracker.md.lock",
+      "flowdag.go",
+      "flowdag.py",
+      "flowdag_test.go",
+      "go.mod",
+      "test_flowdag.py",
+      "test_smoke.py"
+    ],
+    "sizes": {
+      "README.md": 15,
+      "dag_skip_test.go": 3985,
+      "docs/evals/run_0fd23917a12c4110a00526f4656b9535/sprint-1.json": 331,
+      "docs/evals/run_4735a88deeff44068da17929441d32c4/sprint-1.json": 749,
+      "docs/evals/run_4735a88deeff44068da17929441d32c4/sprint-2.json": 635,
+      "docs/evals/run_7d070fff62ad4fef99cae21e0dfd3666/sprint-1.json": 1163,
+      "docs/evals/run_836b8fa69960450dbef3c0c5ce7db559/sprint-1.json": 358,
+      "docs/evals/run_954c951b6b9141d894d7d8fecdb36458/sprint-1.json": 1190,
+      "docs/evals/run_968cb6de5c1243dd945e96f0b9033a39/sprint-1.json": 555,
+      "docs/evals/run_a2cfd4425077468bb1f6a608bd123505/sprint-1.json": 586,
+      "docs/evals/run_a2db22f8a4ab47079d08a14ff6591e9a/sprint-1.json": 467,
+      "docs/evals/run_a85dcfa3ff9b4abab0bf32e1df334321/sprint-1.json": 837,
+      "docs/evals/run_a85dcfa3ff9b4abab0bf32e1df334321/sprint-2.json": 999,
+      "docs/evals/run_f4545632d7c945d1ad20327d3914f7ba/sprint-1.json": 809,
+      "docs/evals/run_f4545632d7c945d1ad20327d3914f7ba/sprint-2.json": 704,
+      "docs/exec-plans/active/run_0fd23917a12c4110a00526f4656b9535-sprint-1.json": 1421,
+      "docs/exec-plans/active/run_0fd23917a12c4110a00526f4656b9535.json": 703,
+      "docs/exec-plans/active/run_0fd23917a12c4110a00526f4656b9535.md": 898,
+      "docs/exec-plans/active/run_4735a88deeff44068da17929441d32c4-sprint-2.json": 2111,
+      "docs/exec-plans/active/run_4735a88deeff44068da17929441d32c4.json": 1087,
+      "docs/exec-plans/active/run_7d070fff62ad4fef99cae21e0dfd3666-sprint-2.json": 4618,
+      "docs/exec-plans/active/run_7d070fff62ad4fef99cae21e0dfd3666.json": 1324,
+      "docs/exec-plans/active/run_836b8fa69960450dbef3c0c5ce7db559-sprint-1.json": 2158,
+      "docs/exec-plans/active/run_836b8fa69960450dbef3c0c5ce7db559.json": 1245,
+      "docs/exec-plans/active/run_836b8fa69960450dbef3c0c5ce7db559.md": 1753,
+      "docs/exec-plans/active/run_954c951b6b9141d894d7d8fecdb36458-sprint-1.json": 2653,
+      "docs/exec-plans/active/run_954c951b6b9141d894d7d8fecdb36458-sprint-2.json": 4531,
+      "docs/exec-plans/active/run_954c951b6b9141d894d7d8fecdb36458.json": 1433,
+      "docs/exec-plans/active/run_954c951b6b9141d894d7d8fecdb36458.md": 2653,
+      "docs/exec-plans/active/run_968cb6de5c1243dd945e96f0b9033a39-sprint-1.json": 2518,
+      "docs/exec-plans/active/run_968cb6de5c1243dd945e96f0b9033a39.json": 1116,
+      "docs/exec-plans/active/run_968cb6de5c1243dd945e96f0b9033a39.md": 1949,
+      "docs/exec-plans/active/run_a2cfd4425077468bb1f6a608bd123505.json": 1147,
+      "docs/exec-plans/active/run_a2db22f8a4ab47079d08a14ff6591e9a-sprint-1.json": 2604,
+      "docs/exec-plans/active/run_a2db22f8a4ab47079d08a14ff6591e9a.json": 1018,
+      "docs/exec-plans/active/run_a2db22f8a4ab47079d08a14ff6591e9a.md": 2134,
+      "docs/exec-plans/active/run_a85dcfa3ff9b4abab0bf32e1df334321-sprint-1.json": 1987,
+      "docs/exec-plans/active/run_a85dcfa3ff9b4abab0bf32e1df334321-sprint-2.json": 2742,
+      "docs/exec-plans/active/run_a85dcfa3ff9b4abab0bf32e1df334321.json": 1489,
+      "docs/exec-plans/active/run_a85dcfa3ff9b4abab0bf32e1df334321.md": 1732,
+      "docs/exec-plans/active/run_ced87bbc009b4fc8a5ddb5dbffb2ab8f-sprint-1.json": 3288,
+      "docs/exec-plans/active/run_ced87bbc009b4fc8a5ddb5dbffb2ab8f.json": 1111,
+      "docs/exec-plans/active/run_ced87bbc009b4fc8a5ddb5dbffb2ab8f.md": 3906,
+      "docs/exec-plans/active/run_f4545632d7c945d1ad20327d3914f7ba-sprint-1.json": 2081,
+      "docs/exec-plans/active/run_f4545632d7c945d1ad20327d3914f7ba-sprint-2.json": 2832,
+      "docs/exec-plans/active/run_f4545632d7c945d1ad20327d3914f7ba.json": 1508,
+      "docs/exec-plans/active/run_f4545632d7c945d1ad20327d3914f7ba.md": 1278,
+      "docs/exec-plans/tech-debt-tracker.md": 269,
+      "docs/exec-plans/tech-debt-tracker.md.lock": 0,
+      "flowdag.go": 12095,
+      "flowdag.py": 9941,
+      "flowdag_test.go": 4702,
+      "go.mod": 24,
+      "test_flowdag.py": 3156,
+      "test_smoke.py": 34
+    },
+    "log": [
+      "0581833 chorus: merge chorus/cy",
+      "9c40cd0 chorus: snapshot work",
+      "c4ead53 chorus: merge chorus/cy",
+      "d854196 chorus: snapshot work",
+      "69bc9e5 chorus: merge chorus/di",
+      "bf5b4d5 chorus: snapshot work",
+      "3e018dd chorus: snapshot work",
+      "7826893 chorus: merge chorus/cy",
+      "8ecbe86 chorus: snapshot work",
+      "78bfe0e chorus: merge chorus/cy",
+      "ca47b53 chorus: snapshot work",
+      "ea3fd4c chorus: merge chorus/cy",
+      "9e87701 chorus: snapshot work",
+      "30b259e chorus: merge chorus/bo",
+      "f5e1872 chorus: snapshot work",
+      "c0e738c chorus: merge chorus/bo",
+      "8de5d6e chorus: snapshot work",
+      "2398450 Add deterministic DAG test for skip-on-failure",
+      "61fe46b chorus: merge chorus/di",
+      "c5bebcc chorus: snapshot work",
+      "f7cfdbf chorus: merge chorus/ada",
+      "3a6f6ea chorus: snapshot work",
+      "0d1705b seed"
+    ],
+    "merges": [
+      "0581833 chorus: merge chorus/cy",
+      "c4ead53 chorus: merge chorus/cy",
+      "69bc9e5 chorus: merge chorus/di",
+      "7826893 chorus: merge chorus/cy",
+      "78bfe0e chorus: merge chorus/cy",
+      "ea3fd4c chorus: merge chorus/cy",
+      "30b259e chorus: merge chorus/bo",
+      "c0e738c chorus: merge chorus/bo",
+      "61fe46b chorus: merge chorus/di",
+      "f7cfdbf chorus: merge chorus/ada"
+    ],
+    "merged_eids": [
+      "ada",
+      "bo",
+      "cy",
+      "di"
+    ],
+    "duplicates": {},
+    "empty_exports": [],
+    "harness_leak": [
+      "docs/evals/run_0fd23917a12c4110a00526f4656b9535/sprint-1.json",
+      "docs/evals/run_4735a88deeff44068da17929441d32c4/sprint-1.json",
+      "docs/evals/run_4735a88deeff44068da17929441d32c4/sprint-2.json",
+      "docs/evals/run_7d070fff62ad4fef99cae21e0dfd3666/sprint-1.json",
+      "docs/evals/run_836b8fa69960450dbef3c0c5ce7db559/sprint-1.json",
+      "docs/evals/run_954c951b6b9141d894d7d8fecdb36458/sprint-1.json",
+      "docs/evals/run_968cb6de5c1243dd945e96f0b9033a39/sprint-1.json",
+      "docs/evals/run_a2cfd4425077468bb1f6a608bd123505/sprint-1.json",
+      "docs/evals/run_a2db22f8a4ab47079d08a14ff6591e9a/sprint-1.json",
+      "docs/evals/run_a85dcfa3ff9b4abab0bf32e1df334321/sprint-1.json",
+      "docs/evals/run_a85dcfa3ff9b4abab0bf32e1df334321/sprint-2.json",
+      "docs/evals/run_f4545632d7c945d1ad20327d3914f7ba/sprint-1.json",
+      "docs/evals/run_f4545632d7c945d1ad20327d3914f7ba/sprint-2.json",
+      "docs/exec-plans/active/run_0fd23917a12c4110a00526f4656b9535-sprint-1.json",
+      "docs/exec-plans/active/run_0fd23917a12c4110a00526f4656b9535.json",
+      "docs/exec-plans/active/run_0fd23917a12c4110a00526f4656b9535.md",
+      "docs/exec-plans/active/run_4735a88deeff44068da17929441d32c4-sprint-2.json",
+      "docs/exec-plans/active/run_4735a88deeff44068da17929441d32c4.json",
+      "docs/exec-plans/active/run_7d070fff62ad4fef99cae21e0dfd3666-sprint-2.json",
+      "docs/exec-plans/active/run_7d070fff62ad4fef99cae21e0dfd3666.json",
+      "docs/exec-plans/active/run_836b8fa69960450dbef3c0c5ce7db559-sprint-1.json",
+      "docs/exec-plans/active/run_836b8fa69960450dbef3c0c5ce7db559.json",
+      "docs/exec-plans/active/run_836b8fa69960450dbef3c0c5ce7db559.md",
+      "docs/exec-plans/active/run_954c951b6b9141d894d7d8fecdb36458-sprint-1.json",
+      "docs/exec-plans/active/run_954c951b6b9141d894d7d8fecdb36458-sprint-2.json",
+      "docs/exec-plans/active/run_954c951b6b9141d894d7d8fecdb36458.json",
+      "docs/exec-plans/active/run_954c951b6b9141d894d7d8fecdb36458.md",
+      "docs/exec-plans/active/run_968cb6de5c1243dd945e96f0b9033a39-sprint-1.json",
+      "docs/exec-plans/active/run_968cb6de5c1243dd945e96f0b9033a39.json",
+      "docs/exec-plans/active/run_968cb6de5c1243dd945e96f0b9033a39.md",
+      "docs/exec-plans/active/run_a2cfd4425077468bb1f6a608bd123505.json",
+      "docs/exec-plans/active/run_a2db22f8a4ab47079d08a14ff6591e9a-sprint-1.json",
+      "docs/exec-plans/active/run_a2db22f8a4ab47079d08a14ff6591e9a.json",
+      "docs/exec-plans/active/run_a2db22f8a4ab47079d08a14ff6591e9a.md",
+      "docs/exec-plans/active/run_a85dcfa3ff9b4abab0bf32e1df334321-sprint-1.json",
+      "docs/exec-plans/active/run_a85dcfa3ff9b4abab0bf32e1df334321-sprint-2.json",
+      "docs/exec-plans/active/run_a85dcfa3ff9b4abab0bf32e1df334321.json",
+      "docs/exec-plans/active/run_a85dcfa3ff9b4abab0bf32e1df334321.md",
+      "docs/exec-plans/active/run_ced87bbc009b4fc8a5ddb5dbffb2ab8f-sprint-1.json",
+      "docs/exec-plans/active/run_ced87bbc009b4fc8a5ddb5dbffb2ab8f.json",
+      "docs/exec-plans/active/run_ced87bbc009b4fc8a5ddb5dbffb2ab8f.md",
+      "docs/exec-plans/active/run_f4545632d7c945d1ad20327d3914f7ba-sprint-1.json",
+      "docs/exec-plans/active/run_f4545632d7c945d1ad20327d3914f7ba-sprint-2.json",
+      "docs/exec-plans/active/run_f4545632d7c945d1ad20327d3914f7ba.json",
+      "docs/exec-plans/active/run_f4545632d7c945d1ad20327d3914f7ba.md",
+      "docs/exec-plans/tech-debt-tracker.md",
+      "docs/exec-plans/tech-debt-tracker.md.lock"
+    ],
+    "readme": "README.md",
+    "readme_stub": true,
+    "packaging_present": [
+      "go.mod"
+    ],
+    "packaging_expected": [
+      "go.mod"
+    ]
+  },
+  "build": {
+    "attempts": [
+      {
+        "cmd": "go build ./...",
+        "rc": 1,
+        "tail": "# flowdag\n./flowdag.go:520:29: syntax error: method must have no type parameters\n"
+      },
+      {
+        "cmd": "go test ./...",
+        "rc": 1,
+        "tail": "FAIL\tflowdag [build failed]\nFAIL\n# flowdag [flowdag.test]\n./flowdag.go:520:29: syntax error: method must have no type parameters\n"
+      }
+    ]
+  },
+  "flaws": [
+    {
+      "sev": "FRAMEWORK",
+      "code": "BUG-007",
+      "title": "Top goal ended blocked, not done",
+      "detail": "The director hit the integrate cap / deadline without a clean done verdict."
+    },
+    {
+      "sev": "FRAMEWORK",
+      "code": "BUG-006",
+      "title": "Deliverable assigned to a non-engineer role",
+      "detail": "task_803dae5e9\u2192pm(rejected), task_aa5d48ca9\u2192analyst(rejected), task_573652cb7\u2192analyst(rejected)"
+    },
+    {
+      "sev": "FRAMEWORK",
+      "code": "BUG-005",
+      "title": "done \u2260 landed \u2014 an author branch never integrated",
+      "detail": "2 employee(s) have done tasks but no merge on main: ['max', 'moe']"
+    },
+    {
+      "sev": "HIGH",
+      "code": "LEAK",
+      "title": "Harness-internal files leaked into the deliverable",
+      "detail": "47 files, e.g. ['docs/evals/run_0fd23917a12c4110a00526f4656b9535/sprint-1.json', 'docs/evals/run_4735a88deeff44068da17929441d32c4/sprint-1.json', 'docs/evals/run_4735a88deeff44068da17929441d32c4/sprint-2.json']"
+    },
+    {
+      "sev": "HIGH",
+      "code": "README",
+      "title": "README missing or still a stub",
+      "detail": "README.md"
+    },
+    {
+      "sev": "CRITICAL",
+      "code": "BUILD",
+      "title": "Deliverable fails `go build ./...` (rc=1)",
+      "detail": "# flowdag\n./flowdag.go:520:29: syntax error: method must have no type parameters\n"
+    },
+    {
+      "sev": "CRITICAL",
+      "code": "BUILD",
+      "title": "Deliverable fails `go test ./...` (rc=1)",
+      "detail": "FAIL\tflowdag [build failed]\nFAIL\n# flowdag [flowdag.test]\n./flowdag.go:520:29: syntax error: method must have no type parameters\n"
+    }
+  ]
+}

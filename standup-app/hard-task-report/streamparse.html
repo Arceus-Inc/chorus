@@ -1,0 +1,118 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>streamparse — Hard-Task Report</title><style>
+:root{--bg:#0d1117;--panel:#161b22;--panel2:#1c2330;--border:#30363d;--fg:#e6edf3;--muted:#8b949e;
+--accent:#58a6ff;--mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;--red:#f85149;
+--redbg:#2d1518;--amber:#d29922;--amberbg:#2a230f;--green:#3fb950;--greenbg:#12261a;--purple:#bc8cff;}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);
+font:15px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased}
+.wrap{max-width:980px;margin:0 auto;padding:48px 24px 96px}
+header{border-bottom:1px solid var(--border);padding-bottom:28px;margin-bottom:36px}
+.eyebrow{font:600 12px/1 var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--accent)}
+h1{margin:14px 0 8px;font-size:30px;letter-spacing:-.02em}
+.sub{color:var(--muted);font-size:15px;max-width:74ch}
+.meta{display:flex;flex-wrap:wrap;gap:10px;margin-top:20px}
+.chip{font:600 12px/1 var(--mono);color:var(--muted);background:var(--panel);border:1px solid var(--border);
+border-radius:999px;padding:7px 12px}.chip b{color:var(--fg)}
+.ok{color:var(--green)}.bad{color:var(--red)}.warn{color:var(--amber)}
+h2{font-size:13px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin:44px 0 18px;
+padding-bottom:10px;border-bottom:1px solid var(--border)}
+.card{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:18px 20px;margin:12px 0;
+position:relative;overflow:hidden}.card::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--red)}
+.card.fwk::before{background:var(--amber)}.card.info::before{background:var(--muted)}
+.card-head{display:flex;align-items:baseline;gap:12px;margin-bottom:6px}
+.code{flex:none;font:700 11px/1 var(--mono);color:var(--bg);background:var(--red);border-radius:6px;padding:5px 8px}
+.card.fwk .code{background:var(--amber)}.card.info .code{background:var(--muted)}
+.title{font-size:15px;font-weight:650}
+.detail{color:#c2ccd6;font-size:13.5px;margin-top:4px;font-family:var(--mono);white-space:pre-wrap;word-break:break-word}
+table{border-collapse:collapse;width:100%;margin:10px 0;font-size:13.5px}
+th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--border)}
+th{color:var(--muted);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.06em}
+td code,code.k{font:12.5px/1.5 var(--mono);background:var(--panel2);border:1px solid var(--border);border-radius:5px;
+padding:1px 6px;color:#d2a8ff}
+.pill{display:inline-block;font:600 11px/1 var(--mono);border-radius:5px;padding:4px 8px}
+.pill.done{color:var(--green);background:var(--greenbg);border:1px solid #1c5a32}
+.pill.blocked,.pill.rejected{color:var(--red);background:var(--redbg);border:1px solid #5c2326}
+.pill.other{color:var(--amber);background:var(--amberbg);border:1px solid #5a4818}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin:8px 0}
+.stat{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:14px}
+.stat .n{font-size:22px;font-weight:700}.stat .l{color:var(--muted);font-size:12px;margin-top:2px}
+a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
+footer{margin-top:56px;padding-top:22px;border-top:1px solid var(--border);color:var(--muted);font-size:13px}
+pre.log{background:#0b0f14;border:1px solid var(--border);border-radius:8px;padding:12px;overflow:auto;
+font:12px/1.5 var(--mono);color:#9db1c5;max-height:240px}
+</style></head><body><div class="wrap">
+<header><div class="eyebrow">Hard-Task Report · TypeScript</div>
+<h1><code class="k" style="font-size:26px;color:var(--fg)">streamparse</code></h1>
+<p class="sub">Build an npm package `streamparse` that folds a raw SSE/token `ReadableStream` into a typed `AsyncIterable&lt;StreamEvent&gt;`: text deltas, tool-call deltas (assembled across chunks), usage accounting, and a terminal event. Ship a real `package.json` + `tsconfig.json`, build with `tsc` to `dist/`, and export the public types. `vitest` (or `node:test`) feeds canned chunk sequences and asserts the reconstructed events.</p>
+<div class="meta">
+<span class="chip">goal: <b class=bad>blocked</b></span>
+<span class="chip">tasks: <b>24</b></span>
+<span class="chip">runs: <b>38</b></span>
+<span class="chip">elapsed: <b>1239s</b></span>
+<span class="chip">deliverable flaws: <b class=bad>6</b></span>
+<span class="chip">framework flaws: <b class=warn>5</b></span>
+</div></header>
+
+<h2>Run accounting</h2>
+<table><tr><th>top goal</th><td><span class="pill blocked">blocked</span></td></tr>
+<tr><th>task statuses</th><tr><td><span class="pill blocked">blocked</span> <b>2</b></td><td><span class="pill other">cancelled</span> <b>2</b></td><td><span class="pill done">done</span> <b>16</b></td><td><span class="pill rejected">rejected</span> <b>4</b></td></tr></table>
+<div class="grid">
+<div class="stat"><div class="n">11</div><div class="l">employees</div></div>
+<div class="stat"><div class="n">42</div><div class="l">files landed</div></div>
+<div class="stat"><div class="n">7</div><div class="l">merges on main</div></div>
+<div class="stat"><div class="n">0</div><div class="l">duplicate modules</div></div>
+</div>
+
+<h2>Build / test verification</h2>
+<table><tr><th>command</th><th>result</th><th>output tail</th></tr><tr><td><code>tsc --noEmit</code></td><td><span class="bad">fail (rc=2)</span></td><td class="detail">Parser.ts(50,3): error TS2578: Unused &#x27;@ts-expect-error&#x27; directive.
+src/streamParser.ts(52,5): error TS2578: Unused &#x27;@ts-expect-error&#x27; directive.
+src/streamParser.ts(67,23): error TS2304: Cannot find name &#x27;TextDecoder&#x27;.
+</td></tr></table>
+
+<h2><span style="color:var(--accent)">A.</span> Deliverable flaws — the <code class="k">streamparse</code> deliverable (6)</h2>
+<p class="detail" style="font-family:inherit;color:var(--muted)">Defects in what the org actually produced — is it a real, usable, distributable artifact?</p>
+<div class="card crit"><div class="card-head"><span class="code">1</span><span class="title">The package entry exports a hello-world placeholder, not the parser</span><span style="margin-left:auto;font:600 10px/1 var(--mono);color:var(--muted)">ENTRY-PLACEHOLDER</span></div><div class="detail">src/index.ts — the package main — is exactly `export const hello = &#x27;world&#x27; as const;`. The real StreamEvent type and the fold-a-stream-into-events parser live in src/streamParser.ts, but index.ts never re-exports them. `import { ... } from &#x27;streamparse&#x27;` yields only `hello`. The brief&#x27;s entire public surface is unreachable through the entry point.</div></div>
+<div class="card crit"><div class="card-head"><span class="code">2</span><span class="title">tsc does not typecheck — the package does not build</span><span style="margin-left:auto;font:600 10px/1 var(--mono);color:var(--muted)">TSC-BROKEN</span></div><div class="detail">tsc --noEmit exits rc=2 with error TS2304: Cannot find name &#x27;ReadableStream&#x27; (multiple sites). tsconfig sets lib: [&quot;ES2020&quot;], which omits DOM/WebWorker, yet streamParser.ts builds on ReadableStream&lt;Uint8Array&gt;. The required Web-Streams type is used but never made available — so the deliverable fails its own toolchain&#x27;s build.</div></div>
+<div class="card crit"><div class="card-head"><span class="code">3</span><span class="title">package.json exports reference files the source can never produce</span><span style="margin-left:auto;font:600 10px/1 var(--mono);color:var(--muted)">FICTIONAL-EXPORTS</span></div><div class="detail">package.json declares main: ./dist/index.js and an exports map with ./parser → ./dist/parser.js and ./StreamEvent → ./dist/StreamEvent.js. The source is src/index.ts + src/streamParser.ts — there is no parser.ts or StreamEvent.ts. tsc would emit dist/index.js + dist/streamParser.js, never dist/parser.js or dist/StreamEvent.js. The manifest&#x27;s public surface is a fiction unrelated to the code.</div></div>
+<div class="card crit"><div class="card-head"><span class="code">4</span><span class="title">The tests are Python and only assert a file exists</span><span style="margin-left:auto;font:600 10px/1 var(--mono);color:var(--muted)">PYTHON-TESTS</span></div><div class="detail">package.json sets &quot;test&quot;: &quot;pytest -q&quot; — a Python runner for a TypeScript package — and the test files are Python. test_stream_parser.py in full: `assert pathlib.Path(&quot;src/streamParser.ts&quot;).exists()`. It never imports, compiles, or exercises the parser; it checks the .ts file is on disk. The brief required vitest feeding canned chunk sequences and asserting reconstructed events. &#x27;Tests pass&#x27; here means nothing about the parser&#x27;s behaviour.</div></div>
+<div class="card crit"><div class="card-head"><span class="code">5</span><span class="title">The package is named after the engineer, not the deliverable</span><span style="margin-left:auto;font:600 10px/1 var(--mono);color:var(--muted)">WRONG-NAME</span></div><div class="detail">package.json &quot;name&quot;: &quot;ada&quot; — the id of the engineer whose branch won the manifest — instead of &quot;streamparse&quot;. The published package would carry the author&#x27;s name, not the product&#x27;s.</div></div>
+<div class="card crit"><div class="card-head"><span class="code">6</span><span class="title">Stray Python files + README stub + leaked harness files</span><span style="margin-left:auto;font:600 10px/1 var(--mono);color:var(--muted)">STRAY</span></div><div class="detail">Root test_smoke.py (`assert True`) and test_stream_parser.py — Python files in a TS package. README.md is the 15-byte &#x27;# company repo&#x27; stub. Harness-internal files leaked (docs/evals/*.json, docs/exec-plans/*).</div></div>
+
+<h2><span style="color:var(--accent)">B.</span> Framework / orchestration flaws — chorus behaviours this run exposed (5)</h2>
+<p class="detail" style="font-family:inherit;color:var(--muted)">Not the deliverable's fault — kernel/orchestration behaviours the run made visible.</p>
+<div class="card fwk"><div class="card-head"><span class="code">7</span><span class="title">Top goal ended blocked, not done</span><span style="margin-left:auto;font:600 10px/1 var(--mono);color:var(--muted)">BUG-007</span></div><div class="detail">24 tasks: 16 done, 4 rejected, 2 cancelled, 2 blocked. The director churned to the ceiling without closing the goal.</div></div>
+<div class="card fwk"><div class="card-head"><span class="code">8</span><span class="title">done ≠ landed — engineer bo&#x27;s branch never merged</span><span style="margin-left:auto;font:600 10px/1 var(--mono);color:var(--muted)">BUG-005</span></div><div class="detail">Engineer bo has done tasks, but only ada/cy/di branches merged to company main (bo absent from the merge log). bo&#x27;s work reads done in the ledger while it never integrated — the unmerged-author-branch bug, present here (unlike the tinyvec/tooldeck runs where all engineers merged).</div></div>
+<div class="card fwk"><div class="card-head"><span class="code">9</span><span class="title">Three deliverable tasks handed to the analyst → all rejected/cancelled</span><span style="margin-left:auto;font:600 10px/1 var(--mono);color:var(--muted)">BUG-006</span></div><div class="detail">The analyst (a non-coding role) was assigned three implementation tasks; two were rejected and one cancelled. The same mis-route, three times.</div></div>
+<div class="card fwk"><div class="card-head"><span class="code">10</span><span class="title">No owner of the package surface — entry, manifest, and impl all disagree</span><span style="margin-left:auto;font:600 10px/1 var(--mono);color:var(--muted)">NO-OWNERSHIP</span></div><div class="detail">index.ts exports a placeholder, package.json exports point at non-existent dist files, and the real parser sits in a third file no one wired up. Three views of the public surface, authored on different branches, merged without anyone owning &#x27;the entry point exports the parser and the manifest matches the build output&#x27;.</div></div>
+<div class="card fwk"><div class="card-head"><span class="code">11</span><span class="title">The DoD for a TypeScript package was pytest — and it passed trivially</span><span style="margin-left:auto;font:600 10px/1 var(--mono);color:var(--muted)">DOD-WRONG-TOOLCHAIN</span></div><div class="detail">The objective Command DoD ran `pytest -q` against a TypeScript npm package, and the one Python test merely asserts the .ts file exists — so it passed while `tsc` (the real build) fails and the entry exports a placeholder. This is the sharpest evidence for spec 15: the coherence gate must build AND test in the deliverable&#x27;s OWN toolchain, reconciled to the declared surface — not run whatever command happens to exit 0.</div></div>
+
+<h2>Landed repo</h2>
+<p class="detail" style="font-family:inherit">Packaging expected: [&#x27;package.json&#x27;, &#x27;tsconfig.json&#x27;] ·
+present: [&#x27;package.json&#x27;, &#x27;tsconfig.json&#x27;]</p>
+<p style="margin:10px 0"><code class=k>.gitignore</code> <code class=k>README.md</code> <code class=k>docs/evals/run_1b9a3f257aa9462b936d082a5b7b5fdb/sprint-1.json</code> <code class=k>docs/evals/run_22a6d9bcb20149afacfd931886aa2fb5/sprint-1.json</code> <code class=k>docs/evals/run_3ac42215162a4ae2bfbde8bf625f41e6/sprint-1.json</code> <code class=k>docs/evals/run_97a88aefe01047dbae27fad0cf370e64/sprint-1.json</code> <code class=k>docs/evals/run_a20a0af6b990438197a2efbb88d83f8f/sprint-1.json</code> <code class=k>docs/evals/run_a20a0af6b990438197a2efbb88d83f8f/sprint-2.json</code> <code class=k>docs/evals/run_bda2d9f53f324ece812b81054341c821/sprint-1.json</code> <code class=k>docs/evals/run_bda2d9f53f324ece812b81054341c821/sprint-2.json</code> <code class=k>docs/evals/run_f980e5ea93fe4b6da32c2f26ad74d86d/sprint-1.json</code> <code class=k>docs/exec-plans/active/run_1b9a3f257aa9462b936d082a5b7b5fdb.json</code> <code class=k>docs/exec-plans/active/run_22a6d9bcb20149afacfd931886aa2fb5-sprint-1.json</code> <code class=k>docs/exec-plans/active/run_22a6d9bcb20149afacfd931886aa2fb5.json</code> <code class=k>docs/exec-plans/active/run_22a6d9bcb20149afacfd931886aa2fb5.md</code> <code class=k>docs/exec-plans/active/run_3ac42215162a4ae2bfbde8bf625f41e6-sprint-1.json</code> <code class=k>docs/exec-plans/active/run_3ac42215162a4ae2bfbde8bf625f41e6.json</code> <code class=k>docs/exec-plans/active/run_3ac42215162a4ae2bfbde8bf625f41e6.md</code> <code class=k>docs/exec-plans/active/run_97a88aefe01047dbae27fad0cf370e64-sprint-1.json</code> <code class=k>docs/exec-plans/active/run_97a88aefe01047dbae27fad0cf370e64.json</code> <code class=k>docs/exec-plans/active/run_97a88aefe01047dbae27fad0cf370e64.md</code> <code class=k>docs/exec-plans/active/run_a20a0af6b990438197a2efbb88d83f8f-gates.txt</code> <code class=k>docs/exec-plans/active/run_a20a0af6b990438197a2efbb88d83f8f-reconstructed-integrate-context.json</code> <code class=k>docs/exec-plans/active/run_a20a0af6b990438197a2efbb88d83f8f-sprint-1.json</code> <code class=k>docs/exec-plans/active/run_a20a0af6b990438197a2efbb88d83f8f-sprint-2.json</code> <code class=k>docs/exec-plans/active/run_a20a0af6b990438197a2efbb88d83f8f-summary.json</code> <code class=k>docs/exec-plans/active/run_a20a0af6b990438197a2efbb88d83f8f.json</code> <code class=k>docs/exec-plans/active/run_a20a0af6b990438197a2efbb88d83f8f.md</code> <code class=k>docs/exec-plans/active/run_bda2d9f53f324ece812b81054341c821-sprint-2.json</code> <code class=k>docs/exec-plans/active/run_bda2d9f53f324ece812b81054341c821.json</code> <code class=k>docs/exec-plans/active/run_f980e5ea93fe4b6da32c2f26ad74d86d-sprint-1.json</code> <code class=k>docs/exec-plans/active/run_f980e5ea93fe4b6da32c2f26ad74d86d.json</code> <code class=k>docs/exec-plans/active/run_f980e5ea93fe4b6da32c2f26ad74d86d.md</code> <code class=k>docs/exec-plans/tech-debt-tracker.md</code> <code class=k>docs/exec-plans/tech-debt-tracker.md.lock</code> <code class=k>package-lock.json</code> <code class=k>package.json</code> <code class=k>src/index.ts</code> <code class=k>src/streamParser.ts</code> <code class=k>test_smoke.py</code> <code class=k>test_stream_parser.py</code> <code class=k>tsconfig.json</code> </p>
+<h2>git log (company main)</h2>
+<pre class="log">613a0e0 chorus: merge chorus/ada
+39d25bc chorus: snapshot work
+65c5475 chorus: merge chorus/ada
+a78f67c chorus: snapshot work
+6337eeb chorus: merge chorus/ada
+eb2e28b chorus: snapshot work
+2d53e5a Adjust npm scripts for tsc build and node test
+90c127c chorus: merge chorus/ada
+dc3c497 chorus: snapshot work
+bbaaff5 Make npm test placeholder succeed and ignore dist
+7cceb15 Add build script for TypeScript dist output
+95db280 chorus: merge chorus/cy
+1e7ab7f chorus: snapshot work
+847ee99 chorus: merge chorus/ada
+8873f4f chorus: snapshot work
+e19e053 chorus: merge chorus/di
+4052bf7 chorus: snapshot work
+b17acf3 Add library tsconfig and TypeScript dev dependency
+c81ccd6 seed</pre>
+
+<footer>Generated by <code class="k">_probe.py</code> + <code class="k">_render.py</code> from a live
+<code class="k">Chorus.build --org</code> run. Workspace: <code class="k">/Users/divyansh/chorus/standup-app/hard-task-report/runs/streamparse/tmp/chorus-standup-adxnqpss</code>.
+Flaw codes cross-reference <a href="../post-dev-wiring.md">post-dev-wiring.md</a> (BUG-005/006/007).</footer>
+</div></body></html>

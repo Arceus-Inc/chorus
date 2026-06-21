@@ -1,0 +1,456 @@
+{
+  "name": "streamparse",
+  "lang": "TypeScript",
+  "brief": "Build an npm package `streamparse` that folds a raw SSE/token `ReadableStream` into a typed `AsyncIterable<StreamEvent>`: text deltas, tool-call deltas (assembled across chunks), usage accounting, and a terminal event. Ship a real `package.json` + `tsconfig.json`, build with `tsc` to `dist/`, and export the public types. `vitest` (or `node:test`) feeds canned chunk sequences and asserts the reconstructed events.",
+  "meta": {
+    "name": "streamparse",
+    "rc": "0",
+    "elapsed_s": "1239",
+    "workspace": "/Users/divyansh/chorus/standup-app/hard-task-report/runs/streamparse/tmp/chorus-standup-adxnqpss",
+    "db": "/Users/divyansh/chorus/standup-app/hard-task-report/runs/streamparse/tmp/chorus-standup-adxnqpss/company.db",
+    "report": "/Users/divyansh/chorus/standup-app/hard-task-report/runs/streamparse/tmp/chorus-standup-adxnqpss/report.md"
+  },
+  "repo_path": "/Users/divyansh/chorus/standup-app/hard-task-report/runs/streamparse/tmp/chorus-standup-adxnqpss/work/acme/repo",
+  "ledger": {
+    "employees": [
+      {
+        "id": "vera",
+        "name": "vera",
+        "role": "manager"
+      },
+      {
+        "id": "moe",
+        "name": "moe",
+        "role": "manager"
+      },
+      {
+        "id": "max",
+        "name": "max",
+        "role": "manager"
+      },
+      {
+        "id": "ada",
+        "name": "ada",
+        "role": "engineer"
+      },
+      {
+        "id": "bo",
+        "name": "bo",
+        "role": "engineer"
+      },
+      {
+        "id": "ria",
+        "name": "ria",
+        "role": "reviewer"
+      },
+      {
+        "id": "pat",
+        "name": "pat",
+        "role": "pm"
+      },
+      {
+        "id": "cy",
+        "name": "cy",
+        "role": "engineer"
+      },
+      {
+        "id": "di",
+        "name": "di",
+        "role": "engineer"
+      },
+      {
+        "id": "rex",
+        "name": "rex",
+        "role": "reviewer"
+      },
+      {
+        "id": "ana",
+        "name": "ana",
+        "role": "analyst"
+      }
+    ],
+    "emp_by_role": {
+      "manager": 3,
+      "engineer": 4,
+      "reviewer": 2,
+      "pm": 1,
+      "analyst": 1
+    },
+    "n_tasks": 24,
+    "n_runs": 38,
+    "status_counts": {
+      "blocked": 2,
+      "done": 16,
+      "rejected": 4,
+      "cancelled": 2
+    },
+    "top_status": "blocked",
+    "top_intent": "Build an npm package `streamparse` that folds a raw SSE/token `ReadableStream` into a typed `AsyncIterable<StreamEvent>`",
+    "misassigned": [
+      {
+        "id": "task_dd3bbb939a98",
+        "intent": "Add minimal unit tests for SSE parsing and stream semantics in new test file(s) (e.g., tes",
+        "role": "analyst",
+        "status": "rejected"
+      },
+      {
+        "id": "task_712fdf8fd6d9",
+        "intent": "Investigate why .harness/integrate-context.json read_file output is truncated/unsaved; ext",
+        "role": "analyst",
+        "status": "rejected"
+      },
+      {
+        "id": "task_672d4f9710c5",
+        "intent": "Create/modify streamparse/src/index.ts to export StreamEvent types and the parser API from",
+        "role": "analyst",
+        "status": "cancelled"
+      }
+    ],
+    "recovery_cards": [
+      {
+        "id": "rec_6cd759c5ef20",
+        "kind": "stale_run_watchdog",
+        "source_task_id": "task_dd3bbb939a98",
+        "status": "folded"
+      },
+      {
+        "id": "rec_6f8d7afb67c9",
+        "kind": "stranded",
+        "source_task_id": "task_651d79dc3c81",
+        "status": "folded"
+      },
+      {
+        "id": "rec_d89a9ef93ced",
+        "kind": "stranded",
+        "source_task_id": "task_e65c9ee537e8",
+        "status": "folded"
+      }
+    ],
+    "done_tasks": [
+      {
+        "id": "task_062753e0b863",
+        "intent": "Create the core TypeScript stream parser that converts an SSE/token ReadableStream into an",
+        "role": "manager",
+        "emp": "max"
+      },
+      {
+        "id": "task_73247be7229b",
+        "intent": "Add package.json and tsconfig.json for a TypeScript library that builds to dist/ using tsc",
+        "role": "manager",
+        "emp": "moe"
+      },
+      {
+        "id": "task_7229dc2ce908",
+        "intent": "Add automated tests (vitest or node:test) that feed canned SSE/chunk sequences into the pa",
+        "role": "manager",
+        "emp": "moe"
+      },
+      {
+        "id": "task_72829287051e",
+        "intent": "Create tsconfig.json for a TypeScript *library* build. Configure compilerOptions to emit J",
+        "role": "engineer",
+        "emp": "ada"
+      },
+      {
+        "id": "task_6238396408a8",
+        "intent": "Add package.json at repo root configuring this project as a TS library. Include scripts: `",
+        "role": "engineer",
+        "emp": "bo"
+      },
+      {
+        "id": "task_8d6bec22e550",
+        "intent": "After tsconfig.json and package.json land, run `npm install` (or npm ci if lock exists), t",
+        "role": "engineer",
+        "emp": "ada"
+      },
+      {
+        "id": "task_c7f17b4a4dc5",
+        "intent": "Implement SSE/token ReadableStream -> AsyncIterable<StreamEvent> parser. Create/modify src",
+        "role": "engineer",
+        "emp": "cy"
+      },
+      {
+        "id": "task_c1b5a400e0ef",
+        "intent": "Add public types module src/types.ts exporting StreamEvent and related types (text delta, ",
+        "role": "engineer",
+        "emp": "di"
+      },
+      {
+        "id": "task_c581221204dc",
+        "intent": "Create new exported module src/types.ts defining and exporting public StreamEvent types: t",
+        "role": "engineer",
+        "emp": "cy"
+      },
+      {
+        "id": "task_d2bc52bbb7d3",
+        "intent": "Create root package.json and tsconfig.json for TS library build to dist/ with declaration ",
+        "role": "engineer",
+        "emp": "ada"
+      },
+      {
+        "id": "task_e47bc096939b",
+        "intent": "Create root package.json for TS library: set name, type/module, main/types pointing to dis",
+        "role": "engineer",
+        "emp": "ada"
+      },
+      {
+        "id": "task_3c343aad8f13",
+        "intent": "Kernel recommends react at iteration 3 but integrate-context.json is truncated in this env",
+        "role": "engineer",
+        "emp": "ada"
+      },
+      {
+        "id": "task_d34c8f75e093",
+        "intent": "Create a new JS test file under test/ or src/__tests__/ (choose whichever existing suite u",
+        "role": "engineer",
+        "emp": "ada"
+      },
+      {
+        "id": "task_0ecc91898d09",
+        "intent": "In the same new test file (do not edit any existing files), add a test that feeds a canned",
+        "role": "engineer",
+        "emp": "bo"
+      },
+      {
+        "id": "task_3a0248cb7801",
+        "intent": "In the same new test file (only new file changes), add a test that feeds a canned SSE/chun",
+        "role": "engineer",
+        "emp": "ada"
+      },
+      {
+        "id": "task_336de1998d72",
+        "intent": "Create new TypeScript file streamparse/src/events.ts that defines and exports a discrimina",
+        "role": "engineer",
+        "emp": "di"
+      }
+    ]
+  },
+  "repo": {
+    "n_files": 42,
+    "files": [
+      ".gitignore",
+      "README.md",
+      "docs/evals/run_1b9a3f257aa9462b936d082a5b7b5fdb/sprint-1.json",
+      "docs/evals/run_22a6d9bcb20149afacfd931886aa2fb5/sprint-1.json",
+      "docs/evals/run_3ac42215162a4ae2bfbde8bf625f41e6/sprint-1.json",
+      "docs/evals/run_97a88aefe01047dbae27fad0cf370e64/sprint-1.json",
+      "docs/evals/run_a20a0af6b990438197a2efbb88d83f8f/sprint-1.json",
+      "docs/evals/run_a20a0af6b990438197a2efbb88d83f8f/sprint-2.json",
+      "docs/evals/run_bda2d9f53f324ece812b81054341c821/sprint-1.json",
+      "docs/evals/run_bda2d9f53f324ece812b81054341c821/sprint-2.json",
+      "docs/evals/run_f980e5ea93fe4b6da32c2f26ad74d86d/sprint-1.json",
+      "docs/exec-plans/active/run_1b9a3f257aa9462b936d082a5b7b5fdb.json",
+      "docs/exec-plans/active/run_22a6d9bcb20149afacfd931886aa2fb5-sprint-1.json",
+      "docs/exec-plans/active/run_22a6d9bcb20149afacfd931886aa2fb5.json",
+      "docs/exec-plans/active/run_22a6d9bcb20149afacfd931886aa2fb5.md",
+      "docs/exec-plans/active/run_3ac42215162a4ae2bfbde8bf625f41e6-sprint-1.json",
+      "docs/exec-plans/active/run_3ac42215162a4ae2bfbde8bf625f41e6.json",
+      "docs/exec-plans/active/run_3ac42215162a4ae2bfbde8bf625f41e6.md",
+      "docs/exec-plans/active/run_97a88aefe01047dbae27fad0cf370e64-sprint-1.json",
+      "docs/exec-plans/active/run_97a88aefe01047dbae27fad0cf370e64.json",
+      "docs/exec-plans/active/run_97a88aefe01047dbae27fad0cf370e64.md",
+      "docs/exec-plans/active/run_a20a0af6b990438197a2efbb88d83f8f-gates.txt",
+      "docs/exec-plans/active/run_a20a0af6b990438197a2efbb88d83f8f-reconstructed-integrate-context.json",
+      "docs/exec-plans/active/run_a20a0af6b990438197a2efbb88d83f8f-sprint-1.json",
+      "docs/exec-plans/active/run_a20a0af6b990438197a2efbb88d83f8f-sprint-2.json",
+      "docs/exec-plans/active/run_a20a0af6b990438197a2efbb88d83f8f-summary.json",
+      "docs/exec-plans/active/run_a20a0af6b990438197a2efbb88d83f8f.json",
+      "docs/exec-plans/active/run_a20a0af6b990438197a2efbb88d83f8f.md",
+      "docs/exec-plans/active/run_bda2d9f53f324ece812b81054341c821-sprint-2.json",
+      "docs/exec-plans/active/run_bda2d9f53f324ece812b81054341c821.json",
+      "docs/exec-plans/active/run_f980e5ea93fe4b6da32c2f26ad74d86d-sprint-1.json",
+      "docs/exec-plans/active/run_f980e5ea93fe4b6da32c2f26ad74d86d.json",
+      "docs/exec-plans/active/run_f980e5ea93fe4b6da32c2f26ad74d86d.md",
+      "docs/exec-plans/tech-debt-tracker.md",
+      "docs/exec-plans/tech-debt-tracker.md.lock",
+      "package-lock.json",
+      "package.json",
+      "src/index.ts",
+      "src/streamParser.ts",
+      "test_smoke.py",
+      "test_stream_parser.py",
+      "tsconfig.json"
+    ],
+    "sizes": {
+      ".gitignore": 20,
+      "README.md": 15,
+      "docs/evals/run_1b9a3f257aa9462b936d082a5b7b5fdb/sprint-1.json": 405,
+      "docs/evals/run_22a6d9bcb20149afacfd931886aa2fb5/sprint-1.json": 424,
+      "docs/evals/run_3ac42215162a4ae2bfbde8bf625f41e6/sprint-1.json": 402,
+      "docs/evals/run_97a88aefe01047dbae27fad0cf370e64/sprint-1.json": 346,
+      "docs/evals/run_a20a0af6b990438197a2efbb88d83f8f/sprint-1.json": 1257,
+      "docs/evals/run_a20a0af6b990438197a2efbb88d83f8f/sprint-2.json": 1115,
+      "docs/evals/run_bda2d9f53f324ece812b81054341c821/sprint-1.json": 755,
+      "docs/evals/run_bda2d9f53f324ece812b81054341c821/sprint-2.json": 1013,
+      "docs/evals/run_f980e5ea93fe4b6da32c2f26ad74d86d/sprint-1.json": 378,
+      "docs/exec-plans/active/run_1b9a3f257aa9462b936d082a5b7b5fdb.json": 913,
+      "docs/exec-plans/active/run_22a6d9bcb20149afacfd931886aa2fb5-sprint-1.json": 3541,
+      "docs/exec-plans/active/run_22a6d9bcb20149afacfd931886aa2fb5.json": 1458,
+      "docs/exec-plans/active/run_22a6d9bcb20149afacfd931886aa2fb5.md": 2937,
+      "docs/exec-plans/active/run_3ac42215162a4ae2bfbde8bf625f41e6-sprint-1.json": 2023,
+      "docs/exec-plans/active/run_3ac42215162a4ae2bfbde8bf625f41e6.json": 1232,
+      "docs/exec-plans/active/run_3ac42215162a4ae2bfbde8bf625f41e6.md": 1505,
+      "docs/exec-plans/active/run_97a88aefe01047dbae27fad0cf370e64-sprint-1.json": 2399,
+      "docs/exec-plans/active/run_97a88aefe01047dbae27fad0cf370e64.json": 937,
+      "docs/exec-plans/active/run_97a88aefe01047dbae27fad0cf370e64.md": 1561,
+      "docs/exec-plans/active/run_a20a0af6b990438197a2efbb88d83f8f-gates.txt": 178,
+      "docs/exec-plans/active/run_a20a0af6b990438197a2efbb88d83f8f-reconstructed-integrate-context.json": 5519,
+      "docs/exec-plans/active/run_a20a0af6b990438197a2efbb88d83f8f-sprint-1.json": 2715,
+      "docs/exec-plans/active/run_a20a0af6b990438197a2efbb88d83f8f-sprint-2.json": 3646,
+      "docs/exec-plans/active/run_a20a0af6b990438197a2efbb88d83f8f-summary.json": 1590,
+      "docs/exec-plans/active/run_a20a0af6b990438197a2efbb88d83f8f.json": 1626,
+      "docs/exec-plans/active/run_a20a0af6b990438197a2efbb88d83f8f.md": 2244,
+      "docs/exec-plans/active/run_bda2d9f53f324ece812b81054341c821-sprint-2.json": 2654,
+      "docs/exec-plans/active/run_bda2d9f53f324ece812b81054341c821.json": 1654,
+      "docs/exec-plans/active/run_f980e5ea93fe4b6da32c2f26ad74d86d-sprint-1.json": 1898,
+      "docs/exec-plans/active/run_f980e5ea93fe4b6da32c2f26ad74d86d.json": 1008,
+      "docs/exec-plans/active/run_f980e5ea93fe4b6da32c2f26ad74d86d.md": 2435,
+      "docs/exec-plans/tech-debt-tracker.md": 313,
+      "docs/exec-plans/tech-debt-tracker.md.lock": 0,
+      "package-lock.json": 714,
+      "package.json": 450,
+      "src/index.ts": 39,
+      "src/streamParser.ts": 6228,
+      "test_smoke.py": 34,
+      "test_stream_parser.py": 246,
+      "tsconfig.json": 416
+    },
+    "log": [
+      "613a0e0 chorus: merge chorus/ada",
+      "39d25bc chorus: snapshot work",
+      "65c5475 chorus: merge chorus/ada",
+      "a78f67c chorus: snapshot work",
+      "6337eeb chorus: merge chorus/ada",
+      "eb2e28b chorus: snapshot work",
+      "2d53e5a Adjust npm scripts for tsc build and node test",
+      "90c127c chorus: merge chorus/ada",
+      "dc3c497 chorus: snapshot work",
+      "bbaaff5 Make npm test placeholder succeed and ignore dist",
+      "7cceb15 Add build script for TypeScript dist output",
+      "95db280 chorus: merge chorus/cy",
+      "1e7ab7f chorus: snapshot work",
+      "847ee99 chorus: merge chorus/ada",
+      "8873f4f chorus: snapshot work",
+      "e19e053 chorus: merge chorus/di",
+      "4052bf7 chorus: snapshot work",
+      "b17acf3 Add library tsconfig and TypeScript dev dependency",
+      "c81ccd6 seed"
+    ],
+    "merges": [
+      "613a0e0 chorus: merge chorus/ada",
+      "65c5475 chorus: merge chorus/ada",
+      "6337eeb chorus: merge chorus/ada",
+      "90c127c chorus: merge chorus/ada",
+      "95db280 chorus: merge chorus/cy",
+      "847ee99 chorus: merge chorus/ada",
+      "e19e053 chorus: merge chorus/di"
+    ],
+    "merged_eids": [
+      "ada",
+      "cy",
+      "di"
+    ],
+    "duplicates": {},
+    "empty_exports": [
+      "src/index.ts"
+    ],
+    "harness_leak": [
+      "docs/evals/run_1b9a3f257aa9462b936d082a5b7b5fdb/sprint-1.json",
+      "docs/evals/run_22a6d9bcb20149afacfd931886aa2fb5/sprint-1.json",
+      "docs/evals/run_3ac42215162a4ae2bfbde8bf625f41e6/sprint-1.json",
+      "docs/evals/run_97a88aefe01047dbae27fad0cf370e64/sprint-1.json",
+      "docs/evals/run_a20a0af6b990438197a2efbb88d83f8f/sprint-1.json",
+      "docs/evals/run_a20a0af6b990438197a2efbb88d83f8f/sprint-2.json",
+      "docs/evals/run_bda2d9f53f324ece812b81054341c821/sprint-1.json",
+      "docs/evals/run_bda2d9f53f324ece812b81054341c821/sprint-2.json",
+      "docs/evals/run_f980e5ea93fe4b6da32c2f26ad74d86d/sprint-1.json",
+      "docs/exec-plans/active/run_1b9a3f257aa9462b936d082a5b7b5fdb.json",
+      "docs/exec-plans/active/run_22a6d9bcb20149afacfd931886aa2fb5-sprint-1.json",
+      "docs/exec-plans/active/run_22a6d9bcb20149afacfd931886aa2fb5.json",
+      "docs/exec-plans/active/run_22a6d9bcb20149afacfd931886aa2fb5.md",
+      "docs/exec-plans/active/run_3ac42215162a4ae2bfbde8bf625f41e6-sprint-1.json",
+      "docs/exec-plans/active/run_3ac42215162a4ae2bfbde8bf625f41e6.json",
+      "docs/exec-plans/active/run_3ac42215162a4ae2bfbde8bf625f41e6.md",
+      "docs/exec-plans/active/run_97a88aefe01047dbae27fad0cf370e64-sprint-1.json",
+      "docs/exec-plans/active/run_97a88aefe01047dbae27fad0cf370e64.json",
+      "docs/exec-plans/active/run_97a88aefe01047dbae27fad0cf370e64.md",
+      "docs/exec-plans/active/run_a20a0af6b990438197a2efbb88d83f8f-gates.txt",
+      "docs/exec-plans/active/run_a20a0af6b990438197a2efbb88d83f8f-reconstructed-integrate-context.json",
+      "docs/exec-plans/active/run_a20a0af6b990438197a2efbb88d83f8f-sprint-1.json",
+      "docs/exec-plans/active/run_a20a0af6b990438197a2efbb88d83f8f-sprint-2.json",
+      "docs/exec-plans/active/run_a20a0af6b990438197a2efbb88d83f8f-summary.json",
+      "docs/exec-plans/active/run_a20a0af6b990438197a2efbb88d83f8f.json",
+      "docs/exec-plans/active/run_a20a0af6b990438197a2efbb88d83f8f.md",
+      "docs/exec-plans/active/run_bda2d9f53f324ece812b81054341c821-sprint-2.json",
+      "docs/exec-plans/active/run_bda2d9f53f324ece812b81054341c821.json",
+      "docs/exec-plans/active/run_f980e5ea93fe4b6da32c2f26ad74d86d-sprint-1.json",
+      "docs/exec-plans/active/run_f980e5ea93fe4b6da32c2f26ad74d86d.json",
+      "docs/exec-plans/active/run_f980e5ea93fe4b6da32c2f26ad74d86d.md",
+      "docs/exec-plans/tech-debt-tracker.md",
+      "docs/exec-plans/tech-debt-tracker.md.lock"
+    ],
+    "readme": "README.md",
+    "readme_stub": true,
+    "packaging_present": [
+      "package.json",
+      "tsconfig.json"
+    ],
+    "packaging_expected": [
+      "package.json",
+      "tsconfig.json"
+    ]
+  },
+  "build": {
+    "attempts": [
+      {
+        "cmd": "tsc --noEmit",
+        "rc": 2,
+        "tail": "src/streamParser.ts(13,5): error TS2304: Cannot find name 'ReadableStream'.\nsrc/streamParser.ts(17,49): error TS2304: Cannot find name 'ReadableStream'.\nsrc/streamParser.ts(42,3): error TS2578: Unused '@ts-expect-error' directive.\nsrc/streamParser.ts(44,5): error TS2578: Unused '@ts-expect-error' directive.\nsrc/streamParser.ts(50,3): error TS2578: Unused '@ts-expect-error' directive.\nsrc/streamParser.ts(52,5): error TS2578: Unused '@ts-expect-error' directive.\nsrc/streamParser.ts(67,23): error TS2304: Cannot find name 'TextDecoder'.\n"
+      }
+    ]
+  },
+  "flaws": [
+    {
+      "sev": "FRAMEWORK",
+      "code": "BUG-007",
+      "title": "Top goal ended blocked, not done",
+      "detail": "The director hit the integrate cap / deadline without a clean done verdict."
+    },
+    {
+      "sev": "FRAMEWORK",
+      "code": "BUG-006",
+      "title": "Deliverable assigned to a non-engineer role",
+      "detail": "task_dd3bbb939\u2192analyst(rejected), task_712fdf8fd\u2192analyst(rejected), task_672d4f971\u2192analyst(cancelled)"
+    },
+    {
+      "sev": "FRAMEWORK",
+      "code": "BUG-005",
+      "title": "done \u2260 landed \u2014 an author branch never integrated",
+      "detail": "3 employee(s) have done tasks but no merge on main: ['bo', 'max', 'moe']"
+    },
+    {
+      "sev": "CRITICAL",
+      "code": "EXPORTS",
+      "title": "Package exports nothing",
+      "detail": "src/index.ts"
+    },
+    {
+      "sev": "HIGH",
+      "code": "LEAK",
+      "title": "Harness-internal files leaked into the deliverable",
+      "detail": "33 files, e.g. ['docs/evals/run_1b9a3f257aa9462b936d082a5b7b5fdb/sprint-1.json', 'docs/evals/run_22a6d9bcb20149afacfd931886aa2fb5/sprint-1.json', 'docs/evals/run_3ac42215162a4ae2bfbde8bf625f41e6/sprint-1.json']"
+    },
+    {
+      "sev": "HIGH",
+      "code": "README",
+      "title": "README missing or still a stub",
+      "detail": "README.md"
+    },
+    {
+      "sev": "CRITICAL",
+      "code": "BUILD",
+      "title": "Deliverable fails `tsc --noEmit` (rc=2)",
+      "detail": "dableStream'.\nsrc/streamParser.ts(42,3): error TS2578: Unused '@ts-expect-error' directive.\nsrc/streamParser.ts(44,5): error TS2578: Unused '@ts-expect-error' directive.\nsrc/streamParser.ts(50,3): error TS2578: Unused '@ts-expect-error' directive.\nsrc/streamParser.ts(52,5): error TS2578: Unused '@ts-expect-error' directive.\nsrc/streamParser.ts(67,23): error TS2304: Cannot find name 'TextDecoder'.\n"
+    }
+  ]
+}

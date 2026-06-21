@@ -1,0 +1,1 @@
+Build a library `ppo_lite` implementing PPO: a clipped surrogate objective, GAE(λ) advantage estimation, a rollout buffer, and a `train(env)` loop against a mockable environment. Config dataclasses + deterministic tests.

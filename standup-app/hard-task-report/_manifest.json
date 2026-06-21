@@ -1,0 +1,92 @@
+[
+  {
+    "n": 1,
+    "name": "dpo_tune",
+    "lang": "Python",
+    "brief": "Build a small Python library `dpo_tune` that wraps preference fine-tuning with DPO (Direct Preference Optimization): a `Trainer` with `fit()`, a chosen/rejected pair dataset interface, a reference-model KL term, config dataclasses, and pytest tests. Pure-Python, CPU-only, mock the policy/reference models."
+  },
+  {
+    "n": 2,
+    "name": "ppo_lite",
+    "lang": "Python",
+    "brief": "Build a library `ppo_lite` implementing PPO: a clipped surrogate objective, GAE(\u03bb) advantage estimation, a rollout buffer, and a `train(env)` loop against a mockable environment. Config dataclasses + deterministic tests."
+  },
+  {
+    "n": 3,
+    "name": "tinyvec",
+    "lang": "Rust",
+    "brief": "Build a Rust crate `tinyvec`: an in-memory vector store with cosine/dot/L2 similarity, a navigable-small-world (HNSW-style) approximate index, `bincode` disk persistence, and a `query(&[f32], k)` API. Ship a real `Cargo.toml` and a clean `lib.rs` public surface. `cargo test` asserts recall vs brute-force; the crate must build under `cargo build --release`."
+  },
+  {
+    "n": 4,
+    "name": "tooldeck",
+    "lang": "Python",
+    "brief": "Build a library `tooldeck` that turns Python functions into LLM tools: derive a JSON Schema from type hints + docstring, register/dispatch by name, validate arguments, and retry-or-error on malformed calls. Tests cover schema generation and validation failures."
+  },
+  {
+    "n": 5,
+    "name": "streamparse",
+    "lang": "TypeScript",
+    "brief": "Build an npm package `streamparse` that folds a raw SSE/token `ReadableStream` into a typed `AsyncIterable<StreamEvent>`: text deltas, tool-call deltas (assembled across chunks), usage accounting, and a terminal event. Ship a real `package.json` + `tsconfig.json`, build with `tsc` to `dist/`, and export the public types. `vitest` (or `node:test`) feeds canned chunk sequences and asserts the reconstructed events."
+  },
+  {
+    "n": 6,
+    "name": "flowdag",
+    "lang": "Go",
+    "brief": "Build a Go module `flowdag`: declare tasks with `DependsOn`, run them in topological order over a worker pool (bounded by a semaphore / `GOMAXPROCS`), per-task retries with backoff, and result caching via a typed map. Ship `go.mod` and an exported API in `flowdag.go`. `go test ./...` asserts ordering, that a failed dep skips its dependents, and cache hits; `go vet` is clean."
+  },
+  {
+    "n": 7,
+    "name": "apiguard",
+    "lang": "Python",
+    "brief": "Build a library `apiguard` for wrapping API clients: a token-bucket rate limiter, exponential backoff with jitter on 429/5xx, and a circuit breaker that opens after N failures and half-opens after a cooldown. Deterministic tests with a fake injected clock."
+  },
+  {
+    "n": 8,
+    "name": "chunker",
+    "lang": "Python",
+    "brief": "Build a library `chunker` for RAG: a recursive splitter that is sentence- and token-aware, honors a max-token budget with configurable overlap, and attaches start/end offsets + metadata to each chunk. Tests assert no chunk exceeds the budget and the offsets reconstruct the original text."
+  },
+  {
+    "n": 9,
+    "name": "prefrank",
+    "lang": "Python",
+    "brief": "Build a library `prefrank`: ingest pairwise preference judgments, fit a Bradley-Terry / Elo ranking, compute inter-judge agreement (Cohen's \u03ba), and emit a CLI Markdown report. Tests assert the ranking recovers a known order and \u03ba on synthetic data."
+  },
+  {
+    "n": 10,
+    "name": "patchkit",
+    "lang": "Python",
+    "brief": "Build a library `patchkit` that parses unified diffs and applies them to files with fuzz matching, hunk-offset search, and structured conflict reporting (no silent corruption). Tests cover clean apply, fuzzy apply, and a rejected conflicting hunk."
+  },
+  {
+    "n": 11,
+    "name": "boardsync",
+    "lang": "Python",
+    "brief": "Build a full-stack `boardsync`: a backend with a WebSocket channel, a typed shared event schema package, and a React frontend. Cards move between columns; every connected client sees a move within one round-trip; moves are persisted and replayed to a client that reconnects. Optimistic UI with server reconciliation. Tests: a headless client asserts a move broadcasts to a second client, and a reconnecting client rebuilds state from the log."
+  },
+  {
+    "n": 12,
+    "name": "shortlink",
+    "lang": "Python",
+    "brief": "Build a full-stack `shortlink`: a REST backend that mints collision-safe base62 codes, 301-redirects, and records click events (ts, referrer, UA); a SQL schema with migrations; and a dashboard frontend charting clicks-over-time and top referrers. Tests assert code uniqueness under concurrency, redirect correctness, and that the analytics aggregation matches a known event fixture."
+  },
+  {
+    "n": 13,
+    "name": "tenantnotes",
+    "lang": "Python",
+    "brief": "Build a full-stack `tenantnotes`: signup/login with hashed passwords + JWT sessions, tenant isolation (a user never sees another tenant's notes), role-based permissions (owner/editor/viewer), and a frontend with protected routes. Tests assert cross-tenant reads are denied, a viewer can't mutate, and an expired token is rejected."
+  },
+  {
+    "n": 14,
+    "name": "checkout",
+    "lang": "Python",
+    "brief": "Build a full-stack `checkout`: a cart service, an inventory service with reservation (no overselling), an order state machine (pending \u2192 paid \u2192 fulfilled / cancelled), and an idempotent payment-webhook handler. Frontend cart + checkout flow. Tests assert no oversell under concurrent reserves, the state machine rejects illegal transitions, and a duplicated webhook is processed exactly once."
+  },
+  {
+    "n": 15,
+    "name": "chatroom",
+    "lang": "Python",
+    "brief": "Build a full-stack `chatroom`: WebSocket messaging with rooms, message persistence + history pagination, presence (who's online), and typing indicators, with a React frontend. Tests assert a message persists and paginates, presence updates when a socket drops, and typing events are debounced and broadcast."
+  }
+]

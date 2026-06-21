@@ -1,0 +1,1 @@
+Build a small Python library `dpo_tune` that wraps preference fine-tuning with DPO (Direct Preference Optimization): a `Trainer` with `fit()`, a chosen/rejected pair dataset interface, a reference-model KL term, config dataclasses, and pytest tests. Pure-Python, CPU-only, mock the policy/reference models.

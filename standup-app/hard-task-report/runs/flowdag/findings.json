@@ -1,0 +1,24 @@
+{
+  "deliverable": [
+    {"code": "CROSS-LANG-SPLIT-BRAIN", "sev": "CRITICAL", "title": "The library is implemented twice — once in Go, once in Python",
+     "detail": "The brief asked for a Go module. The repo ships flowdag.go (12 KB, Go) AND flowdag.py (10 KB, a full Python re-implementation), each with its own tests (flowdag_test.go + dag_skip_test.go vs test_flowdag.py). flowdag.py's own docstring admits the divergence: 'The sprint task asks for flowdag.go; this repository is Python-only (tests run via pytest), so we implement the requested exported API in a Python module.' One engineer wrote Go; another decided the repo was Python and rewrote the whole thing; integrate merged both. This is split-brain across LANGUAGES, not just modules."},
+    {"code": "GO-BUILD-BROKEN", "sev": "CRITICAL", "title": "The Go module does not compile",
+     "detail": "`go build ./...` fails rc=1: flowdag.go:520:29: syntax error: method must have no type parameters. The code declares `func (r *Resolver) ResolveAs[T any](ctx, taskID) (T, error)` — Go does not allow type parameters on methods (generic methods are unsupported). The required deliverable — the Go module — is not buildable."},
+    {"code": "GO-TEST-BROKEN", "sev": "CRITICAL", "title": "go test fails (build failed)",
+     "detail": "`go test ./...` exits rc=1 with 'FAIL flowdag [build failed]' — the same syntax error blocks the test binary. The Go test suite (flowdag_test.go, dag_skip_test.go) cannot run at all."},
+    {"code": "WRONG-DOD-TARGET", "sev": "CRITICAL", "title": "The DoD validated the Python rival, not the Go deliverable",
+     "detail": "The objective gate ran pytest (test_flowdag.py imports the Python flowdag), which passes — while `go build` of the actual brief deliverable fails to compile. The org's DoD checked the wrong language entirely, so a non-compiling Go module passed because its accidental Python twin's tests were green. (Same wrong-toolchain failure mode as the streamparse run.)"},
+    {"code": "STRAY", "sev": "HIGH", "title": "README stub + stray smoke test + leaked harness files",
+     "detail": "README.md is the 15-byte '# company repo' stub. Root test_smoke.py (`assert True`) is committed. Harness-internal files leaked (docs/evals/*.json, docs/exec-plans/*)."}
+  ],
+  "framework": [
+    {"code": "BUG-007", "title": "Top goal ended blocked, not done",
+     "detail": "24 tasks: 18 done, 3 rejected, 2 blocked, 1 left in todo (never started). The director hit the ceiling without closing the goal; a task stranded in todo shows the schedule never drained."},
+    {"code": "BUG-006", "title": "Deliverable tasks handed to non-coding roles (analyst ×2 + pm ×1) → all rejected",
+     "detail": "Three implementation tasks went to non-coding roles — twice to the analyst and once to the PM — and all three were rejected. A new variant: the mis-route reached the PM as well as the analyst this run."},
+    {"code": "NO-OWNERSHIP", "title": "No owner of the language/contract — the cause of the two-language split",
+     "detail": "Nobody owned the fact that the deliverable is a GO module. One engineer wrote Go, another wrote Python on the belief the repo was 'Python-only', and integrate merged both languages side by side. The split-brain is the symptom of an unowned public contract — here, even the implementation language was contested."},
+    {"code": "DOD-WRONG-TOOLCHAIN", "title": "pytest passed while `go build` failed",
+     "detail": "The Command DoD ran whatever command exited 0 (pytest over the Python twin) rather than building and testing the deliverable in its declared toolchain (go build/test). Direct evidence for spec 15: the coherence gate must build AND test in the deliverable's OWN toolchain against the declared surface. (BUG-005 did NOT occur here — all four engineer branches ada/bo/cy/di merged.)"}
+  ]
+}
