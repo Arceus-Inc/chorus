@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>GRPO Tune — Hard-Task Flaw Report</title>
+<style>
+  :root {
+    --bg: #0d1117; --panel: #161b22; --panel2: #1c2330; --border: #30363d;
+    --fg: #e6edf3; --muted: #8b949e; --accent: #58a6ff; --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+    --red: #f85149; --redbg: #2d1518; --amber: #d29922; --amberbg: #2a230f; --green: #3fb950; --purple: #bc8cff;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--fg);
+    font: 15px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 960px; margin: 0 auto; padding: 48px 24px 96px; }
+  header { border-bottom: 1px solid var(--border); padding-bottom: 28px; margin-bottom: 36px; }
+  .eyebrow { font: 600 12px/1 var(--mono); letter-spacing: .14em; text-transform: uppercase; color: var(--accent); }
+  h1 { margin: 14px 0 8px; font-size: 30px; letter-spacing: -.02em; }
+  .sub { color: var(--muted); font-size: 15px; max-width: 70ch; }
+  .meta { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 20px; }
+  .chip {
+    font: 600 12px/1 var(--mono); color: var(--muted); background: var(--panel);
+    border: 1px solid var(--border); border-radius: 999px; padding: 7px 12px;
+  }
+  .chip b { color: var(--fg); }
+  .verdict { color: var(--red); }
+  h2 {
+    font-size: 13px; letter-spacing: .12em; text-transform: uppercase; color: var(--muted);
+    margin: 44px 0 18px; padding-bottom: 10px; border-bottom: 1px solid var(--border);
+  }
+  h2 .n { color: var(--accent); }
+  .card {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+    padding: 20px 22px; margin: 14px 0; position: relative; overflow: hidden;
+  }
+  .card::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--red); }
+  .card.fw::before { background: var(--amber); }
+  .card-head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 8px; }
+  .num {
+    flex: none; font: 700 13px/1 var(--mono); color: var(--bg); background: var(--red);
+    border-radius: 6px; padding: 5px 8px; min-width: 30px; text-align: center;
+  }
+  .card.fw .num { background: var(--amber); }
+  .title { font-size: 16px; font-weight: 650; letter-spacing: -.01em; }
+  .body { color: #cdd6e0; font-size: 14.5px; }
+  .body p { margin: 8px 0; }
+  code, .path {
+    font: 13px/1.5 var(--mono); background: var(--panel2); border: 1px solid var(--border);
+    border-radius: 5px; padding: 1px 6px; color: #d2a8ff; white-space: nowrap;
+  }
+  .tag {
+    display: inline-block; font: 600 11px/1 var(--mono); letter-spacing: .04em;
+    border-radius: 5px; padding: 4px 8px; margin-top: 10px;
+  }
+  .tag.crit { color: var(--red); background: var(--redbg); border: 1px solid #5c2326; }
+  .tag.fwk  { color: var(--amber); background: var(--amberbg); border: 1px solid #5a4818; }
+  ul.tight { margin: 8px 0; padding-left: 20px; }
+  ul.tight li { margin: 5px 0; }
+  .section-note { color: var(--muted); font-size: 13.5px; margin: -6px 0 18px; }
+  footer { margin-top: 56px; padding-top: 22px; border-top: 1px solid var(--border); color: var(--muted); font-size: 13px; }
+  footer code { white-space: normal; }
+  a { color: var(--accent); text-decoration: none; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div class="eyebrow">Hard-Task Flaw Report</div>
+    <h1>GRPO Tune — <span style="color:var(--muted);font-weight:500">a Python library wrapping agent fine-tuning with GRPO</span></h1>
+    <p class="sub">
+      A live <code>Chorus.build</code> org (manager + engineers + analyst + reviewer) was given a single hard goal:
+      build <span class="path">grpo_tune</span>, a pip-installable library that wraps agent fine-tuning with
+      Group-Relative Policy Optimization. This report dissects what the org actually produced — both the
+      <b>deliverable</b> defects and the <b>framework behaviors</b> the run exposed.
+    </p>
+    <div class="meta">
+      <span class="chip">goal status: <b class="verdict">blocked</b></span>
+      <span class="chip">tasks: <b>22</b> · done <b>18</b> · rejected <b>2</b> · blocked <b>2</b></span>
+      <span class="chip">deliverable flaws: <b>9</b></span>
+      <span class="chip">framework flaws: <b>5</b></span>
+    </div>
+  </header>
+
+  <!-- ============ SECTION A ============ -->
+  <h2><span class="n">A.</span> Deliverable flaws — the <span style="color:var(--fg);text-transform:none;letter-spacing:0">grpo_tune</span> library</h2>
+  <p class="section-note">What shipped in <span class="path">main</span> as the "finished" library, and why it isn't one.</p>
+
+  <div class="card">
+    <div class="card-head"><span class="num">1</span><span class="title">Split-brain: two different, incompatible Trainers</span></div>
+    <div class="body">
+      <p><span class="path">grpo_tune/trainer.py</span> (the package, 773&nbsp;B) is a <b>stub</b> —
+        <code>Trainer(model, sampler, config).fit()</code> just loops and calls <code>model.update(batch)</code>.
+        No GRPO math.</p>
+      <p><span class="path">trainer.py</span> (repo root, 2949&nbsp;B, orphaned) is the <b>real GRPO</b> —
+        <code>Trainer(model=, reward=, config=).fit(Batch)</code> with genuine group-relative advantages
+        (<code>adv = r − mean(group)</code>).</p>
+      <p>They have incompatible APIs (sampler-based vs. reward+batch-based) and were never reconciled.</p>
+      <span class="tag crit">CRITICAL · two conflicting implementations of the core class</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><span class="num">2</span><span class="title">The real GRPO code is unreachable</span></div>
+    <div class="body">
+      <p>It lives at <b>repo root</b>, outside the <span class="path">grpo_tune/</span> package, so
+        <code>import grpo_tune</code> can never reach it. The package ships only the stub.</p>
+      <span class="tag crit">CRITICAL · the actual algorithm is not importable</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><span class="num">3</span><span class="title">The package exports nothing</span></div>
+    <div class="body">
+      <p><span class="path">grpo_tune/__init__.py</span> is 25 bytes (<code>"""grpo_tune package."""</code>).
+        <code>from grpo_tune import Trainer</code> fails — there's no public API. The library is unusable <i>as a library</i>.</p>
+      <span class="tag crit">CRITICAL · no public surface</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><span class="num">4</span><span class="title">"Tests pass" is an illusion — they test two different universes</span></div>
+    <div class="body">
+      <p>The 25 green tests import from <b>both</b> modules:</p>
+      <ul class="tight">
+        <li><span class="path">test_trainer_fit_determinism.py</span> → <code>from grpo_tune.trainer import Trainer</code> (the stub)</li>
+        <li><span class="path">test_trainer_fit_e2e.py</span>, <span class="path">test_trainer_validation_errors.py</span>,
+            <span class="path">test_trainer_error_messages.py</span> → <code>from trainer import …</code> (the root real one)</li>
+      </ul>
+      <p>They only co-pass because pytest puts the repo root on <code>sys.path</code>.
+        <code>pip install grpo_tune</code> → the root <span class="path">trainer.py</span> + 3 of the 5 test files break,
+        and the real GRPO disappears.</p>
+      <span class="tag crit">CRITICAL · the green suite is an artifact of the dev layout</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><span class="num">5</span><span class="title">A required module is missing from main</span></div>
+    <div class="body">
+      <p><span class="path">grpo_tune/rewards.py</span>. The spec demanded a typed <code>RewardFunction</code> Protocol there.
+        It's absent (the root trainer just calls <code>self.reward(...)</code>, typed <code>Any</code>).</p>
+      <span class="tag crit">CRITICAL · spec-required module never landed (see flaw 10)</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><span class="num">6</span><span class="title">TrainerConfig is defined twice, inconsistently</span></div>
+    <div class="body">
+      <p><span class="path">grpo_tune/config.py</span> (<code>batch_size, steps, lr, seed</code>) vs. root
+        <span class="path">trainer.py</span> (<code>group_size, steps</code>). Conflicting schemas for the same name.</p>
+      <span class="tag crit">CRITICAL · the config contract is ambiguous</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><span class="num">7</span><span class="title">No packaging</span></div>
+    <div class="body">
+      <p>No <span class="path">pyproject.toml</span> / <span class="path">setup.py</span>.
+        The "Python library" can't be installed or distributed.</p>
+      <span class="tag crit">CRITICAL · not a distributable artifact</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><span class="num">8</span><span class="title">README never written</span></div>
+    <div class="body">
+      <p>It's still the seed stub: <code># company repo</code>. No usage, no install, no GRPO explanation.</p>
+      <span class="tag crit">HIGH · zero documentation</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><span class="num">9</span><span class="title">Repo polluted with 32 harness-internal files</span></div>
+    <div class="body">
+      <p><span class="path">docs/evals/*.json</span> (10) and <span class="path">docs/exec-plans/*.json/.md</span> (22):
+        dream's own run artifacts scaffolded into the deliverable. Plus a stray root
+        <span class="path">test_smoke.py</span> outside <span class="path">tests/</span>.</p>
+      <span class="tag crit">HIGH · the kernel's working files leaked into the product</span>
+    </div>
+  </div>
+
+  <!-- ============ SECTION B ============ -->
+  <h2><span class="n">B.</span> Framework / orchestration flaws — chorus behaviors this run exposed</h2>
+  <p class="section-note">These are not the library's faults; they're kernel/orchestration behaviors made visible by the run.</p>
+
+  <div class="card fw">
+    <div class="card-head"><span class="num">10</span><span class="title">A task marked <code>done</code> whose work never landed</div></div>
+    <div class="body">
+      <p><span class="path">t_task_5aeeec0de80e</span> — "Implement <span class="path">grpo_tune/rewards.py</span>" by engineer
+        <b>di</b> — is <code>done</code> in the ledger, but <span class="path">rewards.py</span> is absent from <span class="path">main</span>.
+        The git log shows merges from ada/bo/cy only — never di. So di's whole branch never integrated, yet its tasks read <code>done</code>.</p>
+      <p>This is a real landing/integration bug: <b>"done" ≠ "landed."</b></p>
+      <span class="tag fwk">FRAMEWORK · ledger state diverges from the integrated tree</span>
+    </div>
+  </div>
+
+  <div class="card fw">
+    <div class="card-head"><span class="num">11</span><span class="title">Manager mis-assigns deliverables to the analyst — twice, both rejected</span></div>
+    <div class="body">
+      <p>Both <span class="path">trainer.py</span> implementation tasks went to <b>ana</b> (analyst), who can't write code → both rejected
+        (<span class="path">bae43175155b</span>, <span class="path">01fca6d7b947</span>). The manager repeated the mistake
+        instead of routing to an engineer.</p>
+      <p>Exactly the cofounder's known wart, now seen <b>looping</b>.</p>
+      <span class="tag fwk">FRAMEWORK · no role-capability check at assignment</span>
+    </div>
+  </div>
+
+  <div class="card fw">
+    <div class="card-head"><span class="num">12</span><span class="title">The goal never closed — ended blocked</span></div>
+    <div class="body">
+      <p>Report: 22 tasks → 18 done, 2 rejected, 2 blocked; the top goal (<b>vera</b>) and max's package subtree
+        (<span class="path">fb5191136214</span>) both blocked. The director churned on <span class="path">rewards.py</span>
+        placement and hit the integrate cap / 20-min deadline without a clean <code>done</code> verdict.</p>
+      <span class="tag fwk">FRAMEWORK · integrate churn exhausts the cap before convergence</span>
+    </div>
+  </div>
+
+  <div class="card fw">
+    <div class="card-head"><span class="num">13</span><span class="title">"Tests pass but off-brief" — the DoD didn't enforce the actual goal</span></div>
+    <div class="body">
+      <p>The package's Command DoD went green on a stub with <b>no GRPO algorithm</b>. This is the documented
+        "objective Command DoD is silently skippable" finding, live: the gate verifies determinism / "update called,"
+        not that GRPO is implemented — so shallow, off-brief work passes.</p>
+      <span class="tag fwk">FRAMEWORK · the DoD measures the wrong thing</span>
+    </div>
+  </div>
+
+  <div class="card fw">
+    <div class="card-head"><span class="num">14</span><span class="title">No de-duplication / no global file ownership</span></div>
+    <div class="body">
+      <p>Parallel engineers each created their own <span class="path">grpo_tune/</span> + <span class="path">trainer.py</span>
+        (the report shows ~5 near-identical "Create package directory grpo_tune/" tasks by di/cy). Integrate merged
+        fragments without reconciling them → the duplicate trainers and the orphaned real implementation.</p>
+      <span class="tag fwk">FRAMEWORK · no cross-child ownership map → fragments collide</span>
+    </div>
+  </div>
+
+  <footer>
+    Generated from a live <code>Chorus.build</code> org run of the hard task
+    <i>"build a Python library that wraps agent fine-tuning using GRPO."</i>
+    Deliverable flaws (A) are defects in the produced library; framework flaws (B) are chorus
+    orchestration behaviors the run exposed — cross-referenced in
+    <span class="path">standup-app/post-dev-wiring.md</span> as BUG-005/006/007 and the integration findings.
+  </footer>
+
+</div>
+</body>
+</html>
