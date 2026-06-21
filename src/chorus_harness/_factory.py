@@ -109,13 +109,52 @@ _REACTIVE_TOOLS = frozenset({"submit_task", "assign_task"})
 
 
 def _team_roster(ledger: SqliteLedger, *, exclude: str) -> str:
-    """The employee's direct reports (id + role), so a delegator names valid assignees."""
+    """The employee's direct reports (id + role), so a delegator names valid assignees.
+
+    When any report is itself a *manager*, the delegator is a director: it must hand each manager a
+    whole self-contained AREA (a multi-file sub-goal) and let that manager sub-decompose — never a
+    single file, and never dropping part of the goal. Without this the model collapses a multi-area
+    goal into one file per manager (so whole areas are silently lost) and then, on integrate, re-submits
+    the area a manager already delivered instead of the area that is still missing.
+    """
     reports = [emp for emp in ledger.employees.list() if emp.reports_to == exclude]
     lines = [f"- {emp.id} ({emp.role})" for emp in reports]
     body = "\n".join(lines) if lines else "(no other employees are currently hired)"
-    return (
+    roster = (
         "\n\n## Your reports (assign each subtask's `assignee` to one of these employee ids)\n" + body
     )
+    manager_reports = [emp for emp in reports if emp.role == "manager"]
+    if manager_reports:
+        ids = ", ".join(emp.id for emp in manager_reports)
+        roster += (
+            "\n\n## You are a director — delegate whole AREAS to your manager reports (" + ids + ")\n"
+            "Some of your reports are themselves managers who run their own teams. Delegate a COMPLETE, "
+            "self-contained AREA (a multi-file sub-goal) to each manager — NOT a single file — and let "
+            "each manager sub-decompose its area into their own engineers. Do NOT break the goal down "
+            "into individual files yourself, and do NOT create any files. Your decomposition MUST cover "
+            "the ENTIRE goal: identify every distinct part it requires and assign EVERY part to exactly "
+            "one manager — never drop, merge away, or forget a required area/module. Write each area "
+            "child's `intent` as a full, standalone brief that names ALL the modules and behaviors that "
+            "area must deliver.\n"
+            "### Mapping rule (follow EXACTLY)\n"
+            f"- You have these manager reports: {ids}. Create EXACTLY ONE area child task per manager "
+            "report — so the number of child tasks you create EQUALS the number of managers above.\n"
+            "- Map ONE distinct area to EACH manager: every manager listed MUST receive exactly one "
+            "area child, and no manager may receive two. Assigning two children to the same manager (and "
+            "leaving another manager with none) is WRONG — that is how whole areas get dropped.\n"
+            "- Do NOT split ONE area's modules across multiple children: each area child must contain "
+            "the COMPLETE set of modules the goal assigns to that area, never a subset. If the goal "
+            "says an area has two modules, a child naming only one of them is a wrong per-file split. "
+            "(An area the goal EXPLICITLY defines as a single integration module is fine — match the "
+            "goal's own area definitions.)\n"
+            "- Before you finish decomposing, verify: (a) one child per manager, (b) every manager has a "
+            "child, (c) the four-or-more module files of the goal are all accounted for across your area "
+            "children. If any check fails, re-form the children before finishing.\n"
+            "On an integrate beat, if a required area is still missing or "
+            "incomplete, `submit_task` the MISSING area to a manager — NEVER re-submit an area a manager "
+            "already delivered, and never re-create files that already exist."
+        )
+    return roster
 
 
 def _toml_escape(value: str) -> str:

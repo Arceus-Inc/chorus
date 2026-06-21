@@ -254,3 +254,59 @@ async def test_adaptive_integrate_is_bounded_by_the_iteration_cap(
     assert ledger.tasks.get("M").status is TaskStatus.DONE  # type: ignore[union-attr]
     # kickoff + exactly cap(=2) adaptive integrate beats; the 3rd integrate was capped (mechanical, no beat)
     assert beat.ran.count("M") == 3
+
+
+# -- the objective rollup gate (run-18 false-`done` fix) -------------------------------------------
+#
+# A delegated parent integrates *mechanically* — landed ``done`` the instant its subtree is terminal.
+# When the goal carries an OBJECTIVE ``command`` DoD (e.g. "every required deliverable exists and the
+# gate passes"), that command is the structural rollup gate: the kernel runs it in the integrator's
+# worktree and parks the goal BLOCKED (not ``done``) if it fails, so a half-built decomposition surfaces
+# honestly instead of being laundered into a false ``done``.
+
+_PY_FAIL = 'python -c "import sys; sys.exit(1)"'   # a failing objective floor (a deliverable is missing)
+_PY_PASS = 'python -c "import sys; sys.exit(0)"'   # a passing objective floor (the goal is satisfied)
+
+
+async def test_integrate_blocks_when_the_goals_objective_rollup_floor_fails(
+    ledger: SqliteLedger, tmp_path: object
+) -> None:
+    from chorus.ledger import DodStatus
+    from chorus.outcomes import Verifier
+
+    _team(ledger)
+    ledger.tasks.submit(Task(id="M", intent="ship the feature", status=TaskStatus.TODO))
+    assign_task(ledger, "M", "mgr")
+    ledger.dod.create("M", Verifier.command(_PY_FAIL))  # the goal's objective rollup floor FAILS
+    beat = _TeamBeat(ledger, parent="M")
+    sched = _sched(ledger, beat, tmp_path=tmp_path)
+
+    for _ in range(6):  # decompose → api → ui → children_done → integrate
+        await sched.tick_once()
+        await sched.drain()
+
+    parent = ledger.tasks.get("M")
+    assert parent is not None and parent.status is TaskStatus.BLOCKED  # NOT done — the floor rejected it
+    assert ledger.tasks.all_children_terminal("M")  # the subtree still fully landed
+    dod = ledger.dod.get_for_task("M")
+    assert dod is not None and dod.status is DodStatus.FAILED  # the failing rollup verdict is recorded
+
+
+async def test_integrate_lands_done_when_the_objective_rollup_floor_passes(
+    ledger: SqliteLedger, tmp_path: object
+) -> None:
+    from chorus.outcomes import Verifier
+
+    _team(ledger)
+    ledger.tasks.submit(Task(id="M", intent="ship the feature", status=TaskStatus.TODO))
+    assign_task(ledger, "M", "mgr")
+    ledger.dod.create("M", Verifier.command(_PY_PASS))  # the goal's objective rollup floor PASSES
+    beat = _TeamBeat(ledger, parent="M")
+    sched = _sched(ledger, beat, tmp_path=tmp_path)
+
+    for _ in range(6):
+        await sched.tick_once()
+        await sched.drain()
+
+    assert ledger.tasks.get("M").status is TaskStatus.DONE  # type: ignore[union-attr]  # floor passed → done
+    assert ledger.tasks.all_children_terminal("M")

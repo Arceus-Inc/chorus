@@ -222,7 +222,11 @@ def _child_outcome(ledger: SqliteLedger, task_id: str) -> ChildOutcomeContext:
         assignee=task.assignee_employee_id,
         assignee_role=assignee.role if assignee is not None else None,
         status=task.status.value,
-        blockers=tuple(ledger.dependencies.blockers(task.id)),
+        # Only *unresolved* blockers count — a child whose own dependencies are all ``done`` is not
+        # blocked. ``blockers()`` returns every dependency edge ever recorded, so a child that itself
+        # delegated (a manager whose engineer children are done) would always look blocked, flipping
+        # ``recommend()`` to ``react`` for a director and letting it re-submit a complete subtree.
+        blockers=tuple(ledger.dependencies.unresolved_blockers(task.id)),
         dod_status=dod.status.value if dod is not None else None,
         dod_verdict=dod.verdict if dod is not None else None,
         latest_run_id=latest_run.id if latest_run is not None else None,

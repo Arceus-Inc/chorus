@@ -583,6 +583,7 @@ class Scheduler:
 
         observer = self._event_bus.emit if self._event_bus is not None else None
         verifier = None
+        beat_runner: BeatRunner | None = None
         try:
             # Resolve the runner for *this* employee's role + beat phase (an integrate beat — the task
             # already has children — is materialized without ``decompose``, spec 06 §2 / M3 §5).
@@ -633,15 +634,29 @@ class Scheduler:
             # The task delegated: its lifecycle is its subtree's, not its own dream verdict (spec M3 §5).
             # This is the fifth beat outcome — the manager "succeeded by delegating".
             ledger.runs.finish(run_id, RunStatus.SUCCEEDED, outcome=verdict)
-            if ledger.tasks.all_children_terminal(task_id):
-                # INTEGRATE — Mechanical DoD: the whole subtree is terminal, so the parent is complete.
+            if not ledger.tasks.all_children_terminal(task_id):
+                # PARK (delegated) — wait for the children; not done, not failed, no recovery ladder.
+                ledger.tasks.set_status(task_id, TaskStatus.BLOCKED)
+            elif self._integrate_floor_verdict(
+                task_id, verifier=verifier, beat_runner=beat_runner
+            ) is False:
+                # ROLLUP GATE (run-18 false-`done` fix): the subtree is terminal, but the parent's
+                # OBJECTIVE rollup DoD — a ``command`` floor, e.g. "every required deliverable exists and
+                # the gate passes" — FAILED against the assembled company main. A delegated parent must
+                # NOT mechanically claim ``done`` on a goal its own objective gate rejects: record the
+                # failed verdict and park BLOCKED so the gap (a missing module / a dropped area) surfaces
+                # honestly instead of being laundered into a false ``done``.
+                ledger.finalize_beat(
+                    task_id=task_id, run_id=run_id, dod_status=DodStatus.FAILED, verdict=verdict
+                )
+                ledger.tasks.set_status(task_id, TaskStatus.BLOCKED)
+            else:
+                # INTEGRATE — the whole subtree is terminal and the parent's objective floor passed (or
+                # it declares none), so the parent is complete (spec M3 §5).
                 await self._land_passed(
                     task_id, run_id=run_id, verifier=verifier, verdict=verdict,
                     employee=employee, result=result, now=now,
                 )
-            else:
-                # PARK (delegated) — wait for the children; not done, not failed, no recovery ladder.
-                ledger.tasks.set_status(task_id, TaskStatus.BLOCKED)
         elif result.disposition is BeatDisposition.ERRORED:
             # Engine/tool fault: the run failed and the task is stranded onto the recovery ladder with
             # the phase on the evidence, owner preserved — never collapsed into a DoD failure (§5).
@@ -701,6 +716,35 @@ class Scheduler:
             return
         IntegrateContextPacket.build(ledger, parent_task_id=task_id).write(working_dir)
 
+    def _integrate_floor_verdict(
+        self, task_id: str, *, verifier: Verifier | None, beat_runner: BeatRunner | None
+    ) -> bool | None:
+        """Run the parent's objective ``command`` floor against the integrator's worktree at rollup.
+
+        Spec M3 §5 lands a delegated parent ``done`` the instant its subtree is terminal — a *mechanical*
+        rollup that never asks whether the assembled result actually satisfies the goal. When the goal
+        carries an objective ``command`` DoD (e.g. "every required deliverable exists and ``gate_check``
+        passes"), that command IS the structural rollup gate: run it here, in the integrator's worktree
+        (= company main once the children merged), and return whether every step exits 0.
+
+        Returns ``None`` when there is no objective floor to run — no ``command`` DoD, or a seam that
+        exposes no worktree (e.g. an in-memory test runner) — so the caller keeps the mechanical
+        ``done`` acceptance unchanged. Returns ``True``/``False`` only when a real floor actually ran.
+        """
+        if verifier is None:
+            return None
+        steps = verifier.verification_steps()
+        if not steps:
+            return None
+        worktree = beat_runner.working_dir if isinstance(beat_runner, _RunnerWithWorkingDir) else None
+        if worktree is None:
+            return None
+        for step in steps:
+            exit_code, _ = _run_verify_command(worktree, step.command, timeout_s=step.timeout_s)
+            if exit_code != 0:
+                return False
+        return True
+
     async def _maybe_cap_integrate(
         self, ledger: SqliteLedger, *, wake: Wake, run_id: str, task: Task, employee: Employee,
         now: datetime,
@@ -716,12 +760,25 @@ class Scheduler:
         if IntegrateContextPacket.iteration_for(ledger, task.id) <= self.max_integrate_iterations:
             return False
         verifier = ledger.dod.verifier_for_task(task.id)
+        beat_runner_for = self._require(self._beat_runner_for, "beat_runner")
+        beat_runner = beat_runner_for.runner_for(employee, task_id=task.id)
         ledger.runs.finish(run_id, RunStatus.SUCCEEDED, outcome=None)
-        await self._land_passed(
-            task.id, run_id=run_id, verifier=verifier, verdict=None, employee=employee,
-            result=BeatOutcome(passed=True, outcome={}, summary="integrated (iteration cap reached)"),
-            now=now,
-        )
+        if self._integrate_floor_verdict(task.id, verifier=verifier, beat_runner=beat_runner) is False:
+            # The cap bounds the MODEL loop (no further decompose/integrate beats), NOT the objective
+            # gate: even here a parent does not land ``done`` while its ``command`` rollup floor fails —
+            # record the failed verdict and park BLOCKED rather than fabricate a passing outcome.
+            ledger.finalize_beat(
+                task_id=task.id, run_id=run_id, dod_status=DodStatus.FAILED, verdict=None
+            )
+            ledger.tasks.set_status(task.id, TaskStatus.BLOCKED)
+        else:
+            await self._land_passed(
+                task.id, run_id=run_id, verifier=verifier, verdict=None, employee=employee,
+                result=BeatOutcome(
+                    passed=True, outcome={}, summary="integrated (iteration cap reached)"
+                ),
+                now=now,
+            )
         ledger.tasks.release_locks(task.id, run_id=run_id)
         ledger.wakes.mark_done(wake.id)
         return True

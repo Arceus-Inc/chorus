@@ -41,6 +41,7 @@ import argparse
 import asyncio
 import contextlib
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -52,7 +53,7 @@ from pathlib import Path
 from chorus import Caps, Chorus, TaskStatus, Verifier, default_roles
 from chorus.events import Event, EventKind
 from chorus.ledger import SqliteLedger
-from chorus.roles import RoleRegistry
+from chorus.roles import RolePlugin, RoleRegistry, SandboxTier
 
 _REQUIRED = ("AZURE_OPENAI_API_KEY", "AZURE_OPENAI_BASE_URL", "AZURE_OPENAI_DEPLOYMENT")
 _TERMINAL = frozenset({TaskStatus.DONE, TaskStatus.CANCELLED, TaskStatus.REJECTED})
@@ -60,7 +61,14 @@ _TERMINAL_VALUES = frozenset(s.value for s in _TERMINAL)  # child views carry st
 
 # The objective CI gate, pinned as the engineers' Definition of Done in --team mode (see
 # ``_objective_engineer_dod``). It is the SAME deterministic floor solo uses.
-_TEAM_GATE = "pytest -q && ruff check ."
+#
+# It is NOT hardcoded to Python: the gate runs ``gate_check.py`` (seeded into every worktree by
+# ``_seed_repo``), which detects the deliverable's stack from its marker files (package.json,
+# Cargo.toml, go.mod, pyproject/*.py) and runs the matching tests + lint. A hardcoded
+# ``pytest -q && ruff check .`` was a real bug: the seed ships a Python ``test_smoke.py``, so pytest
+# was always vacuously green and a TypeScript/Rust/Go deliverable was never actually verified.
+# ``python gate_check.py`` is portable across cmd.exe and /bin/sh (both resolve ``python`` on PATH).
+_TEAM_GATE = "python gate_check.py"
 
 
 def _objective_engineer_dod(intent: str) -> Verifier:
@@ -68,13 +76,57 @@ def _objective_engineer_dod(intent: str) -> Verifier:
 
     The engineer role's *default* DoD is a **reviewed build**: the kernel runs the gate AND a read-only
     reviewer must sign off the diff. In practice a weak/over-eager reviewer conflates "judge the diff"
-    with "run the gate" — and its read-only sandbox cannot run pytest/ruff — so it returns
+    with "run the gate" — and its read-only sandbox cannot run the tests — so it returns
     ``needs-changes`` forever. Every decomposed child then loops, the parent goal sits ``blocked``, and
     the run spins out its deadline (the bug this fixes). Pinning ``Verifier.command`` makes a child go
-    ``done`` exactly when ``pytest -q && ruff check .`` exits 0 in its own worktree — deterministic and
+    ``done`` exactly when the stack-aware gate exits 0 in its own worktree — deterministic and
     self-verifying, with no reviewer in the loop. (Solo already does this explicitly at submit.)
+
+    The gate is the stack-aware ``gate_check.py`` (NOT a Python-only ``pytest``), so a Node/TypeScript,
+    Rust, or Go deliverable is verified by its own toolchain — the engineer's DoD is not restricted to
+    one language.
     """
     return Verifier.command(_TEAM_GATE)
+
+
+# A PM's deliverable is a written plan/spec, verified by ``plan_check.py`` (seeded into every worktree):
+# the named plan file exists and is non-empty. The filename is taken from the task's own intent (the
+# manager names a per-area plan file like ``plan-presence.md`` so two parallel PMs never write the same
+# path and collide on merge); it defaults to ``plan.md`` when the intent names none.
+_PLAN_FILE_RE = re.compile(r"plan[-\w]*\.md")
+
+
+def _objective_pm_dod(intent: str) -> Verifier:
+    """PM DoD = the objective command gate the kernel runs in the worktree (the spec file is present).
+
+    The PM role's *default* DoD is an agent review, which needs a Reviewer in the loop; this org hires
+    none, so a PM task would otherwise never reach ``done``. Pinning ``Verifier.command`` makes a PM go
+    ``done`` exactly when its plan file exists and is non-empty in its own worktree — deterministic and
+    self-verifying, the same objective-floor pattern the engineers use. The gate checks the SPECIFIC
+    plan file the area's intent names, so each area's PM is verified against its own spec.
+    """
+    match = _PLAN_FILE_RE.search(intent)
+    plan_file = match.group(0) if match is not None else "plan.md"
+    return Verifier.command(f"python plan_check.py {plan_file}", artifact_class="spec")
+
+
+def _pin_objective_dod(plugin: RolePlugin) -> RolePlugin:
+    """Override the engineer + PM DoDs with their objective command gates (no reviewer in the loop).
+
+    Engineer → ``python gate_check.py`` (stack-aware tests + lint). PM → ``python plan_check.py <file>``
+    (the named plan file is present + non-empty), plus the UNRESTRICTED sandbox + run_command the
+    engineer uses so the kernel's in-beat gate runs. Every other role passes through unchanged.
+    """
+    if plugin.name == "engineer":
+        return replace(plugin, dod_generator=_objective_engineer_dod)
+    if plugin.name == "pm":
+        pm_manifest = replace(
+            plugin.manifest,
+            sandbox=SandboxTier.UNRESTRICTED,
+            tools=tuple(dict.fromkeys((*plugin.manifest.tools, "run_command"))),
+        )
+        return replace(plugin, dod_generator=_objective_pm_dod, manifest=pm_manifest)
+    return plugin
 
 # NOTE: pytest + ruff are already installed in the sandbox — the tasks say so explicitly, and tell the
 # agent NOT to pip-install or git-push (the kernel's lander handles the PR + merge). Both were the main
@@ -140,6 +192,166 @@ _ORG_GOAL = (
     "integration child tasks: the done-gate `pytest -q && ruff check .` run in each engineer's own "
     "task IS the check." + _NO_THRASH
 )
+# HARD_TASKS.md #15 (presence chatroom) driven through the SAME org guardrails as _ORG_GOAL. The four
+# leaf modules are FLAT, top-level, and mutually INDEPENDENT (no cross-imports, no shared package
+# __init__.py) so all four engineer branches merge onto company main with zero overlap — this is what
+# kept an earlier ad-hoc run from landing (engineers each rewrote chatroom/__init__.py → merge
+# collisions) and from deadlocking (managers split each module from its tests into separate worktrees).
+_CHATROOM_GOAL = (
+    "Build a deterministic, pure-Python presence chatroom WITH A RUNNABLE WEB UI, as THREE areas "
+    "built by THREE separate teams. Decompose into EXACTLY three child tasks — one WHOLE area per team "
+    "lead (a manager report, identified by id in the list below) — and assign each area to a DIFFERENT "
+    "team lead. Your three children are: child 1 = AREA A (BOTH its modules rooms.py + messages.py + "
+    "their tests test_rooms.py/test_messages.py), child 2 = AREA B (BOTH its modules presence.py + "
+    "typing.py + their tests test_presence.py/test_typing.py), and child 3 = AREA C (the single "
+    "integration module app.py + test_app.py). NEVER make more or fewer than three children, NEVER "
+    "assign two areas to the same lead, and NEVER drop an area. Your first decompose MUST already "
+    "cover all three areas. EVERY one of your three children is structurally IDENTICAL: a WHOLE area "
+    "handed to ONE team lead, whose OWN team writes that area's team spec file FIRST (with its own PM) "
+    "and THEN builds that area's module(s). Treat all three areas the SAME way — there is NO separate, "
+    "shared, or up-front 'spec' phase and NO global plan task; each area's spec is written INSIDE that "
+    "area's team by that team's lead, NEVER by you.\n"
+    "ANTI-PATTERNS — these are the most common and costly mistakes; do NOT do any of them: (1) Do NOT "
+    "create a 'write the plan' or 'write the spec' child task, and do NOT make ONE manager write a plan "
+    "while OTHER managers build from it — that drops whole areas. Each PM-first planning step is "
+    "INTERNAL to a single team and is run by THAT team's own lead, NEVER by you. (2) Do NOT scope an "
+    "AREA A or AREA B child to a SINGLE backend module (e.g. a 'rooms' child and a separate 'messages' "
+    "child) — each of those two areas spans TWO modules inside ONE child. (3) Do NOT create any PM, "
+    "spec, planning, build, verification, or integration child yourself, and do NOT decompose an area "
+    "into per-module children — each team lead runs its OWN decomposition from the brief you hand it. "
+    "If any AREA A/B child names fewer than its two modules, or if ANY child is a plan/spec-only task, "
+    "you have FAILED: STOP and re-form the three children so child 1 = AREA A (rooms.py + messages.py + "
+    "tests), child 2 = AREA B (presence.py + typing.py + tests), child 3 = AREA C (app.py + "
+    "test_app.py). The five module files rooms.py, messages.py, presence.py, typing.py, AND app.py "
+    "MUST all be accounted for across exactly three area children before you finish decomposing. "
+    "(CLARIFICATION for reviewers/integrators: using PEP 585 builtin "
+    "generic annotations like dict[str, str], list[int], set[str], and an optional `from __future__ "
+    "import annotations`, is ALLOWED and is NOT a violation — those are builtin syntax and do NOT "
+    "import the standard-library `typing` module, and have NOTHING to do with the sibling app module "
+    "`typing.py`. The 'no cross-imports' rule below ONLY forbids the four BACKEND modules importing "
+    "each other; it does NOT forbid stdlib/builtin generics, and does NOT forbid app.py importing the "
+    "backends lazily. NEVER reject an already-delivered, gate-passing module on the grounds that it "
+    "'imports typing'.):\n"
+    "- AREA A — messaging & history (team spec file `plan-messaging.md`; modules rooms.py + "
+    "messages.py): (1) rooms.py defining Room (join(user)/leave(user) membership plus its OWN "
+    "internal per-room message list via add_message/messages) and RoomRegistry (get(name) "
+    "create-on-demand), with tests in test_rooms.py asserting join adds a member, leave removes a "
+    "member, and messages are stored per-room and do not bleed across rooms; and (2) messages.py "
+    "defining a MessageStore with add(room_id, text) that assigns deterministic monotonic ids per "
+    "room and history(room_id, limit=None, before_id=None) returning at most `limit` messages with "
+    "`before_id` an exclusive cursor (only ids strictly < before_id), with tests in test_messages.py "
+    "asserting a message persists and that pagination with limit + before_id returns the right "
+    "slice.\n"
+    "- AREA B — presence & typing (team spec file `plan-presence.md`; modules presence.py + "
+    "typing.py): (1) presence.py defining a PresenceTracker with connect(user, conn_id), "
+    "heartbeat(conn_id, now), drop(conn_id), and recompute(now) that expires connections older than a "
+    "fixed timeout and returns the current online-user set, with tests in test_presence.py asserting "
+    "a user goes offline when its only connection drops (and on timeout); and (2) typing.py defining "
+    "a TypingTracker with start(room, user, now) and typing(room, now) that debounces typing events "
+    "per user within a fixed window and returns the set of users currently typing, with tests in "
+    "test_typing.py asserting typing is debounced and expires.\n"
+    "- AREA C — the RUNNABLE web UI (team spec file `plan-app.md`; ONE module app.py + "
+    "test_app.py): a single "
+    "integration module app.py that wires the four backend modules into a runnable, stdlib-only web "
+    "chat UI. app.py MUST define `create_app(deps=None)` returning a request-handler/router object, "
+    "AND a top-level `serve(port=None)` function that builds a stdlib `http.server.HTTPServer` with "
+    "that handler and calls `serve_forever()` (port defaults to the PORT env var or 8000), AND an "
+    "`if __name__ == \"__main__\":` block whose body is exactly `serve()`. The `serve` function is "
+    "MANDATORY and is what makes the UI ACTUALLY RUNNABLE via `python app.py`; an app.py without a "
+    "working `serve` + __main__ block is INCOMPLETE and must be rejected. The server serves an HTML "
+    "chat page plus small JSON endpoints (POST a message to a room, GET a room's messages/history, "
+    "GET the online-presence set, GET who is typing). app.py is the ONE module that MAY use the four "
+    "backend modules — but it MUST import "
+    "them LAZILY INSIDE functions (NEVER at module top level) and accept them via DEPENDENCY "
+    "INJECTION: `create_app(deps=None)` uses the injected `deps` when one is given, and when `deps is "
+    "None` it builds the REAL deps by lazily importing the actual modules BY THEIR REAL NAMES — "
+    "`import rooms`, `import messages`, `import presence`, `import typing` — and constructing their "
+    "objects (rooms.RoomRegistry(), messages.MessageStore(), presence.PresenceTracker(), "
+    "typing.TypingTracker()). The ONLY real backend modules are rooms.py / messages.py / presence.py "
+    "/ typing.py: NEVER import a `backend`, `service`, `chat`, `db`, or any other package that does "
+    "not exist in this repo — doing so makes `python app.py` crash with ModuleNotFoundError at "
+    "startup. test_app.py MUST build the app with INJECTED FAKE deps (simple "
+    "in-file stub objects) for its main assertions so they pass WITHOUT importing any backend module, "
+    "asserting that posting "
+    "a message then fetching that room's messages returns it, that the chat page renders, AND that "
+    "app.py exposes a callable top-level `serve` (assert `callable(app.serve)`); PLUS exactly ONE "
+    "real-wiring smoke test that calls `create_app()` with NO arguments (the `deps is None` path) and "
+    "asserts it returns a handler object WITHOUT raising — this single test MAY import the real "
+    "backend modules and is what PROVES `python app.py` actually constructs at runtime (it would fail "
+    "if app.py imported a non-existent module); it must still NOT bind a socket. So the runnable "
+    "real-deps path is gate-checked by pytest. Keep "
+    "app.py stdlib-only (http.server, json, html, os), deterministic, and ruff-clean; a socket is "
+    "bound ONLY under the __main__ block — never at import time and never in tests.\n"
+    "AREA C DEPENDS ON AREA A AND AREA B: the director MUST set the AREA C child's `depends_on` to "
+    "BOTH the AREA A and AREA B children, so the app engineer's worktree branches from a company main "
+    "that ALREADY carries rooms.py/messages.py/presence.py/typing.py — which the real-wiring smoke "
+    "test (`create_app()` with no deps) needs in order to import them. app.py still keeps lazy imports "
+    "+ dependency injection so the injected-fake tests never import the backends; only the one smoke "
+    "test and real runtime (`python app.py`) hit the real modules.\n"
+    "Every module, every test file, AND every team spec file lives at the REPOSITORY ROOT as a FLAT "
+    "top-level file (e.g. ./rooms.py and ./test_rooms.py, ./app.py and ./test_app.py, "
+    "./plan-messaging.md, ./plan-presence.md, ./plan-app.md) — NEVER inside a `src/`, `tests/`, "
+    "`docs/`, or any other subdirectory, and NEVER a package. Each team spec file in particular MUST "
+    "be written at the repo root as `./plan-messaging.md` / `./plan-presence.md` / `./plan-app.md` "
+    "(NOT under docs/, NOT under any exec-plans/active/ folder, NOT anywhere else): the spec gate runs "
+    "`python plan_check.py <plan-name>` against the repo ROOT, so a spec written into a subdirectory "
+    "FAILS the gate and deadlocks the engineers that depend on it. The FIVE module files rooms.py, "
+    "messages.py, "
+    "presence.py, typing.py, AND app.py must ALL be accounted for across your THREE area children "
+    "before you finish decomposing (AREA A = rooms+messages, AREA B = presence+typing, AREA C = app). "
+    "The four BACKEND modules are fully self-contained: rooms/messages/presence/typing must NEVER "
+    "import one another, so their engineer branches never collide; ONLY app.py (the integration "
+    "layer) may import them, and only lazily inside functions.\n"
+    "Assign each of your three area children to a DIFFERENT team lead — NOT to a PM and NOT to an "
+    "engineer. Your ENTIRE job is those three area children: do NOT create any PM, spec, planning, "
+    "build, verification, or integration task YOURSELF, and do NOT decompose an area into per-module "
+    "children — each team lead runs its OWN decomposition from the brief you hand it. In EACH of the "
+    "three area child intents, instruct the lead to have its PM write the area's team spec file FIRST "
+    "AT THE REPO ROOT using the EXACT filename for that area (AREA A -> `./plan-messaging.md`, AREA B "
+    "-> `./plan-presence.md`, AREA C -> `./plan-app.md` — never a generic name like plan-sprint1.md, "
+    "plan.md, or a subdirectory path), and that spec MUST describe THIS area's specific named modules "
+    "and their named classes/methods from the area descriptions above (e.g. AREA A is rooms.py's "
+    "Room/RoomRegistry + messages.py's MessageStore). Do NOT let any team write a generic 'walking "
+    "skeleton', 'vertical slice', CRUD, notes-app, database/SQLite, or any other off-topic spec — "
+    "every spec and every module MUST be about THIS chatroom area and its named modules. Each engineer "
+    "task must name its specific module (rooms.py / messages.py / presence.py / typing.py / app.py). "
+    "Then "
+    "have its engineers build to that spec — two engineers for AREA A and AREA B (one module each), "
+    "one engineer for AREA C's single app.py. Within a team, every "
+    "leaf engineer task is SELF-CONTAINED: the SAME engineer writes BOTH the module AND its test in "
+    "that one task; NEVER split a module's implementation and its tests into separate tasks (a "
+    "test-only task runs in its own worktree, cannot see the module, and will deadlock). Keep "
+    "everything deterministic: pass `now` explicitly to time-based calls (no wall-clock; the only "
+    "socket is app.py's __main__ server). The done-gate `python gate_check.py` run in each engineer's "
+    "own task IS the check — do NOT create separate verification or integration child tasks." + _NO_THRASH
+)
+
+
+# The OBJECTIVE rollup DoD pinned on the chatroom GOAL (the director's task). Without it, a delegated
+# parent integrates *mechanically* — the kernel lands it ``done`` the instant its subtree is terminal,
+# even if the director only built ONE area (the run-18 false-``done`` regression). This ``command`` DoD
+# is the STRUCTURAL decomposition guard: the kernel runs it in the director's worktree (= company main
+# after every area merged) at the integrate beat, and the rollup-honesty gate parks the goal BLOCKED
+# (not DONE) if it fails. It asserts all 13 named deliverables — 5 modules, their 5 tests, and the 3
+# per-area plan files — exist at the flat repo root, then chains to the same stack-aware
+# ``gate_check.py``. So a decomposition that drops an area (e.g. no presence.py) fails the goal HONESTLY
+# instead of reporting ``done`` on a half-built repo. Kept to single-quoted Python inside one
+# double-quoted ``python -c`` arg so it is portable across cmd.exe and /bin/sh (no nested double quotes).
+_CHATROOM_ROLLUP_FILES = (
+    "rooms.py messages.py presence.py typing.py app.py "
+    "test_rooms.py test_messages.py test_presence.py test_typing.py test_app.py "
+    "plan-messaging.md plan-presence.md plan-app.md"
+)
+_CHATROOM_ROLLUP_CMD = (
+    'python -c "'
+    "import sys,subprocess,pathlib; "
+    f"req='{_CHATROOM_ROLLUP_FILES}'.split(); "
+    "missing=[f for f in req if not pathlib.Path(f).exists()]; "
+    "sys.exit('rollup gate: missing required deliverable(s): '+', '.join(missing)) if missing "
+    "else sys.exit(subprocess.run([sys.executable,'gate_check.py']).returncode)"
+    '"'
+)
+_CHATROOM_ROLLUP_DOD = Verifier.command(_CHATROOM_ROLLUP_CMD, timeout_s=900)
 
 
 # ── output helpers ────────────────────────────────────────────────────────────────────────────────
@@ -294,16 +506,140 @@ def _last_run_outcome(org: Chorus, task_id: str) -> dict[str, object]:
     return dict(runs[-1].outcome) if runs else {}
 
 
+# The stack-aware Definition-of-Done gate, seeded into every worktree as ``gate_check.py`` and run by
+# the kernel as ``python gate_check.py``. It detects the deliverable's stack from its marker files and
+# runs the matching tests + lint, so the engineer's DoD is NOT restricted to Python. Kept dependency-
+# free (stdlib only) and lint-clean (ruff E/F/I/B/UP/SIM/RUF, line-length 100) so it passes its own
+# Python gate.
+_GATE_CHECK_PY = '''\
+#!/usr/bin/env python3
+"""Stack-aware Definition-of-Done gate.
+
+Detects the project's stack from marker files in the current directory and runs the matching
+verification command(s): Node/TypeScript (package.json), Rust (Cargo.toml), Go (go.mod), and Python
+(pyproject/*.py). Exits non-zero on the first failing gate. This replaces a hardcoded Python-only
+``pytest -q && ruff check .`` so the harness can verify any deliverable, not just Python.
+"""
+from __future__ import annotations
+
+import json
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+ROOT = Path.cwd()
+
+
+def _run(cmd: list[str]) -> int:
+    print(f"[gate] $ {\' \'.join(cmd)}", flush=True)
+    exe = shutil.which(cmd[0])
+    if exe is None:
+        print(f"[gate] tool not found on PATH: {cmd[0]}", flush=True)
+        return 127
+    return subprocess.run([exe, *cmd[1:]], cwd=str(ROOT)).returncode
+
+
+def _has_py_sources() -> bool:
+    for p in ROOT.rglob("*.py"):
+        parts = set(p.parts)
+        if p.name == "gate_check.py" or ".git" in parts or "node_modules" in parts:
+            continue
+        return True
+    return False
+
+
+def _node_scripts() -> dict[str, str]:
+    try:
+        data = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    scripts = data.get("scripts", {})
+    return scripts if isinstance(scripts, dict) else {}
+
+
+def main() -> int:
+    steps: list[list[str]] = []
+
+    if (ROOT / "package.json").is_file():
+        scripts = _node_scripts()
+        if not (ROOT / "node_modules").is_dir():
+            steps.append(["npm", "install", "--no-audit", "--no-fund"])
+        if "build" in scripts:
+            steps.append(["npm", "run", "build"])
+        if "test" in scripts:
+            steps.append(["npm", "test", "--silent"])
+        elif (ROOT / "tsconfig.json").is_file():
+            steps.append(["npx", "tsc", "--noEmit"])
+
+    if (ROOT / "Cargo.toml").is_file():
+        steps.append(["cargo", "test"])
+
+    if (ROOT / "go.mod").is_file():
+        steps.append(["go", "test", "./..."])
+
+    # Python is also the default floor when no other stack is detected.
+    if _has_py_sources() or not steps:
+        steps.append(["pytest", "-q"])
+        steps.append(["ruff", "check", "."])
+
+    for cmd in steps:
+        rc = _run(cmd)
+        if rc != 0:
+            print(f"[gate] FAILED (rc={rc}): {\' \'.join(cmd)}", flush=True)
+            return rc
+    print("[gate] all gates passed", flush=True)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
+'''
+
+
+# The PM's Definition-of-Done gate, seeded into every worktree as ``plan_check.py`` and run by the
+# kernel as ``python plan_check.py <plan-file>``. A PM's deliverable is a written spec, so its gate is
+# simply: the named plan file exists and is non-empty. Kept stdlib-only and lint-clean so it passes the
+# repo's own Python gate. The filename is an ARGUMENT (not hardcoded) so each area's PM is verified
+# against its OWN plan file (e.g. plan-messaging.md vs plan-presence.md) — a PM that branches off a main
+# already carrying a sibling area's plan can't vacuously pass on that sibling's file.
+_PLAN_CHECK_PY = '''\
+#!/usr/bin/env python3
+"""PM Definition-of-Done gate: the named plan file exists and is non-empty."""
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+
+def main() -> int:
+    name = sys.argv[1] if len(sys.argv) > 1 else "plan.md"
+    plan = Path(name)
+    if plan.is_file() and plan.stat().st_size > 0:
+        print(f"[plan] OK: {name} is present and non-empty", flush=True)
+        return 0
+    print(f"[plan] FAILED: {name} is missing or empty", flush=True)
+    return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
+'''
+
+
 def _seed_repo(path: Path) -> Path:
     """A throwaway git repo the employees branch their worktrees from.
 
-    Seeded with a README and one passing smoke test so the `pytest` done-gate has a green baseline
+    Seeded with a README, one passing smoke test so the gate has a green baseline, and the
+    stack-aware ``gate_check.py`` so the Definition-of-Done can verify ANY stack (not just Python)
     before the employee adds its own code + tests.
     """
     path.mkdir(parents=True, exist_ok=True)
     subprocess.run(["git", "-C", str(path), "init", "-b", "trunk"], check=True, capture_output=True)
     (path / "README.md").write_text("# company repo\n", encoding="utf-8")
     (path / "test_smoke.py").write_text("def test_smoke():\n    assert True\n", encoding="utf-8")
+    (path / "gate_check.py").write_text(_GATE_CHECK_PY, encoding="utf-8")
+    (path / "plan_check.py").write_text(_PLAN_CHECK_PY, encoding="utf-8")
     subprocess.run(["git", "-C", str(path), "add", "-A"], check=True, capture_output=True)
     subprocess.run(
         ["git", "-C", str(path), "-c", "user.name=seed", "-c", "user.email=seed@x",
@@ -330,10 +666,14 @@ def _build_company(base: Path, *, c: _C, timeout_s: float) -> tuple[Chorus, obje
     # Pin the engineer's DoD to the objective gate so a decomposed --team child goes DONE when the
     # kernel runs `pytest -q && ruff check .` (no read-only reviewer in the loop). Solo overrides the
     # DoD per-submit anyway, so this is a no-op for solo and the deterministic floor for the team.
-    plugins = tuple(
-        replace(p, dod_generator=_objective_engineer_dod) if p.name == "engineer" else p
-        for p in default_roles()
-    )
+    #
+    # Pin the PM's DoD the same way: the PM's default DoD is an agent review, but this org hires no
+    # reviewer, so a PM task would never go DONE. ``_objective_pm_dod`` makes it DONE when its plan file
+    # exists (the kernel runs `python plan_check.py <file>`). The PM writes that file with write_file;
+    # bump its sandbox to UNRESTRICTED (matching the engineer) and grant run_command so the kernel's
+    # in-beat gate actually runs — dream otherwise gates a non-path command behind an interactive
+    # approval the kernel can't supply.
+    plugins = tuple(_pin_objective_dod(p) for p in default_roles())
     factory = EmployeeHarnessFactory(
         api_key=os.environ["AZURE_OPENAI_API_KEY"],
         base_url=os.environ["AZURE_OPENAI_BASE_URL"],
@@ -373,14 +713,15 @@ async def _run_solo(org: Chorus, task_text: str, *, max_pulses: int, c: _C) -> s
     _step("hired eng1 (engineer) → reports to moe", c)
 
     _hr("SUBMIT — hand the engineer a task in plain English", c)
-    # We pin the Definition of Done explicitly: the objective CI gate `pytest -q && ruff check .`.
+    # We pin the Definition of Done explicitly: the objective, stack-aware gate `python gate_check.py`.
     # That is the same deterministic floor the engineer's role would run — the kernel executes it as a
     # real subprocess and the task only goes DONE when it exits 0. (Giving no DoD would instead pull
     # the role's *reviewed* build, which also needs a second LLM to sign off; the objective gate keeps
-    # the demo deterministic and self-verifying.)
-    gate = Verifier.command("pytest -q && ruff check .")
+    # the demo deterministic and self-verifying.) The gate detects the deliverable's stack, so the DoD
+    # is not restricted to Python.
+    gate = Verifier.command(_TEAM_GATE)
     task = org.submit(task_text, assignee="eng1", dod=gate)
-    _step(f"submitted {task.id} → eng1   (DoD = objective gate: pytest -q && ruff check .)", c)
+    _step(f"submitted {task.id} → eng1   (DoD = objective gate: {_TEAM_GATE})", c)
     print(c("90", f"    intent: {task_text}"))
 
     _hr("HEARTBEAT — each pulse: recover · cron · monitors · dispatch (watch the live stream)", c)
@@ -502,38 +843,47 @@ def _print_task_tree(org: Chorus, root_id: str, c: _C) -> None:
     walk(root_id, 0)
 
 
-async def _run_org(org: Chorus, goal_text: str, *, c: _C) -> str:
+async def _run_org(
+    org: Chorus, goal_text: str, *, c: _C, rollup_dod: Verifier | None = None
+) -> str:
     """A 3-level org: a director delegates two areas to two team leads, who each delegate to engineers.
 
     Same always-on heartbeat as ``--team``, but with two manager tiers so the subtree integrate (and
     the worktree-sync fix) runs at both levels. We poll the WHOLE tree, not just the goal's direct
     children, and exit when the goal settles or both area subtrees have landed.
+
+    ``rollup_dod`` pins an OBJECTIVE ``command`` DoD on the GOAL (the director's task). The kernel runs
+    it at the director's integrate beat and the rollup-honesty gate parks the goal BLOCKED (not DONE) if
+    it fails — the structural decomposition guard. ``None`` keeps the manager's mechanical rollup.
     """
-    _hr("HIRE — a 3-level org: director · 2 team leads · engineers + reviewer + pm + analyst", c)
+    _hr("HIRE — a 3-level org: 1 director · 3 managers (2 feature teams + 1 app/UI team)", c)
     org.hire(name="vera", role="manager")                       # L1 — the director
-    org.hire(name="moe", role="manager", reports_to="vera")     # L2 — text team lead
-    org.hire(name="max", role="manager", reports_to="vera")     # L2 — math team lead
-    # L3 — moe's text team
+    org.hire(name="moe", role="manager", reports_to="vera")     # L2 — manager A (messaging)
+    org.hire(name="max", role="manager", reports_to="vera")     # L2 — manager B (presence)
+    org.hire(name="nash", role="manager", reports_to="vera")    # L2 — manager C (app/UI)
+    # L3 — moe's team: 2 engineers + 1 PM
     org.hire(name="ada", role="engineer", reports_to="moe")
     org.hire(name="bo", role="engineer", reports_to="moe")
-    org.hire(name="ria", role="reviewer", reports_to="moe")
     org.hire(name="pat", role="pm", reports_to="moe")
-    # L3 — max's math team
+    # L3 — max's team: 2 engineers + 1 PM
     org.hire(name="cy", role="engineer", reports_to="max")
     org.hire(name="di", role="engineer", reports_to="max")
-    org.hire(name="rex", role="reviewer", reports_to="max")
-    org.hire(name="ana", role="analyst", reports_to="max")
-    _step("hired vera(director) → moe,max(team leads) → ada,bo,cy,di(eng) · ria,rex(rev) · "
-          "pat(pm) · ana(analyst)", c)
+    org.hire(name="quinn", role="pm", reports_to="max")
+    # L3 — nash's app team: 1 engineer + 1 PM (builds app.py, the runnable UI)
+    org.hire(name="uri", role="engineer", reports_to="nash")
+    org.hire(name="peg", role="pm", reports_to="nash")
+    _step("hired vera(director) → moe,max,nash(managers) → ada,bo,cy,di,uri(eng) · pat,quinn,peg(pm)", c)
 
     _hr("SUBMIT — state the goal; the director decomposes across the two team leads", c)
-    goal = org.submit(goal_text, assignee="vera")
+    goal = org.submit(goal_text, assignee="vera", dod=rollup_dod)
     _step(f"submitted goal {goal.id} → vera", c)
+    if rollup_dod is not None:
+        _step("goal DoD = objective rollup gate: all required deliverables exist + gate_check passes", c)
     print(c("90", f"    goal: {goal_text[:160]}…"))
 
     _hr("HEARTBEAT — org.start(): two manager tiers integrate their subtrees as work lands", c)
     org.start()
-    deadline = time.monotonic() + 1200.0   # a 3-level run needs more beats than --team
+    deadline = time.monotonic() + 1800.0   # 3 areas + the UI's depends-on phase need extra beats
     stall_after_s = 300.0
     # After every leaf lands, keep ticking long enough for the director's integrate cascade to close
     # the goal. A well-behaved director accepts in one beat; a director that keeps re-decomposing is
@@ -572,8 +922,8 @@ async def _run_org(org: Chorus, goal_text: str, *, c: _C) -> str:
             if leaves_landed:
                 if rollup_since is None:
                     rollup_since = time.monotonic()
-                    print(c("94;1", "  ⏳ both area subtrees landed — all four modules are on company "
-                                    "main; waiting for the director's integrate beat to close the goal…"))
+                    print(c("94;1", "  ⏳ all area subtrees landed — every module (incl. app.py) is on "
+                                    "company main; waiting for the director's integrate beat to close the goal…"))
                 elif time.monotonic() - rollup_since > rollup_grace_s:
                     print(c("93;1", f"  ◑ the director kept re-integrating without closing the goal "
                                     f"within {rollup_grace_s:.0f}s (the kernel integrate cap closes it "
@@ -633,7 +983,9 @@ async def _amain(args: argparse.Namespace) -> int:
     org._event_bus.subscribe(Narrator(c).emit)  # the live in-process stream this app exists to show
 
     if args.org:
-        final = await _run_org(org, args.task or _ORG_GOAL, c=c)
+        org_goal = _CHATROOM_GOAL if args.chatroom else _ORG_GOAL
+        rollup = _CHATROOM_ROLLUP_DOD if args.chatroom else None
+        final = await _run_org(org, args.task or org_goal, c=c, rollup_dod=rollup)
     elif args.team:
         final = await _run_team(org, args.task or _TEAM_GOAL, c=c)
     else:
@@ -671,7 +1023,9 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Stand up a repo with chorus and watch the flow.")
     parser.add_argument("--team", action="store_true", help="manager decomposes across 2 engineers")
     parser.add_argument("--org", action="store_true",
-                        help="3-level org: director → 2 team leads → engineers (+reviewer/pm/analyst)")
+                        help="3-level org: 1 director → 2 managers → 2 engineers + 1 PM each")
+    parser.add_argument("--chatroom", action="store_true",
+                        help="with --org: run HARD_TASKS #15 (presence chatroom) instead of the demo goal")
     parser.add_argument("--report", action="store_true",
                         help="write a decomposition report (org chart + task tree) at the end")
     parser.add_argument("--task", default=None, help="override the task / goal text")

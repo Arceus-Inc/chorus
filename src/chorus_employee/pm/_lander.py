@@ -1,9 +1,10 @@
 """The PM's outcome lander — "done" means a plan doc landed somewhere a reviewer can read it (spec 04 §2).
 
 A PM's deliverable is a written plan/spec in its worktree. This lander snapshots the assignee's
-branch-isolated worktree (commits the plan on ``chorus/{employee}``) and returns the canonical ``doc``
-:class:`~chorus.outcomes.Artifact` pointing at the plan file — branch + commit + a relative worktree
-pointer, never a host-absolute path (spec 04 §2).
+branch-isolated worktree (commits the plan on ``chorus/{employee}``), integrates that branch into the
+company ``main`` so the plan is visible to the engineers who build from it, and returns the canonical
+``doc`` :class:`~chorus.outcomes.Artifact` pointing at the plan file — branch + commit + a relative
+worktree pointer, never a host-absolute path (spec 04 §2).
 
 Dream-free: pure git (via :class:`~chorus.workspace.CompanyWorkspace`) + ledger-free metadata. The doc
 is recorded whether or not it is present (``present``), so a landing is a faithful strict-completion
@@ -33,7 +34,7 @@ class PmLander:
         self._company_root = company_root
 
     async def land(self, task: Task, result: Any) -> Artifact:
-        """Snapshot the assignee's worktree and return the ``doc`` artifact for its plan file."""
+        """Snapshot the assignee's worktree, integrate the plan into ``main``, and return the ``doc``."""
         del result  # the deliverable is the worktree's plan file, not the beat output
         employee_id = task.assignee_employee_id
         if employee_id is None:
@@ -42,6 +43,12 @@ class PmLander:
         doc = workspace.worktree_for(employee_id).path / PM_PLAN_DOC
         present = doc.is_file() and doc.stat().st_size > 0
         commit = workspace.snapshot(employee_id)  # commit the plan on chorus/{employee}
+        # A plan that never reaches ``main`` is invisible to the engineers who must build to it: like
+        # the Engineer's PR, the PM's spec integrates into company ``main`` so a downstream task that
+        # ``depends_on`` this one branches off a main that already carries the plan (conflict-safe —
+        # a conflicting merge is recorded, not raised). This is what makes the plan a real, shared
+        # contract rather than a dead artifact stranded on the PM's branch.
+        merge = workspace.merge(employee_id)
         return Artifact(
             task_id=task.id,
             type=ArtifactType.DOC,
@@ -52,6 +59,8 @@ class PmLander:
                 "commit": commit,
                 "doc": PM_PLAN_DOC,  # relative to the worktree — no host path
                 "present": present,
+                "merged": merge.merged,
+                "into": merge.into,
             },
         )
 
