@@ -132,6 +132,18 @@ class Verifier:
             return (VerificationStep(command=self.spec.command, timeout_s=self.spec.timeout_s),)
         return ()
 
+    def rubric(self) -> str:
+        """The review rubric dream's evaluator judges the artefact against (spec 16).
+
+        ``AgentReview`` and ``ReviewedBuild`` carry a rubric; folding it into the single in-beat
+        evaluator turn (via dream ``run_task(rubric=...)``) is what collapses the redundant second
+        Reviewer beat — one task, one ``run_task``, one verdict. ``Command``/``HumanApproval`` carry
+        none.
+        """
+        if isinstance(self.spec, (AgentReview, ReviewedBuild)):
+            return self.spec.rubric
+        return ""
+
 
 __all__ = [
     "AgentReview",

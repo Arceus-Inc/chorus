@@ -41,7 +41,7 @@ class _TeamBeat:
 
     async def run_task(
         self, *, task_id: str, intent: str, verification: object = (),
-        observer: object = None, run_id: str | None = None,
+        rubric: object = "", observer: object = None, run_id: str | None = None,
     ) -> BeatOutcome:
         self.ran.append(task_id)
         if task_id == self._parent:
@@ -153,7 +153,7 @@ class _AdaptiveBeat:
 
     async def run_task(
         self, *, task_id: str, intent: str, verification: object = (),
-        observer: object = None, run_id: str | None = None,
+        rubric: object = "", observer: object = None, run_id: str | None = None,
     ) -> BeatOutcome:
         self.ran.append(task_id)
         svc = CapabilityService(self._ledger)
@@ -187,7 +187,7 @@ class _AlwaysSubmitBeat:
 
     async def run_task(
         self, *, task_id: str, intent: str, verification: object = (),
-        observer: object = None, run_id: str | None = None,
+        rubric: object = "", observer: object = None, run_id: str | None = None,
     ) -> BeatOutcome:
         self.ran.append(task_id)
         svc = CapabilityService(self._ledger)

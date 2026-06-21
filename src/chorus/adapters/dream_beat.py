@@ -95,6 +95,7 @@ class TaskHarness(Protocol):
         observer: Any | None = None,
         max_sprints: int | None = None,
         harness_dir: Path | None = None,
+        rubric: str | None = None,
     ) -> RunResult: ...
 
 
@@ -179,6 +180,7 @@ class DreamBeatRunner:
         task_id: str,
         intent: str,
         verification: tuple[VerificationStep, ...] = (),
+        rubric: str = "",
         observer: Callable[[Event], None] | None = None,
         run_id: str | None = None,
     ) -> BeatOutcome:
@@ -216,6 +218,7 @@ class DreamBeatRunner:
                     verification_steps=steps,
                     observer=bridge,
                     max_sprints=self._max_sprints,
+                    rubric=rubric,
                 )
             else:
                 run = self._harness.run_task(
@@ -225,6 +228,7 @@ class DreamBeatRunner:
                     observer=bridge,
                     max_sprints=self._max_sprints,
                     harness_dir=self._working_dir / ".harness",
+                    rubric=rubric,
                 )
             result = await asyncio.wait_for(run, timeout=self._timeout_s)
         except TimeoutError as exc:

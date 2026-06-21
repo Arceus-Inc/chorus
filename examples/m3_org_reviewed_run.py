@@ -69,7 +69,7 @@ class _Engineer:
         self._run = run
 
     async def run_task(self, *, task_id: str, intent: str, verification: object = (),
-                       observer: object = None, run_id: str | None = None) -> BeatOutcome:
+                       rubric: object = "", observer: object = None, run_id: str | None = None) -> BeatOutcome:
         buggy = "buggy" in intent
         (self.working_dir / "app.py").write_text(_PASSING, encoding="utf-8")
         (self.working_dir / "test_app.py").write_text(
@@ -89,7 +89,7 @@ class _Reviewer:
         self._id = reviewer_id
 
     async def run_task(self, *, task_id: str, intent: str, verification: object = (),
-                       observer: object = None, run_id: str | None = None) -> BeatOutcome:
+                       rubric: object = "", observer: object = None, run_id: str | None = None) -> BeatOutcome:
         approve = "weak" not in intent  # a quality block for a deliberately weak diff
         command = "python -m pytest -q" if (self.working_dir / "test_app.py").exists() else "true"
         CapabilityService(self._ledger).record_verdict(
@@ -113,7 +113,7 @@ class _Manager:
         self._fixed = False
 
     async def run_task(self, *, task_id: str, intent: str, verification: object = (),
-                       observer: object = None, run_id: str | None = None) -> BeatOutcome:
+                       rubric: object = "", observer: object = None, run_id: str | None = None) -> BeatOutcome:
         self._run.manager_beats += 1
         svc = CapabilityService(self._ledger)
         if not self._ledger.tasks.has_children(self._parent):

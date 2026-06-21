@@ -123,6 +123,7 @@ class _FakeHarness:
         observer: object = None,
         max_sprints: int | None = None,
         harness_dir: str | Path | None = None,
+        rubric: str | None = None,
     ) -> _Result:
         self.calls.append(task_id)
         self.verification_steps = verification_steps

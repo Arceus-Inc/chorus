@@ -38,11 +38,18 @@ class _Runner:
 
 
 class _Worker(_Runner):
-    """A leaf worker that produces a passing deliverable (its DoD is the reviewer's verdict)."""
+    """A leaf worker that renders its own verdict in-beat (spec 16): an ``agent_review`` DoD is judged by
+    dream's single in-beat evaluator, so the worker beat itself passes or blocks — there is no second
+    Reviewer beat. ``decide(task_id)`` selects the verdict (default: always pass)."""
+
+    def __init__(self, working_dir: Path, *, decide: object = None) -> None:
+        super().__init__(working_dir)
+        self._decide = decide
 
     async def run_task(self, *, task_id: str, intent: str, verification: object = (),
-                       observer: object = None, run_id: str | None = None) -> BeatOutcome:
-        return BeatOutcome(passed=True, outcome={}, summary="produced", model="m")
+                       rubric: object = "", observer: object = None, run_id: str | None = None) -> BeatOutcome:
+        passed = True if self._decide is None else bool(self._decide(task_id))  # type: ignore[operator]
+        return BeatOutcome(passed=passed, outcome={}, summary="produced", model="m")
 
 
 class _Reviewer(_Runner):
@@ -60,7 +67,7 @@ class _Reviewer(_Runner):
         self._verify_command = verify_command
 
     async def run_task(self, *, task_id: str, intent: str, verification: object = (),
-                       observer: object = None, run_id: str | None = None) -> BeatOutcome:
+                       rubric: object = "", observer: object = None, run_id: str | None = None) -> BeatOutcome:
         approve = bool(self._decide(task_id))  # type: ignore[operator]
         CapabilityService(self._ledger).record_verdict(
             task_id=task_id, run_id=str(run_id), reviewer_id=self._id, approve=approve, feedback="fb",
@@ -73,7 +80,7 @@ class _SilentReviewer(_Runner):
     """A reviewer that runs but never calls submit_verdict (renders no verdict)."""
 
     async def run_task(self, *, task_id: str, intent: str, verification: object = (),
-                       observer: object = None, run_id: str | None = None) -> BeatOutcome:
+                       rubric: object = "", observer: object = None, run_id: str | None = None) -> BeatOutcome:
         return BeatOutcome(passed=True, outcome={}, summary="said nothing", model="m")
 
 
@@ -83,7 +90,7 @@ class _SlowReviewer(_Reviewer):
     reconcile. The approved deliverable must still land ``done``."""
 
     async def run_task(self, *, task_id: str, intent: str, verification: object = (),
-                       observer: object = None, run_id: str | None = None) -> BeatOutcome:
+                       rubric: object = "", observer: object = None, run_id: str | None = None) -> BeatOutcome:
         for _ in range(6):
             await asyncio.sleep(0)  # yield: let run()'s pulses interleave with the in-flight review
         return await super().run_task(
@@ -101,7 +108,7 @@ class _ReconcilingReviewer(_Reviewer):
     """
 
     async def run_task(self, *, task_id: str, intent: str, verification: object = (),
-                       observer: object = None, run_id: str | None = None) -> BeatOutcome:
+                       rubric: object = "", observer: object = None, run_id: str | None = None) -> BeatOutcome:
         reconcile(self._ledger, now=_NOW + timedelta(seconds=1))  # a concurrent tick's RECOVER step
         return await super().run_task(
             task_id=task_id, intent=intent, verification=verification, observer=observer, run_id=run_id
@@ -117,7 +124,7 @@ class _Manager(_Runner):
         self._parent = parent
 
     async def run_task(self, *, task_id: str, intent: str, verification: object = (),
-                       observer: object = None, run_id: str | None = None) -> BeatOutcome:
+                       rubric: object = "", observer: object = None, run_id: str | None = None) -> BeatOutcome:
         svc = CapabilityService(self._ledger)
         if not self._ledger.tasks.has_children(self._parent):
             svc.decompose(parent_id=self._parent, revision=str(run_id),
@@ -135,7 +142,7 @@ class _Org:
 
     def __init__(self, ledger: SqliteLedger, *, decide: object, root: Path, parent: str = "M",
                  silent: bool = False, verify_command: str = "", reconciling: bool = False,
-                 slow_review: bool = False) -> None:
+                 slow_review: bool = False, worker_decide: object = None) -> None:
         self._ledger = ledger
         self._decide = decide
         self._root = root
@@ -144,6 +151,7 @@ class _Org:
         self._verify_command = verify_command
         self._reconciling = reconciling
         self._slow_review = slow_review
+        self._worker_decide = worker_decide  # spec 16: an agent_review worker renders its verdict in-beat
 
     def runner_for(self, employee: Employee, *, task_id: str | None = None) -> object:
         return self._for(employee)
@@ -164,7 +172,7 @@ class _Org:
                                 working_dir=self._root, verify_command=self._verify_command)
         if employee.role == "manager":
             return _Manager(self._ledger, parent=self._parent, working_dir=self._root)
-        return _Worker(self._root)
+        return _Worker(self._root, decide=self._worker_decide)
 
 
 def _sched(ledger: SqliteLedger, org: _Org, root: Path, *, max_review_rounds: int = 2) -> Scheduler:
@@ -177,8 +185,10 @@ def _sched(ledger: SqliteLedger, org: _Org, root: Path, *, max_review_rounds: in
 
 
 async def test_approve_lands_the_deliverable_done(ledger: SqliteLedger, tmp_path: Path) -> None:
+    # Spec 16: an ``agent_review`` deliverable is judged by dream's single in-beat evaluator — one
+    # ``run_task`` renders the verdict and lands the work ``done``. There is no second Reviewer beat,
+    # so no ``rev_`` run row and no separate kernel-recorded verdict artifact.
     ledger.employees.create(Employee(id="pen", name="Pen", role="pm"))
-    ledger.employees.create(Employee(id="rob", name="Rob", role="reviewer"))
     ledger.tasks.submit(Task(id="spec", intent="write the spec", status=TaskStatus.TODO))
     assign_task(ledger, "spec", "pen")
     org = _Org(ledger, decide=lambda _tid: True, root=tmp_path)
@@ -188,8 +198,8 @@ async def test_approve_lands_the_deliverable_done(ledger: SqliteLedger, tmp_path
     await sched.drain()
 
     assert ledger.tasks.get("spec").status is TaskStatus.DONE  # type: ignore[union-attr]
-    verdicts = [a for a in ledger.artifacts.list_for_task("spec") if a.type.value == "verdict"]
-    assert len(verdicts) == 1 and verdicts[0].resource_ref["approve"] is True  # type: ignore[index]
+    assert not [r for r in ledger.runs.for_task("spec") if r.id.startswith("rev_")]  # one run, no review beat
+    assert not [a for a in ledger.artifacts.list_for_task("spec") if a.type.value == "verdict"]
 
 
 async def test_review_run_survives_a_concurrent_recover_sweep(
@@ -201,34 +211,32 @@ async def test_review_run_survives_a_concurrent_recover_sweep(
     stale leases (``reconcile``) while the reviewer awaits the model. Reproduced here by reconciling
     mid-review: an approved deliverable must still land ``done`` (the review run carries a lease, so the
     sweep leaves it alone) — not be stranded as reaped crash debris. Regression for the run_forever bug.
+    Spec 16 keeps the Reviewer beat for ``reviewed_build``, so this rides its gate (POSIX command floor).
     """
-    ledger.employees.create(Employee(id="pen", name="Pen", role="pm"))
-    ledger.employees.create(Employee(id="rob", name="Rob", role="reviewer"))
-    ledger.tasks.submit(Task(id="spec", intent="write the spec", status=TaskStatus.TODO))
-    assign_task(ledger, "spec", "pen")
-    org = _Org(ledger, decide=lambda _tid: True, root=tmp_path, reconciling=True)
+    _reviewed_build_task(ledger)
+    org = _Org(ledger, decide=lambda _tid: True, root=tmp_path, reconciling=True, verify_command="true")
     sched = _sched(ledger, org, tmp_path)
 
     await sched.tick_once()
     await sched.drain()
 
-    assert ledger.tasks.get("spec").status is TaskStatus.DONE  # type: ignore[union-attr]
+    assert ledger.tasks.get("code").status is TaskStatus.DONE  # type: ignore[union-attr]
 
 
 async def test_review_run_carries_a_lease(ledger: SqliteLedger, tmp_path: Path) -> None:
     """The in-flight review run is leased like any other beat — so the stale-run reaper (a concurrent
-    RECOVER, or another Arceus worker) never mistakes it for crash debris (a null lease) and reaps it."""
-    ledger.employees.create(Employee(id="pen", name="Pen", role="pm"))
-    ledger.employees.create(Employee(id="rob", name="Rob", role="reviewer"))
-    ledger.tasks.submit(Task(id="spec", intent="write the spec", status=TaskStatus.TODO))
-    assign_task(ledger, "spec", "pen")
+    RECOVER, or another Arceus worker) never mistakes it for crash debris (a null lease) and reaps it.
+
+    Spec 16 keeps the Reviewer beat only for ``reviewed_build`` (its objective command floor), so this
+    leases-the-review-run invariant is exercised through an engineer's reviewed_build gate."""
+    _reviewed_build_task(ledger)
     org = _Org(ledger, decide=lambda _tid: True, root=tmp_path)
     sched = _sched(ledger, org, tmp_path)
 
     await sched.tick_once()
     await sched.drain()
 
-    review_runs = [r for r in ledger.runs.for_task("spec") if r.id.startswith("rev_")]
+    review_runs = [r for r in ledger.runs.for_task("code") if r.id.startswith("rev_")]
     assert review_runs and all(r.lease_expires_at is not None for r in review_runs)
 
 
@@ -237,15 +245,12 @@ async def test_run_forever_lands_a_reviewed_deliverable_done(
 ) -> None:
     """The production driver ``run()`` (continuous pulses, no per-pulse drain) lands an approved review.
 
-    Unlike tick+drain, ``run()`` keeps ticking — RECOVER and dispatch fire on every pulse — while a beat
-    is in flight. With a reviewer beat that spans several pulses, this exercises the real ``run_forever``
-    interleaving end to end and asserts the deliverable still reaches ``done``.
+    With a reviewer beat that spans several pulses, this exercises the real ``run_forever``
+    interleaving end to end and asserts the deliverable still reaches ``done``. Spec 16 keeps the
+    Reviewer beat for ``reviewed_build``, so this rides its gate (POSIX command floor).
     """
-    ledger.employees.create(Employee(id="pen", name="Pen", role="pm"))
-    ledger.employees.create(Employee(id="rob", name="Rob", role="reviewer"))
-    ledger.tasks.submit(Task(id="spec", intent="write the spec", status=TaskStatus.TODO))
-    assign_task(ledger, "spec", "pen")
-    org = _Org(ledger, decide=lambda _tid: True, root=tmp_path, slow_review=True)
+    _reviewed_build_task(ledger)
+    org = _Org(ledger, decide=lambda _tid: True, root=tmp_path, slow_review=True, verify_command="true")
 
     pulses = 0
     _SAFETY_CAP = 2000  # an instant injected sleep lets run() spin many no-op pulses; cap so a genuine
@@ -255,8 +260,8 @@ async def test_run_forever_lands_a_reviewed_deliverable_done(
         nonlocal pulses
         pulses += 1
         await asyncio.sleep(0)  # one real yield so the in-flight review can advance between pulses
-        if pulses > _SAFETY_CAP or ledger.tasks.get("spec") is None or (
-            (task := ledger.tasks.get("spec")) is not None and task.status is TaskStatus.DONE
+        if pulses > _SAFETY_CAP or ledger.tasks.get("code") is None or (
+            (task := ledger.tasks.get("code")) is not None and task.status is TaskStatus.DONE
         ):
             sched.stop()
 
@@ -271,30 +276,36 @@ async def test_run_forever_lands_a_reviewed_deliverable_done(
     # The invariant under run_forever: the approved deliverable settles ``done`` (it is never stranded by
     # RECOVER/dispatch firing mid-review). The pulse count itself is not meaningful (instant sleep spins).
     assert pulses <= _SAFETY_CAP, "run() never settled the reviewed deliverable"
-    assert ledger.tasks.get("spec").status is TaskStatus.DONE  # type: ignore[union-attr]
+    assert ledger.tasks.get("code").status is TaskStatus.DONE  # type: ignore[union-attr]
 
 
 async def test_no_reviewer_opens_a_recovery_card(ledger: SqliteLedger, tmp_path: Path) -> None:
-    ledger.employees.create(Employee(id="pen", name="Pen", role="pm"))  # no reviewer hired
-    ledger.tasks.submit(Task(id="spec", intent="write the spec", status=TaskStatus.TODO))
-    assign_task(ledger, "spec", "pen")
+    # Spec 16: only ``reviewed_build`` still requires a Reviewer beat. With none hired, the gate cannot
+    # be discharged → the task blocks and a human is paged (never a silent pass).
+    ledger.employees.create(Employee(id="dev", name="Dev", role="engineer"))  # no reviewer hired
+    ledger.tasks.submit(Task(id="code", intent="build the widget", status=TaskStatus.TODO))
+    assign_task(ledger, "code", "dev")
+    from chorus.outcomes import Verifier
+    ledger.dod.create("code", Verifier.reviewed_build(artifact_class="pr"))
     org = _Org(ledger, decide=lambda _tid: True, root=tmp_path)
     sched = _sched(ledger, org, tmp_path)
 
     await sched.tick_once()
     await sched.drain()
 
-    assert ledger.tasks.get("spec").status is TaskStatus.BLOCKED  # type: ignore[union-attr]
-    assert ledger.recovery_actions.active_for_source("spec") is not None  # a human must verify it
+    assert ledger.tasks.get("code").status is TaskStatus.BLOCKED  # type: ignore[union-attr]
+    assert ledger.recovery_actions.active_for_source("code") is not None  # a human must verify it
 
 
 async def test_standalone_block_self_repairs_then_opens_recovery(ledger: SqliteLedger, tmp_path: Path) -> None:
+    # Spec 16: an ``agent_review`` block is the in-beat evaluator's needs-changes verdict. A standalone
+    # deliverable climbs the bounded self-repair ladder (re-wake the author), then opens a recovery card.
     ledger.employees.create(Employee(id="pen", name="Pen", role="pm"))
-    ledger.employees.create(Employee(id="rob", name="Rob", role="reviewer"))
     ledger.tasks.submit(Task(id="spec", intent="write the spec", status=TaskStatus.TODO))
     assign_task(ledger, "spec", "pen")
-    org = _Org(ledger, decide=lambda _tid: False, root=tmp_path)  # always blocks
-    sched = _sched(ledger, org, tmp_path, max_review_rounds=1)
+    org = _Org(ledger, decide=lambda _tid: True, root=tmp_path,
+               worker_decide=lambda _tid: False)  # the in-beat evaluator always blocks
+    sched = _sched(ledger, org, tmp_path)
 
     for _ in range(6):  # produce → block → self-repair (≤cap) → … → recovery card past the cap
         await sched.tick_once()
@@ -308,11 +319,9 @@ async def test_a_reviewer_that_renders_no_verdict_opens_a_recovery_card(
     ledger: SqliteLedger, tmp_path: Path
 ) -> None:
     # The deliverable must never silently pass, nor loop forever, when the reviewer beat fails to
-    # render a verdict (the live bug this guards): the task blocks and a human is paged.
-    ledger.employees.create(Employee(id="pen", name="Pen", role="pm"))
-    ledger.employees.create(Employee(id="rob", name="Rob", role="reviewer"))
-    ledger.tasks.submit(Task(id="spec", intent="write the spec", status=TaskStatus.TODO))
-    assign_task(ledger, "spec", "pen")
+    # render a verdict (the live bug this guards): the task blocks and a human is paged. Spec 16 keeps
+    # the Reviewer beat for ``reviewed_build``, so the silent-reviewer guard rides its gate.
+    _reviewed_build_task(ledger)
     org = _Org(ledger, decide=lambda _tid: True, root=tmp_path, silent=True)
     sched = _sched(ledger, org, tmp_path)
 
@@ -320,9 +329,9 @@ async def test_a_reviewer_that_renders_no_verdict_opens_a_recovery_card(
         await sched.tick_once()
         await sched.drain()
 
-    assert ledger.tasks.get("spec").status is TaskStatus.BLOCKED  # type: ignore[union-attr]
-    assert ledger.recovery_actions.active_for_source("spec") is not None
-    assert not [a for a in ledger.artifacts.list_for_task("spec") if a.type.value == "verdict"]  # no empty verdict
+    assert ledger.tasks.get("code").status is TaskStatus.BLOCKED  # type: ignore[union-attr]
+    assert ledger.recovery_actions.active_for_source("code") is not None
+    assert not [a for a in ledger.artifacts.list_for_task("code") if a.type.value == "verdict"]  # no empty verdict
 
 
 def _reviewed_build_task(ledger: SqliteLedger) -> None:
@@ -383,13 +392,13 @@ async def test_reviewed_build_quality_block_skips_the_command(ledger: SqliteLedg
 
 
 async def test_manager_parented_block_escalates_and_manager_reacts(ledger: SqliteLedger, tmp_path: Path) -> None:
-    # The headline: a reviewer block on a manager's child becomes a child outcome the Slice-2 manager
+    # The headline: an in-beat block on a manager's child becomes a child outcome the Slice-2 manager
     # reacts to. draft is blocked → REJECTED → manager integrate sees `react` → submits redraft →
-    # redraft is approved → subtree completes → manager accepts → goal done.
+    # redraft is approved → subtree completes → manager accepts → goal done. Spec 16: the child's
+    # needs-changes verdict is rendered by its own in-beat evaluator, not a second Reviewer beat.
     ledger.employees.create(Employee(id="moe", name="Moe", role="manager"))
     ledger.employees.create(Employee(id="pen", name="Pen", role="pm", reports_to="moe"))
     ledger.employees.create(Employee(id="paul", name="Paul", role="pm", reports_to="moe"))
-    ledger.employees.create(Employee(id="rob", name="Rob", role="reviewer"))
     ledger.tasks.submit(Task(id="M", intent="ship the spec", status=TaskStatus.TODO))
     assign_task(ledger, "M", "moe")
 
@@ -397,7 +406,7 @@ async def test_manager_parented_block_escalates_and_manager_reacts(ledger: Sqlit
         task = ledger.tasks.get(task_id)
         return task is not None and task.origin_fingerprint != "draft"  # block only the first draft
 
-    org = _Org(ledger, decide=decide, root=tmp_path, parent="M")
+    org = _Org(ledger, decide=decide, root=tmp_path, parent="M", worker_decide=decide)
     sched = _sched(ledger, org, tmp_path)
 
     for _ in range(12):
@@ -405,7 +414,7 @@ async def test_manager_parented_block_escalates_and_manager_reacts(ledger: Sqlit
         await sched.drain()
 
     children = {c.origin_fingerprint: c for c in ledger.tasks.children("M")}
-    assert children["draft"].status is TaskStatus.REJECTED  # reviewer blocked it → terminal-rejected
+    assert children["draft"].status is TaskStatus.REJECTED  # in-beat block → terminal-rejected
     assert children["redraft"].status is TaskStatus.DONE  # the manager's fix, approved on review
     assert ledger.tasks.get("M").status is TaskStatus.DONE  # type: ignore[union-attr]  # integrated
 

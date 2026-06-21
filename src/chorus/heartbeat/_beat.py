@@ -73,11 +73,14 @@ class BeatRunner(Protocol):
         task_id: str,
         intent: str,
         verification: tuple[VerificationStep, ...] = (),
+        rubric: str = "",
         observer: Callable[[Event], None] | None = None,
         run_id: str | None = None,
     ) -> BeatOutcome:
         """Run the task end-to-end, enforcing ``verification`` (the DoD's objective checks).
 
+        ``rubric`` is the DoD's review rubric (spec 16) — dream's single in-beat evaluator judges the
+        artefact against it, collapsing the redundant second Reviewer beat into one ``run_task`` verdict.
         ``observer`` witnesses dream's structured run events. ``run_id`` is the chorus run this beat
         executes — threaded so a role's in-beat capability tools learn which run they act under.
         """

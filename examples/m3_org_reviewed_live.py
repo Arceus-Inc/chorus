@@ -96,7 +96,7 @@ class _Engineer:
         self._run = run
 
     async def run_task(self, *, task_id: str, intent: str, verification: object = (),
-                       observer: object = None, run_id: str | None = None) -> BeatOutcome:
+                       rubric: object = "", observer: object = None, run_id: str | None = None) -> BeatOutcome:
         # A "fix" beat (the manager's reaction to a rejection) always writes the complete _CLEAN code;
         # the initial beat writes the goal's code. Case-insensitive so a "Fix the rejected work" intent
         # still routes to the clean implementation.
@@ -120,7 +120,7 @@ class _Manager:
         self._fixed = False
 
     async def run_task(self, *, task_id: str, intent: str, verification: object = (),
-                       observer: object = None, run_id: str | None = None) -> BeatOutcome:
+                       rubric: object = "", observer: object = None, run_id: str | None = None) -> BeatOutcome:
         svc = CapabilityService(self._ledger)
         if not self._ledger.tasks.has_children(self._parent):
             svc.decompose(parent_id=self._parent, revision=str(run_id), children=self._plan)

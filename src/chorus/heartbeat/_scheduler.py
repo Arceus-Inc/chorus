@@ -178,8 +178,10 @@ _UNINVOKABLE_EMPLOYEE_STATUSES = frozenset(
     {EmployeeStatus.PENDING, EmployeeStatus.PAUSED, EmployeeStatus.TERMINATED}
 )
 
-# Leaf DoD kinds the kernel gates with a read-only Reviewer beat (M3 Reviewer / reviewed-build).
-_REVIEWER_GATED_DODS = frozenset({DoDKind.AGENT_REVIEW, DoDKind.REVIEWED_BUILD})
+# Leaf DoD kinds the kernel still gates with a separate read-only Reviewer beat. Spec 16 collapses
+# ``agent_review`` into dream's single in-beat evaluator (its rubric rides into ``run_task``), so only
+# ``reviewed_build`` keeps a second beat — for its reviewer-discovered objective command floor.
+_REVIEWER_GATED_DODS = frozenset({DoDKind.REVIEWED_BUILD})
 
 
 def _reviewer_role_and_rubric(spec: object) -> tuple[str, str]:
@@ -512,6 +514,7 @@ class Scheduler:
         task_id: str,
         intent: str,
         verification: tuple[VerificationStep, ...],
+        rubric: str,
         observer: Callable[[Event], None] | None,
     ) -> BeatOutcome:
         """Run the beat, re-running a *transient* engine fault before stranding it (spec 05 §5).
@@ -528,6 +531,7 @@ class Scheduler:
                 task_id=task_id,
                 intent=intent,
                 verification=verification,
+                rubric=rubric,
                 observer=observer,
             )
             transient = result.disposition is BeatDisposition.ERRORED and result.retryable
@@ -598,12 +602,22 @@ class Scheduler:
             # acceptance gate, so ``done`` means plan-complete *and* the Command gate passed (spec 04 §1).
             verifier = ledger.dod.verifier_for_task(task_id)
             verification = verifier.verification_steps() if verifier is not None else ()
+            # Spec 16: an ``agent_review`` DoD's rubric rides into dream's single in-beat evaluator so
+            # one ``run_task`` renders the judgment verdict — no redundant second Reviewer beat. A
+            # ``reviewed_build`` rubric is withheld here; its Reviewer beat still discovers + runs the
+            # objective command floor (and would judge a worktree the in-beat evaluator can't yet see).
+            rubric = (
+                verifier.rubric()
+                if verifier is not None and verifier.kind is DoDKind.AGENT_REVIEW
+                else ""
+            )
             result = await self._run_beat_with_retry(
                 beat_runner,
                 run_id=run_id,
                 task_id=task_id,
                 intent=task.intent,
                 verification=verification,
+                rubric=rubric,
                 observer=observer,
             )
         except Exception as exc:
@@ -644,7 +658,16 @@ class Scheduler:
             ledger.finalize_beat(
                 task_id=task_id, run_id=run_id, dod_status=DodStatus.FAILED, verdict=verdict
             )
-            self._climb_repair_ladder(task_id, employee_id=employee.id, verifier=verifier)
+            # A DoD failure on a *manager-parented* leaf escalates to the manager (mark REJECTED, wake it
+            # on children_done) so its integrate beat reacts — the same coherence loop a reviewer block
+            # drove (spec 15). Since spec 16 renders the ``agent_review`` verdict in-beat (no second
+            # Reviewer beat), the child block now arrives here, not via ``_run_review`` → ``_route_block``;
+            # routing it the same way keeps the manager loop intact. A standalone leaf climbs the bounded
+            # self-repair ladder (spec 04 §1) as before.
+            if self._manager_of(task) is not None:
+                self._route_block(task_id, author=employee)
+            else:
+                self._climb_repair_ladder(task_id, employee_id=employee.id, verifier=verifier)
 
         await self._capture_memory(run_id=run_id, employee=employee, task=task, result=result, now=now)
         ledger.tasks.release_locks(task_id, run_id=run_id)
@@ -723,10 +746,11 @@ class Scheduler:
         """A passed beat lands its role's outcome, then ``done`` — unless a person or reviewer decides.
 
         For a ``HumanApproval`` DoD the deliverable is produced but a person decides: open an
-        **acceptance** gate (parks the task ``blocked`` pending the approval). For an ``AgentReview`` DoD
-        on a *leaf* deliverable, a read-only Reviewer beat renders the verdict that gates completion
-        (M3 load-bearing Reviewer) — a delegated subtree (a manager's own ``agent_review`` DoD) is
-        excluded, it integrates mechanically. Otherwise the role's
+        **acceptance** gate (parks the task ``blocked`` pending the approval). For a ``ReviewedBuild``
+        DoD on a *leaf* deliverable, a read-only Reviewer beat discovers + runs the objective command
+        floor that gates completion (a delegated subtree integrates mechanically and is excluded). An
+        ``AgentReview`` DoD renders no second beat: its rubric was already judged by dream's single
+        in-beat evaluator (spec 16), so a passed beat *is* the verdict. Otherwise the role's
         :class:`~chorus.outcomes.OutcomeLander` records the deliverable before the task is finalised ``done``.
         """
         ledger = self._require_ledger()

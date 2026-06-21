@@ -44,7 +44,7 @@ class _Worker:
         self.working_dir = worktree
 
     async def run_task(self, *, task_id: str, intent: str, verification: object = (),
-                       observer: object = None, run_id: str | None = None) -> BeatOutcome:
+                       rubric: object = "", observer: object = None, run_id: str | None = None) -> BeatOutcome:
         return BeatOutcome(passed=True, outcome={}, summary="built", model="scripted")
 
 
@@ -60,7 +60,7 @@ class _Reviewer:
         self._cmd = verify_command
 
     async def run_task(self, *, task_id: str, intent: str, verification: object = (),
-                       observer: object = None, run_id: str | None = None) -> BeatOutcome:
+                       rubric: object = "", observer: object = None, run_id: str | None = None) -> BeatOutcome:
         CapabilityService(self._ledger).record_verdict(
             task_id=task_id, run_id=str(run_id), reviewer_id=self._id, approve=self._approve,
             feedback="looks good" if self._approve else "needs work", verify_command=self._cmd,

@@ -30,7 +30,7 @@ class _FixedBeat:
         self._passed = passed
 
     async def run_task(self, *, task_id: str, intent: str, verification: object = (),
-                       observer: object = None, run_id: str | None = None) -> BeatOutcome:
+                       rubric: object = "", observer: object = None, run_id: str | None = None) -> BeatOutcome:
         return BeatOutcome(passed=self._passed, outcome={}, summary="fake")
 
 

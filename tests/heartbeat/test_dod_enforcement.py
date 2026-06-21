@@ -33,7 +33,7 @@ class _RecordingBeat:
         intent: str,
         verification: tuple[VerificationStep, ...] = (),
         observer: object = None,
-        run_id: str | None = None,
+        rubric: object = "", run_id: str | None = None,
     ) -> BeatOutcome:
         self.calls.append(task_id)
         self.verification = verification
