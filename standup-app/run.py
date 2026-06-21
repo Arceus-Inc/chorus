@@ -482,16 +482,31 @@ class Narrator:
 # ── credentials + workspace ────────────────────────────────────────────────────────────────────────
 
 def _load_env() -> None:
-    """Fold the repo-root ``.env`` (or ``CHORUS_ENV_FILE``) into the environment."""
+    """Fold the repo-root ``.env`` (or ``CHORUS_ENV_FILE``) into the environment.
+
+    The repo ``.env`` is AUTHORITATIVE: it overrides any pre-existing shell value rather than
+    deferring to it. Using ``setdefault`` here was a footgun — a stale session var (e.g. a
+    leftover ``AZURE_OPENAI_DEPLOYMENT=gpt-5.4-mini``) would silently defeat the pinned config and
+    starve the planner so it never emits ``<spec>`` (BUG-101). Any override of a *differing* live
+    value is announced so the substitution is never silent.
+    """
     path = Path(os.environ.get("CHORUS_ENV_FILE", ".env"))
     if not path.exists():
         return
+    overridden: list[str] = []
     for raw in path.read_text(encoding="utf-8").splitlines():
         line = raw.strip()
         if not line or line.startswith("#") or "=" not in line:
             continue
         key, _, value = line.partition("=")
-        os.environ.setdefault(key.strip(), value.strip().strip("'\""))
+        key = key.strip()
+        value = value.strip().strip("'\"")
+        prev = os.environ.get(key)
+        if prev is not None and prev != value:
+            overridden.append(key)
+        os.environ[key] = value
+    if overridden:
+        print(f"  (.env overrode stale shell value(s): {', '.join(sorted(set(overridden)))})")
 
 
 def _git(repo: Path, *args: str) -> str:
