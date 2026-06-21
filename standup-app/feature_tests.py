@@ -24,8 +24,9 @@ import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))  # import the sibling run.py helpers
-import run as app  # noqa: E402
-from chorus import (  # noqa: E402
+import run as app
+
+from chorus import (
     ApprovalDecision,
     BudgetScope,
     Chorus,
@@ -33,8 +34,8 @@ from chorus import (  # noqa: E402
     TaskStatus,
     Verifier,
 )
-from chorus.governance import GovernancePolicy  # noqa: E402
-from chorus.ledger import ApprovalSubjectKind, BudgetThreshold  # noqa: E402
+from chorus.governance import GovernancePolicy
+from chorus.ledger import ApprovalSubjectKind, BudgetThreshold
 
 _TERMINAL = frozenset({TaskStatus.DONE, TaskStatus.CANCELLED, TaskStatus.REJECTED})
 # An objective, OS-portable DoD: the named deliverable file exists, is non-empty, and (optionally)

@@ -648,7 +648,9 @@ async def _amain(args: argparse.Namespace) -> int:
     if args.report or args.org:
         try:
             sys.path.insert(0, str(Path(__file__).resolve().parent))  # make the sibling importable
-            from report import write_report  # type: ignore[import-not-found]  # sibling in standup-app/
+            from report import (
+                write_report,  # type: ignore[import-not-found]  # sibling in standup-app/
+            )
 
             out = base / "report.md"
             write_report(str(db_path), out_path=str(out))

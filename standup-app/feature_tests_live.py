@@ -167,7 +167,7 @@ async def live_plangate(org: Chorus, company_main: Path, base: Path) -> bool:
     from chorus import ApprovalDecision
     org.governance.resolve(plan_gates[0].id, decision=ApprovalDecision.APPROVE, by="ceo")
     print(f"    approved the plan {plan_gates[0].id} — driving the now-released children")
-    for n in range(1, 12):
+    for _n in range(1, 12):
         await org.tick()
         await org.drain()
         if org.inspect.task(goal.id).status in (TaskStatus.DONE, TaskStatus.BLOCKED, TaskStatus.REJECTED):
@@ -202,7 +202,8 @@ async def _amain(which: list[str]) -> int:
         try:
             results[name] = await _TESTS[name](org, company_main, base)
         except Exception as exc:
-            import traceback; traceback.print_exc()
+            import traceback
+            traceback.print_exc()
             results[name] = _ok(f"{name} raised", False, str(exc))
         print(f"    (workspace: {base})")
     print("\n\033[97;1m── live summary ──\033[0m")

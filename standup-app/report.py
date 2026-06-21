@@ -26,7 +26,7 @@ from __future__ import annotations
 import argparse
 import sys
 from collections import Counter, defaultdict
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from chorus.ledger import SqliteLedger, TaskStatus
@@ -196,7 +196,7 @@ def _rollup(employees: list[Employee], tasks: list[Task]) -> str:
     max_depth = max((t.depth for t in tasks), default=0)
     lines = [
         f"- **employees:** {len(employees)}  "
-        + " · ".join(f"{n}×{r}" for r, n in sorted(role_counts.items())),
+        + " · ".join(f"{n}×{r}" for r, n in sorted(role_counts.items())),  # noqa: RUF001
         f"- **org tiers:** {len(manager_ids)} manager(s) over {leaves} leaf employee(s)",
         f"- **tasks:** {len(tasks)} total, max delegation depth {max_depth}, "
         f"{delegated} delegated (child) task(s)",
@@ -225,7 +225,7 @@ def build_report(db_path: str) -> str:
     # Re-open for per-task run lookups in the section builders (cheap; same file).
     ledger = SqliteLedger.open(db_path)
     try:
-        when = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%SZ")
+        when = datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%SZ")
         parts = [
             "# chorus run — decomposition report",
             f"_generated {when} from `{db_path}`_",
