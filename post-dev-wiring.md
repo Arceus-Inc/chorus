@@ -20,8 +20,25 @@ All runs use gpt-5.2 (`chorus/.env`). Driver: `standup-app/feature_tests.py`; mo
 
 ## Bugs — open / not fixed
 
+- **BUG-005 — `done` ≠ landed (unmerged author branch).** A delegated leaf can reach terminal `done` while
+  its author's worktree branch is **never merged** to company `main` (no `merge chorus/<eid>` commit). The
+  integrate/`sync_to_main` path closes the subtree on the DoD verdict alone; it never re-checks that every
+  contributing branch actually merged, so a `done` deliverable can be **silently absent from `main`**.
+  (Seen on `--org`: an engineer's module read `done` in the ledger yet that author had zero merge commits and
+  the file never appeared on `main`.)
+- **BUG-006 — Managers assign deliverable children to non-engineer roles.** `decompose` is fail-closed against
+  assigning to **reviewers** (M3 §5), but there is **no equivalent guard for `pm`/`analyst`**. A manager
+  repeatedly assigned a shell-required, Command-DoD child to an `analyst` (no shell / `agent_review` role) →
+  the child went `rejected` and the manager **re-assigned the same task to the same analyst**, looping. The
+  role-eligibility guard should extend to all non-engineer roles for Command-DoD deliverables.
+- **BUG-007 — Top-of-tree goal terminalizes `blocked` on multi-tier integrate churn.** On `--org` the director's
+  top integrate oscillates between subtrees that disagree on a shared module's location/ownership; bounded only
+  by `max_integrate_iterations` + wall-clock, it exhausts iterations and the **goal closes `blocked`** (not
+  `done`) even with most leaves `done`. The cap masks the churn rather than resolving it (cf. BUG-001 at scale).
+- Engineers commit **harness-internal artifacts into company `main`** — dream's `docs/exec-plans/*.json|.md` and
+  `docs/evals/*.json` (30+ files) land in the deliverable repo. No land-time `.gitignore` / artifact exclusion
+  for harness paths. (Same root cause as the fabricated `git push`/PR links + scaffolded `docs/`.)
 - Manager's first `decompose` often `[ERR]`s then retries OK (noisy, non-fatal).
-- Engineers fabricate `git push`/PR links and scaffold a `docs/` dir despite goal text.
 - An objective `Verifier.command` DoD is **silently skippable** (see findings) — not a hard floor today.
 - chorus **episodic** memory capture is inert in the supported build path (see findings).
 - Pre-existing unrelated test failures: `test_factory.py::…memory_search` (planner now toolless);
@@ -65,5 +82,20 @@ All runs use gpt-5.2 (`chorus/.env`). Driver: `standup-app/feature_tests.py`; mo
   `Chorus.build` builds an `AppendOnlyMemoryWriter` but never threads it into the `Scheduler`, so no `SprintDelta`
   files are written during real runs.
 - **Manager integrate** now reads landed files `[ok]` and renders genuine `pass 1.0` after the BUG-003 sync fix.
-- **`--org` 3-level run** (gpt-5.2): vera → moe/max → ada/bo/cy/di all `done`; 4 modules land; BUG-003 sync fires at
-  both tiers; `report.py` draws the org chart + decomposition tree from the ledger.
+- **`--org` 3-level run** (gpt-5.2): vera → moe/max → ada/bo/cy/di; decompose + integrate cascade fire at both
+  tiers and `report.py` draws the org chart + tree from the ledger. **But** the goal terminalized `blocked`
+  (BUG-007), one author's branch never merged so a `done` deliverable was missing from `main` (BUG-005), and a
+  deliverable child was looped onto an `analyst` and twice `rejected` (BUG-006). Ledger: 22 tasks → 18 done /
+  2 rejected / 2 blocked.
+- **No cross-child file ownership → duplicate + orphaned modules.** Independent engineer children each create the
+  same package/module from scratch (no shared-file allocation at `decompose`; no content reconciliation at
+  integrate). `sync_to_main` ff-merges fragments **by branch, never by content**, so `main` can end with two
+  competing implementations of one module — and the package `__init__` exporting neither. The kernel merges
+  branches; it does not de-duplicate or reconcile their contents.
+- **`done` is a ledger state, not a landed-artifact guarantee.** The `done` disposition keys off the DoD verdict;
+  it never re-verifies the named deliverable is present on `main`. Combined with the Command-DoD bypass above, a
+  subtree can read `done` while its real artifact is shallow, unmerged, or missing. An objective floor that
+  re-checks "the deliverable exists on `main` and is non-empty" would close BUG-005 + the off-brief gap.
+- **Command-DoD bypass reconfirmed at org scale.** Whole subtrees pass on stub/off-brief output because the
+  planner LLM gates `evaluator_enabled` (see PM finding above). Reinforces: pin `evaluator_enabled=True` whenever
+  a beat carries `verification_steps`.
