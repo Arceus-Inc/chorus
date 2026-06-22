@@ -389,7 +389,10 @@ def test_reconcile_is_idempotent(ledger: SqliteLedger) -> None:
 
 
 def test_healthy_tasks_are_left_untouched(ledger: SqliteLedger) -> None:
-    _task(ledger, TaskStatus.TODO, task_id="resting")  # no interrupted run -> healthy
+    _task(ledger, TaskStatus.TODO, task_id="resting")  # post-success lull -> healthy
+    ledger.runs.create(  # a clean prior run is what makes a wake-less todo "resting", not stranded
+        Run(id="run_ok", employee_id="emp_1", task_id="resting", status=RunStatus.SUCCEEDED)
+    )
     _task(
         ledger,
         TaskStatus.IN_PROGRESS,
