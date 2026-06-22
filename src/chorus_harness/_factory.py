@@ -400,6 +400,10 @@ class EmployeeHarnessFactory:
             plugins=config.plugins,
             wake_model=config.wake_model,
             env=dict(config.env) or None,
+            # spec 15 §4.2: prepend the deliverable's AGENTS.md to every beat so the manager sees the
+            # contract it must author and each engineer builds to it before writing. No-op when no
+            # AGENTS.md exists; harmless for read-only roles (it only adds context).
+            orientation=True,
         )
         return EmployeeHarness(
             runner=DreamBeatRunner(
