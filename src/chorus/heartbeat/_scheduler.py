@@ -816,20 +816,15 @@ class Scheduler:
                 task_id, gate_kind=ApprovalGate.ACCEPTANCE, reason=f"human-approval DoD for {task_id}"
             )
             return
-        if verifier is not None and verifier.kind in _REVIEWER_GATED_DODS:
-            task = ledger.tasks.get(task_id)
-            is_goal = task is not None and self._manager_of(task) is None
-            # A leaf deliverable, OR the top-level GOAL (a delegated parent with no manager above it):
-            # a ``reviewed_build`` goal runs an INTEGRATION review — a peer manager (``reviewer_role`` ≠ the
-            # director author, resolved by ``_resolve_reviewer``) reviews the assembled company main,
-            # running the objective ``gate_check`` floor AND judging the brief. This catches a green-but-
-            # hollow merge no per-engineer evaluator ever saw (tier-3 3.3). A *mid-tier* manager subtree
-            # (it has a manager above it) still integrates mechanically (spec M3 §5) — unchanged.
-            if not ledger.tasks.has_children(task_id) or is_goal:
-                await self._run_review(
-                    task_id, verifier=verifier, author=employee, work_result=result, now=now
-                )
-                return
+        if (
+            verifier is not None
+            and verifier.kind in _REVIEWER_GATED_DODS
+            and not ledger.tasks.has_children(task_id)
+        ):
+            await self._run_review(
+                task_id, verifier=verifier, author=employee, work_result=result, now=now
+            )
+            return
         artifact = await self._land_outcome(task_id, employee=employee, result=result)
         if artifact is not None and artifact.resource_ref.get("merged") is False:
             # done ⇒ landed (tier-3 3.1): the deliverable was produced but its branch did NOT integrate

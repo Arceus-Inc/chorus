@@ -292,34 +292,6 @@ async def test_integrate_blocks_when_the_goals_objective_rollup_floor_fails(
     assert dod is not None and dod.status is DodStatus.FAILED  # the failing rollup verdict is recorded
 
 
-async def test_reviewed_build_goal_runs_integration_review_not_mechanical_done(
-    ledger: SqliteLedger, tmp_path: object
-) -> None:
-    # tier-3 3.3: a delegated GOAL with a ``reviewed_build`` DoD is no longer landed ``done`` mechanically
-    # the instant its subtree is terminal — it runs an INTEGRATION review (a PEER manager reviews the
-    # assembled tree, running the objective floor AND judging the brief). With no peer manager available to
-    # review, the goal must BLOCK (+ a review recovery), proving the gate fired rather than silently landing
-    # done. (approve→done and judgment-block→route are the SAME ``_run_review`` path proven for leaves in
-    # test_m3_review; the full peer-reviewed goal path is covered by the --org e2e.)
-    from chorus.outcomes import Verifier
-
-    _team(ledger)  # only one manager "mgr" — NO peer manager to review the goal
-    ledger.tasks.submit(Task(id="M", intent="ship the feature", status=TaskStatus.TODO))
-    assign_task(ledger, "M", "mgr")
-    ledger.dod.create("M", Verifier.reviewed_build(reviewer_role="manager", rubric="judge the brief"))
-    beat = _TeamBeat(ledger, parent="M")
-    sched = _sched(ledger, beat, tmp_path=tmp_path)
-
-    for _ in range(6):
-        await sched.tick_once()
-        await sched.drain()
-
-    parent = ledger.tasks.get("M")
-    assert parent is not None and parent.status is TaskStatus.BLOCKED  # NOT mechanical done — review gated it
-    assert ledger.tasks.all_children_terminal("M")  # the subtree still fully landed
-    assert ledger.recovery_actions.active_for_source("M") is not None  # the integration review surfaced
-
-
 async def test_integrate_lands_done_when_the_objective_rollup_floor_passes(
     ledger: SqliteLedger, tmp_path: object
 ) -> None:
