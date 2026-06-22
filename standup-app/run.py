@@ -871,23 +871,22 @@ async def _run_org(
     it at the director's integrate beat and the rollup-honesty gate parks the goal BLOCKED (not DONE) if
     it fails — the structural decomposition guard. ``None`` keeps the manager's mechanical rollup.
     """
-    _hr("HIRE — a 3-level org: 1 director · 3 managers (2 feature teams + 1 app/UI team)", c)
+    _hr("HIRE — a 3-level org: 1 director · 2 managers · each lead = 3 engineers + 1 PM", c)
     org.hire(name="vera", role="manager")                       # L1 — the director
-    org.hire(name="moe", role="manager", reports_to="vera")     # L2 — manager A (messaging)
-    org.hire(name="max", role="manager", reports_to="vera")     # L2 — manager B (presence)
-    org.hire(name="nash", role="manager", reports_to="vera")    # L2 — manager C (app/UI)
-    # L3 — moe's team: 2 engineers + 1 PM
+    org.hire(name="moe", role="manager", reports_to="vera")     # L2 — manager A
+    org.hire(name="max", role="manager", reports_to="vera")     # L2 — manager B
+    # L3 — moe's team: 3 engineers + 1 PM
     org.hire(name="ada", role="engineer", reports_to="moe")
     org.hire(name="bo", role="engineer", reports_to="moe")
+    org.hire(name="cy", role="engineer", reports_to="moe")
     org.hire(name="pat", role="pm", reports_to="moe")
-    # L3 — max's team: 2 engineers + 1 PM
-    org.hire(name="cy", role="engineer", reports_to="max")
+    # L3 — max's team: 3 engineers + 1 PM
     org.hire(name="di", role="engineer", reports_to="max")
+    org.hire(name="ev", role="engineer", reports_to="max")
+    org.hire(name="fi", role="engineer", reports_to="max")
     org.hire(name="quinn", role="pm", reports_to="max")
-    # L3 — nash's app team: 1 engineer + 1 PM (builds app.py, the runnable UI)
-    org.hire(name="uri", role="engineer", reports_to="nash")
-    org.hire(name="peg", role="pm", reports_to="nash")
-    _step("hired vera(director) → moe,max,nash(managers) → ada,bo,cy,di,uri(eng) · pat,quinn,peg(pm)", c)
+    _step("hired vera(director) → moe,max(managers) → "
+          "ada,bo,cy,pat(pm) | di,ev,fi,quinn(pm)", c)
 
     _hr("SUBMIT — state the goal; the director decomposes across the two team leads", c)
     goal = org.submit(goal_text, assignee="vera", dod=rollup_dod)
@@ -898,7 +897,7 @@ async def _run_org(
 
     _hr("HEARTBEAT — org.start(): two manager tiers integrate their subtrees as work lands", c)
     org.start()
-    deadline = time.monotonic() + 1800.0   # 3 areas + the UI's depends-on phase need extra beats
+    deadline = time.monotonic() + 1200.0   # 2-manager generic tasks settle within ~20 min
     stall_after_s = 300.0
     # After every leaf lands, keep ticking long enough for the director's integrate cascade to close
     # the goal. A well-behaved director accepts in one beat; a director that keeps re-decomposing is
