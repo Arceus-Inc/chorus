@@ -4,11 +4,18 @@ Pure: filesystem + ``ast`` only, no imports executed. Each check defines one way
 diverge from the contract — the symptoms seen 3-of-3 in live ``--org`` runs (split-brain done):
 
 - ``missing_module`` — a declared module path is absent.
-- ``duplicate_symbol`` — a declared public symbol is defined in more than one module (two Trainers).
+- ``duplicate_symbol`` — a public symbol is defined in more than one module (two Trainers).
 - ``missing_export`` — ``__init__`` does not export a declared public symbol (empty/wrong surface).
 - ``orphan_module`` — a declared non-``__init__`` module is imported by nothing (dead ``loss.py``).
 
 Importability ("builds + imports in a clean env") is the CLI's subprocess check, not a static one.
+
+Placeholder-aware: if the manager left ``AGENTS.md`` as the seeded skeleton (it still contains the
+``<package>`` / ``<Symbol>`` placeholders), the DECLARED checks (missing-module/export, orphan) cannot
+run — there is no real contract to reconcile to. In that case only the STRUCTURAL split-brain check
+runs (a public symbol that ``__init__`` re-exports must not be defined in two sibling modules), so the
+gate never false-blocks coherent code yet still catches a genuine rival. A filled contract runs
+everything (stricter).
 """
 
 from __future__ import annotations
@@ -29,11 +36,25 @@ class CoherenceViolation:
     path: str | None = None
 
 
+def is_placeholder(doc: AgentsMd) -> bool:
+    """True when the contract is still the seeded skeleton (unfilled by the manager)."""
+    return any("<" in m for m in doc.modules) or any("<" in s for s in doc.public_api) or (
+        not doc.modules and not doc.public_api
+    )
+
+
 def check_coherence(root: Path, doc: AgentsMd) -> list[CoherenceViolation]:
-    """Every static coherence violation of ``doc`` by the tree under ``root`` (empty list = coherent)."""
+    """Every static coherence violation of ``doc`` by the tree under ``root`` (empty list = coherent).
+
+    With a filled contract, reconcile the tree to it. With an unfilled (placeholder) contract, run only
+    the contract-free structural split-brain check so coherent code is never spuriously blocked.
+    """
+    if is_placeholder(doc):
+        return _structural_duplicate_symbols(root)
+    wanted = {s.rsplit(".", 1)[-1] for s in doc.public_api}
     return (
         _missing_modules(root, doc)
-        + _duplicate_symbols(root, doc)
+        + _duplicate_symbols(root, doc.modules, wanted)
         + _missing_exports(root, doc)
         + _orphan_modules(root, doc)
     )
@@ -54,40 +75,8 @@ def _top_level_defs(tree: ast.Module) -> set[str]:
     }
 
 
-def _missing_modules(root: Path, doc: AgentsMd) -> list[CoherenceViolation]:
-    return [
-        CoherenceViolation("missing_module", f"declared module is absent: {m}", m)
-        for m in doc.modules
-        if not (root / m).is_file()
-    ]
-
-
-def _duplicate_symbols(root: Path, doc: AgentsMd) -> list[CoherenceViolation]:
-    wanted = {s.rsplit(".", 1)[-1] for s in doc.public_api}
-    definers: dict[str, list[str]] = {}
-    for m in doc.modules:
-        path = root / m
-        if path.name == "__init__.py" or not path.is_file():
-            continue
-        tree = _parse(path)
-        if tree is None:
-            continue
-        for name in _top_level_defs(tree) & wanted:
-            definers.setdefault(name, []).append(m)
-    return [
-        CoherenceViolation("duplicate_symbol", f"public symbol {name!r} defined in {mods}")
-        for name, mods in definers.items()
-        if len(mods) > 1
-    ]
-
-
-def _init_bound_names(root: Path, doc: AgentsMd) -> set[str]:
-    init = next((root / m for m in doc.modules if m.endswith("__init__.py")), None)
-    if init is None or not init.is_file():
-        return set()
-    tree = _parse(init)
-    if tree is None:
-        return set()
+def _bound_names(tree: ast.Module) -> set[str]:
+    """Names an ``__init__`` makes part of its surface: imports, top-level defs, assignments."""
     names: set[str] = set()
     for node in ast.walk(tree):
         if isinstance(node, ast.ImportFrom):
@@ -99,6 +88,68 @@ def _init_bound_names(root: Path, doc: AgentsMd) -> set[str]:
         elif isinstance(node, ast.Assign):
             names |= {t.id for t in node.targets if isinstance(t, ast.Name)}
     return names
+
+
+def _missing_modules(root: Path, doc: AgentsMd) -> list[CoherenceViolation]:
+    return [
+        CoherenceViolation("missing_module", f"declared module is absent: {m}", m)
+        for m in doc.modules
+        if not (root / m).is_file()
+    ]
+
+
+def _duplicate_symbols(
+    root: Path, modules: tuple[str, ...], wanted: set[str]
+) -> list[CoherenceViolation]:
+    """A name in ``wanted`` defined as a top-level def/class in more than one non-``__init__`` module."""
+    definers: dict[str, list[str]] = {}
+    for module in modules:
+        path = root / module
+        if path.name == "__init__.py" or not path.is_file():
+            continue
+        tree = _parse(path)
+        if tree is None:
+            continue
+        for name in _top_level_defs(tree) & wanted:
+            definers.setdefault(name, []).append(module)
+    return [
+        CoherenceViolation("duplicate_symbol", f"public symbol {name!r} defined in {mods}")
+        for name, mods in definers.items()
+        if len(mods) > 1
+    ]
+
+
+def _structural_duplicate_symbols(root: Path) -> list[CoherenceViolation]:
+    """Contract-free split-brain check: for each discovered package, a name its ``__init__`` re-exports
+    must not be defined in two sibling modules. Internal name collisions (not re-exported) are ignored,
+    so this does not false-block legitimately-distinct same-named internals."""
+    out: list[CoherenceViolation] = []
+    for pkg in _discover_packages(root):
+        init = root / pkg / "__init__.py"
+        tree = _parse(init)
+        exported = _bound_names(tree) if tree is not None else set()
+        modules = tuple(
+            f"{pkg}/{p.name}"
+            for p in sorted((root / pkg).glob("*.py"))
+            if p.name != "__init__.py"
+        )
+        out += _duplicate_symbols(root, modules, exported)
+    return out
+
+
+def _discover_packages(root: Path) -> list[str]:
+    """Top-level importable packages in the tree (a directory with an ``__init__.py``)."""
+    return sorted(
+        p.name for p in root.iterdir() if p.is_dir() and (p / "__init__.py").is_file()
+    )
+
+
+def _init_bound_names(root: Path, doc: AgentsMd) -> set[str]:
+    init = next((root / m for m in doc.modules if m.endswith("__init__.py")), None)
+    if init is None or not init.is_file():
+        return set()
+    tree = _parse(init)
+    return _bound_names(tree) if tree is not None else set()
 
 
 def _missing_exports(root: Path, doc: AgentsMd) -> list[CoherenceViolation]:
@@ -113,8 +164,8 @@ def _missing_exports(root: Path, doc: AgentsMd) -> list[CoherenceViolation]:
 def _imported_module_leaves(root: Path, doc: AgentsMd) -> set[str]:
     """The final dotted component of every module any package file imports (``pkg.core`` → ``core``)."""
     leaves: set[str] = set()
-    for m in doc.modules:
-        tree = _parse(root / m)
+    for module in doc.modules:
+        tree = _parse(root / module)
         if tree is None:
             continue
         for node in ast.walk(tree):
@@ -128,13 +179,13 @@ def _imported_module_leaves(root: Path, doc: AgentsMd) -> set[str]:
 def _orphan_modules(root: Path, doc: AgentsMd) -> list[CoherenceViolation]:
     imported = _imported_module_leaves(root, doc)
     out: list[CoherenceViolation] = []
-    for m in doc.modules:
-        if m.endswith("__init__.py"):
+    for module in doc.modules:
+        if module.endswith("__init__.py"):
             continue
-        leaf = Path(m).stem  # `pkg/loss.py` -> `loss`
+        leaf = Path(module).stem  # `pkg/loss.py` -> `loss`
         if leaf not in imported:
-            out.append(CoherenceViolation("orphan_module", f"module imported by nothing: {m}", m))
+            out.append(CoherenceViolation("orphan_module", f"module imported by nothing: {module}", module))
     return out
 
 
-__all__ = ["CoherenceViolation", "check_coherence"]
+__all__ = ["CoherenceViolation", "check_coherence", "is_placeholder"]

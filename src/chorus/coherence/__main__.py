@@ -4,6 +4,10 @@ This is the command a manager's integrate DoD runs (``Verifier.command("python -
 it reconciles the merged tree on company main to ``AGENTS.md`` and is the structural rollup gate. A red
 result parks the goal ``blocked`` with the precise violations (via the kernel's integrate floor), and
 the adaptive integrate loop re-dispatches the manager to reconcile — never a silent split-brain done.
+
+Placeholder-aware: if the contract is still the seeded skeleton, the declared checks are skipped (a
+note is printed) and only the structural split-brain + importability checks run, so coherent code is
+never blocked merely because the manager has not authored the contract yet.
 """
 
 from __future__ import annotations
@@ -14,14 +18,18 @@ import sys
 from pathlib import Path
 
 from chorus.coherence._agents_md import AgentsMd
-from chorus.coherence._checker import CoherenceViolation, check_coherence
+from chorus.coherence._checker import (
+    CoherenceViolation,
+    _discover_packages,
+    check_coherence,
+    is_placeholder,
+)
 
 
-def _importable(root: Path, doc: AgentsMd) -> list[CoherenceViolation]:
-    """The deliverable's top-level packages each import in a clean subprocess (spec 15 §4.3, check 4)."""
-    packages = sorted({m.split("/", 1)[0] for m in doc.modules if "/" in m})
+def _importable(root: Path) -> list[CoherenceViolation]:
+    """Every top-level package in the tree imports in a clean subprocess (spec 15 §4.3, check 4)."""
     out: list[CoherenceViolation] = []
-    for package in packages:
+    for package in _discover_packages(root):
         result = subprocess.run(
             [sys.executable, "-c", f"import {package}"], cwd=str(root), capture_output=True, text=True
         )
@@ -47,7 +55,13 @@ def main() -> int:
         return 1
 
     doc = AgentsMd.parse(contract.read_text(encoding="utf-8"))
-    violations = check_coherence(root, doc) + _importable(root, doc)
+    if is_placeholder(doc):
+        print(
+            "[coherence] NOTE: AGENTS.md is unauthored (still the placeholder) — running structural "
+            "checks only (no-public-rival + imports-clean); the manager should author the real contract.",
+            flush=True,
+        )
+    violations = check_coherence(root, doc) + _importable(root)
     if not violations:
         print("[coherence] OK: the merged tree is a single coherent surface", flush=True)
         return 0

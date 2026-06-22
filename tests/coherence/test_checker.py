@@ -78,3 +78,47 @@ def test_orphan_module(tmp_path: Path) -> None:
         modules=("pkg/__init__.py", "pkg/core.py", "pkg/dead.py"), public_api=("pkg.Thing",)
     )
     assert "orphan_module" in [v.code for v in check_coherence(root, doc)]
+
+
+# --- placeholder-aware behaviour (spec 15): when the manager left AGENTS.md unfilled, the declared
+# checks (missing_module/export, orphan) can't run, but the STRUCTURAL split-brain checks still do.
+
+_PLACEHOLDER = AgentsMd(modules=("<package>/__init__.py",), public_api=("<package>.<Symbol>",))
+
+
+def test_placeholder_contract_skips_declared_checks_on_coherent_code(tmp_path: Path) -> None:
+    # a clean, coherent package + an UNFILLED contract must NOT produce a spurious block.
+    root = _pkg(
+        tmp_path,
+        {
+            "pkg/__init__.py": "from pkg.core import Thing\n__all__ = ['Thing']\n",
+            "pkg/core.py": "class Thing:\n    pass\n",
+        },
+    )
+    assert check_coherence(root, _PLACEHOLDER) == []
+
+
+def test_placeholder_contract_still_catches_a_public_rival(tmp_path: Path) -> None:
+    # two rival Trainers where __init__ re-exports Trainer — a real split brain, caught WITHOUT a contract.
+    root = _pkg(
+        tmp_path,
+        {
+            "pkg/__init__.py": "from pkg.a import Trainer\n",
+            "pkg/a.py": "class Trainer:\n    pass\n",
+            "pkg/b.py": "class Trainer:\n    pass\n",
+        },
+    )
+    assert "duplicate_symbol" in [v.code for v in check_coherence(root, _PLACEHOLDER)]
+
+
+def test_placeholder_ignores_internal_name_collisions(tmp_path: Path) -> None:
+    # two modules each with a private/internal `Config` NOT re-exported by __init__ is not a public rival.
+    root = _pkg(
+        tmp_path,
+        {
+            "pkg/__init__.py": "from pkg.core import Thing\n",
+            "pkg/core.py": "class Thing:\n    pass\nclass Config:\n    pass\n",
+            "pkg/util.py": "class Config:\n    pass\n",  # not exported by __init__
+        },
+    )
+    assert check_coherence(root, _PLACEHOLDER) == []
