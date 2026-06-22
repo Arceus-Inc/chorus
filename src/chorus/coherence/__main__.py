@@ -25,6 +25,34 @@ from chorus.coherence._checker import (
     is_placeholder,
 )
 
+# Files/dirs the harness itself seeds — they are NOT a deliverable. A tree containing only these is
+# "nothing was built", and must fail rather than pass as vacuously coherent (the vacuous-done hole).
+_SCAFFOLD_FILES = frozenset(
+    {"AGENTS.md", "README.md", "gate_check.py", "plan_check.py", "contract_check.py",
+     "test_smoke.py", "LICENSE", ".gitignore"}
+)
+_SCAFFOLD_DIRS = frozenset(
+    {".git", ".harness", ".dream", "docs", "__pycache__", ".pytest_cache", ".mypy_cache",
+     ".ruff_cache", "node_modules", "target", "dist", "build", ".venv", ".tox"}
+)
+
+
+def _has_deliverable(root: Path) -> bool:
+    """True if the tree holds any real source beyond the seeded harness scaffolding (stack-agnostic)."""
+    for path in root.rglob("*"):
+        if not path.is_file():
+            continue
+        rel = path.relative_to(root)
+        if any(part in _SCAFFOLD_DIRS for part in rel.parts):
+            continue
+        name = path.name
+        if name in _SCAFFOLD_FILES or name.startswith("README"):
+            continue
+        if name.startswith("plan") and name.endswith(".md"):
+            continue
+        return True
+    return False
+
 
 def _importable(root: Path) -> list[CoherenceViolation]:
     """Every top-level package in the tree imports in a clean subprocess (spec 15 §4.3, check 4)."""
@@ -55,6 +83,13 @@ def main() -> int:
         return 1
 
     doc = AgentsMd.parse(contract.read_text(encoding="utf-8"))
+    if not _has_deliverable(root):
+        print(
+            "[coherence] FAILED: no_deliverable — the tree contains only harness scaffolding; no "
+            "deliverable was produced (an empty/missing deliverable is not a coherent one).",
+            flush=True,
+        )
+        return 1
     if is_placeholder(doc):
         print(
             "[coherence] NOTE: AGENTS.md is unauthored (still the placeholder) — running structural "
