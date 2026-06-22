@@ -353,6 +353,15 @@ _CHATROOM_ROLLUP_CMD = (
 )
 _CHATROOM_ROLLUP_DOD = Verifier.command(_CHATROOM_ROLLUP_CMD, timeout_s=900)
 
+# The OBJECTIVE rollup DoD pinned on EVERY --org goal (tier-3 3.3a). Without it a delegated goal lands
+# `done` the instant its subtree is terminal — a mechanical rollup that never runs the brief's tests on
+# the ASSEMBLED tree, so a suite that is green per-engineer-worktree but RED after merge (tooldeck) still
+# closes done. This pins the SAME stack-aware ``gate_check.py`` the engineers use, run by the kernel in
+# the director's worktree (= company main once every child merged) at the integrate beat: a red merged
+# suite parks the goal BLOCKED, not DONE. ``gate_check.py`` self-detects the stack, so it floors a
+# Python/TS/Rust/Go deliverable by its own toolchain.
+_ORG_ROLLUP_DOD = Verifier.command(_TEAM_GATE, timeout_s=900)
+
 
 # ── output helpers ────────────────────────────────────────────────────────────────────────────────
 
@@ -998,7 +1007,7 @@ async def _amain(args: argparse.Namespace) -> int:
 
     if args.org:
         org_goal = _CHATROOM_GOAL if args.chatroom else _ORG_GOAL
-        rollup = _CHATROOM_ROLLUP_DOD if args.chatroom else None
+        rollup = _CHATROOM_ROLLUP_DOD if args.chatroom else _ORG_ROLLUP_DOD
         final = await _run_org(org, args.task or org_goal, c=c, rollup_dod=rollup)
     elif args.team:
         final = await _run_team(org, args.task or _TEAM_GOAL, c=c)
