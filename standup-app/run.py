@@ -353,14 +353,28 @@ _CHATROOM_ROLLUP_CMD = (
 )
 _CHATROOM_ROLLUP_DOD = Verifier.command(_CHATROOM_ROLLUP_CMD, timeout_s=900)
 
-# The OBJECTIVE rollup DoD pinned on EVERY --org goal (tier-3 3.3a). Without it a delegated goal lands
-# `done` the instant its subtree is terminal — a mechanical rollup that never runs the brief's tests on
-# the ASSEMBLED tree, so a suite that is green per-engineer-worktree but RED after merge (tooldeck) still
-# closes done. This pins the SAME stack-aware ``gate_check.py`` the engineers use, run by the kernel in
-# the director's worktree (= company main once every child merged) at the integrate beat: a red merged
-# suite parks the goal BLOCKED, not DONE. ``gate_check.py`` self-detects the stack, so it floors a
-# Python/TS/Rust/Go deliverable by its own toolchain.
-_ORG_ROLLUP_DOD = Verifier.command(_TEAM_GATE, timeout_s=900)
+# The integration-review DoD pinned on EVERY --org goal (tier-3 3.3). A delegated goal otherwise lands
+# `done` the instant its subtree is terminal — a mechanical rollup that never verifies the ASSEMBLED tree,
+# so a suite green per-engineer-worktree but RED after merge (tooldeck), or green-but-hollow (a self-
+# skipping test → ppo_lite, two rival packages → dpo_tune), still closes done. A ``reviewed_build`` on the
+# goal makes the kernel run ONE integration review at rollup: a PEER MANAGER (≠ the director who authored
+# the integration — no reviewer hired) reviews company main (= the merged tree) and (a) runs the objective
+# ``gate_check.py`` floor [catches the RED merge] AND (b) judges the brief [catches green-but-hollow]. A
+# block parks the goal BLOCKED + re-wakes the director to close the gap, instead of a false ``done``.
+_ORG_ROLLUP_RUBRIC = (
+    "You are reviewing the ASSEMBLED company-main tree — the integrated result of every engineer's merged "
+    "work — against the goal brief. Treat each child's `done` as a CLAIM to verify against the actual files, "
+    "not to accept on faith.\n"
+    "1. OBJECTIVE FLOOR (mandatory): report `verify_command` = `python gate_check.py`. The kernel runs it on "
+    "the merged tree; if it exits non-zero the build is RED and you MUST block.\n"
+    "2. COVERAGE: every surface the brief names must EXIST and be genuinely EXERCISED. A test that imports its "
+    "target inside try/except and `pytest.skip`s when missing is NOT coverage — if a required module is absent "
+    "or its test self-skips, block.\n"
+    "3. COHERENCE: there must be ONE package with ONE public API. Two rival packages for the same purpose, the "
+    "brief-named package not being the installable one, or duplicate/disagreeing implementations → block.\n"
+    "Approve ONLY if the floor passes AND the brief's named surfaces are all present, exercised, and coherent."
+)
+_ORG_ROLLUP_DOD = Verifier.reviewed_build(reviewer_role="manager", rubric=_ORG_ROLLUP_RUBRIC, verify_timeout_s=900)
 
 
 # ── output helpers ────────────────────────────────────────────────────────────────────────────────
