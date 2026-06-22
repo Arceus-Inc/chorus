@@ -165,3 +165,27 @@ def test_operational_files_are_excluded_from_the_branch(tmp_path: Path) -> None:
     status = _git(ada.path, "status", "--porcelain")
     assert "real.py" in status  # a real deliverable is tracked
     assert ".harness/" not in status and "generator.toml" not in status  # operational, excluded
+
+
+def test_build_output_and_dream_artifacts_are_excluded(tmp_path: Path) -> None:
+    # tier-3 3.4: compiled build output (a Rust crate's target/ — the tinyvec 1241-file leak) and dream's
+    # planning artefacts (docs/evals, docs/exec-plans written into the worktree) must NOT land in the
+    # deliverable. The engineer's actual source under src/ still does.
+    ws = CompanyWorkspace(tmp_path / "acme")
+    ada = ws.worktree_for("ada")
+    (ada.path / "target" / "release").mkdir(parents=True)
+    (ada.path / "target" / "release" / "libtinyvec.rlib").write_text("BLOB", encoding="utf-8")
+    (ada.path / "docs" / "evals" / "run_x").mkdir(parents=True)
+    (ada.path / "docs" / "evals" / "run_x" / "sprint-1.json").write_text("{}", encoding="utf-8")
+    (ada.path / "docs" / "exec-plans").mkdir(parents=True)
+    (ada.path / "docs" / "exec-plans" / "plan.json").write_text("{}", encoding="utf-8")
+    (ada.path / "src").mkdir()
+    (ada.path / "src" / "lib.rs").write_text("pub fn f() {}", encoding="utf-8")
+    (ada.path / "docs" / "guide.md").write_text("# real docs", encoding="utf-8")  # genuine docs stay
+
+    status = _git(ada.path, "status", "--porcelain", "-uall")  # -uall: list files inside untracked dirs
+    assert "src/lib.rs" in status  # the real source is tracked
+    assert "docs/guide.md" in status  # genuine (non-artefact) docs are tracked
+    assert "target/" not in status  # the Rust build dir is excluded (no 1241-file leak)
+    assert "docs/evals/" not in status  # dream's eval artefacts excluded
+    assert "exec-plans/" not in status  # dream's exec-plan artefacts excluded

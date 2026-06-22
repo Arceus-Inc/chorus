@@ -28,6 +28,8 @@ _OPERATIONAL_EXCLUDES = (
     ".dream/",  # dream task/ledger artefacts
     ".harness/",  # dream tool-tier / policy / role-overlay files
     ".chorus/",  # any nested chorus state
+    "docs/evals/",  # dream planner eval artefacts written into the working dir (not deliverable)
+    "docs/exec-plans/",  # dream planner exec-plan artefacts (not deliverable)
     ".mypy_cache/",
     ".playwright-mcp/",
     ".pytest_cache/",
@@ -36,6 +38,18 @@ _OPERATIONAL_EXCLUDES = (
     "__pycache__/",
     "memory/",  # memory store spill, if working-dir-local
     "node_modules/",
+    # Compiled build output — language-agnostic, never the deliverable's source. Without these a
+    # Rust crate's ``target/`` (~thousands of files) or a JS ``dist/`` lands in the "PR" (the tinyvec
+    # 1241-file leak). High-confidence dirs only — never names that can hold tracked source.
+    "target/",  # Rust/Cargo, Maven
+    "dist/",  # Python/JS build output
+    ".next/",  # Next.js build
+    ".nuxt/",  # Nuxt build
+    ".gradle/",  # Gradle cache
+    ".tox/",  # Python tox envs
+    "htmlcov/",  # coverage HTML
+    ".coverage",  # coverage data file
+    "*.egg-info/",  # Python packaging metadata
 )
 _OPERATIONAL_EXCLUDE_NAMES = {path.rstrip("/") for path in _OPERATIONAL_EXCLUDES}
 _SEED_COPY_IGNORE = shutil.ignore_patterns(".git", *_OPERATIONAL_EXCLUDE_NAMES)
