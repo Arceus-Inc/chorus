@@ -8,5 +8,6 @@ public surface or ends ``blocked`` with a specific coherence reason — never a 
 from __future__ import annotations
 
 from chorus.coherence._agents_md import AgentsMd
+from chorus.coherence._checker import CoherenceViolation, check_coherence
 
-__all__ = ["AgentsMd"]
+__all__ = ["AgentsMd", "CoherenceViolation", "check_coherence"]
