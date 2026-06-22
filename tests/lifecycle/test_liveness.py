@@ -124,6 +124,20 @@ def test_todo_after_succeeded_run_is_resting_healthy(ledger: SqliteLedger, emp: 
     assert result.reason == "resting"
 
 
+def test_todo_awaiting_an_unresolved_dependency_is_healthy(ledger: SqliteLedger, emp: Employee) -> None:
+    # A todo whose assignment wake was gated by an unresolved dependency is WAITING, not stranded: the
+    # scheduler marks the assignment wake done, and a ``deps_resolved`` wake re-dispatches it once the
+    # blocker lands. Without this, every dependency-gated child reads "stranded" in the gap before
+    # deps_resolved fires — spurious recovery churn (the V3 over-fire: 100% of stranded recoveries were
+    # dep-gated todos with no wake/run yet, all opened <30s after creation and immediately folded).
+    task = _task(ledger, TaskStatus.TODO, task_id="t1")  # no wake, no run yet
+    _task(ledger, TaskStatus.IN_PROGRESS, task_id="t2")  # its blocker, still being worked
+    ledger.dependencies.add("t1", "t2")
+    result = classify(task, ledger, now=NOW)
+    assert result.healthy
+    assert result.reason == "awaiting_dependency"
+
+
 @pytest.mark.parametrize("bad", [RunStatus.FAILED, RunStatus.TIMED_OUT, RunStatus.CANCELLED])
 def test_todo_with_interrupted_dispatch_is_stalled(
     ledger: SqliteLedger, emp: Employee, bad: RunStatus

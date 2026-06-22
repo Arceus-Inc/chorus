@@ -94,10 +94,17 @@ def _classify_todo(task: Task, ledger: SqliteLedger) -> Liveness:
         return Liveness(Health.HEALTHY, "open_recovery")
     if _has_active_monitor(task, ledger):
         return Liveness(Health.HEALTHY, "active_monitor")
+    # A todo waiting on an unresolved dependency is *gated*, not stranded: the scheduler marks its
+    # assignment wake done and a ``deps_resolved`` wake re-dispatches it once the blocker lands. The
+    # blocker's own health is the blocker's concern (the sweep classifies it independently); this task has
+    # a path forward. Without this, every dependency-gated child reads "stranded" in the window before
+    # ``deps_resolved`` fires — spurious recovery churn (the blocker itself surfaces if *it* stalls).
+    if ledger.dependencies.unresolved_blockers(task.id):
+        return Liveness(Health.HEALTHY, "awaiting_dependency")
     # "Resting" is the post-success lull — a beat ran, succeeded, and left the task queued for its next
-    # step. It is the ONLY healthy todo lacking a live wake/recovery/monitor. A todo whose last run was
-    # interrupted (failed/timed-out/cancelled) OR that was *never dispatched at all* (no runs — its
-    # ``assign_task`` wake was lost) has no path forward and is stranded (spec 02 §9, paperclip's
+    # step. It is the ONLY healthy todo lacking a live wake/recovery/monitor/dependency. A todo whose last
+    # run was interrupted (failed/timed-out/cancelled) OR that was *never dispatched at all* (no runs, no
+    # pending dependency) has no path forward and is stranded (spec 02 §9, paperclip's
     # ``hasExplicitWaitingPath``). Without this, a never-dispatched child reads "resting" healthy and
     # silently hangs its blocked parent forever.
     if _last_run_succeeded(task, ledger):
