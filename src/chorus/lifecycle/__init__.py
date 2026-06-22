@@ -16,6 +16,7 @@ from chorus.lifecycle._decompose import (
     DepthCapped,
     Fanned,
     decompose,
+    seed_agents_md,
 )
 from chorus.lifecycle._disposition import (
     Disposition,
@@ -66,4 +67,5 @@ __all__ = [
     "reconcile_disposition",
     "record_activity",
     "revise_dod",
+    "seed_agents_md",
 ]

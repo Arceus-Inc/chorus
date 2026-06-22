@@ -53,6 +53,7 @@ from pathlib import Path
 from chorus import Caps, Chorus, TaskStatus, Verifier, default_roles
 from chorus.events import Event, EventKind
 from chorus.ledger import SqliteLedger
+from chorus.lifecycle import seed_agents_md
 from chorus.roles import RolePlugin, RoleRegistry, SandboxTier
 
 _REQUIRED = ("AZURE_OPENAI_API_KEY", "AZURE_OPENAI_BASE_URL", "AZURE_OPENAI_DEPLOYMENT")
@@ -667,6 +668,9 @@ def _seed_repo(path: Path) -> Path:
     (path / "test_smoke.py").write_text("def test_smoke():\n    assert True\n", encoding="utf-8")
     (path / "gate_check.py").write_text(_GATE_CHECK_PY, encoding="utf-8")
     (path / "plan_check.py").write_text(_PLAN_CHECK_PY, encoding="utf-8")
+    # spec 15: seed the cross-child coherence contract so it is on company main from the start (the
+    # manager re-writes it to the real module map / public API / ownership on its kickoff beat).
+    seed_agents_md(path, goal_intent="the deliverable described in the goal")
     subprocess.run(["git", "-C", str(path), "add", "-A"], check=True, capture_output=True)
     subprocess.run(
         ["git", "-C", str(path), "-c", "user.name=seed", "-c", "user.email=seed@x",
