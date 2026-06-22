@@ -353,10 +353,17 @@ _CHATROOM_ROLLUP_CMD = (
 )
 _CHATROOM_ROLLUP_DOD = Verifier.command(_CHATROOM_ROLLUP_CMD, timeout_s=900)
 
-# NOTE: tier-3 3.3 (the goal-level integration-review DoD) is TEMPORARILY REVERTED — the `--org --task`
-# goal carries no rollup DoD for now (mechanical rollup, as before 3.3). Capability work comes first; the
-# integration review (a peer-manager `reviewed_build` on the goal) will be restored after. See the
-# reverted commit for the rubric + wiring.
+# spec 15 — the cross-child coherence gate, pinned as the GOAL's objective rollup DoD. The kernel's
+# `_integrate_floor_verdict` runs it in the integrator's worktree (= company main once the subtree
+# merged) at the director's integrate beat: `python -m chorus.coherence` reconciles the merged tree to
+# the manager-authored `AGENTS.md` (declared modules present, no duplicate public symbol, `__init__`
+# exports the declared API, no orphan module, the package imports clean). A non-zero exit parks the goal
+# BLOCKED with the precise violations, and the adaptive integrate loop re-dispatches the manager to
+# reconcile — so a split-brain subtree can never land a silent `done`. chorus is on the worktree venv,
+# so `python -m chorus.coherence` resolves there.
+_COHERENCE_ROLLUP_DOD = Verifier.command(
+    "python -m chorus.coherence", artifact_class="subtree", timeout_s=900
+)
 
 
 # ── output helpers ────────────────────────────────────────────────────────────────────────────────
@@ -1003,7 +1010,10 @@ async def _amain(args: argparse.Namespace) -> int:
 
     if args.org:
         org_goal = _CHATROOM_GOAL if args.chatroom else _ORG_GOAL
-        rollup = _CHATROOM_ROLLUP_DOD if args.chatroom else None  # tier-3 3.3 temporarily reverted
+        # spec 15: the goal's integrate is gated on the coherence checker reconciling the merged tree to
+        # AGENTS.md — the kernel's _integrate_floor_verdict runs it against company main, so a split-brain
+        # subtree parks the goal BLOCKED (with the precise violations) instead of a silent `done`.
+        rollup = _CHATROOM_ROLLUP_DOD if args.chatroom else _COHERENCE_ROLLUP_DOD
         final = await _run_org(org, args.task or org_goal, c=c, rollup_dod=rollup)
     elif args.team:
         final = await _run_team(org, args.task or _TEAM_GOAL, c=c)
