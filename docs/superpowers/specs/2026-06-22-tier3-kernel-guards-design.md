@@ -78,47 +78,32 @@ Deterministic; TDD'd with a fake lander returning `merged=False`.
 
 ---
 
-### 3.3 — Integration verification at the goal root — fixes the verdict-honesty headline
+### 3.3 — Integration review at the goal root — fixes the verdict-honesty headline
 
-Two composing layers on the integration worktree, both gating the goal-root `done`.
+**One mechanism, both teeth.** The goal root gets a `reviewed_build` DoD evaluated at the integration worktree (company main, post-merge) by **the retained `reviewed_build` reviewer beat run at integration scope**. That one beat both (a) runs the objective command floor and (b) renders a brief-rubric judgment — so it catches tooldeck (red merge) *and* ppo_lite/dpo_tune (green-but-hollow) in a single pass.
 
-#### 3.3a — Objective command floor (deterministic) — fixes tooldeck
+**Why this, grounded in the code (dream-probed).** Dream's evaluator is in-beat phase-2c — it grades *what a beat's generator produced in its own worktree*, not a pre-existing tree; there is no standalone `evaluate(tree, rubric)` entrypoint. And at the delegated-parent rollup (`_scheduler.py:633-654`) the integrate beat's in-beat verdict is **deliberately discarded** ("its lifecycle is its subtree's, not its own dream verdict"); only `_integrate_floor_verdict` (the command floor) gates. The code itself warns (lines 608-609) that the in-beat evaluator at integrate scope "would judge a worktree the in-beat evaluator can't yet see" — which is exactly why `reviewed_build` keeps a **separate reviewer beat** that materializes at the right worktree with an explicit file manifest (`_worktree_file_manifest`) + `(read_file, submit_verdict)` toolset + `_run_verify_command`. We reuse that beat at the integration boundary.
 
-**Already exists, currently bypassed.** `_scheduler.py::_integrate_floor_verdict` runs the parent's `command` DoD against the integrator's worktree (= company main once children merge) at rollup, and parks `BLOCKED` if any step exits non-zero. It returns `None` (→ mechanical `done`) when **no `command` DoD is pinned** — which is the case for `--org --task` goals (`rollup_dod=None`). The `--org --chatroom` path already pins one (`run.py:330–350`); the single-task path does not. tooldeck's red-after-merge slipped through here.
+**Spec-16 consistency.** Spec 16 §9 **explicitly retains** the `reviewed_build` reviewer beat (`_REVIEWER_GATED_DODS = {REVIEWED_BUILD}`); only the `agent_review` double-eval was collapsed into dream's in-beat evaluator. Running the retained beat at integration scope is therefore *not* a resurrection of the deleted reviewer — it is the integration worktree's single evaluator. "One evaluator per worktree": per-engineer worktrees → dream in-beat; integration worktree → this reviewer beat.
 
-**Fix.**
-- **Gap A (wiring):** pin an objective rollup `command` DoD on the goal root in the `--org --task` path — run the stack-aware `gate_check.py` on the integrated tree, identical to the chatroom path.
-- **Gap B (kernel fail-closed):** a delegated parent/goal with **deliverable-producing children but no integration evaluator at all** must not close `done` by silent mechanical rollup. When `_integrate_floor_verdict` returns `None` *and* the subtree produced deliverables *and* no rubric watchdog is configured (see 3.3b), surface it rather than accept — the integration worktree was never evaluated.
+**Two gaps to close:**
+- **Gap A — wire the DoD.** Pin a `reviewed_build` DoD on the goal root in the `--org --task` path: `verify_command` = stack-aware `gate_check.py` on the integrated tree (the objective floor, already wired for chatroom at `run.py:330-350`), `rubric` = the brief (the judgment). Today `--org --task` pins `rollup_dod=None`, so neither runs — tooldeck/ppo_lite/dpo_tune slipped through here.
+- **Gap B — run the reviewer beat at rollup + gate `done`.** Extend the delegated-parent rollup (`_scheduler.py:633-654` and the integrate-cap path `:774`): when the subtree is terminal and the goal carries a `reviewed_build` DoD, dispatch the reviewer beat **materialized at the integration worktree** (company main) rather than mechanically accepting. The verdict gates:
+  - **approve** (floor passed + reviewer accepts) → goal closes `done` (honest).
+  - **block** (floor red *or* reviewer rejects on coverage/coherence) → open an `INTEGRATION_GAP` recovery task assigned to the goal's decomposer/manager with the reviewer's findings as the packet → goal stays `BLOCKED` → manager re-dispatches → subtree re-rests → re-reviewed.
+- **Fail-closed:** a delegated goal whose children produced deliverables but which carries **no** integration evaluator (no `reviewed_build`/`command` DoD) must not close `done` by silent mechanical rollup — surface it. (Defense-in-depth for non-`--org` paths; `--org` always pins the DoD via Gap A.)
 
-**Files.** `standup-app/run.py` (pin rollup DoD on the `--task` goal); `src/chorus/heartbeat/_scheduler.py` (fail-closed branch at the mechanical-rollup acceptance, `~:758`). `tests/heartbeat/test_integrate_floor.py`.
+**No new hire — the director is the integration reviewer.** The `reviewed_build` reviewer beat needs an invokable employee materialized read-only at the integration worktree; it does **not** need a dedicated "reviewer-role" employee. The **director already fits**: it owns the goal rollup, and its integrate beat already runs *at* the integration worktree (= company main, where `_integrate_floor_verdict` runs the command today). So at rollup the director takes the reviewer pass — `(read_file, submit_verdict)` toolset + the company-main `_worktree_file_manifest` + the brief in the prompt — reads the merged tree, sees the floor result, and renders approve/block. The verdict comes from the director-as-reviewer's *generation* (read_file → submit_verdict), not from dream's in-beat evaluator, so the worktree-visibility concern (lines 608-609) does not apply. The `--org` topology is unchanged (1 director → 2 managers → 3 eng + 1 PM each); no reviewer is hired.
 
-#### 3.3b — Watchdog: a dream-evaluator pass on the goal root (judgment) — fixes ppo_lite, dpo_tune
+**Idempotency.** Re-dispatch is bounded by the existing review-run gating (one live reviewer run per task) + the integrate-iteration cap (`max_integrate_iterations`) — no new fingerprint table needed. A single live `INTEGRATION_GAP` recovery per goal prevents stacking.
 
-**Why the floor is not enough.** A command floor only answers *"does the command exit 0 on the merged tree?"* It is **blind to green-but-hollow**: a test that passes by `pytest.skip` (ppo_lite), or a suite green over the wrong package (dpo_tune). No deterministic command catches this; no per-task evaluator sees it. Only a judgment over the *assembled whole vs the brief* can — paperclip's task-watchdog ("treat every stopped leaf as a claim that must be verified against evidence; do not accept 'done' without proof").
-
-**Spec-16-faithful framing.** The watchdog is **the goal-root task's own dream `run_task` evaluator pass**, on the integration worktree, with the **brief as its rubric**. It is read-only (dream's evaluator is read-only/no-shell — the *objective* shell verification is 3.3a). This is "one task = one verdict" for the goal root, which today closes with *no* evaluator. It is **not** a reviewer-role beat (that is the per-task double-eval spec 16 deleted) and **not** a second eval of any child.
-
-**Mechanism (ported from `TASK-WATCHDOG.md` §"How a scan works").** When the goal subtree comes to rest:
-1. **Walk the subtree**, excluding watchdog-origin tasks (so it cannot trigger on itself).
-2. **Live-path check** — any included task with an active run / queued wake / open recovery → subtree is LIVE → do not fire.
-3. **Stop fingerprint** = SHA-256 over the stopped leaves' `(id, status, blockers)` + the goal's rubric. Compare to the goal's `integration_review_fingerprint`; equal → already reviewed, suppress; new → proceed.
-4. **Dispatch one evaluator beat** on the goal root: a dream `run_task` (read-only) over company main, rubric = the brief, prompt = "each stopped leaf's `done` is a *claim* — verify the assembled tree actually satisfies the goal: required surfaces present and exercised (no self-skipping tests), one coherent package/API (no rival duplicates), the brief met."
-5. **Verdict.**
-   - **accept** → record the fingerprint as reviewed → the goal closes `done` (honest).
-   - **needs-changes / fail** → open an `INTEGRATION_GAP` recovery task assigned to the goal's decomposer/manager, carrying the evaluator's findings as the packet → the goal stays open → the manager re-dispatches → subtree eventually re-rests → re-evaluated (new fingerprint).
-6. **Idempotency / one review at a time:** the fingerprint gate + a single live `INTEGRATION_GAP` recovery per goal prevent stacking.
-
-**The gate.** The goal-root `done` transition (the mechanical-rollup acceptance and the integrate-cap acceptance, `_scheduler.py:758`/`774`) is extended: a goal cannot finalize `done` until (3.3a floor passes **and**) the watchdog has accepted the *current* rested fingerprint.
-
-**Scope enforcement.** Watchdog-originated mutations are confined to the watched subtree, reusing the existing trust-boundary / capability seam (spec §4 trust). It cannot approve board-level decisions or escape the goal subtree.
+**Scope enforcement.** The reviewer beat is read-only (`(read_file, submit_verdict)`); a `block` opens recovery rather than mutating children directly. Reuses the existing trust-boundary / capability seam (spec §4 trust).
 
 **Files.**
-- migration `0020_integration_review.sql` + declarative `schema/task.sql` parity: add `task.integration_review_fingerprint TEXT NULL` and `task.origin_kind TEXT NULL` (marks watchdog-origin recovery tasks, excluded from the walk).
-- `src/chorus/lifecycle/_watchdog.py` (pure): subtree walk, live-path check, `stop_fingerprint(...)`. No I/O — fully unit-testable.
-- `src/chorus/heartbeat/_scheduler.py`: a rollup branch that, before mechanical `done`, runs the floor (3.3a) then dispatches the goal-root evaluator beat (3.3b) and routes accept/reopen.
-- `src/chorus/recovery/__init__.py`: `INTEGRATION_GAP` recovery kind + opener.
-- the goal-root rubric is carried by the goal's `Verifier` (reuse `Verifier.rubric()` from spec 16); `run.py` sets it to the brief in `--org`.
-- `tests/lifecycle/test_watchdog.py` (fingerprint + walk, pure), `tests/heartbeat/test_integration_watchdog.py` (accept/reopen wiring), one keyed e2e.
+- `standup-app/run.py` — pin the goal-root `reviewed_build` DoD (gate_check + brief rubric) on the `--org --task` goal. No topology change (director-as-reviewer).
+- `src/chorus/heartbeat/_scheduler.py` — extend the delegated-parent rollup (`:633-654`, `:774`) to dispatch the **director-as-reviewer** beat at the integration worktree (read-only toolset + file manifest + brief) and gate `done` on its verdict; fail-closed branch when no evaluator is present.
+- `src/chorus/recovery/__init__.py` — `INTEGRATION_GAP` recovery kind + opener.
+- `tests/heartbeat/test_integration_review.py` — floor-red→block, reviewer-reject→block+INTEGRATION_GAP, approve→done, fail-closed; plus one keyed e2e.
 
 ---
 
@@ -138,10 +123,10 @@ Two composing layers on the integration worktree, both gating the goal-root `don
 |---|---|---|
 | tinyvec | `STRANDED-TODO`, `BLOCKED-GOOD-DELIVERABLE` | **3.2** |
 | tinyvec / ppo_lite | `BUG-005` done≠landed | **3.1** |
-| tooldeck | `RED-AFTER-MERGE`, `DONE-MASKS-RED-SUITE`, `REGISTER-API-SPLIT` (suite goes red) | **3.3a** |
-| ppo_lite | `SKIP-ILLUSION`, `MISSING-CORE`, `DONE-MASKS-INCOMPLETE` | **3.3b** |
-| dpo_tune | `TEST-ILLUSION`, `DUP-PACKAGE`, `WRONG-PACKAGE-SHIPPED`, `WRONG-LOSS`, `DONE-MASKS-SPLIT-BRAIN`, `NO-OWNERSHIP` | **3.3b** |
-| tooldeck | `RIVAL-VALIDATOR`, `ALL-LANDED-STILL-INCOHERENT`, `NO-OWNERSHIP` | **3.3b** |
+| tooldeck | `RED-AFTER-MERGE`, `DONE-MASKS-RED-SUITE`, `REGISTER-API-SPLIT` (suite goes red) | **3.3** (floor) |
+| ppo_lite | `SKIP-ILLUSION`, `MISSING-CORE`, `DONE-MASKS-INCOMPLETE` | **3.3** (reviewer judgment) |
+| dpo_tune | `TEST-ILLUSION`, `DUP-PACKAGE`, `WRONG-PACKAGE-SHIPPED`, `WRONG-LOSS`, `DONE-MASKS-SPLIT-BRAIN`, `NO-OWNERSHIP` | **3.3** (reviewer judgment) |
+| tooldeck | `RIVAL-VALIDATOR`, `ALL-LANDED-STILL-INCOHERENT`, `NO-OWNERSHIP` | **3.3** (reviewer judgment) |
 | all four | `STRAY`, `TARGET-COMMITTED`, harness leak | **3.4** |
 | all four | `README` stub | *Tier 4 — noted, out of scope* |
 
@@ -151,18 +136,19 @@ Two composing layers on the integration worktree, both gating the goal-root `don
 
 ## 5. Data model
 
-Migration `0020_integration_review.sql` (+ declarative `schema/task.sql` parity):
-- `task.integration_review_fingerprint TEXT NULL` — last rested-subtree fingerprint the watchdog accepted/reviewed; gates re-evaluation.
-- `task.origin_kind TEXT NULL` — `'integration_watchdog'` marks watchdog-origin recovery tasks; excluded from the subtree walk.
+**No new migration.** The dream-probe collapsed 3.3 onto existing machinery:
+- The goal-root verdict rides the existing **`reviewed_build` DoD** (`Verifier` already carries `verify_command` + `rubric`).
+- Re-review idempotency reuses the existing **review-run gating** + **integrate-iteration cap** — no fingerprint column needed.
+- `INTEGRATION_GAP` is a new `RecoveryKind` enum value (no schema change; `recovery_action.kind` is already free-text-typed).
 
-No new tables — the watchdog is auto-on-goal-root (not opt-in/configurable like paperclip), so it needs no config row; the goal's existing `Verifier` carries the rubric.
+**No topology change** — the **director** acts as the integration reviewer at rollup (no reviewer hired); the `--org` shape stays 1 director → 2 managers → 3 eng + 1 PM each.
 
 ---
 
 ## 6. Testing strategy (TDD throughout)
 
-- **Unit (pure):** `_classify_todo` predicate (3.2); `done⇒landed` gate with fake lander (3.1); `stop_fingerprint` + subtree walk + live-path check (3.3b); snapshot exclude-list (3.4).
-- **Integration (scheduler):** rollup runs floor → red ⇒ BLOCKED (3.3a); rollup dispatches evaluator → accept ⇒ done, needs-changes ⇒ INTEGRATION_GAP recovery + goal stays open (3.3b); fail-closed when no evaluator present (3.3a Gap B).
+- **Unit (pure):** `_classify_todo` predicate (3.2); `done⇒landed` gate with fake lander (3.1); snapshot exclude-list (3.4).
+- **Integration (scheduler):** at delegated-parent rollup the goal-root `reviewed_build` reviewer beat runs at the integration worktree — floor red ⇒ BLOCKED; reviewer rejects (coverage/coherence) ⇒ BLOCKED + `INTEGRATION_GAP` recovery, goal stays open; approve ⇒ done; fail-closed when no evaluator present (3.3).
 - **e2e (keyed, mini `--org`):** one run that exercises each path end-to-end.
 - **Gate:** `uv run ruff check .` + `uv run mypy --strict src` + full `uv run pytest`.
 
@@ -187,10 +173,9 @@ Success = **no run reports a verdict that contradicts its deep-probe reality.**
 
 1. **3.2 stranded-todo** — smallest, pure, unblocks tinyvec.
 2. **3.1 done⇒landed** — deterministic gate.
-3. **3.3a objective floor** — wire rollup DoD + kernel fail-closed.
-4. **3.3b watchdog** — (a) migration + fingerprint/walk pure, (b) evaluator dispatch at rollup, (c) accept/reopen + INTEGRATION_GAP, (d) done-gate, (e) e2e.
-5. **3.4 hygiene** — lander exclude-list + `.gitignore` seed.
-6. **Re-run 1–4 + deep-probe** (§7).
+3. **3.3 integration review** — (a) pin goal-root `reviewed_build` DoD (gate_check + brief) in `--org --task`; (b) extend delegated-parent rollup to dispatch the **director-as-reviewer** beat at the integration worktree; (c) gate `done` on the verdict — approve⇒done, block⇒BLOCKED + `INTEGRATION_GAP` recovery; (d) fail-closed when no evaluator present; (e) keyed e2e.
+4. **3.4 hygiene** — lander exclude-list + `.gitignore` seed.
+5. **Re-run 1–4 + deep-probe** (§7).
 
 Each slice: RED test → GREEN → gate (ruff + mypy --strict + pytest) → commit.
 
@@ -207,6 +192,7 @@ Each slice: RED test → GREEN → gate (ruff + mypy --strict + pytest) → comm
 
 ## 10. Risks
 
-- **Watchdog false-reopen** (evaluator wrongly rejects a good goal, e.g. tinyvec): mitigated by the fingerprint loop (re-evaluates after the manager responds) + bounded recovery attempts. The rubric must be calibrated to *the brief*, not gold-plating.
+- **Director-as-reviewer false-block** (wrongly rejects a good goal, e.g. tinyvec): the rubric must be calibrated to *the brief*, not gold-plating; bounded by the integrate-iteration cap (past the cap the subtree is mechanically accepted, so a mis-calibrated reviewer can't loop forever). Re-review after the manager responds reuses the existing review-run gating.
+- **Director reviewing its own goal** (separation of duties): acceptable — the director *delegated* the build to managers/engineers and did not write the code, so this is a manager reviewing subordinates' merged work, not self-review of own output.
 - **3.2 over-eager stranding**: bounded by the `assign_task`-always-enqueues-a-wake invariant; the one flipped test documents the contract change.
-- **Cost**: 3.3b adds one read-only evaluator beat per goal-rest. Bounded by the fingerprint (one eval per distinct rested state) — not per tick.
+- **Cost**: 3.3 adds one read-only director-reviewer beat per goal-rest. Bounded by the existing review-run gating (one live reviewer run per task) + the integrate cap — not per tick.
