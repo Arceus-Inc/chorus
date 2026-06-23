@@ -46,3 +46,19 @@ def test_parse_is_forgiving_of_blank_and_missing_sections() -> None:
 def test_arrow_unicode_and_ascii_both_parse() -> None:
     doc = AgentsMd.parse("# AGENTS.md\n## Ownership\n- `a.py` → x\n- `b.py` -> y\n")
     assert doc.ownership == {"a.py": "x", "b.py": "y"}
+
+
+def test_data_model_section_is_carried_verbatim() -> None:
+    # The data-model / I/O contract aligns the manager's acceptance test with the engineer's types: it
+    # is carried as freeform bullets so neither side can disagree on field names or input shape.
+    text = (
+        "# AGENTS.md\n## Public API\n- `pkg.fit`\n## Data model\n"
+        "- `Judgment(winner_id: str|None, loser_id: str|None, judge_id: str)`\n"
+        "- `ingest(rows: list[dict winner_id|loser_id|judge_id]) -> list[Judgment]`\n"
+    )
+    doc = AgentsMd.parse(text)
+    assert doc.data_model == (
+        "`Judgment(winner_id: str|None, loser_id: str|None, judge_id: str)`",
+        "`ingest(rows: list[dict winner_id|loser_id|judge_id]) -> list[Judgment]`",
+    )
+    assert AgentsMd.parse(doc.render()) == doc  # round-trips through render

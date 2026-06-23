@@ -194,7 +194,9 @@ def seed_agents_md(worktree: Path, *, goal_intent: str) -> None:
         "     tree to this contract. -->\n\n"
         "## Module map\n- `<package>/__init__.py` — package entry; re-exports the public API\n\n"
         "## Public API\n- `<package>.<Symbol>`\n\n"
-        "## Ownership\n- `<package>/<file>.py` -> <employee_id>\n"
+        "## Ownership\n- `<package>/<file>.py` -> <employee_id>\n\n"
+        "## Data model\n- `<Type>(<field>: <type>, ...)` — the core type's exact fields\n"
+        "- `<function>(<arg>: <shape>) -> <result>` — the accepted input shape / return\n"
     )
     contract.write_text(skeleton, encoding="utf-8")
 
