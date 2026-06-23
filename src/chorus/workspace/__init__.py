@@ -9,6 +9,7 @@ wires into the harness ``working_dir``.
 from __future__ import annotations
 
 from chorus.workspace._worktree import (
+    ACCEPTANCE_DIR,
     CompanyWorkspace,
     MergeResult,
     WorkspaceError,
@@ -17,6 +18,7 @@ from chorus.workspace._worktree import (
 )
 
 __all__ = [
+    "ACCEPTANCE_DIR",
     "CompanyWorkspace",
     "MergeResult",
     "WorkspaceError",

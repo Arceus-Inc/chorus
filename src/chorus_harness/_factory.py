@@ -343,12 +343,14 @@ class EmployeeHarnessFactory:
             assert task_id is not None and self._ledger is not None  # narrowed by is_integrate_beat
             config = replace(config, tools=tuple(t for t in config.tools if t != "decompose"))
             # Structural over-submit guard: when the kernel's verdict is `accept` — every child done,
-            # unblocked, and passing — the delegated work is complete, so submit_task/assign_task are
-            # withheld too. The manager can only review and accept; it cannot bolt on redundant work.
-            # (A live gpt-class manager over-submits even when the brief + packet tell it to accept.)
+            # unblocked, and passing — the delegated work is complete, so submit_task/assign_task AND the
+            # contract-authoring write surface are withheld too. The manager can only review and accept;
+            # it cannot bolt on redundant work or rewrite the (already-satisfied) contract. (A live
+            # gpt-class manager over-submits even when the brief + packet tell it to accept.)
             if IntegrateContextPacket.recommended_for(self._ledger, task_id) == "accept":
                 config = replace(
-                    config, tools=tuple(t for t in config.tools if t not in _REACTIVE_TOOLS)
+                    config,
+                    tools=tuple(t for t in config.tools if t not in _REACTIVE_TOOLS | {"write_file"}),
                 )
 
         # Team rehydration: a delegating role (decompose/submit/assign) gets its reports appended to its
@@ -368,7 +370,24 @@ class EmployeeHarnessFactory:
             # branched from — blind to the children's deliverables that have since landed. Sync it to
             # ``main`` first so the manager reviews the real, merged subtree instead of an empty tree
             # (read_file on the children's files would otherwise error and the verdict be vacuous).
+            # ``prefer_main``: the manager authored the contract (AGENTS.md/manifest) in this worktree and
+            # the same files were published to ``main`` out-of-band, so a child's edit to the manifest
+            # makes a plain merge an add/add CONFLICT that aborts and strands the manager on a
+            # contract-only tree (the prefrank false block). ``main`` is the integrated truth here, so
+            # conflicts resolve in its favour — the full merged subtree comes in instead of nothing.
             if is_integrate_beat and review_worktree_of is None:
+                workspace.sync_to_main(worktree_owner, prefer_main=True)
+            elif (
+                review_worktree_of is None
+                and task_id is not None
+                and self._ledger is not None
+                and self._ledger.dependencies.blockers(task_id)
+            ):
+                # Dependency-ordered branching (spec 15 §4.1, extended): a child whose code builds on a
+                # sibling's modules must branch off a main that already carries them. By dispatch its
+                # ``depends_on`` blockers are resolved (the M2 gate) and merged, so syncing ``main`` into
+                # its worktree makes the siblings' landed code visible — without it the dependent imports
+                # a module that lives only in a sibling's worktree and fails its build (the run-4 reject).
                 workspace.sync_to_main(worktree_owner)
             root = workspace.worktree_for(worktree_owner).path
         else:
@@ -400,6 +419,10 @@ class EmployeeHarnessFactory:
             plugins=config.plugins,
             wake_model=config.wake_model,
             env=dict(config.env) or None,
+            # spec 15 §4.2: prepend the deliverable's AGENTS.md to every beat so the manager sees the
+            # contract it must author and each engineer builds to it before writing. No-op when no
+            # AGENTS.md exists; harmless for read-only roles (it only adds context).
+            orientation=True,
         )
         return EmployeeHarness(
             runner=DreamBeatRunner(

@@ -28,6 +28,8 @@ _OPERATIONAL_EXCLUDES = (
     ".dream/",  # dream task/ledger artefacts
     ".harness/",  # dream tool-tier / policy / role-overlay files
     ".chorus/",  # any nested chorus state
+    "docs/evals/",  # dream planner eval artefacts written into the working dir (not deliverable)
+    "docs/exec-plans/",  # dream planner exec-plan artefacts (not deliverable)
     ".mypy_cache/",
     ".playwright-mcp/",
     ".pytest_cache/",
@@ -36,10 +38,29 @@ _OPERATIONAL_EXCLUDES = (
     "__pycache__/",
     "memory/",  # memory store spill, if working-dir-local
     "node_modules/",
+    # Compiled build output — language-agnostic, never the deliverable's source. Without these a
+    # Rust crate's ``target/`` (~thousands of files) or a JS ``dist/`` lands in the "PR" (the tinyvec
+    # 1241-file leak). High-confidence dirs only — never names that can hold tracked source.
+    "target/",  # Rust/Cargo, Maven
+    "dist/",  # Python/JS build output
+    ".next/",  # Next.js build
+    ".nuxt/",  # Nuxt build
+    ".gradle/",  # Gradle cache
+    ".tox/",  # Python tox envs
+    "htmlcov/",  # coverage HTML
+    ".coverage",  # coverage data file
+    "*.egg-info/",  # Python packaging metadata
 )
 _OPERATIONAL_EXCLUDE_NAMES = {path.rstrip("/") for path in _OPERATIONAL_EXCLUDES}
 _SEED_COPY_IGNORE = shutil.ignore_patterns(".git", *_OPERATIONAL_EXCLUDE_NAMES)
 _HARNESS_SEED_FILES = frozenset({"mcp-allowlist.toml", "plugins-enabled.toml"})
+
+# The manager-authored, engineer-locked acceptance suite (spec 15 §4.2, test-first-as-org-structure):
+# the goal's RED bar, published to main before engineers branch and run as the goal's rollup gate. It is
+# a STACK-NEUTRAL directory — the manager writes the test(s) inside it in the DELIVERABLE's own test
+# framework (a pytest module, a *.test.ts, a Go _test.go, a Rust test); the stack-aware gate runs it.
+# An engineer may add its own tests but must never weaken this one, so the lander restores it from main.
+ACCEPTANCE_DIR = "acceptance"
 
 
 # The default base for company workspaces under the current working directory. ``chat``, ``tick``, and
@@ -196,6 +217,27 @@ class CompanyWorkspace:
             self._run(self._repo, "worktree", "add", "-b", branch, str(path), "main")
         return WorktreeWorkspace(path=path, branch=branch)
 
+    def publish_to_main(self, relpath: str, content: str, *, message: str) -> str:
+        """Write ``relpath`` into the company ``repo`` (branch ``main``) and commit it; return main's sha.
+
+        The cross-child contract (``AGENTS.md``) must land on ``main`` *before* any engineer worktree is
+        cut, so every branch carries the real module map / public API / ownership rather than the seeded
+        placeholder (spec 15 §4.1). This is that landing primitive: it commits one file straight onto
+        ``main`` (only ``relpath`` is staged, so unrelated working-tree state is untouched) and is
+        idempotent — re-publishing identical content is a no-op that returns the current ``main`` sha.
+        """
+        self.ensure_repo()
+        target = self._repo / relpath
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(content, encoding="utf-8")
+        self._run(self._repo, "add", relpath)
+        staged = subprocess.run(
+            ["git", "-C", str(self._repo), "diff", "--cached", "--quiet"], capture_output=True, text=True
+        )
+        if staged.returncode != 0:  # non-zero → there is a real change to commit
+            self._run(self._repo, *_COMMIT_IDENTITY, "commit", "-m", message)
+        return self._run(self._repo, "rev-parse", "HEAD")
+
     def merge(self, employee_id: str, *, into: str = "main", message: str | None = None) -> MergeResult:
         """Snapshot the employee's uncommitted work, then merge its branch into ``into`` (default main).
 
@@ -223,19 +265,56 @@ class CompanyWorkspace:
             detail=(done.stderr or done.stdout).strip(),
         )
 
-    def sync_to_main(self, employee_id: str) -> bool:
+    def restore_from_main(self, employee_id: str, *relpaths: str) -> None:
+        """Discard ``employee_id``'s edits to ``relpaths``, restoring each from ``main`` (best-effort).
+
+        The lock behind the engineer-owned acceptance test (spec 15 §4.2): an engineer may add tests but
+        must not weaken the goal's bar, so before its branch is snapshotted any change it made to a
+        protected path is reverted to ``main``'s version. A path absent on ``main`` is skipped.
+        """
+        wt = self.worktree_for(employee_id).path
+        for relpath in relpaths:
+            if subprocess.run(
+                ["git", "-C", str(self._repo), "cat-file", "-e", f"main:{relpath}"],
+                capture_output=True, text=True,
+            ).returncode != 0:
+                continue  # not on main → nothing authoritative to restore from
+            subprocess.run(
+                ["git", "-C", str(wt), "checkout", "main", "--", relpath], capture_output=True, text=True
+            )
+
+    def sync_to_main(self, employee_id: str, *, prefer_main: bool = False) -> bool:
         """Bring ``employee_id``'s worktree up to the current company ``main``; return whether it synced.
 
         A manager that delegated never edited code, so its worktree still sits at the ``main`` it
         branched from — blind to the children's deliverables that have since landed there. Merging
-        ``main`` into the branch (a fast-forward, since a delegating manager has no own commits) makes
-        the integrated subtree visible in the worktree, so the manager's integrate beat reviews the real
-        merged result instead of an empty tree. A divergent branch that cannot merge cleanly is left
-        untouched (the beat falls back to its stale worktree) rather than raised — sync is best-effort.
+        ``main`` into the branch makes the integrated subtree visible in the worktree, so the manager's
+        integrate beat reviews the real merged result instead of an empty tree. A divergent branch that
+        cannot merge cleanly is left untouched (the beat falls back to its stale worktree) rather than
+        raised — sync is best-effort.
+
+        Snapshot first: the manager authored ``AGENTS.md`` in this worktree at kickoff and never
+        committed it (it delegated rather than landing a PR), so the tree carries an uncommitted change.
+        ``git merge`` refuses to run over uncommitted local changes — without committing them first the
+        sync always fails and the manager reviews an EMPTY tree (the run-6 ``no_deliverable`` false
+        block). Committing the local work first lets ``main`` merge in cleanly.
+
+        ``prefer_main`` resolves merge conflicts in ``main``'s favour (``-X theirs``). The contract files
+        (AGENTS.md, the acceptance suite, the manifest) are published to ``main`` BEFORE fan-out, yet the
+        manager also authored them in its own worktree; the snapshot above commits those copies onto the
+        manager's branch as additions INDEPENDENT of the publish on ``main`` (their merge-base is the
+        pre-publish seed). So if a child later edits a published file — a manifest gets a new dependency —
+        the merge is an add/add CONFLICT that aborts and strands the manager on a contract-only tree with
+        no deliverable (the prefrank false block). For the manager's integrate REVIEW, ``main`` is the
+        integrated truth and the manager's branch copy of the contract is superseded, so taking ``main``'s
+        side pulls the full merged subtree in cleanly. Off by default: a dependent CHILD syncing siblings'
+        code has its OWN in-progress edits that must not be clobbered.
         """
+        self._snapshot(employee_id)
         wt = self.worktree_for(employee_id)
+        strategy = ["-X", "theirs"] if prefer_main else []
         done = subprocess.run(
-            ["git", "-C", str(wt.path), *_COMMIT_IDENTITY, "merge", "main",
+            ["git", "-C", str(wt.path), *_COMMIT_IDENTITY, "merge", *strategy, "main",
              "-m", f"chorus: sync {wt.branch} to main"],
             capture_output=True,
             text=True,

@@ -103,12 +103,15 @@ def test_todo_with_queued_wake_is_healthy(ledger: SqliteLedger, emp: Employee) -
     assert result.reason == "queued_wake"
 
 
-def test_fresh_todo_is_resting_healthy(ledger: SqliteLedger, emp: Employee) -> None:
-    # No runs, no wake: not yet dispatched — eligible, not stalled.
+def test_todo_with_no_run_and_no_wake_is_stranded(ledger: SqliteLedger, emp: Employee) -> None:
+    # No runs, no wake, no recovery: nothing will ever pick it up. `assign_task` enqueues a
+    # `task_assigned` wake atomically with backlog→todo, so a wake-less, run-less todo is *abandoned*,
+    # not "resting" — "resting" is only valid after a clean success (spec 02 §9, paperclip
+    # hasExplicitWaitingPath). This is the tinyvec stranded-todo: a never-dispatched leaf hangs its parent.
     task = _task(ledger, TaskStatus.TODO)
     result = classify(task, ledger, now=NOW)
-    assert result.healthy
-    assert result.reason == "resting"
+    assert result.stalled
+    assert result.reason == "stranded_todo"
 
 
 def test_todo_after_succeeded_run_is_resting_healthy(ledger: SqliteLedger, emp: Employee) -> None:
@@ -119,6 +122,20 @@ def test_todo_after_succeeded_run_is_resting_healthy(ledger: SqliteLedger, emp: 
     result = classify(task, ledger, now=NOW)
     assert result.healthy
     assert result.reason == "resting"
+
+
+def test_todo_awaiting_an_unresolved_dependency_is_healthy(ledger: SqliteLedger, emp: Employee) -> None:
+    # A todo whose assignment wake was gated by an unresolved dependency is WAITING, not stranded: the
+    # scheduler marks the assignment wake done, and a ``deps_resolved`` wake re-dispatches it once the
+    # blocker lands. Without this, every dependency-gated child reads "stranded" in the gap before
+    # deps_resolved fires — spurious recovery churn (the V3 over-fire: 100% of stranded recoveries were
+    # dep-gated todos with no wake/run yet, all opened <30s after creation and immediately folded).
+    task = _task(ledger, TaskStatus.TODO, task_id="t1")  # no wake, no run yet
+    _task(ledger, TaskStatus.IN_PROGRESS, task_id="t2")  # its blocker, still being worked
+    ledger.dependencies.add("t1", "t2")
+    result = classify(task, ledger, now=NOW)
+    assert result.healthy
+    assert result.reason == "awaiting_dependency"
 
 
 @pytest.mark.parametrize("bad", [RunStatus.FAILED, RunStatus.TIMED_OUT, RunStatus.CANCELLED])
@@ -235,6 +252,18 @@ def test_blocked_on_stalled_leaf_surfaces_it(ledger: SqliteLedger, emp: Employee
     # blocker is a stranded todo (interrupted dispatch, nothing queued)
     _task(ledger, TaskStatus.TODO, task_id="t2")
     ledger.runs.create(Run(id="run_bad", employee_id="emp_1", task_id="t2", status=RunStatus.FAILED))
+    ledger.dependencies.add("t1", "t2")
+    result = classify(parent, ledger, now=NOW)
+    assert result.stalled
+    assert "t2" in result.reason
+
+
+def test_blocked_on_never_dispatched_leaf_surfaces_it(ledger: SqliteLedger, emp: Employee) -> None:
+    # The tinyvec scenario: the parent goal is `blocked` on a child stuck in `todo` that was NEVER
+    # dispatched (no runs at all, no wake). Before the fix the leaf read "resting" healthy → the parent
+    # read "healthy_blocker" → the goal hung forever. The leaf must now surface as the stalled blocker.
+    parent = _task(ledger, TaskStatus.BLOCKED, task_id="t1")
+    _task(ledger, TaskStatus.TODO, task_id="t2")  # never dispatched: no run, no wake
     ledger.dependencies.add("t1", "t2")
     result = classify(parent, ledger, now=NOW)
     assert result.stalled

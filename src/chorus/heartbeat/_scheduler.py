@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Protocol, TypeVar, runtime_checkable
 
 from chorus.adapters._failure import failure_outcome
+from chorus.coherence import authored_contract, contract_sha
 from chorus.cron._fire import fire_routine
 from chorus.governance import GovernanceResolver
 from chorus.heartbeat._beat import BeatDisposition, BeatOutcome
@@ -588,6 +589,9 @@ class Scheduler:
             # Resolve the runner for *this* employee's role + beat phase (an integrate beat — the task
             # already has children — is materialized without ``decompose``, spec 06 §2 / M3 §5).
             beat_runner = beat_runner_for.runner_for(employee, task_id=task_id)
+            self._record_contract_ingestion(
+                ledger, beat_runner=beat_runner, task_id=task_id, employee=employee
+            )
             if ledger.tasks.has_children(task_id) and ledger.tasks.all_children_terminal(task_id):
                 self._write_integrate_packet(ledger, beat_runner=beat_runner, task_id=task_id)
             # Intake DoD (spec 04 §1 / 06 §2): a task with no explicit DoD inherits its assignee role's, so
@@ -716,6 +720,34 @@ class Scheduler:
             return
         IntegrateContextPacket.build(ledger, parent_task_id=task_id).write(working_dir)
 
+    def _record_contract_ingestion(
+        self, ledger: SqliteLedger, *, beat_runner: BeatRunner, task_id: str, employee: Employee
+    ) -> None:
+        """Audit that THIS beat branched off an authored AGENTS.md (spec 15 §4.2 — "did they read it").
+
+        Orientation prepends the worktree's ``AGENTS.md`` to every beat, but that only carries the real
+        contract once the manager has published it to main (so an engineer cut afterwards inherits it).
+        Recording the ingested contract's content sha here turns "the engineer read the contract" from an
+        un-checkable hope into a durable ledger fact: the activity stream shows ``contract_ingested`` with
+        the same ``contract_sha`` the manager ``contract_published`` — no transcript grep required. A
+        beat whose worktree still holds the placeholder (e.g. the manager's own kickoff) records nothing.
+        """
+        if not isinstance(beat_runner, _RunnerWithWorkingDir):
+            return
+        working_dir = beat_runner.working_dir
+        if working_dir is None:
+            return
+        contract = authored_contract(working_dir)
+        if contract is None:
+            return
+        record_activity(
+            ledger,
+            verb=ActivityVerb.CONTRACT_INGESTED,
+            subject_id=task_id,
+            actor_employee_id=employee.id,
+            payload={"contract_sha": contract_sha(contract)},
+        )
+
     def _integrate_floor_verdict(
         self, task_id: str, *, verifier: Verifier | None, beat_runner: BeatRunner | None
     ) -> bool | None:
@@ -825,7 +857,16 @@ class Scheduler:
                 task_id, verifier=verifier, author=employee, work_result=result, now=now
             )
             return
-        await self._land_outcome(task_id, employee=employee, result=result)
+        artifact = await self._land_outcome(task_id, employee=employee, result=result)
+        if artifact is not None and artifact.resource_ref.get("merged") is False:
+            # done ⇒ landed (tier-3 3.1): the deliverable was produced but its branch did NOT integrate
+            # into company main. A passed beat must not finalise `done` over an un-landed artifact —
+            # that is the BUG-005 done≠landed gap. Park BLOCKED + a recovery so the conflict is resolved
+            # and re-integrated; the run still records as succeeded (the work happened, only the merge failed).
+            self._open_merge_conflict_recovery(task_id, owner_id=employee.id)
+            ledger.runs.finish(run_id, RunStatus.SUCCEEDED, outcome=verdict)
+            ledger.tasks.set_status(task_id, TaskStatus.BLOCKED)
+            return
         ledger.finalize_beat(
             task_id=task_id, run_id=run_id, dod_status=DodStatus.PASSED, verdict=verdict
         )
@@ -1086,24 +1127,46 @@ class Scheduler:
             )
         )
 
-    async def _land_outcome(self, task_id: str, *, employee: Employee, result: BeatOutcome) -> None:
+    async def _land_outcome(
+        self, task_id: str, *, employee: Employee, result: BeatOutcome
+    ) -> OutcomeArtifact | None:
         """Record the role's deliverable as an artifact via its registered lander (spec 04 §2).
 
-        A no-op when no lander registry is wired or the employee's role lands no artifact kind — the
-        beat still finalises ``done``, so landing is purely additive (the strict-completion record).
+        Returns the landed :class:`~chorus.outcomes.Artifact` so the caller can inspect its
+        integration status (the done⇒landed gate). A no-op returning ``None`` when no lander registry
+        is wired or the employee's role lands no artifact kind — the beat still finalises ``done``, so
+        landing is purely additive (the strict-completion record).
         """
         if self._landers is None or self._roles is None or employee.role not in self._roles:
-            return
+            return None
         outcome_kind = self._roles.get(employee.role).outcome_kind
         lander = self._landers.get(outcome_kind)
         if lander is None:
-            return
+            return None
         ledger = self._require_ledger()
         task = ledger.tasks.get(task_id)
         if task is None:
-            return
+            return None
         artifact = await lander.land(task, result)
         ledger.artifacts.create(_to_ledger_artifact(artifact))
+        return artifact
+
+    def _open_merge_conflict_recovery(self, task_id: str, *, owner_id: str) -> None:
+        """Open a recovery for a deliverable that was produced but failed to integrate (idempotent)."""
+        ledger = self._require_ledger()
+        if ledger.recovery_actions.active_for_source(task_id) is not None:
+            return
+        ledger.recovery_actions.open(
+            RecoveryAction(
+                id=f"rec_{uuid.uuid4().hex[:12]}",
+                source_task_id=task_id,
+                kind=RecoveryKind.WORKSPACE,
+                owner_employee_id=owner_id,
+                cause="merge_conflict",
+                fingerprint="merge_conflict",
+                next_action="resolve the integration conflict and re-merge the branch into company main",
+            )
+        )
 
     def _climb_repair_ladder(
         self, task_id: str, *, employee_id: str, verifier: Verifier | None

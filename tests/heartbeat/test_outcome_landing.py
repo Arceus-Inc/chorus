@@ -94,6 +94,32 @@ async def test_passed_beat_records_the_role_artifact(ledger: SqliteLedger) -> No
     assert ledger.tasks.get("t1").status is TaskStatus.DONE  # type: ignore[union-attr]
 
 
+class _ConflictLander:
+    """A lander whose artifact records a FAILED integration (``merged=False``)."""
+
+    outcome_kind = "pr"
+
+    async def land(self, task: Any, result: Any) -> Artifact:
+        return Artifact(
+            task_id=task.id,
+            type=ArtifactType.PR,
+            resource_ref={"branch": "chorus/e1", "merged": False},
+        )
+
+
+async def test_unmerged_artifact_blocks_done(ledger: SqliteLedger) -> None:
+    # done ⇒ landed (tier-3 3.1): a passed beat whose deliverable did NOT integrate into company main
+    # (merged=False) must NOT finalize `done`. It blocks + opens a recovery so the conflict is resolved
+    # and re-integrated — instead of laundering an un-landed branch into a false `done` (BUG-005).
+    await _run(ledger, landers=LanderRegistry.from_landers([_ConflictLander()]))
+
+    task = ledger.tasks.get("t1")
+    assert task.status is TaskStatus.BLOCKED  # type: ignore[union-attr]  # not DONE
+    # the unmerged PR is still recorded (it stands as an open PR), and a recovery surfaces it
+    assert ledger.artifacts.list_for_task("t1")[0].resource_ref["merged"] is False
+    assert ledger.recovery_actions.active_for_source("t1") is not None
+
+
 async def test_no_lander_still_finalises_done(ledger: SqliteLedger) -> None:
     await _run(ledger, landers=None)  # back-compat: nothing to land
 

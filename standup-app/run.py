@@ -53,6 +53,7 @@ from pathlib import Path
 from chorus import Caps, Chorus, TaskStatus, Verifier, default_roles
 from chorus.events import Event, EventKind
 from chorus.ledger import SqliteLedger
+from chorus.lifecycle import seed_agents_md
 from chorus.roles import RolePlugin, RoleRegistry, SandboxTier
 
 _REQUIRED = ("AZURE_OPENAI_API_KEY", "AZURE_OPENAI_BASE_URL", "AZURE_OPENAI_DEPLOYMENT")
@@ -132,8 +133,10 @@ def _pin_objective_dod(plugin: RolePlugin) -> RolePlugin:
 # agent NOT to pip-install or git-push (the kernel's lander handles the PR + merge). Both were the main
 # time-wasters that blew the per-beat timeout on the first run; the gate itself (pytest/ruff) is real.
 _NO_THRASH = (
-    " pytest and ruff are ALREADY installed — do NOT run pip install or ensurepip. Do NOT run git "
-    "push (there is no remote; the system handles landing). Just create the files, run the gate "
+    " pytest and ruff are ALREADY installed. If your code needs a third-party library, DECLARE it in "
+    "the project manifest (pyproject.toml [project].dependencies / package.json / Cargo.toml / go.mod) — "
+    "the gate installs declared deps for you; do NOT pip-install ad hoc (it won't persist). Do NOT run "
+    "git push (there is no remote; the system handles landing). Just create the files, run the gate "
     "locally, and commit."
 )
 _SOLO_TASK = (
@@ -352,6 +355,25 @@ _CHATROOM_ROLLUP_CMD = (
     '"'
 )
 _CHATROOM_ROLLUP_DOD = Verifier.command(_CHATROOM_ROLLUP_CMD, timeout_s=900)
+
+# spec 15 — the cross-child coherence gate, pinned as the GOAL's objective rollup DoD. The kernel's
+# `_integrate_floor_verdict` runs it in the integrator's worktree (= company main once the subtree
+# merged) at the director's integrate beat: `python -m chorus.coherence` reconciles the merged tree to
+# the manager-authored `AGENTS.md` (declared modules present, no duplicate public symbol, `__init__`
+# exports the declared API, no orphan module, the package imports clean). A non-zero exit parks the goal
+# BLOCKED with the precise violations, and the adaptive integrate loop re-dispatches the manager to
+# reconcile — so a split-brain subtree can never land a silent `done`. chorus is on the worktree venv,
+# so `python -m chorus.coherence` resolves there.
+# Test-first-as-org-structure (spec 15 §4.2): the goal is NOT done until the manager-authored,
+# engineer-locked acceptance test passes on the integrated tree — an INDEPENDENT bar derived from the
+# goal, run here at the rollup (it imports the whole package, so it can only pass once every child has
+# merged). Coherence (single coherent surface) AND the acceptance test (the deliverable actually does
+# what the goal asked) must both be green for the manager's integrate to land done.
+_COHERENCE_ROLLUP_DOD = Verifier.command(
+    "python -m chorus.coherence && python gate_check.py --acceptance",
+    artifact_class="subtree",
+    timeout_s=900,
+)
 
 
 # ── output helpers ────────────────────────────────────────────────────────────────────────────────
@@ -573,31 +595,70 @@ def _node_scripts() -> dict[str, str]:
     return scripts if isinstance(scripts, dict) else {}
 
 
-def main() -> int:
-    steps: list[list[str]] = []
+def _acceptance_steps() -> list[list[str]]:
+    """Run ONLY the goal's acceptance suite (the manager-authored, engineer-locked bar) in the
+    deliverable's own stack. It lives in the stack-neutral ``acceptance/`` directory; each runner is
+    pointed at it. This is the ONE place stack-specifics live — the rollup DoD just passes --acceptance.
+    """
+    if not (ROOT / "acceptance").is_dir():
+        print("[gate] FAILED: no acceptance/ suite — the manager must author the goal bar", flush=True)
+        return [["false"]]  # force a non-zero gate
+    if (ROOT / "package.json").is_file():
+        return [["npx", "--yes", "vitest", "run", "acceptance"]]
+    if (ROOT / "go.mod").is_file():
+        return [["go", "test", "./acceptance/..."]]
+    if (ROOT / "Cargo.toml").is_file():
+        return [["cargo", "test"]]  # Rust integration tests run via cargo (best-effort)
+    # `python -m pytest` (not bare `pytest`) so the repo root is on sys.path and `acceptance/` can
+    # import the integrated package.
+    return [[sys.executable, "-m", "pytest", "-q", "acceptance"]]
 
+
+def _install_steps() -> list[list[str]]:
+    """Install the deliverable's DECLARED third-party dependencies from its manifest, so any library it
+    (or the acceptance test) depends on is available before the tests run. Stack-aware and the ONE place
+    install logic lives. Python uses ``uv`` (the run env's installer) to install the manifest's deps —
+    no package build needed; ``-r`` reads pyproject/requirements directly. Runs in BOTH gate modes.
+    """
+    steps: list[list[str]] = []
+    if (ROOT / "package.json").is_file() and not (ROOT / "node_modules").is_dir():
+        steps.append(["npm", "install", "--no-audit", "--no-fund"])
+    if shutil.which("uv"):
+        for manifest in ("pyproject.toml", "requirements.txt"):
+            if (ROOT / manifest).is_file():
+                steps.append(["uv", "pip", "install", "-r", manifest])
+                break
+    # Rust (cargo) and Go (go test) fetch declared deps as part of build/test — no separate step.
+    return steps
+
+
+def _unit_steps() -> list[list[str]]:
+    """The per-engineer gate: the stack's unit tests, NEVER the ``acceptance/`` suite (it needs the whole
+    integrated deliverable, absent in one engineer's isolated worktree — it runs at the goal rollup)."""
+    steps: list[list[str]] = []
     if (ROOT / "package.json").is_file():
         scripts = _node_scripts()
-        if not (ROOT / "node_modules").is_dir():
-            steps.append(["npm", "install", "--no-audit", "--no-fund"])
         if "build" in scripts:
             steps.append(["npm", "run", "build"])
         if "test" in scripts:
             steps.append(["npm", "test", "--silent"])
         elif (ROOT / "tsconfig.json").is_file():
             steps.append(["npx", "tsc", "--noEmit"])
-
     if (ROOT / "Cargo.toml").is_file():
         steps.append(["cargo", "test"])
-
     if (ROOT / "go.mod").is_file():
         steps.append(["go", "test", "./..."])
-
-    # Python is also the default floor when no other stack is detected.
+    # Python is also the default floor when no other stack is detected. `python -m pytest` (not bare
+    # `pytest`) so the repo root is on sys.path and a test can import the package without an install.
     if _has_py_sources() or not steps:
-        steps.append(["pytest", "-q"])
+        steps.append([sys.executable, "-m", "pytest", "-q", "--ignore=acceptance"])
         steps.append(["ruff", "check", "."])
+    return steps
 
+
+def main() -> int:
+    run = _acceptance_steps() if "--acceptance" in sys.argv[1:] else _unit_steps()
+    steps = _install_steps() + run  # install declared deps first, in either mode
     for cmd in steps:
         rc = _run(cmd)
         if rc != 0:
@@ -655,6 +716,9 @@ def _seed_repo(path: Path) -> Path:
     (path / "test_smoke.py").write_text("def test_smoke():\n    assert True\n", encoding="utf-8")
     (path / "gate_check.py").write_text(_GATE_CHECK_PY, encoding="utf-8")
     (path / "plan_check.py").write_text(_PLAN_CHECK_PY, encoding="utf-8")
+    # spec 15: seed the cross-child coherence contract so it is on company main from the start (the
+    # manager re-writes it to the real module map / public API / ownership on its kickoff beat).
+    seed_agents_md(path, goal_intent="the deliverable described in the goal")
     subprocess.run(["git", "-C", str(path), "add", "-A"], check=True, capture_output=True)
     subprocess.run(
         ["git", "-C", str(path), "-c", "user.name=seed", "-c", "user.email=seed@x",
@@ -765,17 +829,24 @@ async def _run_solo(org: Chorus, task_text: str, *, max_pulses: int, c: _C) -> s
 
 
 async def _run_team(org: Chorus, goal_text: str, *, c: _C) -> str:
-    """A manager decomposes the goal across two engineers, driven by the always-on heartbeat."""
-    _hr("HIRE — a manager, two engineers, a reviewer", c)
+    """A flat team — one manager + two engineers + a PM — driven by the always-on heartbeat.
+
+    spec 15: the manager authors ``AGENTS.md`` at decompose and its integrate is gated on the coherence
+    checker (``_COHERENCE_ROLLUP_DOD``). Because the manager IS the top of this flat org, its integrate
+    beat runs the gate against company main — so even when the leaf engineers each pass their own gate,
+    a split-brain assembled surface (rival modules / empty __init__ / orphans) parks the goal BLOCKED
+    with the precise violations instead of a silent ``done``.
+    """
+    _hr("HIRE — a manager, two engineers, a PM (flat coherence team)", c)
     org.hire(name="moe", role="manager")
     org.hire(name="ada", role="engineer", reports_to="moe")
     org.hire(name="bo", role="engineer", reports_to="moe")
-    org.hire(name="ria", role="reviewer", reports_to="moe")
-    _step("hired moe(manager) · ada(engineer) · bo(engineer) · ria(reviewer)", c)
+    org.hire(name="pat", role="pm", reports_to="moe")
+    _step("hired moe(manager) · ada(engineer) · bo(engineer) · pat(pm)", c)
 
-    _hr("SUBMIT — state a goal; the manager decomposes it", c)
-    goal = org.submit(goal_text, assignee="moe")
-    _step(f"submitted goal {goal.id} → moe", c)
+    _hr("SUBMIT — state a goal; the manager authors AGENTS.md + decomposes, gated on coherence", c)
+    goal = org.submit(goal_text, assignee="moe", dod=_COHERENCE_ROLLUP_DOD)
+    _step(f"submitted goal {goal.id} → moe (integrate gated on python -m chorus.coherence)", c)
     print(c("90", f"    goal: {goal_text}"))
 
     _hr("HEARTBEAT — org.start(): the concurrent always-on runner (employees work in the background)", c)
@@ -783,7 +854,11 @@ async def _run_team(org: Chorus, goal_text: str, *, c: _C) -> str:
     # Bound the run: the deadline is a hard ceiling, but we exit as soon as the goal settles OR every
     # decomposed child has landed. A stall guard breaks out if no child changes status for a long
     # stretch (the classic symptom of a gate that can never be satisfied) instead of spinning silently.
-    deadline = time.monotonic() + 600.0
+    # Hard ceiling. A contract-derived (per-module) decomposition has a longer SERIAL critical path —
+    # a deep dependency chain funnelled through one foundation task can be ~6 sequential engineer beats
+    # — so the ceiling must clear that, not the 3-4 beats a bundled split needs. The run still exits the
+    # instant the goal settles or every child lands, so a higher ceiling only matters when work is long.
+    deadline = time.monotonic() + 1500.0
     stall_after_s = 200.0
     rollup_grace_s = 300.0                  # let the manager integrate (incl. the kernel cap) close it
     last_child_sig: tuple[tuple[str, str], ...] = ()
@@ -827,10 +902,15 @@ async def _run_team(org: Chorus, goal_text: str, *, c: _C) -> str:
             if child_sig != last_child_sig:
                 last_child_sig = child_sig
                 last_change = time.monotonic()
-            elif kids and time.monotonic() - last_change > stall_after_s:
-                print(c("91;1", f"  ✖ no child made progress for ~{stall_after_s:.0f}s — stopping. The "
-                                f"goal is '{g.status.value}' with {done}/{len(kids)} children done; a "
-                                f"done-gate is stuck (see the verdict lines above)."))
+            if _progress_stalled(
+                running_beats=st.running_beats,
+                idle_s=time.monotonic() - last_change,
+                stall_after_s=stall_after_s,
+                has_children=bool(kids),
+            ):
+                print(c("91;1", f"  ✖ no child made progress for ~{stall_after_s:.0f}s (no beat running) "
+                                f"— stopping. The goal is '{g.status.value}' with {done}/{len(kids)} "
+                                f"children done; a done-gate is stuck (see the verdict lines above)."))
                 break
     finally:
         await org.stop()  # signal the loop, then drain in-flight beats
@@ -871,23 +951,22 @@ async def _run_org(
     it at the director's integrate beat and the rollup-honesty gate parks the goal BLOCKED (not DONE) if
     it fails — the structural decomposition guard. ``None`` keeps the manager's mechanical rollup.
     """
-    _hr("HIRE — a 3-level org: 1 director · 3 managers (2 feature teams + 1 app/UI team)", c)
+    _hr("HIRE — a 3-level org: 1 director · 2 managers · each lead = 3 engineers + 1 PM", c)
     org.hire(name="vera", role="manager")                       # L1 — the director
-    org.hire(name="moe", role="manager", reports_to="vera")     # L2 — manager A (messaging)
-    org.hire(name="max", role="manager", reports_to="vera")     # L2 — manager B (presence)
-    org.hire(name="nash", role="manager", reports_to="vera")    # L2 — manager C (app/UI)
-    # L3 — moe's team: 2 engineers + 1 PM
+    org.hire(name="moe", role="manager", reports_to="vera")     # L2 — manager A
+    org.hire(name="max", role="manager", reports_to="vera")     # L2 — manager B
+    # L3 — moe's team: 3 engineers + 1 PM
     org.hire(name="ada", role="engineer", reports_to="moe")
     org.hire(name="bo", role="engineer", reports_to="moe")
+    org.hire(name="cy", role="engineer", reports_to="moe")
     org.hire(name="pat", role="pm", reports_to="moe")
-    # L3 — max's team: 2 engineers + 1 PM
-    org.hire(name="cy", role="engineer", reports_to="max")
+    # L3 — max's team: 3 engineers + 1 PM
     org.hire(name="di", role="engineer", reports_to="max")
+    org.hire(name="ev", role="engineer", reports_to="max")
+    org.hire(name="fi", role="engineer", reports_to="max")
     org.hire(name="quinn", role="pm", reports_to="max")
-    # L3 — nash's app team: 1 engineer + 1 PM (builds app.py, the runnable UI)
-    org.hire(name="uri", role="engineer", reports_to="nash")
-    org.hire(name="peg", role="pm", reports_to="nash")
-    _step("hired vera(director) → moe,max,nash(managers) → ada,bo,cy,di,uri(eng) · pat,quinn,peg(pm)", c)
+    _step("hired vera(director) → moe,max(managers) → "
+          "ada,bo,cy,pat(pm) | di,ev,fi,quinn(pm)", c)
 
     _hr("SUBMIT — state the goal; the director decomposes across the two team leads", c)
     goal = org.submit(goal_text, assignee="vera", dod=rollup_dod)
@@ -898,7 +977,7 @@ async def _run_org(
 
     _hr("HEARTBEAT — org.start(): two manager tiers integrate their subtrees as work lands", c)
     org.start()
-    deadline = time.monotonic() + 1800.0   # 3 areas + the UI's depends-on phase need extra beats
+    deadline = time.monotonic() + 1200.0   # 2-manager generic tasks settle within ~20 min
     stall_after_s = 300.0
     # After every leaf lands, keep ticking long enough for the director's integrate cascade to close
     # the goal. A well-behaved director accepts in one beat; a director that keeps re-decomposing is
@@ -972,6 +1051,21 @@ def _summary(final: str, company_main: Path, c: _C) -> None:
     print("\n".join(f"    {f}" for f in files.splitlines()) or "    (empty)")
 
 
+def _progress_stalled(
+    *, running_beats: int, idle_s: float, stall_after_s: float, has_children: bool
+) -> bool:
+    """Whether a decomposed goal is genuinely STALLED (vs. just busy on a long beat).
+
+    The stall guard exists to break out of a gate that can NEVER be satisfied — a task sitting with no
+    beat running and a pinned status. An actively-running beat (``running_beats > 0``) is WORKING, not
+    stuck: under a deep dependency chain funnelled through one foundation task, exactly one engineer
+    builds for minutes while every other child waits ``todo`` and NO status changes — that long single
+    beat must NOT be mistaken for a stall (the run-13 misfire). So: stalled iff children exist AND no
+    beat is running AND no child has changed status for the window.
+    """
+    return has_children and running_beats == 0 and idle_s > stall_after_s
+
+
 async def _amain(args: argparse.Namespace) -> int:
     c = _C(on=not args.no_color and sys.stdout.isatty())
     _hr("chorus standup app — build → hire → submit → heartbeat → done", c)
@@ -999,7 +1093,10 @@ async def _amain(args: argparse.Namespace) -> int:
 
     if args.org:
         org_goal = _CHATROOM_GOAL if args.chatroom else _ORG_GOAL
-        rollup = _CHATROOM_ROLLUP_DOD if args.chatroom else None
+        # spec 15: the goal's integrate is gated on the coherence checker reconciling the merged tree to
+        # AGENTS.md — the kernel's _integrate_floor_verdict runs it against company main, so a split-brain
+        # subtree parks the goal BLOCKED (with the precise violations) instead of a silent `done`.
+        rollup = _CHATROOM_ROLLUP_DOD if args.chatroom else _COHERENCE_ROLLUP_DOD
         final = await _run_org(org, args.task or org_goal, c=c, rollup_dod=rollup)
     elif args.team:
         final = await _run_team(org, args.task or _TEAM_GOAL, c=c)

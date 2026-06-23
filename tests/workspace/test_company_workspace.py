@@ -46,6 +46,95 @@ def test_worktree_for_creates_a_branch_isolated_workspace(tmp_path: Path) -> Non
     assert ws.worktree_for("ada").path == wt.path
 
 
+def test_publish_to_main_lands_a_file_on_main_and_is_idempotent(tmp_path: Path) -> None:
+    ws = CompanyWorkspace(tmp_path / "acme")
+    sha1 = ws.publish_to_main("AGENTS.md", "# AGENTS.md\nv1\n", message="chorus: publish contract")
+    assert (ws.repo / "AGENTS.md").read_text(encoding="utf-8") == "# AGENTS.md\nv1\n"
+    assert _git(ws.repo, "rev-parse", "HEAD") == sha1
+    # idempotent — re-publishing identical content makes no new commit
+    sha2 = ws.publish_to_main("AGENTS.md", "# AGENTS.md\nv1\n", message="chorus: publish contract")
+    assert sha2 == sha1
+    # a real change advances main
+    sha3 = ws.publish_to_main("AGENTS.md", "# AGENTS.md\nv2\n", message="chorus: publish contract")
+    assert sha3 != sha1
+
+
+def test_worktree_cut_after_publish_carries_the_contract(tmp_path: Path) -> None:
+    # spec 15 §4.1: the contract lands on main BEFORE the engineer branches, so the engineer's worktree
+    # (cut from main at first request) inherits the real AGENTS.md rather than a placeholder.
+    ws = CompanyWorkspace(tmp_path / "acme")
+    ws.publish_to_main("AGENTS.md", "# AGENTS.md\n## Module map\n- `pkg/__init__.py` — entry\n",
+                       message="chorus: publish contract")
+    eng = ws.worktree_for("ada")
+    assert (eng.path / "AGENTS.md").is_file()
+    assert "Module map" in (eng.path / "AGENTS.md").read_text(encoding="utf-8")
+
+
+def test_sync_to_main_pulls_landed_work_despite_an_uncommitted_local_file(tmp_path: Path) -> None:
+    # The run-6 false block: the manager authored AGENTS.md in its worktree at kickoff (never committed),
+    # then children landed code on main. sync_to_main must commit the local file first so `git merge`
+    # isn't refused — otherwise the manager reviews an empty tree and the gate reports no_deliverable.
+    ws = CompanyWorkspace(tmp_path / "acme")
+    mgr = ws.worktree_for("moe")
+    (mgr.path / "AGENTS.md").write_text("# AGENTS.md\nv1\n", encoding="utf-8")  # uncommitted, like kickoff
+    # a child lands a module on main after the manager's worktree was cut
+    ws.publish_to_main("prefrank/core.py", "VALUE = 1\n", message="chorus: child landed core.py")
+    assert ws.sync_to_main("moe") is True
+    assert (mgr.path / "prefrank" / "core.py").is_file()  # the manager now sees the landed deliverable
+    assert (mgr.path / "AGENTS.md").read_text(encoding="utf-8") == "# AGENTS.md\nv1\n"  # its work kept
+
+
+def test_sync_to_main_prefer_main_resolves_an_add_add_conflict_on_a_published_contract_file(
+    tmp_path: Path,
+) -> None:
+    # The prefrank false-block: the contract files (AGENTS.md, pyproject.toml) are published to main
+    # pre-fan-out, but the manager ALSO authored them in its own worktree. At integrate, sync_to_main
+    # snapshots the manager's copies onto its branch and merges main. Because publish landed on main and
+    # the snapshot on the branch as INDEPENDENT additions over the seed, a child's divergent edit to
+    # pyproject.toml makes the merge an add/add CONFLICT — which aborts, stranding the manager on a
+    # contract-only tree with NO package, so the integrate gate falsely reports "package missing".
+    # prefer_main resolves conflicts in main's favour (it is the integrated truth) so the manager
+    # reviews the real merged subtree.
+    ws = CompanyWorkspace(tmp_path / "acme")
+    mgr = ws.worktree_for("moe")
+    (mgr.path / "AGENTS.md").write_text("# AGENTS.md\nv1\n", encoding="utf-8")  # uncommitted, like kickoff
+    (mgr.path / "pyproject.toml").write_text(
+        "[project]\nname = 'pf'\ndependencies = []\n", encoding="utf-8"
+    )
+    # main: a child publishes a DIVERGENT pyproject (added a dep) + lands the package
+    ws.publish_to_main(
+        "pyproject.toml", "[project]\nname = 'pf'\ndependencies = ['numpy']\n", message="child: add dep"
+    )
+    ws.publish_to_main("prefrank/core.py", "VALUE = 1\n", message="child: land core")
+    # plain sync conflicts on the pyproject add/add and strands the manager (documents the bug)
+    assert ws.sync_to_main("moe") is False
+    assert not (mgr.path / "prefrank" / "core.py").exists()
+    # prefer_main resolves it: the manager now sees the integrated package; pyproject = main's version
+    assert ws.sync_to_main("moe", prefer_main=True) is True
+    assert (mgr.path / "prefrank" / "core.py").is_file()
+    assert "numpy" in (mgr.path / "pyproject.toml").read_text(encoding="utf-8")
+
+
+def test_restore_from_main_reverts_an_engineers_edit_to_a_locked_path(tmp_path: Path) -> None:
+    # The acceptance-suite lock (spec 15 §4.2): a locked dir lives on main; an engineer that weakens it
+    # in its worktree has the change reverted to main's version before its branch is snapshotted.
+    ws = CompanyWorkspace(tmp_path / "acme")
+    ws.publish_to_main("acceptance/test_acceptance.py", "def test_real():\n    assert hard_property()\n",
+                       message="chorus: publish acceptance suite")
+    eng = ws.worktree_for("ada")
+    (eng.path / "acceptance" / "test_acceptance.py").write_text(
+        "def test_real():\n    assert True  # weakened!\n", encoding="utf-8"
+    )
+    ws.restore_from_main("ada", "acceptance")  # restore the whole locked dir
+    assert "hard_property()" in (eng.path / "acceptance" / "test_acceptance.py").read_text(encoding="utf-8")
+
+
+def test_restore_from_main_is_a_noop_when_the_path_is_absent_on_main(tmp_path: Path) -> None:
+    ws = CompanyWorkspace(tmp_path / "acme")
+    ws.worktree_for("ada")
+    ws.restore_from_main("ada", "acceptance")  # not on main → best-effort no-op, no raise
+
+
 def test_two_employees_are_isolated_from_each_other(tmp_path: Path) -> None:
     ws = CompanyWorkspace(tmp_path / "acme")
     ada = ws.worktree_for("ada")
@@ -165,3 +254,27 @@ def test_operational_files_are_excluded_from_the_branch(tmp_path: Path) -> None:
     status = _git(ada.path, "status", "--porcelain")
     assert "real.py" in status  # a real deliverable is tracked
     assert ".harness/" not in status and "generator.toml" not in status  # operational, excluded
+
+
+def test_build_output_and_dream_artifacts_are_excluded(tmp_path: Path) -> None:
+    # tier-3 3.4: compiled build output (a Rust crate's target/ — the tinyvec 1241-file leak) and dream's
+    # planning artefacts (docs/evals, docs/exec-plans written into the worktree) must NOT land in the
+    # deliverable. The engineer's actual source under src/ still does.
+    ws = CompanyWorkspace(tmp_path / "acme")
+    ada = ws.worktree_for("ada")
+    (ada.path / "target" / "release").mkdir(parents=True)
+    (ada.path / "target" / "release" / "libtinyvec.rlib").write_text("BLOB", encoding="utf-8")
+    (ada.path / "docs" / "evals" / "run_x").mkdir(parents=True)
+    (ada.path / "docs" / "evals" / "run_x" / "sprint-1.json").write_text("{}", encoding="utf-8")
+    (ada.path / "docs" / "exec-plans").mkdir(parents=True)
+    (ada.path / "docs" / "exec-plans" / "plan.json").write_text("{}", encoding="utf-8")
+    (ada.path / "src").mkdir()
+    (ada.path / "src" / "lib.rs").write_text("pub fn f() {}", encoding="utf-8")
+    (ada.path / "docs" / "guide.md").write_text("# real docs", encoding="utf-8")  # genuine docs stay
+
+    status = _git(ada.path, "status", "--porcelain", "-uall")  # -uall: list files inside untracked dirs
+    assert "src/lib.rs" in status  # the real source is tracked
+    assert "docs/guide.md" in status  # genuine (non-artefact) docs are tracked
+    assert "target/" not in status  # the Rust build dir is excluded (no 1241-file leak)
+    assert "docs/evals/" not in status  # dream's eval artefacts excluded
+    assert "exec-plans/" not in status  # dream's exec-plan artefacts excluded

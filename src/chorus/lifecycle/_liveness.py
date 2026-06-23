@@ -39,12 +39,6 @@ from chorus.ledger._models import (
 if TYPE_CHECKING:
     from chorus.ledger import SqliteLedger
 
-# Run statuses that mean a *dispatch was interrupted* (spec 02 §9 stranded-todo).
-_INTERRUPTED: frozenset[RunStatus] = frozenset(
-    {RunStatus.FAILED, RunStatus.TIMED_OUT, RunStatus.CANCELLED}
-)
-
-
 class Health(StrEnum):
     """Whether a task currently has a live path forward (spec 02 §3)."""
 
@@ -98,10 +92,24 @@ def _classify_todo(task: Task, ledger: SqliteLedger) -> Liveness:
         return Liveness(Health.HEALTHY, "queued_wake")
     if _has_open_recovery(task, ledger):
         return Liveness(Health.HEALTHY, "open_recovery")
-    # Stalled only when a dispatch was interrupted and nothing else remains (spec 02 §9).
-    if _last_dispatch_interrupted(task, ledger):
-        return Liveness(Health.STALLED, "stranded_todo")
-    return Liveness(Health.HEALTHY, "resting")
+    if _has_active_monitor(task, ledger):
+        return Liveness(Health.HEALTHY, "active_monitor")
+    # A todo waiting on an unresolved dependency is *gated*, not stranded: the scheduler marks its
+    # assignment wake done and a ``deps_resolved`` wake re-dispatches it once the blocker lands. The
+    # blocker's own health is the blocker's concern (the sweep classifies it independently); this task has
+    # a path forward. Without this, every dependency-gated child reads "stranded" in the window before
+    # ``deps_resolved`` fires — spurious recovery churn (the blocker itself surfaces if *it* stalls).
+    if ledger.dependencies.unresolved_blockers(task.id):
+        return Liveness(Health.HEALTHY, "awaiting_dependency")
+    # "Resting" is the post-success lull — a beat ran, succeeded, and left the task queued for its next
+    # step. It is the ONLY healthy todo lacking a live wake/recovery/monitor/dependency. A todo whose last
+    # run was interrupted (failed/timed-out/cancelled) OR that was *never dispatched at all* (no runs, no
+    # pending dependency) has no path forward and is stranded (spec 02 §9, paperclip's
+    # ``hasExplicitWaitingPath``). Without this, a never-dispatched child reads "resting" healthy and
+    # silently hangs its blocked parent forever.
+    if _last_run_succeeded(task, ledger):
+        return Liveness(Health.HEALTHY, "resting")
+    return Liveness(Health.STALLED, "stranded_todo")
 
 
 def _classify_in_progress(task: Task, ledger: SqliteLedger, *, now: datetime) -> Liveness:
@@ -203,10 +211,14 @@ def _has_open_recovery(task: Task, ledger: SqliteLedger) -> bool:
     return ledger.recovery_actions.active_for_source(task.id) is not None
 
 
-def _last_dispatch_interrupted(task: Task, ledger: SqliteLedger) -> bool:
-    """True iff the latest run for the task failed/timed-out/was cancelled (spec 02 §9)."""
+def _last_run_succeeded(task: Task, ledger: SqliteLedger) -> bool:
+    """True iff the task's latest run completed successfully (spec 02 §9).
+
+    The post-success lull is the only "resting" a todo may have without a live wake. A todo with no
+    runs at all (never dispatched) or whose last run was interrupted is *not* resting — it is stranded.
+    """
     runs = ledger.runs.for_task(task.id)
-    return bool(runs) and runs[-1].status in _INTERRUPTED
+    return bool(runs) and runs[-1].status is RunStatus.SUCCEEDED
 
 
 __all__ = [

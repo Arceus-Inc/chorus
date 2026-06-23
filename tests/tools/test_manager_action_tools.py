@@ -16,6 +16,16 @@ pytestmark = pytest.mark.integration
 
 REV = "run_mgr_integrate_1"
 
+_AUTHORED_AGENTS_MD = (
+    "# AGENTS.md\n## Module map\n- `pkg/__init__.py` — entry\n- `pkg/core.py` — Thing\n"
+    "## Public API\n- `pkg.Thing`\n## Ownership\n- `pkg/core.py` -> ada\n"
+)
+
+
+def _author_contract(working_dir: Path) -> None:
+    # spec 15 §4.1: a FIRST submit_task (parent has no children) is contract-gated like decompose.
+    (working_dir / "AGENTS.md").write_text(_AUTHORED_AGENTS_MD, encoding="utf-8")
+
 
 def _ctx(working_dir: Path) -> object:
     from dream.tools._context import ToolExecutionContext
@@ -40,6 +50,7 @@ def _seed(ledger: SqliteLedger) -> None:
 def test_submit_task_tool_creates_one_child(ledger: SqliteLedger, tmp_path: Path) -> None:
     _seed(ledger)
     BeatContext(task_id="M", run_id=REV, employee_id="mgr").write(tmp_path)
+    _author_contract(tmp_path)
 
     result = asyncio.run(
         SubmitTaskTool(ledger).execute(
@@ -61,6 +72,7 @@ def test_submit_task_tool_rejects_non_report(ledger: SqliteLedger, tmp_path: Pat
     _seed(ledger)
     ledger.employees.create(Employee(id="eve", name="Eve", role="engineer"))
     BeatContext(task_id="M", run_id=REV, employee_id="mgr").write(tmp_path)
+    _author_contract(tmp_path)
 
     result = asyncio.run(
         SubmitTaskTool(ledger).execute(
@@ -74,9 +86,27 @@ def test_submit_task_tool_rejects_non_report(ledger: SqliteLedger, tmp_path: Pat
     assert ledger.dependencies.unresolved_blockers("M") == []
 
 
+def test_submit_task_tool_is_contract_gated_on_first_fan_out(
+    ledger: SqliteLedger, tmp_path: Path
+) -> None:
+    # spec 15 §4.1: a manager that fans out via submit_task (not decompose) is gated the same way — no
+    # authored AGENTS.md → refused, nothing created. Closes the decompose-only bypass.
+    _seed(ledger)
+    BeatContext(task_id="M", run_id=REV, employee_id="mgr").write(tmp_path)  # no contract authored
+    result = asyncio.run(
+        SubmitTaskTool(ledger).execute(
+            {"label": "fix", "intent": "fix", "assignee": "ada"}, _ctx(tmp_path)
+        )
+    )
+    assert result.is_error is True
+    assert result.structured["contract_unauthored"] is True
+    assert ledger.dependencies.unresolved_blockers("M") == []
+
+
 def test_assign_task_tool_routes_existing_child(ledger: SqliteLedger, tmp_path: Path) -> None:
     _seed(ledger)
     BeatContext(task_id="M", run_id=REV, employee_id="mgr").write(tmp_path)
+    _author_contract(tmp_path)
     submit = asyncio.run(
         SubmitTaskTool(ledger).execute(
             {"label": "fix", "intent": "fix", "assignee": "ada"},

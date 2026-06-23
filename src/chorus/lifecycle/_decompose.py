@@ -19,6 +19,7 @@ from __future__ import annotations
 import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from chorus.ledger._models import (
@@ -173,9 +174,37 @@ def _fail_closed(ledger: SqliteLedger, source: Task, *, cap: int) -> DepthCapped
     return DepthCapped(recovery)
 
 
+def seed_agents_md(worktree: Path, *, goal_intent: str) -> None:
+    """Write a skeleton ``repo/AGENTS.md`` if none exists, so the coherence contract is always present
+    (spec 15 §4.1).
+
+    The manager fills the module map / public API / ownership during its kickoff beat (per its brief);
+    this guarantees the integrate-time coherence gate finds a contract file to reconcile to rather than
+    an ``agents_md_missing`` violation. Never clobbers a hand-authored contract.
+    """
+    contract = worktree / "AGENTS.md"
+    if contract.is_file():
+        return
+    headline = goal_intent.strip().splitlines()[0][:120] if goal_intent.strip() else ""
+    skeleton = (
+        "# AGENTS.md\n\n"
+        f"<!-- goal: {headline} -->\n"
+        "<!-- The manager MUST replace the placeholders below with the real module map, public API,\n"
+        "     and ownership. The integrate gate (python -m chorus.coherence) reconciles the merged\n"
+        "     tree to this contract. -->\n\n"
+        "## Module map\n- `<package>/__init__.py` — package entry; re-exports the public API\n\n"
+        "## Public API\n- `<package>.<Symbol>`\n\n"
+        "## Ownership\n- `<package>/<file>.py` -> <employee_id>\n\n"
+        "## Data model\n- `<Type>(<field>: <type>, ...)` — the core type's exact fields\n"
+        "- `<function>(<arg>: <shape>) -> <result>` — the accepted input shape / return\n"
+    )
+    contract.write_text(skeleton, encoding="utf-8")
+
+
 __all__ = [
     "ChildSpec",
     "DepthCapped",
     "Fanned",
     "decompose",
+    "seed_agents_md",
 ]
