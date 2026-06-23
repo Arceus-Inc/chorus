@@ -854,7 +854,11 @@ async def _run_team(org: Chorus, goal_text: str, *, c: _C) -> str:
     # Bound the run: the deadline is a hard ceiling, but we exit as soon as the goal settles OR every
     # decomposed child has landed. A stall guard breaks out if no child changes status for a long
     # stretch (the classic symptom of a gate that can never be satisfied) instead of spinning silently.
-    deadline = time.monotonic() + 600.0
+    # Hard ceiling. A contract-derived (per-module) decomposition has a longer SERIAL critical path —
+    # a deep dependency chain funnelled through one foundation task can be ~6 sequential engineer beats
+    # — so the ceiling must clear that, not the 3-4 beats a bundled split needs. The run still exits the
+    # instant the goal settles or every child lands, so a higher ceiling only matters when work is long.
+    deadline = time.monotonic() + 1500.0
     stall_after_s = 200.0
     rollup_grace_s = 300.0                  # let the manager integrate (incl. the kernel cap) close it
     last_child_sig: tuple[tuple[str, str], ...] = ()
@@ -898,10 +902,15 @@ async def _run_team(org: Chorus, goal_text: str, *, c: _C) -> str:
             if child_sig != last_child_sig:
                 last_child_sig = child_sig
                 last_change = time.monotonic()
-            elif kids and time.monotonic() - last_change > stall_after_s:
-                print(c("91;1", f"  ✖ no child made progress for ~{stall_after_s:.0f}s — stopping. The "
-                                f"goal is '{g.status.value}' with {done}/{len(kids)} children done; a "
-                                f"done-gate is stuck (see the verdict lines above)."))
+            if _progress_stalled(
+                running_beats=st.running_beats,
+                idle_s=time.monotonic() - last_change,
+                stall_after_s=stall_after_s,
+                has_children=bool(kids),
+            ):
+                print(c("91;1", f"  ✖ no child made progress for ~{stall_after_s:.0f}s (no beat running) "
+                                f"— stopping. The goal is '{g.status.value}' with {done}/{len(kids)} "
+                                f"children done; a done-gate is stuck (see the verdict lines above)."))
                 break
     finally:
         await org.stop()  # signal the loop, then drain in-flight beats
@@ -1040,6 +1049,21 @@ def _summary(final: str, company_main: Path, c: _C) -> None:
     print(c("97", "\n  company main — tracked files (the repo that now exists):"))
     files = _git(company_main, "ls-files")
     print("\n".join(f"    {f}" for f in files.splitlines()) or "    (empty)")
+
+
+def _progress_stalled(
+    *, running_beats: int, idle_s: float, stall_after_s: float, has_children: bool
+) -> bool:
+    """Whether a decomposed goal is genuinely STALLED (vs. just busy on a long beat).
+
+    The stall guard exists to break out of a gate that can NEVER be satisfied — a task sitting with no
+    beat running and a pinned status. An actively-running beat (``running_beats > 0``) is WORKING, not
+    stuck: under a deep dependency chain funnelled through one foundation task, exactly one engineer
+    builds for minutes while every other child waits ``todo`` and NO status changes — that long single
+    beat must NOT be mistaken for a stall (the run-13 misfire). So: stalled iff children exist AND no
+    beat is running AND no child has changed status for the window.
+    """
+    return has_children and running_beats == 0 and idle_s > stall_after_s
 
 
 async def _amain(args: argparse.Namespace) -> int:
