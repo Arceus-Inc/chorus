@@ -133,8 +133,10 @@ def _pin_objective_dod(plugin: RolePlugin) -> RolePlugin:
 # agent NOT to pip-install or git-push (the kernel's lander handles the PR + merge). Both were the main
 # time-wasters that blew the per-beat timeout on the first run; the gate itself (pytest/ruff) is real.
 _NO_THRASH = (
-    " pytest and ruff are ALREADY installed — do NOT run pip install or ensurepip. Do NOT run git "
-    "push (there is no remote; the system handles landing). Just create the files, run the gate "
+    " pytest and ruff are ALREADY installed. If your code needs a third-party library, DECLARE it in "
+    "the project manifest (pyproject.toml [project].dependencies / package.json / Cargo.toml / go.mod) — "
+    "the gate installs declared deps for you; do NOT pip-install ad hoc (it won't persist). Do NOT run "
+    "git push (there is no remote; the system handles landing). Just create the files, run the gate "
     "locally, and commit."
 )
 _SOLO_TASK = (
@@ -362,8 +364,15 @@ _CHATROOM_ROLLUP_DOD = Verifier.command(_CHATROOM_ROLLUP_CMD, timeout_s=900)
 # BLOCKED with the precise violations, and the adaptive integrate loop re-dispatches the manager to
 # reconcile — so a split-brain subtree can never land a silent `done`. chorus is on the worktree venv,
 # so `python -m chorus.coherence` resolves there.
+# Test-first-as-org-structure (spec 15 §4.2): the goal is NOT done until the manager-authored,
+# engineer-locked acceptance test passes on the integrated tree — an INDEPENDENT bar derived from the
+# goal, run here at the rollup (it imports the whole package, so it can only pass once every child has
+# merged). Coherence (single coherent surface) AND the acceptance test (the deliverable actually does
+# what the goal asked) must both be green for the manager's integrate to land done.
 _COHERENCE_ROLLUP_DOD = Verifier.command(
-    "python -m chorus.coherence", artifact_class="subtree", timeout_s=900
+    "python -m chorus.coherence && python gate_check.py --acceptance",
+    artifact_class="subtree",
+    timeout_s=900,
 )
 
 
@@ -586,31 +595,70 @@ def _node_scripts() -> dict[str, str]:
     return scripts if isinstance(scripts, dict) else {}
 
 
-def main() -> int:
-    steps: list[list[str]] = []
+def _acceptance_steps() -> list[list[str]]:
+    """Run ONLY the goal's acceptance suite (the manager-authored, engineer-locked bar) in the
+    deliverable's own stack. It lives in the stack-neutral ``acceptance/`` directory; each runner is
+    pointed at it. This is the ONE place stack-specifics live — the rollup DoD just passes --acceptance.
+    """
+    if not (ROOT / "acceptance").is_dir():
+        print("[gate] FAILED: no acceptance/ suite — the manager must author the goal bar", flush=True)
+        return [["false"]]  # force a non-zero gate
+    if (ROOT / "package.json").is_file():
+        return [["npx", "--yes", "vitest", "run", "acceptance"]]
+    if (ROOT / "go.mod").is_file():
+        return [["go", "test", "./acceptance/..."]]
+    if (ROOT / "Cargo.toml").is_file():
+        return [["cargo", "test"]]  # Rust integration tests run via cargo (best-effort)
+    # `python -m pytest` (not bare `pytest`) so the repo root is on sys.path and `acceptance/` can
+    # import the integrated package.
+    return [[sys.executable, "-m", "pytest", "-q", "acceptance"]]
 
+
+def _install_steps() -> list[list[str]]:
+    """Install the deliverable's DECLARED third-party dependencies from its manifest, so any library it
+    (or the acceptance test) depends on is available before the tests run. Stack-aware and the ONE place
+    install logic lives. Python uses ``uv`` (the run env's installer) to install the manifest's deps —
+    no package build needed; ``-r`` reads pyproject/requirements directly. Runs in BOTH gate modes.
+    """
+    steps: list[list[str]] = []
+    if (ROOT / "package.json").is_file() and not (ROOT / "node_modules").is_dir():
+        steps.append(["npm", "install", "--no-audit", "--no-fund"])
+    if shutil.which("uv"):
+        for manifest in ("pyproject.toml", "requirements.txt"):
+            if (ROOT / manifest).is_file():
+                steps.append(["uv", "pip", "install", "-r", manifest])
+                break
+    # Rust (cargo) and Go (go test) fetch declared deps as part of build/test — no separate step.
+    return steps
+
+
+def _unit_steps() -> list[list[str]]:
+    """The per-engineer gate: the stack's unit tests, NEVER the ``acceptance/`` suite (it needs the whole
+    integrated deliverable, absent in one engineer's isolated worktree — it runs at the goal rollup)."""
+    steps: list[list[str]] = []
     if (ROOT / "package.json").is_file():
         scripts = _node_scripts()
-        if not (ROOT / "node_modules").is_dir():
-            steps.append(["npm", "install", "--no-audit", "--no-fund"])
         if "build" in scripts:
             steps.append(["npm", "run", "build"])
         if "test" in scripts:
             steps.append(["npm", "test", "--silent"])
         elif (ROOT / "tsconfig.json").is_file():
             steps.append(["npx", "tsc", "--noEmit"])
-
     if (ROOT / "Cargo.toml").is_file():
         steps.append(["cargo", "test"])
-
     if (ROOT / "go.mod").is_file():
         steps.append(["go", "test", "./..."])
-
-    # Python is also the default floor when no other stack is detected.
+    # Python is also the default floor when no other stack is detected. `python -m pytest` (not bare
+    # `pytest`) so the repo root is on sys.path and a test can import the package without an install.
     if _has_py_sources() or not steps:
-        steps.append(["pytest", "-q"])
+        steps.append([sys.executable, "-m", "pytest", "-q", "--ignore=acceptance"])
         steps.append(["ruff", "check", "."])
+    return steps
 
+
+def main() -> int:
+    run = _acceptance_steps() if "--acceptance" in sys.argv[1:] else _unit_steps()
+    steps = _install_steps() + run  # install declared deps first, in either mode
     for cmd in steps:
         rc = _run(cmd)
         if rc != 0:
@@ -781,17 +829,24 @@ async def _run_solo(org: Chorus, task_text: str, *, max_pulses: int, c: _C) -> s
 
 
 async def _run_team(org: Chorus, goal_text: str, *, c: _C) -> str:
-    """A manager decomposes the goal across two engineers, driven by the always-on heartbeat."""
-    _hr("HIRE — a manager, two engineers, a reviewer", c)
+    """A flat team — one manager + two engineers + a PM — driven by the always-on heartbeat.
+
+    spec 15: the manager authors ``AGENTS.md`` at decompose and its integrate is gated on the coherence
+    checker (``_COHERENCE_ROLLUP_DOD``). Because the manager IS the top of this flat org, its integrate
+    beat runs the gate against company main — so even when the leaf engineers each pass their own gate,
+    a split-brain assembled surface (rival modules / empty __init__ / orphans) parks the goal BLOCKED
+    with the precise violations instead of a silent ``done``.
+    """
+    _hr("HIRE — a manager, two engineers, a PM (flat coherence team)", c)
     org.hire(name="moe", role="manager")
     org.hire(name="ada", role="engineer", reports_to="moe")
     org.hire(name="bo", role="engineer", reports_to="moe")
-    org.hire(name="ria", role="reviewer", reports_to="moe")
-    _step("hired moe(manager) · ada(engineer) · bo(engineer) · ria(reviewer)", c)
+    org.hire(name="pat", role="pm", reports_to="moe")
+    _step("hired moe(manager) · ada(engineer) · bo(engineer) · pat(pm)", c)
 
-    _hr("SUBMIT — state a goal; the manager decomposes it", c)
-    goal = org.submit(goal_text, assignee="moe")
-    _step(f"submitted goal {goal.id} → moe", c)
+    _hr("SUBMIT — state a goal; the manager authors AGENTS.md + decomposes, gated on coherence", c)
+    goal = org.submit(goal_text, assignee="moe", dod=_COHERENCE_ROLLUP_DOD)
+    _step(f"submitted goal {goal.id} → moe (integrate gated on python -m chorus.coherence)", c)
     print(c("90", f"    goal: {goal_text}"))
 
     _hr("HEARTBEAT — org.start(): the concurrent always-on runner (employees work in the background)", c)

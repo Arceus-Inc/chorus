@@ -92,12 +92,14 @@ def test_tests_and_entry_points_are_not_orphans_or_missing(tmp_path: Path) -> No
             "pkg/cli.py": "from pkg.core import Thing\n\ndef main() -> None:\n    print(Thing())\n",
             "pkg/__main__.py": "from pkg.cli import main\n\nif __name__ == '__main__':\n    main()\n",
             "tests/test_core.py": "from pkg import Thing\n\ndef test_thing():\n    assert Thing()\n",
+            "pyproject.toml": "[project]\nname='pkg'\nversion='0.1.0'\ndependencies=['numpy']\n",
         },
     )
     doc = AgentsMd(
         modules=(
             "pkg/__init__.py", "pkg/core.py", "pkg/cli.py", "pkg/__main__.py",
             "tests/test_core.py", "tests/test_absent.py",  # declared-but-absent test → not flagged
+            "pyproject.toml",  # a declared manifest is config, not an importable module → never an orphan
         ),
         public_api=("pkg.Thing",),
     )

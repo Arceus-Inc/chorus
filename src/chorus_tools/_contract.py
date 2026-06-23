@@ -17,7 +17,11 @@ from dream.contracts.tool import ToolResult
 from chorus.coherence import authored_contract, contract_sha
 from chorus.ledger import ActivityVerb, SqliteLedger
 from chorus.lifecycle import record_activity
-from chorus.workspace import CompanyWorkspace
+from chorus.workspace import ACCEPTANCE_DIR, CompanyWorkspace
+
+# Stack-neutral packaging manifests — published with the contract so the gate installs the deliverable's
+# declared third-party dependencies in every worktree (the acceptance test may use them).
+_MANIFESTS = ("pyproject.toml", "requirements.txt", "package.json", "Cargo.toml", "go.mod")
 
 _REFUSAL = (
     "refused: AGENTS.md is missing or still the placeholder. Author it YOURSELF, now, in this beat: "
@@ -54,9 +58,25 @@ def publish_contract(
     root = working_dir.parent.parent
     if not (root / "repo" / ".git").exists():
         return None
-    sha = CompanyWorkspace(root).publish_to_main(
+    workspace = CompanyWorkspace(root)
+    sha = workspace.publish_to_main(
         "AGENTS.md", content, message="chorus: publish AGENTS.md contract (pre-fan-out)"
     )
+    # The manager-authored acceptance suite is part of the contract — land it on main too so engineers
+    # branch off the goal's RED bar (spec 15 §4.2; test-first-as-org-structure). It is the goal's rollup
+    # gate, not a per-engineer one (it exercises the WHOLE package), and is locked from the engineers.
+    # Stack-neutral: publish whatever file(s) the manager wrote under ``acceptance/`` (any language),
+    # plus any packaging MANIFEST it authored — so the gate can install the deliverable's declared
+    # third-party dependencies (the acceptance test is free to use them) in every worktree from the start.
+    contract_files = sorted(
+        p for p in (working_dir / ACCEPTANCE_DIR).rglob("*") if p.is_file()
+    ) + [working_dir / m for m in _MANIFESTS if (working_dir / m).is_file()]
+    for path in contract_files:
+        workspace.publish_to_main(
+            str(path.relative_to(working_dir).as_posix()),
+            path.read_text(encoding="utf-8"),
+            message="chorus: publish acceptance suite + manifest (pre-fan-out)",
+        )
     record_activity(
         ledger,
         verb=ActivityVerb.CONTRACT_PUBLISHED,

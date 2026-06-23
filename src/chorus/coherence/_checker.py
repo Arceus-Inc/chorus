@@ -237,10 +237,13 @@ def _orphan_modules(root: Path, doc: AgentsMd) -> list[CoherenceViolation]:
     imported = _imported_module_leaves(root, doc)
     out: list[CoherenceViolation] = []
     for module in doc.modules:
-        # ``__init__`` re-exports (never an orphan); test files are discovered, not imported; an entry
-        # point (CLI / ``__main__``) is run, not imported — none of these are dead code.
+        # The orphan check is about the Python import graph, so it only applies to ``.py`` SOURCE files:
+        # a declared manifest/config/data file (pyproject.toml, package.json, a .md, …) is never
+        # "imported" and is not dead code. ``__init__`` re-exports; test files are discovered, not
+        # imported; an entry point (CLI / ``__main__``) is run, not imported — none are orphans.
         if (
-            module.endswith("__init__.py")
+            not module.endswith(".py")
+            or module.endswith("__init__.py")
             or _is_test_module(module)
             or _is_entrypoint(root, module)
         ):

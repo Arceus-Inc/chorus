@@ -21,7 +21,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from chorus.outcomes import Artifact, ArtifactType
-from chorus.workspace import CompanyWorkspace
+from chorus.workspace import ACCEPTANCE_DIR, CompanyWorkspace
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -43,6 +43,9 @@ class EngineerLander:
         if employee_id is None:
             raise ValueError(f"task {task.id!r} has no assignee — cannot land a PR")
         workspace = CompanyWorkspace(self._company_root)
+        # Lock the goal's acceptance suite (spec 15 §4.2): an engineer builds TO it and may add its own
+        # tests, but must never weaken it — revert any edit it made before its branch is snapshotted.
+        workspace.restore_from_main(employee_id, ACCEPTANCE_DIR)
         commit = workspace.snapshot(employee_id)  # commit the work on chorus/{employee} — the PR tip
         merge = workspace.merge(employee_id)  # PR → integrate into the company main (conflict-safe)
         return Artifact(

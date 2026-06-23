@@ -55,6 +55,13 @@ _OPERATIONAL_EXCLUDE_NAMES = {path.rstrip("/") for path in _OPERATIONAL_EXCLUDES
 _SEED_COPY_IGNORE = shutil.ignore_patterns(".git", *_OPERATIONAL_EXCLUDE_NAMES)
 _HARNESS_SEED_FILES = frozenset({"mcp-allowlist.toml", "plugins-enabled.toml"})
 
+# The manager-authored, engineer-locked acceptance suite (spec 15 §4.2, test-first-as-org-structure):
+# the goal's RED bar, published to main before engineers branch and run as the goal's rollup gate. It is
+# a STACK-NEUTRAL directory — the manager writes the test(s) inside it in the DELIVERABLE's own test
+# framework (a pytest module, a *.test.ts, a Go _test.go, a Rust test); the stack-aware gate runs it.
+# An engineer may add its own tests but must never weaken this one, so the lander restores it from main.
+ACCEPTANCE_DIR = "acceptance"
+
 
 # The default base for company workspaces under the current working directory. ``chat``, ``tick``, and
 # the ``company`` console command all resolve a company to ``<cwd>/.chorus/work/{company}`` — defined
@@ -257,6 +264,24 @@ class CompanyWorkspace:
             conflicted=conflicted,
             detail=(done.stderr or done.stdout).strip(),
         )
+
+    def restore_from_main(self, employee_id: str, *relpaths: str) -> None:
+        """Discard ``employee_id``'s edits to ``relpaths``, restoring each from ``main`` (best-effort).
+
+        The lock behind the engineer-owned acceptance test (spec 15 §4.2): an engineer may add tests but
+        must not weaken the goal's bar, so before its branch is snapshotted any change it made to a
+        protected path is reverted to ``main``'s version. A path absent on ``main`` is skipped.
+        """
+        wt = self.worktree_for(employee_id).path
+        for relpath in relpaths:
+            if subprocess.run(
+                ["git", "-C", str(self._repo), "cat-file", "-e", f"main:{relpath}"],
+                capture_output=True, text=True,
+            ).returncode != 0:
+                continue  # not on main → nothing authoritative to restore from
+            subprocess.run(
+                ["git", "-C", str(wt), "checkout", "main", "--", relpath], capture_output=True, text=True
+            )
 
     def sync_to_main(self, employee_id: str) -> bool:
         """Bring ``employee_id``'s worktree up to the current company ``main``; return whether it synced.

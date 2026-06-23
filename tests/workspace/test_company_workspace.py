@@ -84,6 +84,26 @@ def test_sync_to_main_pulls_landed_work_despite_an_uncommitted_local_file(tmp_pa
     assert (mgr.path / "AGENTS.md").read_text(encoding="utf-8") == "# AGENTS.md\nv1\n"  # its work kept
 
 
+def test_restore_from_main_reverts_an_engineers_edit_to_a_locked_path(tmp_path: Path) -> None:
+    # The acceptance-suite lock (spec 15 §4.2): a locked dir lives on main; an engineer that weakens it
+    # in its worktree has the change reverted to main's version before its branch is snapshotted.
+    ws = CompanyWorkspace(tmp_path / "acme")
+    ws.publish_to_main("acceptance/test_acceptance.py", "def test_real():\n    assert hard_property()\n",
+                       message="chorus: publish acceptance suite")
+    eng = ws.worktree_for("ada")
+    (eng.path / "acceptance" / "test_acceptance.py").write_text(
+        "def test_real():\n    assert True  # weakened!\n", encoding="utf-8"
+    )
+    ws.restore_from_main("ada", "acceptance")  # restore the whole locked dir
+    assert "hard_property()" in (eng.path / "acceptance" / "test_acceptance.py").read_text(encoding="utf-8")
+
+
+def test_restore_from_main_is_a_noop_when_the_path_is_absent_on_main(tmp_path: Path) -> None:
+    ws = CompanyWorkspace(tmp_path / "acme")
+    ws.worktree_for("ada")
+    ws.restore_from_main("ada", "acceptance")  # not on main → best-effort no-op, no raise
+
+
 def test_two_employees_are_isolated_from_each_other(tmp_path: Path) -> None:
     ws = CompanyWorkspace(tmp_path / "acme")
     ada = ws.worktree_for("ada")
