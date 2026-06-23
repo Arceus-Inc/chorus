@@ -22,10 +22,16 @@ from __future__ import annotations
 
 import ast
 import hashlib
-from dataclasses import dataclass
+import os
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from chorus.coherence._agents_md import AgentsMd
+
+# Build/vendor dirs that never hold declared source — pruned from the basename index (and kept cheap).
+_IGNORE_DIRS = frozenset(
+    {".git", "target", "node_modules", "__pycache__", ".dream", ".harness", "dist", "build", ".venv", "vendor"}
+)
 
 
 @dataclass(frozen=True)
@@ -76,6 +82,7 @@ def check_coherence(root: Path, doc: AgentsMd) -> list[CoherenceViolation]:
     """
     if is_placeholder(doc):
         return _structural_duplicate_symbols(root)
+    doc = _resolve_to_tree(root, doc)
     wanted = {s.rsplit(".", 1)[-1] for s in doc.public_api}
     return (
         _missing_modules(root, doc)
@@ -83,6 +90,45 @@ def check_coherence(root: Path, doc: AgentsMd) -> list[CoherenceViolation]:
         + _missing_exports(root, doc)
         + _orphan_modules(root, doc)
     )
+
+
+def _resolve_to_tree(root: Path, doc: AgentsMd) -> AgentsMd:
+    """Resolve declared module paths against the actual tree so a layout difference does not false-block.
+
+    A manager and its engineers often disagree on the project ROOT convention while building the exact
+    same files — the manager wraps modules under the project/crate name (``tinyvec/src/x.rs``) while the
+    scaffold + engineers use the repo-root layout (``src/x.rs``), or nest them (``src/tinyvec/x.rs``).
+    The contract and the tree describe the SAME file; coherence resolves the declared path to the real
+    one — first by stripping a redundant leading segment, then by a UNIQUE basename match — rather than
+    reporting it absent. Stack-agnostic: pure path arithmetic, no language assumptions. A module that
+    matches NO file (or whose basename is ambiguous) is left unchanged and stays a real
+    ``missing_module`` — the resolver never papers over a genuinely unbuilt module."""
+    index = _basename_index(root)
+    resolved = tuple(_resolve_module(root, m, index) for m in doc.modules)
+    return doc if resolved == doc.modules else replace(doc, modules=resolved)
+
+
+def _basename_index(root: Path) -> dict[str, list[str]]:
+    """``filename -> [repo-relative paths]`` for every source file, build/vendor dirs pruned."""
+    index: dict[str, list[str]] = {}
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = [d for d in dirnames if d not in _IGNORE_DIRS]
+        for name in filenames:
+            rel = Path(dirpath, name).relative_to(root).as_posix()
+            index.setdefault(name, []).append(rel)
+    return index
+
+
+def _resolve_module(root: Path, module: str, index: dict[str, list[str]]) -> str:
+    if (root / module).is_file():
+        return module
+    parts = Path(module.replace("\\", "/")).parts
+    for i in range(1, len(parts)):  # drop leading segments (`a/b/c.py` → `b/c.py` → `c.py`) — redundant wrap
+        candidate = "/".join(parts[i:])
+        if (root / candidate).is_file():
+            return candidate
+    matches = index.get(parts[-1], [])  # transposed layout: a UNIQUE file with this basename is the one
+    return matches[0] if len(matches) == 1 else module  # ambiguous or absent → unchanged (stays missing)
 
 
 def _parse(path: Path) -> ast.Module | None:

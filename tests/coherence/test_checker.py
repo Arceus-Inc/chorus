@@ -55,6 +55,63 @@ def test_a_declared_manifest_is_not_a_missing_module(tmp_path: Path) -> None:
     assert check_coherence(root, doc) == []  # no missing_module for the manifest
 
 
+def test_a_redundant_path_prefix_is_resolved_against_the_tree(tmp_path: Path) -> None:
+    # The manager wrapped every module under the project/crate name (`tinyvec/src/...`) while the
+    # scaffold + engineers used the repo-root layout (`src/...`). The contract and the tree describe the
+    # SAME files — coherence resolves a declared path against the tree by stripping a redundant leading
+    # segment rather than false-blocking (the tinyvec layout mismatch). Stack-agnostic path arithmetic.
+    root = _pkg(
+        tmp_path,
+        {
+            "src/lib.rs": "pub use store::TinyVec;\npub mod store;\n",
+            "src/store.rs": "pub struct TinyVec;\n",
+            "Cargo.toml": "[package]\nname='tinyvec'\nversion='0.1.0'\n",
+        },
+    )
+    doc = AgentsMd(
+        modules=("Cargo.toml", "tinyvec/src/lib.rs", "tinyvec/src/store.rs"),  # redundant `tinyvec/` wrap
+        public_api=("tinyvec::TinyVec",),
+        ownership={"tinyvec/src/store.rs": "ada"},
+    )
+    assert check_coherence(root, doc) == []
+
+
+def test_a_transposed_layout_is_resolved_by_unique_basename(tmp_path: Path) -> None:
+    # The engineer nested modules under `src/<crate>/` while the manager declared `<crate>/src/` — same
+    # files, transposed directories (the real tinyvec layout). A UNIQUE basename match resolves them.
+    root = _pkg(
+        tmp_path,
+        {
+            "src/lib.rs": "pub mod tinyvec;\n",
+            "src/tinyvec/metrics.rs": "pub struct Metric;\n",
+            "Cargo.toml": "[package]\nname='tinyvec'\nversion='0.1.0'\n",
+        },
+    )
+    doc = AgentsMd(
+        modules=("tinyvec/src/metrics.rs", "src/lib.rs"),  # metrics transposed: declared a/src vs src/a
+        public_api=("tinyvec::Metric",),
+        ownership={"tinyvec/src/metrics.rs": "ada"},
+    )
+    assert "missing_module" not in [v.code for v in check_coherence(root, doc)]
+
+
+def test_an_ambiguous_basename_is_not_resolved(tmp_path: Path) -> None:
+    # Two files share a basename → the resolver must NOT guess; the declared path stays missing.
+    root = _pkg(
+        tmp_path,
+        {"pkg/__init__.py": "\n", "a/util.py": "x = 1\n", "b/util.py": "y = 2\n"},
+    )
+    doc = AgentsMd(modules=("pkg/__init__.py", "pkg/util.py"))  # util.py is ambiguous (a/ and b/)
+    assert "missing_module" in [v.code for v in check_coherence(root, doc)]
+
+
+def test_a_genuinely_absent_module_is_still_missing(tmp_path: Path) -> None:
+    # The resolver must not paper over a real gap: a module that exists at NO suffix path stays missing.
+    root = _pkg(tmp_path, {"pkg/__init__.py": "\n"})
+    doc = AgentsMd(modules=("pkg/__init__.py", "pkg/core.py"))
+    assert "missing_module" in [v.code for v in check_coherence(root, doc)]
+
+
 def test_non_python_deliverable_skips_the_init_export_check(tmp_path: Path) -> None:
     # The export check is Python-`__init__`-specific (AST of `__init__.py`). A Rust crate exports via
     # `lib.rs` `pub use`, which the Python AST cannot read — so with no declared `__init__.py` the export
