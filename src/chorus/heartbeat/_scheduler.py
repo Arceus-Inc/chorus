@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Protocol, TypeVar, runtime_checkable
 
 from chorus.adapters._failure import failure_outcome
+from chorus.coherence import authored_contract, contract_sha
 from chorus.cron._fire import fire_routine
 from chorus.governance import GovernanceResolver
 from chorus.heartbeat._beat import BeatDisposition, BeatOutcome
@@ -588,6 +589,9 @@ class Scheduler:
             # Resolve the runner for *this* employee's role + beat phase (an integrate beat — the task
             # already has children — is materialized without ``decompose``, spec 06 §2 / M3 §5).
             beat_runner = beat_runner_for.runner_for(employee, task_id=task_id)
+            self._record_contract_ingestion(
+                ledger, beat_runner=beat_runner, task_id=task_id, employee=employee
+            )
             if ledger.tasks.has_children(task_id) and ledger.tasks.all_children_terminal(task_id):
                 self._write_integrate_packet(ledger, beat_runner=beat_runner, task_id=task_id)
             # Intake DoD (spec 04 §1 / 06 §2): a task with no explicit DoD inherits its assignee role's, so
@@ -715,6 +719,34 @@ class Scheduler:
         if working_dir is None:
             return
         IntegrateContextPacket.build(ledger, parent_task_id=task_id).write(working_dir)
+
+    def _record_contract_ingestion(
+        self, ledger: SqliteLedger, *, beat_runner: BeatRunner, task_id: str, employee: Employee
+    ) -> None:
+        """Audit that THIS beat branched off an authored AGENTS.md (spec 15 §4.2 — "did they read it").
+
+        Orientation prepends the worktree's ``AGENTS.md`` to every beat, but that only carries the real
+        contract once the manager has published it to main (so an engineer cut afterwards inherits it).
+        Recording the ingested contract's content sha here turns "the engineer read the contract" from an
+        un-checkable hope into a durable ledger fact: the activity stream shows ``contract_ingested`` with
+        the same ``contract_sha`` the manager ``contract_published`` — no transcript grep required. A
+        beat whose worktree still holds the placeholder (e.g. the manager's own kickoff) records nothing.
+        """
+        if not isinstance(beat_runner, _RunnerWithWorkingDir):
+            return
+        working_dir = beat_runner.working_dir
+        if working_dir is None:
+            return
+        contract = authored_contract(working_dir)
+        if contract is None:
+            return
+        record_activity(
+            ledger,
+            verb=ActivityVerb.CONTRACT_INGESTED,
+            subject_id=task_id,
+            actor_employee_id=employee.id,
+            payload={"contract_sha": contract_sha(contract)},
+        )
 
     def _integrate_floor_verdict(
         self, task_id: str, *, verifier: Verifier | None, beat_runner: BeatRunner | None

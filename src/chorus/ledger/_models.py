@@ -629,6 +629,8 @@ class ActivityVerb(StrEnum):
     PROMOTED = "promoted"
     DOD_REVISED = "dod_revised"
     REVIEW_VERDICT = "review_verdict"
+    CONTRACT_PUBLISHED = "contract_published"
+    CONTRACT_INGESTED = "contract_ingested"
 
 
 @dataclass(frozen=True)

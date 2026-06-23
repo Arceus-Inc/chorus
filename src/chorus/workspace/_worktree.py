@@ -210,6 +210,27 @@ class CompanyWorkspace:
             self._run(self._repo, "worktree", "add", "-b", branch, str(path), "main")
         return WorktreeWorkspace(path=path, branch=branch)
 
+    def publish_to_main(self, relpath: str, content: str, *, message: str) -> str:
+        """Write ``relpath`` into the company ``repo`` (branch ``main``) and commit it; return main's sha.
+
+        The cross-child contract (``AGENTS.md``) must land on ``main`` *before* any engineer worktree is
+        cut, so every branch carries the real module map / public API / ownership rather than the seeded
+        placeholder (spec 15 §4.1). This is that landing primitive: it commits one file straight onto
+        ``main`` (only ``relpath`` is staged, so unrelated working-tree state is untouched) and is
+        idempotent — re-publishing identical content is a no-op that returns the current ``main`` sha.
+        """
+        self.ensure_repo()
+        target = self._repo / relpath
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(content, encoding="utf-8")
+        self._run(self._repo, "add", relpath)
+        staged = subprocess.run(
+            ["git", "-C", str(self._repo), "diff", "--cached", "--quiet"], capture_output=True, text=True
+        )
+        if staged.returncode != 0:  # non-zero → there is a real change to commit
+            self._run(self._repo, *_COMMIT_IDENTITY, "commit", "-m", message)
+        return self._run(self._repo, "rev-parse", "HEAD")
+
     def merge(self, employee_id: str, *, into: str = "main", message: str | None = None) -> MergeResult:
         """Snapshot the employee's uncommitted work, then merge its branch into ``into`` (default main).
 
@@ -242,11 +263,19 @@ class CompanyWorkspace:
 
         A manager that delegated never edited code, so its worktree still sits at the ``main`` it
         branched from — blind to the children's deliverables that have since landed there. Merging
-        ``main`` into the branch (a fast-forward, since a delegating manager has no own commits) makes
-        the integrated subtree visible in the worktree, so the manager's integrate beat reviews the real
-        merged result instead of an empty tree. A divergent branch that cannot merge cleanly is left
-        untouched (the beat falls back to its stale worktree) rather than raised — sync is best-effort.
+        ``main`` into the branch makes the integrated subtree visible in the worktree, so the manager's
+        integrate beat reviews the real merged result instead of an empty tree. A divergent branch that
+        cannot merge cleanly is left untouched (the beat falls back to its stale worktree) rather than
+        raised — sync is best-effort.
+
+        Snapshot first: the manager authored ``AGENTS.md`` in this worktree at kickoff and never
+        committed it (it delegated rather than landing a PR), so the tree carries an uncommitted change.
+        ``git merge`` refuses to run over uncommitted local changes — without committing them first the
+        sync always fails and the manager reviews an EMPTY tree (the run-6 ``no_deliverable`` false
+        block). Committing the local work first lets ``main`` merge in cleanly (the published AGENTS.md
+        is identical content, so it auto-resolves).
         """
+        self._snapshot(employee_id)
         wt = self.worktree_for(employee_id)
         done = subprocess.run(
             ["git", "-C", str(wt.path), *_COMMIT_IDENTITY, "merge", "main",

@@ -46,6 +46,44 @@ def test_worktree_for_creates_a_branch_isolated_workspace(tmp_path: Path) -> Non
     assert ws.worktree_for("ada").path == wt.path
 
 
+def test_publish_to_main_lands_a_file_on_main_and_is_idempotent(tmp_path: Path) -> None:
+    ws = CompanyWorkspace(tmp_path / "acme")
+    sha1 = ws.publish_to_main("AGENTS.md", "# AGENTS.md\nv1\n", message="chorus: publish contract")
+    assert (ws.repo / "AGENTS.md").read_text(encoding="utf-8") == "# AGENTS.md\nv1\n"
+    assert _git(ws.repo, "rev-parse", "HEAD") == sha1
+    # idempotent — re-publishing identical content makes no new commit
+    sha2 = ws.publish_to_main("AGENTS.md", "# AGENTS.md\nv1\n", message="chorus: publish contract")
+    assert sha2 == sha1
+    # a real change advances main
+    sha3 = ws.publish_to_main("AGENTS.md", "# AGENTS.md\nv2\n", message="chorus: publish contract")
+    assert sha3 != sha1
+
+
+def test_worktree_cut_after_publish_carries_the_contract(tmp_path: Path) -> None:
+    # spec 15 §4.1: the contract lands on main BEFORE the engineer branches, so the engineer's worktree
+    # (cut from main at first request) inherits the real AGENTS.md rather than a placeholder.
+    ws = CompanyWorkspace(tmp_path / "acme")
+    ws.publish_to_main("AGENTS.md", "# AGENTS.md\n## Module map\n- `pkg/__init__.py` — entry\n",
+                       message="chorus: publish contract")
+    eng = ws.worktree_for("ada")
+    assert (eng.path / "AGENTS.md").is_file()
+    assert "Module map" in (eng.path / "AGENTS.md").read_text(encoding="utf-8")
+
+
+def test_sync_to_main_pulls_landed_work_despite_an_uncommitted_local_file(tmp_path: Path) -> None:
+    # The run-6 false block: the manager authored AGENTS.md in its worktree at kickoff (never committed),
+    # then children landed code on main. sync_to_main must commit the local file first so `git merge`
+    # isn't refused — otherwise the manager reviews an empty tree and the gate reports no_deliverable.
+    ws = CompanyWorkspace(tmp_path / "acme")
+    mgr = ws.worktree_for("moe")
+    (mgr.path / "AGENTS.md").write_text("# AGENTS.md\nv1\n", encoding="utf-8")  # uncommitted, like kickoff
+    # a child lands a module on main after the manager's worktree was cut
+    ws.publish_to_main("prefrank/core.py", "VALUE = 1\n", message="chorus: child landed core.py")
+    assert ws.sync_to_main("moe") is True
+    assert (mgr.path / "prefrank" / "core.py").is_file()  # the manager now sees the landed deliverable
+    assert (mgr.path / "AGENTS.md").read_text(encoding="utf-8") == "# AGENTS.md\nv1\n"  # its work kept
+
+
 def test_two_employees_are_isolated_from_each_other(tmp_path: Path) -> None:
     ws = CompanyWorkspace(tmp_path / "acme")
     ada = ws.worktree_for("ada")

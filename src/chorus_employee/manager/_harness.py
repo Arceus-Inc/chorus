@@ -20,11 +20,16 @@ def manager_manifest() -> RoleManifest:
     return RoleManifest(
         # — per-role overlay —
         system_prompt=MANAGER_BRIEF,  # → roles/{planner,generator,evaluator}.toml system_prompt
-        permission_mode=PermissionMode.DEFAULT,
-        # — build_harness(registry=…) — manager capabilities + a read surface —
-        tools=("read_file", "decompose", "submit_task", "assign_task"),
+        # ACCEPT_EDITS so the manager can author the ONE file it owns — the AGENTS.md contract — without
+        # an interactive approval the kernel can't supply (the posture the PM uses for its plan doc). The
+        # manager builds NO deliverable; this write surface exists solely for the cross-child contract
+        # spec 15 §4.1 requires it to author before it may fan work out.
+        permission_mode=PermissionMode.ACCEPT_EDITS,
+        # — build_harness(registry=…) — manager capabilities + read/write the contract —
+        tools=("read_file", "write_file", "decompose", "submit_task", "assign_task"),
         # — build_harness(memory=…) — a manager reasons across its team —
         memory_scope=MemoryScope.TEAM,
+        # default sandbox=REPO_WRITE suffices: the manager writes AGENTS.md but runs no commands.
     )
 
 

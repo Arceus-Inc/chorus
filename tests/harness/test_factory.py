@@ -119,7 +119,8 @@ def test_manager_harness_registers_the_decompose_capability_tool(
         )
         factory.materialize(Employee(id="moe", name="Moe", role="manager"))
         names = {t.name for t in captured["registry"].list_tools()}
-        assert names == {"read_file", "decompose", "submit_task", "assign_task"}
+        # write_file: the manager authors the AGENTS.md contract itself (spec 15 §4.1) before fanning out.
+        assert names == {"read_file", "write_file", "decompose", "submit_task", "assign_task"}
     finally:
         ledger.close()
 
@@ -259,11 +260,13 @@ def test_manager_brief_is_rehydrated_with_its_team(
 def test_manager_without_a_ledger_has_no_capability_tools(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # No ledger → the capability tool can't be bound, so it is simply absent (fails closed, no crash).
+    # No ledger → the chorus capability tools can't be bound, so they are absent (fail closed). The
+    # plain dream file tools (read_file/write_file) need no ledger and remain — write_file is how the
+    # manager authors the AGENTS.md contract (spec 15 §4.1).
     factory, captured = _factory(monkeypatch, tmp_path)
     factory.materialize(Employee(id="moe", name="Moe", role="manager"))
     names = {t.name for t in captured["registry"].list_tools()}
-    assert names == {"read_file"}
+    assert names == {"read_file", "write_file"}
 
 
 def test_runner_for_is_a_beat_runner(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

@@ -11,6 +11,8 @@ for), then delegates the mutation. Core ``chorus`` stays dream-free; the dream i
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from dream.contracts.tool import ToolResult
 from dream.tools._base import BaseTool, ToolDeclaration
 from dream.tools._context import ToolExecutionContext
@@ -19,6 +21,7 @@ from pydantic import BaseModel, Field
 from chorus.heartbeat import BeatContext
 from chorus.ledger import SqliteLedger
 from chorus.lifecycle import CapabilityService, ChildPlan
+from chorus_tools._contract import contract_gate, publish_contract
 
 
 class _ChildInput(BaseModel):
@@ -55,6 +58,7 @@ class DecomposeTool(BaseTool):
     input_model = DecomposeInput
 
     def __init__(self, ledger: SqliteLedger) -> None:
+        self._ledger = ledger
         self._service = CapabilityService(ledger)
 
     async def execute(self, input: dict[str, object], ctx: ToolExecutionContext) -> ToolResult:
@@ -64,6 +68,16 @@ class DecomposeTool(BaseTool):
             return ToolResult(content=rejection, is_error=True)
 
         beat = BeatContext.read(ctx.working_dir)
+        # Contract-first gate (spec 15 §4.1): a manager may not fan work out before it has authored the
+        # cross-child contract. A missing/placeholder AGENTS.md means the engineers would branch off a
+        # blank form — the split-brain the contract exists to prevent. Fail closed, then land the
+        # authored contract on company main BEFORE any child exists so every engineer branch carries it.
+        gate_rejection = contract_gate(Path(ctx.working_dir))
+        if gate_rejection is not None:
+            return gate_rejection
+        published_sha = publish_contract(
+            self._ledger, working_dir=Path(ctx.working_dir), parent_id=beat.task_id, actor=beat.employee_id
+        )
         plans = [
             ChildPlan(
                 label=child.label,
@@ -106,7 +120,11 @@ class DecomposeTool(BaseTool):
         listing = ", ".join(f"{c.label}→{c.assignee}" for c in args.children)
         return ToolResult(
             content=f"created {len(plans)} subtasks: {listing}",
-            structured={"depth_capped": False, "children": result.child_ids},
+            structured={
+                "depth_capped": False,
+                "children": result.child_ids,
+                "contract_sha": published_sha,
+            },
         )
 
 

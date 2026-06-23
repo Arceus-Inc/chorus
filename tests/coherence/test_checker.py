@@ -80,6 +80,30 @@ def test_orphan_module(tmp_path: Path) -> None:
     assert "orphan_module" in [v.code for v in check_coherence(root, doc)]
 
 
+def test_tests_and_entry_points_are_not_orphans_or_missing(tmp_path: Path) -> None:
+    # A complete library with a CLI entry point + test files is coherent: test files are discovered
+    # (never imported), and a CLI is run (never imported) — neither is dead code. Tests also aren't part
+    # of the SOURCE contract, so a declared-but-absent test file is not a missing-module violation.
+    root = _pkg(
+        tmp_path,
+        {
+            "pkg/__init__.py": "from pkg.core import Thing\n__all__ = ['Thing']\n",
+            "pkg/core.py": "class Thing:\n    pass\n",
+            "pkg/cli.py": "from pkg.core import Thing\n\ndef main() -> None:\n    print(Thing())\n",
+            "pkg/__main__.py": "from pkg.cli import main\n\nif __name__ == '__main__':\n    main()\n",
+            "tests/test_core.py": "from pkg import Thing\n\ndef test_thing():\n    assert Thing()\n",
+        },
+    )
+    doc = AgentsMd(
+        modules=(
+            "pkg/__init__.py", "pkg/core.py", "pkg/cli.py", "pkg/__main__.py",
+            "tests/test_core.py", "tests/test_absent.py",  # declared-but-absent test → not flagged
+        ),
+        public_api=("pkg.Thing",),
+    )
+    assert check_coherence(root, doc) == []
+
+
 # --- placeholder-aware behaviour (spec 15): when the manager left AGENTS.md unfilled, the declared
 # checks (missing_module/export, orphan) can't run, but the STRUCTURAL split-brain checks still do.
 

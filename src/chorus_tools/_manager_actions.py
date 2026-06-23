@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from dream.contracts.tool import ToolResult
 from dream.tools._base import BaseTool, ToolDeclaration
 from dream.tools._context import ToolExecutionContext
@@ -10,6 +12,7 @@ from pydantic import BaseModel, Field
 from chorus.heartbeat import BeatContext
 from chorus.ledger import SqliteLedger
 from chorus.lifecycle import CapabilityService, ChildPlan
+from chorus_tools._contract import contract_gate, publish_contract
 
 
 class SubmitTaskInput(BaseModel):
@@ -40,11 +43,24 @@ class SubmitTaskTool(BaseTool):
     input_model = SubmitTaskInput
 
     def __init__(self, ledger: SqliteLedger) -> None:
+        self._ledger = ledger
         self._service = CapabilityService(ledger)
 
     async def execute(self, input: dict[str, object], ctx: ToolExecutionContext) -> ToolResult:
         args = SubmitTaskInput.model_validate(input)
         beat = BeatContext.read(ctx.working_dir)
+        # Contract-first gate (spec 15 §4.1) — same rule as ``decompose``: a manager that fans the goal
+        # out via a FIRST ``submit_task`` (no children yet) must have authored AGENTS.md, and the kernel
+        # lands it on company main before the child branches. A later follow-up (children already exist,
+        # a true integrate move) is past the initial fan-out, so the contract is already on main — skip.
+        if not self._ledger.tasks.has_children(beat.task_id):
+            rejection = contract_gate(Path(ctx.working_dir))
+            if rejection is not None:
+                return rejection
+            publish_contract(
+                self._ledger, working_dir=Path(ctx.working_dir),
+                parent_id=beat.task_id, actor=beat.employee_id,
+            )
         result = self._service.submit_one(
             parent_id=beat.task_id,
             revision=beat.run_id,

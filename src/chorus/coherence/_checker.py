@@ -21,6 +21,7 @@ everything (stricter).
 from __future__ import annotations
 
 import ast
+import hashlib
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -41,6 +42,30 @@ def is_placeholder(doc: AgentsMd) -> bool:
     return any("<" in m for m in doc.modules) or any("<" in s for s in doc.public_api) or (
         not doc.modules and not doc.public_api
     )
+
+
+def authored_contract(worktree: Path) -> str | None:
+    """Return ``worktree/AGENTS.md`` content iff it is an authored (non-placeholder) contract, else ``None``.
+
+    The single read both the ``decompose`` gate (refuse to fan out before the manager has authored the
+    contract — spec 15 §4.1) and the per-beat ingestion marker (record which contract an engineer beat
+    actually branched off — spec 15 §4.2) reconcile against, so "authored" means the same thing to both:
+    a real module map / public API, not the seeded ``<package>`` skeleton.
+    """
+    path = worktree / "AGENTS.md"
+    if not path.is_file():
+        return None
+    text = path.read_text(encoding="utf-8")
+    return None if is_placeholder(AgentsMd.parse(text)) else text
+
+
+def contract_sha(content: str) -> str:
+    """A short stable identity for a contract's CONTENT — the ``vN`` both publish and ingest record.
+
+    Hashing the content (not the git commit) lets a query correlate "manager published contract X" with
+    "engineer beat Y ingested contract X" even though they land on different commits (spec 15 §4.2).
+    """
+    return hashlib.sha1(content.encode("utf-8")).hexdigest()[:12]
 
 
 def check_coherence(root: Path, doc: AgentsMd) -> list[CoherenceViolation]:
@@ -90,11 +115,43 @@ def _bound_names(tree: ast.Module) -> set[str]:
     return names
 
 
+def _is_test_module(module: str) -> bool:
+    """A test file is never imported (the runner discovers it) and is an implementation detail of a
+    subtask, not part of the cross-child SOURCE contract — so coherence does not reconcile it."""
+    norm = module.replace("\\", "/")
+    name = norm.rsplit("/", 1)[-1]
+    return (
+        norm.startswith(("tests/", "test/"))
+        or "/tests/" in norm
+        or "/test/" in norm
+        or name.startswith("test_")
+        or name.endswith("_test.py")
+        or name == "conftest.py"
+    )
+
+
+def _is_entrypoint(root: Path, module: str) -> bool:
+    """An entry-point module (a CLI / ``__main__``) is reached by being RUN, not imported, so it is not
+    an orphan even when no sibling imports it (the prefrank ``cli.py`` false positive)."""
+    if Path(module).name in {"__main__.py", "cli.py"}:
+        return True
+    tree = _parse(root / module)
+    if tree is None:
+        return False
+    return any(  # a top-level ``if __name__ == "__main__":`` guard marks a runnable entry point
+        isinstance(node, ast.If)
+        and isinstance(node.test, ast.Compare)
+        and isinstance(node.test.left, ast.Name)
+        and node.test.left.id == "__name__"
+        for node in tree.body
+    )
+
+
 def _missing_modules(root: Path, doc: AgentsMd) -> list[CoherenceViolation]:
     return [
         CoherenceViolation("missing_module", f"declared module is absent: {m}", m)
         for m in doc.modules
-        if not (root / m).is_file()
+        if not _is_test_module(m) and not (root / m).is_file()
     ]
 
 
@@ -180,7 +237,13 @@ def _orphan_modules(root: Path, doc: AgentsMd) -> list[CoherenceViolation]:
     imported = _imported_module_leaves(root, doc)
     out: list[CoherenceViolation] = []
     for module in doc.modules:
-        if module.endswith("__init__.py"):
+        # ``__init__`` re-exports (never an orphan); test files are discovered, not imported; an entry
+        # point (CLI / ``__main__``) is run, not imported — none of these are dead code.
+        if (
+            module.endswith("__init__.py")
+            or _is_test_module(module)
+            or _is_entrypoint(root, module)
+        ):
             continue
         leaf = Path(module).stem  # `pkg/loss.py` -> `loss`
         if leaf not in imported:
