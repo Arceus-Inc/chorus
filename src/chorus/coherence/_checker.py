@@ -130,6 +130,21 @@ def _is_test_module(module: str) -> bool:
     )
 
 
+_MANIFESTS = frozenset(
+    {
+        "pyproject.toml", "requirements.txt", "setup.py", "setup.cfg",
+        "Cargo.toml", "Cargo.lock", "package.json", "go.mod", "go.sum",
+    }
+)
+
+
+def _is_manifest(module: str) -> bool:
+    """A packaging manifest is verified by the install step, not by module presence — so it is never a
+    'missing module' even when a manager (wrongly) lists it in the module map (the prefrank deadlock:
+    ``pyproject.toml`` declared but unbuildable, flagged absent forever)."""
+    return module.replace("\\", "/").rsplit("/", 1)[-1] in _MANIFESTS
+
+
 def _is_entrypoint(root: Path, module: str) -> bool:
     """An entry-point module (a CLI / ``__main__``) is reached by being RUN, not imported, so it is not
     an orphan even when no sibling imports it (the prefrank ``cli.py`` false positive)."""
@@ -151,7 +166,7 @@ def _missing_modules(root: Path, doc: AgentsMd) -> list[CoherenceViolation]:
     return [
         CoherenceViolation("missing_module", f"declared module is absent: {m}", m)
         for m in doc.modules
-        if not _is_test_module(m) and not (root / m).is_file()
+        if not _is_test_module(m) and not _is_manifest(m) and not (root / m).is_file()
     ]
 
 
@@ -210,6 +225,12 @@ def _init_bound_names(root: Path, doc: AgentsMd) -> set[str]:
 
 
 def _missing_exports(root: Path, doc: AgentsMd) -> list[CoherenceViolation]:
+    # The export check reads a Python ``__init__.py`` via AST. A non-Python deliverable (a Rust crate's
+    # ``lib.rs`` ``pub use``, a Node ``index.ts``) declares no ``__init__.py`` — its public surface is
+    # verified by that stack's own compiler/gate, not Python AST. Skip rather than flag every symbol
+    # missing (the tinyvec false block: a correct crate, all `tinyvec::*` exports reported absent).
+    if not any(m.endswith("__init__.py") for m in doc.modules):
+        return []
     bound = _init_bound_names(root, doc)
     return [
         CoherenceViolation("missing_export", f"__init__ does not export declared symbol: {s}", s)

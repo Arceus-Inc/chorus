@@ -41,6 +41,41 @@ def test_missing_declared_module(tmp_path: Path) -> None:
     assert "missing_module" in [v.code for v in check_coherence(root, doc)]
 
 
+def test_a_declared_manifest_is_not_a_missing_module(tmp_path: Path) -> None:
+    # A manager that lists `pyproject.toml` / `Cargo.toml` in the module map must not deadlock the goal:
+    # a manifest is packaging (verified by the install step), not a buildable source module, so coherence
+    # does not require it as a module. The prefrank block: pyproject.toml declared but never built →
+    # missing_module forever.
+    root = _pkg(tmp_path, {"pkg/__init__.py": "from pkg.core import Thing\n", "pkg/core.py": "class Thing:\n    pass\n"})
+    doc = AgentsMd(
+        modules=("pyproject.toml", "pkg/__init__.py", "pkg/core.py"),  # manifest listed, absent on disk
+        public_api=("pkg.Thing",),
+        ownership={"pkg/core.py": "ada"},
+    )
+    assert check_coherence(root, doc) == []  # no missing_module for the manifest
+
+
+def test_non_python_deliverable_skips_the_init_export_check(tmp_path: Path) -> None:
+    # The export check is Python-`__init__`-specific (AST of `__init__.py`). A Rust crate exports via
+    # `lib.rs` `pub use`, which the Python AST cannot read — so with no declared `__init__.py` the export
+    # check must be SKIPPED, not fail every symbol (the tinyvec false block: a correct crate, all 4
+    # `tinyvec::*` exports flagged missing).
+    root = _pkg(
+        tmp_path,
+        {
+            "src/lib.rs": "pub use store::TinyVec;\npub mod store;\n",
+            "src/store.rs": "pub struct TinyVec;\n",
+            "Cargo.toml": "[package]\nname='tinyvec'\nversion='0.1.0'\n",
+        },
+    )
+    doc = AgentsMd(
+        modules=("Cargo.toml", "src/lib.rs", "src/store.rs"),
+        public_api=("tinyvec::TinyVec",),
+        ownership={"src/store.rs": "ada"},
+    )
+    assert "missing_export" not in [v.code for v in check_coherence(root, doc)]
+
+
 def test_duplicate_public_symbol(tmp_path: Path) -> None:
     root = _pkg(
         tmp_path,

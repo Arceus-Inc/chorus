@@ -14,9 +14,10 @@ from pathlib import Path
 
 from dream.contracts.tool import ToolResult
 
-from chorus.coherence import authored_contract, contract_sha
+from chorus.coherence import AgentsMd, authored_contract, contract_sha
 from chorus.ledger import ActivityVerb, SqliteLedger
 from chorus.lifecycle import record_activity
+from chorus.scaffold import scaffold_if_missing
 from chorus.workspace import ACCEPTANCE_DIR, CompanyWorkspace
 
 # Stack-neutral packaging manifests — published with the contract so the gate installs the deliverable's
@@ -58,6 +59,16 @@ def publish_contract(
     root = working_dir.parent.parent
     if not (root / "repo" / ".git").exists():
         return None
+    # Scaffold the project manifest BEFORE fan-out (the manifest-as-module fix): a manager that lists
+    # `pyproject.toml`/`Cargo.toml` in the module map would otherwise deadlock — nobody builds it (the
+    # derive skips non-source files) yet the gate needs it to install declared deps. Lay it down once
+    # from the declared stack (or the goal text) so it exists on main for every engineer branch.
+    parent = ledger.tasks.get(parent_id)
+    scaffold_if_missing(
+        working_dir,
+        goal=parent.intent if parent is not None else "",
+        declared_modules=AgentsMd.parse(content).modules,
+    )
     workspace = CompanyWorkspace(root)
     sha = workspace.publish_to_main(
         "AGENTS.md", content, message="chorus: publish AGENTS.md contract (pre-fan-out)"
