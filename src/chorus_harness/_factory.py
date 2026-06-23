@@ -370,8 +370,13 @@ class EmployeeHarnessFactory:
             # branched from — blind to the children's deliverables that have since landed. Sync it to
             # ``main`` first so the manager reviews the real, merged subtree instead of an empty tree
             # (read_file on the children's files would otherwise error and the verdict be vacuous).
+            # ``prefer_main``: the manager authored the contract (AGENTS.md/manifest) in this worktree and
+            # the same files were published to ``main`` out-of-band, so a child's edit to the manifest
+            # makes a plain merge an add/add CONFLICT that aborts and strands the manager on a
+            # contract-only tree (the prefrank false block). ``main`` is the integrated truth here, so
+            # conflicts resolve in its favour — the full merged subtree comes in instead of nothing.
             if is_integrate_beat and review_worktree_of is None:
-                workspace.sync_to_main(worktree_owner)
+                workspace.sync_to_main(worktree_owner, prefer_main=True)
             elif (
                 review_worktree_of is None
                 and task_id is not None

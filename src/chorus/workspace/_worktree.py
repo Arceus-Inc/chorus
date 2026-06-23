@@ -283,7 +283,7 @@ class CompanyWorkspace:
                 ["git", "-C", str(wt), "checkout", "main", "--", relpath], capture_output=True, text=True
             )
 
-    def sync_to_main(self, employee_id: str) -> bool:
+    def sync_to_main(self, employee_id: str, *, prefer_main: bool = False) -> bool:
         """Bring ``employee_id``'s worktree up to the current company ``main``; return whether it synced.
 
         A manager that delegated never edited code, so its worktree still sits at the ``main`` it
@@ -297,13 +297,24 @@ class CompanyWorkspace:
         committed it (it delegated rather than landing a PR), so the tree carries an uncommitted change.
         ``git merge`` refuses to run over uncommitted local changes — without committing them first the
         sync always fails and the manager reviews an EMPTY tree (the run-6 ``no_deliverable`` false
-        block). Committing the local work first lets ``main`` merge in cleanly (the published AGENTS.md
-        is identical content, so it auto-resolves).
+        block). Committing the local work first lets ``main`` merge in cleanly.
+
+        ``prefer_main`` resolves merge conflicts in ``main``'s favour (``-X theirs``). The contract files
+        (AGENTS.md, the acceptance suite, the manifest) are published to ``main`` BEFORE fan-out, yet the
+        manager also authored them in its own worktree; the snapshot above commits those copies onto the
+        manager's branch as additions INDEPENDENT of the publish on ``main`` (their merge-base is the
+        pre-publish seed). So if a child later edits a published file — a manifest gets a new dependency —
+        the merge is an add/add CONFLICT that aborts and strands the manager on a contract-only tree with
+        no deliverable (the prefrank false block). For the manager's integrate REVIEW, ``main`` is the
+        integrated truth and the manager's branch copy of the contract is superseded, so taking ``main``'s
+        side pulls the full merged subtree in cleanly. Off by default: a dependent CHILD syncing siblings'
+        code has its OWN in-progress edits that must not be clobbered.
         """
         self._snapshot(employee_id)
         wt = self.worktree_for(employee_id)
+        strategy = ["-X", "theirs"] if prefer_main else []
         done = subprocess.run(
-            ["git", "-C", str(wt.path), *_COMMIT_IDENTITY, "merge", "main",
+            ["git", "-C", str(wt.path), *_COMMIT_IDENTITY, "merge", *strategy, "main",
              "-m", f"chorus: sync {wt.branch} to main"],
             capture_output=True,
             text=True,

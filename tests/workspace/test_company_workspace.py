@@ -84,6 +84,37 @@ def test_sync_to_main_pulls_landed_work_despite_an_uncommitted_local_file(tmp_pa
     assert (mgr.path / "AGENTS.md").read_text(encoding="utf-8") == "# AGENTS.md\nv1\n"  # its work kept
 
 
+def test_sync_to_main_prefer_main_resolves_an_add_add_conflict_on_a_published_contract_file(
+    tmp_path: Path,
+) -> None:
+    # The prefrank false-block: the contract files (AGENTS.md, pyproject.toml) are published to main
+    # pre-fan-out, but the manager ALSO authored them in its own worktree. At integrate, sync_to_main
+    # snapshots the manager's copies onto its branch and merges main. Because publish landed on main and
+    # the snapshot on the branch as INDEPENDENT additions over the seed, a child's divergent edit to
+    # pyproject.toml makes the merge an add/add CONFLICT — which aborts, stranding the manager on a
+    # contract-only tree with NO package, so the integrate gate falsely reports "package missing".
+    # prefer_main resolves conflicts in main's favour (it is the integrated truth) so the manager
+    # reviews the real merged subtree.
+    ws = CompanyWorkspace(tmp_path / "acme")
+    mgr = ws.worktree_for("moe")
+    (mgr.path / "AGENTS.md").write_text("# AGENTS.md\nv1\n", encoding="utf-8")  # uncommitted, like kickoff
+    (mgr.path / "pyproject.toml").write_text(
+        "[project]\nname = 'pf'\ndependencies = []\n", encoding="utf-8"
+    )
+    # main: a child publishes a DIVERGENT pyproject (added a dep) + lands the package
+    ws.publish_to_main(
+        "pyproject.toml", "[project]\nname = 'pf'\ndependencies = ['numpy']\n", message="child: add dep"
+    )
+    ws.publish_to_main("prefrank/core.py", "VALUE = 1\n", message="child: land core")
+    # plain sync conflicts on the pyproject add/add and strands the manager (documents the bug)
+    assert ws.sync_to_main("moe") is False
+    assert not (mgr.path / "prefrank" / "core.py").exists()
+    # prefer_main resolves it: the manager now sees the integrated package; pyproject = main's version
+    assert ws.sync_to_main("moe", prefer_main=True) is True
+    assert (mgr.path / "prefrank" / "core.py").is_file()
+    assert "numpy" in (mgr.path / "pyproject.toml").read_text(encoding="utf-8")
+
+
 def test_restore_from_main_reverts_an_engineers_edit_to_a_locked_path(tmp_path: Path) -> None:
     # The acceptance-suite lock (spec 15 §4.2): a locked dir lives on main; an engineer that weakens it
     # in its worktree has the change reverted to main's version before its branch is snapshotted.
