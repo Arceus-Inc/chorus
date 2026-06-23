@@ -65,3 +65,30 @@ def test_test_files_and_non_py_files_are_not_their_own_tasks() -> None:
     )
     labels = {p.label for p in child_plans_from_contract(doc).plans}
     assert labels == {"pkg-core-py"}  # only the source module becomes a task
+
+
+def test_derives_plans_for_a_rust_crate() -> None:
+    # Stack-agnostic: a Rust crate (`src/*.rs`) must derive one task per source module just like Python.
+    # The manifest is excluded; `lib.rs` is the crate entry (re-exports the API) → depends on all others.
+    doc = AgentsMd(
+        modules=("Cargo.toml", "src/lib.rs", "src/metric.rs", "src/store.rs"),
+        public_api=("tinyvec::TinyVec",),
+        ownership={"src/lib.rs": "ada", "src/metric.rs": "bo", "src/store.rs": "ada"},
+        dependencies={"src/store.rs": ("src/metric.rs",)},
+    )
+    derived = child_plans_from_contract(doc)
+    assert derived.unowned == ()
+    by = {p.label: p for p in derived.plans}
+    assert set(by) == {"src-lib-rs", "src-metric-rs", "src-store-rs"}  # Cargo.toml excluded (manifest)
+    assert by["src-store-rs"].depends_on == ("src-metric-rs",)  # declared import edge
+    assert set(by["src-lib-rs"].depends_on) == {"src-metric-rs", "src-store-rs"}  # entry builds last
+
+
+def test_derives_plans_for_a_go_module() -> None:
+    doc = AgentsMd(
+        modules=("go.mod", "store.go", "store_test.go", "index.go"),
+        public_api=("Store",),
+        ownership={"store.go": "ada", "index.go": "ada"},
+    )
+    labels = {p.label for p in child_plans_from_contract(doc).plans}
+    assert labels == {"store-go", "index-go"}  # go.mod (manifest) + store_test.go (test) excluded

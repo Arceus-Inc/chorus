@@ -160,8 +160,9 @@ class DecomposeTool(BaseTool):
         if not derived.plans:
             return ToolResult(
                 content=(
-                    "refused: AGENTS.md declares no source modules. List the package's `.py` modules in "
-                    "the Module map (with Ownership + Dependencies), then call decompose again."
+                    "refused: AGENTS.md declares no source modules. List the package's source files in "
+                    "the Module map — `.py`/`.rs`/`.ts`/`.go`/… (NOT the manifest or test files) — with "
+                    "Ownership + Dependencies, then call decompose again."
                 ),
                 is_error=True,
                 structured={"no_source_modules": True},
