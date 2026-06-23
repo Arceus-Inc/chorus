@@ -23,10 +23,12 @@ class AgentsMd:
     modules: tuple[str, ...] = ()
     public_api: tuple[str, ...] = ()
     ownership: dict[str, str] = field(default_factory=dict)  # repo-relative path -> employee id
+    # module path -> the sibling module paths it imports (the build-order DAG the kernel fans out on).
+    dependencies: dict[str, tuple[str, ...]] = field(default_factory=dict)
 
     @staticmethod
     def parse(text: str) -> AgentsMd:
-        """Parse the three fixed sections; forgiving of blank lines, missing sections, and ``->``/``→``."""
+        """Parse the four sections; forgiving of blank lines, missing sections, and ``->``/``→``."""
         sections = _split_sections(text)
         modules = tuple(
             path for ln in sections.get("module map", []) if (path := _first_backtick(ln)) is not None
@@ -39,7 +41,15 @@ class AgentsMd:
             owner = _OWNER.search(ln)
             if owner is not None:
                 ownership[owner.group(1)] = owner.group(2)
-        return AgentsMd(modules=modules, public_api=public, ownership=ownership)
+        # Dependencies: ``- `model.py` -> `ingest.py`, `types.py``  (a module and the modules it imports).
+        dependencies: dict[str, tuple[str, ...]] = {}
+        for ln in sections.get("dependencies", []) + sections.get("build order", []):
+            backticks = _BACKTICK.findall(ln)
+            if len(backticks) >= 2:
+                dependencies[backticks[0]] = tuple(backticks[1:])
+        return AgentsMd(
+            modules=modules, public_api=public, ownership=ownership, dependencies=dependencies
+        )
 
     def render(self) -> str:
         """Render the contract back to canonical markdown (round-trips through :meth:`parse`)."""
@@ -49,6 +59,11 @@ class AgentsMd:
         lines += [f"- `{s}`" for s in self.public_api]
         lines += ["", "## Ownership"]
         lines += [f"- `{path}` -> {owner}" for path, owner in self.ownership.items()]
+        lines += ["", "## Dependencies"]
+        lines += [
+            f"- `{mod}` -> {', '.join(f'`{d}`' for d in deps)}"
+            for mod, deps in self.dependencies.items()
+        ]
         return "\n".join(lines) + "\n"
 
 

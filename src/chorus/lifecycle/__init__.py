@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from chorus.lifecycle._audit import record_activity
 from chorus.lifecycle._capability import CapabilityService, ChildPlan, DecomposeResult
+from chorus.lifecycle._contract_plan import DerivedPlan, child_plans_from_contract
 from chorus.lifecycle._coordination import assign_task, deliver_message
 from chorus.lifecycle._decompose import (
     DEFAULT_REQUEST_DEPTH_CAP,
@@ -48,6 +49,7 @@ __all__ = [
     "ChildSpec",
     "DecomposeResult",
     "DepthCapped",
+    "DerivedPlan",
     "Disposition",
     "DispositionAction",
     "Fanned",
@@ -59,6 +61,7 @@ __all__ = [
     "RevisionAuthorityError",
     "assert_legal",
     "assign_task",
+    "child_plans_from_contract",
     "classify",
     "decompose",
     "deliver_message",

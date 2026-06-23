@@ -18,9 +18,10 @@ from dream.tools._base import BaseTool, ToolDeclaration
 from dream.tools._context import ToolExecutionContext
 from pydantic import BaseModel, Field
 
+from chorus.coherence import AgentsMd
 from chorus.heartbeat import BeatContext
 from chorus.ledger import SqliteLedger
-from chorus.lifecycle import CapabilityService, ChildPlan
+from chorus.lifecycle import CapabilityService, ChildPlan, child_plans_from_contract
 from chorus_tools._contract import contract_gate, publish_contract
 
 
@@ -37,9 +38,14 @@ class _ChildInput(BaseModel):
 
 
 class DecomposeInput(BaseModel):
-    """Arguments for ``decompose`` — every subtask of the fan-out in one call."""
+    """Arguments for ``decompose``. Leave ``children`` EMPTY to fan out one task per module straight from
+    your authored ``AGENTS.md`` (contract-derived, the default); pass ``children`` only to override."""
 
-    children: list[_ChildInput] = Field(description="the subtasks to fan the current task out into")
+    children: list[_ChildInput] = Field(
+        default_factory=list,
+        description="leave empty to derive one task per declared module from AGENTS.md (recommended); "
+        "pass explicit subtasks only to override the contract-derived breakdown",
+    )
 
 
 class DecomposeTool(BaseTool):
@@ -47,9 +53,10 @@ class DecomposeTool(BaseTool):
 
     name = "decompose"
     description = (
-        "Split the current task into concrete subtasks and assign each to a report. Call once with "
-        "every subtask in 'children'; use 'depends_on' to order them. The current task then waits on "
-        "the whole subtree. Refused if the task is already at the delegation depth cap."
+        "Fan the current task out into subtasks. With NO 'children', the kernel derives ONE task per "
+        "module from the AGENTS.md you authored — assigned to each module's declared owner and ordered "
+        "by the contract's Dependencies — so the hard module lands in its own focused task. Pass "
+        "'children' only to override. The current task then waits on the whole subtree."
     )
     # tier_required=1 (REPO_WRITE): a mutating tool is gated as a write effect, so its *trusted* tier
     # (from this declaration, since it registers DEFAULT/built-in) must meet that — else dream denies it
@@ -78,15 +85,18 @@ class DecomposeTool(BaseTool):
         published_sha = publish_contract(
             self._ledger, working_dir=Path(ctx.working_dir), parent_id=beat.task_id, actor=beat.employee_id
         )
-        plans = [
-            ChildPlan(
-                label=child.label,
-                intent=child.intent,
-                assignee=child.assignee,
-                depends_on=tuple(child.depends_on),
-            )
-            for child in args.children
-        ]
+        if args.children:  # explicit override (legacy): use the manager's hand-written children
+            plans = [
+                ChildPlan(
+                    label=c.label, intent=c.intent, assignee=c.assignee, depends_on=tuple(c.depends_on)
+                )
+                for c in args.children
+            ]
+        else:  # contract-derived (default, spec 15 B): one task per declared module, ordered by deps
+            plans_or_rejection = self._derive_from_contract(Path(ctx.working_dir))
+            if isinstance(plans_or_rejection, ToolResult):
+                return plans_or_rejection
+            plans = plans_or_rejection
         result = self._service.decompose(parent_id=beat.task_id, revision=beat.run_id, children=plans)
         if result.reviewer_assignees:
             joined = ", ".join(result.reviewer_assignees)
@@ -117,7 +127,7 @@ class DecomposeTool(BaseTool):
                 ),
                 structured={"depth_capped": True},
             )
-        listing = ", ".join(f"{c.label}→{c.assignee}" for c in args.children)
+        listing = ", ".join(f"{p.label}→{p.assignee}" for p in plans)
         return ToolResult(
             content=f"created {len(plans)} subtasks: {listing}",
             structured={
@@ -127,11 +137,45 @@ class DecomposeTool(BaseTool):
             },
         )
 
+    def _derive_from_contract(self, working_dir: Path) -> list[ChildPlan] | ToolResult:
+        """Build one :class:`ChildPlan` per declared module from the authored AGENTS.md (spec 15 B).
+
+        Refuses (returns a :class:`ToolResult`) when a declared module has no owner, or no source module
+        is declared at all — so the manager completes the contract rather than the kernel silently
+        dropping work.
+        """
+        text = (working_dir / "AGENTS.md").read_text(encoding="utf-8")
+        derived = child_plans_from_contract(AgentsMd.parse(text))
+        if derived.unowned:
+            joined = ", ".join(derived.unowned)
+            return ToolResult(
+                content=(
+                    f"refused: these declared modules have no owner in AGENTS.md: {joined}. Add an "
+                    "Ownership line (`path -> <engineer id>`) for EVERY source module, then call "
+                    "decompose again — the kernel fans one task per module to its owner."
+                ),
+                is_error=True,
+                structured={"unowned_modules": list(derived.unowned)},
+            )
+        if not derived.plans:
+            return ToolResult(
+                content=(
+                    "refused: AGENTS.md declares no source modules. List the package's `.py` modules in "
+                    "the Module map (with Ownership + Dependencies), then call decompose again."
+                ),
+                is_error=True,
+                structured={"no_source_modules": True},
+            )
+        return list(derived.plans)
+
 
 def _validate(args: DecomposeInput) -> str | None:
-    """Return a rejection message if the children DAG is malformed, else ``None``."""
+    """Return a rejection message if an EXPLICIT children DAG is malformed, else ``None``.
+
+    Empty ``children`` is valid — it selects the contract-derived fan-out (one task per declared module).
+    """
     if not args.children:
-        return "provide at least one subtask in 'children'"
+        return None
     labels = [child.label for child in args.children]
     if len(set(labels)) != len(labels):
         return "each subtask 'label' must be unique within the call"

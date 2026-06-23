@@ -152,3 +152,42 @@ def test_tool_refuses_to_fan_out_with_placeholder_contract(ledger: SqliteLedger,
     assert result.is_error is True
     assert result.structured["contract_unauthored"] is True
     assert ledger.tasks.children("M") == []
+
+
+def test_tool_derives_one_task_per_module_from_the_contract(ledger: SqliteLedger, tmp_path: Path) -> None:
+    # spec 15 B: with NO children, the kernel fans out one task per declared module — owner + depends_on
+    # from AGENTS.md — so the hard module lands in its own focused task, never bundled.
+    _seed(ledger)
+    BeatContext(task_id="M", run_id=REV, employee_id="mgr").write(tmp_path)
+    (tmp_path / "AGENTS.md").write_text(
+        "# AGENTS.md\n## Module map\n- `pkg/__init__.py` — entry\n- `pkg/ingest.py` — load\n"
+        "- `pkg/model.py` — the algorithm\n## Public API\n- `pkg.fit`\n"
+        "## Ownership\n- `pkg/__init__.py` -> ada\n- `pkg/ingest.py` -> ada\n- `pkg/model.py` -> bob\n"
+        "## Dependencies\n- `pkg/model.py` -> `pkg/ingest.py`\n",
+        encoding="utf-8",
+    )
+    result = asyncio.run(DecomposeTool(ledger).execute({}, _ctx(tmp_path)))  # NO children → derive
+
+    assert result.is_error is False
+    child_ids = result.structured["children"]
+    assert set(child_ids) == {"pkg-__init__-py", "pkg-ingest-py", "pkg-model-py"}
+    # the hard module is its OWN task, assigned to its declared owner
+    assert ledger.tasks.get(child_ids["pkg-model-py"]).assignee_employee_id == "bob"  # type: ignore[union-attr]
+    # model depends on ingest (declared); ingest is a foundation (no deps)
+    assert ledger.dependencies.unresolved_blockers(child_ids["pkg-model-py"]) == [child_ids["pkg-ingest-py"]]
+
+
+def test_tool_refuses_contract_derive_when_a_module_has_no_owner(
+    ledger: SqliteLedger, tmp_path: Path
+) -> None:
+    _seed(ledger)
+    BeatContext(task_id="M", run_id=REV, employee_id="mgr").write(tmp_path)
+    (tmp_path / "AGENTS.md").write_text(
+        "# AGENTS.md\n## Module map\n- `pkg/__init__.py` — entry\n- `pkg/model.py` — algo\n"
+        "## Public API\n- `pkg.fit`\n## Ownership\n- `pkg/__init__.py` -> ada\n",  # model.py unowned
+        encoding="utf-8",
+    )
+    result = asyncio.run(DecomposeTool(ledger).execute({}, _ctx(tmp_path)))
+    assert result.is_error is True
+    assert result.structured["unowned_modules"] == ["pkg/model.py"]
+    assert ledger.tasks.children("M") == []
