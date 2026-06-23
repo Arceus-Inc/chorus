@@ -166,6 +166,30 @@ class DecomposeTool(BaseTool):
                 is_error=True,
                 structured={"no_source_modules": True},
             )
+        # Engineer-only ownership: a deliverable module must be owned by an ENGINEER. A manager/PM/
+        # analyst/reviewer coordinates — it has no build->review->land path, so a module assigned to one
+        # SUCCEEDS its beat yet never lands, and the dependent __init__ cascade-cancels (the prefrank
+        # `cli.py -> pat` block). Fail closed so the manager reassigns the module to an engineer (the
+        # CapabilityService reviewer guard already covers the explicit-children path; this covers the
+        # contract-derived module owners B fans out on).
+        non_engineers = {
+            plan.label: employee.role
+            for plan in derived.plans
+            if plan.assignee is not None
+            and (employee := self._ledger.employees.get(plan.assignee)) is not None
+            and employee.role != "engineer"
+        }
+        if non_engineers:
+            listing = ", ".join(f"{label} (owner is a {role})" for label, role in non_engineers.items())
+            return ToolResult(
+                content=(
+                    "refused: every deliverable module must be owned by an ENGINEER — a manager/PM/"
+                    f"reviewer coordinates, it does not build. Non-engineer owners: {listing}. Reassign "
+                    "each to an engineer report in the AGENTS.md Ownership section, then decompose again."
+                ),
+                is_error=True,
+                structured={"non_engineer_owners": list(non_engineers)},
+            )
         return list(derived.plans)
 
 

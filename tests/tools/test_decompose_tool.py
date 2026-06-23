@@ -177,6 +177,27 @@ def test_tool_derives_one_task_per_module_from_the_contract(ledger: SqliteLedger
     assert ledger.dependencies.unresolved_blockers(child_ids["pkg-model-py"]) == [child_ids["pkg-ingest-py"]]
 
 
+def test_tool_refuses_contract_derive_when_a_module_is_owned_by_a_non_engineer(
+    ledger: SqliteLedger, tmp_path: Path
+) -> None:
+    # spec 15 B: a deliverable module must be owned by an ENGINEER. A PM/analyst/reviewer coordinates;
+    # it has no build->review->land path, so a module assigned to it SUCCEEDS its beat yet never lands
+    # and the dependent __init__ cascade-cancels (the prefrank `cli.py -> pat` block). Fail closed so the
+    # manager reassigns the module to an engineer report.
+    _seed(ledger)
+    ledger.employees.create(Employee(id="pat", name="Pat", role="pm", reports_to="mgr"))
+    BeatContext(task_id="M", run_id=REV, employee_id="mgr").write(tmp_path)
+    (tmp_path / "AGENTS.md").write_text(
+        "# AGENTS.md\n## Module map\n- `pkg/__init__.py` — entry\n- `pkg/model.py` — algo\n"
+        "## Public API\n- `pkg.fit`\n## Ownership\n- `pkg/__init__.py` -> ada\n- `pkg/model.py` -> pat\n",
+        encoding="utf-8",
+    )
+    result = asyncio.run(DecomposeTool(ledger).execute({}, _ctx(tmp_path)))
+    assert result.is_error is True
+    assert "pkg-model-py" in result.structured["non_engineer_owners"]
+    assert ledger.tasks.children("M") == []  # nothing fanned out
+
+
 def test_tool_refuses_contract_derive_when_a_module_has_no_owner(
     ledger: SqliteLedger, tmp_path: Path
 ) -> None:
