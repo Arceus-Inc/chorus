@@ -57,6 +57,31 @@ def test_submit_task_tool_creates_one_child(ledger: SqliteLedger, tmp_path: Path
     assert ledger.dependencies.unresolved_blockers("M") == [child_id]
 
 
+def test_submit_task_tool_rejects_follow_up_while_children_are_open(
+    ledger: SqliteLedger, tmp_path: Path
+) -> None:
+    _seed(ledger)
+    BeatContext(task_id="M", run_id=REV, employee_id="mgr").write(tmp_path)
+    first = asyncio.run(
+        SubmitTaskTool(ledger).execute(
+            {"label": "build", "intent": "build the app", "assignee": "ada"},
+            _ctx(tmp_path),
+        )
+    )
+
+    result = asyncio.run(
+        SubmitTaskTool(ledger).execute(
+            {"label": "extra", "intent": "also build the app", "assignee": "bob"},
+            _ctx(tmp_path),
+        )
+    )
+
+    assert first.is_error is False
+    assert result.is_error is True
+    assert result.structured["delegated_children_open"] is True
+    assert [child.id for child in ledger.tasks.children("M")] == [first.structured["child_id"]]
+
+
 def test_submit_task_tool_rejects_non_report(ledger: SqliteLedger, tmp_path: Path) -> None:
     _seed(ledger)
     ledger.employees.create(Employee(id="eve", name="Eve", role="engineer"))

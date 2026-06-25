@@ -73,6 +73,42 @@ _READ_ONLY_DREAM_SURFACE_TOOLS = frozenset(
 )
 
 
+def _planner_tools(config: RoleBeatConfig) -> tuple[str, ...]:
+    """Tools visible in the planner phase.
+
+    Most roles stay toolless so planner must emit a contract. Delegating roles are the exception:
+    their kickoff decision is the delegation itself, and making an early `decompose` call fail causes
+    the later generator to mimic evaluator output instead of retrying the tool call.
+    """
+    names: list[str] = []
+    for name in dream_tool_names(config.tools):
+        if name in _READ_ONLY_DREAM_SURFACE_TOOLS and name not in names:
+            names.append(name)
+    for name in config.tools:
+        if name in _DELEGATING_TOOLS and name not in names:
+            names.append(name)
+    return tuple(names)
+
+
+def _generator_tools(config: RoleBeatConfig) -> tuple[str, ...]:
+    """Tools visible in the generator/action phase."""
+    return config.tools
+
+
+def _role_manifest_tools(tools: tuple[str, ...]) -> tuple[str, ...]:
+    """Tool names written to Dream's role manifest.
+
+    Chorus role configs use friendly names such as ``run_command`` while Dream's built-in command
+    tool is named ``bash``. The registry already translates to the Dream name; the role manifest must
+    allow that actual tool name too, otherwise valid command calls are rejected before execution.
+    """
+    names = list(tools)
+    for name in dream_tool_names(tools):
+        if name not in names:
+            names.append(name)
+    return tuple(names)
+
+
 def dream_tool_names(chorus_tools: tuple[str, ...]) -> tuple[str, ...]:
     """Map a role's chorus tool allow-list to dream built-in names, dropping chorus-only tools."""
     return tuple(_CHORUS_TO_DREAM_TOOL[name] for name in chorus_tools if name in _CHORUS_TO_DREAM_TOOL)
@@ -135,21 +171,40 @@ def _team_roster(ledger: SqliteLedger, *, exclude: str) -> str:
             "the ENTIRE goal: identify every distinct part it requires and assign EVERY part to exactly "
             "one manager — never drop, merge away, or forget a required area/module. Write each area "
             "child's `intent` as a full, standalone brief that names ALL the modules and behaviors that "
-            "area must deliver.\n"
+            "area must deliver. During a kickoff beat when no child tasks exist, use `decompose` to "
+            "create manager-owned area children; do not use `submit_task`. If an earlier kickoff attempt "
+            "to call `decompose` was refused or failed before creating children, your next action must be "
+            "to call `decompose` again with the corrected child list, not to answer with only a spec, "
+            "proposal, or status note.\n"
+            "Do NOT create a manager child whose only deliverable is a plan, spec, research note, "
+            "verification pass, or gate wiring. Managers run teams that deliver product areas. If a "
+            "shared plan/spec is needed, include that PM-first planning step inside the same manager's "
+            "product area; do not make one manager plan while another manager builds. If the goal is one "
+            "cohesive runnable application with no truly independent areas, delegate the whole app to ONE "
+            "manager as a complete product area rather than splitting it by technical layer. In that "
+            "cohesive-app exception, it is correct for another manager report to receive no child task.\n"
             "### Mapping rule (follow EXACTLY)\n"
-            f"- You have these manager reports: {ids}. Create EXACTLY ONE area child task per manager "
-            "report — so the number of child tasks you create EQUALS the number of managers above.\n"
-            "- Map ONE distinct area to EACH manager: every manager listed MUST receive exactly one "
-            "area child, and no manager may receive two. Assigning two children to the same manager (and "
-            "leaving another manager with none) is WRONG — that is how whole areas get dropped.\n"
+            f"- You have these manager reports: {ids}. For a goal with multiple genuinely independent "
+            "areas, create EXACTLY ONE area child task per manager report — so the number of child tasks "
+            "you create EQUALS the number of managers above.\n"
+            "- COHESIVE-APP EXCEPTION: if the goal is one runnable app whose acceptance gate must build "
+            "and test server/client/shared pieces together, create exactly ONE manager-owned child for "
+            "the whole app and assign it to the best-fit manager. Do NOT split server, frontend, schema, "
+            "tests, or gate wiring across sibling manager worktrees just to keep every manager busy.\n"
+            "- When there are truly independent areas, map ONE distinct area to EACH manager: every "
+            "manager listed MUST receive exactly one area child, and no manager may receive two. "
+            "Assigning two children to the same manager (and leaving another manager with none) is WRONG "
+            "for multi-area goals — that is how whole areas get dropped.\n"
             "- Do NOT split ONE area's modules across multiple children: each area child must contain "
             "the COMPLETE set of modules the goal assigns to that area, never a subset. If the goal "
             "says an area has two modules, a child naming only one of them is a wrong per-file split. "
             "(An area the goal EXPLICITLY defines as a single integration module is fine — match the "
             "goal's own area definitions.)\n"
-            "- Before you finish decomposing, verify: (a) one child per manager, (b) every manager has a "
-            "child, (c) the four-or-more module files of the goal are all accounted for across your area "
-            "children. If any check fails, re-form the children before finishing.\n"
+            "- Before you finish decomposing a multi-area goal, verify: (a) one child per manager, (b) "
+            "every manager has a child, (c) the four-or-more module files of the goal are all accounted "
+            "for across your area children. For the cohesive-app exception, verify instead that the one "
+            "manager child owns the entire runnable app and names every required server/client/shared/test "
+            "piece. If either applicable check fails, re-form the children before finishing.\n"
             "On an integrate beat, if a required area is still missing or "
             "incomplete, `submit_task` the MISSING area to a manager — NEVER re-submit an area a manager "
             "already delivered, and never re-create files that already exist."
@@ -170,9 +225,11 @@ def _toml_string_list(values: tuple[str, ...]) -> str:
 def _read_only_role_tools(
     role: Literal["planner", "evaluator"], config: RoleBeatConfig
 ) -> tuple[str, ...]:
-    """Default read-only Dream role tools plus safe Engineer read surfaces."""
+    """Default read-only Dream role tools plus safe verification/read surfaces."""
     base = default_role_manifest(role).tools or ()
     tools = list(base)
+    if role == "evaluator" and "run_command" in config.tools and "bash" not in tools:
+        tools.append("bash")
     for name in dream_tool_names(config.tools):
         if name in _READ_ONLY_DREAM_SURFACE_TOOLS and name not in tools:
             tools.append(name)
@@ -190,7 +247,71 @@ def write_role_overlays(harness_dir: Path, config: RoleBeatConfig) -> None:
     roles_dir.mkdir(parents=True, exist_ok=True)
     for role in _DREAM_ROLES:
         base = default_role_manifest(role).system_prompt
-        prompt = f"{base}\n\n## Operating brief (your role in the org)\n{config.system_prompt}"
+        planner_tools = _planner_tools(config)
+        if role == "planner":
+            if planner_tools == ("write_file",):
+                phase_guard = (
+                    "\n\n## Phase guard\n"
+                    "You are in the PLANNER phase for a one-file planning role. Your deliverable is "
+                    "the requested repo-root markdown plan file. Call `write_file` now with the exact "
+                    "target filename and complete markdown content; do not wait for generator/action "
+                    "phase to create the plan file, and do not read the missing target file first."
+                )
+            elif planner_tools:
+                phase_guard = (
+                    "\n\n## Phase guard\n"
+                    "You are in the PLANNER phase for a delegating role. You may call the delegation "
+                    "tool(s) listed in this phase when kickoff requires creating child tasks; do not "
+                    "call file-writing or command tools. If a child task is required, call `decompose` "
+                    "now rather than only describing the decomposition in prose."
+                )
+            else:
+                phase_guard = (
+                    "\n\n## Phase guard\n"
+                    "You are in the PLANNER phase. Do not call any tools, even if the operating brief "
+                    "names tools such as `write_file` or `submit_verdict`. Tool-use instructions in "
+                    "the operating brief describe what the GENERATOR/action phase will do. Your job "
+                    "is only to emit the planning contract."
+                )
+        elif role == "evaluator":
+            phase_guard = (
+                "\n\n## Phase guard\n"
+                "You are in the EVALUATOR phase. Do not call mutating or delegating tools such as "
+                "`decompose`, `submit_task`, `assign_task`, `write_file`, or `submit_verdict`, even "
+                "if the operating brief names them. Tool-use instructions in the operating brief "
+                "describe the GENERATOR/action phase. Use only evaluator-allowed read surfaces, then "
+                "return the verdict. For repository work, judge the actual topology declared by root "
+                "manifests and scripts instead of assuming fixed directory names. In Node workspaces, "
+                "read the root `package.json` and likely workspace manifests such as `packages/client`, "
+                "`packages/web`, `packages/frontend`, `packages/app`, `packages/server`, `packages/shared`, "
+                "and `packages/tests` before reporting missing frontend/backend/test parts. A green "
+                "objective gate is strong evidence; do not reject solely because the app names a React "
+                "workspace `client` rather than `web`, or uses another conventional package name."
+            )
+        else:
+            phase_guard = (
+                "\n\n## Phase guard\n"
+                "You are in the GENERATOR/action phase. This is the phase that performs the tool "
+                "actions named by the operating brief. If a required tool call failed earlier in a "
+                "non-action phase, make the corrected tool call here."
+            )
+            if "software engineer" in config.system_prompt.lower() and "write_file" in config.tools:
+                phase_guard += (
+                    "\nFor greenfield or scaffold-only implementation tasks, create the required "
+                    "deliverable files with `write_file` before running shell verification. Do not "
+                    "spend the first action pass probing missing files or listing directories; if "
+                    "the repo lacks the app files, write the complete minimal app, shared code, "
+                    "tests, package manifests, and root build/test command first. Proof tests are part "
+                    "of the deliverable: they must be headless, deterministic, fail quickly, and exit "
+                    "cleanly. For async servers, sockets, timers, watchers, or subprocesses, close every "
+                    "handle in test cleanup and prove reconnect/broadcast behavior with bounded waits; "
+                    "do not rely on force-exit flags that hide leaked resources. Use `run_command` only "
+                    "after those files exist, then fix failures or hangs with more `write_file` calls."
+                )
+        prompt = (
+            f"{base}\n\n## Operating brief (your role in the org)\n{config.system_prompt}"
+            f"{phase_guard}"
+        )
         lines = [
             f'system_prompt = "{_toml_escape(prompt)}"',
             f'permission_mode = "{config.permission_mode}"',
@@ -203,9 +324,13 @@ def write_role_overlays(harness_dir: Path, config: RoleBeatConfig) -> None:
         # call, so it must emit the contract; the generator does the real exploration. The evaluator
         # keeps its read-only surfaces (it needs them to verify).
         if role == "planner":
-            lines.append("tools = []")
+            lines.append(f"tools = {_toml_string_list(_role_manifest_tools(planner_tools))}")
         elif role == "evaluator":
-            lines.append(f"tools = {_toml_string_list(_read_only_role_tools(role, config))}")
+            lines.append(
+                f"tools = {_toml_string_list(_role_manifest_tools(_read_only_role_tools(role, config)))}"
+            )
+        else:
+            lines.append(f"tools = {_toml_string_list(_role_manifest_tools(_generator_tools(config)))}")
         (roles_dir / f"{role}.toml").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
@@ -339,6 +464,13 @@ class EmployeeHarnessFactory:
             and self._ledger is not None
             and self._ledger.tasks.has_children(task_id)
         )
+        is_kickoff_beat = (
+            task_id is not None
+            and self._ledger is not None
+            and not self._ledger.tasks.has_children(task_id)
+        )
+        if is_kickoff_beat and "decompose" in config.tools:
+            config = replace(config, tools=tuple(t for t in config.tools if t not in _REACTIVE_TOOLS))
         if is_integrate_beat and "decompose" in config.tools:
             assert task_id is not None and self._ledger is not None  # narrowed by is_integrate_beat
             config = replace(config, tools=tuple(t for t in config.tools if t != "decompose"))

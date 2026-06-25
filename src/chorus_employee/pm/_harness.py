@@ -1,8 +1,7 @@
 """The PM's dream-harness manifest — every ``build_harness`` component, in one place.
 
-A PM **reads context and writes a plan doc**: it needs the file-read and file-write surfaces and a
-worktree it can write into, but no command execution or network. Each field below names the dream
-component it drives.
+A PM **writes a plan doc**: it needs the file-write surface and a worktree it can write into, but no
+command execution or network. Each field below names the dream component it drives.
 """
 
 from __future__ import annotations
@@ -26,8 +25,9 @@ def pm_manifest() -> RoleManifest:
         # so file writes auto-apply (as the Engineer does), bounded by the repo-write sandbox below.
         permission_mode=PermissionMode.ACCEPT_EDITS,
         # — build_harness(registry=…) —
-        # read to gather context, write to persist the plan; no command/git/network surface.
-        tools=("read_file", "write_file"),
+        # write to persist the plan; no read/command/git/network surface. PM tasks are often created
+        # specifically because the target plan is missing, so read probes are more harmful than useful.
+        tools=("write_file",),
         # — build_harness(memory=…) —
         memory_scope=MemoryScope.PROJECT,
         # — worktree containment (spec 04 §4) —

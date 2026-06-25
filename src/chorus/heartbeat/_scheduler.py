@@ -366,6 +366,9 @@ class Scheduler:
             ready_to_integrate = ledger.tasks.has_children(gate_task_id) and ledger.tasks.all_children_terminal(
                 gate_task_id
             )
+            if ledger.tasks.has_children(gate_task_id) and not ready_to_integrate:
+                ledger.wakes.mark_done(wake.id)
+                continue
             if ledger.dependencies.unresolved_blockers(gate_task_id) and not ready_to_integrate:
                 ledger.wakes.mark_done(wake.id)
                 continue

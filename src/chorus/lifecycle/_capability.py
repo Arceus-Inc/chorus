@@ -22,6 +22,7 @@ from chorus.ledger._models import (
     Artifact,
     ArtifactRevision,
     ArtifactType,
+    DecompositionStatus,
     DodStatus,
     OriginKind,
     Task,
@@ -60,6 +61,7 @@ class DecomposeResult:
     depth_capped: bool = False
     unknown_assignees: tuple[str, ...] = ()
     reviewer_assignees: tuple[str, ...] = ()
+    already_decomposed: bool = False
 
 
 @dataclass(frozen=True)
@@ -151,6 +153,9 @@ class CapabilityService:
             )
             for child in children
         ]
+        existing_claim = self._ledger.decomposition_claims.by_source_revision(
+            parent_id, plan_revision_id
+        )
         outcome = decompose(
             self._ledger,
             source_task_id=parent_id,
@@ -161,12 +166,26 @@ class CapabilityService:
         if isinstance(outcome, DepthCapped):
             return DecomposeResult(depth_capped=True)
 
+        completed_before = (
+            existing_claim is not None and existing_claim.status is DecompositionStatus.COMPLETED
+        )
+        claim_child_ids = set(outcome.claim.child_task_ids)
+        requested_child_ids = set(ids.values())
+        if not requested_child_ids.issubset(claim_child_ids):
+            return DecomposeResult(
+                child_ids={
+                    f"existing_{index}": child_id
+                    for index, child_id in enumerate(outcome.claim.child_task_ids, start=1)
+                },
+                already_decomposed=True,
+            )
+
         for child in children:
             if child.assignee is not None:
                 assign_task(self._ledger, ids[child.label], child.assignee)
             for blocker_label in child.depends_on:
                 self._ledger.dependencies.add(ids[child.label], ids[blocker_label])
-        return DecomposeResult(child_ids=ids)
+        return DecomposeResult(child_ids=ids, already_decomposed=completed_before)
 
     def submit_one(
         self, *, parent_id: str, revision: str, child: ChildPlan

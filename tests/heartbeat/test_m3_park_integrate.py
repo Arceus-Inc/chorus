@@ -14,7 +14,7 @@ from datetime import UTC, datetime
 
 import pytest
 
-from chorus.heartbeat import IntegrateContextPacket, Scheduler
+from chorus.heartbeat import IntegrateContextPacket, Scheduler, Wake, WakeReason
 from chorus.heartbeat._beat import BeatOutcome
 from chorus.ledger import SqliteLedger, Task, TaskStatus
 from chorus.lifecycle import CapabilityService, ChildPlan, assign_task
@@ -110,6 +110,35 @@ async def test_decompose_beat_parks_the_parent_not_strands_it(ledger: SqliteLedg
     assert ledger.recovery_actions.active_for_source("M") is None  # never stranded onto recovery
     # the two children exist, assigned, gating the parent
     assert set(ledger.dependencies.unresolved_blockers("M")) and not ledger.tasks.all_children_terminal("M")
+
+
+async def test_stale_parent_wake_does_not_run_while_delegated_children_are_open(
+    ledger: SqliteLedger, tmp_path: object
+) -> None:
+    _team(ledger)
+    ledger.tasks.submit(Task(id="M", intent="ship the feature", status=TaskStatus.TODO))
+    assign_task(ledger, "M", "mgr")
+    beat = _TeamBeat(ledger, parent="M")
+    sched = _sched(ledger, beat, tmp_path=tmp_path)
+
+    await sched.tick_once()  # kickoff decomposes and parks the parent
+    await sched.drain()
+    ledger.wakes.enqueue(
+        Wake(
+            id="stale_parent",
+            employee_id="mgr",
+            reason=WakeReason.TASK_ASSIGNED,
+            payload={"task_id": "M"},
+        )
+    )
+
+    await sched.tick_once()
+    await sched.drain()
+
+    assert beat.ran.count("M") == 1
+    assert ledger.tasks.get("M").status is TaskStatus.BLOCKED  # type: ignore[union-attr]
+    stale = ledger.wakes.get("stale_parent")
+    assert stale is not None and stale.status.value == "done"
 
 
 async def test_full_loop_decompose_then_children_then_integrate_to_done(

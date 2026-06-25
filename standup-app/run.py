@@ -54,21 +54,17 @@ from chorus import Caps, Chorus, TaskStatus, Verifier, default_roles
 from chorus.events import Event, EventKind
 from chorus.ledger import SqliteLedger
 from chorus.roles import RolePlugin, RoleRegistry, SandboxTier
+from chorus.verifiers import spec_gate_command, stack_gate_command
 
 _REQUIRED = ("AZURE_OPENAI_API_KEY", "AZURE_OPENAI_BASE_URL", "AZURE_OPENAI_DEPLOYMENT")
 _TERMINAL = frozenset({TaskStatus.DONE, TaskStatus.CANCELLED, TaskStatus.REJECTED})
 _TERMINAL_VALUES = frozenset(s.value for s in _TERMINAL)  # child views carry status as a plain string
 
 # The objective CI gate, pinned as the engineers' Definition of Done in --team mode (see
-# ``_objective_engineer_dod``). It is the SAME deterministic floor solo uses.
-#
-# It is NOT hardcoded to Python: the gate runs ``gate_check.py`` (seeded into every worktree by
-# ``_seed_repo``), which detects the deliverable's stack from its marker files (package.json,
-# Cargo.toml, go.mod, pyproject/*.py) and runs the matching tests + lint. A hardcoded
-# ``pytest -q && ruff check .`` was a real bug: the seed ships a Python ``test_smoke.py``, so pytest
-# was always vacuously green and a TypeScript/Rust/Go deliverable was never actually verified.
-# ``python gate_check.py`` is portable across cmd.exe and /bin/sh (both resolve ``python`` on PATH).
-_TEAM_GATE = "python gate_check.py"
+# ``_objective_engineer_dod``). It is the SAME deterministic floor solo uses. The command runs a
+# Chorus-owned verifier module with cwd set to the worktree under test; no harness-owned gate file is
+# written into the product repo.
+_TEAM_GATE = stack_gate_command()
 
 
 def _objective_engineer_dod(intent: str) -> Verifier:
@@ -82,17 +78,17 @@ def _objective_engineer_dod(intent: str) -> Verifier:
     ``done`` exactly when the stack-aware gate exits 0 in its own worktree — deterministic and
     self-verifying, with no reviewer in the loop. (Solo already does this explicitly at submit.)
 
-    The gate is the stack-aware ``gate_check.py`` (NOT a Python-only ``pytest``), so a Node/TypeScript,
+    The gate is the built-in stack-aware verifier (NOT a Python-only ``pytest``), so a Node/TypeScript,
     Rust, or Go deliverable is verified by its own toolchain — the engineer's DoD is not restricted to
     one language.
     """
     return Verifier.command(_TEAM_GATE)
 
 
-# A PM's deliverable is a written plan/spec, verified by ``plan_check.py`` (seeded into every worktree):
-# the named plan file exists and is non-empty. The filename is taken from the task's own intent (the
-# manager names a per-area plan file like ``plan-presence.md`` so two parallel PMs never write the same
-# path and collide on merge); it defaults to ``plan.md`` when the intent names none.
+# A PM's deliverable is a written plan/spec, verified by the Chorus-owned spec gate: the named plan
+# file exists and is non-empty. The filename is taken from the task's own intent (the manager names a
+# per-area plan file like ``plan-presence.md`` so two parallel PMs never write the same path and
+# collide on merge); it defaults to ``plan.md`` when the intent names none.
 _PLAN_FILE_RE = re.compile(r"plan[-\w]*\.md")
 
 
@@ -107,15 +103,15 @@ def _objective_pm_dod(intent: str) -> Verifier:
     """
     match = _PLAN_FILE_RE.search(intent)
     plan_file = match.group(0) if match is not None else "plan.md"
-    return Verifier.command(f"python plan_check.py {plan_file}", artifact_class="spec")
+    return Verifier.command(spec_gate_command(plan_file), artifact_class="spec")
 
 
 def _pin_objective_dod(plugin: RolePlugin) -> RolePlugin:
     """Override the engineer + PM DoDs with their objective command gates (no reviewer in the loop).
 
-    Engineer → ``python gate_check.py`` (stack-aware tests + lint). PM → ``python plan_check.py <file>``
-    (the named plan file is present + non-empty), plus the UNRESTRICTED sandbox + run_command the
-    engineer uses so the kernel's in-beat gate runs. Every other role passes through unchanged.
+    Engineer → built-in stack-aware tests + lint. PM → built-in spec-file check (the named plan file is
+    present + non-empty), plus the UNRESTRICTED sandbox + run_command the engineer uses so the kernel's
+    in-beat gate runs. Every other role passes through unchanged.
     """
     if plugin.name == "engineer":
         return replace(plugin, dod_generator=_objective_engineer_dod)
@@ -294,7 +290,7 @@ _CHATROOM_GOAL = (
     "`docs/`, or any other subdirectory, and NEVER a package. Each team spec file in particular MUST "
     "be written at the repo root as `./plan-messaging.md` / `./plan-presence.md` / `./plan-app.md` "
     "(NOT under docs/, NOT under any exec-plans/active/ folder, NOT anywhere else): the spec gate runs "
-    "`python plan_check.py <plan-name>` against the repo ROOT, so a spec written into a subdirectory "
+    "the built-in Chorus spec verifier against the repo ROOT, so a spec written into a subdirectory "
     "FAILS the gate and deadlocks the engineers that depend on it. The FIVE module files rooms.py, "
     "messages.py, "
     "presence.py, typing.py, AND app.py must ALL be accounted for across your THREE area children "
@@ -322,8 +318,8 @@ _CHATROOM_GOAL = (
     "that one task; NEVER split a module's implementation and its tests into separate tasks (a "
     "test-only task runs in its own worktree, cannot see the module, and will deadlock). Keep "
     "everything deterministic: pass `now` explicitly to time-based calls (no wall-clock; the only "
-    "socket is app.py's __main__ server). The done-gate `python gate_check.py` run in each engineer's "
-    "own task IS the check — do NOT create separate verification or integration child tasks." + _NO_THRASH
+    "socket is app.py's __main__ server). The built-in Chorus stack gate run in each engineer's own "
+    "task IS the check — do NOT create separate verification or integration child tasks." + _NO_THRASH
 )
 
 
@@ -333,8 +329,8 @@ _CHATROOM_GOAL = (
 # is the STRUCTURAL decomposition guard: the kernel runs it in the director's worktree (= company main
 # after every area merged) at the integrate beat, and the rollup-honesty gate parks the goal BLOCKED
 # (not DONE) if it fails. It asserts all 13 named deliverables — 5 modules, their 5 tests, and the 3
-# per-area plan files — exist at the flat repo root, then chains to the same stack-aware
-# ``gate_check.py``. So a decomposition that drops an area (e.g. no presence.py) fails the goal HONESTLY
+# per-area plan files — exist at the flat repo root, then chains to the same built-in stack-aware
+# verifier. So a decomposition that drops an area (e.g. no presence.py) fails the goal HONESTLY
 # instead of reporting ``done`` on a half-built repo. Kept to single-quoted Python inside one
 # double-quoted ``python -c`` arg so it is portable across cmd.exe and /bin/sh (no nested double quotes).
 _CHATROOM_ROLLUP_FILES = (
@@ -348,7 +344,7 @@ _CHATROOM_ROLLUP_CMD = (
     f"req='{_CHATROOM_ROLLUP_FILES}'.split(); "
     "missing=[f for f in req if not pathlib.Path(f).exists()]; "
     "sys.exit('rollup gate: missing required deliverable(s): '+', '.join(missing)) if missing "
-    "else sys.exit(subprocess.run([sys.executable,'gate_check.py']).returncode)"
+    "else sys.exit(subprocess.run([sys.executable,'-m','chorus.verifiers.stack_gate']).returncode)"
     '"'
 )
 _CHATROOM_ROLLUP_DOD = Verifier.command(_CHATROOM_ROLLUP_CMD, timeout_s=900)
@@ -521,140 +517,24 @@ def _last_run_outcome(org: Chorus, task_id: str) -> dict[str, object]:
     return dict(runs[-1].outcome) if runs else {}
 
 
-# The stack-aware Definition-of-Done gate, seeded into every worktree as ``gate_check.py`` and run by
-# the kernel as ``python gate_check.py``. It detects the deliverable's stack from its marker files and
-# runs the matching tests + lint, so the engineer's DoD is NOT restricted to Python. Kept dependency-
-# free (stdlib only) and lint-clean (ruff E/F/I/B/UP/SIM/RUF, line-length 100) so it passes its own
-# Python gate.
-_GATE_CHECK_PY = '''\
-#!/usr/bin/env python3
-"""Stack-aware Definition-of-Done gate.
-
-Detects the project's stack from marker files in the current directory and runs the matching
-verification command(s): Node/TypeScript (package.json), Rust (Cargo.toml), Go (go.mod), and Python
-(pyproject/*.py). Exits non-zero on the first failing gate. This replaces a hardcoded Python-only
-``pytest -q && ruff check .`` so the harness can verify any deliverable, not just Python.
-"""
-from __future__ import annotations
-
-import json
-import shutil
-import subprocess
-import sys
-from pathlib import Path
-
-ROOT = Path.cwd()
-
-
-def _run(cmd: list[str]) -> int:
-    print(f"[gate] $ {\' \'.join(cmd)}", flush=True)
-    exe = shutil.which(cmd[0])
-    if exe is None:
-        print(f"[gate] tool not found on PATH: {cmd[0]}", flush=True)
-        return 127
-    return subprocess.run([exe, *cmd[1:]], cwd=str(ROOT)).returncode
-
-
-def _has_py_sources() -> bool:
-    for p in ROOT.rglob("*.py"):
-        parts = set(p.parts)
-        if p.name == "gate_check.py" or ".git" in parts or "node_modules" in parts:
-            continue
-        return True
-    return False
-
-
-def _node_scripts() -> dict[str, str]:
-    try:
-        data = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return {}
-    scripts = data.get("scripts", {})
-    return scripts if isinstance(scripts, dict) else {}
-
-
-def main() -> int:
-    steps: list[list[str]] = []
-
-    if (ROOT / "package.json").is_file():
-        scripts = _node_scripts()
-        if not (ROOT / "node_modules").is_dir():
-            steps.append(["npm", "install", "--no-audit", "--no-fund"])
-        if "build" in scripts:
-            steps.append(["npm", "run", "build"])
-        if "test" in scripts:
-            steps.append(["npm", "test", "--silent"])
-        elif (ROOT / "tsconfig.json").is_file():
-            steps.append(["npx", "tsc", "--noEmit"])
-
-    if (ROOT / "Cargo.toml").is_file():
-        steps.append(["cargo", "test"])
-
-    if (ROOT / "go.mod").is_file():
-        steps.append(["go", "test", "./..."])
-
-    # Python is also the default floor when no other stack is detected.
-    if _has_py_sources() or not steps:
-        steps.append(["pytest", "-q"])
-        steps.append(["ruff", "check", "."])
-
-    for cmd in steps:
-        rc = _run(cmd)
-        if rc != 0:
-            print(f"[gate] FAILED (rc={rc}): {\' \'.join(cmd)}", flush=True)
-            return rc
-    print("[gate] all gates passed", flush=True)
-    return 0
-
-
-if __name__ == "__main__":
-    sys.exit(main())
-'''
-
-
-# The PM's Definition-of-Done gate, seeded into every worktree as ``plan_check.py`` and run by the
-# kernel as ``python plan_check.py <plan-file>``. A PM's deliverable is a written spec, so its gate is
-# simply: the named plan file exists and is non-empty. Kept stdlib-only and lint-clean so it passes the
-# repo's own Python gate. The filename is an ARGUMENT (not hardcoded) so each area's PM is verified
-# against its OWN plan file (e.g. plan-messaging.md vs plan-presence.md) — a PM that branches off a main
-# already carrying a sibling area's plan can't vacuously pass on that sibling's file.
-_PLAN_CHECK_PY = '''\
-#!/usr/bin/env python3
-"""PM Definition-of-Done gate: the named plan file exists and is non-empty."""
-from __future__ import annotations
-
-import sys
-from pathlib import Path
-
-
-def main() -> int:
-    name = sys.argv[1] if len(sys.argv) > 1 else "plan.md"
-    plan = Path(name)
-    if plan.is_file() and plan.stat().st_size > 0:
-        print(f"[plan] OK: {name} is present and non-empty", flush=True)
-        return 0
-    print(f"[plan] FAILED: {name} is missing or empty", flush=True)
-    return 1
-
-
-if __name__ == "__main__":
-    sys.exit(main())
-'''
-
-
 def _seed_repo(path: Path) -> Path:
     """A throwaway git repo the employees branch their worktrees from.
 
-    Seeded with a README, one passing smoke test so the gate has a green baseline, and the
-    stack-aware ``gate_check.py`` so the Definition-of-Done can verify ANY stack (not just Python)
-    before the employee adds its own code + tests.
+    Seeded with a README, one passing smoke test so the repo has a known baseline, and a Windows npm
+    shell shim. Definition-of-Done gates live in Chorus verifier modules and run against this repo via
+    cwd; no harness-owned gate files are written into the product tree.
     """
     path.mkdir(parents=True, exist_ok=True)
     subprocess.run(["git", "-C", str(path), "init", "-b", "trunk"], check=True, capture_output=True)
     (path / "README.md").write_text("# company repo\n", encoding="utf-8")
     (path / "test_smoke.py").write_text("def test_smoke():\n    assert True\n", encoding="utf-8")
-    (path / "gate_check.py").write_text(_GATE_CHECK_PY, encoding="utf-8")
-    (path / "plan_check.py").write_text(_PLAN_CHECK_PY, encoding="utf-8")
+    # Windows-compat shim (generic, not task-specific): on a host whose user ``.npmrc`` sets
+    # ``script-shell=cmd.exe``, pnpm fails to recognise the bare shell name and launches an
+    # INTERACTIVE cmd.exe (prints the Windows banner, then hangs) for EVERY ``pnpm run`` — so any
+    # JS build/test gate stalls forever and the beat times out. pnpm's built-in JS shell emulator
+    # runs package scripts portably without cmd.exe, so seed it repo-wide. npm ignores this flag, so
+    # npm-based deliverables are unaffected.
+    (path / ".npmrc").write_text("shell-emulator=true\n", encoding="utf-8")
     subprocess.run(["git", "-C", str(path), "add", "-A"], check=True, capture_output=True)
     subprocess.run(
         ["git", "-C", str(path), "-c", "user.name=seed", "-c", "user.email=seed@x",
@@ -664,30 +544,41 @@ def _seed_repo(path: Path) -> Path:
     return path
 
 
-def _build_company(base: Path, *, c: _C, timeout_s: float) -> tuple[Chorus, object, Path]:
+def _build_company(
+    base: Path, *, c: _C, timeout_s: float, events_log_path: str | None = None
+) -> tuple[Chorus, object, Path]:
     """Wire the public facade over the harness factory — the supported `Chorus.build` path.
 
     The factory owns dream + the model creds + per-employee git worktrees; ``Chorus.build`` plugs in
     its two seams (``beat_runner_for`` = how a beat runs, ``landers`` = how its work lands) over the
     *same* ledger, so the kernel and the execution layer share one source of truth.
+
+    ``events_log_path`` (when given) arms the facade's durable JSONL event sink so the ENTIRE flow is
+    replayable off disk after the run — the same typed stream the live narrator prints.
     """
     import dream  # the agent runtime — imported only by this wiring, exactly as the facade docstring says
 
     from chorus_cli._beats import default_pricing_from_env
     from chorus_harness import EmployeeHarnessFactory
 
+    # Windows-compat (generic): make pnpm use its JS shell emulator so a host ``.npmrc`` with
+    # ``script-shell=cmd.exe`` cannot make ``pnpm run`` spawn an interactive, hanging cmd.exe. Set in
+    # the parent env so every beat subprocess and the final trusted gate inherit it; npm ignores it.
+    if sys.platform == "win32":
+        os.environ.setdefault("npm_config_shell_emulator", "true")
+
     seed = _seed_repo(base / "source")
     ledger = SqliteLedger.open(str(base / "company.db"))
     # Pin the engineer's DoD to the objective gate so a decomposed --team child goes DONE when the
-    # kernel runs `pytest -q && ruff check .` (no read-only reviewer in the loop). Solo overrides the
-    # DoD per-submit anyway, so this is a no-op for solo and the deterministic floor for the team.
+    # kernel runs the built-in stack-aware verifier (no read-only reviewer in the loop). Solo overrides
+    # the DoD per-submit anyway, so this is a no-op for solo and the deterministic floor for the team.
     #
     # Pin the PM's DoD the same way: the PM's default DoD is an agent review, but this org hires no
     # reviewer, so a PM task would never go DONE. ``_objective_pm_dod`` makes it DONE when its plan file
-    # exists (the kernel runs `python plan_check.py <file>`). The PM writes that file with write_file;
-    # bump its sandbox to UNRESTRICTED (matching the engineer) and grant run_command so the kernel's
-    # in-beat gate actually runs — dream otherwise gates a non-path command behind an interactive
-    # approval the kernel can't supply.
+    # exists (the kernel runs the built-in spec verifier). The PM writes that file with write_file; bump
+    # its sandbox to UNRESTRICTED (matching the engineer) and grant run_command so the kernel's in-beat
+    # gate actually runs — dream otherwise gates a non-path command behind an interactive approval the
+    # kernel can't supply.
     plugins = tuple(_pin_objective_dod(p) for p in default_roles())
     factory = EmployeeHarnessFactory(
         api_key=os.environ["AZURE_OPENAI_API_KEY"],
@@ -711,6 +602,7 @@ def _build_company(base: Path, *, c: _C, timeout_s: float) -> tuple[Chorus, obje
         caps=Caps(tick_interval_s=0.5),
         company_id="acme",
         roles=plugins,             # the kernel intake-DoD registry: engineer pinned to the objective gate
+        events_log_path=events_log_path,  # durable JSONL replay of the whole flow (None = in-process only)
     )
     _step(f"built company  (deployment={os.environ['AZURE_OPENAI_DEPLOYMENT']}, "
           f"per-beat timeout={timeout_s:.0f}s)", c)
@@ -728,12 +620,12 @@ async def _run_solo(org: Chorus, task_text: str, *, max_pulses: int, c: _C) -> s
     _step("hired eng1 (engineer) → reports to moe", c)
 
     _hr("SUBMIT — hand the engineer a task in plain English", c)
-    # We pin the Definition of Done explicitly: the objective, stack-aware gate `python gate_check.py`.
-    # That is the same deterministic floor the engineer's role would run — the kernel executes it as a
-    # real subprocess and the task only goes DONE when it exits 0. (Giving no DoD would instead pull
-    # the role's *reviewed* build, which also needs a second LLM to sign off; the objective gate keeps
-    # the demo deterministic and self-verifying.) The gate detects the deliverable's stack, so the DoD
-    # is not restricted to Python.
+    # We pin the Definition of Done explicitly: the objective, stack-aware Chorus verifier. That is the
+    # same deterministic floor the engineer's role would run — the kernel executes it as a real
+    # subprocess and the task only goes DONE when it exits 0. (Giving no DoD would instead pull the
+    # role's *reviewed* build, which also needs a second LLM to sign off; the objective gate keeps the
+    # demo deterministic and self-verifying.) The gate detects the deliverable's stack, so the DoD is
+    # not restricted to Python.
     gate = Verifier.command(_TEAM_GATE)
     task = org.submit(task_text, assignee="eng1", dod=gate)
     _step(f"submitted {task.id} → eng1   (DoD = objective gate: {_TEAM_GATE})", c)

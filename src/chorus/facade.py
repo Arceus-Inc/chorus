@@ -129,6 +129,7 @@ class Chorus:
         roles: Sequence[RolePlugin] | None = None,
         caps: Caps | None = None,
         company_id: str = "company",
+        events_log_path: str | None = None,
     ) -> Chorus:
         """The composition root — wire the concrete backends and inject them (spec 10 §1).
 
@@ -142,7 +143,9 @@ class Chorus:
         ``ledger`` (share an already-open store with the harness factory, so a reviewer's verdict
         and the factory's capability tools land in *one* ledger, not two). ``roles`` defaults to
         :func:`chorus.roles.default_roles`; extra roles register through the same validated path
-        (spec 09 §1).
+        (spec 09 §1). ``events_log_path`` arms the event bus's durable JSONL sink (spec 08 §1): every
+        typed transition is appended one-JSON-object-per-line, so a consumer can replay the entire
+        flow off disk; unset, the bus stays in-process only.
         """
         if db_path is not None and ledger is not None:
             raise ValueError("provide either db_path or ledger, not both")
@@ -165,7 +168,7 @@ class Chorus:
         # assignment FK points at (spec 06 §3). ``org_repo`` is the portable git-markdown
         # export/import location (spec 09 §3, the GitWorkforce codec), not a second live store.
         workforce = LedgerWorkforce(store.employees)
-        event_bus = EventBus()
+        event_bus = EventBus(log_path=events_log_path)
         scheduler = Scheduler(
             tick_interval_s=the_caps.tick_interval_s,
             max_concurrent_runs=the_caps.max_concurrent_runs,

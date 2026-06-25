@@ -161,7 +161,31 @@ def test_operational_files_are_excluded_from_the_branch(tmp_path: Path) -> None:
     # dream/chorus operational artefacts the harness writes into the working dir
     (ada.path / ".harness" / "roles").mkdir(parents=True)
     (ada.path / ".harness" / "roles" / "generator.toml").write_text("x", encoding="utf-8")
+    (ada.path / "docs" / "exec-plans" / "active").mkdir(parents=True)
+    (ada.path / "docs" / "exec-plans" / "active" / "run.json").write_text("{}", encoding="utf-8")
+    (ada.path / "docs" / "evals" / "run_1").mkdir(parents=True)
+    (ada.path / "docs" / "evals" / "run_1" / "sprint-1.json").write_text("{}", encoding="utf-8")
     (ada.path / "real.py").write_text("y", encoding="utf-8")
     status = _git(ada.path, "status", "--porcelain")
     assert "real.py" in status  # a real deliverable is tracked
     assert ".harness/" not in status and "generator.toml" not in status  # operational, excluded
+    assert "docs/exec-plans" not in status and "docs/evals" not in status
+
+
+def test_sync_to_main_ignores_dream_operational_docs(tmp_path: Path) -> None:
+    ws = CompanyWorkspace(tmp_path / "acme")
+    repo = ws.ensure_repo()
+    ada = ws.worktree_for("ada")
+    manager = ws.worktree_for("max")
+
+    (ada.path / "app.py").write_text("print('shipped')\n", encoding="utf-8")
+    assert ws.merge("ada").merged is True
+
+    (manager.path / "docs" / "exec-plans" / "active").mkdir(parents=True)
+    (manager.path / "docs" / "exec-plans" / "active" / "run.json").write_text("{}", encoding="utf-8")
+    (manager.path / "docs" / "evals" / "run_1").mkdir(parents=True)
+    (manager.path / "docs" / "evals" / "run_1" / "sprint-1.json").write_text("{}", encoding="utf-8")
+
+    assert ws.sync_to_main("max") is True
+    assert (manager.path / "app.py").read_text(encoding="utf-8") == "print('shipped')\n"
+    assert _git(repo, "rev-parse", "main") == _git(manager.path, "rev-parse", "HEAD")

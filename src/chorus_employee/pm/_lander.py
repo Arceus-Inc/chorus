@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING, Any
 
 from chorus.outcomes import Artifact, ArtifactType
 from chorus.workspace import CompanyWorkspace
-from chorus_employee.pm._brief import PM_PLAN_DOC
+from chorus_employee.pm._brief import plan_file_for_intent
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -40,7 +40,8 @@ class PmLander:
         if employee_id is None:
             raise ValueError(f"task {task.id!r} has no assignee — cannot land a doc")
         workspace = CompanyWorkspace(self._company_root)
-        doc = workspace.worktree_for(employee_id).path / PM_PLAN_DOC
+        doc_name = plan_file_for_intent(task.intent)
+        doc = workspace.worktree_for(employee_id).path / doc_name
         present = doc.is_file() and doc.stat().st_size > 0
         commit = workspace.snapshot(employee_id)  # commit the plan on chorus/{employee}
         # A plan that never reaches ``main`` is invisible to the engineers who must build to it: like
@@ -57,7 +58,7 @@ class PmLander:
                 "kind": "plan_doc",
                 "branch": f"chorus/{employee_id}",
                 "commit": commit,
-                "doc": PM_PLAN_DOC,  # relative to the worktree — no host path
+                "doc": doc_name,  # relative to the worktree — no host path
                 "present": present,
                 "merged": merge.merged,
                 "into": merge.into,

@@ -64,7 +64,8 @@ def test_engineer_role_overlays_admit_read_memory_for_read_only_heads(
     assert '"memory_search"' in planner
     assert '"memory_get"' in evaluator
     assert '"working_memory_read"' in planner
-    assert "tools =" not in generator
+    assert '"bash"' in evaluator
+    assert '"bash"' in generator
 
 
 def test_engineer_gets_an_unrestricted_sandbox_so_it_can_run_commands(
@@ -150,6 +151,33 @@ def test_integrate_beat_harness_drops_the_decompose_tool(
         names = {t.name for t in captured["registry"].list_tools()}
         assert "decompose" not in names  # cannot re-decompose a delegated subtree
         assert {"read_file", "submit_task", "assign_task"} <= names  # the reactive toolset remains
+    finally:
+        ledger.close()
+
+
+def test_kickoff_beat_harness_drops_reactive_manager_tools(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # A kickoff beat has no delegated subtree yet; the only mutating move is `decompose`. Reactive
+    # follow-up tools are integrate-beat levers, so they are withheld structurally.
+    from chorus.ledger import Task, TaskStatus
+
+    ledger = SqliteLedger.open(":memory:")
+    try:
+        captured: dict[str, Any] = {}
+        monkeypatch.setattr(
+            _factory_mod.dream, "build_harness", lambda **kw: captured.update(kw) or object()
+        )
+        ledger.employees.create(Employee(id="moe", name="Moe", role="manager"))
+        ledger.tasks.submit(Task(id="goal", intent="ship it", status=TaskStatus.TODO))
+        factory = _factory_mod.EmployeeHarnessFactory(
+            api_key="k", base_url="https://x/openai/v1", deployment="gpt-x", company_id="acme",
+            roles=RoleRegistry.from_plugins(default_roles()), work_root=tmp_path, ledger=ledger,
+        )
+        factory.materialize(Employee(id="moe", name="Moe", role="manager"), task_id="goal")
+        names = {t.name for t in captured["registry"].list_tools()}
+        assert "decompose" in names
+        assert "submit_task" not in names and "assign_task" not in names
     finally:
         ledger.close()
 

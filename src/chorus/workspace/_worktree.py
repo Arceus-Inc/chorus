@@ -28,6 +28,8 @@ _OPERATIONAL_EXCLUDES = (
     ".dream/",  # dream task/ledger artefacts
     ".harness/",  # dream tool-tier / policy / role-overlay files
     ".chorus/",  # any nested chorus state
+    "docs/evals/",  # dream evaluator scratch artefacts
+    "docs/exec-plans/",  # dream execution-plan scratch artefacts
     ".mypy_cache/",
     ".playwright-mcp/",
     ".pytest_cache/",

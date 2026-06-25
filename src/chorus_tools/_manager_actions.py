@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 from chorus.heartbeat import BeatContext
 from chorus.ledger import SqliteLedger
 from chorus.lifecycle import CapabilityService, ChildPlan
+from chorus_tools._cohesive_app import looks_like_cohesive_app, looks_like_incremental_sidecar
 
 
 class SubmitTaskInput(BaseModel):
@@ -40,15 +41,44 @@ class SubmitTaskTool(BaseTool):
     input_model = SubmitTaskInput
 
     def __init__(self, ledger: SqliteLedger) -> None:
+        self._ledger = ledger
         self._service = CapabilityService(ledger)
 
     async def execute(self, input: dict[str, object], ctx: ToolExecutionContext) -> ToolResult:
         args = SubmitTaskInput.model_validate(input)
         beat = BeatContext.read(ctx.working_dir)
+        parent = self._ledger.tasks.get(beat.task_id)
+        assignee = self._ledger.employees.get(args.assignee)
+        child = ChildPlan(label=args.label, intent=args.intent, assignee=args.assignee)
+        if self._ledger.tasks.has_children(beat.task_id) and not self._ledger.tasks.all_children_terminal(
+            beat.task_id
+        ):
+            return ToolResult(
+                content=(
+                    "refused: this task already has delegated children still in progress; wait for "
+                    "the subtree to finish before submitting follow-up work."
+                ),
+                structured={"delegated_children_open": True},
+                is_error=True,
+            )
+        if (
+            parent is not None
+            and looks_like_cohesive_app(parent.intent)
+            and looks_like_incremental_sidecar(child, assignee.role if assignee else None)
+        ):
+            return ToolResult(
+                content=(
+                    "refused: this parent is a cohesive single-repo runnable application. Do not "
+                    "create PM/spec/plan/gate sidecar follow-ups; submit one engineer-owned "
+                    "repair/build task that owns the complete app, its tests, and the root gate."
+                ),
+                structured={"cohesive_app_sidecar_refused": True},
+                is_error=True,
+            )
         result = self._service.submit_one(
             parent_id=beat.task_id,
             revision=beat.run_id,
-            child=ChildPlan(label=args.label, intent=args.intent, assignee=args.assignee),
+            child=child,
         )
         if result.reviewer_assignees:
             joined = ", ".join(result.reviewer_assignees)

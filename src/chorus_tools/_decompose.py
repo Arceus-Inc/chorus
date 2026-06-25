@@ -19,6 +19,7 @@ from pydantic import BaseModel, Field
 from chorus.heartbeat import BeatContext
 from chorus.ledger import SqliteLedger
 from chorus.lifecycle import CapabilityService, ChildPlan
+from chorus_tools._cohesive_app import looks_like_cohesive_app, looks_like_sidecar_child
 
 
 class _ChildInput(BaseModel):
@@ -55,6 +56,7 @@ class DecomposeTool(BaseTool):
     input_model = DecomposeInput
 
     def __init__(self, ledger: SqliteLedger) -> None:
+        self._ledger = ledger
         self._service = CapabilityService(ledger)
 
     async def execute(self, input: dict[str, object], ctx: ToolExecutionContext) -> ToolResult:
@@ -73,6 +75,7 @@ class DecomposeTool(BaseTool):
             )
             for child in args.children
         ]
+        plans, coalesced = _coalesce_cohesive_app_split(self._ledger, beat.task_id, plans)
         result = self._service.decompose(parent_id=beat.task_id, revision=beat.run_id, children=plans)
         if result.reviewer_assignees:
             joined = ", ".join(result.reviewer_assignees)
@@ -103,10 +106,26 @@ class DecomposeTool(BaseTool):
                 ),
                 structured={"depth_capped": True},
             )
-        listing = ", ".join(f"{c.label}→{c.assignee}" for c in args.children)
+        if result.already_decomposed:
+            listing = ", ".join(f"{label}→{task_id}" for label, task_id in result.child_ids.items())
+            return ToolResult(
+                content=f"already decomposed; keeping existing subtasks: {listing}",
+                structured={
+                    "depth_capped": False,
+                    "children": result.child_ids,
+                    "already_decomposed": True,
+                },
+            )
+        listing = ", ".join(f"{c.label}→{c.assignee}" for c in plans)
+        prefix = "coalesced cohesive app split; " if coalesced else ""
         return ToolResult(
-            content=f"created {len(plans)} subtasks: {listing}",
-            structured={"depth_capped": False, "children": result.child_ids},
+            content=f"{prefix}created {len(plans)} subtasks: {listing}",
+            structured={
+                "depth_capped": False,
+                "children": result.child_ids,
+                "already_decomposed": False,
+                "coalesced": coalesced,
+            },
         )
 
 
@@ -123,6 +142,49 @@ def _validate(args: DecomposeInput) -> str | None:
         if unknown:
             return f"subtask {child.label!r} depends on unknown label(s): {', '.join(unknown)}"
     return None
+
+
+def _coalesce_cohesive_app_split(
+    ledger: SqliteLedger, parent_id: str, children: list[ChildPlan]
+) -> tuple[list[ChildPlan], bool]:
+    """Keep cohesive full-stack apps in one engineer worktree.
+
+    A single-repo/single-gate full-stack app cannot safely be split into separate PM, app, and gate
+    worktrees: the branches race and overwrite package layout. When a manager tries that split, route
+    the whole parent intent to the first engineer child instead.
+    """
+    if len(children) <= 1:
+        return children, False
+    parent = ledger.tasks.get(parent_id)
+    if parent is None or not looks_like_cohesive_app(parent.intent):
+        return children, False
+
+    role_by_assignee = {
+        child.assignee: (ledger.employees.get(child.assignee).role if child.assignee else None)
+        for child in children
+    }
+    if not any(looks_like_sidecar_child(child, role_by_assignee.get(child.assignee)) for child in children):
+        return children, False
+
+    engineer_child = next(
+        (child for child in children if role_by_assignee.get(child.assignee) == "engineer"), None
+    )
+    if engineer_child is None or engineer_child.assignee is None:
+        return children, False
+
+    combined_child_intents = "\n".join(
+        f"- {child.label}: {child.intent}" for child in children
+    )
+    intent = (
+        f"Deliver the complete cohesive application in one worktree. Parent brief:\n{parent.intent}\n\n"
+        "Do not split planning, gate wiring, frontend, backend, shared schema, or tests across sibling "
+        "worktrees. Make the repo self-contained: write any needed plan/spec, implement the Node "
+        "WebSocket backend, shared typed event-schema package, React board UI, durable move log/replay, "
+        "optimistic UI reconciliation, and the single root install/build/test gate. Run the gate and "
+        "leave it green. The manager originally proposed these side tasks; absorb all of them here:\n"
+        f"{combined_child_intents}"
+    )
+    return [ChildPlan(label="cohesive-app", intent=intent, assignee=engineer_child.assignee)], True
 
 
 __all__ = ["DecomposeInput", "DecomposeTool"]
