@@ -18,6 +18,7 @@ from chorus.outcomes import LanderRegistry, OutcomeLander
 from chorus.roles._plugin import RolePlugin
 from chorus_employee.analyst import analyst_lander
 from chorus_employee.engineer import engineer_lander, engineer_plugin
+from chorus_employee.growth_marketer import growth_marketer_lander, growth_marketer_plugin
 from chorus_employee.manager import manager_lander
 from chorus_employee.pm import pm_lander
 from chorus_employee.reviewer import reviewer_lander
@@ -60,4 +61,10 @@ def default_employees() -> tuple[RolePlugin, ...]:
     return default_roles()
 
 
-__all__ = ["default_employees", "default_landers", "engineer_plugin"]
+__all__ = [
+    "default_employees",
+    "default_landers",
+    "engineer_plugin",
+    "growth_marketer_lander",
+    "growth_marketer_plugin",
+]
