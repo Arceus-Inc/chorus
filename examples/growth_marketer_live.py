@@ -67,7 +67,7 @@ _TASKS: tuple[tuple[str, str], ...] = (
     ),
     (
         "content",
-        "Draft a batch of 4 short launch-announcement posts (2 for social, 2 for the email list); "
+        "Draft a batch of 4 short announcement posts (2 for social, 2 for the email list); "
         "rank them and recommend the top 2 to publish.",
     ),
     (

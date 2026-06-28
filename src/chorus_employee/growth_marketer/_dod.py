@@ -19,6 +19,7 @@ verifier and the landed artifact always agree.
 
 from __future__ import annotations
 
+import re
 from enum import StrEnum
 
 from chorus.outcomes import Verifier
@@ -42,6 +43,22 @@ _CONTENT_CUES = (
 )
 _BACKTEST_CUES = ("backtest", "back-test", "holdout", "hold-out", "offline eval", "power calc", "simulate")
 
+
+def _cue_matcher(cues: tuple[str, ...]) -> re.Pattern[str]:
+    """Compile cues into a whole-word matcher (optional plural ``s``) so substrings don't false-match.
+
+    Plain ``cue in text`` mis-fires — ``"send"`` in "resend", ``"ship"`` in "relationship",
+    ``"post"`` in "postpone". A word boundary plus an optional trailing ``s`` matches "post"/"posts"
+    while skipping those, so a beat lands the gate its *words* call for, not an accidental substring.
+    """
+    alternation = "|".join(re.escape(cue) for cue in cues)
+    return re.compile(rf"\b(?:{alternation})s?\b")
+
+
+_LAUNCH_RE = _cue_matcher(_LAUNCH_CUES)
+_CONTENT_RE = _cue_matcher(_CONTENT_CUES)
+_BACKTEST_RE = _cue_matcher(_BACKTEST_CUES)
+
 _BRIEF_RUBRIC = (
     "the hypothesis is sound, the target audience is right and adequately sized, and the copy is "
     "on-brand and compliant; the brief is present, specific, and ready to act on"
@@ -51,11 +68,11 @@ _BRIEF_RUBRIC = (
 def classify_action(intent: str) -> ActionClass:
     """Infer the action class from a beat's intent — most-gated cue wins (spec GM §8, §9)."""
     text = intent.lower()
-    if any(cue in text for cue in _LAUNCH_CUES):
+    if _LAUNCH_RE.search(text):
         return ActionClass.LAUNCH
-    if any(cue in text for cue in _CONTENT_CUES):
+    if _CONTENT_RE.search(text):
         return ActionClass.CONTENT
-    if any(cue in text for cue in _BACKTEST_CUES):
+    if _BACKTEST_RE.search(text):
         return ActionClass.BACKTEST
     return ActionClass.BRIEF
 

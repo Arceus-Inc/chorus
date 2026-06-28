@@ -105,6 +105,24 @@ def test_only_channel_holds_a_write_or_spend_grant() -> None:
     assert gated_holders == {"channel"}
 
 
+@pytest.mark.parametrize(
+    ("intent", "action"),
+    [
+        # whole-word matching: a cue inside a larger word must NOT trigger the gate.
+        ("resend the weekly digest copy to me for review", ActionClass.BRIEF),  # "send" in "resend"
+        ("map the customer relationship journey", ActionClass.BRIEF),  # "ship" in "relationship"
+        ("postpone the activation analysis", ActionClass.BRIEF),  # "post" in "postpone"
+        # but the real words still classify.
+        ("send the winning email to the cohort", ActionClass.LAUNCH),
+        ("draft posts for the blog", ActionClass.CONTENT),
+    ],
+)
+def test_classify_action_matches_whole_words_not_substrings(
+    intent: str, action: ActionClass
+) -> None:
+    assert classify_action(intent) is action
+
+
 def test_content_batch_is_a_swipe_gated_human_approval() -> None:
     verifier = growth_marketer_dod("draft a batch of tweets and pick the best to publish")
     assert verifier.kind is DoDKind.HUMAN_APPROVAL
