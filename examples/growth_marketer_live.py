@@ -5,17 +5,19 @@ the kernel generates her **action-class DoD at intake**, and each beat runs thro
 :class:`~chorus_harness.EmployeeHarnessFactory` — so the live model acts *as Mira* (her brief, her
 tools, her own git worktree). A passed beat lands its artifact through her real outcome lander.
 
-Four tasks exercise every DoD class (spec GM §8):
+Five tasks exercise every DoD class (spec GM §8):
 
     "back-test 6 activation-email subject lines and rank them"  → Command       → backtest_report
     "draft a campaign brief to lift activation"                 → AgentReview    → campaign_brief
+    "recommend prospecting plays + find leads for them"         → AgentReview    → growth_playbook
     "draft a batch of launch posts for social + email"          → HumanApproval  → campaign_content
     "launch the winning A/B test live to 40k users"            → HumanApproval  → experiment_launched
                                                                   (both gate — never auto-ships/publishes)
 
 It also runs the net-new offline-eval **branch tournament** (:func:`~chorus.webplugins.run_tournament`)
-on real variant scores, and the **content swipe** (:func:`~chorus.webplugins.swipe_review`) on a draft
-batch, to show the score-and-rank + accept/reject primitives directly.
+on real variant scores, the **content swipe** (:func:`~chorus.webplugins.swipe_review`) on a draft
+batch, and the **play recommender** (:func:`~chorus_employee.growth_marketer.recommend_plays`) on
+candidate go-to-market plays — to show the score-and-rank + accept/reject primitives directly.
 
     AZURE_OPENAI_API_KEY=...
     AZURE_OPENAI_BASE_URL=https://<resource>.openai.azure.com/openai/v1
@@ -46,14 +48,17 @@ from chorus.workforce import LedgerWorkforce
 from chorus.workspace import CompanyWorkspace
 from chorus_cli._beats import default_pricing_from_env
 from chorus_employee.growth_marketer import (
+    Play,
+    ScoredPlay,
     classify_action,
     growth_marketer_dod,
     growth_marketer_lander,
     growth_marketer_plugin,
+    recommend_plays,
 )
 from chorus_harness import EmployeeHarnessFactory
 
-# The four marketing tasks — one per action class (spec GM §8/§9).
+# The five marketing tasks — one per action class (spec GM §8/§9).
 _TASKS: tuple[tuple[str, str], ...] = (
     (
         "backtest",
@@ -64,6 +69,13 @@ _TASKS: tuple[tuple[str, str], ...] = (
         "brief",
         "Draft a campaign brief for a re-engagement push to lift 7-day activation: the hypothesis, "
         "the target audience and its size, the variants, and the power/sample-size plan.",
+    ),
+    (
+        "prospect",
+        "Recommend the top go-to-market plays to scale Arceus this quarter; for the best play, design "
+        "the angled Google/LinkedIn/X search-query grid and assemble a deduped shortlist of candidate "
+        "target organisations (each lead with the signal it matches). Discovery only — write the "
+        "ranked plays and the lead list to the growth playbook; do not contact anyone.",
     ),
     (
         "content",
@@ -105,6 +117,32 @@ def _show_tournament() -> None:
         print(f"  {rank}. {s.variant_id}  score={s.score:+.2f}  power={s.metrics.get('power')}{ship}")
 
 
+def _show_play_recommender() -> None:
+    """The net-new play recommender on candidate go-to-market plays (spec GM §3; reuses tournament)."""
+    scored = [
+        ScoredPlay(
+            Play("series-a", "Just raised Series A", "Seed-to-B startups", "hiring, scaling", "funding PR"),
+            0.7,
+            {"reach": 0.6, "intent": 0.8},
+        ),
+        ScoredPlay(
+            Play("cto-gap", "CTO just stepped down", "Series A-to-C", "interim leadership gap", "role change"),
+            1.4,
+            {"reach": 0.4, "intent": 0.95},
+        ),
+        ScoredPlay(
+            Play("vendor-ask", "Asking for vendor recs", "ML teams", "public 'anyone recommend' post", "forum ask"),
+            1.1,
+            {"reach": 0.7, "intent": 0.9},
+        ),
+    ]
+    rec = recommend_plays(scored, top_k=2)
+    print("\n=== play recommender (recommend_plays, top_k=2) ===")
+    for rank, play in enumerate(rec.ranked, 1):
+        run = "  <- run this cycle" if play in rec.winners else ""
+        print(f"  {rank}. {play.id}  {play.title}{run}")
+
+
 def _show_swipe() -> None:
     """The net-new content swipe on a draft batch (spec GM §3; Result/Polsia 'swipe like Tinder')."""
     drafts = [
@@ -130,6 +168,7 @@ async def main() -> int:
 
     # The net-new primitives first — deterministic, no model needed.
     _show_tournament()
+    _show_play_recommender()
     _show_swipe()
 
     base = Path(tempfile.mkdtemp(prefix="chorus-growth-live-"))
@@ -151,6 +190,9 @@ async def main() -> int:
             seed=seed,
             work_root=base / "work",
             ledger=lg,
+            # The prospecting playbook is a large artifact (ranked plays + query grid + lead list);
+            # give every beat a wider wall-clock so it lands rather than timing out mid-write.
+            timeout_s=float(os.environ.get("GM_TIMEOUT_S", "300")),
         )
         workspace = CompanyWorkspace(factory.company_root, seed=seed)
         workspace.worktree_for("mira")  # pre-create Mira's worktree
@@ -166,8 +208,11 @@ async def main() -> int:
         )
 
         # Submit each task, set its DoD (the action-class verifier), and assign to Mira.
+        # Optional GM_TASKS="prospect,brief" runs only a subset (handy for re-checking one beat).
+        only = {k.strip() for k in os.environ.get("GM_TASKS", "").split(",") if k.strip()}
+        tasks = tuple(t for t in _TASKS if not only or t[0] in only)
         ids: dict[str, str] = {}
-        for key, intent in _TASKS:
+        for key, intent in tasks:
             task = lg.tasks.submit(Task(id=f"gm-{key}", intent=intent, status=TaskStatus.TODO))
             lg.dod.create(task.id, growth_marketer_dod(intent))
             assign_task(lg, task.id, "mira")
@@ -200,6 +245,7 @@ async def main() -> int:
                 "campaign_brief.md",
                 "campaign_content.md",
                 "experiment_launch.md",
+                "growth_playbook.md",
                 "backtest.py",
             ):
                 p = worktree / doc
