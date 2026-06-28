@@ -33,6 +33,17 @@ class GrowthSubagent:
         return bool(self.webplugins) and self.name == "channel"
 
 
+PROSPECTOR = GrowthSubagent(
+    name="prospector",
+    description=(
+        "Scales the top of the funnel: ranks the go-to-market plays, then runs the lead sweep — "
+        "expands each play into angled Google/LinkedIn/X/Reddit queries, reads each query's health, "
+        "heals the bad ones, and harvests + dedupes real buyer leads. Read-only discovery; the actual "
+        "outreach send is handed to Channel behind the gate."
+    ),
+    webplugins=("search",),
+    spawns=("lead_orchestrator",),
+)
 SEGMENT = GrowthSubagent(
     name="segment",
     description=(
@@ -63,10 +74,11 @@ CHANNEL = GrowthSubagent(
     name="channel",
     description=(
         "The only specialist that spends/sends: publishes the swipe-approved content (organic posts, "
-        "email sends) and pushes the winning top-k live — schedules the send, launches the ad set, "
-        "allocates budget — every action fail-closed behind a gate and inside its channel cap."
+        "email sends), reaches out 1:1 to the prospector's approved leads, and pushes the winning "
+        "top-k live — schedules the send, launches the ad set, allocates budget — every action "
+        "fail-closed behind a gate and inside its channel cap."
     ),
-    webplugins=("crm", "social", "ads"),
+    webplugins=("crm", "social", "ads", "outreach"),
 )
 MONITOR = GrowthSubagent(
     name="monitor",
@@ -79,7 +91,14 @@ MONITOR = GrowthSubagent(
     spawns=("query_orchestrator",),
 )
 
-GROWTH_SUBAGENTS: tuple[GrowthSubagent, ...] = (SEGMENT, CREATIVE, EXPERIMENT, CHANNEL, MONITOR)
+GROWTH_SUBAGENTS: tuple[GrowthSubagent, ...] = (
+    PROSPECTOR,
+    SEGMENT,
+    CREATIVE,
+    EXPERIMENT,
+    CHANNEL,
+    MONITOR,
+)
 
 
 __all__ = [
@@ -88,6 +107,7 @@ __all__ = [
     "EXPERIMENT",
     "GROWTH_SUBAGENTS",
     "MONITOR",
+    "PROSPECTOR",
     "SEGMENT",
     "GrowthSubagent",
 ]

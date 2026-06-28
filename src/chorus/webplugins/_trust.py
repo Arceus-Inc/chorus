@@ -30,6 +30,8 @@ class PluginKind(StrEnum):
     ADS = "ads"  # Meta / Google Ads — paid acquisition
     CREATIVE_DAM = "creative_dam"  # Figma / brand DAM — creative assets
     SOCIAL = "social"  # Twitter/X / LinkedIn — organic post publishing
+    SEARCH = "search"  # Google / LinkedIn / X search — read-only lead discovery
+    OUTREACH = "outreach"  # cold DM / connection request — 1:1 lead contact (gated)
 
 
 class Capability(StrEnum):

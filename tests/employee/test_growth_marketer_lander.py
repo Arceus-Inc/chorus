@@ -16,6 +16,7 @@ from chorus_employee.growth_marketer._brief import (
     CAMPAIGN_BRIEF_DOC,
     CAMPAIGN_CONTENT_DOC,
     EXPERIMENT_LAUNCH_DOC,
+    GROWTH_PLAYBOOK_DOC,
 )
 
 pytestmark = pytest.mark.integration
@@ -93,6 +94,25 @@ def test_lands_a_content_batch_as_an_artifact(tmp_path: Path) -> None:
     assert artifact.type is ArtifactType.ARTIFACT
     assert artifact.resource_ref["kind"] == "campaign_content"
     assert artifact.resource_ref["doc"] == CAMPAIGN_CONTENT_DOC
+    assert artifact.resource_ref["present"] is True
+
+
+def test_lands_a_growth_playbook(tmp_path: Path) -> None:
+    workspace = CompanyWorkspace(tmp_path / "acme")
+    worktree = workspace.worktree_for("mira")
+    (worktree.path / GROWTH_PLAYBOOK_DOC).write_text(
+        "# Playbook\n\n2 plays, 14 leads.\n", encoding="utf-8"
+    )
+
+    artifact = asyncio.run(
+        growth_marketer_lander(tmp_path / "acme").land(
+            _task("recommend plays and find leads to scale Arceus"), None
+        )
+    )
+
+    assert artifact.type is ArtifactType.DOC
+    assert artifact.resource_ref["kind"] == "growth_playbook"
+    assert artifact.resource_ref["doc"] == GROWTH_PLAYBOOK_DOC
     assert artifact.resource_ref["present"] is True
 
 

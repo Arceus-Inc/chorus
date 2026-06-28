@@ -10,8 +10,9 @@ thing. This package gathers everything that makes Mira that harness, one compone
 - :mod:`._dod`          — the action-class-aware DoD: Command | AgentReview | HumanApproval (swipe).
 - :mod:`._lander`       — lands backtest_report | campaign_brief | campaign_content | experiment_launched.
 - :mod:`._routines`     — weekly funnel review · daily experiment watch · daily channel optimize.
-- :mod:`._subagents`    — the five Tier-1 specialist overlays (Segment/Creative/Experiment/Channel/Monitor).
+- :mod:`._subagents`    — the Tier-1 specialist overlays (Prospector/Segment/Creative/Experiment/Channel/Monitor).
 - :mod:`._integrations` — the trust-scoped WebPlugin grants per subagent (read/write/gated + secret-refs).
+- :mod:`._plays`        — the play recommender: rank go-to-market plays, the lead-sweep data model.
 
 She is **registrable, not a kernel default** (spec GM §13 / spec 09 §1): a consumer adds her with
 ``org.workforce.register_role(growth_marketer_plugin())`` and wires her lander via
@@ -29,6 +30,7 @@ from chorus_employee.growth_marketer._brief import (
     CAMPAIGN_CONTENT_DOC,
     EXPERIMENT_LAUNCH_DOC,
     GROWTH_MARKETER_BRIEF,
+    GROWTH_PLAYBOOK_DOC,
 )
 from chorus_employee.growth_marketer._dod import (
     ActionClass,
@@ -44,6 +46,13 @@ from chorus_employee.growth_marketer._lander import (
     GROWTH_OUTCOME_KIND,
     GrowthMarketerLander,
     growth_marketer_lander,
+)
+from chorus_employee.growth_marketer._plays import (
+    Play,
+    PlaybookRecommendation,
+    ScoredPlay,
+    SearchStrategy,
+    recommend_plays,
 )
 from chorus_employee.growth_marketer._routines import GROWTH_MARKETER_ROUTINES
 from chorus_employee.growth_marketer._subagents import GROWTH_SUBAGENTS, GrowthSubagent
@@ -68,15 +77,21 @@ __all__ = [
     "GROWTH_MARKETER_BRIEF",
     "GROWTH_MARKETER_ROUTINES",
     "GROWTH_OUTCOME_KIND",
+    "GROWTH_PLAYBOOK_DOC",
     "GROWTH_SUBAGENTS",
     "ActionClass",
     "GrowthMarketerLander",
     "GrowthSubagent",
+    "Play",
+    "PlaybookRecommendation",
+    "ScoredPlay",
+    "SearchStrategy",
     "classify_action",
     "growth_marketer_dod",
     "growth_marketer_lander",
     "growth_marketer_manifest",
     "growth_marketer_plugin",
     "growth_marketer_webplugins",
+    "recommend_plays",
     "subagent_grants",
 ]

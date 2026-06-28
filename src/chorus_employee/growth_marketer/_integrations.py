@@ -74,8 +74,33 @@ DAM = WebPlugin(
     auth_ref="ref:dam_ro",
     scope="read-only asset + guideline fetch",
 )
+SEARCH = WebPlugin(
+    name="search",
+    kind=PluginKind.SEARCH,
+    capability=Capability.READ,
+    auth_ref="ref:search",
+    scope="read-only lead discovery across Google / LinkedIn / X / Reddit",
+)
+OUTREACH = WebPlugin(
+    name="outreach",
+    kind=PluginKind.OUTREACH,
+    capability=Capability.SEND,
+    auth_ref="ref:outreach",
+    scope="1:1 cold DM / connection request to a discovered lead; send → HumanApproval",
+    rate_cap=RateCap(per_day=20),  # a person reaches out to a handful of leads a day, not thousands
+)
 
-_PLUGINS: tuple[WebPlugin, ...] = (WAREHOUSE, ANALYTICS, EXPERIMENTATION, CRM, SOCIAL, ADS, DAM)
+_PLUGINS: tuple[WebPlugin, ...] = (
+    WAREHOUSE,
+    ANALYTICS,
+    EXPERIMENTATION,
+    CRM,
+    SOCIAL,
+    ADS,
+    DAM,
+    SEARCH,
+    OUTREACH,
+)
 
 # Which Tier-1 specialist may reach which plugin (spec GM §4/§5). Only Channel holds a gated plugin —
 # the one small, auditable write/spend seam.
@@ -83,7 +108,8 @@ _GRANTS: dict[str, tuple[str, ...]] = {
     "segment": ("warehouse", "analytics"),
     "creative": ("dam",),
     "experiment": ("warehouse", "experimentation"),
-    "channel": ("crm", "social", "ads"),
+    "prospector": ("search",),  # read-only discovery; the outreach send routes through Channel
+    "channel": ("crm", "social", "ads", "outreach"),
     "monitor": ("analytics", "experimentation"),
 }
 
@@ -104,6 +130,8 @@ __all__ = [
     "CRM",
     "DAM",
     "EXPERIMENTATION",
+    "OUTREACH",
+    "SEARCH",
     "SOCIAL",
     "WAREHOUSE",
     "growth_marketer_webplugins",

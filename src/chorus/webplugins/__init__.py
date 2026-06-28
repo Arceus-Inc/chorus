@@ -8,7 +8,9 @@ kernel surfaces live here:
 - the **branch tournament** / offline-eval outcome — a score-and-rank verifier (:func:`run_tournament`)
   that ranks N competing variants and selects the top-k, instead of a boolean pass/fail;
 - the **content batch + swipe review** (:func:`swipe_review`) — the fail-closed human accept/reject
-  over a batch of generated drafts before any of them publish ("Tinder for marketing").
+  over a batch of generated drafts before any of them publish ("Tinder for marketing");
+- the **lead-search orchestration** skeleton (:func:`classify_query_health`, :func:`dedupe_leads`,
+  :func:`exhaustiveness_stop`) — the deterministic control flow of signal-based prospecting.
 
 All reuse chorus's existing fail-closed trust + budget ideas; none touch dream.
 """
@@ -23,6 +25,18 @@ from chorus.webplugins._outcome import (
     run_tournament,
 )
 from chorus.webplugins._registry import WebPlugin, WebPluginRegistry
+from chorus.webplugins._search import (
+    DedupeResult,
+    Lead,
+    LeadQuery,
+    QueryHealth,
+    QueryLevel,
+    SearchPlatform,
+    classify_query_health,
+    dedupe_leads,
+    exhaustiveness_stop,
+    lead_dup_rate,
+)
 from chorus.webplugins._trust import (
     REF_PREFIX,
     Capability,
@@ -35,9 +49,15 @@ from chorus.webplugins._trust import (
 __all__ = [
     "REF_PREFIX",
     "Capability",
+    "DedupeResult",
     "Draft",
+    "Lead",
+    "LeadQuery",
     "PluginKind",
+    "QueryHealth",
+    "QueryLevel",
     "RateCap",
+    "SearchPlatform",
     "SpendCap",
     "SwipeOutcome",
     "TournamentOutcome",
@@ -45,7 +65,11 @@ __all__ = [
     "VariantScore",
     "WebPlugin",
     "WebPluginRegistry",
+    "classify_query_health",
+    "dedupe_leads",
+    "exhaustiveness_stop",
     "is_secret_ref",
+    "lead_dup_rate",
     "run_tournament",
     "swipe_review",
 ]

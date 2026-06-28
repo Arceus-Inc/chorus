@@ -23,10 +23,28 @@ QUERY_ORCHESTRATOR = SwarmRole(
     spawned_by=("segment", "experiment", "monitor"),
 )
 
+# The lead-hunting twin of the query orchestrator: instead of internal data it reasons over the open
+# web. It takes a go-to-market play, generates angled search strategies, expands each into a
+# broad/intent/icp query grid across Google/LinkedIn/X/Reddit, reads each query's health
+# (ghost-town vs haystack), heals the weak ones, classifies results into real buyer leads, and keeps
+# expanding until the sweep saturates. Its deterministic scaffolding (query health, dedupe,
+# exhaustiveness) lives in :mod:`chorus.webplugins._search`; the judgment is the agent's.
+LEAD_ORCHESTRATOR = SwarmRole(
+    name="lead_orchestrator",
+    description=(
+        "Takes a go-to-market play, generates angled search strategies, expands them into a "
+        "multi-platform query grid, probes each query and heals the weak ones, then classifies and "
+        "dedupes the results into real buyer leads until the sweep saturates."
+    ),
+    tools=("search.google", "search.linkedin", "search.twitter", "leads.classify"),
+    skills=("play_strategies", "boolean_query_syntax"),
+    spawned_by=("prospector",),
+)
+
 
 def default_swarm_roles() -> tuple[SwarmRole, ...]:
     """The canonical shared swarm roles, registered at boot (spec GM §4)."""
-    return (QUERY_ORCHESTRATOR,)
+    return (QUERY_ORCHESTRATOR, LEAD_ORCHESTRATOR)
 
 
-__all__ = ["QUERY_ORCHESTRATOR", "default_swarm_roles"]
+__all__ = ["LEAD_ORCHESTRATOR", "QUERY_ORCHESTRATOR", "default_swarm_roles"]

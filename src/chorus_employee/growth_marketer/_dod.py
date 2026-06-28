@@ -11,7 +11,11 @@ just picks the right one for what the beat produced:
 - a **live send / ad spend** is a :class:`~chorus.outcomes.HumanApproval` — a person approves the
   spend, the audience, and the final creative (a governance gate, not a quality gate);
 - a **content batch** (posts/reels/blogs to publish) is also a :class:`~chorus.outcomes.HumanApproval`
-  — the "swipe" gate over the drafts, since publishing reaches real users on a capped channel.
+  — the "swipe" gate over the drafts, since publishing reaches real users on a capped channel;
+- a **prospecting playbook** (ranked go-to-market plays + the discovered lead list) is an
+  :class:`~chorus.outcomes.AgentReview` — discovery is reversible (it produces a document, sends
+  nothing), so a Growth Reviewer checks the plays and lead quality; the *outreach* to those leads is
+  a separate, gated send (a launch).
 
 The action class is inferred from the intent by :func:`classify_action`, shared with the lander so the
 verifier and the landed artifact always agree.
@@ -30,6 +34,7 @@ class ActionClass(StrEnum):
 
     BACKTEST = "backtest"  # offline eval → Command → backtest_report
     BRIEF = "brief"  # a plan/brief → AgentReview → campaign_brief
+    PROSPECT = "prospect"  # ranked plays + lead sweep → AgentReview → growth_playbook
     CONTENT = "content"  # a batch of drafts to publish → HumanApproval (swipe) → campaign_content
     LAUNCH = "launch"  # spend / live send → HumanApproval → experiment_launched
 
@@ -37,11 +42,17 @@ class ActionClass(StrEnum):
 # Keyword cues, checked most-gated first: a live send or spend dominates (it crosses the human gate),
 # then a content batch to publish (a swipe-gated send), then an offline back-test, else the default
 # reversible deliverable — a reviewed brief.
-_LAUNCH_CUES = ("launch", "send", "spend", "go live", "live send", "ad budget", "allocate budget", "ship")
+_LAUNCH_CUES = (
+    "launch", "send", "spend", "go live", "live send", "ad budget", "allocate budget", "ship",
+    "reach out", "dm", "cold email",
+)
 _CONTENT_CUES = (
     "post", "reel", "tweet", "blog", "social", "newsletter", "content", "caption", "publish", "creative",
 )
 _BACKTEST_CUES = ("backtest", "back-test", "holdout", "hold-out", "offline eval", "power calc", "simulate")
+_PROSPECT_CUES = (
+    "play", "playbook", "lead", "prospect", "go-to-market", "gtm", "icp", "find companies", "lead list",
+)
 
 
 def _cue_matcher(cues: tuple[str, ...]) -> re.Pattern[str]:
@@ -58,6 +69,13 @@ def _cue_matcher(cues: tuple[str, ...]) -> re.Pattern[str]:
 _LAUNCH_RE = _cue_matcher(_LAUNCH_CUES)
 _CONTENT_RE = _cue_matcher(_CONTENT_CUES)
 _BACKTEST_RE = _cue_matcher(_BACKTEST_CUES)
+_PROSPECT_RE = _cue_matcher(_PROSPECT_CUES)
+
+_PROSPECT_RUBRIC = (
+    "the chosen plays fit Arceus's ICP and are worth running, the search strategies plausibly surface "
+    "real buyers (not job-seekers/sellers/news), and the lead list is present, deduped, and grounded "
+    "in a real signal per lead — ready for outreach to be drafted"
+)
 
 _BRIEF_RUBRIC = (
     "the hypothesis is sound, the target audience is right and adequately sized, and the copy is "
@@ -74,6 +92,8 @@ def classify_action(intent: str) -> ActionClass:
         return ActionClass.CONTENT
     if _BACKTEST_RE.search(text):
         return ActionClass.BACKTEST
+    if _PROSPECT_RE.search(text):
+        return ActionClass.PROSPECT
     return ActionClass.BRIEF
 
 
@@ -91,6 +111,9 @@ def growth_marketer_dod(intent: str) -> Verifier:
         return Verifier.command(
             "python backtest.py", artifact_class="backtest_report", timeout_s=600
         )
+    if action is ActionClass.PROSPECT:
+        # Discovery is reversible (a document, no send): a reviewer vets the plays + lead quality.
+        return Verifier.agent_review(rubric=_PROSPECT_RUBRIC, artifact_class="growth_playbook")
     return Verifier.agent_review(rubric=_BRIEF_RUBRIC, artifact_class="campaign_brief")
 
 

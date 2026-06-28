@@ -6,6 +6,7 @@ import pytest
 
 from chorus.outcomes import DoDKind
 from chorus.roles import RoleRegistry, default_roles
+from chorus.swarm import SwarmRoleRegistry, default_swarm_roles
 from chorus.webplugins import Capability
 from chorus_employee.growth_marketer import (
     ActionClass,
@@ -53,6 +54,8 @@ def test_registers_cleanly_alongside_the_v0_roster() -> None:
         ("write a blog post and a newsletter", ActionClass.CONTENT, DoDKind.HUMAN_APPROVAL),
         ("launch the live A/B test and send to 40k users", ActionClass.LAUNCH, DoDKind.HUMAN_APPROVAL),
         ("allocate ad budget to the winning set", ActionClass.LAUNCH, DoDKind.HUMAN_APPROVAL),
+        ("recommend plays and find leads to scale Arceus", ActionClass.PROSPECT, DoDKind.AGENT_REVIEW),
+        ("build a prospecting playbook for our ICP", ActionClass.PROSPECT, DoDKind.AGENT_REVIEW),
     ],
 )
 def test_dod_bends_to_the_action_class(intent: str, action: ActionClass, kind: DoDKind) -> None:
@@ -77,6 +80,7 @@ def test_integrations_are_secret_bound_and_gated_correctly() -> None:
     reg = growth_marketer_webplugins()
     assert set(reg.names()) == {
         "warehouse", "analytics", "experimentation", "crm", "social", "ads", "dam",
+        "search", "outreach",
     }
     # reads are ungated; spend/send are gated and carry a cap (validated at registration).
     assert reg.get("warehouse").gated is False
@@ -86,6 +90,10 @@ def test_integrations_are_secret_bound_and_gated_correctly() -> None:
     assert reg.get("social").capability is Capability.SEND
     assert reg.get("social").spend_cap is None and reg.get("social").rate_cap is not None
     assert reg.get("crm").rate_cap is not None
+    # lead discovery is a read (ungated); 1:1 outreach is a frequency-capped SEND (gated).
+    assert reg.get("search").capability is Capability.READ and reg.get("search").gated is False
+    assert reg.get("outreach").capability is Capability.SEND and reg.get("outreach").gated is True
+    assert reg.get("outreach").rate_cap is not None and reg.get("outreach").spend_cap is None
     # every gated plugin carries at least one cap.
     assert all(
         reg.get(n).spend_cap is not None or reg.get(n).rate_cap is not None
@@ -129,11 +137,30 @@ def test_content_batch_is_a_swipe_gated_human_approval() -> None:
     assert verifier.artifact_class == "campaign_content"
 
 
-def test_subagents_cover_the_five_specialists() -> None:
+def test_subagents_cover_the_specialists() -> None:
     assert {s.name for s in GROWTH_SUBAGENTS} == {
-        "segment", "creative", "experiment", "channel", "monitor",
+        "prospector", "segment", "creative", "experiment", "channel", "monitor",
     }
     # narrower-wins: every subagent grant resolves to a registered web plugin.
     reg = growth_marketer_webplugins()
     for sub in GROWTH_SUBAGENTS:
         assert all(name in reg for name in sub.webplugins)
+
+
+def test_subagent_spawns_resolve_to_registered_swarm_roles() -> None:
+    # every Tier-2 role a specialist spawns is a registered shared swarm role (spec GM §4).
+    reg = SwarmRoleRegistry.from_roles(default_swarm_roles())
+    for sub in GROWTH_SUBAGENTS:
+        assert all(role in reg for role in sub.spawns)
+
+
+def test_prospector_discovers_read_only_and_routes_the_send_through_channel() -> None:
+    # The prospector hunts leads read-only and spawns the lead orchestrator; the gated outreach send
+    # stays with Channel — the single write/spend seam is preserved.
+    grants = subagent_grants()
+    reg = growth_marketer_webplugins()
+    assert grants["prospector"] == ("search",)
+    assert all(not reg.get(n).gated for n in grants["prospector"])
+    assert "outreach" in grants["channel"]
+    prospector = next(s for s in GROWTH_SUBAGENTS if s.name == "prospector")
+    assert "lead_orchestrator" in prospector.spawns

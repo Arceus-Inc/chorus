@@ -5,7 +5,13 @@ from __future__ import annotations
 import pytest
 
 from chorus.errors import SwarmRoleConflict, SwarmRoleInvalid
-from chorus.swarm import QUERY_ORCHESTRATOR, SwarmRole, SwarmRoleRegistry, default_swarm_roles
+from chorus.swarm import (
+    LEAD_ORCHESTRATOR,
+    QUERY_ORCHESTRATOR,
+    SwarmRole,
+    SwarmRoleRegistry,
+    default_swarm_roles,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -17,6 +23,17 @@ def test_default_registry_holds_the_query_orchestrator() -> None:
     assert role.tools == ("warehouse.query", "analytics.fetch")
     assert "query_patterns" in role.skills
     assert set(role.spawned_by) == {"segment", "experiment", "monitor"}
+
+
+def test_default_registry_holds_the_lead_orchestrator() -> None:
+    reg = SwarmRoleRegistry.from_roles(default_swarm_roles())
+    assert "lead_orchestrator" in reg
+    role = reg.get("lead_orchestrator")
+    # role-agnostic open-web prospecting twin of the query orchestrator.
+    assert role is LEAD_ORCHESTRATOR
+    assert "search.google" in role.tools and "leads.classify" in role.tools
+    assert "play_strategies" in role.skills
+    assert set(role.spawned_by) == {"prospector"}
 
 
 def test_re_registering_an_identical_role_is_idempotent() -> None:

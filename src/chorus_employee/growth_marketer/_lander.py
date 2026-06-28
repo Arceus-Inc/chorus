@@ -6,6 +6,7 @@ the DoD uses, so the verifier and the landed artifact always agree):
 - ``backtest`` → a ``backtest_report`` doc (the offline score-and-rank report);
 - ``brief``    → a ``campaign_brief`` doc (the reviewed plan);
 - ``content``  → a ``campaign_content`` artifact (the swipe-approved draft deck that publishes);
+- ``prospect`` → a ``growth_playbook`` doc (the ranked plays + deduped lead list);
 - ``launch``   → an ``experiment_launched`` artifact (the live experiment handle).
 
 It snapshots the assignee's branch-isolated worktree, integrates it into the company ``main`` so the
@@ -28,6 +29,7 @@ from chorus_employee.growth_marketer._brief import (
     CAMPAIGN_BRIEF_DOC,
     CAMPAIGN_CONTENT_DOC,
     EXPERIMENT_LAUNCH_DOC,
+    GROWTH_PLAYBOOK_DOC,
 )
 from chorus_employee.growth_marketer._dod import ActionClass, classify_action
 
@@ -45,6 +47,7 @@ _ARTIFACT_BY_ACTION: dict[ActionClass, tuple[str, str, ArtifactType]] = {
     ActionClass.BACKTEST: ("backtest_report", BACKTEST_REPORT_DOC, ArtifactType.DOC),
     ActionClass.BRIEF: ("campaign_brief", CAMPAIGN_BRIEF_DOC, ArtifactType.DOC),
     ActionClass.CONTENT: ("campaign_content", CAMPAIGN_CONTENT_DOC, ArtifactType.ARTIFACT),
+    ActionClass.PROSPECT: ("growth_playbook", GROWTH_PLAYBOOK_DOC, ArtifactType.DOC),
     ActionClass.LAUNCH: ("experiment_launched", EXPERIMENT_LAUNCH_DOC, ArtifactType.ARTIFACT),
 }
 
