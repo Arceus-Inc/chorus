@@ -6,8 +6,9 @@ Marketer is the forcing function, not a special case (the Engineer and Analyst i
 layer). Registration mirrors :class:`~chorus.roles.RoleRegistry`:
 
 - **fail-closed** — a plugin with an empty name, an inline (non-``ref:``) auth secret, or a gated
-  capability without a :class:`~chorus.webplugins._trust.SpendCap` is rejected *whole* before it can
-  own reach (:class:`~chorus.errors.WebPluginInvalid`);
+  capability carrying neither a :class:`~chorus.webplugins._trust.SpendCap` nor a
+  :class:`~chorus.webplugins._trust.RateCap` is rejected *whole* before it can own reach
+  (:class:`~chorus.errors.WebPluginInvalid`);
 - **idempotent** — re-registering an identical definition is a no-op; a *different* definition under
   the same name raises :class:`~chorus.errors.WebPluginConflict` unless ``replace=True``.
 """
@@ -18,7 +19,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 
 from chorus.errors import WebPluginConflict, WebPluginInvalid
-from chorus.webplugins._trust import Capability, PluginKind, SpendCap, is_secret_ref
+from chorus.webplugins._trust import Capability, PluginKind, RateCap, SpendCap, is_secret_ref
 
 
 @dataclass(frozen=True)
@@ -27,7 +28,9 @@ class WebPlugin:
 
     ``auth_ref`` is a secret *handle* (``ref:warehouse_ro``), never an inline value. ``scope`` is the
     human-readable trust note (e.g. "read-only, row/role-scoped views"). A gated capability
-    (``SEND``/``SPEND``) must carry ``spend_cap``; a read/design plugin leaves it ``None``.
+    (``SEND``/``SPEND``) must carry at least one cap: a ``spend_cap`` (dollar ceiling, typically
+    ``SPEND``) and/or a ``rate_cap`` (frequency ceiling, typically an organic ``SEND`` channel like
+    Twitter/X). A read/design plugin leaves both ``None``.
     """
 
     name: str
@@ -36,6 +39,7 @@ class WebPlugin:
     auth_ref: str
     scope: str = ""
     spend_cap: SpendCap | None = None
+    rate_cap: RateCap | None = None
 
     @property
     def gated(self) -> bool:
@@ -103,10 +107,10 @@ class WebPluginRegistry:
                 f"web plugin {plugin.name!r} auth must bind a ref: handle, not an inline value "
                 f"(got {plugin.auth_ref!r})"
             )
-        if plugin.gated and plugin.spend_cap is None:
+        if plugin.gated and plugin.spend_cap is None and plugin.rate_cap is None:
             raise WebPluginInvalid(
-                f"gated web plugin {plugin.name!r} ({plugin.capability}) must carry a SpendCap — "
-                "a spend/send can never be unbounded"
+                f"gated web plugin {plugin.name!r} ({plugin.capability}) must carry a SpendCap or "
+                "a RateCap — a spend/send can never be unbounded"
             )
 
 

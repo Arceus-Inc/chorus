@@ -4,7 +4,7 @@ Mira ships these with her plugin; hiring her provisions them automatically (hire
 operator ``add_routine`` and no kernel change. ``GROWTH_MARKETER_ROUTINES`` is what
 :func:`chorus_employee.growth_marketer.growth_marketer_plugin` hands to ``RolePlugin.declared_routines``.
 
-Two cron routines are declared here. The third edge of the loop — the *on-signal wake* (Monitor emits
+Three cron routines are declared here. The further edge of the loop — the *on-signal wake* (Monitor emits
 a wake when the metric crosses a threshold) — is **not** a cron declaration: today's routines are
 cron-only, and that internal metric-threshold wake is minted by Mira's own Monitor Agent via a
 next-beat/CRON_DUE-style wake, so it needs no HTTP listener (spec GM §11).
@@ -40,12 +40,25 @@ GROWTH_DAILY_EXPERIMENT_WATCH = RoutineDeclaration(
     concurrency=RoutineConcurrency.SKIP_IF_ACTIVE,
 )
 
+# Daily 08:30 — read channel performance and propose budget reallocation (spend stays behind the gate).
+GROWTH_DAILY_CHANNEL_OPTIMIZE = RoutineDeclaration(
+    routine_key="growth-daily-channel-optimize",
+    intent_template=(
+        "Daily channel optimization: read each live channel's spend and performance, then propose "
+        "reallocating budget toward the winners — the spend itself stays behind the human gate."
+    ),
+    schedule="30 8 * * *",  # == Schedule.daily(at="08:30")
+    concurrency=RoutineConcurrency.SKIP_IF_ACTIVE,
+)
+
 GROWTH_MARKETER_ROUTINES: tuple[RoutineDeclaration, ...] = (
     GROWTH_WEEKLY_FUNNEL_REVIEW,
     GROWTH_DAILY_EXPERIMENT_WATCH,
+    GROWTH_DAILY_CHANNEL_OPTIMIZE,
 )
 
 __all__ = [
+    "GROWTH_DAILY_CHANNEL_OPTIMIZE",
     "GROWTH_DAILY_EXPERIMENT_WATCH",
     "GROWTH_MARKETER_ROUTINES",
     "GROWTH_WEEKLY_FUNNEL_REVIEW",

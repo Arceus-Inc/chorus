@@ -29,6 +29,7 @@ class PluginKind(StrEnum):
     EMAIL_CRM = "email_crm"  # Braze / Customer.io / Klaviyo — audience send
     ADS = "ads"  # Meta / Google Ads — paid acquisition
     CREATIVE_DAM = "creative_dam"  # Figma / brand DAM — creative assets
+    SOCIAL = "social"  # Twitter/X / LinkedIn — organic post publishing
 
 
 class Capability(StrEnum):
@@ -71,6 +72,27 @@ class SpendCap:
         return self.per_action_cents is None or action_cents <= self.per_action_cents
 
 
+@dataclass(frozen=True)
+class RateCap:
+    """A fail-closed *volume* ceiling for a gated SEND plugin (spec GM §5; Result/Polsia channel limits).
+
+    Spend isn't the only blast radius — an organic channel (Twitter/X 1 post/day, an email list
+    2 sends/day) is capped by *frequency*, not dollars. ``per_day`` is the max number of sends in a
+    rolling day; ``None`` means "not separately capped". The send loop checks :meth:`allows` against
+    how many sends already went out today, so a runaway agent can't spam a channel.
+    """
+
+    per_day: int | None = None
+
+    def __post_init__(self) -> None:
+        if self.per_day is not None and self.per_day < 0:
+            raise ValueError(f"per_day must be non-negative, got {self.per_day}")
+
+    def allows(self, *, sent_today: int) -> bool:
+        """Whether one more send is within today's frequency ceiling."""
+        return self.per_day is None or sent_today < self.per_day
+
+
 def is_secret_ref(value: str) -> bool:
     """True iff ``value`` is a secret *reference* (``ref:…``) rather than a raw inline value."""
     return value.startswith(REF_PREFIX) and len(value) > len(REF_PREFIX)
@@ -80,6 +102,7 @@ __all__ = [
     "REF_PREFIX",
     "Capability",
     "PluginKind",
+    "RateCap",
     "SpendCap",
     "is_secret_ref",
 ]

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from chorus.webplugins import Capability, SpendCap, is_secret_ref
+from chorus.webplugins import Capability, RateCap, SpendCap, is_secret_ref
 
 pytestmark = pytest.mark.unit
 
@@ -39,3 +39,19 @@ def test_spend_cap_rejects_negative_limits() -> None:
         SpendCap(per_action_cents=-1)
     with pytest.raises(ValueError):
         SpendCap(daily_cents=-5)
+
+
+def test_rate_cap_allows_until_the_daily_count_is_hit() -> None:
+    cap = RateCap(per_day=2)
+    assert cap.allows(sent_today=0) is True
+    assert cap.allows(sent_today=1) is True
+    assert cap.allows(sent_today=2) is False  # the third send would exceed 2/day
+
+
+def test_rate_cap_with_no_per_day_limit_allows_anything() -> None:
+    assert RateCap().allows(sent_today=10_000) is True
+
+
+def test_rate_cap_rejects_negative_limits() -> None:
+    with pytest.raises(ValueError):
+        RateCap(per_day=-1)

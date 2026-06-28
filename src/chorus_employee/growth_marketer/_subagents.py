@@ -62,16 +62,18 @@ EXPERIMENT = GrowthSubagent(
 CHANNEL = GrowthSubagent(
     name="channel",
     description=(
-        "The only specialist that spends/sends: pushes the winning top-k live — schedules the send, "
-        "launches the ad set, allocates budget — every action fail-closed behind a gate."
+        "The only specialist that spends/sends: publishes the swipe-approved content (organic posts, "
+        "email sends) and pushes the winning top-k live — schedules the send, launches the ad set, "
+        "allocates budget — every action fail-closed behind a gate and inside its channel cap."
     ),
-    webplugins=("crm", "ads"),
+    webplugins=("crm", "social", "ads"),
 )
 MONITOR = GrowthSubagent(
     name="monitor",
     description=(
-        "Watches the live metric post-launch, calls early-stop on losers, detects regressions, and "
-        "emits the next loop's signal as a wake; closes the loop."
+        "Watches the live metric post-launch, calls early-stop on losers, detects regressions, runs "
+        "the daily channel-performance read and proposes budget reallocation (Channel executes it "
+        "behind the gate), and emits the next loop's signal as a wake; closes the loop."
     ),
     webplugins=("analytics", "experimentation"),
     spawns=("query_orchestrator",),

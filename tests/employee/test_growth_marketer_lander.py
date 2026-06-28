@@ -14,6 +14,7 @@ from chorus_employee.growth_marketer import growth_marketer_lander
 from chorus_employee.growth_marketer._brief import (
     BACKTEST_REPORT_DOC,
     CAMPAIGN_BRIEF_DOC,
+    CAMPAIGN_CONTENT_DOC,
     EXPERIMENT_LAUNCH_DOC,
 )
 
@@ -73,6 +74,25 @@ def test_lands_an_experiment_launch_as_an_artifact(tmp_path: Path) -> None:
 
     assert artifact.type is ArtifactType.ARTIFACT
     assert artifact.resource_ref["kind"] == "experiment_launched"
+    assert artifact.resource_ref["present"] is True
+
+
+def test_lands_a_content_batch_as_an_artifact(tmp_path: Path) -> None:
+    workspace = CompanyWorkspace(tmp_path / "acme")
+    worktree = workspace.worktree_for("mira")
+    (worktree.path / CAMPAIGN_CONTENT_DOC).write_text(
+        "# Content batch\n\n3 posts, top-2 recommended.\n", encoding="utf-8"
+    )
+
+    artifact = asyncio.run(
+        growth_marketer_lander(tmp_path / "acme").land(
+            _task("draft 5 posts for social and pick the best to publish"), None
+        )
+    )
+
+    assert artifact.type is ArtifactType.ARTIFACT
+    assert artifact.resource_ref["kind"] == "campaign_content"
+    assert artifact.resource_ref["doc"] == CAMPAIGN_CONTENT_DOC
     assert artifact.resource_ref["present"] is True
 
 

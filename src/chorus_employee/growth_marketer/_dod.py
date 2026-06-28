@@ -9,7 +9,9 @@ just picks the right one for what the beat produced:
 - a **campaign brief** is an :class:`~chorus.outcomes.AgentReview` — a Growth Reviewer checks the
   hypothesis, audience, sample size, and that the copy is on-brand & compliant;
 - a **live send / ad spend** is a :class:`~chorus.outcomes.HumanApproval` — a person approves the
-  spend, the audience, and the final creative (a governance gate, not a quality gate).
+  spend, the audience, and the final creative (a governance gate, not a quality gate);
+- a **content batch** (posts/reels/blogs to publish) is also a :class:`~chorus.outcomes.HumanApproval`
+  — the "swipe" gate over the drafts, since publishing reaches real users on a capped channel.
 
 The action class is inferred from the intent by :func:`classify_action`, shared with the lander so the
 verifier and the landed artifact always agree.
@@ -27,12 +29,17 @@ class ActionClass(StrEnum):
 
     BACKTEST = "backtest"  # offline eval → Command → backtest_report
     BRIEF = "brief"  # a plan/brief → AgentReview → campaign_brief
+    CONTENT = "content"  # a batch of drafts to publish → HumanApproval (swipe) → campaign_content
     LAUNCH = "launch"  # spend / live send → HumanApproval → experiment_launched
 
 
 # Keyword cues, checked most-gated first: a live send or spend dominates (it crosses the human gate),
-# then an offline back-test, else the default reversible deliverable — a reviewed brief.
+# then a content batch to publish (a swipe-gated send), then an offline back-test, else the default
+# reversible deliverable — a reviewed brief.
 _LAUNCH_CUES = ("launch", "send", "spend", "go live", "live send", "ad budget", "allocate budget", "ship")
+_CONTENT_CUES = (
+    "post", "reel", "tweet", "blog", "social", "newsletter", "content", "caption", "publish", "creative",
+)
 _BACKTEST_CUES = ("backtest", "back-test", "holdout", "hold-out", "offline eval", "power calc", "simulate")
 
 _BRIEF_RUBRIC = (
@@ -46,6 +53,8 @@ def classify_action(intent: str) -> ActionClass:
     text = intent.lower()
     if any(cue in text for cue in _LAUNCH_CUES):
         return ActionClass.LAUNCH
+    if any(cue in text for cue in _CONTENT_CUES):
+        return ActionClass.CONTENT
     if any(cue in text for cue in _BACKTEST_CUES):
         return ActionClass.BACKTEST
     return ActionClass.BRIEF
@@ -57,6 +66,9 @@ def growth_marketer_dod(intent: str) -> Verifier:
     if action is ActionClass.LAUNCH:
         # A live send / ad spend is a governance gate, not a quality gate (spec GM §8).
         return Verifier.human_approval(artifact_class="experiment_launched")
+    if action is ActionClass.CONTENT:
+        # The swipe gate: a person accepts/rejects the drafts before any of them publish (§3, §9).
+        return Verifier.human_approval(artifact_class="campaign_content")
     if action is ActionClass.BACKTEST:
         # Offline, verifiable, free: the back-test script is the objective floor (spec GM §8).
         return Verifier.command(

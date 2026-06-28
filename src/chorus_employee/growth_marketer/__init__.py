@@ -7,9 +7,9 @@ thing. This package gathers everything that makes Mira that harness, one compone
 
 - :mod:`._brief`        — Mira's standing identity (the system prompt) + her voice contract.
 - :mod:`._harness`      — the :class:`~chorus.roles.RoleManifest`: every ``build_harness`` component.
-- :mod:`._dod`          — the action-class-aware DoD: Command | AgentReview | HumanApproval.
-- :mod:`._lander`       — lands ``backtest_report`` | ``campaign_brief`` | ``experiment_launched``.
-- :mod:`._routines`     — weekly funnel review · daily experiment watch.
+- :mod:`._dod`          — the action-class-aware DoD: Command | AgentReview | HumanApproval (swipe).
+- :mod:`._lander`       — lands backtest_report | campaign_brief | campaign_content | experiment_launched.
+- :mod:`._routines`     — weekly funnel review · daily experiment watch · daily channel optimize.
 - :mod:`._subagents`    — the five Tier-1 specialist overlays (Segment/Creative/Experiment/Channel/Monitor).
 - :mod:`._integrations` — the trust-scoped WebPlugin grants per subagent (read/write/gated + secret-refs).
 
@@ -26,6 +26,7 @@ from chorus.roles._plugin import RolePlugin
 from chorus_employee.growth_marketer._brief import (
     BACKTEST_REPORT_DOC,
     CAMPAIGN_BRIEF_DOC,
+    CAMPAIGN_CONTENT_DOC,
     EXPERIMENT_LAUNCH_DOC,
     GROWTH_MARKETER_BRIEF,
 )
@@ -62,6 +63,7 @@ def growth_marketer_plugin() -> RolePlugin:
 __all__ = [
     "BACKTEST_REPORT_DOC",
     "CAMPAIGN_BRIEF_DOC",
+    "CAMPAIGN_CONTENT_DOC",
     "EXPERIMENT_LAUNCH_DOC",
     "GROWTH_MARKETER_BRIEF",
     "GROWTH_MARKETER_ROUTINES",

@@ -1,11 +1,13 @@
 """The Growth Marketer's WebPlugin grants — trust-scoped external reach, secret-bound (spec GM §5).
 
 Mira's integrations are the §5 table made concrete: read plugins (warehouse, analytics, brand DAM)
-are cheap and ungated; write-design (experimentation) creates drafts only; the gated plugins (CRM
-send, ad spend) carry a :class:`~chorus.webplugins.SpendCap` and reach the human gate. Auth is always
-a secret *ref* (``ref:warehouse_ro``), never an inline value. ``subagent_grants`` records which
-Tier-1 specialist may reach which plugin — the blast-radius surface is one small, auditable seam:
-only Channel touches a write/spend plugin.
+are cheap and ungated; write-design (experimentation) creates drafts only; the gated plugins reach the
+human gate and carry a cap — a :class:`~chorus.webplugins.SpendCap` where the blast radius is dollars
+(ad spend) or a :class:`~chorus.webplugins.RateCap` where it is frequency (an email list 2 sends/day,
+a Twitter/X account 1 post/day, per Result/Polsia channel limits). Auth is always a secret *ref*
+(``ref:warehouse_ro``), never an inline value. ``subagent_grants`` records which Tier-1 specialist may
+reach which plugin — the blast-radius surface is one small, auditable seam: only Channel touches a
+write/spend/send plugin.
 """
 
 from __future__ import annotations
@@ -13,12 +15,13 @@ from __future__ import annotations
 from chorus.webplugins import (
     Capability,
     PluginKind,
+    RateCap,
     SpendCap,
     WebPlugin,
     WebPluginRegistry,
 )
 
-# The six category integrations (vendors are placeholders for categories — spec GM §5, assumption 4).
+# The category integrations (vendors are placeholders for categories — spec GM §5, assumption 4).
 WAREHOUSE = WebPlugin(
     name="warehouse",
     kind=PluginKind.WAREHOUSE,
@@ -46,7 +49,15 @@ CRM = WebPlugin(
     capability=Capability.SEND,
     auth_ref="ref:crm",
     scope="scoped audience; live send → HumanApproval",
-    spend_cap=SpendCap(per_action_cents=None, daily_cents=None),
+    rate_cap=RateCap(per_day=2),  # frequency-capped, not dollar-capped (a send spends no money)
+)
+SOCIAL = WebPlugin(
+    name="social",
+    kind=PluginKind.SOCIAL,
+    capability=Capability.SEND,
+    auth_ref="ref:social",
+    scope="organic post publishing; swipe-approved → HumanApproval",
+    rate_cap=RateCap(per_day=1),  # one post/day, like the Result/Polsia shared X account
 )
 ADS = WebPlugin(
     name="ads",
@@ -64,7 +75,7 @@ DAM = WebPlugin(
     scope="read-only asset + guideline fetch",
 )
 
-_PLUGINS: tuple[WebPlugin, ...] = (WAREHOUSE, ANALYTICS, EXPERIMENTATION, CRM, ADS, DAM)
+_PLUGINS: tuple[WebPlugin, ...] = (WAREHOUSE, ANALYTICS, EXPERIMENTATION, CRM, SOCIAL, ADS, DAM)
 
 # Which Tier-1 specialist may reach which plugin (spec GM §4/§5). Only Channel holds a gated plugin —
 # the one small, auditable write/spend seam.
@@ -72,13 +83,13 @@ _GRANTS: dict[str, tuple[str, ...]] = {
     "segment": ("warehouse", "analytics"),
     "creative": ("dam",),
     "experiment": ("warehouse", "experimentation"),
-    "channel": ("crm", "ads"),
+    "channel": ("crm", "social", "ads"),
     "monitor": ("analytics", "experimentation"),
 }
 
 
 def growth_marketer_webplugins() -> WebPluginRegistry:
-    """The registry of Mira's six trust-scoped integrations (spec GM §5)."""
+    """The registry of Mira's trust-scoped integrations (spec GM §5)."""
     return WebPluginRegistry.from_plugins(_PLUGINS)
 
 
@@ -93,6 +104,7 @@ __all__ = [
     "CRM",
     "DAM",
     "EXPERIMENTATION",
+    "SOCIAL",
     "WAREHOUSE",
     "growth_marketer_webplugins",
     "subagent_grants",

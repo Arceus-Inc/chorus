@@ -1,10 +1,11 @@
 """The Growth Marketer's outcome lander — "done" means the real artifact landed (spec GM §2, §8).
 
-Mira's outcome is one of three, picked by the beat's action class (the same :func:`classify_action`
+Mira's outcome is one of four, picked by the beat's action class (the same :func:`classify_action`
 the DoD uses, so the verifier and the landed artifact always agree):
 
 - ``backtest`` → a ``backtest_report`` doc (the offline score-and-rank report);
 - ``brief``    → a ``campaign_brief`` doc (the reviewed plan);
+- ``content``  → a ``campaign_content`` artifact (the swipe-approved draft deck that publishes);
 - ``launch``   → an ``experiment_launched`` artifact (the live experiment handle).
 
 It snapshots the assignee's branch-isolated worktree, integrates it into the company ``main`` so the
@@ -25,6 +26,7 @@ from chorus.workspace import CompanyWorkspace
 from chorus_employee.growth_marketer._brief import (
     BACKTEST_REPORT_DOC,
     CAMPAIGN_BRIEF_DOC,
+    CAMPAIGN_CONTENT_DOC,
     EXPERIMENT_LAUNCH_DOC,
 )
 from chorus_employee.growth_marketer._dod import ActionClass, classify_action
@@ -42,6 +44,7 @@ GROWTH_OUTCOME_KIND = "growth_outcome"
 _ARTIFACT_BY_ACTION: dict[ActionClass, tuple[str, str, ArtifactType]] = {
     ActionClass.BACKTEST: ("backtest_report", BACKTEST_REPORT_DOC, ArtifactType.DOC),
     ActionClass.BRIEF: ("campaign_brief", CAMPAIGN_BRIEF_DOC, ArtifactType.DOC),
+    ActionClass.CONTENT: ("campaign_content", CAMPAIGN_CONTENT_DOC, ArtifactType.ARTIFACT),
     ActionClass.LAUNCH: ("experiment_launched", EXPERIMENT_LAUNCH_DOC, ArtifactType.ARTIFACT),
 }
 

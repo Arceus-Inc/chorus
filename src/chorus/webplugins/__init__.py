@@ -6,13 +6,16 @@ kernel surfaces live here:
 - the :class:`WebPlugin` integration layer — a registry of ``(name, kind, capability, auth ref,
   trust scope, spend cap)``, with read ungated and spend/send fail-closed behind a cap;
 - the **branch tournament** / offline-eval outcome — a score-and-rank verifier (:func:`run_tournament`)
-  that ranks N competing variants and selects the top-k, instead of a boolean pass/fail.
+  that ranks N competing variants and selects the top-k, instead of a boolean pass/fail;
+- the **content batch + swipe review** (:func:`swipe_review`) — the fail-closed human accept/reject
+  over a batch of generated drafts before any of them publish ("Tinder for marketing").
 
-Both reuse chorus's existing fail-closed trust + budget ideas; neither touches dream.
+All reuse chorus's existing fail-closed trust + budget ideas; none touch dream.
 """
 
 from __future__ import annotations
 
+from chorus.webplugins._content import Draft, SwipeOutcome, swipe_review
 from chorus.webplugins._outcome import (
     TournamentOutcome,
     Variant,
@@ -24,6 +27,7 @@ from chorus.webplugins._trust import (
     REF_PREFIX,
     Capability,
     PluginKind,
+    RateCap,
     SpendCap,
     is_secret_ref,
 )
@@ -31,8 +35,11 @@ from chorus.webplugins._trust import (
 __all__ = [
     "REF_PREFIX",
     "Capability",
+    "Draft",
     "PluginKind",
+    "RateCap",
     "SpendCap",
+    "SwipeOutcome",
     "TournamentOutcome",
     "Variant",
     "VariantScore",
@@ -40,4 +47,5 @@ __all__ = [
     "WebPluginRegistry",
     "is_secret_ref",
     "run_tournament",
+    "swipe_review",
 ]

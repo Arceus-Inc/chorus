@@ -8,6 +8,7 @@ from chorus.errors import WebPluginConflict, WebPluginInvalid
 from chorus.webplugins import (
     Capability,
     PluginKind,
+    RateCap,
     SpendCap,
     WebPlugin,
     WebPluginRegistry,
@@ -77,15 +78,30 @@ def test_inline_secret_is_rejected() -> None:
         WebPluginRegistry().register(bad)
 
 
-def test_gated_plugin_without_a_spend_cap_is_rejected() -> None:
+def test_gated_plugin_without_any_cap_is_rejected() -> None:
     uncapped = WebPlugin(
         name="ads",
         kind=PluginKind.ADS,
         capability=Capability.SPEND,
-        auth_ref="ref:ads",  # gated but no SpendCap
+        auth_ref="ref:ads",  # gated but neither a SpendCap nor a RateCap
     )
     with pytest.raises(WebPluginInvalid):
         WebPluginRegistry().register(uncapped)
+
+
+def test_gated_send_plugin_with_only_a_rate_cap_is_accepted() -> None:
+    # An organic channel (Twitter/X) sends but spends no money — a frequency cap is enough.
+    social = WebPlugin(
+        name="social",
+        kind=PluginKind.SOCIAL,
+        capability=Capability.SEND,
+        auth_ref="ref:social",
+        rate_cap=RateCap(per_day=1),
+    )
+    reg = WebPluginRegistry()
+    reg.register(social)
+    assert reg.get("social").gated is True
+    assert reg.get("social").rate_cap == RateCap(per_day=1)
 
 
 def test_empty_name_is_rejected() -> None:

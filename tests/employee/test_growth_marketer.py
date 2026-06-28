@@ -27,7 +27,11 @@ def test_plugin_is_a_metric_owning_role_with_routines() -> None:
     assert plugin.manifest.system_prompt  # a real operating brief
     assert "write_file" in plugin.manifest.tools and "read_file" in plugin.manifest.tools
     keys = {r.routine_key for r in plugin.declared_routines}
-    assert keys == {"growth-weekly-funnel-review", "growth-daily-experiment-watch"}
+    assert keys == {
+        "growth-weekly-funnel-review",
+        "growth-daily-experiment-watch",
+        "growth-daily-channel-optimize",
+    }
 
 
 def test_registers_cleanly_alongside_the_v0_roster() -> None:
@@ -45,6 +49,8 @@ def test_registers_cleanly_alongside_the_v0_roster() -> None:
     [
         ("run a backtest of 6 subject-line variants", ActionClass.BACKTEST, DoDKind.COMMAND),
         ("draft a campaign brief to lift activation", ActionClass.BRIEF, DoDKind.AGENT_REVIEW),
+        ("draft 5 posts for social this week", ActionClass.CONTENT, DoDKind.HUMAN_APPROVAL),
+        ("write a blog post and a newsletter", ActionClass.CONTENT, DoDKind.HUMAN_APPROVAL),
         ("launch the live A/B test and send to 40k users", ActionClass.LAUNCH, DoDKind.HUMAN_APPROVAL),
         ("allocate ad budget to the winning set", ActionClass.LAUNCH, DoDKind.HUMAN_APPROVAL),
     ],
@@ -69,11 +75,23 @@ def test_dod_generator_returns_a_typed_verifier_for_the_probe_intent() -> None:
 
 def test_integrations_are_secret_bound_and_gated_correctly() -> None:
     reg = growth_marketer_webplugins()
-    assert set(reg.names()) == {"warehouse", "analytics", "experimentation", "crm", "ads", "dam"}
+    assert set(reg.names()) == {
+        "warehouse", "analytics", "experimentation", "crm", "social", "ads", "dam",
+    }
     # reads are ungated; spend/send are gated and carry a cap (validated at registration).
     assert reg.get("warehouse").gated is False
     assert reg.get("ads").gated is True and reg.get("ads").spend_cap is not None
     assert reg.get("ads").capability is Capability.SPEND
+    # organic channels are SEND-gated but frequency-capped, not dollar-capped.
+    assert reg.get("social").capability is Capability.SEND
+    assert reg.get("social").spend_cap is None and reg.get("social").rate_cap is not None
+    assert reg.get("crm").rate_cap is not None
+    # every gated plugin carries at least one cap.
+    assert all(
+        reg.get(n).spend_cap is not None or reg.get(n).rate_cap is not None
+        for n in reg.names()
+        if reg.get(n).gated
+    )
     # every auth is a ref handle, never inline.
     assert all(reg.get(n).auth_ref.startswith("ref:") for n in reg.names())
 
@@ -85,6 +103,12 @@ def test_only_channel_holds_a_write_or_spend_grant() -> None:
         sub for sub, names in grants.items() if any(reg.get(n).gated for n in names)
     }
     assert gated_holders == {"channel"}
+
+
+def test_content_batch_is_a_swipe_gated_human_approval() -> None:
+    verifier = growth_marketer_dod("draft a batch of tweets and pick the best to publish")
+    assert verifier.kind is DoDKind.HUMAN_APPROVAL
+    assert verifier.artifact_class == "campaign_content"
 
 
 def test_subagents_cover_the_five_specialists() -> None:
