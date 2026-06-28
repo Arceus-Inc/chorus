@@ -89,6 +89,19 @@ def test_gated_plugin_without_any_cap_is_rejected() -> None:
         WebPluginRegistry().register(uncapped)
 
 
+def test_gated_plugin_with_an_all_none_spend_cap_is_rejected() -> None:
+    # An all-None SpendCap is structurally present but enforces nothing — it must not pass the gate.
+    hollow = WebPlugin(
+        name="crm",
+        kind=PluginKind.EMAIL_CRM,
+        capability=Capability.SEND,
+        auth_ref="ref:crm",
+        spend_cap=SpendCap(per_action_cents=None, daily_cents=None),
+    )
+    with pytest.raises(WebPluginInvalid):
+        WebPluginRegistry().register(hollow)
+
+
 def test_gated_send_plugin_with_only_a_rate_cap_is_accepted() -> None:
     # An organic channel (Twitter/X) sends but spends no money — a frequency cap is enough.
     social = WebPlugin(

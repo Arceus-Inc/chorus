@@ -71,6 +71,15 @@ class SpendCap:
         """Whether a single action of ``action_cents`` is within the per-action ceiling."""
         return self.per_action_cents is None or action_cents <= self.per_action_cents
 
+    @property
+    def bounded(self) -> bool:
+        """True iff this cap actually constrains spend — at least one ceiling is set.
+
+        An all-``None`` ``SpendCap`` is structurally present but enforces nothing, so the registry
+        treats it as *uncapped* (a gated plugin needs a real bound, not a hollow one).
+        """
+        return self.per_action_cents is not None or self.daily_cents is not None
+
 
 @dataclass(frozen=True)
 class RateCap:
@@ -91,6 +100,11 @@ class RateCap:
     def allows(self, *, sent_today: int) -> bool:
         """Whether one more send is within today's frequency ceiling."""
         return self.per_day is None or sent_today < self.per_day
+
+    @property
+    def bounded(self) -> bool:
+        """True iff this cap actually constrains volume — a per-day ceiling is set."""
+        return self.per_day is not None
 
 
 def is_secret_ref(value: str) -> bool:

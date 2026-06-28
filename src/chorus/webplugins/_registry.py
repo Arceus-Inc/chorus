@@ -107,10 +107,13 @@ class WebPluginRegistry:
                 f"web plugin {plugin.name!r} auth must bind a ref: handle, not an inline value "
                 f"(got {plugin.auth_ref!r})"
             )
-        if plugin.gated and plugin.spend_cap is None and plugin.rate_cap is None:
+        spend_bounded = plugin.spend_cap is not None and plugin.spend_cap.bounded
+        rate_bounded = plugin.rate_cap is not None and plugin.rate_cap.bounded
+        if plugin.gated and not (spend_bounded or rate_bounded):
             raise WebPluginInvalid(
-                f"gated web plugin {plugin.name!r} ({plugin.capability}) must carry a SpendCap or "
-                "a RateCap — a spend/send can never be unbounded"
+                f"gated web plugin {plugin.name!r} ({plugin.capability}) must carry a bounded "
+                "SpendCap or RateCap — a spend/send can never be unbounded (an all-None cap does "
+                "not count)"
             )
 
 

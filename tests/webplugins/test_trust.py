@@ -55,3 +55,11 @@ def test_rate_cap_with_no_per_day_limit_allows_anything() -> None:
 def test_rate_cap_rejects_negative_limits() -> None:
     with pytest.raises(ValueError):
         RateCap(per_day=-1)
+
+
+def test_bounded_reflects_whether_a_cap_actually_constrains() -> None:
+    assert SpendCap(per_action_cents=None, daily_cents=None).bounded is False  # hollow
+    assert SpendCap(daily_cents=100).bounded is True
+    assert SpendCap(per_action_cents=100).bounded is True
+    assert RateCap().bounded is False
+    assert RateCap(per_day=1).bounded is True
