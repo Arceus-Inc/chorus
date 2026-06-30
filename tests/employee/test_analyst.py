@@ -92,10 +92,19 @@ def test_analyst_subagent_tools_are_a_subset_of_the_analyst() -> None:
     parent_tools = set(manifest.tools)
     for sa in manifest.subagents:
         assert set(sa.tools) <= parent_tools, f"subagent {sa.name!r} widens beyond the Analyst"
-    # The critic may read and recompute (read_file + run_command) but must not write the deliverable.
+    # The critic may read and recompute (read/query/notebook) but must not write the deliverable.
     critic = next(sa for sa in manifest.subagents if sa.name == "critic")
-    assert set(critic.tools) == {"read_file", "run_command"}
+    assert "read_file" in critic.tools and "notebook_run" in critic.tools
     assert "write_file" not in critic.tools
+
+
+def test_analyst_data_subagents_carry_the_analysis_tools() -> None:
+    """The data/modeling specialists can pull from the warehouse and compute in the notebook."""
+    manifest = analyst_plugin().manifest
+    data = next(sa for sa in manifest.subagents if sa.name == "data")
+    modeling = next(sa for sa in manifest.subagents if sa.name == "modeling")
+    assert "warehouse_query" in data.tools and "notebook_run" in data.tools
+    assert "notebook_run" in modeling.tools and "chart_render" in modeling.tools
 
 
 def test_analyst_beat_config_carries_the_subagents() -> None:

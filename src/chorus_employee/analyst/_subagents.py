@@ -20,31 +20,32 @@ ANALYST_SUBAGENTS: tuple[SubagentSpec, ...] = (
         name="data",
         description=(
             "Load, clean, and shape the dataset. You work in the analyst's working directory where the "
-            "source files live: use read_file to inspect them, then write and run a small Python script "
-            "(pandas/numpy) with run_command to produce the base tables — typed columns, derived rates, "
-            "group-bys. Print and return the computed numbers, not prose."
+            "source files live: use `repo_search`/`read_file` to find them, `warehouse_query` to pull "
+            "from the SQL warehouse, and `notebook_run` (pandas) to produce the base tables — typed "
+            "columns, derived rates, group-bys, joins. Return the computed numbers, not prose."
         ),
-        tools=("read_file", "run_command"),
+        tools=("read_file", "repo_search", "warehouse_query", "notebook_run", "run_command"),
     ),
     SubagentSpec(
         name="modeling",
         description=(
-            "Compute statistics and fit simple models — correlations, regressions/trends, aggregates. "
-            "You work in the analyst's working directory: read the data with read_file, then write and "
-            "run a focused Python script with run_command and report the exact numeric results."
+            "Compute statistics and fit simple models — correlations, regressions/trends, aggregates — "
+            "and visualise them. You work in the analyst's working directory: read the data, compute "
+            "with `notebook_run` (pandas/numpy), render a chart with `chart_render` if it helps, and "
+            "report the exact numeric results."
         ),
-        tools=("read_file", "run_command"),
+        tools=("read_file", "warehouse_query", "notebook_run", "chart_render", "run_command"),
     ),
     SubagentSpec(
         name="critic",
         description=(
             "Independently red-team the analysis. You work in the same directory as the data and the "
-            "analysis script: read the source file(s) and `analysis.py` with read_file, then write and "
-            "run your OWN short verification script with run_command to recompute the key numbers from "
-            "scratch. Report whether each figure matches, with exact recomputed values, and flag any "
-            "discrepancy, arithmetic slip, or unsupported claim. Do not write the findings doc."
+            "analysis: read the source file(s) with `read_file`, then independently recompute the key "
+            "numbers from scratch with `notebook_run` (or a `run_command` script). Report whether each "
+            "figure matches, with exact recomputed values, and flag any discrepancy, arithmetic slip, "
+            "or unsupported claim. Do not write the findings doc."
         ),
-        tools=("read_file", "run_command"),
+        tools=("read_file", "warehouse_query", "notebook_run", "run_command"),
     ),
     SubagentSpec(
         name="narrative",
