@@ -36,7 +36,13 @@ from chorus.workforce import Employee
 from chorus.workspace import CompanyWorkspace, default_work_root
 from chorus_employee import default_landers
 from chorus_harness._trust import apply_trust
-from chorus_tools import AssignTaskTool, DecomposeTool, SubmitTaskTool, SubmitVerdictTool
+from chorus_tools import (
+    AssignTaskTool,
+    DecomposeTool,
+    SubmitTaskTool,
+    SubmitVerdictTool,
+    analysis_tool,
+)
 
 if TYPE_CHECKING:
     from chorus.ledger import SqliteLedger
@@ -63,6 +69,12 @@ _CHORUS_TO_DREAM_TOOL: dict[str, str] = {
     "working_memory_write": "working_memory_write",
     "working_memory_append": "working_memory_append",
     "memory_propose": "memory_propose",
+    # Analyst analysis tools (chorus-defined dream BaseTools; identity-mapped so dream_tool_names keeps
+    # them and the subagent projection can intersect them — they are registered from ``analysis_tool``).
+    "warehouse_query": "warehouse_query",
+    "repo_search": "repo_search",
+    "notebook_run": "notebook_run",
+    "chart_render": "chart_render",
 }
 
 _READ_ONLY_DREAM_SURFACE_TOOLS = frozenset(
@@ -411,6 +423,13 @@ class EmployeeHarnessFactory:
                 capability = _capability_tool(name, self._ledger)
                 if capability is not None:
                     registry.register(capability, source=ToolSource.DEFAULT)
+        # Analysis tools (ledger-free, worktree-scoped): warehouse_query / repo_search / notebook_run /
+        # chart_render. The generator runs tools=null, so registering them here is enough for the model
+        # to see and call them; they are not dream built-ins, so _role_registry skipped them above.
+        for name in config.tools:
+            atool = analysis_tool(name)
+            if atool is not None and registry.get(name) is None:
+                registry.register(atool, source=ToolSource.DEFAULT)
 
         # Every build_harness knob comes from the role config — this is where the employee *becomes*
         # its harness. config.model overrides the deployment when set; an empty role env means None.

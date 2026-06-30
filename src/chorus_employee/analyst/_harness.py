@@ -32,10 +32,16 @@ def analyst_manifest() -> RoleManifest:
         # — build_harness(registry=…) —
         # read evidence, run analysis code, persist findings, and keep working notes. Deliberately NO
         # ``git`` — the Analyst writes only its worktree; the lander commits the finding, not the model.
+        # The analysis tools (warehouse_query / repo_search / notebook_run / chart_render) are chorus
+        # dream-BaseTools registered by the composition root when listed here.
         tools=(
             "read_file",
             "write_file",
             "run_command",
+            "repo_search",
+            "warehouse_query",
+            "notebook_run",
+            "chart_render",
             "memory_search",
             "memory_get",
             "working_memory_read",

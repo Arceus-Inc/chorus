@@ -8,24 +8,36 @@ dream ``BaseTool`` wrapping a dream-free chorus service. The dream import lives 
 
 from __future__ import annotations
 
+from chorus_tools._analysis import (
+    ChartRenderTool,
+    NotebookRunTool,
+    RepoSearchTool,
+    WarehouseQueryTool,
+    analysis_tool,
+)
 from chorus_tools._decompose import DecomposeInput, DecomposeTool
 from chorus_tools._manager_actions import (
-	AssignTaskInput,
-	AssignTaskTool,
-	SubmitTaskInput,
-	SubmitTaskTool,
+        AssignTaskInput,
+        AssignTaskTool,
+        SubmitTaskInput,
+        SubmitTaskTool,
 )
 from chorus_tools._registry import chorus_tool_registry
 from chorus_tools._submit_verdict import SubmitVerdictInput, SubmitVerdictTool
 
 __all__ = [
-	"AssignTaskInput",
-	"AssignTaskTool",
-	"DecomposeInput",
-	"DecomposeTool",
-	"SubmitTaskInput",
-	"SubmitTaskTool",
-	"SubmitVerdictInput",
-	"SubmitVerdictTool",
-	"chorus_tool_registry",
+        "AssignTaskInput",
+        "AssignTaskTool",
+        "ChartRenderTool",
+        "DecomposeInput",
+        "DecomposeTool",
+        "NotebookRunTool",
+        "RepoSearchTool",
+        "SubmitTaskInput",
+        "SubmitTaskTool",
+        "SubmitVerdictInput",
+        "SubmitVerdictTool",
+        "WarehouseQueryTool",
+        "analysis_tool",
+        "chorus_tool_registry",
 ]

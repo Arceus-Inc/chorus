@@ -9,11 +9,14 @@ from __future__ import annotations
 from chorus.outcomes import Verifier
 
 _RUBRIC = (
-    "Judge ONLY the findings file (findings.md) as a finished artifact. PASS it when it is present, "
+    "You are judging a FINISHED artifact: the file `findings.md` produced by an analyst. Use "
+    "`read_file` to read `findings.md` (you have read_file). PASS it when `findings.md` is present, "
     "non-empty, and answers every part of the task's question with specific, numeric, evidence-backed "
-    "conclusions consistent with the data. Do NOT require re-running code, re-spawning subagents, "
-    "command/STDOUT logs, or any other process evidence — you are read-only and the committed artifact "
-    "IS the evidence. Fail only if an answer is missing, vague, or contradicts the data."
+    "conclusions that are internally consistent. You are read-only by design: you do NOT have, and do "
+    "NOT need, warehouse_query / notebook_run / a shell / subagents, and you must NOT require re-running "
+    "queries, re-executing code, STDOUT logs, regenerated charts, or any other process evidence — the "
+    "committed `findings.md` IS the evidence. Never claim you cannot verify: read the file and assess "
+    "its content. FAIL only if `findings.md` is missing, an answer is absent, vague, or self-contradictory."
 )
 
 
