@@ -1,0 +1,86 @@
+"""The Analyst employee config — a complete dream harness, every component declared.
+
+These tests pin the Analyst as a research role that **reads broadly, runs analysis code in its own
+worktree, and writes a findings doc** — and that its authority stays narrow: no ``git``, no
+network/system-of-record writes. They also assert the Analyst the kernel registers by default is
+exactly the one defined here (single source — no drift between the two).
+"""
+
+from __future__ import annotations
+
+import pytest
+
+from chorus.roles import default_roles, role_beat_config
+from chorus_employee import default_employees
+from chorus_employee.analyst import analyst_plugin
+
+pytestmark = pytest.mark.unit
+
+
+def test_analyst_declares_its_analysis_toolset() -> None:
+    manifest = analyst_plugin().manifest
+    # Capability components: read evidence, run analysis code, persist findings, keep working notes.
+    assert manifest.tools == (
+        "read_file",
+        "write_file",
+        "run_command",
+        "memory_search",
+        "memory_get",
+        "working_memory_read",
+        "working_memory_write",
+        "working_memory_append",
+    )
+    assert manifest.permission_mode.value == "acceptEdits"  # writes its findings under its own posture
+    assert manifest.memory_scope.value == "project"
+    assert manifest.system_prompt  # a real operating brief, not a placeholder
+
+
+def test_analyst_authority_stays_narrow() -> None:
+    """Read the world, write only the worktree: no commit/push, no system-of-record writes."""
+    manifest = analyst_plugin().manifest
+    assert "git" not in manifest.tools  # the lander commits the finding, never the model
+    # Engine scalars — a real investigation is multi-step and multi-sprint.
+    assert manifest.working_memory is True  # an in-task scratchpad across turns
+    assert manifest.max_turns >= 8  # deeper than dream's default for read→script→run→conclude
+    assert manifest.max_sprints > 1  # one beat runs the investigation to a finding
+    assert manifest.model is None  # uses the deployment model the composition root supplies
+    assert manifest.mcp is False and manifest.plugins is False  # opt-in surfaces, off by default
+
+
+def test_analyst_runs_code_in_an_unrestricted_worktree_sandbox() -> None:
+    """It must run analysis commands (python, etc.); dream otherwise gates non-path commands."""
+    manifest = analyst_plugin().manifest
+    assert manifest.sandbox.value == "unrestricted"
+    assert manifest.isolation.value == "worktree"  # confined to its own branch-isolated tree
+
+
+def test_analyst_projects_to_a_beat_config_carrying_the_scalars() -> None:
+    config = role_beat_config(analyst_plugin().manifest)
+    assert "run_command" in config.tools
+    assert "working_memory_write" in config.tools
+    assert "git" not in config.tools
+    assert config.permission_mode == "acceptEdits"
+    assert config.working_memory is True
+    assert config.max_sprints > 1
+    assert config.sandbox == "unrestricted"
+
+
+def test_analyst_ships_its_dod_and_outcome() -> None:
+    plugin = analyst_plugin()
+    assert plugin.name == "analyst"
+    assert plugin.outcome_kind == "finding"
+    verifier = plugin.dod_generator("analyse the churn data")
+    assert verifier is not None  # a typed Verifier, not None/str
+    assert verifier.artifact_class == "finding"
+
+
+def test_default_roles_sources_the_analyst_from_its_package() -> None:
+    # The kernel's default analyst IS the one defined in chorus_employee (single source).
+    kernel_analyst = next(r for r in default_roles() if r.name == "analyst")
+    assert kernel_analyst.manifest == analyst_plugin().manifest
+
+
+def test_default_employees_includes_the_analyst_plus_the_rest() -> None:
+    names = {r.name for r in default_employees()}
+    assert "analyst" in names
+    assert {"engineer", "reviewer", "manager", "pm"} <= names

@@ -14,10 +14,14 @@ ANALYST_FINDINGS_DOC = "findings.md"
 ANALYST_BRIEF = (
     "You are an analyst. Investigate the question the task poses and write up what you found — the "
     "answer, the evidence behind it, and the implication. Read the available material first with "
-    f"`read_file`, then write your findings to a single file named `{ANALYST_FINDINGS_DOC}` in your "
-    "working directory using `write_file`; that file IS your deliverable, so it must be present and "
-    "non-empty. State concrete findings a Reviewer can check against the question, not a restatement "
-    "of the prompt."
+    "`read_file`. When the question needs computation, write a small analysis script in your working "
+    "directory and run it with `run_command` (e.g. a Python script), then read its output back before "
+    "drawing any conclusion — never assert a number you did not compute. Keep working notes across "
+    "steps with the working-memory tools so a multi-step investigation stays coherent. Then write your "
+    f"findings to a single file named `{ANALYST_FINDINGS_DOC}` in your working directory using "
+    "`write_file`; that file IS your deliverable, so it must be present and non-empty. State concrete, "
+    "evidence-backed findings a Reviewer can check against the question, not a restatement of the "
+    "prompt. Do not commit, push, or change anything outside your working directory."
 )
 
 __all__ = ["ANALYST_BRIEF", "ANALYST_FINDINGS_DOC"]
