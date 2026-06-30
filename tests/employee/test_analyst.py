@@ -28,6 +28,7 @@ def test_analyst_declares_its_analysis_toolset() -> None:
         "warehouse_query",
         "notebook_run",
         "chart_render",
+        "skill",
         "memory_search",
         "memory_get",
         "working_memory_read",
@@ -100,6 +101,25 @@ def test_analyst_subagent_tools_are_a_subset_of_the_analyst() -> None:
 def test_analyst_beat_config_carries_the_subagents() -> None:
     config = role_beat_config(analyst_plugin().manifest)
     assert {sa.name for sa in config.subagents} >= {"data", "critic"}
+
+
+def test_analyst_declares_authored_skills() -> None:
+    manifest = analyst_plugin().manifest
+    assert set(manifest.skills) >= {"exploratory-data-analysis", "sql-investigation", "trend-and-correlation"}
+    assert manifest.skills_root is not None
+    assert "skill" in manifest.tools  # the skill tool must be present to load skill bodies
+
+
+def test_analyst_skills_root_holds_valid_skill_files() -> None:
+    """Every declared skill resolves to a discoverable SKILL.md with valid frontmatter."""
+    from pathlib import Path
+
+    from dream.skills import load_skill_registry
+
+    manifest = analyst_plugin().manifest
+    registry, _shadows = load_skill_registry(project_dirs=[Path(manifest.skills_root)])
+    discovered = {m.name for m in registry.list_meta()}
+    assert set(manifest.skills) <= discovered
 
 
 def test_default_roles_sources_the_analyst_from_its_package() -> None:

@@ -10,6 +10,8 @@ drives.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from chorus.roles._manifest import (
     Isolation,
     MemoryScope,
@@ -19,6 +21,8 @@ from chorus.roles._manifest import (
 )
 from chorus_employee.analyst._brief import ANALYST_BRIEF
 from chorus_employee.analyst._subagents import ANALYST_SUBAGENTS
+
+_SKILLS_ROOT = str(Path(__file__).parent / "skills")
 
 
 def analyst_manifest() -> RoleManifest:
@@ -42,6 +46,7 @@ def analyst_manifest() -> RoleManifest:
             "warehouse_query",
             "notebook_run",
             "chart_render",
+            "skill",
             "memory_search",
             "memory_get",
             "working_memory_read",
@@ -70,6 +75,14 @@ def analyst_manifest() -> RoleManifest:
         # — build_harness(subagents=…) — Tier-1 specialists the Analyst may dispatch mid-beat. Each
         # subagent's tools are a subset of the Analyst's toolset (intersected at materialize).
         subagents=ANALYST_SUBAGENTS,
+        # — build_harness(skill_registry=…) — the Analyst's authored playbooks (EDA, SQL investigation,
+        # trend & correlation), discovered from this package's ``skills/`` dir and offered via `skill`.
+        skills=(
+            "exploratory-data-analysis",
+            "sql-investigation",
+            "trend-and-correlation",
+        ),
+        skills_root=_SKILLS_ROOT,
     )
 
 

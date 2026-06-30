@@ -49,6 +49,8 @@ class RoleBeatConfig:
     # Tier-1 role-owned subagents (dream-free specs); the composition root projects these onto dream's
     # ``SubagentSet`` and passes it to ``build_harness(subagents=…)``.
     subagents: tuple[SubagentSpec, ...] = ()
+    # Filesystem dir of this role's ``<slug>/SKILL.md`` playbooks (None = no role skills).
+    skills_root: str | None = None
 
 
 def role_beat_config(manifest: RoleManifest) -> RoleBeatConfig:
@@ -70,6 +72,7 @@ def role_beat_config(manifest: RoleManifest) -> RoleBeatConfig:
         plugins=manifest.plugins,
         env=manifest.env,
         subagents=manifest.subagents,
+        skills_root=manifest.skills_root,
     )
 
 
