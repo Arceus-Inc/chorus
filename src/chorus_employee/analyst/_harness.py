@@ -45,8 +45,9 @@ def analyst_manifest() -> RoleManifest:
         memory_scope=MemoryScope.PROJECT,
         working_memory=True,  # an in-task scratchpad to carry analysis state across turns
         # — build_harness(max_turns=…) —
-        # analysis is multi-step (read → script → run → read output → conclude); a deeper budget than 8.
-        max_turns=12,
+        # analysis is multi-step (read → script → run → read output → conclude), and a real
+        # investigation may need a couple of script fixes within one sprint; give it headroom.
+        max_turns=16,
         # — per-beat sprint budget (spec 05) —
         # a real investigation rarely lands in one sprint; widen so one Analyst beat runs to a finding
         # instead of stopping after the first sprint with `needs-changes` and waiting on re-dispatch.
