@@ -21,6 +21,8 @@ from typing import TYPE_CHECKING, Literal
 
 import dream
 from dream.roles import default_role_manifest
+from dream.subagents import Subagent, SubagentSet
+from dream.subagents._projection import build_subagent_set
 from dream.tools._base import BaseTool
 from dream.tools._registry import ToolRegistry, ToolSource
 from dream.tools.builtin import default_registry
@@ -87,6 +89,32 @@ def _role_registry(dream_names: tuple[str, ...]) -> ToolRegistry:
         if tool is not None:
             registry.register(tool, source=ToolSource.DEFAULT)
     return registry
+
+
+def _subagent_set(config: RoleBeatConfig) -> SubagentSet | None:
+    """Project a role's chorus :class:`SubagentSpec`s onto a dream :class:`SubagentSet` (Tier-1).
+
+    Each spec's chorus tool names are mapped to dream names and intersected with the parent role's
+    own dream toolset, so a subagent can only ever *narrow* capability, never widen it (spec 06
+    §minimisation). Returns ``None`` when the role declares no subagents, so the harness's tool surface
+    stays byte-identical (``build_harness`` registers ``spawn_subagent`` only when a set is supplied).
+    """
+    if not config.subagents:
+        return None
+    parent_tools = frozenset(dream_tool_names(config.tools))
+    agents: list[Subagent] = []
+    for spec in config.subagents:
+        tools = tuple(t for t in dream_tool_names(spec.tools) if t in parent_tools)
+        agents.append(
+            Subagent(
+                name=spec.name,
+                description=spec.description,
+                tools=tools,
+                model=spec.model,
+                max_turns=spec.max_turns,
+            )
+        )
+    return build_subagent_set(tier1_agents=agents, parent_tools=parent_tools)
 
 
 def _capability_tool(name: str, ledger: SqliteLedger) -> BaseTool | None:
@@ -400,6 +428,9 @@ class EmployeeHarnessFactory:
             plugins=config.plugins,
             wake_model=config.wake_model,
             env=dict(config.env) or None,
+            # Tier-1 role-owned subagents the employee may dispatch mid-beat (None when none declared,
+            # keeping the tool surface byte-identical for roles without a swarm).
+            subagents=_subagent_set(config),
         )
         return EmployeeHarness(
             runner=DreamBeatRunner(

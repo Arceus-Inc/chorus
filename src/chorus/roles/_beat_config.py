@@ -13,6 +13,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from chorus.roles._manifest import RoleManifest
+from chorus.roles._subagent import SubagentSpec
 
 
 @dataclass(frozen=True)
@@ -45,6 +46,9 @@ class RoleBeatConfig:
     mcp: bool = False
     plugins: bool = False
     env: tuple[tuple[str, str], ...] = ()
+    # Tier-1 role-owned subagents (dream-free specs); the composition root projects these onto dream's
+    # ``SubagentSet`` and passes it to ``build_harness(subagents=…)``.
+    subagents: tuple[SubagentSpec, ...] = ()
 
 
 def role_beat_config(manifest: RoleManifest) -> RoleBeatConfig:
@@ -65,6 +69,7 @@ def role_beat_config(manifest: RoleManifest) -> RoleBeatConfig:
         mcp=manifest.mcp,
         plugins=manifest.plugins,
         env=manifest.env,
+        subagents=manifest.subagents,
     )
 
 

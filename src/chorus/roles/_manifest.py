@@ -17,6 +17,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import StrEnum
 
+from chorus.roles._subagent import SubagentSpec
+
 
 class PermissionMode(StrEnum):
     """Permission gate posture (subset of dream's; no ``bypassPermissions``)."""
@@ -93,6 +95,10 @@ class RoleManifest:
     mcp: bool = False  # admit the working dir's MCP allowlist (opt-in)
     plugins: bool = False  # load the working dir's repo-local plugins (opt-in)
     env: tuple[tuple[str, str], ...] = ()  # host-resolution env (e.g. DREAM_HOME); never secrets
+    # — build_harness(subagents=…) — Tier-1 role-owned subagents the employee may dispatch mid-beat
+    # (dream's ``spawn_subagent``). Each subagent's tools are intersected with this role's toolset at
+    # materialize, so a subagent can only ever narrow capability, never widen it (spec 06 §minimisation).
+    subagents: tuple[SubagentSpec, ...] = ()
 
 
 __all__ = [

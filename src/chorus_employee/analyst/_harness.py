@@ -18,6 +18,7 @@ from chorus.roles._manifest import (
     SandboxTier,
 )
 from chorus_employee.analyst._brief import ANALYST_BRIEF
+from chorus_employee.analyst._subagents import ANALYST_SUBAGENTS
 
 
 def analyst_manifest() -> RoleManifest:
@@ -60,6 +61,9 @@ def analyst_manifest() -> RoleManifest:
         # dream's credential guard, command-deny list, and worktree confinement still apply, and the
         # toolset carries no ``git`` — so "read the world, write only my worktree" holds.
         sandbox=SandboxTier.UNRESTRICTED,
+        # — build_harness(subagents=…) — Tier-1 specialists the Analyst may dispatch mid-beat. Each
+        # subagent's tools are a subset of the Analyst's toolset (intersected at materialize).
+        subagents=ANALYST_SUBAGENTS,
     )
 
 

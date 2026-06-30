@@ -74,6 +74,30 @@ def test_analyst_ships_its_dod_and_outcome() -> None:
     assert verifier.artifact_class == "finding"
 
 
+def test_analyst_declares_a_tier1_subagent_swarm() -> None:
+    """The Analyst owns specialist subagents it can dispatch mid-beat (data/modeling/critic/narrative)."""
+    manifest = analyst_plugin().manifest
+    names = {sa.name for sa in manifest.subagents}
+    assert {"data", "modeling", "critic", "narrative"} <= names
+
+
+def test_analyst_subagent_tools_are_a_subset_of_the_analyst() -> None:
+    """Capability minimisation: a subagent can only ever narrow the parent's toolset, never widen it."""
+    manifest = analyst_plugin().manifest
+    parent_tools = set(manifest.tools)
+    for sa in manifest.subagents:
+        assert set(sa.tools) <= parent_tools, f"subagent {sa.name!r} widens beyond the Analyst"
+    # The critic may read and recompute (read_file + run_command) but must not write the deliverable.
+    critic = next(sa for sa in manifest.subagents if sa.name == "critic")
+    assert set(critic.tools) == {"read_file", "run_command"}
+    assert "write_file" not in critic.tools
+
+
+def test_analyst_beat_config_carries_the_subagents() -> None:
+    config = role_beat_config(analyst_plugin().manifest)
+    assert {sa.name for sa in config.subagents} >= {"data", "critic"}
+
+
 def test_default_roles_sources_the_analyst_from_its_package() -> None:
     # The kernel's default analyst IS the one defined in chorus_employee (single source).
     kernel_analyst = next(r for r in default_roles() if r.name == "analyst")

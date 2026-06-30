@@ -9,8 +9,11 @@ from __future__ import annotations
 from chorus.outcomes import Verifier
 
 _RUBRIC = (
-    "the findings answer the task's question with concrete, evidence-backed conclusions; they are "
-    "present, non-empty, and specific rather than a restatement of the prompt"
+    "Judge ONLY the findings file (findings.md) as a finished artifact. PASS it when it is present, "
+    "non-empty, and answers every part of the task's question with specific, numeric, evidence-backed "
+    "conclusions consistent with the data. Do NOT require re-running code, re-spawning subagents, "
+    "command/STDOUT logs, or any other process evidence — you are read-only and the committed artifact "
+    "IS the evidence. Fail only if an answer is missing, vague, or contradicts the data."
 )
 
 
