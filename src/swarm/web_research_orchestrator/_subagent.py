@@ -25,9 +25,10 @@ WEB_RESEARCH_ORCHESTRATOR = SubagentSpec(
     name="web_research",
     description=_WEB_RESEARCH_BRIEF,
     tools=WEB_RESEARCH_SUBAGENT_TOOLS,
-    # Research is turn-hungry: 2-5 sub-questions, each a search->extract->cross-check cycle, plus
-    # the saturation ladder. 16 leaves room for a real sweep without running unbounded.
-    max_turns=16,
+    # Research is turn-hungry: a search->extract->cross-check cycle per sub-question, plus the
+    # saturation ladder. 10 keeps a focused sweep well within a parent beat's ~300s lease (a broad,
+    # many-sub-question sweep at 16 blew it) while still allowing real triangulation.
+    max_turns=10,
     # Runtime-enforced return contract: the brief instructs the JSON shape (soft); this makes it hard
     # — the inline executor validates + repair-loops + fails open with a warning (WebResearchOutput).
     output_schema=web_research_output_schema(),
