@@ -21,6 +21,8 @@ from typing import TYPE_CHECKING, Literal
 
 import dream
 from dream.roles import default_role_manifest
+from dream.subagents import Subagent, SubagentSet
+from dream.subagents._projection import build_subagent_set
 from dream.tools._base import BaseTool
 from dream.tools._registry import ToolRegistry, ToolSource
 from dream.tools.builtin import default_registry
@@ -28,7 +30,7 @@ from dream.tools.builtin import default_registry
 from chorus.adapters import DreamBeatRunner, TokenPricing
 from chorus.heartbeat import BeatRunner, IntegrateContextPacket
 from chorus.outcomes import LanderRegistry
-from chorus.roles import RoleBeatConfig, RoleRegistry, role_beat_config
+from chorus.roles import RoleBeatConfig, RoleRegistry, SubagentDecl, role_beat_config
 from chorus.trust import TrustPolicy
 from chorus.workforce import Employee
 from chorus.workspace import CompanyWorkspace, default_work_root
@@ -61,6 +63,7 @@ _CHORUS_TO_DREAM_TOOL: dict[str, str] = {
     "working_memory_write": "working_memory_write",
     "working_memory_append": "working_memory_append",
     "memory_propose": "memory_propose",
+    "spawn_subagent": "spawn_subagent",
 }
 
 _READ_ONLY_DREAM_SURFACE_TOOLS = frozenset(
@@ -76,6 +79,27 @@ _READ_ONLY_DREAM_SURFACE_TOOLS = frozenset(
 def dream_tool_names(chorus_tools: tuple[str, ...]) -> tuple[str, ...]:
     """Map a role's chorus tool allow-list to dream built-in names, dropping chorus-only tools."""
     return tuple(_CHORUS_TO_DREAM_TOOL[name] for name in chorus_tools if name in _CHORUS_TO_DREAM_TOOL)
+
+
+def _project_subagents(decls: tuple[SubagentDecl, ...]) -> SubagentSet | None:
+    """Project chorus SubagentDecl declarations into dream's SubagentSet.
+
+    Returns None when the role declares no subagents (the common case — most roles don't spawn).
+    """
+    if not decls:
+        return None
+    agents = [
+        Subagent(
+            name=d.name,
+            description=d.description,
+            tools=dream_tool_names(d.tools),
+            system_prompt=d.system_prompt,
+            max_turns=d.max_turns,
+            depth=d.depth,
+        )
+        for d in decls
+    ]
+    return build_subagent_set(tier1_agents=agents)
 
 
 def _role_registry(dream_names: tuple[str, ...]) -> ToolRegistry:
@@ -320,7 +344,8 @@ class EmployeeHarnessFactory:
         """
         if employee.role not in self._roles:
             raise ValueError(f"role {employee.role!r} for {employee.id!r} is not a registered role")
-        config = role_beat_config(self._roles.get(employee.role).manifest)
+        manifest = self._roles.get(employee.role).manifest
+        config = role_beat_config(manifest)
 
         # §4 trust: narrow the harness to the task's effective preset (read-only / plan for a low-trust
         # beat) and assert containment. A TrustDenied propagates — an uncontained beat is not built.
@@ -384,6 +409,11 @@ class EmployeeHarnessFactory:
                 if capability is not None:
                     registry.register(capability, source=ToolSource.DEFAULT)
 
+        # Subagents: project the role's Tier-1 declarations into dream's SubagentSet. The
+        # spawn_subagent tool (already in the registry if "spawn_subagent" is in the role's tools)
+        # discovers available subagents from this set at runtime.
+        subagent_set = _project_subagents(manifest.subagents)
+
         # Every build_harness knob comes from the role config — this is where the employee *becomes*
         # its harness. config.model overrides the deployment when set; an empty role env means None.
         harness = dream.build_harness(
@@ -400,6 +430,7 @@ class EmployeeHarnessFactory:
             plugins=config.plugins,
             wake_model=config.wake_model,
             env=dict(config.env) or None,
+            subagents=subagent_set,
         )
         return EmployeeHarness(
             runner=DreamBeatRunner(

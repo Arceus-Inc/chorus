@@ -16,6 +16,7 @@ from chorus.roles._manifest import (
     SandboxTier,
 )
 from chorus_employee.marketer._brief import MARKETER_BRIEF
+from chorus_employee.marketer._subagents import BRAND_CRITIC_SUBAGENT
 
 
 def marketer_manifest() -> RoleManifest:
@@ -37,6 +38,7 @@ def marketer_manifest() -> RoleManifest:
             "working_memory_write",
             "working_memory_append",
             "memory_propose",
+            "spawn_subagent",
         ),
         disallowed_tools=(),
         # --- build_harness(skills=...) ---
@@ -63,6 +65,10 @@ def marketer_manifest() -> RoleManifest:
         # and has no network. Gated write surfaces (publish/send/spend) are a follow-up via
         # WebPlugin trust layer.
         sandbox=SandboxTier.REPO_WRITE,
+        # --- subagents (Tier-1, role-owned) ---
+        # The Brand-Critic: an adversarial reviewer Mira spawns mid-beat to validate content
+        # against the voice spec. Read-only (can only inspect, never edit the draft).
+        subagents=(BRAND_CRITIC_SUBAGENT,),
     )
 
 

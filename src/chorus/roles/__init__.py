@@ -15,6 +15,7 @@ from chorus.roles._manifest import (
     PermissionMode,
     RoleManifest,
     SandboxTier,
+    SubagentDecl,
 )
 from chorus.roles._overlay import ManifestOverlay, resolve_manifest
 from chorus.roles._plugin import DoDGenerator, Role, RolePlugin
@@ -36,6 +37,7 @@ __all__ = [
     "RoleSurfaceOverride",
     "RoutineDeclaration",
     "SandboxTier",
+    "SubagentDecl",
     "apply_role_surface_overrides",
     "default_roles",
     "resolve_manifest",

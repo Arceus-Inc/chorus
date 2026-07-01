@@ -8,6 +8,7 @@ Marketer that harness, one component per module:
 - :mod:`._dod`      — the Definition of Done (intent -> typed :class:`~chorus.outcomes.Verifier`).
 - :mod:`._lander`   — the ``content`` :class:`~chorus.outcomes.OutcomeLander` (committed draft).
 - :mod:`._routines` — standing routines (performance watch, experiment readout, etc.).
+- :mod:`._subagents` — Tier-1 subagents (Brand-Critic).
 
 :func:`marketer_plugin` assembles the role triple; :func:`marketer_lander` provides the matching
 :class:`~chorus.outcomes.OutcomeLander`. This is the **single source** of the Marketer:
@@ -22,6 +23,7 @@ from chorus_employee.marketer._dod import marketer_dod
 from chorus_employee.marketer._harness import marketer_manifest
 from chorus_employee.marketer._lander import MarketerLander, marketer_lander
 from chorus_employee.marketer._routines import MARKETER_ROUTINES
+from chorus_employee.marketer._subagents import BRAND_CRITIC_SUBAGENT
 
 
 def marketer_plugin() -> RolePlugin:
@@ -36,6 +38,7 @@ def marketer_plugin() -> RolePlugin:
 
 
 __all__ = [
+    "BRAND_CRITIC_SUBAGENT",
     "MARKETER_BRIEF",
     "MARKETER_CONTENT_DOC",
     "MARKETER_ROUTINES",
