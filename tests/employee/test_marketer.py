@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from chorus.ledger import SqliteLedger, Task, TaskStatus
+from chorus.ledger import RoutineConcurrency, SqliteLedger, Task, TaskStatus
 from chorus.outcomes import ArtifactType, DoDKind
 from chorus.roles._manifest import Isolation, MemoryScope, PermissionMode, SandboxTier
 from chorus.workspace import CompanyWorkspace
@@ -82,10 +82,16 @@ class TestMarketerPlugin:
         plugin = marketer_plugin()
         assert plugin.manifest.working_memory is True
 
-    def test_no_routines_in_slice_0(self) -> None:
+    def test_declares_the_brand_drift_scan(self) -> None:
+        # §13: the first standing routine — a weekly read/report cadence against the voice spec.
         plugin = marketer_plugin()
-        assert plugin.declared_routines == ()
-        assert MARKETER_ROUTINES == ()
+        assert plugin.declared_routines == MARKETER_ROUTINES
+        assert len(MARKETER_ROUTINES) == 1
+        (routine,) = MARKETER_ROUTINES
+        assert routine.routine_key == "marketer-brand-drift-scan"
+        assert routine.schedule == "0 9 * * 1"  # weekly, Monday 09:00
+        assert routine.concurrency is RoutineConcurrency.COALESCE
+        assert "brand_spec.md" in routine.intent_template
 
 
 # --- DoD ---

@@ -22,7 +22,7 @@ from chorus_employee.marketer._brief import MARKETER_BRIEF, MARKETER_CONTENT_DOC
 from chorus_employee.marketer._dod import marketer_dod
 from chorus_employee.marketer._harness import marketer_manifest
 from chorus_employee.marketer._lander import MarketerLander, marketer_lander
-from chorus_employee.marketer._routines import MARKETER_ROUTINES
+from chorus_employee.marketer._routines import MARKETER_BRAND_DRIFT_SCAN, MARKETER_ROUTINES
 from chorus_employee.marketer._subagents import BRAND_CRITIC_SUBAGENT
 
 
@@ -39,6 +39,7 @@ def marketer_plugin() -> RolePlugin:
 
 __all__ = [
     "BRAND_CRITIC_SUBAGENT",
+    "MARKETER_BRAND_DRIFT_SCAN",
     "MARKETER_BRIEF",
     "MARKETER_CONTENT_DOC",
     "MARKETER_ROUTINES",
