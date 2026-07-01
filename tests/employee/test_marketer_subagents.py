@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import pytest
 
-from chorus.roles._manifest import SubagentDecl
+from chorus.roles import RoleBeatConfig, role_beat_config
+from chorus.roles._subagent import SubagentSpec
 from chorus_employee.marketer import BRAND_CRITIC_SUBAGENT, marketer_plugin
-from chorus_harness._factory import _project_subagents
+from chorus_harness._factory import _subagent_set
 
 pytestmark = pytest.mark.integration
 
@@ -23,28 +24,23 @@ class TestBrandCriticDeclaration:
         assert "run_command" not in BRAND_CRITIC_SUBAGENT.tools
         assert "read_file" in BRAND_CRITIC_SUBAGENT.tools
 
-    def test_subagent_has_system_prompt(self) -> None:
-        assert BRAND_CRITIC_SUBAGENT.system_prompt is not None
-        assert "Brand-Critic" in BRAND_CRITIC_SUBAGENT.system_prompt
-
     def test_subagent_max_turns_bounded(self) -> None:
         assert BRAND_CRITIC_SUBAGENT.max_turns <= 6
 
-    def test_subagent_depth_is_1(self) -> None:
-        assert BRAND_CRITIC_SUBAGENT.depth == 1
-
     def test_subagent_description_mentions_brand_voice(self) -> None:
-        assert "brand" in BRAND_CRITIC_SUBAGENT.description.lower()
-        assert "voice" in BRAND_CRITIC_SUBAGENT.description.lower()
+        # The child's system prompt is generated from the description, so the full brief lives there.
+        desc = BRAND_CRITIC_SUBAGENT.description.lower()
+        assert "brand" in desc
+        assert "voice" in desc
 
-    def test_system_prompt_instructs_pass_fail_verdict(self) -> None:
-        prompt = BRAND_CRITIC_SUBAGENT.system_prompt
-        assert "PASS" in prompt
-        assert "FAIL" in prompt
+    def test_description_instructs_pass_fail_verdict(self) -> None:
+        desc = BRAND_CRITIC_SUBAGENT.description
+        assert "PASS" in desc
+        assert "FAIL" in desc
 
-    def test_system_prompt_instructs_read_only(self) -> None:
-        prompt = BRAND_CRITIC_SUBAGENT.system_prompt
-        assert "read-only" in prompt.lower() or "read only" in prompt.lower()
+    def test_description_instructs_read_only(self) -> None:
+        desc = BRAND_CRITIC_SUBAGENT.description.lower()
+        assert "read-only" in desc or "read only" in desc
 
 
 # --- Manifest integration ---
@@ -70,64 +66,85 @@ class TestMarketerManifestSubagents:
                     f"narrower-wins violation"
                 )
 
+    def test_beat_config_carries_the_subagents(self) -> None:
+        config = role_beat_config(marketer_plugin().manifest)
+        assert {sa.name for sa in config.subagents} == {"brand_critic"}
+
 
 # --- Factory projection ---
 
 
+def _config(tools: tuple[str, ...], subagents: tuple[SubagentSpec, ...]) -> RoleBeatConfig:
+    return RoleBeatConfig(system_prompt="x", tools=tools, subagents=subagents)
+
+
 class TestProjectSubagents:
-    def test_empty_decls_returns_none(self) -> None:
-        assert _project_subagents(()) is None
+    def test_no_subagents_returns_none(self) -> None:
+        assert _subagent_set(_config(("read_file",), ())) is None
 
     def test_single_subagent_projects_to_subagent_set(self) -> None:
-        decl = SubagentDecl(
+        spec = SubagentSpec(
             name="test_agent",
             description="A test subagent",
             tools=("read_file",),
-            system_prompt="You are a test agent.",
             max_turns=3,
-            depth=1,
         )
-        result = _project_subagents((decl,))
+        result = _subagent_set(_config(("read_file",), (spec,)))
         assert result is not None
         assert "test_agent" in result
         assert len(result) == 1
 
     def test_projected_subagent_preserves_fields(self) -> None:
-        decl = SubagentDecl(
+        spec = SubagentSpec(
             name="critic",
             description="Reviews things",
             tools=("read_file",),
-            system_prompt="Be critical.",
             max_turns=4,
-            depth=1,
         )
-        result = _project_subagents((decl,))
+        result = _subagent_set(_config(("read_file",), (spec,)))
+        assert result is not None
         agent = result.get("critic")
         assert agent is not None
         assert agent.name == "critic"
         assert agent.description == "Reviews things"
-        assert agent.system_prompt == "Be critical."
         assert agent.max_turns == 4
-        assert agent.depth == 1
 
     def test_projected_tools_are_dream_names(self) -> None:
-        decl = SubagentDecl(
+        spec = SubagentSpec(
             name="runner",
             description="Runs commands",
             tools=("read_file", "run_command"),
             max_turns=2,
         )
-        result = _project_subagents((decl,))
+        # The parent must carry the tools, else the intersection narrows them away.
+        result = _subagent_set(_config(("read_file", "run_command"), (spec,)))
+        assert result is not None
         agent = result.get("runner")
+        assert agent is not None
         # "run_command" maps to "bash" in dream
         assert "bash" in agent.tools
         assert "read_file" in agent.tools
 
+    def test_projection_intersects_with_parent_tools(self) -> None:
+        # A subagent tool the parent lacks is dropped — a subagent can only narrow, never widen.
+        spec = SubagentSpec(
+            name="narrower",
+            description="Wants to write but parent can only read",
+            tools=("read_file", "write_file"),
+        )
+        result = _subagent_set(_config(("read_file",), (spec,)))
+        assert result is not None
+        agent = result.get("narrower")
+        assert agent is not None
+        assert "read_file" in agent.tools
+        assert "write_file" not in agent.tools
+
     def test_marketer_brand_critic_projects_correctly(self) -> None:
-        plugin = marketer_plugin()
-        result = _project_subagents(plugin.manifest.subagents)
+        config = role_beat_config(marketer_plugin().manifest)
+        result = _subagent_set(config)
         assert result is not None
         assert "brand_critic" in result
         agent = result.get("brand_critic")
+        assert agent is not None
         assert agent.max_turns == 4
         assert "read_file" in agent.tools
