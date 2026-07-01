@@ -19,6 +19,7 @@ from chorus.roles._plugin import RolePlugin
 from chorus_employee.analyst import analyst_lander
 from chorus_employee.engineer import engineer_lander, engineer_plugin
 from chorus_employee.manager import manager_lander
+from chorus_employee.marketer import marketer_lander
 from chorus_employee.pm import pm_lander
 from chorus_employee.reviewer import reviewer_lander
 
@@ -41,6 +42,7 @@ def default_landers(company_root: Path, *, ledger: SqliteLedger | None = None) -
         engineer_lander(company_root),
         pm_lander(company_root),
         analyst_lander(company_root),
+        marketer_lander(company_root),
     ]
     if ledger is not None:
         landers.append(manager_lander(ledger))

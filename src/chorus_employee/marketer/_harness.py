@@ -1,0 +1,69 @@
+"""The Marketer's dream-harness manifest — every ``build_harness`` component, in one place.
+
+A Marketer **reads the funnel and market, drafts content/creatives, and stages campaigns for
+go-live**. She needs file-read, file-write (to her worktree), web search (market research),
+and memory surfaces — but no command execution and no ungated external writes. Each field below
+names the dream component it drives.
+"""
+
+from __future__ import annotations
+
+from chorus.roles._manifest import (
+    Isolation,
+    MemoryScope,
+    PermissionMode,
+    RoleManifest,
+    SandboxTier,
+)
+from chorus_employee.marketer._brief import MARKETER_BRIEF
+
+
+def marketer_manifest() -> RoleManifest:
+    """The complete harness identity of a Marketer (design doc §02 -> dream ``build_harness``)."""
+    return RoleManifest(
+        # --- per-role overlay ---
+        system_prompt=MARKETER_BRIEF,
+        # ACCEPT_EDITS: the Marketer writes drafts to her worktree autonomously (content, creatives).
+        permission_mode=PermissionMode.ACCEPT_EDITS,
+        # --- build_harness(registry=...) ---
+        # Read-heavy + draft-write: market research, analytics read, content drafting.
+        # No run_command (she doesn't build/test), no git (she doesn't ship PRs).
+        tools=(
+            "read_file",
+            "write_file",
+            "memory_search",
+            "memory_get",
+            "working_memory_read",
+            "working_memory_write",
+            "working_memory_append",
+            "memory_propose",
+        ),
+        disallowed_tools=(),
+        # --- build_harness(skills=...) ---
+        skills=(),  # brand-voice, experiment-design skills are a follow-up
+        # --- build_harness(memory=...) + working_memory ---
+        memory_scope=MemoryScope.PROJECT,
+        working_memory=True,  # tracks campaign state, creative variants across turns
+        # --- build_harness(model=...) ---
+        model=None,  # use the deployment model the composition root supplies
+        wake_model=None,
+        # --- build_harness(max_turns=...) ---
+        max_turns=10,  # generating + pruning variants is multi-step; wider than default 8
+        # --- per-beat sprint budget ---
+        max_sprints=3,  # a content draft may need a couple of revision sprints
+        # --- build_harness(mcp=...) / build_harness(plugins=...) ---
+        mcp=False,  # MCP integrations (analytics, ad platforms) are a follow-up
+        plugins=False,
+        # --- build_harness(env=...) ---
+        env=(),
+        # --- worktree containment ---
+        isolation=Isolation.WORKTREE,
+        # --- trust posture ---
+        # REPO_WRITE: may write files (drafts) within her isolated worktree, but runs no commands
+        # and has no network. Gated write surfaces (publish/send/spend) are a follow-up via
+        # WebPlugin trust layer.
+        sandbox=SandboxTier.REPO_WRITE,
+    )
+
+
+__all__ = ["marketer_manifest"]

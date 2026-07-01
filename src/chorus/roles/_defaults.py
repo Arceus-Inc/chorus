@@ -7,6 +7,7 @@
 | Manager   | ledger-write (decompose) | children done+integrated| a completed subtree  |
 | Product/PM| read + write docs        | AgentReview (Reviewer)  | spec/decision        |
 | Analyst   | read + data tools        | AgentReview (Reviewer)  | a data finding       |
+| Marketer  | read + draft-write       | AgentReview (brand)     | content draft        |
 
 Reviewer is load-bearing, not a luxury (B3.2): it is the verifier for all
 judgment-class work, so it must ship at M3 with the first non-code role.
@@ -22,6 +23,7 @@ from chorus.roles._plugin import RolePlugin
 from chorus_employee.analyst import analyst_plugin
 from chorus_employee.engineer import engineer_plugin
 from chorus_employee.manager import manager_plugin
+from chorus_employee.marketer import marketer_plugin
 from chorus_employee.pm import pm_plugin
 from chorus_employee.reviewer import reviewer_plugin
 
@@ -38,6 +40,7 @@ def default_roles() -> tuple[RolePlugin, ...]:
         manager_plugin(),
         pm_plugin(),
         analyst_plugin(),
+        marketer_plugin(),
     )
 
 
