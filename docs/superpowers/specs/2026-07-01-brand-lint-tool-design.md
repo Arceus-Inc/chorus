@@ -127,13 +127,17 @@ is pure function-calling (no internal reasoning, no model call).
 - **Register** in `chorus_harness/_factory.py::_capability_tool` — `if name == "brand_lint": return BrandLintTool()`
   (no ledger needed; it's a pure file reader — unlike the ledger-bound tools).
 - **Map** `"brand_lint": "brand_lint"` into `_CHORUS_TO_DREAM_TOOL` so `dream_tool_names` keeps it.
-- **Scope — REVISED after implementation:** grant `"brand_lint"` to the **marketer parent** manifest's
-  `tools` (not the Brand-Critic subagent). Reason: chorus capability tools are registered via
-  `_capability_tool` and are *not* in `_CHORUS_TO_DREAM_TOOL`; the subagent projection filters
-  `spec.tools` through `dream_tool_names` (dream built-ins only), so a capability tool can't currently
-  reach a subagent. Granting it to the marketer is also the more §10-faithful placement — the *static
-  rule runs pre-gen*, by the drafter, before the (post-gen) Brand-Critic. **Deferred follow-up:** a
-  capability-tool→subagent projection seam would let the tool sit on the Brand-Critic per §08's owner.
+- **Scope — on BOTH the marketer parent and the Brand-Critic subagent (final):**
+  - *Parent* (§10 pre-gen static rule): `"brand_lint"` on the marketer manifest — she lints her own
+    draft before spawning the critic.
+  - *Subagent* (§08 owner = Brand-Critic): `"brand_lint"` on `BRAND_CRITIC_SUBAGENT.tools`, made
+    reachable by **identity-mapping it in `_CHORUS_TO_DREAM_TOOL`** so the subagent projection
+    (`dream_tool_names(spec.tools) ∩ parent_tools`) keeps it. `_role_registry` still skips it (no dream
+    built-in); `_capability_tool` registers it into the parent harness the subagent runs on. This is the
+    established codebase pattern — the Analyst uses the same identity-mapping technique for its analysis
+    tools (`warehouse_query` / `notebook_run` / `chart_render`), so it converges cleanly with that
+    branch. The earlier "deferred seam" is thus **built**: a chorus capability tool now reaches a
+    subagent via the map, no kernel change.
 - **Brief:** one line in the Brand-Critic's `description` — "run `brand_lint` first for the mechanical
   prohibited-phrase/claim scan, then reason over its findings" — so the deterministic pass grounds the
   verdict rather than replacing it.

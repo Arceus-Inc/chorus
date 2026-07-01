@@ -69,6 +69,21 @@ class TestMarketerManifestSubagents:
         assert wr.output_schema is not None
         assert wr.output_schema.get("type") == "object"  # a JSON-schema object
 
+    def test_brand_critic_gets_brand_lint_as_a_subagent_primitive(self) -> None:
+        # §08: brand_lint is the Brand-Critic's deterministic primitive. It's a chorus capability tool,
+        # so it must be in the dream-name map (identity) for the subagent projection to keep it, and on
+        # the parent (narrower-wins). The projected child must carry it.
+        plugin = marketer_plugin()
+        critic = next(sa for sa in plugin.manifest.subagents if sa.name == "brand_critic")
+        assert "brand_lint" in critic.tools
+        assert "brand_lint" in plugin.manifest.tools  # parent superset
+        config = role_beat_config(plugin.manifest)
+        result = _subagent_set(config)
+        assert result is not None
+        child = result.get("brand_critic")
+        assert child is not None
+        assert "brand_lint" in child.tools  # survived dream_tool_names + parent intersection
+
     def test_manifest_includes_spawn_subagent_tool(self) -> None:
         plugin = marketer_plugin()
         assert "spawn_subagent" in plugin.manifest.tools
@@ -179,5 +194,6 @@ class TestProjectSubagents:
         assert "brand_critic" in result
         agent = result.get("brand_critic")
         assert agent is not None
-        assert agent.max_turns == 4
+        assert agent.max_turns == 6
         assert "read_file" in agent.tools
+        assert "brand_lint" in agent.tools

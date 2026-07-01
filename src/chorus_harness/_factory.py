@@ -74,6 +74,11 @@ _CHORUS_TO_DREAM_TOOL: dict[str, str] = {
     "spawn_subagent": "spawn_subagent",
     "web_search": "web_search",
     "web_extract": "web_extract",
+    # brand_lint is a chorus capability tool (registered via _capability_tool, not a dream built-in),
+    # but it is IDENTITY-mapped here so the subagent projection (dream_tool_names ∩ parent) keeps it —
+    # the Brand-Critic subagent's deterministic primitive (§08). _role_registry skips it (no built-in);
+    # _capability_tool registers it. (Same technique the Analyst uses for its analysis tools.)
+    "brand_lint": "brand_lint",
 }
 
 _READ_ONLY_DREAM_SURFACE_TOOLS = frozenset(
