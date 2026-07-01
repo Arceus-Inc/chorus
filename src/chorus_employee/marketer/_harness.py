@@ -39,6 +39,9 @@ def marketer_manifest() -> RoleManifest:
             "working_memory_append",
             "memory_propose",
             "spawn_subagent",
+            # the ONLY path to a live surface: stage publish/send/spend for human approval (§07/§11).
+            # Its call opens a gate and never executes — reach is fail-closed by construction.
+            "stage_go_live",
         ),
         disallowed_tools=(),
         # --- build_harness(skills=...) ---

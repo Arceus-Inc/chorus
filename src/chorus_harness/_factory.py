@@ -36,7 +36,13 @@ from chorus.workforce import Employee
 from chorus.workspace import CompanyWorkspace, default_work_root
 from chorus_employee import default_landers
 from chorus_harness._trust import apply_trust
-from chorus_tools import AssignTaskTool, DecomposeTool, SubmitTaskTool, SubmitVerdictTool
+from chorus_tools import (
+    AssignTaskTool,
+    DecomposeTool,
+    GoLiveTool,
+    SubmitTaskTool,
+    SubmitVerdictTool,
+)
 
 if TYPE_CHECKING:
     from chorus.ledger import SqliteLedger
@@ -123,6 +129,8 @@ def _capability_tool(name: str, ledger: SqliteLedger) -> BaseTool | None:
         return AssignTaskTool(ledger)
     if name == "submit_verdict":
         return SubmitVerdictTool(ledger)
+    if name == "stage_go_live":
+        return GoLiveTool(ledger)
     return None
 
 
