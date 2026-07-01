@@ -183,6 +183,10 @@ def main() -> int:
             roles=registry,
             pricing=default_pricing_from_env(),
             seed=seed,
+            # REQUIRED: binds the role's ledger-backed capability tools. Without it the factory skips
+            # _capability_tool registration entirely, so brand_lint / stage_go_live never reach the
+            # harness and the Brand-Critic can't run brand_lint.
+            ledger=ledger,
         )
         ledger.employees.create(Employee(id="mira", name="Mira", role="marketer"))
 
