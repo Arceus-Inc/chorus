@@ -86,20 +86,24 @@ class TestMarketerPlugin:
 
 
 class TestMarketerDoD:
-    def test_dod_is_agent_review(self) -> None:
+    def test_dod_is_command(self) -> None:
+        # Slice 1: a reversible draft lands on a deterministic Command, not a stochastic
+        # AgentReview — brand fidelity is enforced in-beat by the Brand-Critic (§06/§10).
         plugin = marketer_plugin()
         verifier = plugin.dod_generator("write a blog post")
-        assert verifier.kind == DoDKind.AGENT_REVIEW
+        assert verifier.kind == DoDKind.COMMAND
 
     def test_dod_artifact_class_is_content(self) -> None:
         plugin = marketer_plugin()
         verifier = plugin.dod_generator("write a blog post")
         assert verifier.artifact_class == "content"
 
-    def test_dod_rubric_mentions_brand(self) -> None:
+    def test_dod_command_checks_the_content_draft(self) -> None:
         plugin = marketer_plugin()
         verifier = plugin.dod_generator("write a blog post")
-        assert "brand" in verifier.rubric().lower()
+        commands = " ".join(step.command for step in verifier.verification_steps())
+        assert "content_draft.md" in commands
+        assert "wc -w" in commands  # substantive-length floor, not just existence
 
 
 # --- Lander ---
