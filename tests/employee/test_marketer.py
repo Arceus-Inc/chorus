@@ -45,6 +45,12 @@ class TestMarketerPlugin:
         plugin = marketer_plugin()
         assert plugin.manifest.system_prompt == MARKETER_BRIEF
 
+    def test_brief_documents_the_variety_path(self) -> None:
+        # The optional §10 variety loop: seed -> creative -> prune -> promote.
+        assert "content_seed.md" in MARKETER_BRIEF
+        assert "creative" in MARKETER_BRIEF
+        assert "candidates/" in MARKETER_BRIEF
+
     def test_manifest_tools_include_read_write_and_memory(self) -> None:
         plugin = marketer_plugin()
         assert "read_file" in plugin.manifest.tools

@@ -6,7 +6,11 @@ import pytest
 
 from chorus.roles import RoleBeatConfig, role_beat_config
 from chorus.roles._subagent import SubagentSpec
-from chorus_employee.marketer import BRAND_CRITIC_SUBAGENT, marketer_plugin
+from chorus_employee.marketer import (
+    BRAND_CRITIC_SUBAGENT,
+    CREATIVE_SUBAGENT,
+    marketer_plugin,
+)
 from chorus_harness._factory import _subagent_set
 
 pytestmark = pytest.mark.integration
@@ -135,7 +139,77 @@ class TestMarketerManifestSubagents:
 
     def test_beat_config_carries_the_subagents(self) -> None:
         config = role_beat_config(marketer_plugin().manifest)
-        assert {sa.name for sa in config.subagents} == {"brand_critic", "web_research"}
+        assert {sa.name for sa in config.subagents} == {
+            "brand_critic",
+            "creative",
+            "web_research",
+        }
+
+
+# --- Creative / Copywriter declaration (§06, §10) ---
+
+
+class TestCreativeDeclaration:
+    def test_subagent_name(self) -> None:
+        assert CREATIVE_SUBAGENT.name == "creative"
+
+    def test_creative_is_a_write_agent(self) -> None:
+        # §06: Creative drafts variants to the worktree — unlike the read-only Brand-Critic.
+        assert "write_file" in CREATIVE_SUBAGENT.tools
+        assert "read_file" in CREATIVE_SUBAGENT.tools
+
+    def test_creative_self_lints(self) -> None:
+        # It runs brand_lint on each variant so the set arrives pre-checked.
+        assert "brand_lint" in CREATIVE_SUBAGENT.tools
+
+    def test_creative_loads_the_brand_voice_skill(self) -> None:
+        assert "skill" in CREATIVE_SUBAGENT.tools
+
+    def test_creative_never_publishes(self) -> None:
+        # No live surface, no command execution — it only drafts.
+        assert "stage_go_live" not in CREATIVE_SUBAGENT.tools
+        assert "run_command" not in CREATIVE_SUBAGENT.tools
+
+    def test_creative_carries_the_output_schema(self) -> None:
+        schema = CREATIVE_SUBAGENT.output_schema
+        assert schema is not None
+        assert schema.get("type") == "object"
+        assert set(schema["required"]) == {"seed", "variants"}
+
+    def test_description_names_the_seed_and_variants_contract(self) -> None:
+        desc = CREATIVE_SUBAGENT.description
+        assert "content_seed.md" in desc
+        assert "candidates/" in desc
+
+    def test_description_forbids_inventing_claims(self) -> None:
+        # The hard rule: vary expression, preserve the seed's evidence (§10 claim discipline).
+        desc = CREATIVE_SUBAGENT.description.lower()
+        assert "claim" in desc
+
+    def test_max_turns_bounded(self) -> None:
+        assert 6 <= CREATIVE_SUBAGENT.max_turns <= 12
+
+
+class TestCreativeManifestIntegration:
+    def test_manifest_declares_creative(self) -> None:
+        plugin = marketer_plugin()
+        assert any(sa.name == "creative" for sa in plugin.manifest.subagents)
+
+    def test_creative_tools_are_subset_of_parent(self) -> None:
+        plugin = marketer_plugin()
+        parent = set(plugin.manifest.tools)
+        for tool in CREATIVE_SUBAGENT.tools:
+            assert tool in parent, f"Creative tool {tool!r} not in parent (narrower-wins violation)"
+
+    def test_projection_keeps_write_and_lint_on_the_child(self) -> None:
+        config = role_beat_config(marketer_plugin().manifest)
+        result = _subagent_set(config)
+        assert result is not None
+        child = result.get("creative")
+        assert child is not None
+        assert "write_file" in child.tools
+        assert "brand_lint" in child.tools
+        assert child.output_schema is not None
 
 
 # --- Factory projection ---

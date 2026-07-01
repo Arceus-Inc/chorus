@@ -1,23 +1,26 @@
-"""Marketer subagents — the Brand-Critic (design doc §06, §10).
+"""Marketer subagents — the Brand-Critic and the Creative/Copywriter (design doc §06, §10).
 
-The Brand-Critic is an adversarial reviewer Mira spawns mid-beat to check her
-drafted content against the voice spec. It can only *read* — never edit — so the
-marketer retains full ownership of revisions. If it finds violations, Mira
-iterates; if it passes, the beat proceeds to landing.
+Two Tier-1, role-owned specialists Mira spawns mid-beat:
 
-This is the "post-gen" layer of the validation sandwich (§10): not a structural
-LLM call or a static rule engine, but an agentic adversary that reasons about
-brand fidelity in context.
+- **Brand-Critic** — an adversarial reviewer that checks her drafted content against the voice
+  spec. Read-only (never edits), so Mira keeps ownership of revisions. This is the "post-gen"
+  layer of the validation sandwich (§10): an agentic adversary that reasons about brand fidelity.
+- **Creative/Copywriter** — a *variation engine*. Given a research-grounded seed Mira writes, it
+  drafts a handful of on-brand variants (§10 variety) to the worktree, self-lints each, and returns
+  a typed manifest. It varies *expression*, never *evidence* — the seed's cited claims are
+  preserved verbatim, so it cannot fabricate a metric. It writes but never publishes or selects;
+  Mira prunes among {seed + variants} and promotes the winner.
 
 Tier-1, role-owned. ``tools`` are CHORUS names (mapped to dream + intersected with the marketer's
-toolset at materialize). The spawned child's system prompt is generated from name + description, so
-the full adversarial brief lives *in* the description — imperative, so the critic actually reads the
-files and returns a verdict rather than claiming it cannot.
+toolset at materialize). Each spawned child's system prompt is generated from name + description, so
+the full brief lives *in* the description — imperative, so the specialist actually reads the files
+and produces its deliverable rather than claiming it cannot.
 """
 
 from __future__ import annotations
 
 from chorus.roles._subagent import SubagentSpec
+from chorus_employee.marketer._creative_manifest import creative_output_schema
 
 BRAND_CRITIC_SUBAGENT = SubagentSpec(
     name="brand_critic",
@@ -64,4 +67,41 @@ BRAND_CRITIC_SUBAGENT = SubagentSpec(
     max_turns=6,
 )
 
-__all__ = ["BRAND_CRITIC_SUBAGENT"]
+CREATIVE_SUBAGENT = SubagentSpec(
+    name="creative",
+    description=(
+        "You are the Creative/Copywriter — a variation engine. Mira hands you ONE research-grounded "
+        "seed post; you produce a handful of on-brand VARIANTS of it so the strongest can be chosen. "
+        "You vary how the message is EXPRESSED; you never change the evidence behind it.\n\n"
+        "## Your job\n"
+        "1. Read `brand_spec.md` (the voice rules) and load the `brand-voice` skill with the `skill` "
+        "tool — draft *to* the voice, not draft-then-fix.\n"
+        "2. Read the seed post `content_seed.md` (Mira's grounded reference). Note its structure and, "
+        "critically, every substantiated claim and its citation.\n"
+        "3. Write THREE variants to `candidates/variant_01.md`, `candidates/variant_02.md`, "
+        "`candidates/variant_03.md`. Each is a COMPLETE post, not a fragment. Make them genuinely "
+        "different — vary the ANGLE (problem-first vs proof-first vs outcome-first), the HOOK/opening, "
+        "and the STRUCTURE. Do NOT just reword the seed.\n"
+        "4. Run `brand_lint(doc=\"candidates/variant_NN.md\")` on EACH variant and fix anything it "
+        "flags before you finish, so the set arrives pre-checked.\n"
+        "5. Return a JSON manifest: the seed you varied and, per variant, its file, a one-line angle, "
+        "and whether brand_lint came back clean.\n\n"
+        "## Hard rules\n"
+        "- PRESERVE THE EVIDENCE. Every performance/outcome CLAIM in the seed is either already cited "
+        "or already hedged — carry it across UNCHANGED. You may re-word prose, but you may NOT invent a "
+        "new metric, drop a citation, or state as fact anything the seed did not. Varying expression is "
+        "your job; manufacturing evidence is forbidden.\n"
+        "- You write ONLY under `candidates/`. Never edit `content_seed.md` and never touch "
+        "`content_draft.md` — Mira owns selection and promotion.\n"
+        "- You do not publish, send, or spend, and you do not pick a winner — you only produce variety.\n"
+        "- If `content_seed.md` is missing, return an empty variants list and say the seed was not found."
+    ),
+    # read seed + spec, write variants, self-lint — all within Mira's parent toolset (narrower-wins ok).
+    tools=("read_file", "write_file", "skill", "brand_lint"),
+    # read spec + skill + seed, draft 3 variants, brand_lint 3 → 12 leaves headroom.
+    max_turns=12,
+    # Runtime-enforced return contract: the typed CreativeManifest shape (seed + per-variant entries).
+    output_schema=creative_output_schema(),
+)
+
+__all__ = ["BRAND_CRITIC_SUBAGENT", "CREATIVE_SUBAGENT"]
