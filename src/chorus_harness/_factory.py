@@ -70,6 +70,7 @@ _CHORUS_TO_DREAM_TOOL: dict[str, str] = {
     "working_memory_append": "working_memory_append",
     "memory_propose": "memory_propose",
     "spawn_subagent": "spawn_subagent",
+    "web_search": "web_search",
 }
 
 _READ_ONLY_DREAM_SURFACE_TOOLS = frozenset(
