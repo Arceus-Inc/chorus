@@ -8,6 +8,8 @@ names the dream component it drives.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from chorus.roles._manifest import (
     Isolation,
     MemoryScope,
@@ -18,6 +20,9 @@ from chorus.roles._manifest import (
 from chorus_employee.marketer._brief import MARKETER_BRIEF
 from chorus_employee.marketer._subagents import BRAND_CRITIC_SUBAGENT
 from swarm.web_research_orchestrator import WEB_RESEARCH_ORCHESTRATOR
+
+# Authored playbooks discovered from this package's ``skills/`` dir and offered via the ``skill`` tool.
+_SKILLS_ROOT = str(Path(__file__).parent / "skills")
 
 
 def marketer_manifest() -> RoleManifest:
@@ -49,10 +54,16 @@ def marketer_manifest() -> RoleManifest:
             # the ONLY path to a live surface: stage publish/send/spend for human approval (§07/§11).
             # Its call opens a gate and never executes — reach is fail-closed by construction.
             "stage_go_live",
+            # the `skill` tool loads her authored playbooks (brand-voice) on demand (§08 know-how).
+            "skill",
         ),
         disallowed_tools=(),
-        # --- build_harness(skills=...) ---
-        skills=(),  # brand-voice, experiment-design skills are a follow-up
+        # --- build_harness(skills=...) / build_harness(skill_registry=...) ---
+        # The brand-voice playbook (§08): authored craft that keeps a fluent model from being an
+        # on-message-sounding, off-brand fabricator — the deterministic-rules complement to the
+        # in-beat Brand-Critic. Discovered from the package's skills/ dir; loaded via the skill tool.
+        skills=("brand-voice",),
+        skills_root=_SKILLS_ROOT,
         # --- build_harness(memory=...) + working_memory ---
         memory_scope=MemoryScope.PROJECT,
         working_memory=True,  # tracks campaign state, creative variants across turns

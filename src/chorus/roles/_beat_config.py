@@ -53,6 +53,8 @@ class RoleBeatConfig:
     # Tier-1 role-owned subagents (carried through verbatim; the composition root projects them
     # onto dream's ``Subagent``/``SubagentSet`` and intersects each one's tools with this config's.
     subagents: tuple[SubagentSpec, ...] = ()
+    # Filesystem dir of this role's ``<slug>/SKILL.md`` playbooks (None = no role skills).
+    skills_root: str | None = None
 
 
 def role_beat_config(manifest: RoleManifest) -> RoleBeatConfig:
@@ -76,6 +78,7 @@ def role_beat_config(manifest: RoleManifest) -> RoleBeatConfig:
         beat_timeout_s=manifest.beat_timeout_s,
         lease_ttl_s=manifest.lease_ttl_s,
         subagents=manifest.subagents,
+        skills_root=manifest.skills_root,
     )
 
 

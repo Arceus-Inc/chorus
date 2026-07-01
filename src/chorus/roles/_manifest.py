@@ -105,6 +105,10 @@ class RoleManifest:
     # (dream's ``spawn_subagent``). Each subagent's tools are intersected with this role's toolset at
     # materialize, so a subagent can only ever narrow capability, never widen it (spec 06 §minimisation).
     subagents: tuple[SubagentSpec, ...] = ()
+    # — build_harness(skill_registry=…) — a filesystem dir holding this role's ``<slug>/SKILL.md``
+    # playbooks. The composition root discovers them into a skill registry the harness offers the
+    # model (catalogue in the prompt + the ``skill`` tool loads bodies). ``None`` = no role skills.
+    skills_root: str | None = None
 
 
 __all__ = [

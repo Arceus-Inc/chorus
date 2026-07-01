@@ -21,6 +21,7 @@ from typing import TYPE_CHECKING, Literal
 
 import dream
 from dream.roles import default_role_manifest
+from dream.skills import load_skill_registry
 from dream.subagents import Subagent, SubagentSet
 from dream.subagents._projection import build_subagent_set
 from dream.tools._base import BaseTool
@@ -430,6 +431,12 @@ class EmployeeHarnessFactory:
         # discovers available subagents from this set at runtime.
         subagent_set = _subagent_set(config)
 
+        # The role's authored playbooks: discover ``{skills_root}/<slug>/SKILL.md`` into a registry the
+        # harness offers the model (catalogue in the prompt + the ``skill`` tool loads bodies).
+        skill_registry = None
+        if config.skills_root:
+            skill_registry, _shadows = load_skill_registry(project_dirs=[Path(config.skills_root)])
+
         # Every build_harness knob comes from the role config — this is where the employee *becomes*
         # its harness. config.model overrides the deployment when set; an empty role env means None.
         harness = dream.build_harness(
@@ -438,7 +445,8 @@ class EmployeeHarnessFactory:
             base_url=self._base_url,
             working_dir=root,
             registry=registry,
-            skills=bool(config.skills),
+            skills=bool(config.skills) or skill_registry is not None,
+            skill_registry=skill_registry,
             memory=True,
             working_memory=config.working_memory,
             max_turns=config.max_turns,

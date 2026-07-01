@@ -82,6 +82,31 @@ class TestMarketerPlugin:
         plugin = marketer_plugin()
         assert plugin.manifest.working_memory is True
 
+    def test_manifest_declares_the_brand_voice_skill(self) -> None:
+        # §08 anti-fabrication layer: the authored brand-voice playbook, loaded via the skill tool.
+        manifest = marketer_plugin().manifest
+        assert "brand-voice" in manifest.skills
+        assert "skill" in manifest.tools  # the tool that loads skill bodies
+        assert manifest.skills_root is not None
+
+    def test_brand_voice_skill_is_discoverable(self) -> None:
+        # The declared skill resolves to a real SKILL.md with valid frontmatter dream can load.
+        from pathlib import Path
+
+        from dream.skills import load_skill_registry
+
+        manifest = marketer_plugin().manifest
+        assert manifest.skills_root is not None
+        registry, _shadows = load_skill_registry(project_dirs=[Path(manifest.skills_root)])
+        discovered = {m.name for m in registry.list_meta()}
+        assert "brand-voice" in discovered
+
+    def test_beat_config_carries_the_skills_root(self) -> None:
+        from chorus.roles import role_beat_config
+
+        manifest = marketer_plugin().manifest
+        assert role_beat_config(manifest).skills_root == manifest.skills_root
+
     def test_manifest_widens_beat_budget_for_research(self) -> None:
         # She spawns a multi-minute web_research sweep; the org defaults (90s beat / 300s lease) would
         # reap her mid-research, so the role carries a wider beat_timeout_s + lease_ttl_s.
