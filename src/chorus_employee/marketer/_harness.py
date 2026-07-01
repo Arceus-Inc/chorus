@@ -50,9 +50,13 @@ def marketer_manifest() -> RoleManifest:
         model=None,  # use the deployment model the composition root supplies
         wake_model=None,
         # --- build_harness(max_turns=...) ---
-        max_turns=10,  # generating + pruning variants is multi-step; wider than default 8
+        # The draft→critic→revise loop is turn-hungry: read spec, draft, spawn critic, revise, re-spawn.
+        # 20 turns leaves room for ~3 critic rounds without starving the beat mid-revision.
+        max_turns=20,
         # --- per-beat sprint budget ---
-        max_sprints=3,  # a content draft may need a couple of revision sprints
+        # Brand convergence takes a few passes (the Brand-Critic is deliberately strict), so a content
+        # beat needs more sprints than a code beat. 5 lets a hot first draft cool to on-brand.
+        max_sprints=5,
         # --- build_harness(mcp=...) / build_harness(plugins=...) ---
         mcp=False,  # MCP integrations (analytics, ad platforms) are a follow-up
         plugins=False,
