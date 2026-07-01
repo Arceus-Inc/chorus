@@ -124,6 +124,14 @@ class LoggingBus(EventBus):
             else:
                 note = f"  {str(p.get('content', ''))[:160]}" if p.get("is_error") else ""
                 _log(f"    ← {tool_name} [{tag}]{note}")
+        elif event.kind is EventKind.SUBAGENT_SPAWNED:
+            _log(f"    🔀 SUBAGENT_SPAWNED: {p.get('subagent_name', '?')}")
+        elif event.kind is EventKind.SUBAGENT_COMPLETED:
+            tag = "ERR" if p.get("is_error") else "ok"
+            _log(
+                f"    ✅ SUBAGENT_COMPLETED: {p.get('subagent_name', '?')} [{tag}]"
+                f"  {str(p.get('content', ''))[:280]}"
+            )
         elif event.kind is EventKind.RUN_EVALUATED:
             _log(f"    ⊢ evaluated: {p.get('outcome', p)}")
         elif event.kind is EventKind.RUN_STARTED:

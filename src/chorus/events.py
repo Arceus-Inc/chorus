@@ -45,6 +45,9 @@ class EventKind(StrEnum):
     RUN_TURN = "run.turn"
     RUN_EVALUATED = "run.evaluated"
     RUN_DONE = "run.done"
+    # subagents — dream's intra-beat swarm (spawn_subagent)
+    SUBAGENT_SPAWNED = "run.subagent_spawned"
+    SUBAGENT_COMPLETED = "run.subagent_completed"
     # cron — tick
     ROUTINE_FIRED = "routine.fired"
     ROUTINE_SUPPRESSED = "routine.suppressed"
