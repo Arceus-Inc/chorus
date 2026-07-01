@@ -39,6 +39,12 @@ def marketer_manifest() -> RoleManifest:
             "working_memory_append",
             "memory_propose",
             "spawn_subagent",
+            # market/audience research: Tavily-backed web search (§06 Researcher, §07 read reach).
+            # An allowlisted-egress read (its declared host is api.tavily.com) — needs the net tier below.
+            "web_search",
+            # the ONLY path to a live surface: stage publish/send/spend for human approval (§07/§11).
+            # Its call opens a gate and never executes — reach is fail-closed by construction.
+            "stage_go_live",
         ),
         disallowed_tools=(),
         # --- build_harness(skills=...) ---
@@ -50,9 +56,13 @@ def marketer_manifest() -> RoleManifest:
         model=None,  # use the deployment model the composition root supplies
         wake_model=None,
         # --- build_harness(max_turns=...) ---
-        max_turns=10,  # generating + pruning variants is multi-step; wider than default 8
+        # The draft→critic→revise loop is turn-hungry: read spec, draft, spawn critic, revise, re-spawn.
+        # 20 turns leaves room for ~3 critic rounds without starving the beat mid-revision.
+        max_turns=20,
         # --- per-beat sprint budget ---
-        max_sprints=3,  # a content draft may need a couple of revision sprints
+        # Brand convergence takes a few passes (the Brand-Critic is deliberately strict), so a content
+        # beat needs more sprints than a code beat. 5 lets a hot first draft cool to on-brand.
+        max_sprints=5,
         # --- build_harness(mcp=...) / build_harness(plugins=...) ---
         mcp=False,  # MCP integrations (analytics, ad platforms) are a follow-up
         plugins=False,
@@ -61,10 +71,11 @@ def marketer_manifest() -> RoleManifest:
         # --- worktree containment ---
         isolation=Isolation.WORKTREE,
         # --- trust posture ---
-        # REPO_WRITE: may write files (drafts) within her isolated worktree, but runs no commands
-        # and has no network. Gated write surfaces (publish/send/spend) are a follow-up via
-        # WebPlugin trust layer.
-        sandbox=SandboxTier.REPO_WRITE,
+        # REPO_WRITE_NET: writes drafts within her worktree AND may reach the net through the
+        # *allowlist* — only hosts a registered tool declares (web_search → api.tavily.com). She runs
+        # no commands, and her only outbound-write surface (publish/send/spend) is still the gated
+        # stage_go_live tool. Research reach is read-only egress, not an open network.
+        sandbox=SandboxTier.REPO_WRITE_NET,
         # --- subagents (Tier-1, role-owned) ---
         # The Brand-Critic: an adversarial reviewer Mira spawns mid-beat to validate content
         # against the voice spec. Read-only (can only inspect, never edit the draft).

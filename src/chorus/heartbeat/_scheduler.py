@@ -811,6 +811,18 @@ class Scheduler:
         :class:`~chorus.outcomes.OutcomeLander` records the deliverable before the task is finalised ``done``.
         """
         ledger = self._require_ledger()
+        # A gate opened *during* the beat (e.g. the marketer's ``stage_go_live`` tool) must win over the
+        # DoD: a task carrying a pending approval is parked BLOCKED, not finalised ``done`` — resolving
+        # the gate is what completes it. Explicitly (re-)block here rather than trusting the mid-run
+        # ``open_task_gate`` transition to survive the run's own lifecycle, which leaves the task
+        # ``in_progress``. Without this the DoD races the gate to ``done`` (or leaves it ``in_progress``)
+        # and the gate's approval path (blocked → todo) then hits an illegal ``… → todo``. Checked
+        # before the DoD branches so it guards every gated path.
+        if any(approval.subject_id == task_id for approval in ledger.approvals.pending()):
+            task = ledger.tasks.get(task_id)
+            if task is not None and task.status is not TaskStatus.BLOCKED:
+                ledger.tasks.transition(task_id, TaskStatus.BLOCKED)
+            return
         if verifier is not None and verifier.kind is DoDKind.HUMAN_APPROVAL:
             GovernanceResolver(ledger).open_task_gate(
                 task_id, gate_kind=ApprovalGate.ACCEPTANCE, reason=f"human-approval DoD for {task_id}"

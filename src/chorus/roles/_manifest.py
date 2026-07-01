@@ -17,6 +17,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import StrEnum
 
+from chorus.roles._subagent import SubagentSpec
+
 
 class PermissionMode(StrEnum):
     """Permission gate posture (subset of dream's; no ``bypassPermissions``)."""
@@ -93,25 +95,10 @@ class RoleManifest:
     mcp: bool = False  # admit the working dir's MCP allowlist (opt-in)
     plugins: bool = False  # load the working dir's repo-local plugins (opt-in)
     env: tuple[tuple[str, str], ...] = ()  # host-resolution env (e.g. DREAM_HOME); never secrets
-    # Subagent declarations (Tier-1, role-owned): the subagents this role may spawn mid-beat.
-    # Each entry is projected onto dream's SubagentSet at materialize time. Empty → no subagents.
-    subagents: tuple[SubagentDecl, ...] = ()
-
-
-@dataclass(frozen=True)
-class SubagentDecl:
-    """Chorus-side subagent declaration — projected onto dream's ``Subagent`` at materialize.
-
-    Declared on the role manifest (Tier-1). Capability-minimized: ``tools`` must be a subset
-    of the parent role's tools (enforced at projection time by narrower-wins intersection).
-    """
-
-    name: str
-    description: str
-    tools: tuple[str, ...]
-    system_prompt: str | None = None
-    max_turns: int = 4
-    depth: int = 1
+    # — build_harness(subagents=…) — Tier-1 role-owned subagents the employee may dispatch mid-beat
+    # (dream's ``spawn_subagent``). Each subagent's tools are intersected with this role's toolset at
+    # materialize, so a subagent can only ever narrow capability, never widen it (spec 06 §minimisation).
+    subagents: tuple[SubagentSpec, ...] = ()
 
 
 __all__ = [
@@ -120,5 +107,4 @@ __all__ = [
     "PermissionMode",
     "RoleManifest",
     "SandboxTier",
-    "SubagentDecl",
 ]

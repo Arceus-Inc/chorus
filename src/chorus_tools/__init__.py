@@ -9,6 +9,7 @@ dream ``BaseTool`` wrapping a dream-free chorus service. The dream import lives 
 from __future__ import annotations
 
 from chorus_tools._decompose import DecomposeInput, DecomposeTool
+from chorus_tools._go_live import GoLiveAction, GoLiveInput, GoLiveTool
 from chorus_tools._manager_actions import (
 	AssignTaskInput,
 	AssignTaskTool,
@@ -23,6 +24,9 @@ __all__ = [
 	"AssignTaskTool",
 	"DecomposeInput",
 	"DecomposeTool",
+	"GoLiveAction",
+	"GoLiveInput",
+	"GoLiveTool",
 	"SubmitTaskInput",
 	"SubmitTaskTool",
 	"SubmitVerdictInput",

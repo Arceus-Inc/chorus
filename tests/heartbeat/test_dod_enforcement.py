@@ -183,6 +183,43 @@ async def test_human_approval_dod_opens_an_approval_instead_of_marking_done(
     assert ledger.tasks.get("t1").status is TaskStatus.DONE  # type: ignore[union-attr]
 
 
+class _GatingBeat:
+    """A beat that opens an authorization gate mid-run (as ``stage_go_live`` does), then passes."""
+
+    def __init__(self, ledger: SqliteLedger) -> None:
+        self._ledger = ledger
+
+    async def run_task(
+        self, *, task_id: str, intent: str, verification: tuple[VerificationStep, ...] = (),
+        observer: object = None, rubric: object = "", run_id: str | None = None,
+    ) -> BeatOutcome:
+        del intent, verification, observer, rubric, run_id
+        GovernanceResolver(self._ledger).open_task_gate(
+            task_id, gate_kind=ApprovalGate.AUTHORIZATION, reason="go-live publish"
+        )
+        return BeatOutcome(passed=True, outcome={}, summary="staged a go-live")
+
+
+async def test_pending_gate_wins_over_the_dod_so_the_task_stays_blocked(ledger: SqliteLedger) -> None:
+    # A tool (e.g. stage_go_live) opens a gate mid-beat → task BLOCKED. Even though the beat then
+    # passes its Command DoD, the pending human gate must win: the task must NOT finalise `done`,
+    # else resolving the gate (blocked → todo) becomes an illegal `done → todo`.
+    employee = _seed(ledger)
+    ledger.dod.create("t1", Verifier.command("true"))  # a Command DoD that would pass
+
+    await _tick(ledger, _GatingBeat(ledger), employee)
+
+    task = ledger.tasks.get("t1")
+    assert task is not None and task.status is TaskStatus.BLOCKED  # gate won over the DoD
+    pending = ledger.approvals.pending()
+    assert len(pending) == 1
+    # and approving now completes cleanly (blocked → todo), not the crashing `done → todo`
+    GovernanceResolver(ledger).resolve(
+        pending[0].id, decision=ApprovalDecision.APPROVE, decided_by_user_id="board", now=_NOW
+    )
+    assert ledger.tasks.get("t1").status is TaskStatus.TODO  # type: ignore[union-attr]
+
+
 async def test_command_dod_pass_marks_done_without_an_approval(ledger: SqliteLedger) -> None:
     employee = _seed(ledger)
     ledger.dod.create("t1", Verifier.command("pytest -q"))

@@ -51,6 +51,10 @@ class TestMarketerPlugin:
         assert "write_file" in plugin.manifest.tools
         assert "memory_search" in plugin.manifest.tools
 
+    def test_manifest_includes_web_search_for_research(self) -> None:
+        # §06 Researcher / §07 read reach: Tavily-backed web search for market/audience research.
+        assert "web_search" in marketer_plugin().manifest.tools
+
     def test_manifest_tools_exclude_command_and_git(self) -> None:
         plugin = marketer_plugin()
         assert "run_command" not in plugin.manifest.tools
@@ -64,9 +68,11 @@ class TestMarketerPlugin:
         plugin = marketer_plugin()
         assert plugin.manifest.isolation == Isolation.WORKTREE
 
-    def test_manifest_sandbox_is_repo_write(self) -> None:
+    def test_manifest_sandbox_is_repo_write_net(self) -> None:
+        # REPO_WRITE_NET: drafts to her worktree + allowlisted egress (web_search → api.tavily.com).
+        # No arbitrary network, no commands; the gated stage_go_live is her only outbound-write surface.
         plugin = marketer_plugin()
-        assert plugin.manifest.sandbox == SandboxTier.REPO_WRITE
+        assert plugin.manifest.sandbox == SandboxTier.REPO_WRITE_NET
 
     def test_manifest_memory_scope_is_project(self) -> None:
         plugin = marketer_plugin()
@@ -86,20 +92,24 @@ class TestMarketerPlugin:
 
 
 class TestMarketerDoD:
-    def test_dod_is_agent_review(self) -> None:
+    def test_dod_is_command(self) -> None:
+        # Slice 1: a reversible draft lands on a deterministic Command, not a stochastic
+        # AgentReview — brand fidelity is enforced in-beat by the Brand-Critic (§06/§10).
         plugin = marketer_plugin()
         verifier = plugin.dod_generator("write a blog post")
-        assert verifier.kind == DoDKind.AGENT_REVIEW
+        assert verifier.kind == DoDKind.COMMAND
 
     def test_dod_artifact_class_is_content(self) -> None:
         plugin = marketer_plugin()
         verifier = plugin.dod_generator("write a blog post")
         assert verifier.artifact_class == "content"
 
-    def test_dod_rubric_mentions_brand(self) -> None:
+    def test_dod_command_checks_the_content_draft(self) -> None:
         plugin = marketer_plugin()
         verifier = plugin.dod_generator("write a blog post")
-        assert "brand" in verifier.rubric().lower()
+        commands = " ".join(step.command for step in verifier.verification_steps())
+        assert "content_draft.md" in commands
+        assert "wc -w" in commands  # substantive-length floor, not just existence
 
 
 # --- Lander ---

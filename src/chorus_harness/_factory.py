@@ -30,13 +30,19 @@ from dream.tools.builtin import default_registry
 from chorus.adapters import DreamBeatRunner, TokenPricing
 from chorus.heartbeat import BeatRunner, IntegrateContextPacket
 from chorus.outcomes import LanderRegistry
-from chorus.roles import RoleBeatConfig, RoleRegistry, SubagentDecl, role_beat_config
+from chorus.roles import RoleBeatConfig, RoleRegistry, role_beat_config
 from chorus.trust import TrustPolicy
 from chorus.workforce import Employee
 from chorus.workspace import CompanyWorkspace, default_work_root
 from chorus_employee import default_landers
 from chorus_harness._trust import apply_trust
-from chorus_tools import AssignTaskTool, DecomposeTool, SubmitTaskTool, SubmitVerdictTool
+from chorus_tools import (
+    AssignTaskTool,
+    DecomposeTool,
+    GoLiveTool,
+    SubmitTaskTool,
+    SubmitVerdictTool,
+)
 
 if TYPE_CHECKING:
     from chorus.ledger import SqliteLedger
@@ -64,6 +70,8 @@ _CHORUS_TO_DREAM_TOOL: dict[str, str] = {
     "working_memory_append": "working_memory_append",
     "memory_propose": "memory_propose",
     "spawn_subagent": "spawn_subagent",
+    "web_search": "web_search",
+    "web_extract": "web_extract",
 }
 
 _READ_ONLY_DREAM_SURFACE_TOOLS = frozenset(
@@ -81,25 +89,30 @@ def dream_tool_names(chorus_tools: tuple[str, ...]) -> tuple[str, ...]:
     return tuple(_CHORUS_TO_DREAM_TOOL[name] for name in chorus_tools if name in _CHORUS_TO_DREAM_TOOL)
 
 
-def _project_subagents(decls: tuple[SubagentDecl, ...]) -> SubagentSet | None:
-    """Project chorus SubagentDecl declarations into dream's SubagentSet.
+def _subagent_set(config: RoleBeatConfig) -> SubagentSet | None:
+    """Project a role's chorus :class:`SubagentSpec`s onto a dream :class:`SubagentSet` (Tier-1).
 
-    Returns None when the role declares no subagents (the common case — most roles don't spawn).
+    Each spec's chorus tool names are mapped to dream names and intersected with the parent role's
+    own dream toolset, so a subagent can only ever *narrow* capability, never widen it (spec 06
+    §minimisation). Returns ``None`` when the role declares no subagents, so the harness's tool surface
+    stays byte-identical (``build_harness`` registers ``spawn_subagent`` only when a set is supplied).
     """
-    if not decls:
+    if not config.subagents:
         return None
-    agents = [
-        Subagent(
-            name=d.name,
-            description=d.description,
-            tools=dream_tool_names(d.tools),
-            system_prompt=d.system_prompt,
-            max_turns=d.max_turns,
-            depth=d.depth,
+    parent_tools = frozenset(dream_tool_names(config.tools))
+    agents: list[Subagent] = []
+    for spec in config.subagents:
+        tools = tuple(t for t in dream_tool_names(spec.tools) if t in parent_tools)
+        agents.append(
+            Subagent(
+                name=spec.name,
+                description=spec.description,
+                tools=tools,
+                model=spec.model,
+                max_turns=spec.max_turns,
+            )
         )
-        for d in decls
-    ]
-    return build_subagent_set(tier1_agents=agents)
+    return build_subagent_set(tier1_agents=agents, parent_tools=parent_tools)
 
 
 def _role_registry(dream_names: tuple[str, ...]) -> ToolRegistry:
@@ -123,6 +136,8 @@ def _capability_tool(name: str, ledger: SqliteLedger) -> BaseTool | None:
         return AssignTaskTool(ledger)
     if name == "submit_verdict":
         return SubmitVerdictTool(ledger)
+    if name == "stage_go_live":
+        return GoLiveTool(ledger)
     return None
 
 
@@ -412,7 +427,7 @@ class EmployeeHarnessFactory:
         # Subagents: project the role's Tier-1 declarations into dream's SubagentSet. The
         # spawn_subagent tool (already in the registry if "spawn_subagent" is in the role's tools)
         # discovers available subagents from this set at runtime.
-        subagent_set = _project_subagents(manifest.subagents)
+        subagent_set = _subagent_set(config)
 
         # Every build_harness knob comes from the role config — this is where the employee *becomes*
         # its harness. config.model overrides the deployment when set; an empty role env means None.
