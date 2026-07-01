@@ -71,6 +71,7 @@ _CHORUS_TO_DREAM_TOOL: dict[str, str] = {
     "memory_propose": "memory_propose",
     "spawn_subagent": "spawn_subagent",
     "web_search": "web_search",
+    "web_extract": "web_extract",
 }
 
 _READ_ONLY_DREAM_SURFACE_TOOLS = frozenset(
