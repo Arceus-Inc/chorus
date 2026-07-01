@@ -69,15 +69,55 @@ class TestMarketerManifestSubagents:
         assert wr.output_schema is not None
         assert wr.output_schema.get("type") == "object"  # a JSON-schema object
 
-    def test_brand_lint_is_a_parent_tool_not_a_subagent_primitive(self) -> None:
-        # brand_lint is a chorus capability tool. dream's runtime role-allowlist (the subagent's parent
-        # ceiling) currently excludes capability tools, so brand_lint lives on the MARKETER PARENT (the
-        # §10 pre-gen static check), not on the Brand-Critic subagent. Scoping it to the subagent needs
-        # a dream change (compute_session_role_allowlist must include registered capability tools).
+    def test_brand_critic_gets_brand_lint_as_a_subagent_primitive(self) -> None:
+        # §08: brand_lint is the Brand-Critic's deterministic primitive. It's a chorus capability tool,
+        # identity-mapped in _CHORUS_TO_DREAM_TOOL so the projection keeps it; the parent holds it too
+        # (narrower-wins). The projected child must carry it (the generator overlay is tools-unrestricted,
+        # so the runtime parent-tool ceiling includes it as well).
         plugin = marketer_plugin()
-        assert "brand_lint" in plugin.manifest.tools  # parent runs the pre-gen static check
+        assert "brand_lint" in plugin.manifest.tools  # parent superset (needed by the projection)
         critic = next(sa for sa in plugin.manifest.subagents if sa.name == "brand_critic")
-        assert "brand_lint" not in critic.tools
+        assert "brand_lint" in critic.tools
+        config = role_beat_config(plugin.manifest)
+        result = _subagent_set(config)
+        assert result is not None
+        child = result.get("brand_critic")
+        assert child is not None
+        assert "brand_lint" in child.tools
+
+    def test_brand_lint_is_actually_offered_to_the_critic_at_runtime(self) -> None:
+        # Projection alone isn't enough — prove dream would OFFER brand_lint to the spawned critic via
+        # its own tool-minimisation path. The generator manifest is tools=None (unrestricted), so the
+        # subagent's parent ceiling = all registered tools; compute_minimum_toolset must keep brand_lint.
+        from dream.permissions._types import SandboxTier
+        from dream.roles._toolset import compute_minimum_toolset
+        from dream.subagents._inline_executor import _build_subagent_manifest
+        from dream.tools._registry import ToolSource
+
+        import chorus_harness._factory as factory
+        from chorus.ledger import SqliteLedger
+
+        config = role_beat_config(marketer_plugin().manifest)
+        ledger = SqliteLedger.open(":memory:")
+        try:
+            registry = factory._role_registry(factory.dream_tool_names(config.tools))
+            for name in config.tools:
+                cap = factory._capability_tool(name, ledger)
+                if cap is not None:
+                    registry.register(cap, source=ToolSource.DEFAULT)
+            declarations = {t.name: t.declaration for t in registry.list_tools()}
+            assert "brand_lint" in declarations  # registered as a real tool
+
+            critic = _subagent_set(config).get("brand_critic")  # type: ignore[union-attr]
+            assert critic is not None
+            parent_ceiling = frozenset(declarations)  # generator role_allowed (tools=None → all)
+            manifest = _build_subagent_manifest(critic, parent_tools=parent_ceiling)
+            offered = compute_minimum_toolset(
+                manifest, sandbox_tier=SandboxTier.REPO_WRITE_NET, declarations=declarations
+            )
+            assert "brand_lint" in offered  # dream offers it to the critic — not just projected
+        finally:
+            ledger.close()
 
     def test_manifest_includes_spawn_subagent_tool(self) -> None:
         plugin = marketer_plugin()
@@ -189,5 +229,6 @@ class TestProjectSubagents:
         assert "brand_critic" in result
         agent = result.get("brand_critic")
         assert agent is not None
-        assert agent.max_turns == 4
+        assert agent.max_turns == 6
         assert "read_file" in agent.tools
+        assert "brand_lint" in agent.tools

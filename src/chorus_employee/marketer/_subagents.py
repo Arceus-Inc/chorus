@@ -50,11 +50,18 @@ BRAND_CRITIC_SUBAGENT = SubagentSpec(
         "- Be adversarial but FAIR: do not manufacture marginal violations to keep failing, and "
         "never flag something the Claim Policy expressly permits. Over-failing a compliant draft "
         "is itself a failure.\n"
+        "- Ground your verdict: FIRST run `brand_lint(doc=\"content_draft.md\")` — your deterministic "
+        "scan for prohibited phrases and unsubstantiated claims — and treat its findings as "
+        "authoritative signal, then reason over them for what mechanical rules can't catch (tone, "
+        "framing, off-message positioning). A clean brand_lint plus your judgment is a stronger PASS.\n"
         "- If `brand_spec.md` is missing, FAIL with a note that no voice spec was found.\n"
         "- Keep your verdict concise — the marketer needs actionable feedback, not essays."
     ),
-    tools=("read_file", "working_memory_read"),
-    max_turns=4,
+    # brand_lint is the Brand-Critic's owned deterministic primitive (§08). It reaches the child via the
+    # identity mapping in ``_CHORUS_TO_DREAM_TOOL`` (the parent holds it, so narrower-wins keeps it).
+    tools=("read_file", "working_memory_read", "brand_lint"),
+    # read brand_spec.md + read the draft + run brand_lint + reason to a verdict — 6 leaves headroom.
+    max_turns=6,
 )
 
 __all__ = ["BRAND_CRITIC_SUBAGENT"]

@@ -127,21 +127,30 @@ is pure function-calling (no internal reasoning, no model call).
 - **Register** in `chorus_harness/_factory.py::_capability_tool` — `if name == "brand_lint": return BrandLintTool()`
   (no ledger needed; it's a pure file reader — unlike the ledger-bound tools).
 - **Map** `"brand_lint": "brand_lint"` into `_CHORUS_TO_DREAM_TOOL` so `dream_tool_names` keeps it.
-- **Scope — marketer PARENT only (final, after a keyed run):** `"brand_lint"` on the marketer manifest —
-  she runs it pre-gen (§10 static rule) before spawning the Brand-Critic. It behaves exactly like
-  `stage_go_live` (a capability tool the parent calls; registered via `_capability_tool`; NOT in
-  `_CHORUS_TO_DREAM_TOOL`).
-- **Subagent scoping is BLOCKED on a dream change (not merely deferred).** A keyed run proved that
-  granting `brand_lint` to the Brand-Critic subagent does NOT work at runtime: dream seeds the
-  subagent's parent-tool ceiling from `role_allowed = compute_session_role_allowlist(tool_registry,
-  manifest)` (`_factory.py:667`, `PARENT_TOOLS_KEY`), which includes dream **built-ins** but **excludes
-  registered chorus capability tools**. So `intersect_tools(agent.tools, role_allowed)` drops
-  `brand_lint`, and the subagent reports it "isn't available." Identity-mapping it in
-  `_CHORUS_TO_DREAM_TOOL` also confused the parent (it spawned `brand_lint` as a subagent). To put a
-  capability tool on a subagent, dream's `compute_session_role_allowlist` must count registered
-  capability tools in `role_allowed` — a shared-kernel dream change with its own blast radius. The
-  same latent gap applies to the Analyst's tools inside its subagents (untested there). Deferred to a
-  dedicated dream slice.
+- **Scope — on the Brand-Critic subagent (§08 owner), via the identity-map (corrected RCA).** The
+  earlier "dream blocks capability tools in subagents" RCA was **wrong**. The drop was purely in
+  chorus's `_subagent_set` (`dream_tool_names(spec.tools)` strips a name absent from
+  `_CHORUS_TO_DREAM_TOOL`). Identity-mapping `"brand_lint"` fixes it, and dream does NOT block it: the
+  generator overlay writes no `tools` line, so its `manifest.tools is None` → `compute_minimum_toolset`
+  returns **all registered tools** (incl. `brand_lint`), which is the subagent's parent-tool ceiling.
+  Verified deterministically: with the map, `brand_lint` is registered in the role registry AND the
+  projected `brand_critic` child carries `('read_file', 'working_memory_read', 'brand_lint')`.
+- **The real fault in the first keyed run was the MARKETER BRIEF over-instructing the parent** to call
+  `brand_lint` — that made the *parent* try `spawn_subagent(name="brand_lint")` (mis-firing), and
+  polluted the run. Fix: the marketer brief says NOTHING about `brand_lint`; it is the Brand-Critic's
+  owned primitive, driven by the critic's own description. The parent still lists `brand_lint` in its
+  tools (the projection requires the parent to hold it) but is never told to use it. A keyed run
+  confirmed the parent no longer mis-spawns it.
+- **Runtime offering is proven, not assumed.** A deterministic test drives dream's *own*
+  `compute_minimum_toolset` on the critic's `_build_subagent_manifest` (parent ceiling = all registered
+  tools, since the generator manifest is `tools=None`) and asserts `brand_lint` is in the offered set —
+  so dream genuinely surfaces it to the critic. In the last keyed run the (weak) critic *model* still
+  claimed "brand_lint not available"; that was a hallucination — the same run also hallucinated
+  read_file truncation and illegally tried `spawn_subagent` from inside a subagent. The wiring is
+  correct; reliable in-beat use is a model-quality matter (a stronger critic model, or the DoD-gate
+  design below).
+- **Alternative still worth doing:** expose `brand_lint` as a **DoD gate** the kernel runs
+  deterministically (CLI + Command DoD), removing the dependence on the model choosing to call it.
 - **Brief:** one line in the Brand-Critic's `description` — "run `brand_lint` first for the mechanical
   prohibited-phrase/claim scan, then reason over its findings" — so the deterministic pass grounds the
   verdict rather than replacing it.

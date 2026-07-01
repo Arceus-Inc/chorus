@@ -74,6 +74,13 @@ _CHORUS_TO_DREAM_TOOL: dict[str, str] = {
     "spawn_subagent": "spawn_subagent",
     "web_search": "web_search",
     "web_extract": "web_extract",
+    # brand_lint is a chorus capability tool (registered via _capability_tool, NOT a dream built-in),
+    # but it is IDENTITY-mapped here so the subagent projection (``_subagent_set`` → dream_tool_names ∩
+    # parent) keeps it for the Brand-Critic (§08 owner). ``_role_registry`` still skips it (no built-in)
+    # and ``_capability_tool`` registers it; the generator overlay is tools-unrestricted, so it's in the
+    # parent's role-allowlist ceiling too. The MARKETER BRIEF must NOT instruct the parent to call it —
+    # it is the critic's primitive; over-instructing the parent makes it mis-spawn brand_lint.
+    "brand_lint": "brand_lint",
 }
 
 _READ_ONLY_DREAM_SURFACE_TOOLS = frozenset(
