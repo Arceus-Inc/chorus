@@ -14,6 +14,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Callable, Mapping, Sequence
 from contextlib import suppress
+from dataclasses import asdict, replace
 from datetime import UTC, datetime
 from enum import StrEnum
 from inspect import isawaitable
@@ -23,6 +24,7 @@ from typing import Any, Protocol
 from chorus.adapters._failure import failure_outcome
 from chorus.adapters._observer import DreamObserverBridge
 from chorus.adapters._pricing import TokenPricing, UsageView
+from chorus.adapters._trace import beat_subagent_stats, sidecar_traces
 from chorus.events import Event
 from chorus.heartbeat import BeatContext, BeatOutcome
 from chorus.outcomes import VerificationStep
@@ -197,6 +199,11 @@ class DreamBeatRunner:
             if observer is not None
             else None
         )
+        # Snapshot existing sidecar traces so we can isolate *this* beat's trace afterwards and recover
+        # the subagent counters dream drops before they reach the observer (see ``_trace``).
+        traces_before = (
+            sidecar_traces(self._working_dir) if self._working_dir is not None else frozenset()
+        )
         # dream's verification step ``kind`` must be one of {test, lint, eval} (its SprintContract
         # rejects anything else and the whole beat errors before the generator). A chorus Command DoD
         # is a generic shell command, so it maps to ``eval``; the oracle runs ``command`` regardless of
@@ -250,7 +257,9 @@ class DreamBeatRunner:
             return failure_outcome(exc)
         finally:
             await self._close_harness()
-        outcome = to_beat_outcome(result, pricing=self._pricing)
+        outcome = self._attach_subagent_stats(
+            to_beat_outcome(result, pricing=self._pricing), traces_before
+        )
         if not outcome.passed and verification and await self._verification_passed(verification):
             return BeatOutcome(
                 passed=True,
@@ -266,6 +275,19 @@ class DreamBeatRunner:
                 output_tokens=outcome.output_tokens,
             )
         return outcome
+
+    def _attach_subagent_stats(
+        self, outcome: BeatOutcome, traces_before: frozenset[Path]
+    ) -> BeatOutcome:
+        """Enrich a beat outcome with this beat's subagent counters (best-effort, from the trace)."""
+        if self._working_dir is None:
+            return outcome
+        stats = beat_subagent_stats(self._working_dir, traces_before)
+        if not stats:
+            return outcome
+        return replace(
+            outcome, outcome={**outcome.outcome, "subagents": [asdict(s) for s in stats]}
+        )
 
     async def _close_harness(self) -> None:
         close = getattr(self._harness, "aclose", None)
