@@ -95,6 +95,12 @@ class RoleManifest:
     mcp: bool = False  # admit the working dir's MCP allowlist (opt-in)
     plugins: bool = False  # load the working dir's repo-local plugins (opt-in)
     env: tuple[tuple[str, str], ...] = ()  # host-resolution env (e.g. DREAM_HOME); never secrets
+    # — beat time budget — how long ONE beat of this role may run before it's cut off / reaped. A
+    # research-heavy role (spawns a multi-minute web_research sweep in one uninterrupted call) needs
+    # more than the org defaults, or the beat times out / its run lease is reaped mid-research. ``None``
+    # inherits the composition-root default (factory ``timeout_s`` / scheduler ``lease_ttl_s``).
+    beat_timeout_s: float | None = None  # DreamBeatRunner wall-clock per beat
+    lease_ttl_s: float | None = None  # scheduler run-lease TTL before the stale-run reaper claims it
     # — build_harness(subagents=…) — Tier-1 role-owned subagents the employee may dispatch mid-beat
     # (dream's ``spawn_subagent``). Each subagent's tools are intersected with this role's toolset at
     # materialize, so a subagent can only ever narrow capability, never widen it (spec 06 §minimisation).

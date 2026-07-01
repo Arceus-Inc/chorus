@@ -560,7 +560,9 @@ class Scheduler:
         employee = workforce.get(wake.employee_id)
 
         # begin_execution — mint the run row the checkout lock already points at, with a fresh lease.
-        lease = now + timedelta(seconds=self.lease_ttl_s)
+        # The lease TTL is the assignee role's (a research-heavy role widens it past the org default),
+        # so a beat that blocks for minutes inside one uninterrupted subagent call isn't reaped.
+        lease = now + timedelta(seconds=self._lease_seconds_for(employee))
         ledger.runs.create(
             Run(
                 id=run_id,
@@ -878,7 +880,7 @@ class Scheduler:
                 # A lease, like every other running beat: a null lease reads as crash debris to the
                 # stale-run reaper (a concurrent RECOVER under run_forever, or another Arceus worker),
                 # which would reap this in-flight review and strand the deliverable (spec 03 §5).
-                lease_expires_at=now + timedelta(seconds=self.lease_ttl_s),
+                lease_expires_at=now + timedelta(seconds=self._lease_seconds_for(reviewer)),
                 started_at=now,
             )
         )
@@ -1097,6 +1099,19 @@ class Scheduler:
                 next_action="resolve the rejected deliverable or revise its DoD",
             )
         )
+
+    def _lease_seconds_for(self, employee: Employee) -> float:
+        """The run-lease TTL for a beat of ``employee``'s role — the role's override, else the default.
+
+        A research-heavy role (one that spawns a multi-minute ``web_research`` sweep in a single
+        uninterrupted call, unable to renew its lease meanwhile) sets a larger ``lease_ttl_s`` so the
+        stale-run reaper doesn't claim its still-live beat at the org default (spec 06 §2).
+        """
+        if self._roles is not None and employee.role in self._roles:
+            ttl = self._roles.get(employee.role).manifest.lease_ttl_s
+            if ttl is not None:
+                return ttl
+        return self.lease_ttl_s
 
     async def _land_outcome(self, task_id: str, *, employee: Employee, result: BeatOutcome) -> None:
         """Record the role's deliverable as an artifact via its registered lander (spec 04 §2).

@@ -46,6 +46,10 @@ class RoleBeatConfig:
     mcp: bool = False
     plugins: bool = False
     env: tuple[tuple[str, str], ...] = ()
+    # Per-role beat time budget (``None`` → composition-root default). ``beat_timeout_s`` bounds the
+    # DreamBeatRunner's wall-clock; ``lease_ttl_s`` the scheduler's run lease before the reaper claims.
+    beat_timeout_s: float | None = None
+    lease_ttl_s: float | None = None
     # Tier-1 role-owned subagents (carried through verbatim; the composition root projects them
     # onto dream's ``Subagent``/``SubagentSet`` and intersects each one's tools with this config's.
     subagents: tuple[SubagentSpec, ...] = ()
@@ -69,6 +73,8 @@ def role_beat_config(manifest: RoleManifest) -> RoleBeatConfig:
         mcp=manifest.mcp,
         plugins=manifest.plugins,
         env=manifest.env,
+        beat_timeout_s=manifest.beat_timeout_s,
+        lease_ttl_s=manifest.lease_ttl_s,
         subagents=manifest.subagents,
     )
 

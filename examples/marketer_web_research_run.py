@@ -165,9 +165,8 @@ def main() -> int:
             api_key=api_key, base_url=base_url, deployment=deployment,
             company_id="arceus", roles=registry, pricing=default_pricing_from_env(),
             seed=seed, ledger=ledger,
-            # A research beat (spawn web_research → draft → brand_critic) needs more than the 90s
-            # default: a single web_research sweep alone is ~2-3 min of network. Give it room.
-            timeout_s=480.0,
+            # The marketer role carries its own beat_timeout_s / lease_ttl_s (research is turn-hungry),
+            # so no factory/scheduler override is needed here — the role budget flows through.
         )
         ledger.employees.create(Employee(id="mira", name="Mira", role="marketer"))
         cfg = role_beat_config(registry.get("marketer").manifest)

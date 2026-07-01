@@ -82,6 +82,19 @@ class TestMarketerPlugin:
         plugin = marketer_plugin()
         assert plugin.manifest.working_memory is True
 
+    def test_manifest_widens_beat_budget_for_research(self) -> None:
+        # She spawns a multi-minute web_research sweep; the org defaults (90s beat / 300s lease) would
+        # reap her mid-research, so the role carries a wider beat_timeout_s + lease_ttl_s.
+        manifest = marketer_plugin().manifest
+        assert manifest.beat_timeout_s is not None and manifest.beat_timeout_s >= 300.0
+        assert manifest.lease_ttl_s is not None and manifest.lease_ttl_s >= manifest.beat_timeout_s
+        # And the projection carries both through to the beat config.
+        from chorus.roles import role_beat_config
+
+        config = role_beat_config(manifest)
+        assert config.beat_timeout_s == manifest.beat_timeout_s
+        assert config.lease_ttl_s == manifest.lease_ttl_s
+
     def test_declares_the_brand_drift_scan(self) -> None:
         # §13: the first standing routine — a weekly read/report cadence against the voice spec.
         plugin = marketer_plugin()
