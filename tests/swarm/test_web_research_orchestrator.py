@@ -41,6 +41,12 @@ class TestDeclaration:
     def test_turn_budget_is_bounded(self) -> None:
         assert 0 < WEB_RESEARCH_ORCHESTRATOR.max_turns <= 16
 
+    def test_declares_the_runtime_output_schema(self) -> None:
+        # The contract goes from soft (brief-only) to runtime-enforced: the schema rides the spec into
+        # dream, where the inline executor validates + repair-loops + fails open with a warning.
+        assert WEB_RESEARCH_ORCHESTRATOR.output_schema == web_research_output_schema()
+        assert WEB_RESEARCH_ORCHESTRATOR.output_schema is not None
+
     def test_brief_carries_policy_ladder_and_contract(self) -> None:
         desc = WEB_RESEARCH_ORCHESTRATOR.description
         assert "web_search" in desc and "web_extract" in desc

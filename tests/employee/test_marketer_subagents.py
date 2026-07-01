@@ -49,8 +49,25 @@ class TestBrandCriticDeclaration:
 class TestMarketerManifestSubagents:
     def test_manifest_declares_brand_critic(self) -> None:
         plugin = marketer_plugin()
-        assert len(plugin.manifest.subagents) == 1
-        assert plugin.manifest.subagents[0].name == "brand_critic"
+        assert any(sa.name == "brand_critic" for sa in plugin.manifest.subagents)
+
+    def test_manifest_declares_web_research(self) -> None:
+        # The shared Web-Research Orchestrator, passed DIRECTLY into the manifest (no with_web_research).
+        plugin = marketer_plugin()
+        assert any(sa.name == "web_research" for sa in plugin.manifest.subagents)
+
+    def test_manifest_grants_web_extract_for_the_researcher(self) -> None:
+        # web_research needs web_search + web_extract; the parent must hold both or narrower-wins strips
+        # them from the child at materialize.
+        plugin = marketer_plugin()
+        assert "web_search" in plugin.manifest.tools
+        assert "web_extract" in plugin.manifest.tools
+
+    def test_web_research_carries_a_runtime_output_schema(self) -> None:
+        plugin = marketer_plugin()
+        wr = next(sa for sa in plugin.manifest.subagents if sa.name == "web_research")
+        assert wr.output_schema is not None
+        assert wr.output_schema.get("type") == "object"  # a JSON-schema object
 
     def test_manifest_includes_spawn_subagent_tool(self) -> None:
         plugin = marketer_plugin()
@@ -68,7 +85,7 @@ class TestMarketerManifestSubagents:
 
     def test_beat_config_carries_the_subagents(self) -> None:
         config = role_beat_config(marketer_plugin().manifest)
-        assert {sa.name for sa in config.subagents} == {"brand_critic"}
+        assert {sa.name for sa in config.subagents} == {"brand_critic", "web_research"}
 
 
 # --- Factory projection ---
@@ -108,6 +125,22 @@ class TestProjectSubagents:
         assert agent.name == "critic"
         assert agent.description == "Reviews things"
         assert agent.max_turns == 4
+        assert agent.output_schema is None  # unset by default → no runtime enforcement
+
+    def test_projection_carries_the_output_schema(self) -> None:
+        # A declared output_schema reaches dream's Subagent, where the guardrail enforces it at runtime.
+        schema = {"type": "object", "required": ["answer"]}
+        spec = SubagentSpec(
+            name="researcher",
+            description="answers with structured JSON",
+            tools=("read_file",),
+            output_schema=schema,
+        )
+        result = _subagent_set(_config(("read_file",), (spec,)))
+        assert result is not None
+        agent = result.get("researcher")
+        assert agent is not None
+        assert agent.output_schema == schema
 
     def test_projected_tools_are_dream_names(self) -> None:
         spec = SubagentSpec(

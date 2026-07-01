@@ -17,6 +17,7 @@ from chorus.roles._manifest import (
 )
 from chorus_employee.marketer._brief import MARKETER_BRIEF
 from chorus_employee.marketer._subagents import BRAND_CRITIC_SUBAGENT
+from swarm.web_research_orchestrator import WEB_RESEARCH_ORCHESTRATOR
 
 
 def marketer_manifest() -> RoleManifest:
@@ -42,6 +43,9 @@ def marketer_manifest() -> RoleManifest:
             # market/audience research: Tavily-backed web search (§06 Researcher, §07 read reach).
             # An allowlisted-egress read (its declared host is api.tavily.com) — needs the net tier below.
             "web_search",
+            # web_extract (fetch + clean read) — the second tool the Web-Research Orchestrator needs;
+            # granted directly so narrower-wins doesn't strip it from that subagent at materialize.
+            "web_extract",
             # the ONLY path to a live surface: stage publish/send/spend for human approval (§07/§11).
             # Its call opens a gate and never executes — reach is fail-closed by construction.
             "stage_go_live",
@@ -79,7 +83,10 @@ def marketer_manifest() -> RoleManifest:
         # --- subagents (Tier-1, role-owned) ---
         # The Brand-Critic: an adversarial reviewer Mira spawns mid-beat to validate content
         # against the voice spec. Read-only (can only inspect, never edit the draft).
-        subagents=(BRAND_CRITIC_SUBAGENT,),
+        # The Web-Research Orchestrator: a shared specialist (declared once in src/swarm/) she spawns to
+        # answer a market/audience question from the live web (web_search + web_extract), returning a
+        # runtime-validated WebResearchOutput. Passed directly — no with_web_research indirection.
+        subagents=(BRAND_CRITIC_SUBAGENT, WEB_RESEARCH_ORCHESTRATOR),
     )
 
 

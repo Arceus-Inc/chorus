@@ -13,6 +13,7 @@ never widen, what its parent can do.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 
 @dataclass(frozen=True)
@@ -22,6 +23,11 @@ class SubagentSpec:
     ``tools`` are *chorus* tool names (the same vocabulary as ``RoleManifest.tools``); the composition
     root maps them to dream names and intersects with the parent's live toolset. ``model`` lets a
     cheap specialist run on a smaller model than the parent; ``None`` inherits the parent's model.
+
+    ``output_schema`` is an optional JSON-schema dict the subagent's final message is validated against
+    at runtime: the composition root passes it to dream, whose inline executor coerces + validates the
+    output, runs a bounded reformat loop on failure, and fails open with a warning. ``None`` = free-text
+    return (no enforcement).
     """
 
     name: str
@@ -29,6 +35,7 @@ class SubagentSpec:
     tools: tuple[str, ...] = ()
     model: str | None = None
     max_turns: int = 6
+    output_schema: dict[str, Any] | None = None
 
     def __post_init__(self) -> None:
         if not self.name or not self.name.strip():

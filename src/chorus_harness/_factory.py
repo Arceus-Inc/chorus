@@ -110,6 +110,7 @@ def _subagent_set(config: RoleBeatConfig) -> SubagentSet | None:
                 tools=tools,
                 model=spec.model,
                 max_turns=spec.max_turns,
+                output_schema=spec.output_schema,
             )
         )
     return build_subagent_set(tier1_agents=agents, parent_tools=parent_tools)

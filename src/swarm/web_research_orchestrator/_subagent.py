@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from chorus.roles._subagent import SubagentSpec
 from swarm.web_research_orchestrator._brief import _WEB_RESEARCH_BRIEF
+from swarm.web_research_orchestrator._schemas import web_research_output_schema
 
 # The subagent's tools — the ONLY two it may use. Kept as a module constant so the opt-in helper
 # can guarantee the parent grants a superset (narrower-wins would otherwise strip them).
@@ -27,6 +28,9 @@ WEB_RESEARCH_ORCHESTRATOR = SubagentSpec(
     # Research is turn-hungry: 2-5 sub-questions, each a search->extract->cross-check cycle, plus
     # the saturation ladder. 16 leaves room for a real sweep without running unbounded.
     max_turns=16,
+    # Runtime-enforced return contract: the brief instructs the JSON shape (soft); this makes it hard
+    # — the inline executor validates + repair-loops + fails open with a warning (WebResearchOutput).
+    output_schema=web_research_output_schema(),
 )
 
 __all__ = ["WEB_RESEARCH_ORCHESTRATOR", "WEB_RESEARCH_SUBAGENT_TOOLS"]
