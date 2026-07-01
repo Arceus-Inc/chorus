@@ -39,6 +39,7 @@ from chorus_employee import default_landers
 from chorus_harness._trust import apply_trust
 from chorus_tools import (
     AssignTaskTool,
+    BrandLintTool,
     DecomposeTool,
     GoLiveTool,
     SubmitTaskTool,
@@ -140,6 +141,8 @@ def _capability_tool(name: str, ledger: SqliteLedger) -> BaseTool | None:
         return SubmitVerdictTool(ledger)
     if name == "stage_go_live":
         return GoLiveTool(ledger)
+    if name == "brand_lint":
+        return BrandLintTool()  # pure file reader — the ledger arg is unused (kept for a uniform seam)
     return None
 
 

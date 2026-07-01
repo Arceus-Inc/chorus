@@ -8,6 +8,7 @@ dream ``BaseTool`` wrapping a dream-free chorus service. The dream import lives 
 
 from __future__ import annotations
 
+from chorus_tools._brand_lint import BrandFinding, BrandLintInput, BrandLintTool
 from chorus_tools._decompose import DecomposeInput, DecomposeTool
 from chorus_tools._go_live import GoLiveAction, GoLiveInput, GoLiveTool
 from chorus_tools._manager_actions import (
@@ -22,6 +23,9 @@ from chorus_tools._submit_verdict import SubmitVerdictInput, SubmitVerdictTool
 __all__ = [
 	"AssignTaskInput",
 	"AssignTaskTool",
+	"BrandFinding",
+	"BrandLintInput",
+	"BrandLintTool",
 	"DecomposeInput",
 	"DecomposeTool",
 	"GoLiveAction",

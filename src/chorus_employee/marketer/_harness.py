@@ -54,6 +54,9 @@ def marketer_manifest() -> RoleManifest:
             # the ONLY path to a live surface: stage publish/send/spend for human approval (§07/§11).
             # Its call opens a gate and never executes — reach is fail-closed by construction.
             "stage_go_live",
+            # deterministic pre-gen self-check (§08 tool / §10 sandwich): mechanically scan her draft for
+            # prohibited phrases + unsubstantiated claims before she spawns the (expensive) Brand-Critic.
+            "brand_lint",
             # the `skill` tool loads her authored playbooks (brand-voice) on demand (§08 know-how).
             "skill",
         ),
