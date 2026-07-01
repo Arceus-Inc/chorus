@@ -127,17 +127,21 @@ is pure function-calling (no internal reasoning, no model call).
 - **Register** in `chorus_harness/_factory.py::_capability_tool` — `if name == "brand_lint": return BrandLintTool()`
   (no ledger needed; it's a pure file reader — unlike the ledger-bound tools).
 - **Map** `"brand_lint": "brand_lint"` into `_CHORUS_TO_DREAM_TOOL` so `dream_tool_names` keeps it.
-- **Scope — on BOTH the marketer parent and the Brand-Critic subagent (final):**
-  - *Parent* (§10 pre-gen static rule): `"brand_lint"` on the marketer manifest — she lints her own
-    draft before spawning the critic.
-  - *Subagent* (§08 owner = Brand-Critic): `"brand_lint"` on `BRAND_CRITIC_SUBAGENT.tools`, made
-    reachable by **identity-mapping it in `_CHORUS_TO_DREAM_TOOL`** so the subagent projection
-    (`dream_tool_names(spec.tools) ∩ parent_tools`) keeps it. `_role_registry` still skips it (no dream
-    built-in); `_capability_tool` registers it into the parent harness the subagent runs on. This is the
-    established codebase pattern — the Analyst uses the same identity-mapping technique for its analysis
-    tools (`warehouse_query` / `notebook_run` / `chart_render`), so it converges cleanly with that
-    branch. The earlier "deferred seam" is thus **built**: a chorus capability tool now reaches a
-    subagent via the map, no kernel change.
+- **Scope — marketer PARENT only (final, after a keyed run):** `"brand_lint"` on the marketer manifest —
+  she runs it pre-gen (§10 static rule) before spawning the Brand-Critic. It behaves exactly like
+  `stage_go_live` (a capability tool the parent calls; registered via `_capability_tool`; NOT in
+  `_CHORUS_TO_DREAM_TOOL`).
+- **Subagent scoping is BLOCKED on a dream change (not merely deferred).** A keyed run proved that
+  granting `brand_lint` to the Brand-Critic subagent does NOT work at runtime: dream seeds the
+  subagent's parent-tool ceiling from `role_allowed = compute_session_role_allowlist(tool_registry,
+  manifest)` (`_factory.py:667`, `PARENT_TOOLS_KEY`), which includes dream **built-ins** but **excludes
+  registered chorus capability tools**. So `intersect_tools(agent.tools, role_allowed)` drops
+  `brand_lint`, and the subagent reports it "isn't available." Identity-mapping it in
+  `_CHORUS_TO_DREAM_TOOL` also confused the parent (it spawned `brand_lint` as a subagent). To put a
+  capability tool on a subagent, dream's `compute_session_role_allowlist` must count registered
+  capability tools in `role_allowed` — a shared-kernel dream change with its own blast radius. The
+  same latent gap applies to the Analyst's tools inside its subagents (untested there). Deferred to a
+  dedicated dream slice.
 - **Brief:** one line in the Brand-Critic's `description` — "run `brand_lint` first for the mechanical
   prohibited-phrase/claim scan, then reason over its findings" — so the deterministic pass grounds the
   verdict rather than replacing it.

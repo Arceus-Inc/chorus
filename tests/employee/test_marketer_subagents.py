@@ -69,20 +69,15 @@ class TestMarketerManifestSubagents:
         assert wr.output_schema is not None
         assert wr.output_schema.get("type") == "object"  # a JSON-schema object
 
-    def test_brand_critic_gets_brand_lint_as_a_subagent_primitive(self) -> None:
-        # §08: brand_lint is the Brand-Critic's deterministic primitive. It's a chorus capability tool,
-        # so it must be in the dream-name map (identity) for the subagent projection to keep it, and on
-        # the parent (narrower-wins). The projected child must carry it.
+    def test_brand_lint_is_a_parent_tool_not_a_subagent_primitive(self) -> None:
+        # brand_lint is a chorus capability tool. dream's runtime role-allowlist (the subagent's parent
+        # ceiling) currently excludes capability tools, so brand_lint lives on the MARKETER PARENT (the
+        # §10 pre-gen static check), not on the Brand-Critic subagent. Scoping it to the subagent needs
+        # a dream change (compute_session_role_allowlist must include registered capability tools).
         plugin = marketer_plugin()
+        assert "brand_lint" in plugin.manifest.tools  # parent runs the pre-gen static check
         critic = next(sa for sa in plugin.manifest.subagents if sa.name == "brand_critic")
-        assert "brand_lint" in critic.tools
-        assert "brand_lint" in plugin.manifest.tools  # parent superset
-        config = role_beat_config(plugin.manifest)
-        result = _subagent_set(config)
-        assert result is not None
-        child = result.get("brand_critic")
-        assert child is not None
-        assert "brand_lint" in child.tools  # survived dream_tool_names + parent intersection
+        assert "brand_lint" not in critic.tools
 
     def test_manifest_includes_spawn_subagent_tool(self) -> None:
         plugin = marketer_plugin()
@@ -194,6 +189,5 @@ class TestProjectSubagents:
         assert "brand_critic" in result
         agent = result.get("brand_critic")
         assert agent is not None
-        assert agent.max_turns == 6
+        assert agent.max_turns == 4
         assert "read_file" in agent.tools
-        assert "brand_lint" in agent.tools
