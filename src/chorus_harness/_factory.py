@@ -45,6 +45,7 @@ from chorus_tools import (
     SubmitTaskTool,
     SubmitVerdictTool,
 )
+from chorus_tools.cms import CmsDraftTool, cms_backend_from_env
 
 if TYPE_CHECKING:
     from chorus.ledger import SqliteLedger
@@ -81,6 +82,10 @@ _CHORUS_TO_DREAM_TOOL: dict[str, str] = {
     # parent's role-allowlist ceiling too. The MARKETER BRIEF must NOT instruct the parent to call it —
     # it is the critic's primitive; over-instructing the parent makes it mis-spawn brand_lint.
     "brand_lint": "brand_lint",
+    # cms_draft — a chorus capability tool (reversible CMS write, §08 Channel). Identity-mapped for the
+    # same reason as brand_lint: so the projection keeps it; it is registered in the materialize flow
+    # (it needs the worktree for the Markdown backend, which _capability_tool has no access to).
+    "cms_draft": "cms_draft",
 }
 
 _READ_ONLY_DREAM_SURFACE_TOOLS = frozenset(
@@ -435,6 +440,13 @@ class EmployeeHarnessFactory:
                 capability = _capability_tool(name, self._ledger)
                 if capability is not None:
                     registry.register(capability, source=ToolSource.DEFAULT)
+        # cms_draft is registered here (not in _capability_tool): its Markdown fallback backend needs the
+        # worktree, and the backend (Strapi when its env is set, else Markdown) is config-selected. No
+        # ledger needed — a reversible CMS write, below the go-live gate.
+        if "cms_draft" in config.tools:
+            registry.register(
+                CmsDraftTool(cms_backend_from_env(root / "cms_drafts")), source=ToolSource.DEFAULT
+            )
 
         # Subagents: project the role's Tier-1 declarations into dream's SubagentSet. The
         # spawn_subagent tool (already in the registry if "spawn_subagent" is in the role's tools)

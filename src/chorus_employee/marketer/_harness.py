@@ -57,6 +57,9 @@ def marketer_manifest() -> RoleManifest:
             # deterministic pre-gen self-check (§08 tool / §10 sandwich): mechanically scan her draft for
             # prohibited phrases + unsubstantiated claims before she spawns the (expensive) Brand-Critic.
             "brand_lint",
+            # the Channel's reversible write (§08 cms.draft): stage finished content as an UNPUBLISHED
+            # CMS draft (blog/social/email). Below the go-live gate — publishing it is still stage_go_live.
+            "cms_draft",
             # the `skill` tool loads her authored playbooks (brand-voice) on demand (§08 know-how).
             "skill",
         ),

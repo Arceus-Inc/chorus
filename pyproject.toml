@@ -31,6 +31,8 @@ dependencies = [
   "dream",
   "croniter>=2.0",
   "pyyaml>=6.0",
+  # cms_draft's StrapiCmsBackend speaks Strapi's REST API over httpx (previously only transitive).
+  "httpx>=0.27",
 ]
 
 [project.optional-dependencies]
