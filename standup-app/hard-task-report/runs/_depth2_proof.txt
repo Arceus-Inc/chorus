@@ -1,0 +1,2 @@
+    🔀 SUBAGENT_SPAWNED web_research (depth=?)
+    ✅ web_research completed [ok] err=None

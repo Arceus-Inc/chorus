@@ -72,10 +72,18 @@ def marketer_manifest() -> RoleManifest:
         ),
         disallowed_tools=(),
         # --- build_harness(skills=...) / build_harness(skill_registry=...) ---
-        # The brand-voice playbook (§08): authored craft that keeps a fluent model from being an
-        # on-message-sounding, off-brand fabricator — the deterministic-rules complement to the
-        # in-beat Brand-Critic. Discovered from the package's skills/ dir; loaded via the skill tool.
-        skills=("brand-voice",),
+        # Authored §08 playbooks — the craft that keeps a fluent model on-brand, discoverable, and
+        # deliverable. Loaded on demand via the `skill` tool; discovered from the package's skills/ dir.
+        # - brand-voice: on-brand, evidence-honest copy (the deterministic-rules complement to the
+        #   in-beat Brand-Critic).
+        # - deliverability: getting email to the inbox — reputation, list hygiene, the send ceiling
+        #   (pairs with the live email.send reach).
+        # - geo-aeo-seo: structuring owned content so search AND generative answer engines cite it
+        #   (pairs with the content/GEO-refresh routine).
+        # - channel-priors: what format + cadence each surface rewards (shapes the Strategist's plan).
+        # Experiment/measurement skills (A/B discipline, attribution) wait on the analytics + the
+        # Experimenter subagent.
+        skills=("brand-voice", "deliverability", "geo-aeo-seo", "channel-priors"),
         skills_root=_SKILLS_ROOT,
         # --- build_harness(memory=...) + working_memory ---
         memory_scope=MemoryScope.PROJECT,
