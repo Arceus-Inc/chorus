@@ -21,6 +21,7 @@ from chorus_tools.cms._types import (
     EmailDraft,
     SocialDraft,
     SocialPlatform,
+    draft_from_fields,
 )
 
 __all__ = [
@@ -38,4 +39,5 @@ __all__ = [
     "SocialPlatform",
     "StrapiCmsBackend",
     "cms_backend_from_env",
+    "draft_from_fields",
 ]

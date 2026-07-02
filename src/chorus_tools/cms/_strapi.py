@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import httpx
 
-from chorus_tools.cms._types import CmsDraft, CmsError, ContentType, DraftRef
+from chorus_tools.cms._types import CmsDraft, CmsError, ContentType, DraftRef, draft_from_fields
 
 # content_type -> (plural collection id, singular id) — the Strapi types built during setup.
 _COLLECTIONS: dict[ContentType, tuple[str, str]] = {
@@ -48,6 +48,22 @@ class StrapiCmsBackend:
             json={"data": draft.fields()},
         )
         return self._ref_from(response, draft)
+
+    def read_draft(self, ref_id: str, content_type: ContentType) -> CmsDraft:
+        """Rebuild the staged draft from Strapi — the send path reads APPROVED content, never input."""
+        collection, _ = _COLLECTIONS[content_type]
+        response = self._client.get(
+            f"{self._base}/api/{collection}/{ref_id}",
+            params={"status": "draft"},
+            headers={"Authorization": f"Bearer {self._token}"},
+        )
+        if response.status_code // 100 != 2:
+            raise CmsError(f"strapi {response.status_code}: {response.text[:200]}")
+        payload = response.json()
+        data = payload.get("data") if isinstance(payload, dict) else None
+        if not isinstance(data, dict):
+            raise CmsError("strapi response missing data")
+        return draft_from_fields(content_type, data)
 
     def _ref_from(self, response: httpx.Response, draft: CmsDraft) -> DraftRef:
         if response.status_code // 100 != 2:

@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from chorus_tools.cms._types import CmsDraft, DraftRef
+from chorus_tools.cms._types import CmsDraft, ContentType, DraftRef
 
 
 class CmsBackend(Protocol):
@@ -21,6 +21,10 @@ class CmsBackend(Protocol):
 
     def update_draft(self, ref_id: str, draft: CmsDraft) -> DraftRef:
         """Update the standing draft ``ref_id`` in place — the idempotent re-stage path."""
+        ...
+
+    def read_draft(self, ref_id: str, content_type: ContentType) -> CmsDraft:
+        """Rebuild the staged draft — the send executor reads APPROVED content, never model input."""
         ...
 
 

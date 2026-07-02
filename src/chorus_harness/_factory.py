@@ -46,7 +46,11 @@ from chorus_tools import (
     SubmitVerdictTool,
 )
 from chorus_tools.cms import CmsDraftTool, cms_backend_from_env
-from chorus_tools.delivery import ExecuteGoLiveTool, publish_backend_from_env
+from chorus_tools.delivery import (
+    ExecuteGoLiveTool,
+    email_delivery_from_env,
+    publish_backend_from_env,
+)
 
 if TYPE_CHECKING:
     from chorus.ledger import SqliteLedger
@@ -458,7 +462,9 @@ class EmployeeHarnessFactory:
         if "execute_go_live" in config.tools and self._ledger is not None:
             registry.register(
                 ExecuteGoLiveTool(
-                    self._ledger, publish_backend_from_env(root / "cms_drafts")
+                    self._ledger,
+                    publish_backend_from_env(root / "cms_drafts"),
+                    email_delivery=email_delivery_from_env(root / "cms_drafts"),
                 ),
                 source=ToolSource.DEFAULT,
             )

@@ -23,6 +23,7 @@ from chorus_tools.cms import ContentType, DraftRef
 from chorus_tools.cms._index import CmsDraftIndex
 from chorus_tools.delivery._backend import PublishBackend
 from chorus_tools.delivery._index import DeliveryIndex
+from chorus_tools.delivery._send import EmailDelivery
 from chorus_tools.delivery._types import DeliveryError, DeliveryRecord
 
 # Worktree locations (beside the beat context the kernel writes).
@@ -57,9 +58,15 @@ class ExecuteGoLiveTool(BaseTool):
     declaration = ToolDeclaration(risk="mutating", tier_required=1, timeout_seconds=30.0)
     input_model = ExecuteGoLiveInput
 
-    def __init__(self, ledger: SqliteLedger, backend: PublishBackend) -> None:
+    def __init__(
+        self,
+        ledger: SqliteLedger,
+        backend: PublishBackend,
+        email_delivery: EmailDelivery | None = None,
+    ) -> None:
         self._ledger = ledger
         self._backend = backend
+        self._email_delivery = email_delivery
 
     async def execute(self, input: dict[str, object], ctx: ToolExecutionContext) -> ToolResult:
         try:
@@ -98,16 +105,28 @@ class ExecuteGoLiveTool(BaseTool):
                 "run cms_draft first"
             )
 
+        # The reach per channel: email GOES OUT (send), everything else GOES UP (publish).
+        if args.content_type is ContentType.EMAIL:
+            if self._email_delivery is None:
+                return _rejected(
+                    "email delivery is not configured on this harness — the send cannot execute"
+                )
+            action = GoLiveAction.SEND
+            executor = self._email_delivery.send
+        else:
+            action = GoLiveAction.PUBLISH
+            executor = self._backend.publish
+
         try:
-            published = self._backend.publish(draft)
+            landed = executor(draft)
         except DeliveryError as exc:
             return _failed(str(exc))
 
         record = DeliveryRecord(
             approval_id=gate.id,
-            action=GoLiveAction.PUBLISH,
+            action=action,
             target=args.content_type.value,
-            published=published,
+            published=landed,
         )
         deliveries.record(record)
         return _delivered(record, already=False)

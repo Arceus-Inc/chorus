@@ -163,6 +163,48 @@ class DraftRef:
         )
 
 
+def draft_from_fields(content_type: ContentType, fields: dict[str, object]) -> CmsDraft:
+    """Rebuild a typed draft from a backend's stored field map — the inverse of ``draft.fields()``.
+
+    The read half of ``read_draft``: a missing/blank required field or an unknown enum value raises
+    :class:`CmsError` naming the field, so a corrupted store can never yield a half-valid draft.
+    """
+    try:
+        if content_type is ContentType.BLOG:
+            return BlogDraft(
+                title=_text(fields, "title"),
+                body=_text(fields, "body"),
+                slug=_text(fields, "slug", optional=True),
+                excerpt=_text(fields, "excerpt", optional=True),
+                seo_description=_text(fields, "seo_description", optional=True),
+            )
+        if content_type is ContentType.SOCIAL:
+            return SocialDraft(
+                platform=SocialPlatform(_text(fields, "platform")),
+                text=_text(fields, "text"),
+                link=_text(fields, "link", optional=True),
+                scheduled_at=_text(fields, "scheduled_at", optional=True),
+            )
+        return EmailDraft(
+            subject=_text(fields, "subject"),
+            body=_text(fields, "body"),
+            preheader=_text(fields, "preheader", optional=True),
+            segment=_text(fields, "segment", optional=True),
+        )
+    except ValueError as exc:
+        raise CmsError(f"stored {content_type.value} draft is invalid: {exc}") from exc
+
+
+def _text(fields: dict[str, object], key: str, *, optional: bool = False) -> str:
+    """A string field from a stored map; blank/absent is '' when optional, else a named error."""
+    value = fields.get(key)
+    if isinstance(value, str) and value.strip():
+        return value
+    if optional:
+        return ""
+    raise ValueError(f"{key} is missing")
+
+
 def _require(value: str, name: str) -> None:
     """Raise ``ValueError`` naming ``name`` unless ``value`` is a non-blank string."""
     if not value or not value.strip():
@@ -184,4 +226,5 @@ __all__ = [
     "EmailDraft",
     "SocialDraft",
     "SocialPlatform",
+    "draft_from_fields",
 ]
