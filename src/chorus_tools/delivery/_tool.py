@@ -72,7 +72,8 @@ class ExecuteGoLiveTool(BaseTool):
         except (FileNotFoundError, KeyError, ValueError):
             return _rejected("no beat context — execute_go_live only runs inside a task beat")
 
-        gate = self._resolve_gate(task_id, args.approval_id)
+        deliveries = DeliveryIndex(ctx.working_dir / _DELIVERIES_RELATIVE)
+        gate = self._resolve_gate(task_id, args.approval_id, deliveries)
         if gate is None:
             return _rejected(
                 "no go-live gate exists for this task — run stage_go_live first, then wait for approval"
@@ -86,7 +87,6 @@ class ExecuteGoLiveTool(BaseTool):
                 f"gate {gate.id} was {gate.status.value} (denied) — the reach must NOT be executed"
             )
 
-        deliveries = DeliveryIndex(ctx.working_dir / _DELIVERIES_RELATIVE)
         standing = deliveries.standing_delivery(gate.id)
         if standing is not None:
             return _delivered(standing, already=True)
@@ -112,17 +112,33 @@ class ExecuteGoLiveTool(BaseTool):
         deliveries.record(record)
         return _delivered(record, already=False)
 
-    def _resolve_gate(self, task_id: str, approval_id: str | None) -> Approval | None:
-        """The gate this beat may execute — explicit id (must belong to THIS task) or the latest."""
+    def _resolve_gate(
+        self, task_id: str, approval_id: str | None, deliveries: DeliveryIndex
+    ) -> Approval | None:
+        """The gate this beat may execute — explicit id (must belong to THIS task) or resolved.
+
+        An APPROVED gate still awaiting its delivery outranks any newer duplicate (an accidental
+        re-stage, pending or human-denied) — the authorised reach must execute regardless of the
+        noise staged after it. With no such gate, the newest gate speaks for the task's state
+        (pending → wait · denied → dead · delivered → idempotent return upstream).
+        """
         if approval_id is not None:
             gate = self._ledger.approvals.get(approval_id)
             if gate is None or gate.subject_id != task_id:
                 return None  # unknown, or someone else's gate — never executable from this beat
             return gate
-        for gate in self._ledger.approvals.for_subject(task_id):
-            if gate.action is ApprovalAction.TASK_GATE:
+        gates = [
+            gate
+            for gate in self._ledger.approvals.for_subject(task_id)
+            if gate.action is ApprovalAction.TASK_GATE
+        ]
+        for gate in gates:  # newest first
+            if (
+                gate.status is ApprovalStatus.APPROVED
+                and deliveries.standing_delivery(gate.id) is None
+            ):
                 return gate
-        return None
+        return gates[0] if gates else None
 
     def _standing_draft(
         self, working_dir: Path, content_type: ContentType, task_id: str

@@ -109,3 +109,48 @@ class TestErrorRecoveryContract:
         result = _run(ledger, tmp_path, {"action": "delete_everything", "target": "x", "content_ref": "c"})
         assert result.is_error is True  # type: ignore[attr-defined]
         assert len(ledger.approvals.pending()) == 0
+
+
+class TestRestageGuard:
+    """An approved-but-undelivered gate must be EXECUTED, not re-staged (the duplicate-gate bug)."""
+
+    def _approve_first_gate(self, ledger: SqliteLedger) -> str:
+        gate = ledger.approvals.pending()[0]
+        ledger.approvals.approve(gate.id, decided_by_user_id="board")
+        return gate.id
+
+    def test_restage_rejected_while_approved_gate_awaits_execution(
+        self, ledger: SqliteLedger, tmp_path: Path
+    ) -> None:
+        payload = {"action": "publish", "target": "blog", "content_ref": "content_draft.md"}
+        _run(ledger, tmp_path, payload)
+        gate_id = self._approve_first_gate(ledger)
+
+        result = _run(ledger, tmp_path, payload)
+
+        assert result.is_error is True  # type: ignore[attr-defined]
+        assert "execute_go_live" in result.content  # type: ignore[attr-defined]
+        assert gate_id in result.content  # type: ignore[attr-defined]
+        assert ledger.approvals.pending() == []  # no duplicate gate opened
+
+    def test_restage_allowed_after_the_delivery_landed(
+        self, ledger: SqliteLedger, tmp_path: Path
+    ) -> None:
+        from chorus_tools._go_live import GoLiveAction
+        from chorus_tools.delivery import DeliveryRecord, PublishedRef
+        from chorus_tools.delivery._index import DeliveryIndex
+
+        payload = {"action": "publish", "target": "blog", "content_ref": "content_draft.md"}
+        _run(ledger, tmp_path, payload)
+        gate_id = self._approve_first_gate(ledger)
+        DeliveryIndex(tmp_path / ".harness" / "deliveries.json").record(
+            DeliveryRecord(
+                approval_id=gate_id, action=GoLiveAction.PUBLISH, target="blog",
+                published=PublishedRef(backend="strapi", ref_id="d1", url="u://d1"),
+            )
+        )
+
+        result = _run(ledger, tmp_path, payload)  # a genuinely NEW reach for the same task
+
+        assert result.is_error is False  # type: ignore[attr-defined]
+        assert len(ledger.approvals.pending()) == 1

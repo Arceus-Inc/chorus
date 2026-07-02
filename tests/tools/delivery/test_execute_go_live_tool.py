@@ -206,3 +206,57 @@ class TestInput:
     def test_input_requires_valid_content_type(self) -> None:
         with pytest.raises(Exception):
             ExecuteGoLiveInput(content_type="carrier-pigeon")  # type: ignore[arg-type]
+
+
+class TestDuplicateGateResolution:
+    """The approved-undelivered gate wins over newer duplicates (the evaluator re-stage bug)."""
+
+    def test_approved_gate_executes_despite_newer_pending_duplicate(
+        self, ledger: SqliteLedger, tmp_path: Path
+    ) -> None:
+        _wire_beat(tmp_path)
+        _stage_draft(tmp_path)
+        _open_gate(ledger, approval_id="apr_1")
+        ledger.approvals.approve("apr_1", decided_by_user_id="boss")
+        _open_gate(ledger, approval_id="apr_dup")  # accidental re-stage, newer, pending
+        backend = _FakeBackend()
+
+        res = _run(ExecuteGoLiveTool(ledger, backend), _PUBLISH, tmp_path)
+
+        assert res.is_error is False
+        assert len(backend.published) == 1
+        assert res.metadata["delivery"]["approval_id"] == "apr_1"
+
+    def test_approved_gate_executes_despite_newer_denied_duplicate(
+        self, ledger: SqliteLedger, tmp_path: Path
+    ) -> None:
+        _wire_beat(tmp_path)
+        _stage_draft(tmp_path)
+        _open_gate(ledger, approval_id="apr_1")
+        ledger.approvals.approve("apr_1", decided_by_user_id="boss")
+        _open_gate(ledger, approval_id="apr_dup")
+        ledger.approvals.deny("apr_dup", decided_by_user_id="boss")  # human kills the duplicate
+        backend = _FakeBackend()
+
+        res = _run(ExecuteGoLiveTool(ledger, backend), _PUBLISH, tmp_path)
+
+        assert res.is_error is False
+        assert res.metadata["delivery"]["approval_id"] == "apr_1"
+
+    def test_delivered_gate_stays_idempotent_despite_newer_pending(
+        self, ledger: SqliteLedger, tmp_path: Path
+    ) -> None:
+        _wire_beat(tmp_path)
+        _stage_draft(tmp_path)
+        _open_gate(ledger, approval_id="apr_1")
+        ledger.approvals.approve("apr_1", decided_by_user_id="boss")
+        backend = _FakeBackend()
+        tool = ExecuteGoLiveTool(ledger, backend)
+        _run(tool, _PUBLISH, tmp_path)  # delivered
+        _open_gate(ledger, approval_id="apr_new")  # a NEW pending reach opens later
+
+        res = _run(tool, _PUBLISH, tmp_path)
+
+        assert len(backend.published) == 1  # never re-publishes on a pending gate
+        assert res.is_error is True  # the new gate is pending -> wait
+        assert "pending" in res.content.lower()
