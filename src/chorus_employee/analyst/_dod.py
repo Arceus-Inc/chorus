@@ -72,7 +72,16 @@ _FINDINGS_RUBRIC = (
     "NOT need, warehouse_query / notebook_run / a shell / subagents, and you must NOT require re-running "
     "queries, re-executing code, STDOUT logs, regenerated charts, or any other process evidence — the "
     "committed `findings.md` IS the evidence. Never claim you cannot verify: read the file and assess "
-    "its content. FAIL only if `findings.md` is missing, an answer is absent, vague, or self-contradictory."
+    "its content. Judge citations by SUBSTANCE, not format: a claim is supported if it carries a source "
+    "the analyst could have retrieved — an API endpoint, a raw file, a docs page, or an HTML page are "
+    "ALL valid; never fail a finding for the *kind* of URL it cites, and never invent a citation-format "
+    "rule the task did not state. Hold a CONVERGENCE bar: PASS as soon as every question the task asked "
+    "is answered with specific, sourced, self-consistent conclusions — approve work that is materially "
+    "complete even if it could be marginally improved, and do NOT withhold approval for stylistic "
+    "polish, per-sentence citation adjacency, belt-and-suspenders evidence, or anything the task did not "
+    "require. FAIL only for a CONCRETE defect: `findings.md` missing, a required answer absent or vague, "
+    "a self-contradiction (e.g. an impossible or future-dated claim), or a factual claim with no source "
+    "at all — and when you fail, name the specific fix so the next attempt can converge."
 )
 
 
