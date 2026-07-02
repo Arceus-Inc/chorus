@@ -96,12 +96,12 @@ def marketer_manifest() -> RoleManifest:
         plugins=False,
         # --- build_harness(env=...) ---
         env=(),
-        # --- beat time budget (research-heavy) ---
-        # Mira spawns the Web-Research Orchestrator, a multi-minute web_search/web_extract sweep that
-        # blocks the beat in one uninterrupted call. The org defaults (90s beat / 300s lease) reap her
-        # mid-research; widen both so a research beat (spawn → draft → brand_critic) runs to done.
-        beat_timeout_s=480.0,
-        lease_ttl_s=900.0,
+        # --- beat time budget (research-heavy, now depth-2) ---
+        # Mira spawns research that blocks the beat in one uninterrupted call. With the Strategist
+        # (which itself nests the Web-Research Orchestrator, depth-2), a single beat can hold TWO
+        # live research sweeps — so widen the wall-clock further or the reaper claims it mid-nest.
+        beat_timeout_s=900.0,
+        lease_ttl_s=1200.0,
         # --- worktree containment ---
         isolation=Isolation.WORKTREE,
         # --- trust posture ---
