@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import httpx
 
+from chorus_tools.delivery._email_html import render_email_html
 from chorus_tools.delivery._email_types import EmailMessage
 from chorus_tools.delivery._types import DeliveryError, PublishedRef
 
@@ -32,7 +33,10 @@ class ResendEmailBackend:
                 "from": message.sender,
                 "to": list(message.recipients),
                 "subject": message.subject,
+                # Both bodies: html renders the markdown for inbox clients; text is the
+                # plain-part fallback (and better deliverability than html-only).
                 "text": message.body,
+                "html": render_email_html(message.body),
             },
         )
         if response.status_code // 100 != 2:

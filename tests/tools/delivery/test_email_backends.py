@@ -108,12 +108,11 @@ class TestResendEmail:
         assert str(req.url) == "https://api.resend.com/emails"
         assert req.headers["authorization"] == "Bearer re_test_key"
         payload = json.loads(req.content)
-        assert payload == {
-            "from": "mira@arceus.sh",
-            "to": ["a@x.io", "b@x.io"],
-            "subject": "Launch news",
-            "text": "Hello!\n\nBig news.",
-        }
+        assert payload["from"] == "mira@arceus.sh"
+        assert payload["to"] == ["a@x.io", "b@x.io"]
+        assert payload["subject"] == "Launch news"
+        assert payload["text"] == "Hello!\n\nBig news."
+        assert "Big news." in payload["html"]  # rendered part rides along
         assert landed.backend == "resend"
         assert landed.ref_id == "msg_123"
         assert "msg_123" in landed.url
