@@ -14,9 +14,14 @@ from chorus_tools.delivery._types import PublishedRef
 
 
 class EmailBackend(Protocol):
-    """Send a composed message; raise :class:`DeliveryError` on failure."""
+    """Send a composed message; raise :class:`DeliveryError` on failure.
 
-    def send(self, message: EmailMessage) -> PublishedRef: ...
+    ``idempotency_key`` is a stable per-approval token (the go-live gate id). A send is at-most-once
+    with no delivery record written until it succeeds, so a retry after a provider-accepted-then-errored
+    call could double-send; passing the same key lets the transport dedupe that retry.
+    """
+
+    def send(self, message: EmailMessage, *, idempotency_key: str) -> PublishedRef: ...
 
 
 __all__ = ["EmailBackend"]

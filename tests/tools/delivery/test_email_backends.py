@@ -67,7 +67,7 @@ class TestEmailMessage:
 
 class TestOutboxEmail:
     def test_writes_an_eml_file_with_headers_and_body(self, tmp_path: Path) -> None:
-        landed = OutboxEmailBackend(tmp_path).send(_message())
+        landed = OutboxEmailBackend(tmp_path).send(_message(), idempotency_key="apr_1")
 
         assert landed.backend == "outbox"
         path = tmp_path / landed.ref_id
@@ -79,12 +79,21 @@ class TestOutboxEmail:
         assert "X-Preheader: pre" in text
         assert "Big news." in text
 
-    def test_sequential_sends_get_distinct_files(self, tmp_path: Path) -> None:
+    def test_distinct_keys_get_distinct_files(self, tmp_path: Path) -> None:
         backend = OutboxEmailBackend(tmp_path)
-        first = backend.send(_message("One"))
-        second = backend.send(_message("Two"))
+        first = backend.send(_message("One"), idempotency_key="apr_1")
+        second = backend.send(_message("Two"), idempotency_key="apr_2")
         assert first.ref_id != second.ref_id
         assert (tmp_path / first.ref_id).is_file() and (tmp_path / second.ref_id).is_file()
+
+    def test_same_key_overwrites_one_file(self, tmp_path: Path) -> None:
+        # A retry of the same send (same gate id) must land in the same file, not a second one —
+        # at-most-once, mirroring the live ESP's idempotency key.
+        backend = OutboxEmailBackend(tmp_path)
+        first = backend.send(_message("Launch"), idempotency_key="apr_1")
+        second = backend.send(_message("Launch"), idempotency_key="apr_1")
+        assert first.ref_id == second.ref_id
+        assert sum(1 for _ in (tmp_path / "outbox").glob("*.eml")) == 1
 
 
 def _resend(handler: Any) -> ResendEmailBackend:
@@ -99,7 +108,7 @@ class TestResendEmail:
             handler.request = request  # type: ignore[attr-defined]
             return httpx.Response(200, json={"id": "msg_123"})
 
-        landed = _resend(handler).send(_message())
+        landed = _resend(handler).send(_message(), idempotency_key="apr_9")
 
         import json
 
@@ -107,6 +116,7 @@ class TestResendEmail:
         assert req.method == "POST"
         assert str(req.url) == "https://api.resend.com/emails"
         assert req.headers["authorization"] == "Bearer re_test_key"
+        assert req.headers["idempotency-key"] == "apr_9"  # dedupes a retried send
         payload = json.loads(req.content)
         assert payload["from"] == "mira@arceus.sh"
         assert payload["to"] == ["a@x.io", "b@x.io"]
@@ -122,14 +132,14 @@ class TestResendEmail:
             return httpx.Response(422, json={"message": "invalid from"})
 
         with pytest.raises(DeliveryError, match="422"):
-            _resend(handler).send(_message())
+            _resend(handler).send(_message(), idempotency_key="apr_1")
 
     def test_missing_id_raises(self) -> None:
         def handler(request: httpx.Request) -> httpx.Response:
             return httpx.Response(200, json={})
 
         with pytest.raises(DeliveryError, match="id"):
-            _resend(handler).send(_message())
+            _resend(handler).send(_message(), idempotency_key="apr_1")
 
     def test_error_does_not_leak_the_provider_body(self) -> None:
         # Resend 4xx bodies can echo the from/to addresses; keep them server-side.
@@ -137,7 +147,7 @@ class TestResendEmail:
             return httpx.Response(422, text="secret-tenant-xyz 'from' a@x.io not verified")
 
         with pytest.raises(DeliveryError) as exc_info:
-            _resend(handler).send(_message())
+            _resend(handler).send(_message(), idempotency_key="apr_1")
         message = str(exc_info.value)
         assert "422" in message
         assert "secret-tenant-xyz" not in message
@@ -147,7 +157,7 @@ class TestResendEmail:
             return httpx.Response(200, text="<html>gateway</html>")
 
         with pytest.raises(DeliveryError):
-            _resend(handler).send(_message())
+            _resend(handler).send(_message(), idempotency_key="apr_1")
 
 
 class TestEmailBackendFromEnv:

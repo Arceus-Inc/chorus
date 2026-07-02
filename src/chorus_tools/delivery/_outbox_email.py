@@ -25,20 +25,17 @@ class OutboxEmailBackend:
     def __init__(self, root: Path) -> None:
         self._root = root
 
-    def send(self, message: EmailMessage) -> PublishedRef:
+    def send(self, message: EmailMessage, *, idempotency_key: str) -> PublishedRef:
         outbox = self._root / _OUTBOX_DIR
         outbox.mkdir(parents=True, exist_ok=True)
-        relative = (
-            Path(_OUTBOX_DIR) / f"{self._next_number(outbox):04d}-{_slug(message.subject)}.eml"
-        )
+        # Filename is derived from the key so a retry of the same send overwrites its file rather than
+        # dropping a second one — at-most-once, matching the live ESP's Idempotency-Key behaviour.
+        relative = Path(_OUTBOX_DIR) / f"{_slug(idempotency_key)}-{_slug(message.subject)}.eml"
         path = self._root / relative
         path.write_text(_render(message), encoding="utf-8")
         return PublishedRef(
             backend=BackendName.OUTBOX.value, ref_id=str(relative), url=path.as_uri()
         )
-
-    def _next_number(self, outbox: Path) -> int:
-        return sum(1 for _ in outbox.glob("*.eml")) + 1
 
 
 def _render(message: EmailMessage) -> str:

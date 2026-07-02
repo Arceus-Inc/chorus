@@ -104,20 +104,23 @@ class ExecuteGoLiveTool(BaseTool):
                 "run cms_draft first"
             )
 
-        # The reach per channel: email GOES OUT (send), everything else GOES UP (publish).
+        # The reach per channel: email GOES OUT (send), everything else GOES UP (publish). A publish
+        # is an idempotent Strapi flip; a send is at-most-once, so it carries the gate id as an
+        # idempotency key so a retry can never double-send.
         if args.content_type is ContentType.EMAIL:
             if self._email_delivery is None:
                 return _rejected(
                     "email delivery is not configured on this harness — the send cannot execute"
                 )
             action = GoLiveAction.SEND
-            executor = self._email_delivery.send
         else:
             action = GoLiveAction.PUBLISH
-            executor = self._backend.publish
 
         try:
-            landed = executor(draft)
+            if self._email_delivery is not None and action is GoLiveAction.SEND:
+                landed = self._email_delivery.send(draft, idempotency_key=gate.id)
+            else:
+                landed = self._backend.publish(draft)
         except DeliveryError as exc:
             return _failed(str(exc), action=action)
 

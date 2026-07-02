@@ -68,7 +68,7 @@ class TestResendSendsHtmlAndText:
             body="# Hi\n\n**Bold** move.",
         )
 
-        backend.send(message)
+        backend.send(message, idempotency_key="apr_1")
 
         req: Any = handler.request  # type: ignore[attr-defined]
         payload = json.loads(req.content)

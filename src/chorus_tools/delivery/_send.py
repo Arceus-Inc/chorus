@@ -22,7 +22,7 @@ class EmailDelivery:
         self._transport = transport
         self._routing = routing
 
-    def send(self, draft: DraftRef) -> PublishedRef:
+    def send(self, draft: DraftRef, *, idempotency_key: str) -> PublishedRef:
         if draft.content_type is not ContentType.EMAIL:
             raise DeliveryError(
                 f"only an email draft can be sent — got content_type={draft.content_type.value!r}"
@@ -33,7 +33,8 @@ class EmailDelivery:
             raise DeliveryError(f"could not read the staged email draft: {exc}") from exc
         if not isinstance(staged, EmailDraft):  # narrowing for the type system; read is by type
             raise DeliveryError("staged draft is not an email draft")
-        return self._transport.send(EmailMessage.compose(self._routing, staged))
+        message = EmailMessage.compose(self._routing, staged)
+        return self._transport.send(message, idempotency_key=idempotency_key)
 
 
 __all__ = ["EmailDelivery"]

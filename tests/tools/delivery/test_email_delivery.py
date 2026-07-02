@@ -32,8 +32,9 @@ class _FakeTransport:
     def __init__(self) -> None:
         self.sent: list[EmailMessage] = []
 
-    def send(self, message: EmailMessage) -> PublishedRef:
+    def send(self, message: EmailMessage, *, idempotency_key: str) -> PublishedRef:
         self.sent.append(message)
+        self.idempotency_key = idempotency_key
         return PublishedRef(backend="fake-esp", ref_id="msg_1", url="esp://msg_1")
 
 
@@ -60,7 +61,7 @@ class TestEmailDelivery:
         staged = cms.create_draft(EmailDraft(subject="Launch news", body="Hello!", preheader="pre"))
         transport = _FakeTransport()
 
-        landed = EmailDelivery(cms, transport, _ROUTING).send(staged)
+        landed = EmailDelivery(cms, transport, _ROUTING).send(staged, idempotency_key="apr_1")
 
         assert transport.sent == [
             EmailMessage(
@@ -78,14 +79,18 @@ class TestEmailDelivery:
             backend="markdown", content_type=ContentType.EMAIL, ref_id="email/ghost.md", url="u://x"
         )
         with pytest.raises(DeliveryError, match="staged"):
-            EmailDelivery(MarkdownCmsBackend(tmp_path), _FakeTransport(), _ROUTING).send(ghost)
+            EmailDelivery(MarkdownCmsBackend(tmp_path), _FakeTransport(), _ROUTING).send(
+                ghost, idempotency_key="apr_1"
+            )
 
     def test_non_email_draft_rejected(self, tmp_path: Path) -> None:
         blog = DraftRef(
             backend="markdown", content_type=ContentType.BLOG, ref_id="blog/x.md", url="u://x"
         )
         with pytest.raises(DeliveryError, match="email"):
-            EmailDelivery(MarkdownCmsBackend(tmp_path), _FakeTransport(), _ROUTING).send(blog)
+            EmailDelivery(MarkdownCmsBackend(tmp_path), _FakeTransport(), _ROUTING).send(
+                blog, idempotency_key="apr_1"
+            )
 
 
 def _approved_email_stage(ledger: SqliteLedger, tmp: Path) -> DraftRef:
@@ -117,6 +122,7 @@ class TestToolSendBranch:
 
         assert res.is_error is False
         assert len(transport.sent) == 1
+        assert transport.idempotency_key == "apr_1"  # the tool keys the send on the gate id
         record = res.metadata["delivery"]
         assert record["action"] == "send"
         assert record["backend"] == "fake-esp"
@@ -141,7 +147,7 @@ class TestToolSendBranch:
         _approved_email_stage(ledger, tmp_path)
 
         class _RaisingTransport:
-            def send(self, message: EmailMessage) -> PublishedRef:
+            def send(self, message: EmailMessage, *, idempotency_key: str) -> PublishedRef:
                 raise DeliveryError("resend send: HTTP 504")
 
         delivery = EmailDelivery(MarkdownCmsBackend(tmp_path), _RaisingTransport(), _ROUTING)

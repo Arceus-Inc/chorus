@@ -27,10 +27,15 @@ class ResendEmailBackend:
         self._api_key = api_key
         self._client = client
 
-    def send(self, message: EmailMessage) -> PublishedRef:
+    def send(self, message: EmailMessage, *, idempotency_key: str) -> PublishedRef:
         response = self._client.post(
             _ENDPOINT,
-            headers={"Authorization": f"Bearer {self._api_key}"},
+            headers={
+                "Authorization": f"Bearer {self._api_key}",
+                # Resend dedupes retries carrying the same key — the at-most-once guard for a send
+                # whose delivery record is only written after it succeeds.
+                "Idempotency-Key": idempotency_key,
+            },
             json={
                 "from": message.sender,
                 "to": list(message.recipients),

@@ -12,7 +12,7 @@ import dataclasses
 
 import pytest
 
-from chorus_employee.marketer._creative_manifest import (
+from chorus_employee.marketer._schemas import (
     CreativeManifest,
     VariantEntry,
     creative_output_schema,

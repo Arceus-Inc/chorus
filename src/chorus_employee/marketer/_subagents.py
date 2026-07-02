@@ -20,7 +20,7 @@ and produces its deliverable rather than claiming it cannot.
 from __future__ import annotations
 
 from chorus.roles._subagent import SubagentSpec
-from chorus_employee.marketer._creative_manifest import creative_output_schema
+from chorus_employee.marketer._schemas import creative_output_schema
 from swarm.web_research_orchestrator import WEB_RESEARCH_ORCHESTRATOR
 
 STRATEGIST_SUBAGENT = SubagentSpec(
@@ -34,8 +34,8 @@ STRATEGIST_SUBAGENT = SubagentSpec(
         "understand the metric, the audience, and the positioning constraints.\n"
         "2. Ground the bet in REAL market facts — do NOT write competitor/funding/trend claims from "
         "memory. Before you write the brief, you MUST dispatch the `web_research` subagent at least "
-        "once: `spawn_subagent(name=\"web_research\", prompt=\"<one focused question naming the ACTUAL "
-        "company/metric>\")`. It returns a cited JSON answer; every fact in your EVIDENCE section comes "
+        'once: `spawn_subagent(name="web_research", prompt="<one focused question naming the ACTUAL '
+        'company/metric>")`. It returns a cited JSON answer; every fact in your EVIDENCE section comes '
         "from it, with its source. Ask one or two FOCUSED questions (a narrow question saturates fast); "
         "never a placeholder. A strategy brief whose market claims aren't backed by a web_research "
         "citation is incomplete — spawn it.\n"
@@ -93,7 +93,7 @@ BRAND_CRITIC_SUBAGENT = SubagentSpec(
         "- Be adversarial but FAIR: do not manufacture marginal violations to keep failing, and "
         "never flag something the Claim Policy expressly permits. Over-failing a compliant draft "
         "is itself a failure.\n"
-        "- Ground your verdict: FIRST run `brand_lint(doc=\"content_draft.md\")` — your deterministic "
+        '- Ground your verdict: FIRST run `brand_lint(doc="content_draft.md")` — your deterministic '
         "scan for prohibited phrases and unsubstantiated claims — and treat its findings as "
         "authoritative signal, then reason over them for what mechanical rules can't catch (tone, "
         "framing, off-message positioning). A clean brand_lint plus your judgment is a stronger PASS.\n"
@@ -122,7 +122,7 @@ CREATIVE_SUBAGENT = SubagentSpec(
         "`candidates/variant_03.md`. Each is a COMPLETE post, not a fragment. Make them genuinely "
         "different — vary the ANGLE (problem-first vs proof-first vs outcome-first), the HOOK/opening, "
         "and the STRUCTURE. Do NOT just reword the seed.\n"
-        "4. Run `brand_lint(doc=\"candidates/variant_NN.md\")` on EACH variant and fix anything it "
+        '4. Run `brand_lint(doc="candidates/variant_NN.md")` on EACH variant and fix anything it '
         "flags before you finish, so the set arrives pre-checked.\n"
         "5. Return a JSON manifest: the seed you varied and, per variant, its file, a one-line angle, "
         "and whether brand_lint came back clean.\n\n"

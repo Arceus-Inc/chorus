@@ -79,7 +79,10 @@ def creative_output_schema() -> dict[str, Any]:
         "type": "object",
         "properties": {
             "file": {"type": "string", "description": "worktree-relative path to the variant file"},
-            "angle": {"type": "string", "description": "one-line description of this variant's angle"},
+            "angle": {
+                "type": "string",
+                "description": "one-line description of this variant's angle",
+            },
             "brand_lint_clean": {
                 "type": "boolean",
                 "description": "true when Creative's brand_lint on this variant returned no findings",
