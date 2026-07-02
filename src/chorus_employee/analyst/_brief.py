@@ -34,7 +34,12 @@ ANALYST_BRIEF = (
     f"`write_file` your findings ONCE to `{ANALYST_FINDINGS_DOC}`, complete on the first write: give "
     "every answer the task asked for, each with the exact number you computed and a one-line note on "
     "how. That file IS your deliverable; it must be present, non-empty, and specific — not a restatement "
-    "of the prompt. Do not commit, push, or change anything outside your working directory."
+    "of the prompt. If the task asks you to PREDICT, forecast, or fit a model, hold out a test split "
+    "the model never sees, write your predictions to `predictions.csv`, and write a `score.py` that "
+    "loads that held-out split, prints the metric, and exits non-zero if it is below the agreed "
+    "threshold — an independent held-out score is your Definition of Done, so never report a "
+    "cross-validation number you tuned to the bar and call it done. Do not commit, push, or change "
+    "anything outside your working directory."
 )
 
 __all__ = ["ANALYST_BRIEF", "ANALYST_FINDINGS_DOC"]

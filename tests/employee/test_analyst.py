@@ -81,6 +81,68 @@ def test_analyst_ships_its_dod_and_outcome() -> None:
     assert verifier.artifact_class == "finding"
 
 
+def test_analyst_dod_is_action_class_aware() -> None:
+    """The DoD bends to the beat: predict → Command, recommend → HumanApproval, else AgentReview."""
+    from chorus.outcomes import DoDKind
+    from chorus_employee.analyst import ActionClass, classify_action
+
+    dod = analyst_plugin().dod_generator
+
+    # A prediction/model beat gets an objective, ungameable held-out scorer (Command).
+    assert classify_action("train a model to predict churn") is ActionClass.PREDICT
+    predict = dod("train a model to predict churn")
+    assert predict.kind is DoDKind.COMMAND
+    assert predict.artifact_class == "prediction"
+    assert "score.py" in predict.spec.command  # the held-out scorer, not a self-reported metric
+
+    # A recommendation a human will act on is a governance gate (HumanApproval).
+    assert classify_action("recommend which plan we should pick") is ActionClass.RECOMMEND
+    recommend = dod("recommend which plan we should pick")
+    assert recommend.kind is DoDKind.HUMAN_APPROVAL
+    assert recommend.artifact_class == "recommendation"
+
+    # The default research beat is reviewed findings (AgentReview).
+    assert classify_action("analyse the churn drivers") is ActionClass.FINDINGS
+    findings = dod("analyse the churn drivers")
+    assert findings.kind is DoDKind.AGENT_REVIEW
+    assert findings.artifact_class == "finding"
+
+
+def test_analyst_dod_classify_ignores_substring_false_matches() -> None:
+    """Whole-word cues: 'profit'/'remodel' must not trip the predict gate."""
+    from chorus_employee.analyst import ActionClass, classify_action
+
+    assert classify_action("summarise last quarter's profit") is ActionClass.FINDINGS
+    assert classify_action("write up the remodel budget breakdown") is ActionClass.FINDINGS
+
+
+def test_analyst_declares_trust_scoped_read_integrations() -> None:
+    """Warehouse + web reach are declared as ungated READ WebPlugins, bound to secret refs."""
+    from chorus.webplugins import Capability
+    from chorus_employee.analyst import analyst_webplugins
+
+    registry = analyst_webplugins()
+    assert set(registry.names()) == {"warehouse", "web"}
+    for name in ("warehouse", "web"):
+        plugin = registry.get(name)
+        assert plugin.capability is Capability.READ  # read-only, ungated
+        assert not plugin.gated  # no send/spend → no cap needed
+        assert plugin.auth_ref.startswith("ref:")  # secret-ref bound, never inline
+
+
+def test_analyst_subagent_grants_map_specialists_to_read_plugins() -> None:
+    """Only data/modeling/critic touch the warehouse; only scout touches the web (auditable seam)."""
+    from chorus_employee.analyst import subagent_grants
+
+    grants = subagent_grants()
+    assert grants["data"] == ("warehouse",)
+    assert grants["modeling"] == ("warehouse",)
+    assert grants["critic"] == ("warehouse",)
+    assert grants["scout"] == ("web",)
+    assert "narrative" not in grants  # the write-up specialist reaches no external system
+
+
+
 def test_analyst_declares_a_tier1_subagent_swarm() -> None:
     """The Analyst owns specialist subagents it can dispatch mid-beat (data/modeling/critic/narrative/scout)."""
     manifest = analyst_plugin().manifest
