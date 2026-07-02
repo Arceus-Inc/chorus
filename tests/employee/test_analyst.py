@@ -110,11 +110,22 @@ def test_analyst_dod_is_action_class_aware() -> None:
 
 
 def test_analyst_dod_classify_ignores_substring_false_matches() -> None:
-    """Whole-word cues: 'profit'/'remodel' must not trip the predict gate."""
+    """Whole-word cues must not trip the predict gate on ordinary research/analysis prose."""
     from chorus_employee.analyst import ActionClass, classify_action
 
     assert classify_action("summarise last quarter's profit") is ActionClass.FINDINGS
     assert classify_action("write up the remodel budget breakdown") is ActionClass.FINDINGS
+    # The bare word "model" (esp. inside hyphenated compounds) must NOT force a prediction beat —
+    # a research/analysis task about models is still FINDINGS. Regression guard for the live run where
+    # "large-language-model inference servers" was mis-routed to a Command DoD.
+    assert classify_action(
+        "compare open-source large-language-model inference servers by adoption and tradeoffs"
+    ) is ActionClass.FINDINGS
+    assert classify_action("document our data model and its business model") is ActionClass.FINDINGS
+    assert classify_action("assess the goodness of fit of last year's plan") is ActionClass.FINDINGS
+    # But a genuine predictive beat still routes to PREDICT via unambiguous cues.
+    assert classify_action("build a classifier to predict churn") is ActionClass.PREDICT
+    assert classify_action("forecast next quarter's revenue") is ActionClass.PREDICT
 
 
 def test_analyst_declares_trust_scoped_read_integrations() -> None:
@@ -186,7 +197,22 @@ def test_analyst_beat_config_carries_the_subagents() -> None:
 
 def test_analyst_declares_authored_skills() -> None:
     manifest = analyst_plugin().manifest
-    assert set(manifest.skills) >= {"exploratory-data-analysis", "sql-investigation", "trend-and-correlation"}
+    # A distinguished-analyst library: the investigation spine + rigor/causal/modeling/research/
+    # experiment/tradeoff/communication methods, on top of the data-mechanics playbooks.
+    assert set(manifest.skills) >= {
+        "analytics-diagnostic-method",
+        "exploratory-data-analysis",
+        "sql-investigation",
+        "trend-and-correlation",
+        "statistical-rigor",
+        "causal-inference",
+        "predictive-modeling",
+        "web-research",
+        "experiment-analysis",
+        "metric-definition-and-benchmarks",
+        "technical-tradeoff-analysis",
+        "findings-communication",
+    }
     assert manifest.skills_root is not None
     assert "skill" in manifest.tools  # the skill tool must be present to load skill bodies
 

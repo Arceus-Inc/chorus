@@ -61,8 +61,10 @@ def analyst_manifest() -> RoleManifest:
         working_memory=True,  # an in-task scratchpad to carry analysis state across turns
         # — build_harness(max_turns=…) —
         # analysis is multi-step (read → script → run → read output → conclude), and a real
-        # investigation may need a couple of script fixes within one sprint; give it headroom.
-        max_turns=16,
+        # investigation may need a couple of script fixes within one sprint; give it headroom. Deep
+        # distinguished-engineer tasks (capacity models, sensitivity analysis) legitimately need more
+        # steps to derive, compute, and write, so keep the ceiling generous.
+        max_turns=20,
         # — per-beat sprint budget (spec 05) —
         # a real investigation rarely lands in one sprint; widen so one Analyst beat runs to a finding
         # instead of stopping after the first sprint with `needs-changes` and waiting on re-dispatch.
@@ -78,12 +80,23 @@ def analyst_manifest() -> RoleManifest:
         # — build_harness(subagents=…) — Tier-1 specialists the Analyst may dispatch mid-beat. Each
         # subagent's tools are a subset of the Analyst's toolset (intersected at materialize).
         subagents=ANALYST_SUBAGENTS,
-        # — build_harness(skill_registry=…) — the Analyst's authored playbooks (EDA, SQL investigation,
-        # trend & correlation), discovered from this package's ``skills/`` dir and offered via `skill`.
+        # — build_harness(skill_registry=…) — the Analyst's authored playbooks, discovered from this
+        # package's ``skills/`` dir and offered via the `skill` tool. A distinguished-analyst library:
+        # the investigation spine plus rigor, causal, modeling, research, experiment, tradeoff, and
+        # communication methods — the standing operating procedure the brief promotes.
         skills=(
+            "analytics-diagnostic-method",
             "exploratory-data-analysis",
             "sql-investigation",
             "trend-and-correlation",
+            "statistical-rigor",
+            "causal-inference",
+            "predictive-modeling",
+            "web-research",
+            "experiment-analysis",
+            "metric-definition-and-benchmarks",
+            "technical-tradeoff-analysis",
+            "findings-communication",
         ),
         skills_root=_SKILLS_ROOT,
     )

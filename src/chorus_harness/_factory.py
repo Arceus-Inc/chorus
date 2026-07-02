@@ -93,6 +93,12 @@ _READ_ONLY_DREAM_SURFACE_TOOLS = frozenset(
         "memory_search",
         "memory_get",
         "working_memory_read",
+        # A read-only reviewer that reads a large artifact (a long findings.md) gets its read_file
+        # output offloaded to scratch with a "Full output saved to: <file>" pointer; without
+        # read_offloaded it cannot see the overflow and wrongly fails with "content is truncated /
+        # cannot verify". read_offloaded is safe (tier-0, scratch-confined, read-only), so a verifier
+        # head may hold it to read the full artifact it is judging.
+        "read_offloaded",
     }
 )
 

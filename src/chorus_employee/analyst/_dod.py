@@ -44,18 +44,25 @@ _RECOMMEND_CUES = (
     "recommend", "recommendation", "decide", "decision", "should we", "go/no-go", "go no-go",
     "propose", "proposal", "advise", "pick", "choose", "prioritize", "prioritise",
 )
+# Only an UNAMBIGUOUS predictive vocabulary — words that in ordinary research/analysis prose mean
+# something else are deliberately excluded: "model" (a language-model / data-model / business-model,
+# and it false-fires inside hyphenated compounds like "large-language-model" where the hyphen is a
+# word boundary), "fit" (goodness-of-fit), "score" (a credit score / "is this a good score"), and bare
+# "accuracy". A genuine prediction beat still lands here via predict/forecast/classify/train/etc.
 _PREDICT_CUES = (
-    "predict", "prediction", "forecast", "classify", "classifier", "model", "train", "fit",
-    "regression", "backtest", "back-test", "holdout", "hold-out", "score", "accuracy", "auc", "rmse",
+    "predict", "prediction", "predictive", "forecast", "classify", "classifier", "train",
+    "regression", "backtest", "back-test", "holdout", "hold-out", "auc", "rmse",
 )
 
 
 def _cue_matcher(cues: tuple[str, ...]) -> re.Pattern[str]:
     """Compile cues into a whole-word matcher (optional plural ``s``) so substrings don't false-match.
 
-    Plain ``cue in text`` mis-fires — ``"model"`` in "remodel", ``"fit"`` in "profit", ``"score"`` in
-    "underscore". A word boundary plus an optional trailing ``s`` matches "model"/"models" while
-    skipping those, so a beat lands the verifier its *words* call for, not an accidental substring.
+    Plain ``cue in text`` mis-fires — ``"train"`` in "restrained", ``"forecast"`` in "forecaster". A
+    word boundary plus an optional trailing ``s`` matches "forecast"/"forecasts" while skipping those.
+    Word boundaries do NOT protect against hyphenated compounds (a hyphen is itself a boundary), so a
+    cue that appears inside a domain compound — e.g. "model" in "large-language-model" — must simply
+    be kept out of the cue list rather than relied on to be bounded.
     """
     alternation = "|".join(re.escape(cue) for cue in cues)
     return re.compile(rf"\b(?:{alternation})s?\b")
@@ -72,7 +79,11 @@ _FINDINGS_RUBRIC = (
     "NOT need, warehouse_query / notebook_run / a shell / subagents, and you must NOT require re-running "
     "queries, re-executing code, STDOUT logs, regenerated charts, or any other process evidence — the "
     "committed `findings.md` IS the evidence. Never claim you cannot verify: read the file and assess "
-    "its content. Judge citations by SUBSTANCE, not format: a claim is supported if it carries a source "
+    "its content. You also have NO web or browser tool and CANNOT open the URLs a claim cites — that is "
+    "by design; a citation you cannot personally fetch is NOT grounds to fail. Judge whether each claim "
+    "carries a plausible, relevant source and whether the numbers and reasoning are internally "
+    "consistent — not whether you can re-fetch the page. Judge citations by SUBSTANCE, not format: a "
+    "claim is supported if it carries a source "
     "the analyst could have retrieved — an API endpoint, a raw file, a docs page, or an HTML page are "
     "ALL valid; never fail a finding for the *kind* of URL it cites, and never invent a citation-format "
     "rule the task did not state. Hold a CONVERGENCE bar: PASS as soon as every question the task asked "
