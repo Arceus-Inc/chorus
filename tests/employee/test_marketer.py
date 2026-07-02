@@ -95,8 +95,19 @@ class TestMarketerPlugin:
         assert "skill" in manifest.tools  # the tool that loads skill bodies
         assert manifest.skills_root is not None
 
-    def test_brand_voice_skill_is_discoverable(self) -> None:
-        # The declared skill resolves to a real SKILL.md with valid frontmatter dream can load.
+    def test_manifest_declares_the_craft_skills(self) -> None:
+        # §08 authored playbooks: brand-voice + the discoverability/deliverability craft.
+        manifest = marketer_plugin().manifest
+        assert set(manifest.skills) >= {
+            "brand-voice",
+            "deliverability",
+            "geo-aeo-seo",
+            "channel-priors",
+        }
+
+    def test_declared_skills_are_all_discoverable(self) -> None:
+        # Every declared skill resolves to a real SKILL.md with valid frontmatter dream can load —
+        # a manifest can't name a skill that isn't authored on disk.
         from pathlib import Path
 
         from dream.skills import load_skill_registry
@@ -105,7 +116,7 @@ class TestMarketerPlugin:
         assert manifest.skills_root is not None
         registry, _shadows = load_skill_registry(project_dirs=[Path(manifest.skills_root)])
         discovered = {m.name for m in registry.list_meta()}
-        assert "brand-voice" in discovered
+        assert set(manifest.skills) <= discovered
 
     def test_beat_config_carries_the_skills_root(self) -> None:
         from chorus.roles import role_beat_config
@@ -126,16 +137,27 @@ class TestMarketerPlugin:
         assert config.beat_timeout_s == manifest.beat_timeout_s
         assert config.lease_ttl_s == manifest.lease_ttl_s
 
-    def test_declares_the_brand_drift_scan(self) -> None:
-        # §13: the first standing routine — a weekly read/report cadence against the voice spec.
+    def test_declares_the_standing_routines(self) -> None:
+        # §13: the standing routines that make Mira a campaigner, not a pure responder. Both are
+        # analytics-free read/report cadences (performance-watch + experiment-readout wait on
+        # analytics data).
         plugin = marketer_plugin()
         assert plugin.declared_routines == MARKETER_ROUTINES
-        assert len(MARKETER_ROUTINES) == 1
-        (routine,) = MARKETER_ROUTINES
-        assert routine.routine_key == "marketer-brand-drift-scan"
-        assert routine.schedule == "0 9 * * 1"  # weekly, Monday 09:00
-        assert routine.concurrency is RoutineConcurrency.COALESCE
-        assert "brand_spec.md" in routine.intent_template
+        keys = {r.routine_key for r in MARKETER_ROUTINES}
+        assert keys == {"marketer-brand-drift-scan", "marketer-geo-refresh"}
+        assert all(r.concurrency is RoutineConcurrency.COALESCE for r in MARKETER_ROUTINES)
+
+    def test_brand_drift_scan_reads_the_voice_spec(self) -> None:
+        drift = next(r for r in MARKETER_ROUTINES if r.routine_key == "marketer-brand-drift-scan")
+        assert drift.schedule == "0 9 * * 1"  # weekly, Monday 09:00
+        assert "brand_spec.md" in drift.intent_template
+
+    def test_geo_refresh_is_monthly_and_report_only(self) -> None:
+        geo = next(r for r in MARKETER_ROUTINES if r.routine_key == "marketer-geo-refresh")
+        assert geo.schedule == "0 9 1 * *"  # monthly, 1st at 09:00
+        assert "GEO" in geo.intent_template or "answer-first" in geo.intent_template
+        # report/propose only — a routine never trips a gate on its own
+        assert "do not publish" in geo.intent_template.lower()
 
 
 # --- DoD ---

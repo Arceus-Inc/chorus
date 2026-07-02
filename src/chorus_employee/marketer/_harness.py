@@ -18,7 +18,11 @@ from chorus.roles._manifest import (
     SandboxTier,
 )
 from chorus_employee.marketer._brief import MARKETER_BRIEF
-from chorus_employee.marketer._subagents import BRAND_CRITIC_SUBAGENT, CREATIVE_SUBAGENT
+from chorus_employee.marketer._subagents import (
+    BRAND_CRITIC_SUBAGENT,
+    CREATIVE_SUBAGENT,
+    STRATEGIST_SUBAGENT,
+)
 from swarm.web_research_orchestrator import WEB_RESEARCH_ORCHESTRATOR
 
 # Authored playbooks discovered from this package's ``skills/`` dir and offered via the ``skill`` tool.
@@ -57,15 +61,29 @@ def marketer_manifest() -> RoleManifest:
             # deterministic pre-gen self-check (§08 tool / §10 sandwich): mechanically scan her draft for
             # prohibited phrases + unsubstantiated claims before she spawns the (expensive) Brand-Critic.
             "brand_lint",
+            # the Channel's reversible write (§08 cms.draft): stage finished content as an UNPUBLISHED
+            # CMS draft (blog/social/email). Below the go-live gate — publishing it is still stage_go_live.
+            "cms_draft",
+            # the §05 dark-node executor: once a human APPROVES the stage_go_live gate, this publishes
+            # the staged draft (fail-closed: pending/denied gates can never execute; idempotent per gate).
+            "execute_go_live",
             # the `skill` tool loads her authored playbooks (brand-voice) on demand (§08 know-how).
             "skill",
         ),
         disallowed_tools=(),
         # --- build_harness(skills=...) / build_harness(skill_registry=...) ---
-        # The brand-voice playbook (§08): authored craft that keeps a fluent model from being an
-        # on-message-sounding, off-brand fabricator — the deterministic-rules complement to the
-        # in-beat Brand-Critic. Discovered from the package's skills/ dir; loaded via the skill tool.
-        skills=("brand-voice",),
+        # Authored §08 playbooks — the craft that keeps a fluent model on-brand, discoverable, and
+        # deliverable. Loaded on demand via the `skill` tool; discovered from the package's skills/ dir.
+        # - brand-voice: on-brand, evidence-honest copy (the deterministic-rules complement to the
+        #   in-beat Brand-Critic).
+        # - deliverability: getting email to the inbox — reputation, list hygiene, the send ceiling
+        #   (pairs with the live email.send reach).
+        # - geo-aeo-seo: structuring owned content so search AND generative answer engines cite it
+        #   (pairs with the content/GEO-refresh routine).
+        # - channel-priors: what format + cadence each surface rewards (shapes the Strategist's plan).
+        # Experiment/measurement skills (A/B discipline, attribution) wait on the analytics + the
+        # Experimenter subagent.
+        skills=("brand-voice", "deliverability", "geo-aeo-seo", "channel-priors"),
         skills_root=_SKILLS_ROOT,
         # --- build_harness(memory=...) + working_memory ---
         memory_scope=MemoryScope.PROJECT,
@@ -86,12 +104,12 @@ def marketer_manifest() -> RoleManifest:
         plugins=False,
         # --- build_harness(env=...) ---
         env=(),
-        # --- beat time budget (research-heavy) ---
-        # Mira spawns the Web-Research Orchestrator, a multi-minute web_search/web_extract sweep that
-        # blocks the beat in one uninterrupted call. The org defaults (90s beat / 300s lease) reap her
-        # mid-research; widen both so a research beat (spawn → draft → brand_critic) runs to done.
-        beat_timeout_s=480.0,
-        lease_ttl_s=900.0,
+        # --- beat time budget (research-heavy, now depth-2) ---
+        # Mira spawns research that blocks the beat in one uninterrupted call. With the Strategist
+        # (which itself nests the Web-Research Orchestrator, depth-2), a single beat can hold TWO
+        # live research sweeps — so widen the wall-clock further or the reaper claims it mid-nest.
+        beat_timeout_s=900.0,
+        lease_ttl_s=1200.0,
         # --- worktree containment ---
         isolation=Isolation.WORKTREE,
         # --- trust posture ---
@@ -109,7 +127,15 @@ def marketer_manifest() -> RoleManifest:
         # The Creative/Copywriter: a variation engine she spawns on a grounded seed to draft a set of
         # on-brand variants (§10 variety). Writes to her worktree (candidates/), never publishes or
         # selects; returns a typed CreativeManifest. It self-lints via brand_lint.
-        subagents=(BRAND_CRITIC_SUBAGENT, CREATIVE_SUBAGENT, WEB_RESEARCH_ORCHESTRATOR),
+        # The Strategist: frames the bet BEFORE drafting (§06) — reads the funnel/brand/brief and
+        # writes strategy_brief.md. Depth-2: it itself dispatches the Web-Research Orchestrator for
+        # cited market facts (the first employee to use bounded subagent nesting).
+        subagents=(
+            BRAND_CRITIC_SUBAGENT,
+            CREATIVE_SUBAGENT,
+            STRATEGIST_SUBAGENT,
+            WEB_RESEARCH_ORCHESTRATOR,
+        ),
     )
 
 

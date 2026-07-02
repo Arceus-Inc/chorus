@@ -32,6 +32,7 @@ from chorus.adapters import DreamBeatRunner, TokenPricing
 from chorus.heartbeat import BeatRunner, IntegrateContextPacket
 from chorus.outcomes import LanderRegistry
 from chorus.roles import RoleBeatConfig, RoleRegistry, role_beat_config
+from chorus.roles._subagent import SubagentSpec
 from chorus.trust import TrustPolicy
 from chorus.workforce import Employee
 from chorus.workspace import CompanyWorkspace, default_work_root
@@ -44,6 +45,12 @@ from chorus_tools import (
     GoLiveTool,
     SubmitTaskTool,
     SubmitVerdictTool,
+)
+from chorus_tools.cms import CmsDraftTool, cms_backend_from_env
+from chorus_tools.delivery import (
+    ExecuteGoLiveTool,
+    email_delivery_from_env,
+    publish_backend_from_env,
 )
 
 if TYPE_CHECKING:
@@ -81,6 +88,14 @@ _CHORUS_TO_DREAM_TOOL: dict[str, str] = {
     # parent's role-allowlist ceiling too. The MARKETER BRIEF must NOT instruct the parent to call it —
     # it is the critic's primitive; over-instructing the parent makes it mis-spawn brand_lint.
     "brand_lint": "brand_lint",
+    # cms_draft — a chorus capability tool (reversible CMS write, §08 Channel). Identity-mapped for the
+    # same reason as brand_lint: so the projection keeps it; it is registered in the materialize flow
+    # (it needs the worktree for the Markdown backend, which _capability_tool has no access to).
+    "cms_draft": "cms_draft",
+    # execute_go_live — the §05 dark-node executor: publishes the staged draft ONLY once its
+    # stage_go_live gate is APPROVED (fail-closed + idempotent). Registered in materialize (needs
+    # ledger for the gate check + the worktree for the draft/delivery indexes).
+    "execute_go_live": "execute_go_live",
 }
 
 _READ_ONLY_DREAM_SURFACE_TOOLS = frozenset(
@@ -98,6 +113,26 @@ def dream_tool_names(chorus_tools: tuple[str, ...]) -> tuple[str, ...]:
     return tuple(_CHORUS_TO_DREAM_TOOL[name] for name in chorus_tools if name in _CHORUS_TO_DREAM_TOOL)
 
 
+def _project_spec(spec: SubagentSpec, parent_tools: frozenset[str]) -> Subagent:
+    """Project one chorus :class:`SubagentSpec` onto a dream :class:`Subagent`, recursively.
+
+    Tools are mapped to dream names and intersected with ``parent_tools`` (narrower-wins). A spec's
+    ``spawnable`` children (depth-2) are projected the same way against THIS spec's own effective
+    tools, so the intersection chain holds transitively — a grandchild can only ever narrow.
+    """
+    tools = tuple(t for t in dream_tool_names(spec.tools) if t in parent_tools)
+    own_tools = frozenset(tools)
+    return Subagent(
+        name=spec.name,
+        description=spec.description,
+        tools=tools,
+        model=spec.model,
+        max_turns=spec.max_turns,
+        output_schema=spec.output_schema,
+        spawnable=tuple(_project_spec(child, own_tools) for child in spec.spawnable),
+    )
+
+
 def _subagent_set(config: RoleBeatConfig) -> SubagentSet | None:
     """Project a role's chorus :class:`SubagentSpec`s onto a dream :class:`SubagentSet` (Tier-1).
 
@@ -109,19 +144,7 @@ def _subagent_set(config: RoleBeatConfig) -> SubagentSet | None:
     if not config.subagents:
         return None
     parent_tools = frozenset(dream_tool_names(config.tools))
-    agents: list[Subagent] = []
-    for spec in config.subagents:
-        tools = tuple(t for t in dream_tool_names(spec.tools) if t in parent_tools)
-        agents.append(
-            Subagent(
-                name=spec.name,
-                description=spec.description,
-                tools=tools,
-                model=spec.model,
-                max_turns=spec.max_turns,
-                output_schema=spec.output_schema,
-            )
-        )
+    agents = [_project_spec(spec, parent_tools) for spec in config.subagents]
     return build_subagent_set(tier1_agents=agents, parent_tools=parent_tools)
 
 
@@ -435,6 +458,25 @@ class EmployeeHarnessFactory:
                 capability = _capability_tool(name, self._ledger)
                 if capability is not None:
                     registry.register(capability, source=ToolSource.DEFAULT)
+        # cms_draft is registered here (not in _capability_tool): its Markdown fallback backend needs the
+        # worktree, and the backend (Strapi when its env is set, else Markdown) is config-selected. No
+        # ledger needed — a reversible CMS write, below the go-live gate.
+        if "cms_draft" in config.tools:
+            registry.register(
+                CmsDraftTool(cms_backend_from_env(root / "cms_drafts")), source=ToolSource.DEFAULT
+            )
+        # execute_go_live pairs with cms_draft: it publishes the staged draft once the human approves
+        # the stage_go_live gate. Needs BOTH the ledger (fail-closed gate check) and the worktree
+        # (standing-draft + delivery indexes), so it registers here rather than in _capability_tool.
+        if "execute_go_live" in config.tools and self._ledger is not None:
+            registry.register(
+                ExecuteGoLiveTool(
+                    self._ledger,
+                    publish_backend_from_env(root / "cms_drafts"),
+                    email_delivery=email_delivery_from_env(root / "cms_drafts"),
+                ),
+                source=ToolSource.DEFAULT,
+            )
 
         # Subagents: project the role's Tier-1 declarations into dream's SubagentSet. The
         # spawn_subagent tool (already in the registry if "spawn_subagent" is in the role's tools)

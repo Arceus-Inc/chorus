@@ -16,11 +16,11 @@ never double-fanned-out (spec 02 §4.2).
 
 from __future__ import annotations
 
-import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
+from chorus.ids import mint_id
 from chorus.ledger._models import (
     ActivityVerb,
     DecompositionClaim,
@@ -114,7 +114,7 @@ def decompose(
     if claim is None:
         claim = ledger.decomposition_claims.open(
             DecompositionClaim(
-                id=f"claim_{uuid.uuid4().hex[:12]}",
+                id=mint_id("claim"),
                 source_task_id=source_task_id,
                 accepted_plan_revision_id=accepted_plan_revision_id,
                 owner_run_id=owner_run_id,
@@ -141,7 +141,8 @@ def decompose(
 
     ledger.decomposition_claims.complete(claim.id)
     sealed = ledger.decomposition_claims.get(claim.id)
-    assert sealed is not None  # just completed it in this call
+    if sealed is None:  # completed above in this call — a missing claim means the store is corrupt
+        raise RuntimeError(f"decomposition claim {claim.id} vanished immediately after complete()")
     # Governance audit (spec 08 §5): the manager split this task into a child tree.
     record_activity(
         ledger,
@@ -161,7 +162,7 @@ def _fail_closed(ledger: SqliteLedger, source: Task, *, cap: int) -> DepthCapped
         return DepthCapped(existing)  # already surfaced — a retry must not double-open
     recovery = ledger.recovery_actions.open(
         RecoveryAction(
-            id=f"rec_{uuid.uuid4().hex[:12]}",
+            id=mint_id("rec"),
             source_task_id=source.id,
             kind=RecoveryKind.STRANDED,
             owner_employee_id=source.assignee_employee_id,

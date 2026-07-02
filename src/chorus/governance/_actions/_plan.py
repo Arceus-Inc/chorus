@@ -11,10 +11,10 @@ decompose-with-gate path). This gate signs off the *plan*:
 
 from __future__ import annotations
 
-import uuid
 from typing import TYPE_CHECKING
 
 from chorus.governance._types import ActionOutcome
+from chorus.ids import mint_id
 from chorus.ledger import (
     Approval,
     ApprovalAction,
@@ -76,7 +76,7 @@ class PlanApprovalAction:
             return 0
         self._ledger.wakes.enqueue(
             Wake(
-                id=f"wake_{uuid.uuid4().hex[:12]}",
+                id=mint_id("wake"),
                 employee_id=employee_id,
                 reason=reason,
                 payload={"task_id": task_id},
@@ -90,7 +90,7 @@ class PlanApprovalAction:
         parent = self._ledger.tasks.get(parent_id)
         self._ledger.recovery_actions.open(
             RecoveryAction(
-                id=f"rec_{uuid.uuid4().hex[:12]}",
+                id=mint_id("rec"),
                 source_task_id=parent_id,
                 kind=RecoveryKind.STRANDED,
                 owner_employee_id=parent.assignee_employee_id if parent is not None else None,

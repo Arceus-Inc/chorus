@@ -1,32 +1,37 @@
-"""Marketer go-live gate — Mira stages an irreversible publish; a human authorises it (§07/§11).
+"""Marketer go-live — the full §05 dark node: stage → gate → human approves → EXECUTE → live.
 
-The marketer's crux is *draft-and-stage, gate-out*. Here the draft is already final and brand-approved
-(seeded into her worktree), so the beat exercises the NEW surface: Mira calls the ``stage_go_live``
-tool to publish it — which does NOT publish. It opens a human approval gate and parks the task
-BLOCKED. A person then approves (or denies), and only then does the go-live proceed.
+Beat 1: Mira stages the final draft into the CMS (``cms_draft`` → an UNPUBLISHED Strapi draft,
+invisible on the public blog) and opens the go-live gate (``stage_go_live``). Nothing ships.
+A human then approves. Beat 2: Mira wakes and calls ``execute_go_live`` — fail-closed against the
+ledger — which flips the Strapi draft to PUBLISHED: the post appears on http://localhost:1337/blog/.
 
-Two modes, one persistent ledger:
+Three modes, one persistent ledger + worktree:
 
-    # 1) run the beat — Mira stages the publish; leaves the gate pending
-    AZURE_OPENAI_API_KEY=... AZURE_OPENAI_BASE_URL=... AZURE_OPENAI_DEPLOYMENT=... \
+    # 1) stage — Mira drafts into the CMS + opens the gate (needs Azure keys)
     GOLIVE_DEMO_DIR=/tmp/golive uv run python examples/marketer_go_live_run.py
 
-    # 2) resolve it as the human approver (no model, no keys)
+    # 2) the human decision (no model, no keys)
     GOLIVE_DEMO_DIR=/tmp/golive uv run python examples/marketer_go_live_run.py resolve approve
-    GOLIVE_DEMO_DIR=/tmp/golive uv run python examples/marketer_go_live_run.py resolve deny
 
-Skips cleanly (exit 0) when the Azure env vars are unset (stage mode only).
+    # 3) execute — Mira wakes and publishes the approved reach (needs Azure keys)
+    GOLIVE_DEMO_DIR=/tmp/golive uv run python examples/marketer_go_live_run.py publish
+
+Skips cleanly (exit 0) when the Azure env vars are unset (model modes only).
 """
 
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import subprocess
 import sys
 import tempfile
+import urllib.error
+import urllib.request
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import ClassVar
 
 from chorus.budgets import BudgetEnforcer
 from chorus.events import Event, EventKind
@@ -35,7 +40,7 @@ from chorus.heartbeat import Scheduler
 from chorus.ledger import SqliteLedger, Task, TaskStatus
 from chorus.lifecycle import assign_task
 from chorus.observability import EventBus
-from chorus.roles import RoleRegistry, default_roles, role_beat_config
+from chorus.roles import RoleRegistry, default_roles
 from chorus.workforce import Employee, LedgerWorkforce
 from chorus_cli._beats import default_pricing_from_env
 from chorus_employee import default_landers
@@ -51,7 +56,7 @@ _BRAND_SPEC = """# Arceus Brand Voice Specification
 - Hedge unvalidated benefits with "we believe" / "early results suggest".
 """
 
-# A final, brand-approved draft — this run is about GOING LIVE, not drafting (that's the prior slice).
+# A final, brand-approved draft — this run is about GOING LIVE, not drafting (that's a prior slice).
 _FINAL_DRAFT = """# Why technical founders should look at Arceus
 
 If you have shipped software for any length of time, you know the tax is coordination: turning an
@@ -67,10 +72,16 @@ verified. If you are small and moving fast, that is the point — momentum witho
 """
 
 _TASK = (
-    "The file content_draft.md in your worktree is FINAL and brand-approved. Your only job is to take "
-    "it live: publish it to the company blog. Do this by calling the stage_go_live tool exactly once "
-    "with action='publish', target='company blog', content_ref='content_draft.md'. Do not edit the "
-    "draft or write any other file. After staging, you are done."
+    "The file content_draft.md in your worktree is FINAL and brand-approved. Your job is to take it "
+    "live on the company blog, through the gate. PROBE FIRST, every beat:\n"
+    "1. Your FIRST tool call is execute_go_live(content_type='blog') — fail-closed and safe to call "
+    "blind; its answer tells you the true state. If it publishes: report the live URL and finish. "
+    "If it says the gate is PENDING: stop and wait for the human. If DENIED: note that and finish.\n"
+    "2. ONLY if it says no gate exists / nothing staged: call cms_draft(content_type='blog', "
+    "title=<the H1 of the draft>, body=<the full draft text>), then stage_go_live(action='publish', "
+    "target='company blog', content_ref='content_draft.md') exactly once, and STOP — a human must "
+    "approve before anything goes live.\n"
+    "Never edit the draft; never publish without the gate; never re-stage when a gate already exists."
 )
 
 
@@ -80,17 +91,15 @@ def _log(msg: str = "") -> None:
 
 
 class LoggingBus(EventBus):
-    """Print the beat's events, highlighting the go-live tool call + its gated result."""
+    """Print the beat's events, highlighting the gate + executor calls."""
+
+    _SPOTLIGHT: ClassVar[dict[str, str]] = {
+        "stage_go_live": "🚀", "cms_draft": "📄", "execute_go_live": "🟢",
+    }
 
     def __init__(self) -> None:
         super().__init__(log_path=None)
         self._buf = ""
-
-    def _flush(self) -> None:
-        line = self._buf.strip()
-        self._buf = ""
-        if line:
-            _log(f"    · {line[:200]}")
 
     def emit(self, event: Event) -> None:
         p = event.payload
@@ -101,21 +110,17 @@ class LoggingBus(EventBus):
                 if head.strip():
                     _log(f"    · {head.strip()[:200]}")
             return
-        self._flush()
         if event.kind is EventKind.RUN_TOOL_USE:
-            tool = p.get("tool", "?")
-            if tool == "stage_go_live":
-                _log(f"    🚀 CALL stage_go_live  {str(p.get('input', ''))[:200]}")
-            else:
-                _log(f"    → {tool}  {str(p.get('input', ''))[:120]}")
+            tool = str(p.get("tool", "?"))
+            mark = self._SPOTLIGHT.get(tool, "→")
+            _log(f"    {mark} {tool}  {str(p.get('input', ''))[:160]}")
         elif event.kind is EventKind.RUN_TOOL_RESULT:
-            tool = p.get("tool", "?")
-            if tool == "stage_go_live":
-                for line in str(p.get("content", "")).splitlines():
-                    _log(f"    🔒 {line}")
-            else:
-                tag = "ERR" if p.get("is_error") else "ok"
-                _log(f"    ← {tool} [{tag}]")
+            tool = str(p.get("tool", "?"))
+            if tool in self._SPOTLIGHT:
+                for line in str(p.get("content", "")).splitlines()[:4]:
+                    _log(f"      {line[:180]}")
+            elif p.get("is_error"):
+                _log(f"    ← {tool} [ERR] {str(p.get('content', ''))[:120]}")
         elif event.kind is EventKind.RUN_STARTED:
             _log("    ▸ beat started")
         elif event.kind is EventKind.RUN_DONE:
@@ -123,6 +128,8 @@ class LoggingBus(EventBus):
 
 
 def _seed_repo(path: Path) -> None:
+    if (path / ".git").exists():
+        return  # already seeded (publish mode reuses the stage worktree)
     path.mkdir(parents=True, exist_ok=True)
     subprocess.run(["git", "-C", str(path), "init", "-q"], check=True)
     (path / "brand_spec.md").write_text(_BRAND_SPEC, encoding="utf-8")
@@ -142,74 +149,113 @@ def _base() -> Path:
     return base
 
 
-def _stage(base: Path) -> int:
+def _azure() -> tuple[str, str, str] | None:
     api_key = os.environ.get("AZURE_OPENAI_API_KEY")
     base_url = os.environ.get("AZURE_OPENAI_BASE_URL")
     deployment = os.environ.get("AZURE_OPENAI_DEPLOYMENT")
     if not (api_key and base_url and deployment):
+        return None
+    return api_key, base_url, deployment
+
+
+def _factory(
+    base: Path, ledger: SqliteLedger, creds: tuple[str, str, str]
+) -> tuple[EmployeeHarnessFactory, RoleRegistry]:
+    api_key, base_url, deployment = creds
+    registry = RoleRegistry.from_plugins(default_roles())
+    factory = EmployeeHarnessFactory(
+        api_key=api_key, base_url=base_url, deployment=deployment,
+        company_id="arceus", roles=registry,
+        pricing=default_pricing_from_env(), seed=base / "source", ledger=ledger,
+    )
+    return factory, registry
+
+
+def _tick(scheduler: Scheduler) -> None:
+    async def _pulse() -> None:
+        await scheduler.tick_once()
+        await scheduler.drain()
+
+    asyncio.run(_pulse())
+
+
+def _scheduler(
+    ledger: SqliteLedger, factory: EmployeeHarnessFactory, registry: RoleRegistry
+) -> Scheduler:
+    return Scheduler(
+        ledger=ledger, workforce=LedgerWorkforce(ledger.employees),
+        beat_runner_for=factory, budget_enforcer=BudgetEnforcer(ledger, company_id="arceus"),
+        roles=registry, landers=default_landers(factory.company_root),
+        event_bus=LoggingBus(), max_concurrent_runs=1,
+    )
+
+
+def _public_post_status(document_id: str) -> str:
+    """What the PUBLIC blog API says about a post: 'published' | 'invisible' | 'unreachable'."""
+    url = os.environ.get("STRAPI_URL", "http://localhost:1337")
+    try:
+        with urllib.request.urlopen(f"{url}/api/blog-posts/{document_id}", timeout=10) as resp:
+            data = json.loads(resp.read()).get("data") or {}
+            return "published" if data.get("publishedAt") else "invisible"
+    except urllib.error.HTTPError as err:
+        return "invisible" if err.code == 404 else "unreachable"
+    except OSError:
+        return "unreachable"
+
+
+def _staged_document_id(working_dir: Path, task_id: str) -> str | None:
+    """The Strapi documentId Mira staged, from the worktree's standing-draft index."""
+    index = working_dir / ".harness" / "cms-drafts.json"
+    if not index.exists():
+        return None
+    entry = json.loads(index.read_text(encoding="utf-8")).get(f"blog:{task_id}")
+    return entry.get("ref_id") if isinstance(entry, dict) else None
+
+
+def _stage(base: Path) -> int:
+    creds = _azure()
+    if creds is None:
         _log("skipping stage: set AZURE_OPENAI_API_KEY, AZURE_OPENAI_BASE_URL, AZURE_OPENAI_DEPLOYMENT")
         return 0
 
-    seed = base / "source"
-    _seed_repo(seed)
-    ledger = SqliteLedger.open(str(base / "ledger.db"))  # persistent — the resolve step reopens it
+    _seed_repo(base / "source")
+    ledger = SqliteLedger.open(str(base / "ledger.db"))
     try:
-        registry = RoleRegistry.from_plugins(default_roles())
-        factory = EmployeeHarnessFactory(
-            api_key=api_key, base_url=base_url, deployment=deployment,
-            company_id="arceus", roles=registry, pricing=default_pricing_from_env(),
-            seed=seed, ledger=ledger,  # ledger= binds the stage_go_live capability tool
-        )
+        factory, registry = _factory(base, ledger, creds)
         ledger.employees.create(Employee(id="mira", name="Mira", role="marketer"))
-        cfg = role_beat_config(registry.get("marketer").manifest)
         mat = factory.materialize(ledger.employees.get("mira"))  # type: ignore[arg-type]
 
         _log("=" * 72)
-        _log("MARKETER GO-LIVE GATE — stage a publish, gate on human approval")
+        _log("STEP 1/3 — STAGE: draft into the CMS + open the go-live gate")
         _log("=" * 72)
-        _log("   employee : mira (marketer)")
-        _log(f"   go-live tool present: {'stage_go_live' in cfg.tools}")
         _log(f"   worktree : {mat.working_dir}")
-        _log(f"   content_draft.md seeded final: {(mat.working_dir / MARKETER_CONTENT_DOC).exists()}")
 
         ledger.tasks.submit(Task(id="arceus-golive", intent=_TASK))
         assign_task(ledger, "arceus-golive", "mira")
-        _log("\nTASK: take the final draft live (publish) — must stage for approval\n" + "-" * 72)
 
-        scheduler = Scheduler(
-            ledger=ledger, workforce=LedgerWorkforce(ledger.employees),
-            beat_runner_for=factory, budget_enforcer=BudgetEnforcer(ledger, company_id="arceus"),
-            roles=registry, landers=default_landers(factory.company_root),
-            event_bus=LoggingBus(), max_concurrent_runs=1,
-        )
+        scheduler = _scheduler(ledger, factory, registry)
         for n in range(1, 4):
             task = ledger.tasks.get("arceus-golive")
             if task is None or task.status in (TaskStatus.DONE, TaskStatus.BLOCKED):
                 break
-            _log(f"\nTICK {n} — kernel dispatches marketer beat")
-
-            async def _pulse() -> None:
-                await scheduler.tick_once()
-                await scheduler.drain()
-
-            asyncio.run(_pulse())
+            _log(f"\nTICK {n}")
+            _tick(scheduler)
 
         _log("\n" + "=" * 72)
-        _log("RESULT — staged, awaiting a human")
+        _log("STAGED — awaiting the human")
         _log("=" * 72)
         task = ledger.tasks.get("arceus-golive")
         _log(f"   task status : {task.status.value if task else '?'}")
+        doc = _staged_document_id(mat.working_dir, "arceus-golive")
+        if doc:
+            _log(f"   CMS draft   : {doc} — public blog says: {_public_post_status(doc)}")
         pending = ledger.approvals.pending()
         if pending:
-            gate = pending[0]
-            _log(f"   ★ GATE OPEN : {gate.id}")
-            _log(f"     reason    : {gate.reason}")
-            _log(f"     gate_kind : {gate.gate_kind.value if gate.gate_kind else '?'}  (approve → task proceeds)")
+            _log(f"   ★ GATE OPEN : {pending[0].id} — {pending[0].reason}")
             _log("   nothing published — reach is fail-closed behind this gate.")
         else:
             _log("   ⚠ no gate opened — Mira did not call stage_go_live")
-        _log(f"\n   ledger    : {base / 'ledger.db'}")
-        _log(f"   resolve   : GOLIVE_DEMO_DIR={base} uv run python examples/marketer_go_live_run.py resolve <approve|deny>")
+        _log(f"\n   next: GOLIVE_DEMO_DIR={base} uv run python examples/marketer_go_live_run.py resolve approve")
     finally:
         ledger.close()
     return 0
@@ -225,7 +271,7 @@ def _resolve(base: Path, decision: str) -> int:
         gate = pending[0]
         verdict = ApprovalDecision.APPROVE if decision == "approve" else ApprovalDecision.DENY
         _log("=" * 72)
-        _log(f"HUMAN DECISION: {verdict.value.upper()} — gate {gate.id}")
+        _log(f"STEP 2/3 — HUMAN DECISION: {verdict.value.upper()} — gate {gate.id}")
         _log("=" * 72)
         _log(f"   {gate.reason}")
         GovernanceResolver(ledger).resolve(
@@ -233,11 +279,55 @@ def _resolve(base: Path, decision: str) -> int:
         )
         task = ledger.tasks.get(gate.subject_id)
         _log(f"\n   gate status : {ledger.approvals.get(gate.id).status.value}")  # type: ignore[union-attr]
-        _log(f"   task status : {task.status.value if task else '?'}")
+        _log(f"   task status : {task.status.value if task else '?'} (approve re-wakes Mira)")
         if verdict is ApprovalDecision.APPROVE:
-            _log("   → authorised: the go-live may now proceed (the real publish is a later slice).")
+            _log(f"\n   next: GOLIVE_DEMO_DIR={base} uv run python examples/marketer_go_live_run.py publish")
         else:
-            _log("   → denied: nothing goes live; the draft stays staged.")
+            _log("   → denied: nothing goes live; execute_go_live will refuse.")
+    finally:
+        ledger.close()
+    return 0
+
+
+def _publish(base: Path) -> int:
+    creds = _azure()
+    if creds is None:
+        _log("skipping publish: set AZURE_OPENAI_API_KEY, AZURE_OPENAI_BASE_URL, AZURE_OPENAI_DEPLOYMENT")
+        return 0
+
+    ledger = SqliteLedger.open(str(base / "ledger.db"))
+    try:
+        factory, registry = _factory(base, ledger, creds)
+        mat = factory.materialize(ledger.employees.get("mira"))  # type: ignore[arg-type]
+        doc = _staged_document_id(mat.working_dir, "arceus-golive")
+
+        _log("=" * 72)
+        _log("STEP 3/3 — EXECUTE: Mira publishes the approved reach")
+        _log("=" * 72)
+        if doc:
+            _log(f"   before: public blog says {doc} is {_public_post_status(doc)}")
+
+        scheduler = _scheduler(ledger, factory, registry)
+        for n in range(1, 4):
+            task = ledger.tasks.get("arceus-golive")
+            if task is None or task.status in (TaskStatus.DONE, TaskStatus.BLOCKED):
+                break
+            _log(f"\nTICK {n}")
+            _tick(scheduler)
+
+        _log("\n" + "=" * 72)
+        _log("RESULT — the dark node, closed")
+        _log("=" * 72)
+        task = ledger.tasks.get("arceus-golive")
+        _log(f"   task status : {task.status.value if task else '?'}")
+        deliveries = mat.working_dir / ".harness" / "deliveries.json"
+        if deliveries.exists():
+            for approval_id, record in json.loads(deliveries.read_text(encoding="utf-8")).items():
+                _log(f"   ★ DELIVERED : gate {approval_id} → {record.get('url')}")
+        if doc:
+            status = _public_post_status(doc)
+            marker = "★ LIVE ON THE BLOG" if status == "published" else f"⚠ {status}"
+            _log(f"   {marker}: {os.environ.get('STRAPI_URL', 'http://localhost:1337')}/blog/#/post/{doc}")
     finally:
         ledger.close()
     return 0
@@ -247,6 +337,8 @@ def main(argv: list[str]) -> int:
     base = _base()
     if len(argv) >= 2 and argv[0] == "resolve":
         return _resolve(base, argv[1])
+    if len(argv) >= 1 and argv[0] == "publish":
+        return _publish(base)
     return _stage(base)
 
 

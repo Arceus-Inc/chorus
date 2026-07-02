@@ -39,7 +39,9 @@ def _seed(ledger: SqliteLedger) -> None:
     ledger.employees.create(Employee(id="mgr", name="Mgr", role="manager"))
     ledger.employees.create(Employee(id="ada", name="Ada", role="engineer", reports_to="mgr"))
     ledger.employees.create(Employee(id="bob", name="Bob", role="engineer", reports_to="mgr"))
-    ledger.tasks.submit(Task(id="M", intent="ship it", status=TaskStatus.TODO, assignee_employee_id="mgr"))
+    ledger.tasks.submit(
+        Task(id="M", intent="ship it", status=TaskStatus.TODO, assignee_employee_id="mgr")
+    )
     ledger.runs.create(Run(id=REV, employee_id="mgr", task_id="M", status=RunStatus.RUNNING))
 
 
@@ -53,7 +55,12 @@ def test_tool_fans_out_and_assigns(ledger: SqliteLedger, tmp_path: Path) -> None
             {
                 "children": [
                     {"label": "api", "intent": "build the api", "assignee": "ada"},
-                    {"label": "tests", "intent": "write tests", "assignee": "bob", "depends_on": ["api"]},
+                    {
+                        "label": "tests",
+                        "intent": "write tests",
+                        "assignee": "bob",
+                        "depends_on": ["api"],
+                    },
                 ]
             },
             _ctx(tmp_path),
@@ -83,12 +90,26 @@ def test_tool_rejects_empty_children(ledger: SqliteLedger, tmp_path: Path) -> No
     assert result.is_error is True
 
 
+def test_tool_rejects_malformed_input_as_recovery_not_crash(
+    ledger: SqliteLedger, tmp_path: Path
+) -> None:
+    # A payload that fails schema validation must come back as the tool's recovery contract
+    # (is_error result), never an unchained pydantic ValidationError that escapes the tool.
+    _seed(ledger)
+    result = asyncio.run(DecomposeTool(ledger).execute({}, _ctx(tmp_path)))  # missing 'children'
+    assert result.is_error is True
+
+
 def test_tool_rejects_unknown_dependency_label(ledger: SqliteLedger, tmp_path: Path) -> None:
     _seed(ledger)
     BeatContext(task_id="M", run_id=REV, employee_id="mgr").write(tmp_path)
     result = asyncio.run(
         DecomposeTool(ledger).execute(
-            {"children": [{"label": "api", "intent": "x", "assignee": "ada", "depends_on": ["ghost"]}]},
+            {
+                "children": [
+                    {"label": "api", "intent": "x", "assignee": "ada", "depends_on": ["ghost"]}
+                ]
+            },
             _ctx(tmp_path),
         )
     )

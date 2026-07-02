@@ -31,6 +31,27 @@ MARKETER_BRAND_DRIFT_SCAN = RoutineDeclaration(
     concurrency=RoutineConcurrency.COALESCE,
 )
 
-MARKETER_ROUTINES: tuple[RoutineDeclaration, ...] = (MARKETER_BRAND_DRIFT_SCAN,)
+# Monthly content/GEO refresh, filed the 1st at 09:00. The second analytics-free routine (§13):
+# owned content decays for generative-answer + search visibility as the category moves, so Mira
+# re-scores what shipped on GEO/AEO + SEO craft (answer-first structure, schema, entity density,
+# citation-readiness) and stages refreshes for the ones that drifted. Report/propose only — a
+# refresh still stages for approval like any other beat; it never publishes on its own.
+MARKETER_GEO_REFRESH = RoutineDeclaration(
+    routine_key="marketer-geo-refresh",
+    intent_template=(
+        "Content/GEO refresh: re-score the owned content that shipped for GEO/AEO + SEO decay — "
+        "answer-first structure, schema/entity density, and citation-readiness (would an AI answer "
+        "engine cite it?). Load the `geo-aeo-seo` skill for the craft. Flag posts that have decayed "
+        "or fallen behind the category, note why in memory, and propose refreshes. Report and propose "
+        "only; do not publish or send — any refresh stages for approval like any other beat."
+    ),
+    schedule="0 9 1 * *",  # == Schedule.monthly(day=1, at="09:00")
+    concurrency=RoutineConcurrency.COALESCE,
+)
 
-__all__ = ["MARKETER_BRAND_DRIFT_SCAN", "MARKETER_ROUTINES"]
+MARKETER_ROUTINES: tuple[RoutineDeclaration, ...] = (
+    MARKETER_BRAND_DRIFT_SCAN,
+    MARKETER_GEO_REFRESH,
+)
+
+__all__ = ["MARKETER_BRAND_DRIFT_SCAN", "MARKETER_GEO_REFRESH", "MARKETER_ROUTINES"]

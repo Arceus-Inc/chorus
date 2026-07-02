@@ -14,7 +14,7 @@ from __future__ import annotations
 from dream.contracts.tool import ToolResult
 from dream.tools._base import BaseTool, ToolDeclaration
 from dream.tools._context import ToolExecutionContext
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
 from chorus.heartbeat import BeatContext
 from chorus.ledger import SqliteLedger
@@ -24,7 +24,9 @@ from chorus.lifecycle import CapabilityService, ChildPlan
 class _ChildInput(BaseModel):
     """One subtask the manager proposes, routed to one report."""
 
-    label: str = Field(description="a short stable name for this subtask, unique in this call (e.g. 'api')")
+    label: str = Field(
+        description="a short stable name for this subtask, unique in this call (e.g. 'api')"
+    )
     intent: str = Field(description="what the subtask should accomplish")
     assignee: str = Field(description="the employee id of the report who will own this subtask")
     depends_on: list[str] = Field(
@@ -58,7 +60,10 @@ class DecomposeTool(BaseTool):
         self._service = CapabilityService(ledger)
 
     async def execute(self, input: dict[str, object], ctx: ToolExecutionContext) -> ToolResult:
-        args = DecomposeInput.model_validate(input)
+        try:
+            args = DecomposeInput.model_validate(input)
+        except ValidationError as exc:
+            return ToolResult(content=f"refused: malformed decompose input — {exc}", is_error=True)
         rejection = _validate(args)
         if rejection is not None:
             return ToolResult(content=rejection, is_error=True)
@@ -73,7 +78,9 @@ class DecomposeTool(BaseTool):
             )
             for child in args.children
         ]
-        result = self._service.decompose(parent_id=beat.task_id, revision=beat.run_id, children=plans)
+        result = self._service.decompose(
+            parent_id=beat.task_id, revision=beat.run_id, children=plans
+        )
         if result.reviewer_assignees:
             joined = ", ".join(result.reviewer_assignees)
             return ToolResult(

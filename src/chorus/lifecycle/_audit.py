@@ -7,9 +7,9 @@ event stream. :func:`record_activity` is the one writer the runtime calls so eve
 
 from __future__ import annotations
 
-import uuid
 from typing import TYPE_CHECKING, Any
 
+from chorus.ids import mint_id
 from chorus.ledger._models import Activity, ActivityVerb
 
 if TYPE_CHECKING:
@@ -30,7 +30,7 @@ def record_activity(
     """Append one immutable governance-audit row (spec 08 §5). Kernel actor when ``actor`` is null."""
     ledger.activity.append(
         Activity(
-            id=f"act_{uuid.uuid4().hex[:12]}",
+            id=mint_id("act"),
             verb=verb,
             subject_kind=subject_kind,
             subject_id=subject_id,

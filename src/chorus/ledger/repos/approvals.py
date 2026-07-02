@@ -16,7 +16,7 @@ from chorus.ledger._models import (
     ApprovalStatus,
     ApprovalSubjectKind,
 )
-from chorus.ledger.repos._base import from_iso, utcnow_iso
+from chorus.ledger.repos._base import from_iso, require_persisted, utcnow_iso
 
 
 class ApprovalRepo:
@@ -45,8 +45,7 @@ class ApprovalRepo:
             ),
         )
         self._conn.commit()
-        opened = self.get(approval.id)
-        assert opened is not None  # just inserted in this transaction
+        opened = require_persisted(self.get(approval.id), approval.id)
         return opened
 
     def approve(self, approval_id: str, *, decided_by_user_id: str) -> None:
@@ -71,10 +70,20 @@ class ApprovalRepo:
         self._conn.commit()
 
     def get(self, approval_id: str) -> Approval | None:
-        row = self._conn.execute(
-            "SELECT * FROM approval WHERE id = ?", (approval_id,)
-        ).fetchone()
+        row = self._conn.execute("SELECT * FROM approval WHERE id = ?", (approval_id,)).fetchone()
         return _row_to_approval(row) if row is not None else None
+
+    def for_subject(self, subject_id: str) -> list[Approval]:
+        """Every gate ever opened on ``subject_id``, newest first — any status.
+
+        The go-live executor resolves a task's gate with this (fail-closed on its status), so the
+        model never has to remember an approval id across beats.
+        """
+        rows = self._conn.execute(
+            "SELECT * FROM approval WHERE subject_id = ? ORDER BY created_at DESC, id DESC",
+            (subject_id,),
+        ).fetchall()
+        return [_row_to_approval(row) for row in rows]
 
     def pending(self) -> list[Approval]:
         """Open gates that have not lapsed, oldest first.

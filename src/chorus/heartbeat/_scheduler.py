@@ -31,6 +31,7 @@ from chorus.heartbeat._beat_context import BeatContext, IntegrateContextPacket
 from chorus.heartbeat._invokability import invokability_block
 from chorus.heartbeat._runner_for import single
 from chorus.heartbeat._wake import TickReport, Wake
+from chorus.ids import mint_id
 from chorus.ledger import ApprovalGate, TaskPriority
 from chorus.ledger._models import (
     ActivityVerb,
@@ -127,7 +128,9 @@ def _run_verify_command(worktree: Path, command: str, *, timeout_s: int) -> tupl
         )
     except subprocess.TimeoutExpired as exc:
         captured = _as_text(exc.stdout) + _as_text(exc.stderr)
-        return _VERIFY_TIMEOUT_EXIT, f"timeout after {timeout_s}s\n{captured}"[-_VERIFY_OUTPUT_TAIL:]
+        return _VERIFY_TIMEOUT_EXIT, f"timeout after {timeout_s}s\n{captured}"[
+            -_VERIFY_OUTPUT_TAIL:
+        ]
     except OSError as exc:
         return _VERIFY_SPAWN_FAILED_EXIT, f"failed to run {command!r}: {exc}"[-_VERIFY_OUTPUT_TAIL:]
     return completed.returncode, (completed.stdout + completed.stderr)[-_VERIFY_OUTPUT_TAIL:]
@@ -204,14 +207,18 @@ def _sprint_delta(
     """Build the beat's raw episodic record — honest fields derived from the run (spec 07 §3)."""
     verdict = result.outcome or {}
     raw_score = verdict.get("score")
-    score = float(raw_score) if isinstance(raw_score, int | float) else (1.0 if result.passed else 0.0)
+    score = (
+        float(raw_score) if isinstance(raw_score, int | float) else (1.0 if result.passed else 0.0)
+    )
     return SprintDelta(
         run_id=run_id,
         task_id=task.id,
         employee_id=employee.id,
         scope=scope,
         intent=task.intent,
-        outcome=_OUTCOME_BY_DISPOSITION.get(result.disposition or BeatDisposition.ERRORED, "blocked"),
+        outcome=_OUTCOME_BY_DISPOSITION.get(
+            result.disposition or BeatDisposition.ERRORED, "blocked"
+        ),
         score=score,
         created_at=now,
         body=result.summary or "",
@@ -221,7 +228,7 @@ def _sprint_delta(
 def _to_ledger_artifact(artifact: OutcomeArtifact) -> Artifact:
     """Map a lander's canonical :class:`~chorus.outcomes.Artifact` to a storable ledger row."""
     return Artifact(
-        id=f"art_{uuid.uuid4().hex[:12]}",
+        id=mint_id("art"),
         task_id=artifact.task_id,
         type=ArtifactType(artifact.type.value),
         external_id=artifact.external_id,
@@ -229,6 +236,7 @@ def _to_ledger_artifact(artifact: OutcomeArtifact) -> Artifact:
         is_primary=artifact.is_primary,
         resource_ref=artifact.resource_ref,
     )
+
 
 # Dispatch priority rank for the deterministic sort key (spec 03 §3).
 PRIORITY_RANK: dict[TaskPriority, int] = {
@@ -273,7 +281,9 @@ class Scheduler:
         self.tick_interval_s = tick_interval_s
         self.max_concurrent_runs = max_concurrent_runs
         self.lease_ttl_s = lease_ttl_s
-        self.max_repair_attempts = max_repair_attempts  # DoD-failure self-repair budget (spec 04 §1)
+        self.max_repair_attempts = (
+            max_repair_attempts  # DoD-failure self-repair budget (spec 04 §1)
+        )
         # In-beat retry budget for *transient* engine faults (a planner/evaluator parse blip): re-run the
         # beat this many times before stranding it onto the recovery ladder (spec 05 §5).
         self.transient_retries = transient_retries
@@ -296,10 +306,16 @@ class Scheduler:
         self._event_bus = event_bus
         self._budget_enforcer = budget_enforcer  # None = budgets off (gating is opt-in)
         self._roles = roles  # None = no intake DoD (a task keeps whatever DoD was set explicitly)
-        self._landers = landers  # None = a passed beat lands 'done' without recording a role artifact
-        self._memory_writer = memory_writer  # None = no episodic capture (the kernel is writer-agnostic)
+        self._landers = (
+            landers  # None = a passed beat lands 'done' without recording a role artifact
+        )
+        self._memory_writer = (
+            memory_writer  # None = no episodic capture (the kernel is writer-agnostic)
+        )
         self._clock = clock or _utc_now  # the time source the run loop stamps each pulse with
-        self._sleep = sleep or asyncio.sleep  # the inter-pulse wait (injectable for deterministic tests)
+        self._sleep = (
+            sleep or asyncio.sleep
+        )  # the inter-pulse wait (injectable for deterministic tests)
         self._stop = asyncio.Event()  # set by stop(); ends the run loop after the current pulse
         self._inflight: set[asyncio.Task[None]] = set()
 
@@ -333,7 +349,7 @@ class Scheduler:
                 continue
             ledger.wakes.enqueue(
                 Wake(
-                    id=f"wake_{uuid.uuid4().hex[:12]}",
+                    id=mint_id("wake"),
                     employee_id=fired.employee_id,
                     reason=WakeReason.MONITOR_DUE,
                     payload={"task_id": fired.task_id},
@@ -363,9 +379,9 @@ class Scheduler:
             # ``rejected`` (a reviewer block) rather than ``done`` — so the manager reacts to the rejection
             # instead of parking forever on an unresolvable gate (M3 load-bearing Reviewer).
             gate_task_id = str(wake.payload["task_id"])
-            ready_to_integrate = ledger.tasks.has_children(gate_task_id) and ledger.tasks.all_children_terminal(
+            ready_to_integrate = ledger.tasks.has_children(
                 gate_task_id
-            )
+            ) and ledger.tasks.all_children_terminal(gate_task_id)
             if ledger.dependencies.unresolved_blockers(gate_task_id) and not ready_to_integrate:
                 ledger.wakes.mark_done(wake.id)
                 continue
@@ -456,7 +472,7 @@ class Scheduler:
         if monitor.recovery_policy is MonitorRecoveryPolicy.WAKE_OWNER:
             ledger.wakes.enqueue(
                 Wake(
-                    id=f"wake_{uuid.uuid4().hex[:12]}",
+                    id=mint_id("wake"),
                     employee_id=monitor.employee_id,
                     reason=WakeReason.RECOVERY,
                     payload={"task_id": monitor.task_id, "cause": "monitor_exhausted"},
@@ -470,7 +486,7 @@ class Scheduler:
             if monitor.recovery_policy is MonitorRecoveryPolicy.ESCALATE
             else RecoveryKind.STALE_RUN_WATCHDOG
         )
-        action_id = f"rec_{uuid.uuid4().hex[:12]}"
+        action_id = mint_id("rec")
         ledger.recovery_actions.open(
             RecoveryAction(
                 id=action_id,
@@ -600,7 +616,9 @@ class Scheduler:
                 and employee.role in self._roles
                 and ledger.dod.get_for_task(task_id) is None
             ):
-                ledger.dod.create(task_id, self._roles.get(employee.role).dod_generator(task.intent))
+                ledger.dod.create(
+                    task_id, self._roles.get(employee.role).dod_generator(task.intent)
+                )
             # The DoD's objective checks ride into the beat: dream's evaluator runs them as the
             # acceptance gate, so ``done`` means plan-complete *and* the Command gate passed (spec 04 §1).
             verifier = ledger.dod.verifier_for_task(task_id)
@@ -639,9 +657,10 @@ class Scheduler:
             if not ledger.tasks.all_children_terminal(task_id):
                 # PARK (delegated) — wait for the children; not done, not failed, no recovery ladder.
                 ledger.tasks.set_status(task_id, TaskStatus.BLOCKED)
-            elif self._integrate_floor_verdict(
-                task_id, verifier=verifier, beat_runner=beat_runner
-            ) is False:
+            elif (
+                self._integrate_floor_verdict(task_id, verifier=verifier, beat_runner=beat_runner)
+                is False
+            ):
                 # ROLLUP GATE (run-18 false-`done` fix): the subtree is terminal, but the parent's
                 # OBJECTIVE rollup DoD — a ``command`` floor, e.g. "every required deliverable exists and
                 # the gate passes" — FAILED against the assembled company main. A delegated parent must
@@ -656,8 +675,13 @@ class Scheduler:
                 # INTEGRATE — the whole subtree is terminal and the parent's objective floor passed (or
                 # it declares none), so the parent is complete (spec M3 §5).
                 await self._land_passed(
-                    task_id, run_id=run_id, verifier=verifier, verdict=verdict,
-                    employee=employee, result=result, now=now,
+                    task_id,
+                    run_id=run_id,
+                    verifier=verifier,
+                    verdict=verdict,
+                    employee=employee,
+                    result=result,
+                    now=now,
                 )
         elif result.disposition is BeatDisposition.ERRORED:
             # Engine/tool fault: the run failed and the task is stranded onto the recovery ladder with
@@ -667,8 +691,13 @@ class Scheduler:
         elif result.passed:
             ledger.runs.finish(run_id, RunStatus.SUCCEEDED, outcome=verdict)
             await self._land_passed(
-                task_id, run_id=run_id, verifier=verifier, verdict=verdict, employee=employee,
-                result=result, now=now,
+                task_id,
+                run_id=run_id,
+                verifier=verifier,
+                verdict=verdict,
+                employee=employee,
+                result=result,
+                now=now,
             )
         else:
             ledger.runs.finish(run_id, RunStatus.FAILED, outcome=verdict)
@@ -686,7 +715,9 @@ class Scheduler:
             else:
                 self._climb_repair_ladder(task_id, employee_id=employee.id, verifier=verifier)
 
-        await self._capture_memory(run_id=run_id, employee=employee, task=task, result=result, now=now)
+        await self._capture_memory(
+            run_id=run_id, employee=employee, task=task, result=result, now=now
+        )
         ledger.tasks.release_locks(task_id, run_id=run_id)
         ledger.wakes.mark_done(wake.id)
         self._record_cost(employee.id, task_id=task_id, run_id=run_id, result=result, now=now)
@@ -702,8 +733,12 @@ class Scheduler:
         if self._memory_writer is None or result.disposition is BeatDisposition.CANCELLED:
             return
         delta = _sprint_delta(
-            run_id=run_id, employee=employee, task=task, result=result,
-            scope=self._memory_scope(employee), now=now,
+            run_id=run_id,
+            employee=employee,
+            task=task,
+            result=result,
+            scope=self._memory_scope(employee),
+            now=now,
         )
         await self._memory_writer.apply(delta.to_memory_delta())
 
@@ -738,7 +773,9 @@ class Scheduler:
         steps = verifier.verification_steps()
         if not steps:
             return None
-        worktree = beat_runner.working_dir if isinstance(beat_runner, _RunnerWithWorkingDir) else None
+        worktree = (
+            beat_runner.working_dir if isinstance(beat_runner, _RunnerWithWorkingDir) else None
+        )
         if worktree is None:
             return None
         for step in steps:
@@ -748,7 +785,13 @@ class Scheduler:
         return True
 
     async def _maybe_cap_integrate(
-        self, ledger: SqliteLedger, *, wake: Wake, run_id: str, task: Task, employee: Employee,
+        self,
+        ledger: SqliteLedger,
+        *,
+        wake: Wake,
+        run_id: str,
+        task: Task,
+        employee: Employee,
         now: datetime,
     ) -> bool:
         """At the integrate-iteration cap, accept the completed subtree mechanically — no model beat.
@@ -765,7 +808,10 @@ class Scheduler:
         beat_runner_for = self._require(self._beat_runner_for, "beat_runner")
         beat_runner = beat_runner_for.runner_for(employee, task_id=task.id)
         ledger.runs.finish(run_id, RunStatus.SUCCEEDED, outcome=None)
-        if self._integrate_floor_verdict(task.id, verifier=verifier, beat_runner=beat_runner) is False:
+        if (
+            self._integrate_floor_verdict(task.id, verifier=verifier, beat_runner=beat_runner)
+            is False
+        ):
             # The cap bounds the MODEL loop (no further decompose/integrate beats), NOT the objective
             # gate: even here a parent does not land ``done`` while its ``command`` rollup floor fails —
             # record the failed verdict and park BLOCKED rather than fabricate a passing outcome.
@@ -775,7 +821,11 @@ class Scheduler:
             ledger.tasks.set_status(task.id, TaskStatus.BLOCKED)
         else:
             await self._land_passed(
-                task.id, run_id=run_id, verifier=verifier, verdict=None, employee=employee,
+                task.id,
+                run_id=run_id,
+                verifier=verifier,
+                verdict=None,
+                employee=employee,
                 result=BeatOutcome(
                     passed=True, outcome={}, summary="integrated (iteration cap reached)"
                 ),
@@ -827,7 +877,9 @@ class Scheduler:
             return
         if verifier is not None and verifier.kind is DoDKind.HUMAN_APPROVAL:
             GovernanceResolver(ledger).open_task_gate(
-                task_id, gate_kind=ApprovalGate.ACCEPTANCE, reason=f"human-approval DoD for {task_id}"
+                task_id,
+                gate_kind=ApprovalGate.ACCEPTANCE,
+                reason=f"human-approval DoD for {task_id}",
             )
             return
         if (
@@ -869,7 +921,7 @@ class Scheduler:
             self._open_review_recovery(task_id, cause="no_reviewer", owner_id=author.id)
             return
 
-        review_run_id = f"rev_{uuid.uuid4().hex[:12]}"
+        review_run_id = mint_id("rev")
         runner = self._review_runner(reviewer, task_id=task_id, worktree_owner_id=author.id)
         ledger.runs.create(
             Run(
@@ -886,7 +938,9 @@ class Scheduler:
         )
         worktree = runner.working_dir if isinstance(runner, _RunnerWithWorkingDir) else None
         if worktree is not None:
-            BeatContext(task_id=task_id, run_id=review_run_id, employee_id=reviewer.id).write(worktree)
+            BeatContext(task_id=task_id, run_id=review_run_id, employee_id=reviewer.id).write(
+                worktree
+            )
         observer = self._event_bus.emit if self._event_bus is not None else None
         try:
             result = await runner.run_task(
@@ -913,17 +967,25 @@ class Scheduler:
         # Quality approved. A reviewed_build still has an objective floor: the kernel runs the
         # reviewer-discovered command — passing it never depends on the model's word.
         if verifier.kind is DoDKind.REVIEWED_BUILD and not self._reviewed_build_passes(
-            task_id, dod_id=dod.id, run_id=review_run_id, verifier=verifier, verdict=dod.verdict,
+            task_id,
+            dod_id=dod.id,
+            run_id=review_run_id,
+            verifier=verifier,
+            verdict=dod.verdict,
             worktree=worktree,
         ):
             await self._land_outcome(task_id, employee=reviewer, result=result)
             self._route_block(task_id, author=author)
             return
-        await self._land_outcome(task_id, employee=reviewer, result=result)  # the `verdict` artifact
+        await self._land_outcome(
+            task_id, employee=reviewer, result=result
+        )  # the `verdict` artifact
         await self._land_outcome(task_id, employee=author, result=work_result)
         dod_after = ledger.dod.get_for_task(task_id)
         ledger.finalize_beat(
-            task_id=task_id, run_id=review_run_id, dod_status=DodStatus.PASSED,
+            task_id=task_id,
+            run_id=review_run_id,
+            dod_status=DodStatus.PASSED,
             verdict=dod_after.verdict if dod_after is not None else dod.verdict,
         )
 
@@ -943,13 +1005,18 @@ class Scheduler:
         or a non-zero exit, records the failure on the DoD verdict and returns ``False`` (→ block)."""
         ledger = self._require_ledger()
         command = str((verdict or {}).get("verify_command", "")).strip()
-        timeout_s = verifier.spec.verify_timeout_s if isinstance(verifier.spec, ReviewedBuild) else 600
+        timeout_s = (
+            verifier.spec.verify_timeout_s if isinstance(verifier.spec, ReviewedBuild) else 600
+        )
         if not command or worktree is None:
-            reason = "reviewer approved but supplied no verify command" if not command else (
-                "no worktree to run the verify command in"
+            reason = (
+                "reviewer approved but supplied no verify command"
+                if not command
+                else ("no worktree to run the verify command in")
             )
             ledger.dod.record_verdict(
-                dod_id, DodStatus.FAILED,
+                dod_id,
+                DodStatus.FAILED,
                 verdict={**(verdict or {}), "build_passed": False, "build_output": reason},
                 run_id=run_id,
             )
@@ -958,8 +1025,12 @@ class Scheduler:
         ledger.dod.record_verdict(
             dod_id,
             DodStatus.PASSED if exit_code == 0 else DodStatus.FAILED,
-            verdict={**(verdict or {}), "build_passed": exit_code == 0, "build_exit": exit_code,
-                     "build_output": output},
+            verdict={
+                **(verdict or {}),
+                "build_passed": exit_code == 0,
+                "build_exit": exit_code,
+                "build_output": output,
+            },
             run_id=run_id,
         )
         return exit_code == 0
@@ -982,7 +1053,7 @@ class Scheduler:
             if task.parent_id is not None and ledger.tasks.all_children_terminal(task.parent_id):
                 ledger.wakes.enqueue(
                     Wake(
-                        id=f"wake_{uuid.uuid4().hex[:12]}",
+                        id=mint_id("wake"),
                         employee_id=manager_id,
                         reason=WakeReason.CHILDREN_DONE,
                         payload={"task_id": task.parent_id},
@@ -996,7 +1067,7 @@ class Scheduler:
             ledger.tasks.set_status(task_id, TaskStatus.TODO)  # re-dispatch the author to fix it
             ledger.wakes.enqueue(
                 Wake(
-                    id=f"wake_{uuid.uuid4().hex[:12]}",
+                    id=mint_id("wake"),
                     employee_id=author.id,
                     reason=WakeReason.RECOVERY,
                     payload={"task_id": task_id, "cause": "review_blocked"},
@@ -1090,7 +1161,7 @@ class Scheduler:
             return
         ledger.recovery_actions.open(
             RecoveryAction(
-                id=f"rec_{uuid.uuid4().hex[:12]}",
+                id=mint_id("rec"),
                 source_task_id=task_id,
                 kind=RecoveryKind.STRANDED,
                 owner_employee_id=owner_id,
@@ -1153,7 +1224,7 @@ class Scheduler:
             ledger.tasks.set_status(task_id, TaskStatus.TODO)  # dispatchable; not yet "stuck"
             ledger.wakes.enqueue(
                 Wake(
-                    id=f"wake_{uuid.uuid4().hex[:12]}",
+                    id=mint_id("wake"),
                     employee_id=employee_id,
                     reason=WakeReason.RECOVERY,
                     payload={"task_id": task_id, "cause": "dod_failed"},
@@ -1164,7 +1235,7 @@ class Scheduler:
         if ledger.recovery_actions.active_for_source(task_id) is None:
             ledger.recovery_actions.open(
                 RecoveryAction(
-                    id=f"rec_{uuid.uuid4().hex[:12]}",
+                    id=mint_id("rec"),
                     source_task_id=task_id,
                     kind=RecoveryKind.STALE_RUN_WATCHDOG,
                     owner_employee_id=employee_id,
@@ -1174,9 +1245,7 @@ class Scheduler:
                 )
             )
 
-    def _strand_errored(
-        self, task_id: str, *, employee_id: str, result: BeatOutcome
-    ) -> None:
+    def _strand_errored(self, task_id: str, *, employee_id: str, result: BeatOutcome) -> None:
         """An engine-faulted beat strands its task onto the recovery ladder (spec 05 §5, spec 02 §6).
 
         Distinct from a DoD failure: there is no objective gate to re-run, so the task goes ``blocked``
@@ -1191,7 +1260,7 @@ class Scheduler:
         phase = result.outcome.get("phase")
         ledger.recovery_actions.open(
             RecoveryAction(
-                id=f"rec_{uuid.uuid4().hex[:12]}",
+                id=mint_id("rec"),
                 source_task_id=task_id,
                 kind=RecoveryKind.STRANDED,
                 owner_employee_id=employee_id,
@@ -1215,7 +1284,7 @@ class Scheduler:
         ledger = self._require_ledger()
         event = ledger.cost_events.record(
             CostEvent(
-                id=f"cost_{uuid.uuid4().hex[:12]}",
+                id=mint_id("cost"),
                 employee_id=employee_id,
                 task_id=task_id,
                 run_id=run_id,
@@ -1239,10 +1308,15 @@ class Scheduler:
             raise RuntimeError(f"Scheduler not wired with a {name} (inject it at construction)")
         return seam
 
-
     @staticmethod
-    def sort_key(*, in_progress: bool, deps_done: bool, priority: TaskPriority,
-                 created_at: datetime, wake_id: str) -> tuple[int, int, int, datetime, str]:
+    def sort_key(
+        *,
+        in_progress: bool,
+        deps_done: bool,
+        priority: TaskPriority,
+        created_at: datetime,
+        wake_id: str,
+    ) -> tuple[int, int, int, datetime, str]:
         """The total, tie-broken dispatch order (spec 03 §3).
 
         Resume live work before new; dependency-ready before gated; priority;

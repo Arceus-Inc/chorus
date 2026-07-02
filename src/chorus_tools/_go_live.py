@@ -12,6 +12,7 @@ and gates, returning the observation contract (status / summary / next_actions /
 from __future__ import annotations
 
 from enum import StrEnum
+from pathlib import Path
 
 from dream.contracts.tool import ToolResult
 from dream.tools._base import BaseTool, ToolDeclaration
@@ -20,7 +21,7 @@ from pydantic import BaseModel, Field, ValidationError, model_validator
 
 from chorus.governance import GovernanceError, GovernanceResolver
 from chorus.heartbeat import BeatContext
-from chorus.ledger import ApprovalAction, ApprovalGate, SqliteLedger
+from chorus.ledger import ApprovalAction, ApprovalGate, ApprovalStatus, SqliteLedger
 
 
 class GoLiveAction(StrEnum):
@@ -37,8 +38,12 @@ class GoLiveInput(BaseModel):
     action: GoLiveAction = Field(
         description="the reach: publish (owned channel), send (audience), or spend (ad budget)"
     )
-    target: str = Field(min_length=1, description="the channel, audience, or ad platform the reach lands on")
-    content_ref: str = Field(min_length=1, description="the staged deliverable to go live, e.g. 'content_draft.md'")
+    target: str = Field(
+        min_length=1, description="the channel, audience, or ad platform the reach lands on"
+    )
+    content_ref: str = Field(
+        min_length=1, description="the staged deliverable to go live, e.g. 'content_draft.md'"
+    )
     amount_cents: int | None = Field(
         default=None, description="budget in cents; REQUIRED for a spend, omitted otherwise"
     )
@@ -84,6 +89,15 @@ class GoLiveTool(BaseTool):
             return _rejected(str(exc))
 
         beat = BeatContext.read(ctx.working_dir)
+        # Re-stage guard: an APPROVED gate still awaiting its delivery means the reach is already
+        # authorised — a second gate would fork the authority. The right verb from here is
+        # execute_go_live; this rejection is what steers a confused model back onto it.
+        awaiting = self._approved_awaiting_execution(beat.task_id, ctx.working_dir)
+        if awaiting is not None:
+            return _rejected(
+                f"gate {awaiting} is already APPROVED and awaiting execution — do NOT stage again; "
+                "call execute_go_live to publish it"
+            )
         # Idempotent per beat: a task carries at most one pending gate (the exact-once approval index),
         # so a re-stage returns the standing gate rather than colliding on the unique index.
         standing = self._pending_task_gate(beat.task_id)
@@ -92,7 +106,9 @@ class GoLiveTool(BaseTool):
                 standing
                 if standing is not None
                 else GovernanceResolver(self._ledger)
-                .open_task_gate(beat.task_id, gate_kind=ApprovalGate.AUTHORIZATION, reason=args.reason)
+                .open_task_gate(
+                    beat.task_id, gate_kind=ApprovalGate.AUTHORIZATION, reason=args.reason
+                )
                 .id
             )
         except GovernanceError as exc:
@@ -102,6 +118,22 @@ class GoLiveTool(BaseTool):
     def _pending_task_gate(self, task_id: str) -> str | None:
         for approval in self._ledger.approvals.pending():
             if approval.subject_id == task_id and approval.action is ApprovalAction.TASK_GATE:
+                return approval.id
+        return None
+
+    def _approved_awaiting_execution(self, task_id: str, working_dir: Path) -> str | None:
+        """The id of an APPROVED gate whose delivery has not landed yet, if any."""
+        # Local import: the delivery package imports GoLiveAction from this module, so the reverse
+        # dependency stays out of module scope to avoid an import cycle.
+        from chorus_tools.delivery._index import DeliveryIndex
+
+        deliveries = DeliveryIndex(working_dir / ".harness" / "deliveries.json")
+        for approval in self._ledger.approvals.for_subject(task_id):
+            if (
+                approval.action is ApprovalAction.TASK_GATE
+                and approval.status is ApprovalStatus.APPROVED
+                and deliveries.standing_delivery(approval.id) is None
+            ):
                 return approval.id
         return None
 

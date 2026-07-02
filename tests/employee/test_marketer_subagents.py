@@ -142,6 +142,7 @@ class TestMarketerManifestSubagents:
         assert {sa.name for sa in config.subagents} == {
             "brand_critic",
             "creative",
+            "strategist",
             "web_research",
         }
 

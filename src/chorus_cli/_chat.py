@@ -16,13 +16,13 @@ through the small :class:`ChatBeatService` bridge, and is fully testable with a 
 from __future__ import annotations
 
 import asyncio
-import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import TextIO
 
 from chorus.events import Event, EventKind
 from chorus.heartbeat import Scheduler, TickReport, Wake, WakeReason
+from chorus.ids import mint_id
 from chorus.ledger import Message, MessageKind, SqliteLedger, Task
 from chorus.lifecycle import assign_task
 from chorus.observability import EventBus
@@ -164,14 +164,14 @@ def ensure_task(ledger: SqliteLedger, employee_id: str, line: str) -> tuple[str,
         if not _wake_already_queued(ledger, open_task.id):
             ledger.wakes.enqueue(
                 Wake(
-                    id=f"wake_{uuid.uuid4().hex[:12]}",
+                    id=mint_id("wake"),
                     employee_id=employee_id,
                     reason=WakeReason.RECOVERY,
                     payload={"task_id": open_task.id, "cause": "chat_steer"},
                 )
             )
         return open_task.id, "attach"
-    task_id = f"task_{uuid.uuid4().hex[:12]}"
+    task_id = mint_id("task")
     ledger.tasks.submit(Task(id=task_id, intent=line))
     ledger.messages.send(_message(employee_id, line, task_id=task_id))
     # No ``assigned_by`` — like the ``assign`` command; the activity actor FKs employees, and the
@@ -182,7 +182,7 @@ def ensure_task(ledger: SqliteLedger, employee_id: str, line: str) -> tuple[str,
 
 def _message(employee_id: str, body: str, *, task_id: str) -> Message:
     return Message(
-        id=f"msg_{uuid.uuid4().hex[:12]}",
+        id=mint_id("msg"),
         to_employee_id=employee_id,
         body=body,
         kind=MessageKind.INSTRUCTION,
@@ -269,7 +269,9 @@ def _cmd_config(
     """
     spec = service.harness_spec
     if spec is None:
-        console.line("no resolved role config (keys-free chat) — set Azure creds for a real harness")
+        console.line(
+            "no resolved role config (keys-free chat) — set Azure creds for a real harness"
+        )
         return
     employee = ledger.employees.get(employee_id)
     role = employee.role if employee is not None else "?"
@@ -309,13 +311,20 @@ def _cmd_merge(console: Console, *, service: ChatBeatService) -> None:
     if result.merged:
         console.line(f"  [merged {result.branch} → {result.into}]")
     elif result.conflicted:
-        console.error(f"merge conflict on {result.branch} (aborted) — resolve in {service.workspace.repo}")
+        console.error(
+            f"merge conflict on {result.branch} (aborted) — resolve in {service.workspace.repo}"
+        )
     else:
         console.error(f"merge failed: {result.detail}")
 
 
 def _cmd_info(
-    console: Console, *, employee_id: str, service: ChatBeatService, state: _ChatState, ledger: SqliteLedger
+    console: Console,
+    *,
+    employee_id: str,
+    service: ChatBeatService,
+    state: _ChatState,
+    ledger: SqliteLedger,
 ) -> None:
     open_task = ledger.tasks.open_for_assignee(employee_id)
     console.kv(

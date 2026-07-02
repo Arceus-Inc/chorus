@@ -10,7 +10,7 @@ from __future__ import annotations
 import sqlite3
 
 from chorus.ledger._models import BudgetIncident, BudgetIncidentStatus, BudgetThreshold
-from chorus.ledger.repos._base import from_iso, to_iso, utcnow_iso
+from chorus.ledger.repos._base import from_iso, require_persisted, to_iso, utcnow_iso
 
 
 class BudgetIncidentRepo:
@@ -39,8 +39,7 @@ class BudgetIncidentRepo:
             ),
         )
         self._conn.commit()
-        opened = self.get(incident.id)
-        assert opened is not None  # just inserted in this transaction
+        opened = require_persisted(self.get(incident.id), incident.id)
         return opened
 
     def get(self, incident_id: str) -> BudgetIncident | None:

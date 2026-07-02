@@ -6,7 +6,7 @@ import sqlite3
 from datetime import datetime
 
 from chorus.ledger._models import Run, RunStatus
-from chorus.ledger.repos._base import dumps, from_iso, loads, to_iso, utcnow_iso
+from chorus.ledger.repos._base import dumps, from_iso, loads_dict, to_iso, utcnow_iso
 
 
 class RunRepo:
@@ -146,6 +146,6 @@ def _row_to_run(row: sqlite3.Row) -> Run:
         continuation_attempt=row["continuation_attempt"],
         started_at=from_iso(row["started_at"]),
         finished_at=from_iso(row["finished_at"]),
-        outcome=loads(row["outcome"]) or {},
-        usage=loads(row["usage"]) or {},
+        outcome=loads_dict(row["outcome"]),
+        usage=loads_dict(row["usage"]),
     )

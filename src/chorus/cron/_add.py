@@ -8,11 +8,11 @@ firing pins against (spec 13 §2).
 
 from __future__ import annotations
 
-import uuid
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from chorus.cron._routine import parse_cron
+from chorus.ids import mint_id
 from chorus.ledger import (
     Routine,
     RoutineCatchUp,
@@ -50,7 +50,7 @@ def add_routine(
 
     routine = ledger.routines.create(
         Routine(
-            id=f"routine_{uuid.uuid4().hex[:12]}",
+            id=mint_id("routine"),
             employee_id=employee_id,
             intent_template=intent_template,
             target=target,
@@ -62,7 +62,7 @@ def add_routine(
     )
     rev1 = ledger.routine_revisions.append(
         RoutineRevision(
-            id=f"rrev_{uuid.uuid4().hex[:12]}",
+            id=mint_id("rrev"),
             routine_id=routine.id,
             revision_no=1,
             intent_template=intent_template,
@@ -76,7 +76,7 @@ def add_routine(
     ledger.routines.set_head(routine.id, rev1)
     ledger.routine_triggers.create(
         RoutineTrigger(
-            id=f"trig_{uuid.uuid4().hex[:12]}",
+            id=mint_id("trig"),
             routine_id=routine.id,
             kind=TriggerKind.CRON,
             cron_expression=schedule,
@@ -85,7 +85,8 @@ def add_routine(
         )
     )
     refreshed = ledger.routines.get(routine.id)
-    assert refreshed is not None  # just created in this transaction
+    if refreshed is None:  # created above in this transaction — a None means the write was lost
+        raise RuntimeError(f"routine {routine.id} not found immediately after creation")
     return refreshed
 
 

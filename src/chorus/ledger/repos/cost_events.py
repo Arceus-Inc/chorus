@@ -11,7 +11,7 @@ import sqlite3
 from datetime import datetime
 
 from chorus.ledger._models import CostEvent
-from chorus.ledger.repos._base import from_iso, to_iso, utcnow_iso
+from chorus.ledger.repos._base import from_iso, require_persisted, to_iso, utcnow_iso
 
 
 class CostEventRepo:
@@ -43,14 +43,11 @@ class CostEventRepo:
             ),
         )
         self._conn.commit()
-        recorded = self.get(event.id)
-        assert recorded is not None  # just inserted in this transaction
+        recorded = require_persisted(self.get(event.id), event.id)
         return recorded
 
     def get(self, event_id: str) -> CostEvent | None:
-        row = self._conn.execute(
-            "SELECT * FROM cost_event WHERE id = ?", (event_id,)
-        ).fetchone()
+        row = self._conn.execute("SELECT * FROM cost_event WHERE id = ?", (event_id,)).fetchone()
         return _row_to_event(row) if row is not None else None
 
     def for_run(self, run_id: str) -> list[CostEvent]:

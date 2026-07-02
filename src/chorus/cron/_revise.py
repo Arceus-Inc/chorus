@@ -10,9 +10,9 @@ fired under (§3.3), so an edit never re-judges work in flight.
 
 from __future__ import annotations
 
-import uuid
 from typing import TYPE_CHECKING, Final, cast
 
+from chorus.ids import mint_id
 from chorus.ledger._models import (
     RoutineCatchUp,
     RoutineConcurrency,
@@ -61,7 +61,7 @@ def revise_routine(
     new_env = base.env if env is _UNSET else cast("dict[str, str] | None", env)
     assert_no_inline_secrets(new_env)  # fail-closed: env binds refs, never raw secrets (spec 13 §3)
     proposed = RoutineRevision(
-        id=f"rrev_{uuid.uuid4().hex[:12]}",
+        id=mint_id("rrev"),
         routine_id=routine_id,
         revision_no=routine.latest_revision_no + 1,
         intent_template=intent_template if intent_template is not None else base.intent_template,
@@ -90,7 +90,7 @@ def restore_routine(
         raise NoRoutineRevision(f"routine {routine_id!r} has no revision {revision_no}")
 
     restored = RoutineRevision(
-        id=f"rrev_{uuid.uuid4().hex[:12]}",
+        id=mint_id("rrev"),
         routine_id=routine_id,
         revision_no=routine.latest_revision_no + 1,
         intent_template=source.intent_template,

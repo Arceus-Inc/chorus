@@ -48,15 +48,25 @@ def _run(ledger: SqliteLedger, tmp_path: Path, payload: Mapping[str, object]) ->
 
 class TestStaging:
     def test_valid_publish_opens_a_gate(self, ledger: SqliteLedger, tmp_path: Path) -> None:
-        result = _run(ledger, tmp_path, {"action": "publish", "target": "blog", "content_ref": "content_draft.md"})
+        result = _run(
+            ledger,
+            tmp_path,
+            {"action": "publish", "target": "blog", "content_ref": "content_draft.md"},
+        )
         assert result.is_error is False  # type: ignore[attr-defined]
         assert "status: gated" in result.content  # type: ignore[attr-defined]
         assert len(ledger.approvals.pending()) == 1
 
     def test_spend_with_amount_is_gated(self, ledger: SqliteLedger, tmp_path: Path) -> None:
         result = _run(
-            ledger, tmp_path,
-            {"action": "spend", "target": "meta", "content_ref": "creative_set.md", "amount_cents": 50000},
+            ledger,
+            tmp_path,
+            {
+                "action": "spend",
+                "target": "meta",
+                "content_ref": "creative_set.md",
+                "amount_cents": 50000,
+            },
         )
         assert result.is_error is False  # type: ignore[attr-defined]
         assert len(ledger.approvals.pending()) == 1
@@ -72,8 +82,14 @@ class TestStaging:
 
 
 class TestObservationContract:
-    def test_result_carries_next_actions_and_artifacts(self, ledger: SqliteLedger, tmp_path: Path) -> None:
-        result = _run(ledger, tmp_path, {"action": "publish", "target": "blog", "content_ref": "content_draft.md"})
+    def test_result_carries_next_actions_and_artifacts(
+        self, ledger: SqliteLedger, tmp_path: Path
+    ) -> None:
+        result = _run(
+            ledger,
+            tmp_path,
+            {"action": "publish", "target": "blog", "content_ref": "content_draft.md"},
+        )
         gate_id = ledger.approvals.pending()[0].id
         assert "next_actions" in result.content  # type: ignore[attr-defined]
         assert gate_id in result.content  # type: ignore[attr-defined]
@@ -82,7 +98,9 @@ class TestObservationContract:
 
 
 class TestIdempotency:
-    def test_second_call_returns_the_standing_gate(self, ledger: SqliteLedger, tmp_path: Path) -> None:
+    def test_second_call_returns_the_standing_gate(
+        self, ledger: SqliteLedger, tmp_path: Path
+    ) -> None:
         payload = {"action": "publish", "target": "blog", "content_ref": "content_draft.md"}
         first = _run(ledger, tmp_path, payload)
         second = _run(ledger, tmp_path, payload)
@@ -91,7 +109,9 @@ class TestIdempotency:
 
 
 class TestErrorRecoveryContract:
-    def test_spend_without_amount_errors_with_a_recovery_hint(self, ledger: SqliteLedger, tmp_path: Path) -> None:
+    def test_spend_without_amount_errors_with_a_recovery_hint(
+        self, ledger: SqliteLedger, tmp_path: Path
+    ) -> None:
         result = _run(ledger, tmp_path, {"action": "spend", "target": "meta", "content_ref": "c"})
         assert result.is_error is True  # type: ignore[attr-defined]
         assert "safe_retry" in result.content  # type: ignore[attr-defined]
@@ -99,13 +119,65 @@ class TestErrorRecoveryContract:
 
     def test_non_spend_with_amount_errors(self, ledger: SqliteLedger, tmp_path: Path) -> None:
         result = _run(
-            ledger, tmp_path,
+            ledger,
+            tmp_path,
             {"action": "publish", "target": "blog", "content_ref": "c", "amount_cents": 500},
         )
         assert result.is_error is True  # type: ignore[attr-defined]
         assert len(ledger.approvals.pending()) == 0
 
-    def test_unknown_action_errors_without_staging(self, ledger: SqliteLedger, tmp_path: Path) -> None:
-        result = _run(ledger, tmp_path, {"action": "delete_everything", "target": "x", "content_ref": "c"})
+    def test_unknown_action_errors_without_staging(
+        self, ledger: SqliteLedger, tmp_path: Path
+    ) -> None:
+        result = _run(
+            ledger, tmp_path, {"action": "delete_everything", "target": "x", "content_ref": "c"}
+        )
         assert result.is_error is True  # type: ignore[attr-defined]
         assert len(ledger.approvals.pending()) == 0
+
+
+class TestRestageGuard:
+    """An approved-but-undelivered gate must be EXECUTED, not re-staged (the duplicate-gate bug)."""
+
+    def _approve_first_gate(self, ledger: SqliteLedger) -> str:
+        gate = ledger.approvals.pending()[0]
+        ledger.approvals.approve(gate.id, decided_by_user_id="board")
+        return gate.id
+
+    def test_restage_rejected_while_approved_gate_awaits_execution(
+        self, ledger: SqliteLedger, tmp_path: Path
+    ) -> None:
+        payload = {"action": "publish", "target": "blog", "content_ref": "content_draft.md"}
+        _run(ledger, tmp_path, payload)
+        gate_id = self._approve_first_gate(ledger)
+
+        result = _run(ledger, tmp_path, payload)
+
+        assert result.is_error is True  # type: ignore[attr-defined]
+        assert "execute_go_live" in result.content  # type: ignore[attr-defined]
+        assert gate_id in result.content  # type: ignore[attr-defined]
+        assert ledger.approvals.pending() == []  # no duplicate gate opened
+
+    def test_restage_allowed_after_the_delivery_landed(
+        self, ledger: SqliteLedger, tmp_path: Path
+    ) -> None:
+        from chorus_tools._go_live import GoLiveAction
+        from chorus_tools.delivery import DeliveryRecord, PublishedRef
+        from chorus_tools.delivery._index import DeliveryIndex
+
+        payload = {"action": "publish", "target": "blog", "content_ref": "content_draft.md"}
+        _run(ledger, tmp_path, payload)
+        gate_id = self._approve_first_gate(ledger)
+        DeliveryIndex(tmp_path / ".harness" / "deliveries.json").record(
+            DeliveryRecord(
+                approval_id=gate_id,
+                action=GoLiveAction.PUBLISH,
+                target="blog",
+                published=PublishedRef(backend="strapi", ref_id="d1", url="u://d1"),
+            )
+        )
+
+        result = _run(ledger, tmp_path, payload)  # a genuinely NEW reach for the same task
+
+        assert result.is_error is False  # type: ignore[attr-defined]
+        assert len(ledger.approvals.pending()) == 1

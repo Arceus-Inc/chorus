@@ -10,7 +10,14 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, TypeVar
+
+_T = TypeVar("_T")
+
+
+class LedgerInvariantError(RuntimeError):
+    """A row expected to exist (e.g. just written in this transaction) was not found — a corrupt
+    store or a broken write, never a normal outcome."""
 
 
 def utcnow_iso() -> str:
@@ -40,3 +47,23 @@ def dumps(value: Any) -> str:
 def loads(value: str | None) -> Any:
     """Parse a text JSON column (``None`` → ``None``)."""
     return json.loads(value) if value else None
+
+
+def loads_dict(value: str | None) -> dict[str, Any]:
+    """Parse a JSON object column, defaulting empty/``None`` to ``{}`` (was ``loads(x) or {}``)."""
+    parsed = loads(value)
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def loads_list(value: str | None) -> list[Any]:
+    """Parse a JSON array column, defaulting empty/``None`` to ``[]`` (was ``loads(x) or []``)."""
+    parsed = loads(value)
+    return parsed if isinstance(parsed, list) else []
+
+
+def require_persisted(value: _T | None, entity_id: str) -> _T:
+    """Return ``value``, or raise if a just-written row came back missing (replaces the
+    ``assert opened is not None`` post-insert guards — asserts vanish under ``python -O``)."""
+    if value is None:
+        raise LedgerInvariantError(f"row {entity_id!r} not found immediately after write")
+    return value

@@ -34,8 +34,14 @@ def _ctx(working_dir: Path) -> object:
 def _seed(ledger: SqliteLedger, working_dir: Path) -> None:
     ledger.employees.create(Employee(id="ada", name="Ada", role="pm"))
     ledger.employees.create(Employee(id="rev", name="Rob", role="reviewer"))
-    ledger.tasks.submit(Task(id="spec", intent="write the spec", status=TaskStatus.IN_PROGRESS,
-                             assignee_employee_id="ada"))
+    ledger.tasks.submit(
+        Task(
+            id="spec",
+            intent="write the spec",
+            status=TaskStatus.IN_PROGRESS,
+            assignee_employee_id="ada",
+        )
+    )
     ledger.dod.create("spec", Verifier.agent_review(rubric="complete?", artifact_class="spec"))
     ledger.runs.create(Run(id=_RUN, employee_id="rev", task_id="spec", status=RunStatus.RUNNING))
     # the reviewer beat reads its identity from the worker's worktree (where the kernel drops it)
@@ -45,7 +51,9 @@ def _seed(ledger: SqliteLedger, working_dir: Path) -> None:
 def test_submit_verdict_approve_records_passed(ledger: SqliteLedger, tmp_path: Path) -> None:
     _seed(ledger, tmp_path)
     result = asyncio.run(
-        SubmitVerdictTool(ledger).execute({"approve": True, "feedback": "meets the rubric"}, _ctx(tmp_path))
+        SubmitVerdictTool(ledger).execute(
+            {"approve": True, "feedback": "meets the rubric"}, _ctx(tmp_path)
+        )
     )
     assert result.is_error is False and result.structured["approved"] is True
     dod = ledger.dod.get_for_task("spec")
@@ -55,7 +63,9 @@ def test_submit_verdict_approve_records_passed(ledger: SqliteLedger, tmp_path: P
 def test_submit_verdict_block_records_failed(ledger: SqliteLedger, tmp_path: Path) -> None:
     _seed(ledger, tmp_path)
     result = asyncio.run(
-        SubmitVerdictTool(ledger).execute({"approve": False, "feedback": "section 3 missing"}, _ctx(tmp_path))
+        SubmitVerdictTool(ledger).execute(
+            {"approve": False, "feedback": "section 3 missing"}, _ctx(tmp_path)
+        )
     )
     assert result.is_error is False and result.structured["approved"] is False
     dod = ledger.dod.get_for_task("spec")
@@ -64,7 +74,9 @@ def test_submit_verdict_block_records_failed(ledger: SqliteLedger, tmp_path: Pat
 
 def test_submit_verdict_refuses_self_review(ledger: SqliteLedger, tmp_path: Path) -> None:
     ledger.employees.create(Employee(id="rev", name="Rob", role="reviewer"))
-    ledger.tasks.submit(Task(id="spec", intent="x", status=TaskStatus.IN_PROGRESS, assignee_employee_id="rev"))
+    ledger.tasks.submit(
+        Task(id="spec", intent="x", status=TaskStatus.IN_PROGRESS, assignee_employee_id="rev")
+    )
     ledger.dod.create("spec", Verifier.agent_review(artifact_class="spec"))
     ledger.runs.create(Run(id=_RUN, employee_id="rev", task_id="spec", status=RunStatus.RUNNING))
     BeatContext(task_id="spec", run_id=_RUN, employee_id="rev").write(tmp_path)
