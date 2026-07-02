@@ -43,7 +43,6 @@ from chorus_tools import (
     SubmitTaskTool,
     SubmitVerdictTool,
     analysis_tool,
-    web_tool,
 )
 
 if TYPE_CHECKING:
@@ -77,9 +76,10 @@ _CHORUS_TO_DREAM_TOOL: dict[str, str] = {
     "repo_search": "repo_search",
     "notebook_run": "notebook_run",
     "chart_render": "chart_render",
-    # Web research integration (read-only, network-scoped to Tavily) — registered from ``web_tool``.
+    # Web research: reuse dream's native Tavily built-ins (in default_registry) — identity-mapped so
+    # dream_tool_names keeps them and _role_registry picks them up; the subagent projection carries them.
     "web_search": "web_search",
-    "web_fetch": "web_fetch",
+    "web_extract": "web_extract",
 }
 
 _READ_ONLY_DREAM_SURFACE_TOOLS = frozenset(
@@ -431,8 +431,9 @@ class EmployeeHarnessFactory:
         # Analysis tools (ledger-free, worktree-scoped): warehouse_query / repo_search / notebook_run /
         # chart_render. The generator runs tools=null, so registering them here is enough for the model
         # to see and call them; they are not dream built-ins, so _role_registry skipped them above.
+        # (Web tools web_search/web_extract ARE dream built-ins, so _role_registry already picked them up.)
         for name in config.tools:
-            atool = analysis_tool(name) or web_tool(name)
+            atool = analysis_tool(name)
             if atool is not None and registry.get(name) is None:
                 registry.register(atool, source=ToolSource.DEFAULT)
 

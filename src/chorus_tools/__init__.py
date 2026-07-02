@@ -24,7 +24,6 @@ from chorus_tools._manager_actions import (
 )
 from chorus_tools._registry import chorus_tool_registry
 from chorus_tools._submit_verdict import SubmitVerdictInput, SubmitVerdictTool
-from chorus_tools._web import WebFetchTool, WebSearchTool, web_tool
 
 __all__ = [
         "AssignTaskInput",
@@ -39,9 +38,6 @@ __all__ = [
         "SubmitVerdictInput",
         "SubmitVerdictTool",
         "WarehouseQueryTool",
-        "WebFetchTool",
-        "WebSearchTool",
         "analysis_tool",
         "chorus_tool_registry",
-        "web_tool",
 ]

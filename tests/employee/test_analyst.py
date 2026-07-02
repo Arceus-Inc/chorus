@@ -27,7 +27,7 @@ def test_analyst_declares_its_analysis_toolset() -> None:
         "repo_search",
         "warehouse_query",
         "web_search",
-        "web_fetch",
+        "web_extract",
         "notebook_run",
         "chart_render",
         "skill",
@@ -91,7 +91,7 @@ def test_analyst_declares_a_tier1_subagent_swarm() -> None:
 def test_analyst_scout_is_a_read_only_web_researcher() -> None:
     manifest = analyst_plugin().manifest
     scout = next(sa for sa in manifest.subagents if sa.name == "scout")
-    assert set(scout.tools) == {"web_search", "web_fetch", "read_file"}
+    assert set(scout.tools) == {"web_search", "web_extract", "read_file"}
     assert "write_file" not in scout.tools and "warehouse_query" not in scout.tools
 
 
