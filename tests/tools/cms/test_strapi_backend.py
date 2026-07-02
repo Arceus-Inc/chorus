@@ -92,3 +92,23 @@ class TestStrapiCreateDraft:
 
         with pytest.raises(CmsError, match="documentId"):
             _backend(handler).create_draft(BlogDraft(title="T", body="B"))
+
+
+class TestStrapiUpdate:
+    def test_update_puts_to_the_document_as_draft(self) -> None:
+        handler = _ok("doc9")
+        ref = _backend(handler).update_draft("doc9", BlogDraft(title="New", body="v2"))
+        req: httpx.Request = handler.request
+        assert req.method == "PUT"
+        assert req.url.path == "/api/blog-posts/doc9"
+        assert req.url.params.get("status") == "draft"
+        assert json.loads(req.content) == {"data": {"title": "New", "body": "v2"}}
+        assert ref.ref_id == "doc9"
+        assert ref.content_type is ContentType.BLOG
+
+    def test_update_non_2xx_raises(self) -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(404, json={"error": {"message": "Not Found"}})
+
+        with pytest.raises(CmsError, match="404"):
+            _backend(handler).update_draft("gone", BlogDraft(title="T", body="B"))

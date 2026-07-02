@@ -28,6 +28,13 @@ class MarkdownCmsBackend:
 
     def create_draft(self, draft: CmsDraft) -> DraftRef:
         relative = Path(draft.content_type.value) / f"{_slugify(draft.slug_seed())}.md"
+        return self._write(relative, draft)
+
+    def update_draft(self, ref_id: str, draft: CmsDraft) -> DraftRef:
+        """Overwrite the standing draft at ``ref_id`` (a stable path — the title may have changed)."""
+        return self._write(Path(ref_id), draft)
+
+    def _write(self, relative: Path, draft: CmsDraft) -> DraftRef:
         path = self._root / relative
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(_render(draft), encoding="utf-8")

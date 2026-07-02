@@ -151,6 +151,17 @@ class DraftRef:
             "status": self.status,
         }
 
+    @classmethod
+    def from_dict(cls, data: dict[str, str]) -> DraftRef:
+        """Inverse of :meth:`as_dict` — rehydrate a ref persisted in the standing-draft index."""
+        return cls(
+            backend=data["backend"],
+            content_type=ContentType(data["content_type"]),
+            ref_id=data["ref_id"],
+            url=data["url"],
+            status=data.get("status", "draft"),
+        )
+
 
 def _require(value: str, name: str) -> None:
     """Raise ``ValueError`` naming ``name`` unless ``value`` is a non-blank string."""

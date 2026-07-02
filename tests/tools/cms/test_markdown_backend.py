@@ -82,3 +82,18 @@ class TestMarkdownBackend:
         backend = MarkdownCmsBackend(tmp_path)
         ref = backend.create_draft(BlogDraft(title="!!!", body="B"))
         assert ref.ref_id == "blog/draft.md"
+
+
+class TestMarkdownUpdate:
+    def test_update_overwrites_the_stored_path(self, tmp_path: Path) -> None:
+        backend = MarkdownCmsBackend(tmp_path)
+        created = backend.create_draft(BlogDraft(title="Original", body="v1"))
+        # Update at the SAME ref_id even though the new title would slugify elsewhere.
+        updated = backend.update_draft(created.ref_id, BlogDraft(title="Renamed", body="v2"))
+        assert updated.ref_id == created.ref_id  # stable — no second file
+        front = _front(tmp_path / created.ref_id)
+        assert front["title"] == "Renamed"
+        assert front["body"] == "v2"
+        assert front["draft"] is True
+        # exactly one blog file exists
+        assert list((tmp_path / "blog").glob("*.md")) == [tmp_path / created.ref_id]

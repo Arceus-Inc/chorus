@@ -10,12 +10,15 @@ stop_condition) on any failure — nothing is written on a rejected input.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from dream.contracts.tool import ToolResult
 from dream.tools._base import BaseTool, ToolDeclaration
 from dream.tools._context import ToolExecutionContext
 from pydantic import BaseModel, Field, ValidationError
 
 from chorus_tools.cms._backend import CmsBackend
+from chorus_tools.cms._index import CmsDraftIndex
 from chorus_tools.cms._types import (
     BlogDraft,
     CmsDraft,
@@ -26,6 +29,9 @@ from chorus_tools.cms._types import (
     SocialDraft,
     SocialPlatform,
 )
+
+# Where the standing-draft index lives in the worktree (beside the beat context dream/chorus write).
+_INDEX_RELATIVE = Path(".harness") / "cms-drafts.json"
 
 
 class CmsDraftInput(BaseModel):
@@ -89,24 +95,47 @@ class CmsDraftTool(BaseTool):
         self._backend = backend
 
     async def execute(self, input: dict[str, object], ctx: ToolExecutionContext) -> ToolResult:
-        del ctx  # the deliverable is the CMS draft, not anything in the worktree
         try:
             draft = CmsDraftInput.model_validate(input).to_draft()
         except (ValidationError, ValueError) as exc:
             return _rejected(str(exc))
+        # Idempotency: within a task, one draft per content_type — a re-stage updates it in place.
+        key = _standing_key(ctx.working_dir, draft.content_type)
+        index = CmsDraftIndex(ctx.working_dir / _INDEX_RELATIVE) if key is not None else None
+        standing = index.standing_ref(key) if index is not None and key is not None else None
         try:
-            ref = self._backend.create_draft(draft)
+            if standing is not None:
+                ref, action = self._backend.update_draft(standing.ref_id, draft), "updated"
+            else:
+                ref, action = self._backend.create_draft(draft), "staged"
         except CmsError as exc:
             return _failed(str(exc))
-        return _drafted(ref)
+        if index is not None and key is not None:
+            index.record(key, ref)
+        return _drafted(ref, action)
 
 
-def _drafted(ref: DraftRef) -> ToolResult:
+def _standing_key(working_dir: Path, content_type: ContentType) -> str | None:
+    """The idempotency key for this beat's content_type, or ``None`` when there's no beat context.
+
+    Reading the beat context (``.harness/beat-context.json``) is best-effort: outside a real beat
+    (a local run or a unit test) there is no task identity, so idempotency simply doesn't engage.
+    """
+    from chorus.heartbeat import BeatContext
+
+    try:
+        task_id = BeatContext.read(working_dir).task_id
+    except (FileNotFoundError, KeyError, ValueError):
+        return None
+    return f"{content_type.value}:{task_id}"
+
+
+def _drafted(ref: DraftRef, action: str) -> ToolResult:
     publish_action = f"stage_go_live(publish, target={ref.ref_id})"
     return ToolResult(
         content=(
             "status: success\n"
-            f"summary: staged a {ref.content_type.value} draft in the CMS ({ref.backend}) — id {ref.ref_id}\n"
+            f"summary: {action} a {ref.content_type.value} draft in the CMS ({ref.backend}) — id {ref.ref_id}\n"
             f"next_actions: review the draft, then {publish_action} to publish it\n"
             f"artifacts: {ref.as_dict()}"
         ),

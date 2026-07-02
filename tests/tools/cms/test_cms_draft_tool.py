@@ -21,14 +21,26 @@ pytestmark = pytest.mark.unit
 class _FakeBackend:
     def __init__(self) -> None:
         self.received: Any = None
+        self.creates: list[Any] = []
+        self.updates: list[tuple[str, Any]] = []
 
     def create_draft(self, draft: Any) -> DraftRef:
         self.received = draft
-        return DraftRef(backend="fake", content_type=draft.content_type, ref_id="fake1", url="fake://1")
+        self.creates.append(draft)
+        ref_id = f"fake{len(self.creates)}"
+        return DraftRef(backend="fake", content_type=draft.content_type, ref_id=ref_id, url=f"fake://{ref_id}")
+
+    def update_draft(self, ref_id: str, draft: Any) -> DraftRef:
+        self.received = draft
+        self.updates.append((ref_id, draft))
+        return DraftRef(backend="fake", content_type=draft.content_type, ref_id=ref_id, url=f"fake://{ref_id}")
 
 
 class _RaisingBackend:
     def create_draft(self, draft: Any) -> DraftRef:
+        raise CmsError("strapi 403: Forbidden")
+
+    def update_draft(self, ref_id: str, draft: Any) -> DraftRef:
         raise CmsError("strapi 403: Forbidden")
 
 
@@ -101,3 +113,39 @@ class TestInput:
     def test_to_draft_builds_the_right_type(self) -> None:
         assert isinstance(CmsDraftInput(content_type=ContentType.BLOG, title="T", body="B").to_draft(), BlogDraft)
         assert isinstance(CmsDraftInput(content_type=ContentType.EMAIL, subject="S", body="B").to_draft(), EmailDraft)
+
+
+def _write_beat_context(working_dir: Path, task_id: str) -> None:
+    from chorus.heartbeat import BeatContext
+
+    BeatContext(task_id=task_id, run_id="r1", employee_id="mira").write(working_dir)
+
+
+class TestIdempotency:
+    def test_repeat_same_task_and_type_updates_not_duplicates(self, tmp_path: Path) -> None:
+        _write_beat_context(tmp_path, "task-1")
+        backend = _FakeBackend()
+        tool = CmsDraftTool(backend)
+        r1 = _run(tool, {"content_type": "blog", "title": "T", "body": "v1"}, tmp_path)
+        r2 = _run(tool, {"content_type": "blog", "title": "T", "body": "v2"}, tmp_path)
+        assert len(backend.creates) == 1  # created once
+        assert len(backend.updates) == 1  # then updated in place
+        assert r1.metadata["draft_ref"]["ref_id"] == r2.metadata["draft_ref"]["ref_id"]
+
+    def test_different_content_type_same_task_is_a_separate_draft(self, tmp_path: Path) -> None:
+        _write_beat_context(tmp_path, "task-1")
+        backend = _FakeBackend()
+        tool = CmsDraftTool(backend)
+        _run(tool, {"content_type": "blog", "title": "T", "body": "B"}, tmp_path)
+        _run(tool, {"content_type": "social", "platform": "linkedin", "text": "hi"}, tmp_path)
+        assert len(backend.creates) == 2  # blog and social are distinct deliverables
+        assert backend.updates == []
+
+    def test_without_beat_context_each_call_creates(self, tmp_path: Path) -> None:
+        # No .harness/beat-context.json → no idempotency key → plain create each time (unchanged default).
+        backend = _FakeBackend()
+        tool = CmsDraftTool(backend)
+        _run(tool, {"content_type": "blog", "title": "T", "body": "v1"}, tmp_path)
+        _run(tool, {"content_type": "blog", "title": "T", "body": "v2"}, tmp_path)
+        assert len(backend.creates) == 2
+        assert backend.updates == []

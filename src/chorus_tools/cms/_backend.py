@@ -15,9 +15,13 @@ from chorus_tools.cms._types import CmsDraft, DraftRef
 
 
 class CmsBackend(Protocol):
-    """Create a reversible draft from a validated :class:`CmsDraft`; raise ``CmsError`` on failure."""
+    """Create/update a reversible draft from a validated :class:`CmsDraft`; raise ``CmsError`` on failure."""
 
     def create_draft(self, draft: CmsDraft) -> DraftRef: ...
+
+    def update_draft(self, ref_id: str, draft: CmsDraft) -> DraftRef:
+        """Update the standing draft ``ref_id`` in place — the idempotent re-stage path."""
+        ...
 
 
 __all__ = ["CmsBackend"]

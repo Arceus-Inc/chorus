@@ -29,15 +29,30 @@ class StrapiCmsBackend:
         self._client = client
 
     def create_draft(self, draft: CmsDraft) -> DraftRef:
-        collection, singular = _COLLECTIONS[draft.content_type]
+        collection, _ = _COLLECTIONS[draft.content_type]
         response = self._client.post(
             f"{self._base}/api/{collection}",
             params={"status": "draft"},
             headers={"Authorization": f"Bearer {self._token}"},
             json={"data": draft.fields()},
         )
+        return self._ref_from(response, draft)
+
+    def update_draft(self, ref_id: str, draft: CmsDraft) -> DraftRef:
+        """Update the standing draft ``ref_id`` in place (PUT ?status=draft) — no duplicate entry."""
+        collection, _ = _COLLECTIONS[draft.content_type]
+        response = self._client.put(
+            f"{self._base}/api/{collection}/{ref_id}",
+            params={"status": "draft"},
+            headers={"Authorization": f"Bearer {self._token}"},
+            json={"data": draft.fields()},
+        )
+        return self._ref_from(response, draft)
+
+    def _ref_from(self, response: httpx.Response, draft: CmsDraft) -> DraftRef:
         if response.status_code // 100 != 2:
             raise CmsError(f"strapi {response.status_code}: {response.text[:200]}")
+        _, singular = _COLLECTIONS[draft.content_type]
         document_id = _document_id(response)
         return DraftRef(
             backend="strapi",
