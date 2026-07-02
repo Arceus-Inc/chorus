@@ -141,7 +141,8 @@ def decompose(
 
     ledger.decomposition_claims.complete(claim.id)
     sealed = ledger.decomposition_claims.get(claim.id)
-    assert sealed is not None  # just completed it in this call
+    if sealed is None:  # completed above in this call — a missing claim means the store is corrupt
+        raise RuntimeError(f"decomposition claim {claim.id} vanished immediately after complete()")
     # Governance audit (spec 08 §5): the manager split this task into a child tree.
     record_activity(
         ledger,

@@ -85,7 +85,8 @@ def add_routine(
         )
     )
     refreshed = ledger.routines.get(routine.id)
-    assert refreshed is not None  # just created in this transaction
+    if refreshed is None:  # created above in this transaction — a None means the write was lost
+        raise RuntimeError(f"routine {routine.id} not found immediately after creation")
     return refreshed
 
 
