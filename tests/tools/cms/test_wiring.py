@@ -14,7 +14,9 @@ pytestmark = pytest.mark.unit
 
 
 class TestBackendFromEnv:
-    def test_markdown_when_strapi_env_absent(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_markdown_when_strapi_env_absent(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         monkeypatch.delenv("STRAPI_URL", raising=False)
         monkeypatch.delenv("STRAPI_TOKEN", raising=False)
         assert isinstance(cms_backend_from_env(tmp_path), MarkdownCmsBackend)
@@ -24,7 +26,9 @@ class TestBackendFromEnv:
         monkeypatch.setenv("STRAPI_TOKEN", "tok")
         assert isinstance(cms_backend_from_env(tmp_path), StrapiCmsBackend)
 
-    def test_markdown_when_only_url_set(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_markdown_when_only_url_set(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         # Partial config must not half-wire a hosted backend.
         monkeypatch.setenv("STRAPI_URL", "http://localhost:1337")
         monkeypatch.delenv("STRAPI_TOKEN", raising=False)

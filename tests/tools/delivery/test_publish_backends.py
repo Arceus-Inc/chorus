@@ -86,6 +86,27 @@ class TestStrapiPublish:
         with pytest.raises(DeliveryError, match="documentId"):
             _backend(handler).publish(_blog_ref())
 
+    def test_error_does_not_leak_the_provider_body(self) -> None:
+        # The provider body can echo tenant/address/field detail; it must stay server-side and
+        # never ride into the model-visible exception. Only the HTTP status class is surfaced.
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(422, text="secret-tenant-xyz validation of 'from' failed")
+
+        with pytest.raises(DeliveryError) as exc_info:
+            _backend(handler).publish(_blog_ref())
+        message = str(exc_info.value)
+        assert "422" in message
+        assert "secret-tenant-xyz" not in message
+
+    def test_non_json_2xx_raises_delivery_error_not_decode_error(self) -> None:
+        # A 2xx with a non-JSON body must surface as the domain error (caught by the tool's
+        # recovery contract), never an unchained JSONDecodeError that escapes the tool.
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, text="<html>gateway</html>")
+
+        with pytest.raises(DeliveryError):
+            _backend(handler).publish(_blog_ref())
+
 
 class TestMarkdownPublish:
     def test_flips_draft_true_to_false_in_place(self, tmp_path: Path) -> None:
@@ -118,9 +139,7 @@ class TestPublishBackendFromEnv:
         monkeypatch.delenv("STRAPI_TOKEN", raising=False)
         assert isinstance(publish_backend_from_env(tmp_path), MarkdownPublishBackend)
 
-    def test_strapi_when_env_present(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_strapi_when_env_present(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("STRAPI_URL", _BASE)
         monkeypatch.setenv("STRAPI_TOKEN", "tok")
         assert isinstance(publish_backend_from_env(tmp_path), StrapiPublishBackend)

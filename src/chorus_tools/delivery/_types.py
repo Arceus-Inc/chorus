@@ -11,6 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from chorus_tools._go_live import GoLiveAction
+from chorus_tools._validate import require as _require
 
 
 class DeliveryError(RuntimeError):
@@ -65,15 +66,8 @@ class DeliveryRecord:
             approval_id=data["approval_id"],
             action=GoLiveAction(data["action"]),
             target=data["target"],
-            published=PublishedRef(
-                backend=data["backend"], ref_id=data["ref_id"], url=data["url"]
-            ),
+            published=PublishedRef(backend=data["backend"], ref_id=data["ref_id"], url=data["url"]),
         )
-
-
-def _require(value: str, name: str) -> None:
-    if not value or not value.strip():
-        raise ValueError(f"{name} must be a non-empty string")
 
 
 __all__ = ["DeliveryError", "DeliveryRecord", "PublishedRef"]

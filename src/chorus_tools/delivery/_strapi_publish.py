@@ -12,6 +12,8 @@ from __future__ import annotations
 
 import httpx
 
+from chorus_tools._backends import BackendName
+from chorus_tools._http import ensure_ok, strapi_document_id
 from chorus_tools.cms import ContentType, DraftRef
 from chorus_tools.delivery._types import DeliveryError, PublishedRef
 
@@ -39,11 +41,10 @@ class StrapiPublishBackend:
             headers={"Authorization": f"Bearer {self._token}"},
             json={"data": {}},  # publish the existing draft content verbatim
         )
-        if response.status_code // 100 != 2:
-            raise DeliveryError(f"strapi publish {response.status_code}: {response.text[:200]}")
-        document_id = _document_id(response)
+        ensure_ok(response, prefix="strapi publish", error=DeliveryError)
+        document_id = strapi_document_id(response, prefix="strapi publish", error=DeliveryError)
         return PublishedRef(
-            backend="strapi",
+            backend=BackendName.STRAPI.value,
             ref_id=document_id,
             url=self._live_url(draft.content_type, singular, document_id),
         )
@@ -56,15 +57,6 @@ class StrapiPublishBackend:
             f"{self._base}/admin/content-manager/collection-types/"
             f"api::{singular}.{singular}/{document_id}"
         )
-
-
-def _document_id(response: httpx.Response) -> str:
-    payload = response.json()
-    data = payload.get("data") if isinstance(payload, dict) else None
-    document_id = data.get("documentId") if isinstance(data, dict) else None
-    if not isinstance(document_id, str) or not document_id:
-        raise DeliveryError("strapi publish response missing data.documentId")
-    return document_id
 
 
 __all__ = ["StrapiPublishBackend"]

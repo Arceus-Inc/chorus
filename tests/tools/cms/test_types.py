@@ -38,7 +38,11 @@ class TestBlogDraft:
     def test_optional_fields_included_only_when_set(self) -> None:
         d = BlogDraft(title="T", body="B", slug="t", excerpt="hi", seo_description="seo")
         assert d.fields() == {
-            "title": "T", "body": "B", "slug": "t", "excerpt": "hi", "seo_description": "seo",
+            "title": "T",
+            "body": "B",
+            "slug": "t",
+            "excerpt": "hi",
+            "seo_description": "seo",
         }
 
     def test_missing_title_raises(self) -> None:
@@ -80,7 +84,12 @@ class TestEmailDraft:
 
     def test_optional_included_when_set(self) -> None:
         d = EmailDraft(subject="S", body="B", preheader="pre", segment="founders")
-        assert d.fields() == {"subject": "S", "body": "B", "preheader": "pre", "segment": "founders"}
+        assert d.fields() == {
+            "subject": "S",
+            "body": "B",
+            "preheader": "pre",
+            "segment": "founders",
+        }
 
     def test_missing_subject_raises(self) -> None:
         with pytest.raises(ValueError, match="subject"):

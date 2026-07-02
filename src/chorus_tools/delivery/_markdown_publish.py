@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from chorus_tools._backends import BackendName
 from chorus_tools.cms import DraftRef
 from chorus_tools.delivery._types import DeliveryError, PublishedRef
 
@@ -29,7 +30,9 @@ class MarkdownPublishBackend:
             raise DeliveryError(f"nothing staged to publish at {draft.ref_id!r}")
         text = path.read_text(encoding="utf-8")
         path.write_text(text.replace(_DRAFT_TRUE, _DRAFT_FALSE, 1), encoding="utf-8")
-        return PublishedRef(backend="markdown", ref_id=draft.ref_id, url=path.as_uri())
+        return PublishedRef(
+            backend=BackendName.MARKDOWN.value, ref_id=draft.ref_id, url=path.as_uri()
+        )
 
 
 __all__ = ["MarkdownPublishBackend"]

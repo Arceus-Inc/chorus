@@ -76,7 +76,9 @@ class TestStrapiCreateDraft:
 
     def test_base_url_trailing_slash_trimmed(self) -> None:
         handler = _ok()
-        _backend(handler, base="http://localhost:1337/").create_draft(BlogDraft(title="T", body="B"))
+        _backend(handler, base="http://localhost:1337/").create_draft(
+            BlogDraft(title="T", body="B")
+        )
         assert str(handler.request.url).startswith("http://localhost:1337/api/blog-posts")
 
     def test_non_2xx_raises_cms_error(self) -> None:
@@ -91,6 +93,23 @@ class TestStrapiCreateDraft:
             return httpx.Response(201, json={"data": {}})
 
         with pytest.raises(CmsError, match="documentId"):
+            _backend(handler).create_draft(BlogDraft(title="T", body="B"))
+
+    def test_error_does_not_leak_the_provider_body(self) -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(403, text="secret-tenant-xyz forbidden for token abc")
+
+        with pytest.raises(CmsError) as exc_info:
+            _backend(handler).create_draft(BlogDraft(title="T", body="B"))
+        message = str(exc_info.value)
+        assert "403" in message
+        assert "secret-tenant-xyz" not in message
+
+    def test_non_json_2xx_raises_cms_error_not_decode_error(self) -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(201, text="<html>gateway</html>")
+
+        with pytest.raises(CmsError):
             _backend(handler).create_draft(BlogDraft(title="T", body="B"))
 
 

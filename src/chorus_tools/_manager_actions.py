@@ -15,7 +15,9 @@ from chorus.lifecycle import CapabilityService, ChildPlan
 class SubmitTaskInput(BaseModel):
     """Arguments for ``submit_task`` — one follow-up child for the current parent task."""
 
-    label: str = Field(description="a short stable name for this child task, unique under the parent")
+    label: str = Field(
+        description="a short stable name for this child task, unique under the parent"
+    )
     intent: str = Field(description="what the follow-up task should accomplish")
     assignee: str = Field(description="the employee id of the direct report who will own this task")
 

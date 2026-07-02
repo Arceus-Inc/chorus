@@ -44,7 +44,10 @@ def _ctx(working_dir: Path) -> Any:
     from dream.tools._context import ToolExecutionContext
 
     return ToolExecutionContext(
-        working_dir=working_dir, session_id="s", metadata={}, scratch_dir=working_dir,
+        working_dir=working_dir,
+        session_id="s",
+        metadata={},
+        scratch_dir=working_dir,
         cancel_requested=False,
     )
 
@@ -163,7 +166,9 @@ class TestApprovedExecutes:
         assert record["ref_id"] == "doc9"
         assert record["url"] == "live://doc9"
         # durable: the delivery index holds the standing record
-        standing = DeliveryIndex(tmp_path / ".harness" / "deliveries.json").standing_delivery("apr_1")
+        standing = DeliveryIndex(tmp_path / ".harness" / "deliveries.json").standing_delivery(
+            "apr_1"
+        )
         assert standing is not None and standing.published.ref_id == "doc9"
 
     def test_second_call_is_idempotent(self, ledger: SqliteLedger, tmp_path: Path) -> None:
@@ -182,9 +187,7 @@ class TestApprovedExecutes:
         assert "already" in second.content.lower()
         assert second.metadata["delivery"] == first.metadata["delivery"]
 
-    def test_backend_failure_surfaces_recovery(
-        self, ledger: SqliteLedger, tmp_path: Path
-    ) -> None:
+    def test_backend_failure_surfaces_recovery(self, ledger: SqliteLedger, tmp_path: Path) -> None:
         _wire_beat(tmp_path)
         _stage_draft(tmp_path)
         _open_gate(ledger)

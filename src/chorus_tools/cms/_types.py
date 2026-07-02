@@ -12,6 +12,8 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Protocol, runtime_checkable
 
+from chorus_tools._validate import require as _require
+
 
 class ContentType(StrEnum):
     """The channel a draft targets — the discriminator that routes it to a collection."""
@@ -203,12 +205,6 @@ def _text(fields: dict[str, object], key: str, *, optional: bool = False) -> str
     if optional:
         return ""
     raise ValueError(f"{key} is missing")
-
-
-def _require(value: str, name: str) -> None:
-    """Raise ``ValueError`` naming ``name`` unless ``value`` is a non-blank string."""
-    if not value or not value.strip():
-        raise ValueError(f"{name} must be a non-empty string")
 
 
 def _put(target: dict[str, str], key: str, value: str) -> None:

@@ -131,6 +131,24 @@ class TestResendEmail:
         with pytest.raises(DeliveryError, match="id"):
             _resend(handler).send(_message())
 
+    def test_error_does_not_leak_the_provider_body(self) -> None:
+        # Resend 4xx bodies can echo the from/to addresses; keep them server-side.
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(422, text="secret-tenant-xyz 'from' a@x.io not verified")
+
+        with pytest.raises(DeliveryError) as exc_info:
+            _resend(handler).send(_message())
+        message = str(exc_info.value)
+        assert "422" in message
+        assert "secret-tenant-xyz" not in message
+
+    def test_non_json_2xx_raises_delivery_error_not_decode_error(self) -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, text="<html>gateway</html>")
+
+        with pytest.raises(DeliveryError):
+            _resend(handler).send(_message())
+
 
 class TestEmailBackendFromEnv:
     def test_outbox_when_resend_key_absent(
@@ -141,9 +159,7 @@ class TestEmailBackendFromEnv:
 
         assert isinstance(email_backend_from_env(tmp_path), OutboxEmailBackend)
 
-    def test_resend_when_key_present(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_resend_when_key_present(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("RESEND_API_KEY", "re_x")
         from chorus_tools.delivery import email_backend_from_env
 

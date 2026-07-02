@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import httpx
 
+from chorus_tools._backends import BackendName
+from chorus_tools._http import ensure_ok, json_body, strapi_document_id
 from chorus_tools.cms._types import CmsDraft, CmsError, ContentType, DraftRef, draft_from_fields
 
 # content_type -> (plural collection id, singular id) — the Strapi types built during setup.
@@ -57,21 +59,19 @@ class StrapiCmsBackend:
             params={"status": "draft"},
             headers={"Authorization": f"Bearer {self._token}"},
         )
-        if response.status_code // 100 != 2:
-            raise CmsError(f"strapi {response.status_code}: {response.text[:200]}")
-        payload = response.json()
+        ensure_ok(response, prefix="strapi read", error=CmsError)
+        payload = json_body(response, prefix="strapi read", error=CmsError)
         data = payload.get("data") if isinstance(payload, dict) else None
         if not isinstance(data, dict):
-            raise CmsError("strapi response missing data")
+            raise CmsError("strapi read: response missing data")
         return draft_from_fields(content_type, data)
 
     def _ref_from(self, response: httpx.Response, draft: CmsDraft) -> DraftRef:
-        if response.status_code // 100 != 2:
-            raise CmsError(f"strapi {response.status_code}: {response.text[:200]}")
+        ensure_ok(response, prefix="strapi", error=CmsError)
         _, singular = _COLLECTIONS[draft.content_type]
-        document_id = _document_id(response)
+        document_id = strapi_document_id(response, prefix="strapi", error=CmsError)
         return DraftRef(
-            backend="strapi",
+            backend=BackendName.STRAPI.value,
             content_type=draft.content_type,
             ref_id=document_id,
             url=(
@@ -79,16 +79,6 @@ class StrapiCmsBackend:
                 f"api::{singular}.{singular}/{document_id}"
             ),
         )
-
-
-def _document_id(response: httpx.Response) -> str:
-    """Pull `data.documentId` from a Strapi create response, or raise :class:`CmsError`."""
-    payload = response.json()
-    data = payload.get("data") if isinstance(payload, dict) else None
-    document_id = data.get("documentId") if isinstance(data, dict) else None
-    if not isinstance(document_id, str) or not document_id:
-        raise CmsError("strapi response missing data.documentId")
-    return document_id
 
 
 __all__ = ["StrapiCmsBackend"]

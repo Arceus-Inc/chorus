@@ -41,7 +41,9 @@ class CmsDraftInput(BaseModel):
     per-type requirements by constructing the typed draft (which validates on __post_init__).
     """
 
-    content_type: ContentType = Field(description="blog | social | email — the channel to draft for")
+    content_type: ContentType = Field(
+        description="blog | social | email — the channel to draft for"
+    )
     # blog / email
     title: str = Field(default="", description="blog title (blog)")
     body: str = Field(default="", description="the markdown body (blog, email)")
@@ -63,17 +65,26 @@ class CmsDraftInput(BaseModel):
         """Narrow to the typed draft for ``content_type`` (raises ``ValueError`` if required fields miss)."""
         if self.content_type is ContentType.BLOG:
             return BlogDraft(
-                title=self.title, body=self.body, slug=self.slug,
-                excerpt=self.excerpt, seo_description=self.seo_description,
+                title=self.title,
+                body=self.body,
+                slug=self.slug,
+                excerpt=self.excerpt,
+                seo_description=self.seo_description,
             )
         if self.content_type is ContentType.SOCIAL:
             if self.platform is None:
                 raise ValueError("a social draft requires 'platform'")
             return SocialDraft(
-                platform=self.platform, text=self.text, link=self.link, scheduled_at=self.scheduled_at,
+                platform=self.platform,
+                text=self.text,
+                link=self.link,
+                scheduled_at=self.scheduled_at,
             )
         return EmailDraft(
-            subject=self.subject, body=self.body, preheader=self.preheader, segment=self.segment,
+            subject=self.subject,
+            body=self.body,
+            preheader=self.preheader,
+            segment=self.segment,
         )
 
 
@@ -121,11 +132,10 @@ def _standing_key(working_dir: Path, content_type: ContentType) -> str | None:
     Reading the beat context (``.harness/beat-context.json``) is best-effort: outside a real beat
     (a local run or a unit test) there is no task identity, so idempotency simply doesn't engage.
     """
-    from chorus.heartbeat import BeatContext
+    from chorus_tools._beat import task_id_or_none
 
-    try:
-        task_id = BeatContext.read(working_dir).task_id
-    except (FileNotFoundError, KeyError, ValueError):
+    task_id = task_id_or_none(working_dir)
+    if task_id is None:
         return None
     return f"{content_type.value}:{task_id}"
 

@@ -38,8 +38,12 @@ class GoLiveInput(BaseModel):
     action: GoLiveAction = Field(
         description="the reach: publish (owned channel), send (audience), or spend (ad budget)"
     )
-    target: str = Field(min_length=1, description="the channel, audience, or ad platform the reach lands on")
-    content_ref: str = Field(min_length=1, description="the staged deliverable to go live, e.g. 'content_draft.md'")
+    target: str = Field(
+        min_length=1, description="the channel, audience, or ad platform the reach lands on"
+    )
+    content_ref: str = Field(
+        min_length=1, description="the staged deliverable to go live, e.g. 'content_draft.md'"
+    )
     amount_cents: int | None = Field(
         default=None, description="budget in cents; REQUIRED for a spend, omitted otherwise"
     )
@@ -102,7 +106,9 @@ class GoLiveTool(BaseTool):
                 standing
                 if standing is not None
                 else GovernanceResolver(self._ledger)
-                .open_task_gate(beat.task_id, gate_kind=ApprovalGate.AUTHORIZATION, reason=args.reason)
+                .open_task_gate(
+                    beat.task_id, gate_kind=ApprovalGate.AUTHORIZATION, reason=args.reason
+                )
                 .id
             )
         except GovernanceError as exc:

@@ -41,7 +41,7 @@ def _render_block(block: str) -> str:
         return f'<hr style="{_STYLE_HR}"/>'
     for level, prefix in ((1, "# "), (2, "## "), (3, "### ")):
         if block.startswith(prefix):
-            return f'<h{level} style="{_STYLE_H}">{_inline(block[len(prefix):])}</h{level}>'
+            return f'<h{level} style="{_STYLE_H}">{_inline(block[len(prefix) :])}</h{level}>'
     lines = [line.strip() for line in block.split("\n") if line.strip()]
     if all(_UL_ITEM.match(line) for line in lines):
         items = "".join(f"<li>{_inline(_UL_ITEM.sub('', line))}</li>" for line in lines)

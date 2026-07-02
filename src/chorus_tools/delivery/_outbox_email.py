@@ -10,6 +10,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from chorus_tools._backends import BackendName
 from chorus_tools.delivery._email_types import EmailMessage
 from chorus_tools.delivery._types import PublishedRef
 
@@ -27,13 +28,17 @@ class OutboxEmailBackend:
     def send(self, message: EmailMessage) -> PublishedRef:
         outbox = self._root / _OUTBOX_DIR
         outbox.mkdir(parents=True, exist_ok=True)
-        relative = Path(_OUTBOX_DIR) / f"{self._next_number(outbox):04d}-{_slug(message.subject)}.eml"
+        relative = (
+            Path(_OUTBOX_DIR) / f"{self._next_number(outbox):04d}-{_slug(message.subject)}.eml"
+        )
         path = self._root / relative
         path.write_text(_render(message), encoding="utf-8")
-        return PublishedRef(backend="outbox", ref_id=str(relative), url=path.as_uri())
+        return PublishedRef(
+            backend=BackendName.OUTBOX.value, ref_id=str(relative), url=path.as_uri()
+        )
 
     def _next_number(self, outbox: Path) -> int:
-        return len(list(outbox.glob("*.eml"))) + 1
+        return sum(1 for _ in outbox.glob("*.eml")) + 1
 
 
 def _render(message: EmailMessage) -> str:

@@ -70,10 +70,19 @@ class TestStrapiReadDraft:
     def test_email_read_hits_draft_endpoint_and_maps_fields(self) -> None:
         def handler(request: httpx.Request) -> httpx.Response:
             handler.request = request  # type: ignore[attr-defined]
-            return httpx.Response(200, json={"data": {
-                "documentId": "doc7", "subject": "Launch news", "body": "Hello!",
-                "preheader": "pre", "segment": "beta", "publishedAt": None,
-            }})
+            return httpx.Response(
+                200,
+                json={
+                    "data": {
+                        "documentId": "doc7",
+                        "subject": "Launch news",
+                        "body": "Hello!",
+                        "preheader": "pre",
+                        "segment": "beta",
+                        "publishedAt": None,
+                    }
+                },
+            )
 
         backend = _strapi(handler)
         draft = backend.read_draft("doc7", ContentType.EMAIL)
@@ -83,14 +92,24 @@ class TestStrapiReadDraft:
         assert req.url.path == "/api/email-campaigns/doc7"
         assert req.url.params.get("status") == "draft"
         assert req.headers["authorization"] == f"Bearer {_TOKEN}"
-        assert draft == EmailDraft(subject="Launch news", body="Hello!", preheader="pre", segment="beta")
+        assert draft == EmailDraft(
+            subject="Launch news", body="Hello!", preheader="pre", segment="beta"
+        )
 
     def test_null_optional_fields_become_defaults(self) -> None:
         def handler(request: httpx.Request) -> httpx.Response:
-            return httpx.Response(200, json={"data": {
-                "documentId": "doc7", "subject": "S", "body": "B",
-                "preheader": None, "segment": None,
-            }})
+            return httpx.Response(
+                200,
+                json={
+                    "data": {
+                        "documentId": "doc7",
+                        "subject": "S",
+                        "body": "B",
+                        "preheader": None,
+                        "segment": None,
+                    }
+                },
+            )
 
         draft = _strapi(handler).read_draft("doc7", ContentType.EMAIL)
         assert draft == EmailDraft(subject="S", body="B")

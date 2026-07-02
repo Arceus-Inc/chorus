@@ -46,7 +46,10 @@ def _ctx(working_dir: Path) -> Any:
     from dream.tools._context import ToolExecutionContext
 
     return ToolExecutionContext(
-        working_dir=working_dir, session_id="s", metadata={}, scratch_dir=working_dir,
+        working_dir=working_dir,
+        session_id="s",
+        metadata={},
+        scratch_dir=working_dir,
         cancel_requested=False,
     )
 
@@ -54,9 +57,7 @@ def _ctx(working_dir: Path) -> Any:
 class TestEmailDelivery:
     def test_sends_the_staged_content_on_the_configured_route(self, tmp_path: Path) -> None:
         cms = MarkdownCmsBackend(tmp_path)
-        staged = cms.create_draft(
-            EmailDraft(subject="Launch news", body="Hello!", preheader="pre")
-        )
+        staged = cms.create_draft(EmailDraft(subject="Launch news", body="Hello!", preheader="pre"))
         transport = _FakeTransport()
 
         landed = EmailDelivery(cms, transport, _ROUTING).send(staged)
@@ -94,8 +95,11 @@ def _approved_email_stage(ledger: SqliteLedger, tmp: Path) -> DraftRef:
     CmsDraftIndex(tmp / ".harness" / "cms-drafts.json").record(f"email:{_TASK}", staged)
     ledger.approvals.request(
         Approval(
-            id="apr_1", subject_kind=ApprovalSubjectKind.TASK, subject_id=_TASK,
-            reason="go-live send to board", gate_kind=ApprovalGate.AUTHORIZATION,
+            id="apr_1",
+            subject_kind=ApprovalSubjectKind.TASK,
+            subject_id=_TASK,
+            reason="go-live send to board",
+            gate_kind=ApprovalGate.AUTHORIZATION,
         )
     )
     ledger.approvals.approve("apr_1", decided_by_user_id="boss")
@@ -103,9 +107,7 @@ def _approved_email_stage(ledger: SqliteLedger, tmp: Path) -> DraftRef:
 
 
 class TestToolSendBranch:
-    def test_email_content_type_routes_to_send(
-        self, ledger: SqliteLedger, tmp_path: Path
-    ) -> None:
+    def test_email_content_type_routes_to_send(self, ledger: SqliteLedger, tmp_path: Path) -> None:
         _approved_email_stage(ledger, tmp_path)
         transport = _FakeTransport()
         delivery = EmailDelivery(MarkdownCmsBackend(tmp_path), transport, _ROUTING)
@@ -129,6 +131,27 @@ class TestToolSendBranch:
 
         assert res.is_error is True
         assert "email" in res.content.lower()
+
+    def test_send_failure_warns_about_the_at_most_once_window(
+        self, ledger: SqliteLedger, tmp_path: Path
+    ) -> None:
+        # A send has no idempotent record until it succeeds, so the transport may already have
+        # accepted the message before failing. The recovery guidance must NOT say "retry once"
+        # (that risks a double-send); it must warn the send may already have gone out.
+        _approved_email_stage(ledger, tmp_path)
+
+        class _RaisingTransport:
+            def send(self, message: EmailMessage) -> PublishedRef:
+                raise DeliveryError("resend send: HTTP 504")
+
+        delivery = EmailDelivery(MarkdownCmsBackend(tmp_path), _RaisingTransport(), _ROUTING)
+        tool = ExecuteGoLiveTool(ledger, _FakePublish(), email_delivery=delivery)
+
+        res = asyncio.run(tool.execute({"content_type": "email"}, _ctx(tmp_path)))
+
+        assert res.is_error is True
+        assert "retry once" not in res.content
+        assert "already" in res.content.lower()  # the send may already have been delivered
 
     def test_send_is_idempotent_per_approval(self, ledger: SqliteLedger, tmp_path: Path) -> None:
         _approved_email_stage(ledger, tmp_path)

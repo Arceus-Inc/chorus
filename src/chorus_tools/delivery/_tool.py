@@ -16,8 +16,8 @@ from dream.tools._base import BaseTool, ToolDeclaration
 from dream.tools._context import ToolExecutionContext
 from pydantic import BaseModel, Field, ValidationError
 
-from chorus.heartbeat import BeatContext
 from chorus.ledger import Approval, ApprovalAction, ApprovalStatus, SqliteLedger
+from chorus_tools._beat import task_id_or_none
 from chorus_tools._go_live import GoLiveAction
 from chorus_tools.cms import ContentType, DraftRef
 from chorus_tools.cms._index import CmsDraftIndex
@@ -74,9 +74,8 @@ class ExecuteGoLiveTool(BaseTool):
         except ValidationError as exc:
             return _rejected(str(exc))
 
-        try:
-            task_id = BeatContext.read(ctx.working_dir).task_id
-        except (FileNotFoundError, KeyError, ValueError):
+        task_id = task_id_or_none(ctx.working_dir)
+        if task_id is None:
             return _rejected("no beat context — execute_go_live only runs inside a task beat")
 
         deliveries = DeliveryIndex(ctx.working_dir / _DELIVERIES_RELATIVE)
@@ -120,7 +119,7 @@ class ExecuteGoLiveTool(BaseTool):
         try:
             landed = executor(draft)
         except DeliveryError as exc:
-            return _failed(str(exc))
+            return _failed(str(exc), action=action)
 
         record = DeliveryRecord(
             approval_id=gate.id,
@@ -198,13 +197,31 @@ def _rejected(detail: str) -> ToolResult:
     )
 
 
-def _failed(detail: str) -> ToolResult:
+def _failed(detail: str, *, action: GoLiveAction) -> ToolResult:
+    # A publish is an idempotent flip (safe to retry). A send is at-most-once and leaves NO delivery
+    # record until it succeeds, so the transport may already have accepted the message before the
+    # failure — a blind retry risks a double-send. The two need different recovery guidance.
+    if action is GoLiveAction.SEND:
+        return ToolResult(
+            content=(
+                "status: error\n"
+                f"summary: the email transport failed — {detail}\n"
+                "root_cause: the ESP rejected or could not confirm the send (auth, network, address)\n"
+                "safe_retry: do NOT simply resend — the message may ALREADY have been delivered "
+                "(the transport can accept then fail before confirming). Verify in the ESP whether "
+                "it went out before any retry\n"
+                "stop_condition: if delivery is unconfirmed, stop and report — a blind retry can "
+                "double-send; the approval stays valid for a confirmed single send"
+            ),
+            is_error=True,
+        )
     return ToolResult(
         content=(
             "status: error\n"
             f"summary: the publish backend failed — {detail}\n"
             "root_cause: the CMS rejected or could not complete the publish (auth, network, target)\n"
-            "safe_retry: verify the CMS is reachable, then retry once — the gate stays approved\n"
+            "safe_retry: publishing is idempotent — verify the CMS is reachable, then retry once; "
+            "the gate stays approved\n"
             "stop_condition: if it fails again, stop — the CMS is unavailable, not the approval"
         ),
         is_error=True,

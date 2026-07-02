@@ -33,7 +33,12 @@ _SPEC = """# Arceus Brand Voice Specification
 
 class TestParseProhibitedPhrases:
     def test_extracts_csv_list_under_the_heading(self) -> None:
-        assert parse_prohibited_phrases(_SPEC) == ("revolutionary", "game-changing", "10x", "unlock")
+        assert parse_prohibited_phrases(_SPEC) == (
+            "revolutionary",
+            "game-changing",
+            "10x",
+            "unlock",
+        )
 
     def test_absent_section_falls_back_to_defaults(self) -> None:
         phrases = parse_prohibited_phrases("# Spec\n## Tone\n- be nice\n")

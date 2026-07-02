@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import httpx
 
+from chorus_tools._backends import BackendName
+from chorus_tools._http import ensure_ok, json_body
 from chorus_tools.delivery._email_html import render_email_html
 from chorus_tools.delivery._email_types import EmailMessage
 from chorus_tools.delivery._types import DeliveryError, PublishedRef
@@ -39,17 +41,18 @@ class ResendEmailBackend:
                 "html": render_email_html(message.body),
             },
         )
-        if response.status_code // 100 != 2:
-            raise DeliveryError(f"resend send {response.status_code}: {response.text[:200]}")
+        ensure_ok(response, prefix="resend send", error=DeliveryError)
         message_id = _message_id(response)
-        return PublishedRef(backend="resend", ref_id=message_id, url=f"{_DASHBOARD}/{message_id}")
+        return PublishedRef(
+            backend=BackendName.RESEND.value, ref_id=message_id, url=f"{_DASHBOARD}/{message_id}"
+        )
 
 
 def _message_id(response: httpx.Response) -> str:
-    payload = response.json()
+    payload = json_body(response, prefix="resend send", error=DeliveryError)
     message_id = payload.get("id") if isinstance(payload, dict) else None
     if not isinstance(message_id, str) or not message_id:
-        raise DeliveryError("resend response missing id")
+        raise DeliveryError("resend send: response missing id")
     return message_id
 
 

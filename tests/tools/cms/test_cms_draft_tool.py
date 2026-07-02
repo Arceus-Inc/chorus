@@ -28,12 +28,16 @@ class _FakeBackend:
         self.received = draft
         self.creates.append(draft)
         ref_id = f"fake{len(self.creates)}"
-        return DraftRef(backend="fake", content_type=draft.content_type, ref_id=ref_id, url=f"fake://{ref_id}")
+        return DraftRef(
+            backend="fake", content_type=draft.content_type, ref_id=ref_id, url=f"fake://{ref_id}"
+        )
 
     def update_draft(self, ref_id: str, draft: Any) -> DraftRef:
         self.received = draft
         self.updates.append((ref_id, draft))
-        return DraftRef(backend="fake", content_type=draft.content_type, ref_id=ref_id, url=f"fake://{ref_id}")
+        return DraftRef(
+            backend="fake", content_type=draft.content_type, ref_id=ref_id, url=f"fake://{ref_id}"
+        )
 
 
 class _RaisingBackend:
@@ -48,7 +52,10 @@ def _ctx(working_dir: Path) -> object:
     from dream.tools._context import ToolExecutionContext
 
     return ToolExecutionContext(
-        working_dir=working_dir, session_id="s", metadata={}, scratch_dir=working_dir,
+        working_dir=working_dir,
+        session_id="s",
+        metadata={},
+        scratch_dir=working_dir,
         cancel_requested=False,
     )
 
@@ -69,7 +76,9 @@ class TestDeclaration:
 class TestExecute:
     def test_blog_success_routes_a_blog_draft(self, tmp_path: Path) -> None:
         backend = _FakeBackend()
-        res = _run(CmsDraftTool(backend), {"content_type": "blog", "title": "T", "body": "B"}, tmp_path)
+        res = _run(
+            CmsDraftTool(backend), {"content_type": "blog", "title": "T", "body": "B"}, tmp_path
+        )
         assert res.is_error is False
         assert isinstance(backend.received, BlogDraft)
         assert backend.received.fields() == {"title": "T", "body": "B"}
@@ -78,22 +87,34 @@ class TestExecute:
 
     def test_social_routes_a_social_draft(self, tmp_path: Path) -> None:
         backend = _FakeBackend()
-        _run(CmsDraftTool(backend), {"content_type": "social", "platform": "linkedin", "text": "hi"}, tmp_path)
+        _run(
+            CmsDraftTool(backend),
+            {"content_type": "social", "platform": "linkedin", "text": "hi"},
+            tmp_path,
+        )
         assert isinstance(backend.received, SocialDraft)
         assert backend.received.content_type is ContentType.SOCIAL
 
     def test_email_routes_an_email_draft(self, tmp_path: Path) -> None:
         backend = _FakeBackend()
-        _run(CmsDraftTool(backend), {"content_type": "email", "subject": "S", "body": "B"}, tmp_path)
+        _run(
+            CmsDraftTool(backend), {"content_type": "email", "subject": "S", "body": "B"}, tmp_path
+        )
         assert isinstance(backend.received, EmailDraft)
 
     def test_success_next_actions_point_at_go_live(self, tmp_path: Path) -> None:
-        res = _run(CmsDraftTool(_FakeBackend()), {"content_type": "blog", "title": "T", "body": "B"}, tmp_path)
+        res = _run(
+            CmsDraftTool(_FakeBackend()),
+            {"content_type": "blog", "title": "T", "body": "B"},
+            tmp_path,
+        )
         assert any("stage_go_live" in a for a in res.metadata["next_actions"])
 
     def test_missing_required_field_is_rejected_without_a_write(self, tmp_path: Path) -> None:
         backend = _FakeBackend()
-        res = _run(CmsDraftTool(backend), {"content_type": "blog", "title": "T"}, tmp_path)  # no body
+        res = _run(
+            CmsDraftTool(backend), {"content_type": "blog", "title": "T"}, tmp_path
+        )  # no body
         assert res.is_error is True
         assert "root_cause" in res.content
         assert backend.received is None  # nothing was drafted
@@ -103,7 +124,11 @@ class TestExecute:
         assert res.is_error is True
 
     def test_backend_failure_is_surfaced_with_recovery(self, tmp_path: Path) -> None:
-        res = _run(CmsDraftTool(_RaisingBackend()), {"content_type": "blog", "title": "T", "body": "B"}, tmp_path)
+        res = _run(
+            CmsDraftTool(_RaisingBackend()),
+            {"content_type": "blog", "title": "T", "body": "B"},
+            tmp_path,
+        )
         assert res.is_error is True
         assert "Forbidden" in res.content
         assert "root_cause" in res.content
@@ -111,8 +136,13 @@ class TestExecute:
 
 class TestInput:
     def test_to_draft_builds_the_right_type(self) -> None:
-        assert isinstance(CmsDraftInput(content_type=ContentType.BLOG, title="T", body="B").to_draft(), BlogDraft)
-        assert isinstance(CmsDraftInput(content_type=ContentType.EMAIL, subject="S", body="B").to_draft(), EmailDraft)
+        assert isinstance(
+            CmsDraftInput(content_type=ContentType.BLOG, title="T", body="B").to_draft(), BlogDraft
+        )
+        assert isinstance(
+            CmsDraftInput(content_type=ContentType.EMAIL, subject="S", body="B").to_draft(),
+            EmailDraft,
+        )
 
 
 def _write_beat_context(working_dir: Path, task_id: str) -> None:

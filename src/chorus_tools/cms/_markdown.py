@@ -13,6 +13,7 @@ from pathlib import Path
 
 import yaml
 
+from chorus_tools._backends import BackendName
 from chorus_tools.cms._types import (
     CmsDraft,
     CmsError,
@@ -54,7 +55,7 @@ class MarkdownCmsBackend:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(_render(draft), encoding="utf-8")
         return DraftRef(
-            backend="markdown",
+            backend=BackendName.MARKDOWN.value,
             content_type=draft.content_type,
             ref_id=str(relative),
             url=path.as_uri(),

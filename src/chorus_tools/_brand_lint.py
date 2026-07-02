@@ -27,13 +27,22 @@ FindingKind = Literal["prohibited_phrase", "unsubstantiated_claim"]
 # Fallback when the spec has no ``## Prohibited Phrases`` section — a missing brand kit should degrade,
 # never blind the critic.
 _DEFAULT_PROHIBITED: tuple[str, ...] = (
-    "revolutionary", "game-changing", "10x", "unlock", "supercharge",
-    "best-in-class", "cutting-edge", "seamless", "effortless",
+    "revolutionary",
+    "game-changing",
+    "10x",
+    "unlock",
+    "supercharge",
+    "best-in-class",
+    "cutting-edge",
+    "seamless",
+    "effortless",
 )
 
 # Claim heuristic (deliberately advisory — the Brand-Critic adjudicates false positives).
 _METRIC = re.compile(r"\d+%|\$\s?\d|\b\d+(?:\.\d+)?x\b|\b\d{2,}\b")
-_GUARANTEE = re.compile(r"\b(?:will|guarantees?|ensures?|eliminates?|never|always)\b", re.IGNORECASE)
+_GUARANTEE = re.compile(
+    r"\b(?:will|guarantees?|ensures?|eliminates?|never|always)\b", re.IGNORECASE
+)
 _HEDGE = re.compile(
     r"we believe|early results suggest|designed to|aims? to|can help|\b(?:may|could|might)\b",
     re.IGNORECASE,
@@ -54,7 +63,13 @@ class BrandFinding:
     fix: str  # a concrete, actionable remedy
 
     def as_dict(self) -> dict[str, object]:
-        return {"kind": self.kind, "line": self.line, "quote": self.quote, "rule": self.rule, "fix": self.fix}
+        return {
+            "kind": self.kind,
+            "line": self.line,
+            "quote": self.quote,
+            "rule": self.rule,
+            "fix": self.fix,
+        }
 
 
 def parse_prohibited_phrases(spec_text: str) -> tuple[str, ...]:
@@ -123,8 +138,12 @@ def lint_text(doc_text: str, phrases: tuple[str, ...]) -> tuple[BrandFinding, ..
 class BrandLintInput(BaseModel):
     """Typed contract for ``brand_lint`` — validated before any file is read."""
 
-    doc: str = Field(min_length=1, description="the drafted content file to lint, e.g. 'content_draft.md'")
-    spec: str = Field(default="brand_spec.md", description="the brand-voice spec (the local brand kit)")
+    doc: str = Field(
+        min_length=1, description="the drafted content file to lint, e.g. 'content_draft.md'"
+    )
+    spec: str = Field(
+        default="brand_spec.md", description="the brand-voice spec (the local brand kit)"
+    )
 
 
 class BrandLintTool(BaseTool):
@@ -165,7 +184,9 @@ class BrandLintTool(BaseTool):
             spec_note = ""
         else:
             phrases = _DEFAULT_PROHIBITED
-            spec_note = f" (spec {args.spec!r} not found — used the built-in prohibited-phrase list)"
+            spec_note = (
+                f" (spec {args.spec!r} not found — used the built-in prohibited-phrase list)"
+            )
 
         findings = lint_text(doc_path.read_text(encoding="utf-8"), phrases)
         return _report(args, findings, spec_note)
@@ -187,7 +208,9 @@ def _report(args: BrandLintInput, findings: tuple[BrandFinding, ...], spec_note:
         content = f"{summary}\n{detail}"
     else:
         summary = f"brand_lint: clean — no prohibited phrases or unsubstantiated claims{spec_note}"
-        next_actions = ["Draft is mechanically clean; proceed with the Brand-Critic's voice judgment."]
+        next_actions = [
+            "Draft is mechanically clean; proceed with the Brand-Critic's voice judgment."
+        ]
         content = summary
     return ToolResult(
         content=content,
@@ -214,4 +237,10 @@ def _rejected(message: str) -> ToolResult:
     )
 
 
-__all__ = ["BrandFinding", "BrandLintInput", "BrandLintTool", "lint_text", "parse_prohibited_phrases"]
+__all__ = [
+    "BrandFinding",
+    "BrandLintInput",
+    "BrandLintTool",
+    "lint_text",
+    "parse_prohibited_phrases",
+]
