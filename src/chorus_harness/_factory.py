@@ -80,6 +80,11 @@ _CHORUS_TO_DREAM_TOOL: dict[str, str] = {
     # dream_tool_names keeps them and _role_registry picks them up; the subagent projection carries them.
     "web_search": "web_search",
     "web_extract": "web_extract",
+    # Reading spilled tool output: a large tool result (a web_extract page, a repo_search dump) is
+    # offloaded to the session scratch dir with a "Full output saved to: <file>" pointer — read_offloaded
+    # (tier-0, scratch-confined) is how a role pulls that full payload back. Without it a role loops on
+    # read_file (worktree-relative) and never reads the evidence it just fetched.
+    "read_offloaded": "read_offloaded",
 }
 
 _READ_ONLY_DREAM_SURFACE_TOOLS = frozenset(

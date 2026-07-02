@@ -24,7 +24,7 @@ ANALYST_SUBAGENTS: tuple[SubagentSpec, ...] = (
             "from the SQL warehouse, and `notebook_run` (pandas) to produce the base tables — typed "
             "columns, derived rates, group-bys, joins. Return the computed numbers, not prose."
         ),
-        tools=("read_file", "repo_search", "warehouse_query", "notebook_run", "run_command"),
+        tools=("read_file", "repo_search", "warehouse_query", "notebook_run", "run_command", "read_offloaded"),
     ),
     SubagentSpec(
         name="modeling",
@@ -34,7 +34,7 @@ ANALYST_SUBAGENTS: tuple[SubagentSpec, ...] = (
             "with `notebook_run` (pandas/numpy), render a chart with `chart_render` if it helps, and "
             "report the exact numeric results."
         ),
-        tools=("read_file", "warehouse_query", "notebook_run", "chart_render", "run_command"),
+        tools=("read_file", "warehouse_query", "notebook_run", "chart_render", "run_command", "read_offloaded"),
     ),
     SubagentSpec(
         name="critic",
@@ -45,16 +45,18 @@ ANALYST_SUBAGENTS: tuple[SubagentSpec, ...] = (
             "figure matches, with exact recomputed values, and flag any discrepancy, arithmetic slip, "
             "or unsupported claim. Do not write the findings doc."
         ),
-        tools=("read_file", "warehouse_query", "notebook_run", "run_command"),
+        tools=("read_file", "warehouse_query", "notebook_run", "run_command", "read_offloaded"),
     ),
     SubagentSpec(
         name="scout",
         description=(
             "Research the world. Use `web_search` to find current, external information and `web_extract` "
             "to read a promising source in full, then return a concise, cited summary (claim + the URL "
-            "it came from). Read-only; never invent a source or a URL."
+            "it came from). When a result says `Full output saved to: <file>`, read that full payload with "
+            "`read_offloaded` (not `read_file`) — it lives in session scratch, not your working dir. "
+            "Read-only; never invent a source or a URL."
         ),
-        tools=("web_search", "web_extract", "read_file"),
+        tools=("web_search", "web_extract", "read_file", "read_offloaded"),
     ),
     SubagentSpec(
         name="narrative",
