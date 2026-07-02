@@ -76,6 +76,18 @@ class ApprovalRepo:
         ).fetchone()
         return _row_to_approval(row) if row is not None else None
 
+    def for_subject(self, subject_id: str) -> list[Approval]:
+        """Every gate ever opened on ``subject_id``, newest first — any status.
+
+        The go-live executor resolves a task's gate with this (fail-closed on its status), so the
+        model never has to remember an approval id across beats.
+        """
+        rows = self._conn.execute(
+            "SELECT * FROM approval WHERE subject_id = ? ORDER BY created_at DESC, id DESC",
+            (subject_id,),
+        ).fetchall()
+        return [_row_to_approval(row) for row in rows]
+
     def pending(self) -> list[Approval]:
         """Open gates that have not lapsed, oldest first.
 

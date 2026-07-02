@@ -60,6 +60,9 @@ def marketer_manifest() -> RoleManifest:
             # the Channel's reversible write (§08 cms.draft): stage finished content as an UNPUBLISHED
             # CMS draft (blog/social/email). Below the go-live gate — publishing it is still stage_go_live.
             "cms_draft",
+            # the §05 dark-node executor: once a human APPROVES the stage_go_live gate, this publishes
+            # the staged draft (fail-closed: pending/denied gates can never execute; idempotent per gate).
+            "execute_go_live",
             # the `skill` tool loads her authored playbooks (brand-voice) on demand (§08 know-how).
             "skill",
         ),

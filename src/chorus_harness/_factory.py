@@ -46,6 +46,7 @@ from chorus_tools import (
     SubmitVerdictTool,
 )
 from chorus_tools.cms import CmsDraftTool, cms_backend_from_env
+from chorus_tools.delivery import ExecuteGoLiveTool, publish_backend_from_env
 
 if TYPE_CHECKING:
     from chorus.ledger import SqliteLedger
@@ -86,6 +87,10 @@ _CHORUS_TO_DREAM_TOOL: dict[str, str] = {
     # same reason as brand_lint: so the projection keeps it; it is registered in the materialize flow
     # (it needs the worktree for the Markdown backend, which _capability_tool has no access to).
     "cms_draft": "cms_draft",
+    # execute_go_live — the §05 dark-node executor: publishes the staged draft ONLY once its
+    # stage_go_live gate is APPROVED (fail-closed + idempotent). Registered in materialize (needs
+    # ledger for the gate check + the worktree for the draft/delivery indexes).
+    "execute_go_live": "execute_go_live",
 }
 
 _READ_ONLY_DREAM_SURFACE_TOOLS = frozenset(
@@ -446,6 +451,16 @@ class EmployeeHarnessFactory:
         if "cms_draft" in config.tools:
             registry.register(
                 CmsDraftTool(cms_backend_from_env(root / "cms_drafts")), source=ToolSource.DEFAULT
+            )
+        # execute_go_live pairs with cms_draft: it publishes the staged draft once the human approves
+        # the stage_go_live gate. Needs BOTH the ledger (fail-closed gate check) and the worktree
+        # (standing-draft + delivery indexes), so it registers here rather than in _capability_tool.
+        if "execute_go_live" in config.tools and self._ledger is not None:
+            registry.register(
+                ExecuteGoLiveTool(
+                    self._ledger, publish_backend_from_env(root / "cms_drafts")
+                ),
+                source=ToolSource.DEFAULT,
             )
 
         # Subagents: project the role's Tier-1 declarations into dream's SubagentSet. The
