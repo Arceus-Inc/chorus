@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import sqlite3
-
 from chorus.lifecycle import (
     NoRevision,
     RevisionAuthorityError,
@@ -45,14 +43,16 @@ def _dod_set(ctx: CommandContext, args: tuple[str, ...]) -> LoopSignal:
     if ctx.session.ledger.tasks.get(task_id) is None:
         ctx.out.error(f"no such task: {task_id!r}")
         return LoopSignal.CONTINUE
+    if ctx.session.ledger.dod.get_for_task(task_id) is not None:
+        # Explicit pre-check for the friendly duplicate message, rather than catching a low-level
+        # sqlite3.IntegrityError (which would also mask any *other* integrity fault). This is an
+        # interactive single-console verb, so the LBYL check has no meaningful race.
+        ctx.out.error(f"task {task_id!r} already has a DoD")
+        return LoopSignal.CONTINUE
     verifier = _build_verifier(raw_kind, args[2:], ctx.out)
     if verifier is None:
         return LoopSignal.CONTINUE
-    try:
-        ctx.session.ledger.dod.create(task_id, verifier)
-    except sqlite3.IntegrityError:
-        ctx.out.error(f"task {task_id!r} already has a DoD")
-        return LoopSignal.CONTINUE
+    ctx.session.ledger.dod.create(task_id, verifier)
     ctx.out.line(f"set {verifier.kind.value} DoD on {task_id} ({verifier.artifact_class})")
     return LoopSignal.CONTINUE
 

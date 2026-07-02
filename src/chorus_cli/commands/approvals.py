@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import sqlite3
-
 from chorus.governance import ApprovalDecision, GovernanceError, GovernanceResolver
 from chorus.ledger import (
     ApprovalGate,
@@ -61,9 +59,6 @@ def _approval_open(ctx: CommandContext, args: tuple[str, ...]) -> LoopSignal:
         approval = _resolver(ctx).open_task_gate(args[0], gate_kind=gate, reason=" ".join(args[2:]))
     except GovernanceError as exc:
         ctx.out.error(str(exc))
-        return LoopSignal.CONTINUE
-    except sqlite3.IntegrityError:
-        ctx.out.error(f"task {args[0]!r} already has a pending gate")
         return LoopSignal.CONTINUE
     ctx.out.line(f"opened {approval.id}: {gate.value} gate on {args[0]} -- task blocked")
     return LoopSignal.CONTINUE

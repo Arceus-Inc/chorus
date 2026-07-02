@@ -115,6 +115,19 @@ class GovernanceResolver:
             raise GovernanceError(f"no such task: {task_id!r}")
         if task.status in _TERMINAL:
             raise GovernanceError(f"task {task_id!r} is {task.status.value} (terminal)")
+        # One active gate per task. A duplicate is a domain error the caller should hear cleanly,
+        # not a leaked sqlite UNIQUE(subject_kind, subject_id) IntegrityError (which also masks any
+        # *other* integrity fault). A genuine race that slips past this still raises — a real fault.
+        pending = next(
+            (
+                a
+                for a in self._ledger.approvals.for_subject(task_id)
+                if a.status is ApprovalStatus.PENDING
+            ),
+            None,
+        )
+        if pending is not None:
+            raise GovernanceError(f"task {task_id!r} already has a pending gate ({pending.id})")
         return self.open(
             action=ApprovalAction.TASK_GATE,
             subject_kind=ApprovalSubjectKind.TASK,
