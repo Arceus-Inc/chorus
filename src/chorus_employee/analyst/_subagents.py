@@ -48,6 +48,15 @@ ANALYST_SUBAGENTS: tuple[SubagentSpec, ...] = (
         tools=("read_file", "warehouse_query", "notebook_run", "run_command"),
     ),
     SubagentSpec(
+        name="scout",
+        description=(
+            "Research the world. Use `web_search` to find current, external information and `web_fetch` "
+            "to read a promising source in full, then return a concise, cited summary (claim + the URL "
+            "it came from). Read-only; never invent a source or a URL."
+        ),
+        tools=("web_search", "web_fetch", "read_file"),
+    ),
+    SubagentSpec(
         name="narrative",
         description=(
             "Draft a clear, reviewer-ready write-up of already-computed results: the answer, the "

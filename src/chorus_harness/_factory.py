@@ -43,6 +43,7 @@ from chorus_tools import (
     SubmitTaskTool,
     SubmitVerdictTool,
     analysis_tool,
+    web_tool,
 )
 
 if TYPE_CHECKING:
@@ -76,6 +77,9 @@ _CHORUS_TO_DREAM_TOOL: dict[str, str] = {
     "repo_search": "repo_search",
     "notebook_run": "notebook_run",
     "chart_render": "chart_render",
+    # Web research integration (read-only, network-scoped to Tavily) — registered from ``web_tool``.
+    "web_search": "web_search",
+    "web_fetch": "web_fetch",
 }
 
 _READ_ONLY_DREAM_SURFACE_TOOLS = frozenset(
@@ -428,7 +432,7 @@ class EmployeeHarnessFactory:
         # chart_render. The generator runs tools=null, so registering them here is enough for the model
         # to see and call them; they are not dream built-ins, so _role_registry skipped them above.
         for name in config.tools:
-            atool = analysis_tool(name)
+            atool = analysis_tool(name) or web_tool(name)
             if atool is not None and registry.get(name) is None:
                 registry.register(atool, source=ToolSource.DEFAULT)
 
