@@ -3,12 +3,12 @@ employee/task resolution, and the demo heartbeat worker. No verbs register here.
 
 from __future__ import annotations
 
+import logging
 import os
 import re
 import subprocess
 import sys
 import threading
-from contextlib import suppress
 from pathlib import Path
 
 from chorus.ledger import (
@@ -22,6 +22,8 @@ from chorus.workforce import LedgerWorkforce
 from chorus.workspace import default_work_root
 from chorus_cli._context import BeatService, CommandContext
 from chorus_cli._render import Console
+
+_logger = logging.getLogger("chorus_cli.heartbeat")
 
 _PREVIEW = 48  # how many chars of free text (intent/body) a table cell shows
 _OPERATOR = "operator"  # the human at the console — the sender of messages it delivers
@@ -79,8 +81,13 @@ class _HeartbeatWorker:
             if beats is None:
                 return
             while not self._stop.is_set():
-                with suppress(Exception):
+                try:
                     beats.run_tick()
+                except Exception:
+                    # A single failed tick must not kill the background thread (and the console), but
+                    # it must not be silent either — a permanently-broken runner would otherwise spin
+                    # at the cadence with zero signal. Log with the traceback and keep ticking.
+                    _logger.warning("heartbeat tick failed; continuing", exc_info=True)
                 self._stop.wait(self._interval_s)
         finally:
             ledger.close()
@@ -134,7 +141,10 @@ def _maybe_bootstrap_employee(ctx: CommandContext) -> None:
         return
     try:
         created = LedgerWorkforce(ledger.employees).hire(name="employee", role="engineer")
-    except Exception:
+    except Exception as exc:
+        # The demo can continue without the seed employee, but the operator should know why the
+        # org came up empty rather than have it fail silently.
+        ctx.out.error(f"could not create the default employee: {type(exc).__name__}: {exc}")
         return
     company_root = default_work_root() / ctx.session.company_id
     base = company_root / "worktrees" / created.id
