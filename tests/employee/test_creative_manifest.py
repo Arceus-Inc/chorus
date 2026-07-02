@@ -1,16 +1,15 @@
 """Creative subagent — the typed return contract (design doc §06, §10).
 
-``CreativeManifest`` is what the Creative subagent returns after drafting a set of on-brand
-variants: the seed it varied plus one entry per variant (its file, angle, and brand_lint status).
-These tests pin the validating parser (``from_payload``) and lock the JSON ``output_schema`` to the
-dataclass fields so the two can never silently drift.
+``CreativeManifest`` is a pydantic model: what the Creative subagent returns after drafting a set of
+on-brand variants (the seed it varied plus one entry per variant — its file, angle, and brand_lint
+status). ``model_validate`` parses+validates the raw return; ``creative_output_schema`` is the JSON
+schema DERIVED from the model (single source, no drift with the hand-written schema).
 """
 
 from __future__ import annotations
 
-import dataclasses
-
 import pytest
+from pydantic import ValidationError
 
 from chorus_employee.marketer._schemas import (
     CreativeManifest,
@@ -25,15 +24,19 @@ def _payload() -> dict[str, object]:
     return {
         "seed": "content_seed.md",
         "variants": [
-            {"file": "candidates/variant_01.md", "angle": "problem-first", "brand_lint_clean": True},
+            {
+                "file": "candidates/variant_01.md",
+                "angle": "problem-first",
+                "brand_lint_clean": True,
+            },
             {"file": "candidates/variant_02.md", "angle": "proof-first", "brand_lint_clean": False},
         ],
     }
 
 
-class TestFromPayload:
+class TestModelValidate:
     def test_roundtrips_well_formed_payload(self) -> None:
-        manifest = CreativeManifest.from_payload(_payload())
+        manifest = CreativeManifest.model_validate(_payload())
         assert manifest.seed == "content_seed.md"
         assert len(manifest.variants) == 2
         first = manifest.variants[0]
@@ -43,84 +46,59 @@ class TestFromPayload:
         assert first.brand_lint_clean is True
         assert manifest.variants[1].brand_lint_clean is False
 
-    def test_variants_is_a_tuple_not_a_list(self) -> None:
-        # Frozen, hashable value object — the collection must be immutable too.
-        manifest = CreativeManifest.from_payload(_payload())
-        assert isinstance(manifest.variants, tuple)
-
     def test_empty_variants_is_allowed(self) -> None:
         # A degenerate run (Creative produced nothing) parses to an empty manifest, not an error —
         # the caller decides what to do with zero variants.
-        manifest = CreativeManifest.from_payload({"seed": "content_seed.md", "variants": []})
-        assert manifest.variants == ()
-
-    def test_rejects_non_mapping_payload(self) -> None:
-        with pytest.raises(ValueError, match="payload"):
-            CreativeManifest.from_payload(["not", "a", "mapping"])  # type: ignore[arg-type]
+        manifest = CreativeManifest.model_validate({"seed": "content_seed.md", "variants": []})
+        assert manifest.variants == []
 
     def test_rejects_missing_seed(self) -> None:
-        with pytest.raises(ValueError, match="seed"):
-            CreativeManifest.from_payload({"variants": []})
+        with pytest.raises(ValidationError, match="seed"):
+            CreativeManifest.model_validate({"variants": []})
 
-    def test_rejects_empty_seed(self) -> None:
-        with pytest.raises(ValueError, match="seed"):
-            CreativeManifest.from_payload({"seed": "   ", "variants": []})
+    def test_rejects_blank_seed(self) -> None:
+        # str_strip_whitespace + min_length=1: a whitespace-only seed collapses to empty and fails.
+        with pytest.raises(ValidationError, match="seed"):
+            CreativeManifest.model_validate({"seed": "   ", "variants": []})
+
+    def test_rejects_missing_variants(self) -> None:
+        with pytest.raises(ValidationError, match="variants"):
+            CreativeManifest.model_validate({"seed": "content_seed.md"})
 
     def test_rejects_non_list_variants(self) -> None:
-        with pytest.raises(ValueError, match="variants"):
-            CreativeManifest.from_payload({"seed": "content_seed.md", "variants": "nope"})
+        with pytest.raises(ValidationError, match="variants"):
+            CreativeManifest.model_validate({"seed": "content_seed.md", "variants": "nope"})
 
     def test_rejects_variant_missing_field(self) -> None:
         bad = {"seed": "s.md", "variants": [{"file": "v.md", "angle": "x"}]}
-        with pytest.raises(ValueError, match="brand_lint_clean"):
-            CreativeManifest.from_payload(bad)
+        with pytest.raises(ValidationError, match="brand_lint_clean"):
+            CreativeManifest.model_validate(bad)
 
     def test_rejects_variant_mistyped_flag(self) -> None:
+        # strict=True on the bool: a stringly flag is an error, never silently coerced to True.
         bad = {
             "seed": "s.md",
             "variants": [{"file": "v.md", "angle": "x", "brand_lint_clean": "yes"}],
         }
-        with pytest.raises(ValueError, match="brand_lint_clean"):
-            CreativeManifest.from_payload(bad)
+        with pytest.raises(ValidationError, match="brand_lint_clean"):
+            CreativeManifest.model_validate(bad)
 
     def test_rejects_variant_empty_file(self) -> None:
         bad = {"seed": "s.md", "variants": [{"file": "", "angle": "x", "brand_lint_clean": True}]}
-        with pytest.raises(ValueError, match="file"):
-            CreativeManifest.from_payload(bad)
-
-
-class TestImmutability:
-    def test_variant_entry_is_frozen(self) -> None:
-        entry = VariantEntry(file="v.md", angle="a", brand_lint_clean=True)
-        with pytest.raises(dataclasses.FrozenInstanceError):
-            entry.angle = "b"  # type: ignore[misc]
-
-    def test_manifest_is_frozen(self) -> None:
-        manifest = CreativeManifest(seed="s.md", variants=())
-        with pytest.raises(dataclasses.FrozenInstanceError):
-            manifest.seed = "other.md"  # type: ignore[misc]
+        with pytest.raises(ValidationError, match="file"):
+            CreativeManifest.model_validate(bad)
 
 
 class TestOutputSchema:
-    def test_schema_is_an_object(self) -> None:
+    def test_schema_is_derived_from_the_model(self) -> None:
+        # Single source of truth: the exported schema IS the model's json schema — nothing to drift.
+        assert creative_output_schema() == CreativeManifest.model_json_schema()
+
+    def test_schema_is_an_object_requiring_seed_and_variants(self) -> None:
         schema = creative_output_schema()
         assert schema["type"] == "object"
         assert set(schema["required"]) == {"seed", "variants"}
 
-    def test_top_level_properties_match_dataclass_fields(self) -> None:
-        # Drift guard: the schema's top-level keys must be exactly CreativeManifest's fields.
-        schema = creative_output_schema()
-        field_names = {f.name for f in dataclasses.fields(CreativeManifest)}
-        assert set(schema["properties"]) == field_names
-
-    def test_variant_item_properties_match_variant_fields(self) -> None:
-        # Drift guard for the nested item shape.
-        schema = creative_output_schema()
-        item_props = schema["properties"]["variants"]["items"]["properties"]
-        field_names = {f.name for f in dataclasses.fields(VariantEntry)}
-        assert set(item_props) == field_names
-
-    def test_schema_parses_back_through_from_payload(self) -> None:
-        # A payload built to the schema's shape must survive from_payload — schema and parser agree.
-        manifest = CreativeManifest.from_payload(_payload())
-        assert manifest.variants[0].file == "candidates/variant_01.md"
+    def test_model_fields_are_the_contract(self) -> None:
+        assert set(CreativeManifest.model_fields) == {"seed", "variants"}
+        assert set(VariantEntry.model_fields) == {"file", "angle", "brand_lint_clean"}
