@@ -32,6 +32,7 @@ from chorus.adapters import DreamBeatRunner, TokenPricing
 from chorus.heartbeat import BeatRunner, IntegrateContextPacket
 from chorus.outcomes import LanderRegistry
 from chorus.roles import RoleBeatConfig, RoleRegistry, role_beat_config
+from chorus.roles._subagent import SubagentSpec
 from chorus.trust import TrustPolicy
 from chorus.workforce import Employee
 from chorus.workspace import CompanyWorkspace, default_work_root
@@ -112,6 +113,26 @@ def dream_tool_names(chorus_tools: tuple[str, ...]) -> tuple[str, ...]:
     return tuple(_CHORUS_TO_DREAM_TOOL[name] for name in chorus_tools if name in _CHORUS_TO_DREAM_TOOL)
 
 
+def _project_spec(spec: SubagentSpec, parent_tools: frozenset[str]) -> Subagent:
+    """Project one chorus :class:`SubagentSpec` onto a dream :class:`Subagent`, recursively.
+
+    Tools are mapped to dream names and intersected with ``parent_tools`` (narrower-wins). A spec's
+    ``spawnable`` children (depth-2) are projected the same way against THIS spec's own effective
+    tools, so the intersection chain holds transitively — a grandchild can only ever narrow.
+    """
+    tools = tuple(t for t in dream_tool_names(spec.tools) if t in parent_tools)
+    own_tools = frozenset(tools)
+    return Subagent(
+        name=spec.name,
+        description=spec.description,
+        tools=tools,
+        model=spec.model,
+        max_turns=spec.max_turns,
+        output_schema=spec.output_schema,
+        spawnable=tuple(_project_spec(child, own_tools) for child in spec.spawnable),
+    )
+
+
 def _subagent_set(config: RoleBeatConfig) -> SubagentSet | None:
     """Project a role's chorus :class:`SubagentSpec`s onto a dream :class:`SubagentSet` (Tier-1).
 
@@ -123,19 +144,7 @@ def _subagent_set(config: RoleBeatConfig) -> SubagentSet | None:
     if not config.subagents:
         return None
     parent_tools = frozenset(dream_tool_names(config.tools))
-    agents: list[Subagent] = []
-    for spec in config.subagents:
-        tools = tuple(t for t in dream_tool_names(spec.tools) if t in parent_tools)
-        agents.append(
-            Subagent(
-                name=spec.name,
-                description=spec.description,
-                tools=tools,
-                model=spec.model,
-                max_turns=spec.max_turns,
-                output_schema=spec.output_schema,
-            )
-        )
+    agents = [_project_spec(spec, parent_tools) for spec in config.subagents]
     return build_subagent_set(tier1_agents=agents, parent_tools=parent_tools)
 
 

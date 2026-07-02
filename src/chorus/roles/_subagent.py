@@ -36,6 +36,10 @@ class SubagentSpec:
     model: str | None = None
     max_turns: int = 6
     output_schema: dict[str, Any] | None = None
+    spawnable: tuple[SubagentSpec, ...] = ()
+    """Tier-2 subagents THIS spec may itself dispatch (depth-2). Empty (default) = a leaf. The
+    composition root projects these onto dream's ``Subagent.spawnable``, intersecting each with this
+    spec's own tools so a grandchild can only narrow. Requires ``spawn_subagent`` in ``tools``."""
 
     def __post_init__(self) -> None:
         if not self.name or not self.name.strip():
@@ -44,6 +48,11 @@ class SubagentSpec:
             raise ValueError(f"SubagentSpec {self.name!r} must carry a non-empty description")
         if isinstance(self.tools, str):
             raise TypeError("SubagentSpec.tools must be a sequence of strings, not a bare string")
+        if self.spawnable and "spawn_subagent" not in self.tools:
+            raise ValueError(
+                f"SubagentSpec {self.name!r} declares spawnable children but lacks 'spawn_subagent' "
+                "in its tools — it could never dispatch them"
+            )
 
 
 __all__ = ["SubagentSpec"]

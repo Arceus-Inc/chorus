@@ -18,7 +18,11 @@ from chorus.roles._manifest import (
     SandboxTier,
 )
 from chorus_employee.marketer._brief import MARKETER_BRIEF
-from chorus_employee.marketer._subagents import BRAND_CRITIC_SUBAGENT, CREATIVE_SUBAGENT
+from chorus_employee.marketer._subagents import (
+    BRAND_CRITIC_SUBAGENT,
+    CREATIVE_SUBAGENT,
+    STRATEGIST_SUBAGENT,
+)
 from swarm.web_research_orchestrator import WEB_RESEARCH_ORCHESTRATOR
 
 # Authored playbooks discovered from this package's ``skills/`` dir and offered via the ``skill`` tool.
@@ -115,7 +119,15 @@ def marketer_manifest() -> RoleManifest:
         # The Creative/Copywriter: a variation engine she spawns on a grounded seed to draft a set of
         # on-brand variants (§10 variety). Writes to her worktree (candidates/), never publishes or
         # selects; returns a typed CreativeManifest. It self-lints via brand_lint.
-        subagents=(BRAND_CRITIC_SUBAGENT, CREATIVE_SUBAGENT, WEB_RESEARCH_ORCHESTRATOR),
+        # The Strategist: frames the bet BEFORE drafting (§06) — reads the funnel/brand/brief and
+        # writes strategy_brief.md. Depth-2: it itself dispatches the Web-Research Orchestrator for
+        # cited market facts (the first employee to use bounded subagent nesting).
+        subagents=(
+            BRAND_CRITIC_SUBAGENT,
+            CREATIVE_SUBAGENT,
+            STRATEGIST_SUBAGENT,
+            WEB_RESEARCH_ORCHESTRATOR,
+        ),
     )
 
 
