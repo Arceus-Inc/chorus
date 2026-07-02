@@ -16,7 +16,7 @@ from chorus.ledger._models import (
     RoutineRevision,
     RoutineTarget,
 )
-from chorus.ledger.repos._base import dumps, from_iso, loads, utcnow_iso
+from chorus.ledger.repos._base import dumps, from_iso, loads, require_persisted, utcnow_iso
 
 
 class RoutineRevisionRepo:
@@ -46,8 +46,7 @@ class RoutineRevisionRepo:
             ),
         )
         self._conn.commit()
-        appended = self.get(revision.id)
-        assert appended is not None  # just inserted in this transaction
+        appended = require_persisted(self.get(revision.id), revision.id)
         return appended
 
     def get(self, revision_id: str) -> RoutineRevision | None:

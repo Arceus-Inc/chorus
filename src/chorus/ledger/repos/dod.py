@@ -13,7 +13,7 @@ from typing import cast
 
 from chorus.ids import mint_id
 from chorus.ledger._models import Dod, DodStatus
-from chorus.ledger.repos._base import dumps, loads, utcnow_iso
+from chorus.ledger.repos._base import dumps, loads, loads_dict, utcnow_iso
 from chorus.outcomes import AgentReview, Command, DoDKind, HumanApproval, ReviewedBuild, Verifier
 
 
@@ -184,7 +184,7 @@ def _row_to_dod(row: sqlite3.Row) -> Dod:
         id=row["id"],
         task_id=row["task_id"],
         kind=row["kind"],
-        spec=loads(row["spec"]) or {},
+        spec=loads_dict(row["spec"]),
         artifact_class=row["artifact_class"],
         revision=row["revision"],
         status=DodStatus(row["status"]),

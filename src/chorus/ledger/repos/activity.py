@@ -10,7 +10,13 @@ from __future__ import annotations
 import sqlite3
 
 from chorus.ledger._models import Activity, ActivityVerb
-from chorus.ledger.repos._base import dumps, from_iso, loads, utcnow_iso
+from chorus.ledger.repos._base import (
+    dumps,
+    from_iso,
+    loads_dict,
+    require_persisted,
+    utcnow_iso,
+)
 
 
 class ActivityRepo:
@@ -38,14 +44,11 @@ class ActivityRepo:
             ),
         )
         self._conn.commit()
-        recorded = self.get(activity.id)
-        assert recorded is not None  # just inserted in this transaction
+        recorded = require_persisted(self.get(activity.id), activity.id)
         return recorded
 
     def get(self, activity_id: str) -> Activity | None:
-        row = self._conn.execute(
-            "SELECT * FROM activity WHERE id = ?", (activity_id,)
-        ).fetchone()
+        row = self._conn.execute("SELECT * FROM activity WHERE id = ?", (activity_id,)).fetchone()
         return _row_to_activity(row) if row is not None else None
 
     def by_subject(self, subject_kind: str, subject_id: str) -> list[Activity]:
@@ -85,6 +88,6 @@ def _row_to_activity(row: sqlite3.Row) -> Activity:
         actor_employee_id=row["actor_employee_id"],
         actor_user_id=row["actor_user_id"],
         trace_id=row["trace_id"],
-        payload=loads(row["payload"]) or {},
+        payload=loads_dict(row["payload"]),
         occurred_at=from_iso(row["occurred_at"]),
     )

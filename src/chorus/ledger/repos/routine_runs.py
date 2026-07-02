@@ -10,7 +10,7 @@ from __future__ import annotations
 import sqlite3
 
 from chorus.ledger._models import RoutineRun, RoutineRunStatus
-from chorus.ledger.repos._base import from_iso, utcnow_iso
+from chorus.ledger.repos._base import from_iso, require_persisted, utcnow_iso
 
 
 class RoutineRunRepo:
@@ -40,14 +40,11 @@ class RoutineRunRepo:
             ),
         )
         self._conn.commit()
-        recorded = self.get(run.id)
-        assert recorded is not None  # just inserted in this transaction
+        recorded = require_persisted(self.get(run.id), run.id)
         return recorded
 
     def get(self, run_id: str) -> RoutineRun | None:
-        row = self._conn.execute(
-            "SELECT * FROM routine_run WHERE id = ?", (run_id,)
-        ).fetchone()
+        row = self._conn.execute("SELECT * FROM routine_run WHERE id = ?", (run_id,)).fetchone()
         return _row_to_run(row) if row is not None else None
 
     def by_routine(self, routine_id: str) -> list[RoutineRun]:

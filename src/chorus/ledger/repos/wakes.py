@@ -12,7 +12,7 @@ from __future__ import annotations
 import sqlite3
 
 from chorus.ledger._models import Wake, WakeReason, WakeStatus
-from chorus.ledger.repos._base import dumps, from_iso, loads, utcnow_iso
+from chorus.ledger.repos._base import dumps, from_iso, loads_dict, utcnow_iso
 
 # The spec 03 §3 deterministic dispatch sort key, as a SQL ORDER BY fragment over aliases
 # ``w`` (wake) and ``t`` (its target task, LEFT JOINed — NULL for a task-less wake):
@@ -201,7 +201,7 @@ def _row_to_wake(row: sqlite3.Row) -> Wake:
         id=row["id"],
         employee_id=row["employee_id"],
         reason=WakeReason(row["reason"]),
-        payload=loads(row["payload"]) or {},
+        payload=loads_dict(row["payload"]),
         status=WakeStatus(row["status"]),
         coalesce_key=row["coalesce_key"],
         coalesced_count=row["coalesced_count"],

@@ -5,7 +5,7 @@ from __future__ import annotations
 import sqlite3
 
 from chorus.ledger._models import BudgetPolicy, BudgetScope
-from chorus.ledger.repos._base import from_iso, utcnow_iso
+from chorus.ledger.repos._base import from_iso, require_persisted, utcnow_iso
 
 
 class BudgetPolicyRepo:
@@ -35,8 +35,7 @@ class BudgetPolicyRepo:
             ),
         )
         self._conn.commit()
-        created = self.get(policy.id)
-        assert created is not None  # just inserted in this transaction
+        created = require_persisted(self.get(policy.id), policy.id)
         return created
 
     def get(self, policy_id: str) -> BudgetPolicy | None:

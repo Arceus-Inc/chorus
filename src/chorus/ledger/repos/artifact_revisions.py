@@ -10,7 +10,7 @@ from __future__ import annotations
 import sqlite3
 
 from chorus.ledger._models import ArtifactRevision
-from chorus.ledger.repos._base import dumps, from_iso, loads, utcnow_iso
+from chorus.ledger.repos._base import dumps, from_iso, loads, require_persisted, utcnow_iso
 
 
 class ArtifactRevisionRepo:
@@ -44,8 +44,7 @@ class ArtifactRevisionRepo:
             ),
         )
         self._conn.commit()
-        recorded = self.get(revision.id)
-        assert recorded is not None  # just inserted in this transaction
+        recorded = require_persisted(self.get(revision.id), revision.id)
         return recorded
 
     def get(self, revision_id: str) -> ArtifactRevision | None:
