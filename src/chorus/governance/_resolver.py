@@ -11,7 +11,6 @@ action is one handler in :func:`~chorus.governance.default_actions`, never an ed
 
 from __future__ import annotations
 
-import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
@@ -20,6 +19,7 @@ from typing import TYPE_CHECKING
 from chorus.governance._errors import GovernanceError
 from chorus.governance._registry import GovernanceRegistry, default_actions
 from chorus.governance._types import ActionOutcome, ApprovalDecision
+from chorus.ids import mint_id
 from chorus.ledger import (
     Activity,
     ActivityVerb,
@@ -77,7 +77,7 @@ class GovernanceResolver:
         The exact-once index rejects a second open gate on the same subject (a duplicate raises)."""
         handler = self._registry.get(action)
         approval = Approval(
-            id=_mint("ap"),
+            id=mint_id("ap"),
             subject_kind=subject_kind,
             subject_id=subject_id,
             reason=reason,
@@ -167,17 +167,13 @@ class GovernanceResolver:
     def _audit(self, verb: ActivityVerb, approval: Approval, *, actor: str | None) -> None:
         self._ledger.activity.append(
             Activity(
-                id=_mint("act"),
+                id=mint_id("act"),
                 verb=verb,
                 subject_kind=approval.subject_kind.value,
                 subject_id=approval.subject_id,
                 actor_user_id=actor,
             )
         )
-
-
-def _mint(prefix: str) -> str:
-    return f"{prefix}_{uuid.uuid4().hex[:12]}"
 
 
 __all__ = ["GovernanceError", "GovernanceResolver", "ResolveOutcome"]

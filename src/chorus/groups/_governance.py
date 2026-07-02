@@ -7,12 +7,12 @@ through the tested :class:`GovernanceResolver` (atomic + audited, fail-closed on
 
 from __future__ import annotations
 
-import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from chorus.errors import OrgInvariantViolation
 from chorus.governance import ApprovalDecision, GovernancePolicy, GovernanceResolver, ResolveOutcome
+from chorus.ids import mint_id
 from chorus.ledger import (
     Approval,
     ApprovalAction,
@@ -54,7 +54,12 @@ class GovernanceFacade:
         self._resolver = GovernanceResolver(ledger)
 
     def request_hire(
-        self, *, name: str, role: str, reports_to: str | None = None, budget_cents: int | None = None
+        self,
+        *,
+        name: str,
+        role: str,
+        reports_to: str | None = None,
+        budget_cents: int | None = None,
     ) -> HireRequest:
         """Hire an employee, gated by policy (spec 04 §5 ``hire_employee``).
 
@@ -119,7 +124,7 @@ class GovernanceFacade:
     def _create_employee_budget(self, employee_id: str, amount_cents: int) -> None:
         self._ledger.budget_policies.create(
             BudgetPolicy(
-                id=f"bp_{uuid.uuid4().hex[:12]}",
+                id=mint_id("bp"),
                 scope_type=BudgetScope.EMPLOYEE,
                 scope_id=employee_id,
                 amount=amount_cents,

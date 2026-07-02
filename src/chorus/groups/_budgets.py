@@ -7,10 +7,10 @@ run through the tested :class:`BudgetEnforcer` (atomic).
 
 from __future__ import annotations
 
-import uuid
 from datetime import UTC, datetime
 
 from chorus.budgets import BudgetEnforcer, BudgetWindow
+from chorus.ids import mint_id
 from chorus.ledger import BudgetPolicy, BudgetScope, SqliteLedger
 
 _DEFAULT_WARN_PERCENT = 80
@@ -43,7 +43,7 @@ class BudgetsFacade:
             return updated
         return self._ledger.budget_policies.create(
             BudgetPolicy(
-                id=f"bp_{uuid.uuid4().hex[:12]}",
+                id=mint_id("bp"),
                 scope_type=scope,
                 scope_id=scope_id,
                 amount=amount_cents,

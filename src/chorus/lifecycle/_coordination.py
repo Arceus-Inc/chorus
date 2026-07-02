@@ -13,9 +13,9 @@ Both run in one ``ledger.transaction()`` so the write and its wake commit togeth
 
 from __future__ import annotations
 
-import uuid
 from typing import TYPE_CHECKING
 
+from chorus.ids import mint_id
 from chorus.ledger._models import ActivityVerb, Wake, WakeReason
 from chorus.lifecycle._audit import record_activity
 
@@ -37,7 +37,7 @@ def assign_task(
             return None
         wake = ledger.wakes.enqueue(
             Wake(
-                id=f"wake_{uuid.uuid4().hex[:12]}",
+                id=mint_id("wake"),
                 employee_id=employee_id,
                 reason=WakeReason.TASK_ASSIGNED,
                 payload={"task_id": task_id},
@@ -70,7 +70,7 @@ def deliver_message(ledger: SqliteLedger, message: Message) -> Wake:
         sent = ledger.messages.send(message)
         wake = ledger.wakes.enqueue(
             Wake(
-                id=f"wake_{uuid.uuid4().hex[:12]}",
+                id=mint_id("wake"),
                 employee_id=message.to_employee_id,
                 reason=WakeReason.MESSAGE,
                 payload={"message_id": sent.id},

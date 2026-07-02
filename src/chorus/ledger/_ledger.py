@@ -9,11 +9,11 @@ write. The same repo code runs on Postgres later behind the same ``Ledger`` shap
 from __future__ import annotations
 
 import sqlite3
-import uuid
 from collections.abc import Iterator
 from contextlib import AbstractContextManager, contextmanager
 from typing import Protocol, runtime_checkable
 
+from chorus.ids import mint_id
 from chorus.ledger._migrations import MigrationRunner
 from chorus.ledger._models import (
     DecompositionClaim,
@@ -52,7 +52,7 @@ from chorus.ledger.repos import (
 
 
 def _wake_id() -> str:
-    return f"wake_{uuid.uuid4().hex[:12]}"
+    return mint_id("wake")
 
 
 class _LedgerConnection(sqlite3.Connection):
@@ -268,16 +268,16 @@ class SqliteLedger:
         ):
             parent = self.tasks.get(task.parent_id)
             if parent is not None and parent.assignee_employee_id is not None:
-                    fired.append(
-                        self.wakes.enqueue(
-                            Wake(
-                                id=_wake_id(),
-                                employee_id=parent.assignee_employee_id,
-                                reason=WakeReason.CHILDREN_DONE,
-                                payload={"task_id": task.parent_id},
-                            )
+                fired.append(
+                    self.wakes.enqueue(
+                        Wake(
+                            id=_wake_id(),
+                            employee_id=parent.assignee_employee_id,
+                            reason=WakeReason.CHILDREN_DONE,
+                            payload={"task_id": task.parent_id},
                         )
                     )
+                )
         return fired
 
     def close(self) -> None:

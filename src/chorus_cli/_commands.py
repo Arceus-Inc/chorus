@@ -18,7 +18,6 @@ import sqlite3
 import subprocess
 import sys
 import threading
-import uuid
 from contextlib import suppress
 from pathlib import Path
 
@@ -26,6 +25,7 @@ from chorus.budgets import BudgetEnforcer, BudgetWindow, window_start
 from chorus.errors import OrgInvariantViolation, UnknownEmployee
 from chorus.facade import Caps, Chorus
 from chorus.governance import ApprovalDecision, GovernanceError, GovernanceResolver
+from chorus.ids import mint_id
 from chorus.ledger import (
     ApprovalGate,
     Artifact,
@@ -180,9 +180,7 @@ def _maybe_bootstrap_employee(ctx: CommandContext) -> None:
         return
     company_root = default_work_root() / ctx.session.company_id
     base = company_root / "worktrees" / created.id
-    ctx.out.line(
-        f"employee born: {created.id} ({created.role}) -- base path {base}"
-    )
+    ctx.out.line(f"employee born: {created.id} ({created.role}) -- base path {base}")
 
 
 def _minimal_file_dod(prompt: str) -> Verifier | None:
@@ -213,9 +211,7 @@ def _resolve_employee(ledger: SqliteLedger, raw: str) -> str | None:
     if not matches:
         return None
     if len(matches) > 1:
-        raise ValueError(
-            f"{raw!r} matches multiple employees {matches}; use an employee id"
-        )
+        raise ValueError(f"{raw!r} matches multiple employees {matches}; use an employee id")
     return matches[0]
 
 
@@ -223,7 +219,9 @@ def _latest_task_for_employee(ledger: SqliteLedger, employee_id: str) -> Task | 
     open_task = ledger.tasks.open_for_assignee(employee_id)
     if open_task is not None:
         return open_task
-    candidates = [t for t in ledger.tasks.list_eligible(limit=200) if t.assignee_employee_id == employee_id]
+    candidates = [
+        t for t in ledger.tasks.list_eligible(limit=200) if t.assignee_employee_id == employee_id
+    ]
     if candidates:
         return candidates[-1]
     for activity in ledger.activity.recent(limit=200):
@@ -356,7 +354,7 @@ def _assign_task_minimal(ctx: CommandContext) -> LoopSignal:
     if employee_id is None:
         ctx.out.error(f"no such employee or role: {employee_ref!r}")
         return LoopSignal.CONTINUE
-    task_id = f"task_{uuid.uuid4().hex[:12]}"
+    task_id = mint_id("task")
     created = ctx.session.ledger.tasks.submit(Task(id=task_id, intent=prompt))
     dod = _minimal_file_dod(prompt)
     if dod is not None:
@@ -365,16 +363,16 @@ def _assign_task_minimal(ctx: CommandContext) -> LoopSignal:
     if wake is None:
         ctx.out.error("could not queue task")
         return LoopSignal.CONTINUE
-    ctx.out.line(
-        f"assigned {created.id} -> {employee_id}; queued {wake.id}; heartbeat running"
-    )
+    ctx.out.line(f"assigned {created.id} -> {employee_id}; queued {wake.id}; heartbeat running")
     return LoopSignal.CONTINUE
 
 
 _CHECK = "check memory | check ledger | check org | check scrum <task_id> | check <employee_name>"
 
 
-@REGISTRY.command("check", summary="inspect memory, ledger, or employee latest-task actions", usage=_CHECK)
+@REGISTRY.command(
+    "check", summary="inspect memory, ledger, or employee latest-task actions", usage=_CHECK
+)
 def _check(ctx: CommandContext) -> LoopSignal:
     _maybe_bootstrap_employee(ctx)
     _ensure_heartbeat(ctx)
@@ -459,10 +457,7 @@ def _check(ctx: CommandContext) -> LoopSignal:
         if recent:
             ctx.out.table(
                 ("at", "verb", "subject", "id"),
-                [
-                    (str(a.occurred_at), a.verb.value, a.subject_kind, a.subject_id)
-                    for a in recent
-                ],
+                [(str(a.occurred_at), a.verb.value, a.subject_kind, a.subject_id) for a in recent],
             )
         return LoopSignal.CONTINUE
     if target == "org":
@@ -596,7 +591,9 @@ def _hire(ctx: CommandContext) -> LoopSignal:
 _TERMINATE = "terminate <id>"
 
 
-@REGISTRY.command("terminate", summary="irreversibly terminate an employee", usage=_TERMINATE, hidden=True)
+@REGISTRY.command(
+    "terminate", summary="irreversibly terminate an employee", usage=_TERMINATE, hidden=True
+)
 def _terminate(ctx: CommandContext) -> LoopSignal:
     if len(ctx.args) != 1:
         ctx.out.error(f"usage: {_TERMINATE}")
@@ -617,7 +614,9 @@ def _terminate(ctx: CommandContext) -> LoopSignal:
 _PAUSE = "pause <id>"
 
 
-@REGISTRY.command("pause", summary="pause an employee (the gate holds its wakes)", usage=_PAUSE, hidden=True)
+@REGISTRY.command(
+    "pause", summary="pause an employee (the gate holds its wakes)", usage=_PAUSE, hidden=True
+)
 def _pause(ctx: CommandContext) -> LoopSignal:
     if len(ctx.args) != 1:
         ctx.out.error(f"usage: {_PAUSE}")
@@ -657,7 +656,9 @@ def _resume(ctx: CommandContext) -> LoopSignal:
 _WORKFORCE = "workforce"
 
 
-@REGISTRY.command("workforce", summary="list the org (every employee + status)", usage=_WORKFORCE, hidden=True)
+@REGISTRY.command(
+    "workforce", summary="list the org (every employee + status)", usage=_WORKFORCE, hidden=True
+)
 def _workforce(ctx: CommandContext) -> LoopSignal:
     if ctx.args:
         ctx.out.error(f"usage: {_WORKFORCE}")
@@ -665,10 +666,7 @@ def _workforce(ctx: CommandContext) -> LoopSignal:
     employees = ctx.session.ledger.employees.list()
     ctx.out.table(
         ("id", "name", "role", "reports_to", "status"),
-        [
-            (e.id, e.name, e.role, _fmt(e.reports_to), e.status.value)
-            for e in employees
-        ],
+        [(e.id, e.name, e.role, _fmt(e.reports_to), e.status.value) for e in employees],
     )
     return LoopSignal.CONTINUE
 
@@ -701,7 +699,9 @@ def _employee(ctx: CommandContext) -> LoopSignal:
 _EXPORT = "export <dir>"
 
 
-@REGISTRY.command("export", summary="serialize the org to a git-markdown tree", usage=_EXPORT, hidden=True)
+@REGISTRY.command(
+    "export", summary="serialize the org to a git-markdown tree", usage=_EXPORT, hidden=True
+)
 def _export(ctx: CommandContext) -> LoopSignal:
     if len(ctx.args) != 1:
         ctx.out.error(f"usage: {_EXPORT}")
@@ -716,7 +716,9 @@ def _export(ctx: CommandContext) -> LoopSignal:
 _IMPORT = "import <dir>"
 
 
-@REGISTRY.command("import", summary="materialize a git-markdown org into the ledger", usage=_IMPORT, hidden=True)
+@REGISTRY.command(
+    "import", summary="materialize a git-markdown org into the ledger", usage=_IMPORT, hidden=True
+)
 def _import(ctx: CommandContext) -> LoopSignal:
     if len(ctx.args) != 1:
         ctx.out.error(f"usage: {_IMPORT}")
@@ -737,7 +739,12 @@ def _import(ctx: CommandContext) -> LoopSignal:
 _COMPANY = "company [init [seed]]"
 
 
-@REGISTRY.command("company", summary="show or create the company workspace (the shared git root)", usage=_COMPANY, hidden=True)
+@REGISTRY.command(
+    "company",
+    summary="show or create the company workspace (the shared git root)",
+    usage=_COMPANY,
+    hidden=True,
+)
 def _company(ctx: CommandContext) -> LoopSignal:
     """Show or create ``.chorus/work/{company}/repo`` — the ``main`` employees' worktrees branch from.
 
@@ -794,12 +801,8 @@ def _submit(ctx: CommandContext) -> LoopSignal:
     if ctx.session.ledger.tasks.get(task_id) is not None:
         ctx.out.error(f"task {task_id!r} already exists")
         return LoopSignal.CONTINUE
-    created = ctx.session.ledger.tasks.submit(
-        Task(id=task_id, intent=intent, priority=priority)
-    )
-    ctx.out.line(
-        f"submitted {created.id} ({created.status.value}, {created.priority.value})"
-    )
+    created = ctx.session.ledger.tasks.submit(Task(id=task_id, intent=intent, priority=priority))
+    ctx.out.line(f"submitted {created.id} ({created.status.value}, {created.priority.value})")
     return LoopSignal.CONTINUE
 
 
@@ -845,7 +848,9 @@ def _task(ctx: CommandContext) -> LoopSignal:
 _ASSIGN = "assign <task_id> <employee_id>"
 
 
-@REGISTRY.command("assign", summary="assign a task and wake the employee", usage=_ASSIGN, hidden=True)
+@REGISTRY.command(
+    "assign", summary="assign a task and wake the employee", usage=_ASSIGN, hidden=True
+)
 def _assign(ctx: CommandContext) -> LoopSignal:
     if len(ctx.args) != 2:
         ctx.out.error(f"usage: {_ASSIGN}")
@@ -877,7 +882,13 @@ def _eligible(ctx: CommandContext) -> LoopSignal:
     ctx.out.table(
         ("id", "status", "priority", "assignee", "intent"),
         [
-            (t.id, t.status.value, t.priority.value, _fmt(t.assignee_employee_id), _preview(t.intent))
+            (
+                t.id,
+                t.status.value,
+                t.priority.value,
+                _fmt(t.assignee_employee_id),
+                _preview(t.intent),
+            )
             for t in tasks
         ],
     )
@@ -886,9 +897,9 @@ def _eligible(ctx: CommandContext) -> LoopSignal:
 
 def _accepted_plan(ledger: SqliteLedger, parent_id: str) -> str:
     """Record a minimal accepted plan revision the decomposition claim references (spec 02 §4)."""
-    plan = Artifact(id=f"plan_{uuid.uuid4().hex[:12]}", task_id=parent_id, type=ArtifactType.DOC)
+    plan = Artifact(id=mint_id("plan"), task_id=parent_id, type=ArtifactType.DOC)
     ledger.artifacts.create(plan)
-    revision = ArtifactRevision(id=f"rev_{uuid.uuid4().hex[:12]}", artifact_id=plan.id)
+    revision = ArtifactRevision(id=mint_id("rev"), artifact_id=plan.id)
     ledger.artifact_revisions.record(revision)
     return revision.id
 
@@ -896,7 +907,12 @@ def _accepted_plan(ledger: SqliteLedger, parent_id: str) -> str:
 _DECOMPOSE = "decompose <parent_id> <child_intent...>"
 
 
-@REGISTRY.command("decompose", summary="manager fan-out: create a gated child (depth-capped)", usage=_DECOMPOSE, hidden=True)
+@REGISTRY.command(
+    "decompose",
+    summary="manager fan-out: create a gated child (depth-capped)",
+    usage=_DECOMPOSE,
+    hidden=True,
+)
 def _decompose(ctx: CommandContext) -> LoopSignal:
     if len(ctx.args) < 2:
         ctx.out.error(f"usage: {_DECOMPOSE}")
@@ -907,7 +923,7 @@ def _decompose(ctx: CommandContext) -> LoopSignal:
         ctx.out.error(f"no such task: {parent_id!r}")
         return LoopSignal.CONTINUE
     revision_id = _accepted_plan(ledger, parent_id)  # the manager's accepted plan (spec 02 §4)
-    child = Task(id=f"task_{uuid.uuid4().hex[:12]}", intent=child_intent)
+    child = Task(id=mint_id("task"), intent=child_intent)
     outcome = decompose(
         ledger,
         source_task_id=parent_id,
@@ -946,7 +962,9 @@ def _wakes(ctx: CommandContext) -> LoopSignal:
 _MESSAGE = "message <to_employee_id> <body...>"
 
 
-@REGISTRY.command("message", summary="deliver a message and wake the recipient", usage=_MESSAGE, hidden=True)
+@REGISTRY.command(
+    "message", summary="deliver a message and wake the recipient", usage=_MESSAGE, hidden=True
+)
 def _message(ctx: CommandContext) -> LoopSignal:
     if len(ctx.args) < 2:
         ctx.out.error(f"usage: {_MESSAGE}")
@@ -958,7 +976,7 @@ def _message(ctx: CommandContext) -> LoopSignal:
     wake = deliver_message(
         ctx.session.ledger,
         Message(
-            id=f"msg_{uuid.uuid4().hex[:12]}",
+            id=mint_id("msg"),
             to_employee_id=to_employee_id,
             body=body,
             kind=MessageKind.INSTRUCTION,
@@ -994,14 +1012,19 @@ _TICK = "tick"
 
 
 @REGISTRY.command(
-    "tick", summary="run one kernel pulse -- dispatch a real beat (needs Azure keys)", usage=_TICK, hidden=True
+    "tick",
+    summary="run one kernel pulse -- dispatch a real beat (needs Azure keys)",
+    usage=_TICK,
+    hidden=True,
 )
 def _tick(ctx: CommandContext) -> LoopSignal:
     if ctx.args:
         ctx.out.error(f"usage: {_TICK}")
         return LoopSignal.CONTINUE
     if ctx.session.minimal_mode:
-        ctx.out.line("heartbeat is already live -- use 'check ledger' or 'check employee' to watch it land")
+        ctx.out.line(
+            "heartbeat is already live -- use 'check ledger' or 'check employee' to watch it land"
+        )
         return LoopSignal.CONTINUE
     beats = ctx.session.beats
     if beats is None:
@@ -1010,7 +1033,9 @@ def _tick(ctx: CommandContext) -> LoopSignal:
             "AZURE_OPENAI_DEPLOYMENT and relaunch"
         )
         return LoopSignal.CONTINUE
-    ctx.out.line(f"ticking the kernel (model {beats.model}) -- this runs a real beat, please wait...")
+    ctx.out.line(
+        f"ticking the kernel (model {beats.model}) -- this runs a real beat, please wait..."
+    )
     report = beats.run_tick()
     ctx.out.kv(
         {
@@ -1035,7 +1060,10 @@ _CHAT = "chat <employee_id>"
 
 
 @REGISTRY.command(
-    "chat", summary="converse with an employee -- each line runs a real beat (needs Azure keys)", usage=_CHAT, hidden=True
+    "chat",
+    summary="converse with an employee -- each line runs a real beat (needs Azure keys)",
+    usage=_CHAT,
+    hidden=True,
 )
 def _chat(ctx: CommandContext) -> LoopSignal:
     if len(ctx.args) != 1:
@@ -1067,7 +1095,9 @@ def _chat(ctx: CommandContext) -> LoopSignal:
         )
         return LoopSignal.CONTINUE
     if employee.status is EmployeeStatus.PAUSED:
-        ctx.out.line(f"note: {employee_id} is paused -- its turns will be gated until you 'resume' it")
+        ctx.out.line(
+            f"note: {employee_id} is paused -- its turns will be gated until you 'resume' it"
+        )
     run_chat(
         employee_id,
         ledger=ctx.session.ledger,
@@ -1169,22 +1199,38 @@ def _budget_list(ctx: CommandContext) -> LoopSignal:
     ledger = ctx.session.ledger
     policies = ledger.budget_policies.all()
     if not policies:
-        ctx.out.line("no budgets -- 'budget set employee <id> <cents>' or 'budget set company <cents>'")
+        ctx.out.line(
+            "no budgets -- 'budget set employee <id> <cents>' or 'budget set company <cents>'"
+        )
         return LoopSignal.CONTINUE
     rows = []
     for policy in policies:
         spent = _spent_for(ctx, policy)
         pct = f"{spent * 100 // policy.amount}%" if policy.amount else "-"
-        rows.append((policy.id, policy.scope_type.value, policy.scope_id, policy.amount, spent,
-                     pct, policy.window_kind, _budget_status(ctx, policy, spent)))
-    ctx.out.table(("policy", "scope", "id", "cap_cents", "spent_cents", "used", "window", "status"), rows)
+        rows.append(
+            (
+                policy.id,
+                policy.scope_type.value,
+                policy.scope_id,
+                policy.amount,
+                spent,
+                pct,
+                policy.window_kind,
+                _budget_status(ctx, policy, spent),
+            )
+        )
+    ctx.out.table(
+        ("policy", "scope", "id", "cap_cents", "spent_cents", "used", "window", "status"), rows
+    )
     incidents = [i for p in policies for i in ledger.budget_incidents.open_for_policy(p.id)]
     if incidents:
         ctx.out.line("open incidents:")
         ctx.out.table(
             ("incident", "policy", "threshold", "observed_cents", "approval"),
-            [(i.id, i.policy_id, i.threshold_type.value, i.amount_observed, _fmt(i.approval_id))
-             for i in incidents],
+            [
+                (i.id, i.policy_id, i.threshold_type.value, i.amount_observed, _fmt(i.approval_id))
+                for i in incidents
+            ],
         )
     return LoopSignal.CONTINUE
 
@@ -1231,12 +1277,20 @@ def _budget_set(ctx: CommandContext, args: tuple[str, ...]) -> LoopSignal:
         ledger.budget_policies.set_amount(existing.id, amount)
         ctx.out.line(f"updated {existing.id}: {scope.value} {scope_id} cap -> {amount} cents")
         return LoopSignal.CONTINUE
-    policy_id = f"bp_{uuid.uuid4().hex[:12]}"
+    policy_id = mint_id("bp")
     ledger.budget_policies.create(
-        BudgetPolicy(id=policy_id, scope_type=scope, scope_id=scope_id, amount=amount,
-                     warn_percent=warn, window_kind=window.value)
+        BudgetPolicy(
+            id=policy_id,
+            scope_type=scope,
+            scope_id=scope_id,
+            amount=amount,
+            warn_percent=warn,
+            window_kind=window.value,
+        )
     )
-    ctx.out.line(f"set {policy_id}: {scope.value} {scope_id} cap {amount} cents (warn {warn}%, {window.value})")
+    ctx.out.line(
+        f"set {policy_id}: {scope.value} {scope_id} cap {amount} cents (warn {warn}%, {window.value})"
+    )
     return LoopSignal.CONTINUE
 
 
@@ -1286,7 +1340,9 @@ _BUDGET_SUBCOMMANDS = {
 }
 
 
-@REGISTRY.command("budget", summary="view or manage budgets -- caps, spend, incidents", usage=_BUDGET, hidden=True)
+@REGISTRY.command(
+    "budget", summary="view or manage budgets -- caps, spend, incidents", usage=_BUDGET, hidden=True
+)
 def _budget(ctx: CommandContext) -> LoopSignal:
     if not ctx.args or ctx.args[0] == "list":
         return _budget_list(ctx)
@@ -1318,8 +1374,14 @@ def _approval_list(ctx: CommandContext) -> LoopSignal:
     ctx.out.table(
         ("approval", "action", "subject", "id", "gate", "reason"),
         [
-            (a.id, a.action.value, a.subject_kind.value, a.subject_id,
-             _fmt(a.gate_kind.value if a.gate_kind else None), _preview(a.reason))
+            (
+                a.id,
+                a.action.value,
+                a.subject_kind.value,
+                a.subject_id,
+                _fmt(a.gate_kind.value if a.gate_kind else None),
+                _preview(a.reason),
+            )
             for a in pending
         ],
     )
@@ -1387,7 +1449,9 @@ _APPROVAL_DECISIONS: dict[str, ApprovalDecision] = {
 }
 
 
-@REGISTRY.command("approval", summary="view or resolve approval gates", usage=_APPROVAL, hidden=True)
+@REGISTRY.command(
+    "approval", summary="view or resolve approval gates", usage=_APPROVAL, hidden=True
+)
 def _approval(ctx: CommandContext) -> LoopSignal:
     if not ctx.args or ctx.args[0] == "list":
         return _approval_list(ctx)
@@ -1475,7 +1539,9 @@ def _dod_revise(ctx: CommandContext, args: tuple[str, ...]) -> LoopSignal:
     return LoopSignal.CONTINUE
 
 
-@REGISTRY.command("dod", summary="set or revise a task's Definition of Done", usage=_DOD, hidden=True)
+@REGISTRY.command(
+    "dod", summary="set or revise a task's Definition of Done", usage=_DOD, hidden=True
+)
 def _dod(ctx: CommandContext) -> LoopSignal:
     if ctx.args and ctx.args[0] == "set":
         return _dod_set(ctx, ctx.args[1:])
@@ -1584,13 +1650,19 @@ def _routine_list(ctx: CommandContext, args: tuple[str, ...]) -> LoopSignal:
         ctx.out.error(str(exc))
         return LoopSignal.CONTINUE
     if not views:
-        ctx.out.line('no routines -- \'routine add <employee> <intent> --schedule "<cron>"\'')
+        ctx.out.line("no routines -- 'routine add <employee> <intent> --schedule \"<cron>\"'")
         return LoopSignal.CONTINUE
     ctx.out.table(
         ("routine", "employee", "intent", "status", "concurrency", "next_run"),
         [
-            (view.id, view.employee_id, _preview(view.intent_template), view.status.value,
-             view.concurrency_policy.value, _next_run(view))
+            (
+                view.id,
+                view.employee_id,
+                _preview(view.intent_template),
+                view.status.value,
+                view.concurrency_policy.value,
+                _next_run(view),
+            )
             for view in views
         ],
     )
@@ -1606,25 +1678,38 @@ def _routine_show(ctx: CommandContext, args: tuple[str, ...]) -> LoopSignal:
     except KeyError:
         ctx.out.error(f"no routine {args[0]!r}")
         return LoopSignal.CONTINUE
-    ctx.out.kv({
-        "routine": view.id,
-        "employee": view.employee_id,
-        "intent": view.intent_template,
-        "status": view.status.value,
-        "concurrency": view.concurrency_policy.value,
-        "catch_up": view.catch_up_policy.value,
-    })
+    ctx.out.kv(
+        {
+            "routine": view.id,
+            "employee": view.employee_id,
+            "intent": view.intent_template,
+            "status": view.status.value,
+            "concurrency": view.concurrency_policy.value,
+            "catch_up": view.catch_up_policy.value,
+        }
+    )
     if view.triggers:
         ctx.out.table(
             ("trigger", "kind", "cron", "timezone", "next_run", "last_fired"),
-            [(t.id, t.kind.value, t.cron_expression or "-", t.timezone, _fmt(t.next_run_at),
-              _fmt(t.last_fired_at)) for t in view.triggers],
+            [
+                (
+                    t.id,
+                    t.kind.value,
+                    t.cron_expression or "-",
+                    t.timezone,
+                    _fmt(t.next_run_at),
+                    _fmt(t.last_fired_at),
+                )
+                for t in view.triggers
+            ],
         )
     if view.recent_runs:
         ctx.out.table(
             ("run", "status", "task", "coalesced_into"),
-            [(r.id, r.status.value, _fmt(r.linked_task_id), _fmt(r.coalesced_into_run_id))
-             for r in view.recent_runs],
+            [
+                (r.id, r.status.value, _fmt(r.linked_task_id), _fmt(r.coalesced_into_run_id))
+                for r in view.recent_runs
+            ],
         )
     return LoopSignal.CONTINUE
 
@@ -1663,7 +1748,9 @@ _ROUTINE_SUBCOMMANDS = {
 }
 
 
-@REGISTRY.command("routine", summary="manage recurring work -- cron routines", usage=_ROUTINE, hidden=True)
+@REGISTRY.command(
+    "routine", summary="manage recurring work -- cron routines", usage=_ROUTINE, hidden=True
+)
 def _routine(ctx: CommandContext) -> LoopSignal:
     if not ctx.args or ctx.args[0] == "list":
         return _routine_list(ctx, ctx.args[1:])

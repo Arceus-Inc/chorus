@@ -10,10 +10,10 @@ artifact id:
 
 from __future__ import annotations
 
-import uuid
 from typing import TYPE_CHECKING
 
 from chorus.governance._types import ActionOutcome
+from chorus.ids import mint_id
 from chorus.ledger import Activity, ActivityVerb, Approval, ApprovalAction, Wake, WakeReason
 
 if TYPE_CHECKING:
@@ -38,7 +38,7 @@ class BoardApprovalAction:
     def on_approve(self, approval: Approval) -> ActionOutcome:
         self._ledger.activity.append(
             Activity(
-                id=f"act_{uuid.uuid4().hex[:12]}",
+                id=mint_id("act"),
                 verb=ActivityVerb.PROMOTED,
                 subject_kind="artifact",
                 subject_id=approval.subject_id,
@@ -62,7 +62,7 @@ class BoardApprovalAction:
             return 0
         self._ledger.wakes.enqueue(
             Wake(
-                id=f"wake_{uuid.uuid4().hex[:12]}",
+                id=mint_id("wake"),
                 employee_id=employee_id,
                 reason=WakeReason.RECOVERY,
                 payload={"task_id": task_id},

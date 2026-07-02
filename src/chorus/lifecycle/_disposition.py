@@ -16,12 +16,12 @@ task is stranded again does the reconciler escalate.
 
 from __future__ import annotations
 
-import uuid
 from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
 from typing import TYPE_CHECKING
 
+from chorus.ids import mint_id
 from chorus.ledger._models import (
     ActivityVerb,
     RecoveryAction,
@@ -94,7 +94,7 @@ def reconcile_disposition(task: Task, ledger: SqliteLedger, *, now: datetime) ->
 def _enqueue_handoff(task: Task, ledger: SqliteLedger, key: str) -> Disposition:
     ledger.wakes.enqueue(
         Wake(
-            id=f"wake_{uuid.uuid4().hex[:12]}",
+            id=mint_id("wake"),
             employee_id=task.assignee_employee_id,  # type: ignore[arg-type]  # guarded above
             reason=WakeReason.RECOVERY,
             # carry the structured choice menu so the beat picks exactly one disposition (spec 02 §5)
@@ -111,7 +111,7 @@ def _enqueue_handoff(task: Task, ledger: SqliteLedger, key: str) -> Disposition:
 
 def _escalate(task: Task, ledger: SqliteLedger) -> Disposition:
     """Exhausted ladder: surface the stuck task as ``blocked`` + a recovery owner (spec 02 §5)."""
-    action_id = f"rec_{uuid.uuid4().hex[:12]}"
+    action_id = mint_id("rec")
     with ledger.transaction():
         ledger.tasks.transition(task.id, TaskStatus.BLOCKED)
         ledger.recovery_actions.open(
