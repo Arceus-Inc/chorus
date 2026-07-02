@@ -12,10 +12,13 @@ reusable by the public API and fully testable with a real git repo in a temp dir
 
 from __future__ import annotations
 
+import logging
 import shutil
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
+
+_logger = logging.getLogger("chorus.workspace")
 
 # A local identity for the company workspace repos (which live under .chorus/, never the user's source
 # repo). Commits here are operational snapshots, not authored history — keep them clearly machine-made.
@@ -118,7 +121,12 @@ class CompanyWorkspace:
             self._repo.mkdir(parents=True, exist_ok=True)
             self._run(self._repo, "init", "-b", "main")
             self._run(
-                self._repo, *_COMMIT_IDENTITY, "commit", "--allow-empty", "-m", "chorus: company root"
+                self._repo,
+                *_COMMIT_IDENTITY,
+                "commit",
+                "--allow-empty",
+                "-m",
+                "chorus: company root",
             )
         exclude = self._repo / ".git" / "info" / "exclude"
         exclude.write_text("\n".join(_OPERATIONAL_EXCLUDES) + "\n", encoding="utf-8")
@@ -134,7 +142,9 @@ class CompanyWorkspace:
             self._run(self._repo, "init", "-b", "main")
             self._copy_tree(src, self._repo)
             self._run(self._repo, "add", "-A")
-            self._run(self._repo, *_COMMIT_IDENTITY, "commit", "-m", f"chorus: seed from {src.name}")
+            self._run(
+                self._repo, *_COMMIT_IDENTITY, "commit", "-m", f"chorus: seed from {src.name}"
+            )
         else:  # not a local path → treat as a remote clone URL
             self._clone(str(seed))
 
@@ -196,7 +206,9 @@ class CompanyWorkspace:
             self._run(self._repo, "worktree", "add", "-b", branch, str(path), "main")
         return WorktreeWorkspace(path=path, branch=branch)
 
-    def merge(self, employee_id: str, *, into: str = "main", message: str | None = None) -> MergeResult:
+    def merge(
+        self, employee_id: str, *, into: str = "main", message: str | None = None
+    ) -> MergeResult:
         """Snapshot the employee's uncommitted work, then merge its branch into ``into`` (default main).
 
         Returns a :class:`MergeResult`; a merge conflict is reported (and aborted), never raised, so a
@@ -206,12 +218,24 @@ class CompanyWorkspace:
         self._snapshot(employee_id)
         msg = message or f"chorus: merge {branch}"
         done = subprocess.run(
-            ["git", "-C", str(self._repo), *_COMMIT_IDENTITY, "merge", "--no-ff", branch, "-m", msg],
+            [
+                "git",
+                "-C",
+                str(self._repo),
+                *_COMMIT_IDENTITY,
+                "merge",
+                "--no-ff",
+                branch,
+                "-m",
+                msg,
+            ],
             capture_output=True,
             text=True,
         )
         if done.returncode == 0:
-            return MergeResult(branch=branch, into=into, merged=True, conflicted=False, detail=done.stdout.strip())
+            return MergeResult(
+                branch=branch, into=into, merged=True, conflicted=False, detail=done.stdout.strip()
+            )
         conflicted = "CONFLICT" in (done.stdout + done.stderr)
         if conflicted:
             self._run(self._repo, "merge", "--abort")
@@ -235,8 +259,16 @@ class CompanyWorkspace:
         """
         wt = self.worktree_for(employee_id)
         done = subprocess.run(
-            ["git", "-C", str(wt.path), *_COMMIT_IDENTITY, "merge", "main",
-             "-m", f"chorus: sync {wt.branch} to main"],
+            [
+                "git",
+                "-C",
+                str(wt.path),
+                *_COMMIT_IDENTITY,
+                "merge",
+                "main",
+                "-m",
+                f"chorus: sync {wt.branch} to main",
+            ],
             capture_output=True,
             text=True,
         )
@@ -244,6 +276,16 @@ class CompanyWorkspace:
             return True
         if "CONFLICT" in (done.stdout + done.stderr):
             self._run(wt.path, "merge", "--abort")
+            return False
+        # A non-conflict failure (auth, a lock, a corrupt repo) is still best-effort — the beat falls
+        # back to the stale worktree rather than crashing — but it must not be silent: log the git
+        # output so a real failure leaves a trail instead of vanishing as a bare False.
+        _logger.warning(
+            "sync_to_main: git merge of main into %s failed (rc=%s): %s",
+            wt.branch,
+            done.returncode,
+            (done.stderr or done.stdout).strip(),
+        )
         return False
 
     def snapshot(self, employee_id: str) -> str:
@@ -276,11 +318,11 @@ class CompanyWorkspace:
         )
 
     def _run(self, cwd: Path, *args: str) -> str:
-        done = subprocess.run(
-            ["git", "-C", str(cwd), *args], capture_output=True, text=True
-        )
+        done = subprocess.run(["git", "-C", str(cwd), *args], capture_output=True, text=True)
         if done.returncode != 0:
-            raise WorkspaceError(f"git {' '.join(args)} failed: {(done.stderr or done.stdout).strip()}")
+            raise WorkspaceError(
+                f"git {' '.join(args)} failed: {(done.stderr or done.stdout).strip()}"
+            )
         return done.stdout.strip()
 
 
