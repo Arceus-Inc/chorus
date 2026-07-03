@@ -18,6 +18,7 @@ from __future__ import annotations
 
 from chorus.roles._plugin import RolePlugin
 from chorus_employee.pm._brief import PM_BRIEF, PM_PLAN_DOC
+from chorus_employee.pm._decision import render_packet
 from chorus_employee.pm._dod import pm_dod
 from chorus_employee.pm._harness import pm_manifest
 from chorus_employee.pm._lander import PmLander, pm_lander
@@ -52,5 +53,6 @@ __all__ = [
     "ResearchBrief",
     "pm_lander",
     "pm_plugin",
+    "render_packet",
     "research_output_schema",
 ]
