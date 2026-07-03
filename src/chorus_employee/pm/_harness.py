@@ -45,6 +45,9 @@ def pm_manifest() -> RoleManifest:
             # spawn_subagent — dispatch the Tier-1 Researcher mid-beat (§06). The web tools above are
             # also what the Researcher is capability-minimised from (it delegates them to web_research).
             "spawn_subagent",
+            # record_decision — the §10 Decision OS write: record the decision as an immutable, cited
+            # ledger object (confidence-floor-gated, mirrors decision.json). The PM's only ledger write.
+            "record_decision",
         ),
         # — build_harness(subagents=…) — the Tier-1 specialists Piper may dispatch mid-beat (§06).
         # The Researcher gathers cited evidence (depth-2 over the shared web_research orchestrator) and
