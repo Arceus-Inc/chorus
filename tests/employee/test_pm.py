@@ -17,7 +17,7 @@ import pytest
 
 from chorus.ledger import SqliteLedger, Task, TaskStatus
 from chorus.outcomes import ArtifactType, DoDKind
-from chorus.roles import default_roles
+from chorus.roles import default_roles, role_beat_config
 from chorus.roles._manifest import Isolation, MemoryScope, PermissionMode, SandboxTier
 from chorus.workspace import CompanyWorkspace
 from chorus_employee import default_landers
@@ -71,7 +71,9 @@ class TestPmPlugin:
         manifest = pm_plugin().manifest
         assert manifest.permission_mode == PermissionMode.ACCEPT_EDITS
         assert manifest.isolation == Isolation.WORKTREE
-        assert manifest.sandbox == SandboxTier.REPO_WRITE
+        # REPO_WRITE_NET: the PM writes its plan in-worktree AND may reach the net through the
+        # allowlist a registered tool declares (web_search/web_extract → api.tavily.com). No commands.
+        assert manifest.sandbox == SandboxTier.REPO_WRITE_NET
         assert manifest.memory_scope == MemoryScope.PROJECT
 
     def test_declares_the_weekly_routine(self) -> None:
@@ -79,6 +81,43 @@ class TestPmPlugin:
 
     def test_pm_is_registered_in_the_default_workforce(self) -> None:
         assert "pm" in {plugin.name for plugin in default_roles()}
+
+
+# --- Web research: the PM can gather its own cited evidence (design doc §07/§08/§10) ---
+
+
+class TestPmWebResearch:
+    """The grounding floor demands a source; §08's shelf lets the PM fetch one inline.
+
+    §10's confidence policy is explicit — below the floor, *acquire evidence* rather than hedge. This
+    slice gives the PM the same Tavily-backed web reach the Marketer holds: search + extract, egress
+    allowlisted by the net sandbox tier, with a widened beat so a live sweep isn't reaped mid-call.
+    """
+
+    def test_manifest_grants_web_search_and_extract(self) -> None:
+        tools = pm_plugin().manifest.tools
+        assert "web_search" in tools  # §08 shelf: Tavily-backed search
+        assert "web_extract" in tools  # §08 shelf: fetch + clean-read a source to ground a claim
+
+    def test_web_reach_needs_the_net_sandbox_tier(self) -> None:
+        # Egress is only reachable under REPO_WRITE_NET; without it the allowlisted call is blocked.
+        assert pm_plugin().manifest.sandbox == SandboxTier.REPO_WRITE_NET
+
+    def test_brief_points_the_pm_at_research_when_evidence_is_thin(self) -> None:
+        # §10 confidence policy: weak evidence triggers acquisition, not a hedge.
+        assert "web_search" in PM_BRIEF
+
+    def test_manifest_widens_the_beat_for_a_live_research_sweep(self) -> None:
+        # A web sweep blocks the beat in one call; org defaults (90s beat / 300s lease) would reap it.
+        manifest = pm_plugin().manifest
+        assert manifest.beat_timeout_s is not None and manifest.beat_timeout_s >= 300.0
+        assert manifest.lease_ttl_s is not None and manifest.lease_ttl_s >= manifest.beat_timeout_s
+
+    def test_beat_config_carries_the_widened_timeouts(self) -> None:
+        manifest = pm_plugin().manifest
+        config = role_beat_config(manifest)
+        assert config.beat_timeout_s == manifest.beat_timeout_s
+        assert config.lease_ttl_s == manifest.lease_ttl_s
 
 
 # --- DoD: the grounding floor ---

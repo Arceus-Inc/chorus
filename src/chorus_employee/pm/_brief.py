@@ -21,9 +21,9 @@ PM_BRIEF = (
     "1. A `## Decision` section that states, in one or two sentences, what you are choosing to do and "
     "why — decisive, not a list of open questions.\n"
     "2. At least one cited source for the evidence behind that decision — a URL, a `Source:` line, or "
-    "a `[n]` reference. A decision that cites no evidence does not clear the bar; if you lack evidence, "
-    "gather it (you have `read_file` and, where available, research) rather than asserting a certainty "
-    "you cannot support.\n\n"
+    "a `[n]` reference. A decision that cites no evidence does not clear the bar; if the evidence you "
+    "were handed is thin, use `web_search` (and `web_extract` to read a promising result in full) to "
+    "gather a real source before deciding, rather than asserting a certainty you cannot support.\n\n"
     "Be specific and decisive — a plan an engineer can build to, grounded in evidence a reader can "
     "check."
 )

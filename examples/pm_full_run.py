@@ -51,11 +51,13 @@ month; provider outages have been rare; site traffic is healthy.
 _TASK = (
     "You are the product manager for Arceus (arceus.sh). Here is the product context:\n\n"
     + _ARCEUS_CONTEXT
-    + "\nDecide what to build next and write the plan to plan.md in your worktree. Include a "
-    "`## Decision` section that states your choice and why in one or two sentences, and cite at "
-    "least one source for the evidence behind it (a URL, a `Source:` line, or a `[n]` reference — "
-    "the support-ticket signal above is a citable source). Be decisive; this is a decision, not a "
-    "list of open questions."
+    + "\nDecide what to build next and write the plan to plan.md in your worktree. Ground the "
+    "decision in EXTERNAL market evidence, not just the internal signal above: use `web_search` "
+    "(and `web_extract` to read a promising result) to find a real, current source on how AI-agent / "
+    "autonomous-agent products handle run observability and user trust, and cite it. Include a "
+    "`## Decision` section stating your choice and why in one or two sentences, with at least one "
+    "cited source URL for the external evidence. Be decisive; this is a decision, not a list of "
+    "open questions."
 )
 
 
