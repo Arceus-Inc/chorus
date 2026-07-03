@@ -1,15 +1,16 @@
 """PM — Slice 0: plugin assembly, the grounding-floor DoD, and the doc lander (pm design doc §01-§15).
 
 The PM's signature elevation over the thin triple is its **grounding floor** (design doc §01/§09/§10):
-a decision that states no decision or cites no evidence never clears "done". That floor is a
-deterministic ``Verifier.command`` on the plan doc — the same move the Marketer made (a reversible
-artifact lands on an objective check, not a stochastic reviewer). These tests pin the floor's shape and
-prove it gates a cited plan in and an uncited one out.
+a decision that states no decision or cites no evidence never clears "done". With the Decision OS the
+floor is a deterministic ``Verifier.command`` over the recorded ``decision.json`` (plus the plan doc) —
+the same move the Marketer made (a reversible artifact lands on an objective check, not a stochastic
+reviewer). These tests pin the floor's shape and prove it gates a grounded decision in and a weak one out.
 """
 
 from __future__ import annotations
 
 import asyncio
+import json
 import subprocess
 from pathlib import Path
 
@@ -28,6 +29,7 @@ from chorus_employee.pm import (
     pm_lander,
     pm_plugin,
 )
+from chorus_employee.pm._decision import CONFIDENCE_FLOOR
 
 pytestmark = pytest.mark.integration
 
@@ -124,6 +126,10 @@ class TestPmWebResearch:
 
 
 class TestPmGroundingFloorDoD:
+    """The floor gates on the RECORDED decision (§10): decision.json states an option, meets the
+    confidence floor, and cites >= 1 source — defense-in-depth over the record_decision tool's own gate.
+    """
+
     def test_dod_is_a_deterministic_command(self) -> None:
         # The elevation: a reversible plan lands on an objective floor, not a stochastic AgentReview.
         verifier = pm_plugin().dod_generator("decide the thing")
@@ -132,18 +138,29 @@ class TestPmGroundingFloorDoD:
     def test_dod_artifact_class_is_spec(self) -> None:
         assert pm_plugin().dod_generator("decide the thing").artifact_class == "spec"
 
-    def test_floor_command_checks_plan_decision_and_source(self) -> None:
-        verifier = pm_plugin().dod_generator("decide the thing")
-        command = " ".join(step.command for step in verifier.verification_steps())
-        assert PM_PLAN_DOC in command
-        assert "decision" in command.lower()  # a decision heading is required
-        assert "http" in command.lower()  # a cited source is required
+    def test_floor_command_checks_plan_decision_and_confidence(self) -> None:
+        command = " ".join(
+            step.command for step in pm_plugin().dod_generator("x").verification_steps()
+        )
+        assert PM_PLAN_DOC in command  # the human-readable deliverable must be present
+        assert "decision.json" in command  # a decision was recorded
+        assert str(CONFIDENCE_FLOOR) in command  # the confidence floor is enforced
 
     # --- the floor actually gates (deterministic proof, run in a temp worktree) ---
 
-    def _floor_passes(self, tmp_path: Path, plan: str | None) -> bool:
-        if plan is not None:
-            (tmp_path / PM_PLAN_DOC).write_text(plan, encoding="utf-8")
+    def _grounded(self) -> dict[str, object]:
+        return {
+            "option": "build presence indicators",
+            "confidence": 0.82,
+            "claims": [{"text": "x", "source_url": "https://arceus.sh/metrics", "confidence": 0.9}],
+        }
+
+    def _floor_passes(
+        self, tmp_path: Path, decision: dict[str, object] | None, *, plan: str = "# Plan\n"
+    ) -> bool:
+        (tmp_path / PM_PLAN_DOC).write_text(plan, encoding="utf-8")
+        if decision is not None:
+            (tmp_path / "decision.json").write_text(json.dumps(decision), encoding="utf-8")
         command = " ".join(
             step.command for step in pm_plugin().dod_generator("x").verification_steps()
         )
@@ -151,24 +168,31 @@ class TestPmGroundingFloorDoD:
             subprocess.run(command, shell=True, cwd=tmp_path, capture_output=True).returncode == 0
         )
 
-    def test_floor_passes_a_decision_with_a_cited_url(self, tmp_path: Path) -> None:
-        plan = (
-            "# Plan: Presence indicators\n\n"
-            "## Decision\nBuild presence next — the retention pull is real.\n\n"
-            "## Evidence\nWeekly retention is flat; see https://arceus.sh/metrics for the cohort.\n"
-        )
-        assert self._floor_passes(tmp_path, plan) is True
+    def test_floor_passes_a_grounded_decision(self, tmp_path: Path) -> None:
+        assert self._floor_passes(tmp_path, self._grounded()) is True
 
-    def test_floor_rejects_a_decision_with_no_source(self, tmp_path: Path) -> None:
-        plan = "# Plan\n\n## Decision\nBuild presence next. Trust me.\n"
-        assert self._floor_passes(tmp_path, plan) is False
+    def test_floor_rejects_low_confidence(self, tmp_path: Path) -> None:
+        assert self._floor_passes(tmp_path, self._grounded() | {"confidence": 0.4}) is False
 
-    def test_floor_rejects_a_cited_doc_with_no_decision(self, tmp_path: Path) -> None:
-        plan = "# Notes\n\nSome context, and a link https://arceus.sh/x — but no decision stated.\n"
-        assert self._floor_passes(tmp_path, plan) is False
+    def test_floor_rejects_no_cited_claim(self, tmp_path: Path) -> None:
+        assert self._floor_passes(tmp_path, self._grounded() | {"claims": []}) is False
+
+    def test_floor_rejects_a_claim_missing_its_source(self, tmp_path: Path) -> None:
+        decision = self._grounded() | {"claims": [{"text": "x", "confidence": 0.9}]}
+        assert self._floor_passes(tmp_path, decision) is False
+
+    def test_floor_rejects_a_missing_decision(self, tmp_path: Path) -> None:
+        assert self._floor_passes(tmp_path, None) is False
 
     def test_floor_rejects_a_missing_plan(self, tmp_path: Path) -> None:
-        assert self._floor_passes(tmp_path, None) is False
+        # decision.json present but no plan.md — the human-readable deliverable is still required.
+        (tmp_path / "decision.json").write_text(json.dumps(self._grounded()), encoding="utf-8")
+        command = " ".join(
+            step.command for step in pm_plugin().dod_generator("x").verification_steps()
+        )
+        assert (
+            subprocess.run(command, shell=True, cwd=tmp_path, capture_output=True).returncode != 0
+        )
 
 
 # --- Lander ---
