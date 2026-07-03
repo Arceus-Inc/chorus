@@ -9,9 +9,9 @@ A ``cancelled`` blocker does **not** count as resolved (spec 02 §2) — only ``
 from __future__ import annotations
 
 import sqlite3
-import uuid
 
 from chorus.errors import ChorusError
+from chorus.ids import mint_id
 from chorus.ledger._models import TaskDependency
 from chorus.ledger.repos._base import from_iso, utcnow_iso
 
@@ -35,7 +35,7 @@ class DependencyRepo:
                 f"{task_id!r} depends on {depends_on_id!r} would create a cycle"
             )
         now = utcnow_iso()
-        edge_id = f"dep_{uuid.uuid4().hex[:12]}"
+        edge_id = mint_id("dep")
         self._conn.execute(
             "INSERT INTO task_dependency (id, task_id, depends_on_id, created_at) "
             "VALUES (?, ?, ?, ?) ON CONFLICT (task_id, depends_on_id) DO NOTHING",

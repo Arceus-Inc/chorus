@@ -12,7 +12,13 @@ from __future__ import annotations
 import sqlite3
 
 from chorus.ledger._models import DecompositionClaim, DecompositionStatus
-from chorus.ledger.repos._base import dumps, from_iso, loads, utcnow_iso
+from chorus.ledger.repos._base import (
+    dumps,
+    from_iso,
+    loads_list,
+    require_persisted,
+    utcnow_iso,
+)
 
 
 class DecompositionClaimRepo:
@@ -46,8 +52,7 @@ class DecompositionClaimRepo:
             ),
         )
         self._conn.commit()
-        opened = self.get(claim.id)
-        assert opened is not None  # just inserted in this transaction
+        opened = require_persisted(self.get(claim.id), claim.id)
         return opened
 
     def _require_revision_lineage(self, source_task_id: str, revision_id: str) -> None:
@@ -97,8 +102,7 @@ class DecompositionClaimRepo:
                 (dumps(children), claim_id),
             )
             self._conn.commit()
-        updated = self.get(claim_id)
-        assert updated is not None  # the row exists — we just read it above
+        updated = require_persisted(self.get(claim_id), claim_id)
         return updated
 
     def complete(self, claim_id: str) -> None:
@@ -128,8 +132,8 @@ def _row_to_claim(row: sqlite3.Row) -> DecompositionClaim:
         owner_run_id=row["owner_run_id"],
         status=DecompositionStatus(row["status"]),
         request_fingerprint=row["request_fingerprint"],
-        requested_children=loads(row["requested_children"]) or [],
-        child_task_ids=loads(row["child_task_ids"]) or [],
+        requested_children=loads_list(row["requested_children"]),
+        child_task_ids=loads_list(row["child_task_ids"]),
         completed_at=from_iso(row["completed_at"]),
         created_at=from_iso(row["created_at"]),
     )

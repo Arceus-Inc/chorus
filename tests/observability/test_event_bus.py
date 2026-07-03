@@ -57,7 +57,7 @@ def test_event_bus_subscribers_receive_events(tmp_path) -> None:  # type: ignore
     assert seen == [_event(EventKind.RUN_DONE)]
 
 
-def test_fanout_bus_isolates_sink_failures() -> None:
+def test_fanout_bus_isolates_sink_failures(caplog: pytest.LogCaptureFixture) -> None:
     seen: list[Event] = []
 
     class BrokenSink:
@@ -70,6 +70,9 @@ def test_fanout_bus_isolates_sink_failures() -> None:
 
     event = _event(EventKind.RUN_TOOL_USE)
 
-    FanoutBus(BrokenSink(), RecordingSink()).emit(event)
+    with caplog.at_level("WARNING"):
+        FanoutBus(BrokenSink(), RecordingSink()).emit(event)
 
     assert seen == [event]
+    # the failure is isolated but NOT silent — a dead sink must leave a log trail
+    assert "sink unavailable" in caplog.text

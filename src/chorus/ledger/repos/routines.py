@@ -12,7 +12,7 @@ from chorus.ledger._models import (
     RoutineStatus,
     RoutineTarget,
 )
-from chorus.ledger.repos._base import dumps, loads, utcnow_iso
+from chorus.ledger.repos._base import dumps, loads, require_persisted, utcnow_iso
 
 
 class RoutineRepo:
@@ -47,8 +47,7 @@ class RoutineRepo:
             ),
         )
         self._conn.commit()
-        created = self.get(routine.id)
-        assert created is not None  # just inserted in this transaction
+        created = require_persisted(self.get(routine.id), routine.id)
         return created
 
     def set_head(self, routine_id: str, revision: RoutineRevision) -> None:

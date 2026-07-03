@@ -15,29 +15,37 @@ from chorus_tools._analysis import (
     WarehouseQueryTool,
     analysis_tool,
 )
+from chorus_tools._brand_lint import BrandFinding, BrandLintInput, BrandLintTool
 from chorus_tools._decompose import DecomposeInput, DecomposeTool
+from chorus_tools._go_live import GoLiveAction, GoLiveInput, GoLiveTool
 from chorus_tools._manager_actions import (
-        AssignTaskInput,
-        AssignTaskTool,
-        SubmitTaskInput,
-        SubmitTaskTool,
+    AssignTaskInput,
+    AssignTaskTool,
+    SubmitTaskInput,
+    SubmitTaskTool,
 )
 from chorus_tools._registry import chorus_tool_registry
 from chorus_tools._submit_verdict import SubmitVerdictInput, SubmitVerdictTool
 
 __all__ = [
-        "AssignTaskInput",
-        "AssignTaskTool",
-        "ChartRenderTool",
-        "DecomposeInput",
-        "DecomposeTool",
-        "NotebookRunTool",
-        "RepoSearchTool",
-        "SubmitTaskInput",
-        "SubmitTaskTool",
-        "SubmitVerdictInput",
-        "SubmitVerdictTool",
-        "WarehouseQueryTool",
-        "analysis_tool",
-        "chorus_tool_registry",
+    "AssignTaskInput",
+    "AssignTaskTool",
+    "BrandFinding",
+    "BrandLintInput",
+    "BrandLintTool",
+    "ChartRenderTool",
+    "DecomposeInput",
+    "DecomposeTool",
+    "GoLiveAction",
+    "GoLiveInput",
+    "GoLiveTool",
+    "NotebookRunTool",
+    "RepoSearchTool",
+    "SubmitTaskInput",
+    "SubmitTaskTool",
+    "SubmitVerdictInput",
+    "SubmitVerdictTool",
+    "WarehouseQueryTool",
+    "analysis_tool",
+    "chorus_tool_registry",
 ]

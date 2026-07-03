@@ -22,11 +22,11 @@ beat-managed (spec 02 §8).
 
 from __future__ import annotations
 
-import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import TYPE_CHECKING
 
+from chorus.ids import mint_id
 from chorus.ledger._models import (
     ActivityVerb,
     RecoveryAction,
@@ -165,7 +165,7 @@ def _wake_parent_if_subtree_terminal(ledger: SqliteLedger, *, parent_id: str | N
         return
     ledger.wakes.enqueue(
         Wake(
-            id=f"wake_{uuid.uuid4().hex[:12]}",
+            id=mint_id("wake"),
             employee_id=parent.assignee_employee_id,
             reason=WakeReason.CHILDREN_DONE,
             payload={"task_id": parent_id},
@@ -189,9 +189,7 @@ def _reap_orphaned_runs(ledger: SqliteLedger, *, now: datetime) -> list[str]:
 # -- §7 step 3: reconcile stranded assigned work (the §6 ladder) --------------
 
 
-def _reconcile_stranded(
-    ledger: SqliteLedger, *, now: datetime
-) -> tuple[list[str], list[str]]:
+def _reconcile_stranded(ledger: SqliteLedger, *, now: datetime) -> tuple[list[str], list[str]]:
     recovered: list[str] = []
     opened: list[str] = []
     for task in ledger.tasks.agent_owned_open():
@@ -212,9 +210,7 @@ def _reconcile_stranded(
 
         # Tier 1 -> Tier 2 ladder: one wake, then escalate once it's delivered + still stranded.
         key = _recovery_key(task.id)
-        delivered = any(
-            w.status is WakeStatus.DONE for w in ledger.wakes.by_coalesce_key(key)
-        )
+        delivered = any(w.status is WakeStatus.DONE for w in ledger.wakes.by_coalesce_key(key))
         if delivered:
             action_id = _escalate(ledger, task, cause=live.reason)
             if action_id is not None:
@@ -225,12 +221,10 @@ def _reconcile_stranded(
     return recovered, opened
 
 
-def _enqueue_recovery_wake(
-    ledger: SqliteLedger, task: Task, *, kind: str, key: str
-) -> None:
+def _enqueue_recovery_wake(ledger: SqliteLedger, task: Task, *, kind: str, key: str) -> None:
     ledger.wakes.enqueue(
         Wake(
-            id=f"wake_{uuid.uuid4().hex[:12]}",
+            id=mint_id("wake"),
             employee_id=task.assignee_employee_id,  # type: ignore[arg-type]  # agent-owned scan
             reason=WakeReason.RECOVERY,
             payload={"kind": kind, "task_id": task.id, **_CHEAP_LANE},
@@ -248,7 +242,7 @@ def _escalate(ledger: SqliteLedger, task: Task, *, cause: str) -> str | None:
     """
     if ledger.recovery_actions.active_for_source(task.id) is not None:
         return None
-    action_id = f"rec_{uuid.uuid4().hex[:12]}"
+    action_id = mint_id("rec")
     manager = _manager_of(ledger, task.assignee_employee_id)
     with ledger.transaction():
         if task.status is not TaskStatus.BLOCKED:
@@ -274,7 +268,7 @@ def _escalate(ledger: SqliteLedger, task: Task, *, cause: str) -> str | None:
         if manager is not None:
             ledger.wakes.enqueue(
                 Wake(
-                    id=f"wake_{uuid.uuid4().hex[:12]}",
+                    id=mint_id("wake"),
                     employee_id=manager,
                     reason=WakeReason.RECOVERY,
                     payload={
@@ -301,7 +295,7 @@ def _open_recovery(ledger: SqliteLedger, task: Task, *, cause: str) -> str | Non
     """Open an explicit recovery card without a status change (the card IS the live path)."""
     if ledger.recovery_actions.active_for_source(task.id) is not None:
         return None
-    action_id = f"rec_{uuid.uuid4().hex[:12]}"
+    action_id = mint_id("rec")
     ledger.recovery_actions.open(
         RecoveryAction(
             id=action_id,

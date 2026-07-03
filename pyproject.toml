@@ -31,6 +31,8 @@ dependencies = [
   "dream",
   "croniter>=2.0",
   "pyyaml>=6.0",
+  # cms_draft's StrapiCmsBackend speaks Strapi's REST API over httpx (previously only transitive).
+  "httpx>=0.27",
 ]
 
 [project.optional-dependencies]
@@ -57,10 +59,10 @@ Repository = "https://github.com/Arceus-Inc/chorus"
 dream = { path = "../dream", editable = true }
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/chorus", "src/chorus_cli", "src/chorus_employee", "src/chorus_harness"]
+packages = ["src/chorus", "src/chorus_cli", "src/chorus_employee", "src/chorus_harness", "src/swarm"]
 
 [tool.hatch.build.targets.sdist]
-include = ["src/chorus", "src/chorus_cli", "src/chorus_employee", "src/chorus_harness", "tests", "README.md", "pyproject.toml"]
+include = ["src/chorus", "src/chorus_cli", "src/chorus_employee", "src/chorus_harness", "src/swarm", "tests", "README.md", "pyproject.toml"]
 
 [tool.ruff]
 line-length = 100

@@ -43,9 +43,7 @@ class EmployeeRepo:
         return employee
 
     def get(self, employee_id: str) -> Employee | None:
-        row = self._conn.execute(
-            "SELECT * FROM employee WHERE id = ?", (employee_id,)
-        ).fetchone()
+        row = self._conn.execute("SELECT * FROM employee WHERE id = ?", (employee_id,)).fetchone()
         return _row_to_employee(row) if row is not None else None
 
     def list(self) -> list[Employee]:

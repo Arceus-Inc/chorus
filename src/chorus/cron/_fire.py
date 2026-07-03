@@ -10,10 +10,10 @@ dispatch loop drains. It writes rows and returns; it never invokes ``dream.run_t
 from __future__ import annotations
 
 import sqlite3
-import uuid
 from typing import TYPE_CHECKING
 
 from chorus.cron._routine import parse_cron
+from chorus.ids import mint_id
 from chorus.ledger._models import (
     OriginKind,
     RoutineCatchUp,
@@ -35,9 +35,7 @@ if TYPE_CHECKING:
     from chorus.ledger._models import Routine, RoutineTrigger
 
 
-def fire_routine(
-    ledger: SqliteLedger, trigger: RoutineTrigger, *, now: datetime
-) -> str | None:
+def fire_routine(ledger: SqliteLedger, trigger: RoutineTrigger, *, now: datetime) -> str | None:
     """Resolve one due ``routine_trigger`` into ledger writes (spec 03 §4).
 
     Returns the spawned task id on the ``spawn_task`` path, else ``None`` (a ``next_beat`` note, a
@@ -70,7 +68,7 @@ def fire_routine(
         return None
 
     idempotency_key = f"{routine.id}:{trigger.id}:{edge.isoformat()}"
-    run_id = f"rr_{uuid.uuid4().hex[:12]}"
+    run_id = mint_id("rr")
 
     # Concurrency policy (spec 03 §4): while a prior task for this routine is still open,
     # ``skip_if_active`` suppresses the firing and ``coalesce`` folds it onto the live run (linking
@@ -81,25 +79,35 @@ def fire_routine(
     ):
         if routine.concurrency_policy is RoutineConcurrency.COALESCE:
             _record(
-                ledger, run_id, routine, trigger, idempotency_key,
+                ledger,
+                run_id,
+                routine,
+                trigger,
+                idempotency_key,
                 RoutineRunStatus.COALESCED,
                 routine_revision_id=pinned_id,
                 coalesced_into_run_id=_latest_dispatched_run(ledger, routine.id),
             )
         else:  # skip_if_active
             _record(
-                ledger, run_id, routine, trigger, idempotency_key, RoutineRunStatus.SUPPRESSED,
+                ledger,
+                run_id,
+                routine,
+                trigger,
+                idempotency_key,
+                RoutineRunStatus.SUPPRESSED,
                 routine_revision_id=pinned_id,
             )
         return None
 
-    if _record(
-        ledger, run_id, routine, trigger, idempotency_key, routine_revision_id=pinned_id
-    ) is None:
+    if (
+        _record(ledger, run_id, routine, trigger, idempotency_key, routine_revision_id=pinned_id)
+        is None
+    ):
         return None  # a duplicate firing already landed this edge
 
     if routine.target is RoutineTarget.SPAWN_TASK:
-        task_id = f"task_{uuid.uuid4().hex[:12]}"
+        task_id = mint_id("task")
         ledger.tasks.submit(
             Task(
                 id=task_id,
@@ -116,7 +124,7 @@ def fire_routine(
         ledger.routine_runs.dispatch(run_id, linked_task_id=task_id)
         ledger.wakes.enqueue(
             Wake(
-                id=f"wake_{uuid.uuid4().hex[:12]}",
+                id=mint_id("wake"),
                 employee_id=routine.employee_id,
                 reason=WakeReason.CRON_DUE,
                 payload={"task_id": task_id},
@@ -127,7 +135,7 @@ def fire_routine(
     # next_beat — no new task, just extra context delivered on the employee's next beat.
     ledger.wakes.enqueue(
         Wake(
-            id=f"wake_{uuid.uuid4().hex[:12]}",
+            id=mint_id("wake"),
             employee_id=routine.employee_id,
             reason=WakeReason.CRON_DUE,
             payload={"note": intent},

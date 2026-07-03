@@ -14,7 +14,6 @@ below; the behavior is stubbed pending implementation (M1+, spec 11 build plan).
 from __future__ import annotations
 
 import asyncio
-import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
@@ -41,6 +40,7 @@ from chorus.heartbeat import (
     Wake,
     runner_from,
 )
+from chorus.ids import mint_id
 from chorus.ledger import (
     Message,
     SqliteLedger,
@@ -110,7 +110,9 @@ class Chorus:
         self._routines = RoutinesFacade(ledger, workforce, inspector)
         self._workforce_grp = WorkforceFacade(workforce, roles)
         self._dod = DodFacade(ledger)
-        self._heartbeat: asyncio.Task[None] | None = None  # the managed always-on runner (start/stop)
+        self._heartbeat: asyncio.Task[None] | None = (
+            None  # the managed always-on runner (start/stop)
+        )
 
     # -- construction ---------------------------------------------------------
 
@@ -216,7 +218,7 @@ class Chorus:
         employee_id = self._workforce.get(slugify(assignee)).id if assignee is not None else None
         task = self._ledger.tasks.submit(
             Task(
-                id=f"task_{uuid.uuid4().hex[:12]}",
+                id=mint_id("task"),
                 intent=intent,
                 priority=priority,
                 trust_preset=trust_preset.value if trust_preset is not None else None,

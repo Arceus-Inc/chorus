@@ -32,6 +32,7 @@ from chorus.adapters import DreamBeatRunner, TokenPricing
 from chorus.heartbeat import BeatRunner, IntegrateContextPacket
 from chorus.outcomes import LanderRegistry
 from chorus.roles import RoleBeatConfig, RoleRegistry, role_beat_config
+from chorus.roles._subagent import SubagentSpec
 from chorus.trust import TrustPolicy
 from chorus.workforce import Employee
 from chorus.workspace import CompanyWorkspace, default_work_root
@@ -39,10 +40,18 @@ from chorus_employee import default_landers
 from chorus_harness._trust import apply_trust
 from chorus_tools import (
     AssignTaskTool,
+    BrandLintTool,
     DecomposeTool,
+    GoLiveTool,
     SubmitTaskTool,
     SubmitVerdictTool,
     analysis_tool,
+)
+from chorus_tools.cms import CmsDraftTool, cms_backend_from_env
+from chorus_tools.delivery import (
+    ExecuteGoLiveTool,
+    email_delivery_from_env,
+    publish_backend_from_env,
 )
 
 if TYPE_CHECKING:
@@ -70,12 +79,7 @@ _CHORUS_TO_DREAM_TOOL: dict[str, str] = {
     "working_memory_write": "working_memory_write",
     "working_memory_append": "working_memory_append",
     "memory_propose": "memory_propose",
-    # Analyst analysis tools (chorus-defined dream BaseTools; identity-mapped so dream_tool_names keeps
-    # them and the subagent projection can intersect them — they are registered from ``analysis_tool``).
-    "warehouse_query": "warehouse_query",
-    "repo_search": "repo_search",
-    "notebook_run": "notebook_run",
-    "chart_render": "chart_render",
+    "spawn_subagent": "spawn_subagent",
     # Web research: reuse dream's native Tavily built-ins (in default_registry) — identity-mapped so
     # dream_tool_names keeps them and _role_registry picks them up; the subagent projection carries them.
     "web_search": "web_search",
@@ -85,6 +89,27 @@ _CHORUS_TO_DREAM_TOOL: dict[str, str] = {
     # (tier-0, scratch-confined) is how a role pulls that full payload back. Without it a role loops on
     # read_file (worktree-relative) and never reads the evidence it just fetched.
     "read_offloaded": "read_offloaded",
+    # Analyst analysis tools (chorus-defined dream BaseTools; identity-mapped so dream_tool_names keeps
+    # them and the subagent projection can intersect them — they are registered from ``analysis_tool``).
+    "warehouse_query": "warehouse_query",
+    "repo_search": "repo_search",
+    "notebook_run": "notebook_run",
+    "chart_render": "chart_render",
+    # brand_lint is a chorus capability tool (registered via _capability_tool, NOT a dream built-in),
+    # but it is IDENTITY-mapped here so the subagent projection (``_subagent_set`` → dream_tool_names ∩
+    # parent) keeps it for the Brand-Critic (§08 owner). ``_role_registry`` still skips it (no built-in)
+    # and ``_capability_tool`` registers it; the generator overlay is tools-unrestricted, so it's in the
+    # parent's role-allowlist ceiling too. The MARKETER BRIEF must NOT instruct the parent to call it —
+    # it is the critic's primitive; over-instructing the parent makes it mis-spawn brand_lint.
+    "brand_lint": "brand_lint",
+    # cms_draft — a chorus capability tool (reversible CMS write, §08 Channel). Identity-mapped for the
+    # same reason as brand_lint: so the projection keeps it; it is registered in the materialize flow
+    # (it needs the worktree for the Markdown backend, which _capability_tool has no access to).
+    "cms_draft": "cms_draft",
+    # execute_go_live — the §05 dark-node executor: publishes the staged draft ONLY once its
+    # stage_go_live gate is APPROVED (fail-closed + idempotent). Registered in materialize (needs
+    # ledger for the gate check + the worktree for the draft/delivery indexes).
+    "execute_go_live": "execute_go_live",
 }
 
 _READ_ONLY_DREAM_SURFACE_TOOLS = frozenset(
@@ -108,15 +133,24 @@ def dream_tool_names(chorus_tools: tuple[str, ...]) -> tuple[str, ...]:
     return tuple(_CHORUS_TO_DREAM_TOOL[name] for name in chorus_tools if name in _CHORUS_TO_DREAM_TOOL)
 
 
-def _role_registry(dream_names: tuple[str, ...]) -> ToolRegistry:
-    """A dream registry holding only the role's built-in tools — the harness's effective toolset."""
-    full = default_registry()
-    registry = ToolRegistry()
-    for name in dream_names:
-        tool = full.get(name)
-        if tool is not None:
-            registry.register(tool, source=ToolSource.DEFAULT)
-    return registry
+def _project_spec(spec: SubagentSpec, parent_tools: frozenset[str]) -> Subagent:
+    """Project one chorus :class:`SubagentSpec` onto a dream :class:`Subagent`, recursively.
+
+    Tools are mapped to dream names and intersected with ``parent_tools`` (narrower-wins). A spec's
+    ``spawnable`` children (depth-2) are projected the same way against THIS spec's own effective
+    tools, so the intersection chain holds transitively — a grandchild can only ever narrow.
+    """
+    tools = tuple(t for t in dream_tool_names(spec.tools) if t in parent_tools)
+    own_tools = frozenset(tools)
+    return Subagent(
+        name=spec.name,
+        description=spec.description,
+        tools=tools,
+        model=spec.model,
+        max_turns=spec.max_turns,
+        output_schema=spec.output_schema,
+        spawnable=tuple(_project_spec(child, own_tools) for child in spec.spawnable),
+    )
 
 
 def _subagent_set(config: RoleBeatConfig) -> SubagentSet | None:
@@ -130,19 +164,19 @@ def _subagent_set(config: RoleBeatConfig) -> SubagentSet | None:
     if not config.subagents:
         return None
     parent_tools = frozenset(dream_tool_names(config.tools))
-    agents: list[Subagent] = []
-    for spec in config.subagents:
-        tools = tuple(t for t in dream_tool_names(spec.tools) if t in parent_tools)
-        agents.append(
-            Subagent(
-                name=spec.name,
-                description=spec.description,
-                tools=tools,
-                model=spec.model,
-                max_turns=spec.max_turns,
-            )
-        )
+    agents = [_project_spec(spec, parent_tools) for spec in config.subagents]
     return build_subagent_set(tier1_agents=agents, parent_tools=parent_tools)
+
+
+def _role_registry(dream_names: tuple[str, ...]) -> ToolRegistry:
+    """A dream registry holding only the role's built-in tools — the harness's effective toolset."""
+    full = default_registry()
+    registry = ToolRegistry()
+    for name in dream_names:
+        tool = full.get(name)
+        if tool is not None:
+            registry.register(tool, source=ToolSource.DEFAULT)
+    return registry
 
 
 def _capability_tool(name: str, ledger: SqliteLedger) -> BaseTool | None:
@@ -155,6 +189,10 @@ def _capability_tool(name: str, ledger: SqliteLedger) -> BaseTool | None:
         return AssignTaskTool(ledger)
     if name == "submit_verdict":
         return SubmitVerdictTool(ledger)
+    if name == "stage_go_live":
+        return GoLiveTool(ledger)
+    if name == "brand_lint":
+        return BrandLintTool()  # pure file reader — the ledger arg is unused (kept for a uniform seam)
     return None
 
 
@@ -376,7 +414,8 @@ class EmployeeHarnessFactory:
         """
         if employee.role not in self._roles:
             raise ValueError(f"role {employee.role!r} for {employee.id!r} is not a registered role")
-        config = role_beat_config(self._roles.get(employee.role).manifest)
+        manifest = self._roles.get(employee.role).manifest
+        config = role_beat_config(manifest)
 
         # §4 trust: narrow the harness to the task's effective preset (read-only / plan for a low-trust
         # beat) and assert containment. A TrustDenied propagates — an uncontained beat is not built.
@@ -439,6 +478,25 @@ class EmployeeHarnessFactory:
                 capability = _capability_tool(name, self._ledger)
                 if capability is not None:
                     registry.register(capability, source=ToolSource.DEFAULT)
+        # cms_draft is registered here (not in _capability_tool): its Markdown fallback backend needs the
+        # worktree, and the backend (Strapi when its env is set, else Markdown) is config-selected. No
+        # ledger needed — a reversible CMS write, below the go-live gate.
+        if "cms_draft" in config.tools:
+            registry.register(
+                CmsDraftTool(cms_backend_from_env(root / "cms_drafts")), source=ToolSource.DEFAULT
+            )
+        # execute_go_live pairs with cms_draft: it publishes the staged draft once the human approves
+        # the stage_go_live gate. Needs BOTH the ledger (fail-closed gate check) and the worktree
+        # (standing-draft + delivery indexes), so it registers here rather than in _capability_tool.
+        if "execute_go_live" in config.tools and self._ledger is not None:
+            registry.register(
+                ExecuteGoLiveTool(
+                    self._ledger,
+                    publish_backend_from_env(root / "cms_drafts"),
+                    email_delivery=email_delivery_from_env(root / "cms_drafts"),
+                ),
+                source=ToolSource.DEFAULT,
+            )
         # Analysis tools (ledger-free, worktree-scoped): warehouse_query / repo_search / notebook_run /
         # chart_render. The generator runs tools=null, so registering them here is enough for the model
         # to see and call them; they are not dream built-ins, so _role_registry skipped them above.
@@ -447,6 +505,11 @@ class EmployeeHarnessFactory:
             atool = analysis_tool(name)
             if atool is not None and registry.get(name) is None:
                 registry.register(atool, source=ToolSource.DEFAULT)
+
+        # Subagents: project the role's Tier-1 declarations into dream's SubagentSet. The
+        # spawn_subagent tool (already in the registry if "spawn_subagent" is in the role's tools)
+        # discovers available subagents from this set at runtime.
+        subagent_set = _subagent_set(config)
 
         # Every build_harness knob comes from the role config — this is where the employee *becomes*
         # its harness. config.model overrides the deployment when set; an empty role env means None.
@@ -468,16 +531,15 @@ class EmployeeHarnessFactory:
             plugins=config.plugins,
             wake_model=config.wake_model,
             env=dict(config.env) or None,
-            # Tier-1 role-owned subagents the employee may dispatch mid-beat (None when none declared,
-            # keeping the tool surface byte-identical for roles without a swarm).
-            subagents=_subagent_set(config),
+            subagents=subagent_set,
         )
         return EmployeeHarness(
             runner=DreamBeatRunner(
                 harness,
                 pricing=self._pricing,
                 max_sprints=config.max_sprints,  # the role's per-beat sprint budget (spec 05)
-                timeout_s=self._timeout_s,
+                # A research-heavy role widens its beat wall-clock past the org default (spec 06).
+                timeout_s=config.beat_timeout_s if config.beat_timeout_s is not None else self._timeout_s,
                 working_dir=root,
                 employee_id=employee.id,  # stamped into each beat's context for capability tools
             ),

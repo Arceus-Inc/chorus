@@ -119,3 +119,26 @@ def test_resolved_subject_can_be_re_requested(ledger: SqliteLedger) -> None:
         Approval(id="a2", subject_kind=ApprovalSubjectKind.TASK, subject_id="t1", reason="retry")
     )
     assert again.status is ApprovalStatus.PENDING
+
+
+def test_for_subject_lists_newest_first(ledger: SqliteLedger) -> None:
+    # Two resolved gates + one pending for the same subject; a stranger subject stays invisible.
+    ledger.approvals.request(
+        Approval(id="a1", subject_kind=ApprovalSubjectKind.TASK, subject_id="t1", reason="first")
+    )
+    ledger.approvals.deny("a1", decided_by_user_id="boss")
+    ledger.approvals.request(
+        Approval(id="a2", subject_kind=ApprovalSubjectKind.TASK, subject_id="t1", reason="second")
+    )
+    ledger.approvals.approve("a2", decided_by_user_id="boss")
+    ledger.approvals.request(
+        Approval(id="zz", subject_kind=ApprovalSubjectKind.TASK, subject_id="OTHER", reason="x")
+    )
+
+    got = ledger.approvals.for_subject("t1")
+    assert [a.id for a in got] == ["a2", "a1"]  # newest first
+    assert got[0].status is ApprovalStatus.APPROVED
+
+
+def test_for_subject_empty_for_unknown_subject(ledger: SqliteLedger) -> None:
+    assert ledger.approvals.for_subject("ghost") == []

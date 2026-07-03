@@ -124,6 +124,35 @@ def test_manager_harness_registers_the_decompose_capability_tool(
         ledger.close()
 
 
+def test_marketer_harness_registers_the_stage_go_live_tool(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The marketer's ONLY path to a live surface is the `stage_go_live` capability tool (§07/§11): a
+    # chorus capability that opens a governance gate, with no dream built-in. It is registered into
+    # the harness only when the factory has a ledger to bind it to — fail-closed otherwise.
+    ledger = SqliteLedger.open(":memory:")
+    try:
+        captured: dict[str, Any] = {}
+        monkeypatch.setattr(
+            _factory_mod.dream, "build_harness", lambda **kw: captured.update(kw) or object()
+        )
+        factory = _factory_mod.EmployeeHarnessFactory(
+            api_key="k",
+            base_url="https://x/openai/v1",
+            deployment="gpt-x",
+            company_id="acme",
+            roles=RoleRegistry.from_plugins(default_roles()),
+            work_root=tmp_path,
+            ledger=ledger,
+        )
+        factory.materialize(Employee(id="mira", name="Mira", role="marketer"))
+        names = {t.name for t in captured["registry"].list_tools()}
+        assert "stage_go_live" in names  # her one gated live surface is wired
+        assert "decompose" not in names  # she is not a delegator; go-live is her only capability tool
+    finally:
+        ledger.close()
+
+
 def test_integrate_beat_harness_drops_the_decompose_tool(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

@@ -11,7 +11,7 @@ import sqlite3
 from datetime import datetime
 
 from chorus.ledger._models import RoutineTrigger, TriggerKind
-from chorus.ledger.repos._base import from_iso, to_iso, utcnow_iso
+from chorus.ledger.repos._base import from_iso, require_persisted, to_iso, utcnow_iso
 
 
 class RoutineTriggerRepo:
@@ -37,8 +37,7 @@ class RoutineTriggerRepo:
             ),
         )
         self._conn.commit()
-        created = self.get(trigger.id)
-        assert created is not None  # just inserted in this transaction
+        created = require_persisted(self.get(trigger.id), trigger.id)
         return created
 
     def get(self, trigger_id: str) -> RoutineTrigger | None:

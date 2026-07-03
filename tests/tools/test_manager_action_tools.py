@@ -33,7 +33,9 @@ def _seed(ledger: SqliteLedger) -> None:
     ledger.employees.create(Employee(id="mgr", name="Mgr", role="manager"))
     ledger.employees.create(Employee(id="ada", name="Ada", role="engineer", reports_to="mgr"))
     ledger.employees.create(Employee(id="bob", name="Bob", role="engineer", reports_to="mgr"))
-    ledger.tasks.submit(Task(id="M", intent="ship it", status=TaskStatus.TODO, assignee_employee_id="mgr"))
+    ledger.tasks.submit(
+        Task(id="M", intent="ship it", status=TaskStatus.TODO, assignee_employee_id="mgr")
+    )
     ledger.runs.create(Run(id=REV, employee_id="mgr", task_id="M", status=RunStatus.RUNNING))
 
 
@@ -97,7 +99,9 @@ def test_assign_task_tool_routes_existing_child(ledger: SqliteLedger, tmp_path: 
 
 def test_assign_task_tool_rejects_non_child(ledger: SqliteLedger, tmp_path: Path) -> None:
     _seed(ledger)
-    ledger.tasks.submit(Task(id="outside", intent="outside", status=TaskStatus.TODO, assignee_employee_id="ada"))
+    ledger.tasks.submit(
+        Task(id="outside", intent="outside", status=TaskStatus.TODO, assignee_employee_id="ada")
+    )
     BeatContext(task_id="M", run_id=REV, employee_id="mgr").write(tmp_path)
 
     result = asyncio.run(

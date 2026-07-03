@@ -11,7 +11,7 @@ from __future__ import annotations
 import sqlite3
 
 from chorus.ledger._models import Message, MessageKind
-from chorus.ledger.repos._base import from_iso, utcnow_iso
+from chorus.ledger.repos._base import from_iso, require_persisted, utcnow_iso
 
 
 class MessageRepo:
@@ -38,14 +38,11 @@ class MessageRepo:
             ),
         )
         self._conn.commit()
-        sent = self.get(message.id)
-        assert sent is not None  # just inserted in this transaction
+        sent = require_persisted(self.get(message.id), message.id)
         return sent
 
     def get(self, message_id: str) -> Message | None:
-        row = self._conn.execute(
-            "SELECT * FROM message WHERE id = ?", (message_id,)
-        ).fetchone()
+        row = self._conn.execute("SELECT * FROM message WHERE id = ?", (message_id,)).fetchone()
         return _row_to_message(row) if row is not None else None
 
     def inbox(self, employee_id: str) -> list[Message]:

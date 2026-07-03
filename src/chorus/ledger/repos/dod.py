@@ -8,12 +8,12 @@ is later derived from (spec 01 Cluster F invariant).
 from __future__ import annotations
 
 import sqlite3
-import uuid
 from dataclasses import asdict
 from typing import cast
 
+from chorus.ids import mint_id
 from chorus.ledger._models import Dod, DodStatus
-from chorus.ledger.repos._base import dumps, loads, utcnow_iso
+from chorus.ledger.repos._base import dumps, loads, loads_dict, utcnow_iso
 from chorus.outcomes import AgentReview, Command, DoDKind, HumanApproval, ReviewedBuild, Verifier
 
 
@@ -25,7 +25,7 @@ class DodRepo:
 
     def create(self, task_id: str, verifier: Verifier, *, dod_id: str | None = None) -> Dod:
         now = utcnow_iso()
-        did = dod_id or f"dod_{uuid.uuid4().hex[:12]}"
+        did = dod_id or mint_id("dod")
         spec: dict[str, object] = asdict(verifier.spec)
         kind = verifier.kind.value
         self._conn.execute(
@@ -184,7 +184,7 @@ def _row_to_dod(row: sqlite3.Row) -> Dod:
         id=row["id"],
         task_id=row["task_id"],
         kind=row["kind"],
-        spec=loads(row["spec"]) or {},
+        spec=loads_dict(row["spec"]),
         artifact_class=row["artifact_class"],
         revision=row["revision"],
         status=DodStatus(row["status"]),

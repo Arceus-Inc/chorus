@@ -1,0 +1,670 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Marketer — a deep employee for chorus</title>
+<style>
+  :root{
+    --ink:#0a0a0a; --ink-2:#3a3a3a; --mut:#8a8a8a; --mut-2:#b3b3b3;
+    --line:#e7e7e7; --line-2:#efefef; --bg:#ffffff; --card:#fafafa; --card-2:#f4f4f5;
+    --accent:#111; --read:#1f7a4d; --write:#b4530a; --gate:#9b1c1c;
+    --read-bg:#eaf6ef; --write-bg:#fdf0e6; --gate-bg:#fbeaea;
+    --mono:"SF Mono",ui-monospace,"JetBrains Mono",Menlo,Consolas,monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,Helvetica,Arial,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);
+    line-height:1.6;font-size:16px;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:1060px;margin:0 auto;padding:0 28px}
+  header.hero{padding:80px 0 44px;border-bottom:1px solid var(--line)}
+  .eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:var(--mut);margin:0 0 18px}
+  h1{font-size:46px;line-height:1.05;letter-spacing:-.02em;margin:0 0 18px;font-weight:800}
+  h1 .thin{font-weight:400;color:var(--mut)}
+  .lede{font-size:19px;color:var(--ink-2);max-width:780px;margin:0}
+  .lede b{color:var(--ink)}
+
+  nav.toc{position:sticky;top:0;background:rgba(255,255,255,.92);backdrop-filter:blur(8px);
+    border-bottom:1px solid var(--line);z-index:20;padding:11px 0}
+  nav.toc .wrap{display:flex;gap:18px;flex-wrap:wrap;font-family:var(--mono);font-size:12px}
+  nav.toc a{color:var(--mut);text-decoration:none;letter-spacing:.02em}
+  nav.toc a:hover{color:var(--ink)}
+
+  section{padding:54px 0;border-bottom:1px solid var(--line-2)}
+  h2{font-size:13px;font-family:var(--mono);letter-spacing:.14em;text-transform:uppercase;
+    color:var(--mut);margin:0 0 6px;font-weight:600}
+  h2 + .h2sub{font-size:27px;letter-spacing:-.01em;font-weight:700;margin:0 0 22px;line-height:1.2}
+  h3{font-size:17px;margin:26px 0 8px;font-weight:700}
+  p{margin:0 0 14px}
+  .muted{color:var(--mut)}
+  code{font-family:var(--mono);font-size:.86em;background:var(--card-2);padding:1px 6px;border-radius:5px;color:var(--ink-2)}
+  a.ref{color:var(--ink);text-decoration:underline;text-decoration-color:var(--mut-2);text-underline-offset:2px}
+
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+  .grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+  @media(max-width:820px){.grid2,.grid3{grid-template-columns:1fr}}
+
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:20px 22px}
+  .card h4{margin:0 0 4px;font-size:15px;font-weight:700;display:flex;align-items:center;gap:9px}
+  .card .role{font-family:var(--mono);font-size:11px;color:var(--mut);letter-spacing:.04em;text-transform:uppercase}
+  .card p{font-size:14.5px;color:var(--ink-2);margin:10px 0 0}
+  .dot{width:9px;height:9px;border-radius:50%;display:inline-block;flex:none}
+
+  .triple{display:grid;grid-template-columns:1fr 1fr 1fr;gap:0;border:1px solid var(--line);border-radius:14px;overflow:hidden}
+  .triple > div{padding:20px 22px;border-right:1px solid var(--line);background:var(--card)}
+  .triple > div:last-child{border-right:none}
+  .triple .k{font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--mut);margin-bottom:8px}
+  .triple .v{font-weight:700;font-size:15px;margin-bottom:6px}
+  .triple .d{font-size:13.5px;color:var(--ink-2)}
+  @media(max-width:820px){.triple{grid-template-columns:1fr}.triple>div{border-right:none;border-bottom:1px solid var(--line)}}
+
+  table{width:100%;border-collapse:collapse;font-size:14px;margin-top:6px}
+  th,td{text-align:left;padding:11px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{font-family:var(--mono);font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--mut);font-weight:600}
+  td code{font-size:12.5px}
+  tbody tr:hover{background:var(--card)}
+
+  .pill{display:inline-block;font-family:var(--mono);font-size:10.5px;letter-spacing:.04em;
+    padding:2px 8px;border-radius:999px;font-weight:600;text-transform:uppercase;white-space:nowrap}
+  .pill.read{color:var(--read);background:var(--read-bg)}
+  .pill.write{color:var(--write);background:var(--write-bg)}
+  .pill.gate{color:var(--gate);background:var(--gate-bg)}
+  .pill.new{color:#1a4ba8;background:#e8f0fc}
+  .pill.reuse{color:#5a5a5a;background:#eee}
+  .pill.built{color:#fff;background:#1f7a4d}
+  .pill.partial{color:#8a5a0a;background:#f8edd4}
+  .pill.todo{color:#8a8a8a;background:#f0f0f0;outline:1px dashed #d4d4d4}
+  .status-note{border-left:3px solid #1f7a4d;background:#eaf6ef;padding:13px 17px;border-radius:0 10px 10px 0;margin:16px 0;font-size:14px;color:#14532d}
+  .status-note b{color:#0f3d22}
+  .status-note .lbl{font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:#1f7a4d;margin-bottom:4px}
+
+  .legend{display:flex;gap:18px;flex-wrap:wrap;font-size:13px;color:var(--mut);margin-top:14px}
+  .legend span{display:flex;align-items:center;gap:7px}
+
+  ul.clean{margin:8px 0 0;padding-left:0;list-style:none}
+  ul.clean li{position:relative;padding-left:20px;margin:7px 0;font-size:14.5px;color:var(--ink-2)}
+  ul.clean li::before{content:"";position:absolute;left:2px;top:9px;width:6px;height:6px;border-radius:50%;background:var(--mut-2)}
+  ul.clean li b{color:var(--ink)}
+
+  .callout{border-left:3px solid var(--accent);background:var(--card);padding:16px 20px;border-radius:0 10px 10px 0;margin:18px 0}
+  .callout.gate{border-left-color:var(--gate)}
+  .callout .lbl{font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--mut);margin-bottom:4px}
+  .callout p{margin:0;font-size:14.5px;color:var(--ink-2)}
+
+  pre.tree{font-family:var(--mono);font-size:13px;line-height:1.7;background:var(--card);
+    border:1px solid var(--line);border-radius:12px;padding:20px 22px;overflow:auto;color:var(--ink-2);margin:6px 0 0}
+  pre.tree .new{color:#1a4ba8;font-weight:600}
+  pre.tree .c{color:var(--mut)}
+
+  .loopfig{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:18px;margin-top:8px}
+  .loopfig svg{display:block;width:100%;height:auto}
+
+  .stepnum{font-family:var(--mono);font-size:11px;color:var(--mut);border:1px solid var(--line);border-radius:6px;padding:1px 7px;margin-right:8px}
+  footer{padding:48px 0 80px;color:var(--mut);font-size:13px}
+  footer code{font-size:12px}
+  .kbd{font-family:var(--mono);font-size:12px;color:var(--ink-2)}
+  .tag-row{display:flex;gap:6px;flex-wrap:wrap;margin-top:12px}
+  .yn{font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.06em;margin-right:7px}
+  .yn.y{color:var(--read)} .yn.n{color:var(--gate)}
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="wrap">
+    <p class="eyebrow">chorus · employee design · deep archetype</p>
+    <h1>Marketer<br><span class="thin">a senior IC who turns intent into reach — under a gate.</span></h1>
+    <p class="lede">Where the Engineer ships <b>code</b> and the Analyst ships a <b>belief</b>, the Marketer ships <b>reach</b> — a campaign, a creative, a message that spends budget and touches users. Her output is visible the instant it lands and impossible to recall. So her one failure mode that matters is <b>sending or spending the wrong thing at scale</b> — off-brand, off-budget, off-channel — and the entire design is built around <b>gates, brand-fidelity, and the tournament</b>, not evidence. She has draft reach to everything and <b>go-live reach to nothing without a gate</b>.</p>
+    <p class="eyebrow" style="margin-top:22px;margin-bottom:0">build status · 2026-07-02 &nbsp;·&nbsp; <span class="pill built">built</span> shipped &amp; proven live &nbsp; <span class="pill partial">partial</span> core landed, rest pending &nbsp; <span class="pill todo">deferred</span> not started</p>
+  </div>
+</header>
+
+<nav class="toc">
+  <div class="wrap">
+    <a href="#thesis">01 Thesis</a>
+    <a href="#identity">02 Identity</a>
+    <a href="#surface">03 Surface</a>
+    <a href="#modes">04 Modes</a>
+    <a href="#loop">05 The Loop</a>
+    <a href="#subagents">06 Subagents</a>
+    <a href="#integrations">07 Integrations</a>
+    <a href="#tools">08 Tools</a>
+    <a href="#done">09 Done</a>
+    <a href="#tournament">10 Tournament</a>
+    <a href="#authority">11 Authority</a>
+    <a href="#voice">12 Voice</a>
+    <a href="#routines">13 Routines</a>
+    <a href="#memory">14 Memory</a>
+    <a href="#build">15 Build map</a>
+  </div>
+</nav>
+
+<!-- 01 -->
+<section id="thesis">
+  <div class="wrap">
+    <h2>01 — The thesis</h2>
+    <div class="h2sub">Depth is a loop, and the blast radius is reach.</div>
+    <p>chorus's employee is deliberately thin and stateless — <i>"a replayable identity, not a process."</i> The Marketer keeps that invariant. She gets "deep" not by holding state, but by composing durable things into a campaign:</p>
+    <ul class="clean">
+      <li>A <b>metric and a brand</b> she owns — activation, pipeline, retention — and the voice it all has to sound like.</li>
+      <li>A <b>brand &amp; evidence base</b> — what's on-message, what converted, what burned — accruing in memory.</li>
+      <li>A <b>creative swarm</b> — strategise, generate variants, red-team the brand, run the experiment, in one beat.</li>
+      <li>An <b>open campaign subtree</b> — the live threads of a launch in flight.</li>
+    </ul>
+    <p>What's genuinely new in chorus to make her work — all role-agnostic, so the whole workforce inherits them:</p>
+    <div class="grid3" style="margin-top:14px">
+      <div class="card"><h4><span class="pill new">new</span>Variety + read-back</h4><p>Generate a <i>handful</i> of on-brand candidates, prune the weak ones offline, let the platform pick the winner at serve time — then read the winning <i>element</i> back into memory. The selection engine is mostly the ad platform's; what's ours is the disciplined read-back loop.</p></div>
+      <div class="card"><h4><span class="pill new">new</span>Brand layer</h4><p>A persistent voice + ontology + anti-personas, wrapped in a pre/live/post validation sandwich. The substrate that makes "on-brand, claim-true" structural, not hoped-for.</p></div>
+      <div class="card"><h4><span class="pill new">new</span>Gated write surface</h4><p>Publish / send / spend WebPlugins bound to secret-refs, fail-closed, capped. The inbound-research counterpart's mirror image: reach <i>out</i>, under a leash.</p></div>
+    </div>
+
+    <div class="callout gate" style="margin-top:22px">
+      <div class="lbl">The crux — what she's governed against</div>
+      <p>The Analyst is governed against being <b>confidently wrong</b>; her governance is epistemic — a Critic that red-teams the truth. The Marketer is governed against <b>spending or sending recklessly</b>. An LLM will fluently generate a thousand on-budget, off-brand, never-recalled messages — exactly the thing a real marketer's instincts exist to suppress. So her governance is <b>action-class</b>: spend caps, send gates, and a <b>Brand-Critic</b> that red-teams fidelity-and-claims <i>before</i> anything goes live. That single inversion shapes her DoD, her tools, and her authority. The market agrees — every serious vendor converged on "bounded autonomy, approve-before-go-live," and the cautionary tale (§10) is the one big platform whose gate was opt-out.</p>
+    </div>
+  </div>
+</section>
+
+<!-- 02 -->
+<section id="identity">
+  <div class="wrap">
+    <h2>02 — Identity &amp; the role triple</h2>
+    <div class="h2sub">Mira — Marketer / Campaigner.</div>
+    <p>She owns a <b>metric and a brand</b>, not a question: <i>"grow activation,"</i> <i>"launch the v2 positioning,"</i> <i>"keep the funnel fed." </i> The <b>channel</b> — content, paid, lifecycle, brand — is config, not code: swap a blog series for an ad set for an email flow and the loop is identical. In chorus a role is exactly three things:</p>
+    <div class="triple" style="margin-top:16px">
+      <div>
+        <div class="k">RoleManifest</div>
+        <div class="v">Drafts all · go-live gated</div>
+        <div class="d">Read reach into analytics, market, brand, CMS, ad platforms · a draft surface in her worktree · every external write (publish · send · spend) bound to a gate. Subagents narrow it further (overlay, narrower-wins).</div>
+      </div>
+      <div>
+        <div class="k">DoDGenerator</div>
+        <div class="v">Intent → typed Verifier</div>
+        <div class="d">Action-class: a reversible draft re-renders as a <b>Command</b>; an on-brand creative is <b>AgentReview</b> (the Brand-Critic); anything going <b>live</b> — a send, a spend, a publish — is <b>HumanApproval</b>. "Done" is never "it posted."</div>
+      </div>
+      <div>
+        <div class="k">OutcomeKind</div>
+        <div class="v">What "landed" means</div>
+        <div class="d">One of <b>content · creative-set · sequence · campaign</b>. The lander snapshots the artifact bundle — the asset plus its variants, brief, brand-check, and the experiment plan it ships under.</div>
+      </div>
+    </div>
+
+    <h3>Three employees, three blast radii</h3>
+    <p>The Engineer ships a <b>commit</b> — reversible, free, CI-verifiable. Vera ships a <b>belief</b> — invisible until someone acts on it, dangerous when wrong-but-persuasive, so her eval is evidence. Mira ships <b>reach</b> — money spent and users touched, <b>irreversible the instant it lands</b>. So her eval is the tournament-plus-gate, and her one hard rule is the boundary below: she drafts and proposes, she never commits the budget or the audience on her own.</p>
+  </div>
+</section>
+
+<!-- 03 -->
+<section id="surface">
+  <div class="wrap">
+    <h2>03 — The surface of work</h2>
+    <div class="h2sub">Four archetypes, one loop. The channel is config.</div>
+    <p>Mira spans a wide brief — owned content, paid acquisition, lifecycle, and brand. They are not four employees; they're four weightings of the same campaign loop (§05), pulling on different subagents.</p>
+    <table>
+      <thead><tr><th>Archetype</th><th>The ask sounds like</th><th>Dominant mix</th><th>Lands a…</th></tr></thead>
+      <tbody>
+        <tr><td><b>Content / SEO-GEO</b><br><span class="muted">owned · organic</span></td><td>"rank and get cited for 'agent eval'"</td><td>Strategy + Creative</td><td>content</td></tr>
+        <tr><td><b>Paid / creative</b><br><span class="muted">acquisition · spend</span></td><td>"bring CAC down on the cold audience"</td><td>Creative + Experiment</td><td>creative-set</td></tr>
+        <tr><td><b>Lifecycle / email</b><br><span class="muted">owned · send</span></td><td>"lift week-1 activation by email"</td><td>Creative + Channel</td><td>sequence</td></tr>
+        <tr><td><b>Brand / campaign</b><br><span class="muted">integrated · judgment</span></td><td>"launch the v2 positioning everywhere"</td><td>Strategy + Brand-Critic</td><td>campaign</td></tr>
+      </tbody>
+    </table>
+    <p style="margin-top:16px">The <b>campaigner facet</b> — "launch the integrated thing" — is the fourth row: a <code>campaign</code> is a multi-channel bundle whose load-bearing decision is the positioning, with the channels weighed and the spend staged. She orchestrates the launch; she does not authorise the budget or hit send on the whole list herself.</p>
+    <div class="callout">
+      <div class="lbl">The GEO note</div>
+      <p>Content is no longer just SEO. The research is unanimous: <b>GEO/AEO is co-equal with SEO</b> — "SEO earns clicks, AEO earns mentions" — and citation-readiness is scored <i>during</i> drafting, not after. The Content archetype's Creative subagent carries a GEO skill, not a bolt-on.</p>
+    </div>
+  </div>
+</section>
+
+<!-- 04 -->
+<section id="modes">
+  <div class="wrap">
+    <h2>04 — Two modes — IC and under a manager</h2>
+    <div class="h2sub">Same RolePlugin, two compositions.</div>
+    <div class="grid2" style="margin-top:8px">
+      <div class="card">
+        <div class="role">As an IC</div>
+        <h4>Handed one metric to move</h4>
+        <p>She owns the whole loop end-to-end: frames the hypothesis, runs the swarm, red-teams the brand, stages the go-live for approval, and reads the result back. The default for an open-ended growth mandate where the strategy is the work.</p>
+      </div>
+      <div class="card">
+        <div class="role">Under a manager</div>
+        <h4>A leaf in a decomposition</h4>
+        <p>A manager splits a launch into per-channel tasks; each becomes a beat assigned to a Marketer. She runs the leaf — one channel's creative + experiment — and the manager integrates across channels. The role is unchanged; only the decomposition moves.</p>
+      </div>
+    </div>
+    <div class="callout gate" style="margin-top:20px">
+      <div class="lbl">The reach seam — she is the growth organ, not the treasurer</div>
+      <p>Mira is the natural owner of a growth metric: she reads the funnel and the market and produces the campaigns that move it. But she cannot <b>commit the company's money or audience</b> — no spend above her cap, no send to the full list, no publish to an owned channel, without a gate. She is an IC, not finance and not the brand owner. Her reach flows one way: a staged go-live a human or a manager <b>approves</b>. The seam is <b>draft-and-stage, gate-out</b> — the mirror of the Analyst's read-in, advise-out.</p>
+    </div>
+  </div>
+</section>
+
+<!-- 05 -->
+<section id="loop">
+  <div class="wrap">
+    <h2>05 — The campaign loop</h2>
+    <div class="h2sub">Signal → hypothesise → generate → eval → ship → measure → back.</div>
+    <p>Every node is a chorus object. The employee is stateless across the whole loop — continuity is the metric + the brand base + the task rows, never a long-lived Mira. The market calls this the <i>continuous growth loop</i> and is unanimous that the unit of value is the loop on a cadence, not a one-off asset.</p>
+    <div class="loopfig">
+      <svg viewBox="0 0 980 220" xmlns="http://www.w3.org/2000/svg" font-family="var(--mono)">
+        <defs>
+          <marker id="ar" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#b3b3b3"/></marker>
+        </defs>
+        <!-- nodes -->
+        <g font-size="12.5" text-anchor="middle">
+          <g><rect x="8" y="78" width="118" height="62" rx="11" fill="#fff" stroke="#e7e7e7"/><text x="67" y="103" font-weight="700" fill="#0a0a0a">Signal</text><text x="67" y="121" fill="#8a8a8a">funnel · market</text></g>
+          <g><rect x="150" y="78" width="118" height="62" rx="11" fill="#fff" stroke="#e7e7e7"/><text x="209" y="103" font-weight="700" fill="#0a0a0a">Hypothesise</text><text x="209" y="121" fill="#8a8a8a">frame the bet</text></g>
+          <g><rect x="292" y="78" width="130" height="62" rx="11" fill="#fff" stroke="#e7e7e7"/><text x="357" y="103" font-weight="700" fill="#0a0a0a">Generate</text><text x="357" y="121" fill="#8a8a8a">on-brand variety</text></g>
+          <g><rect x="446" y="78" width="118" height="62" rx="11" fill="#fff" stroke="#e7e7e7"/><text x="505" y="100" font-weight="700" fill="#0a0a0a">Prune</text><text x="505" y="117" fill="#8a8a8a">brand-critic +</text><text x="505" y="131" fill="#8a8a8a">pre-flight score</text></g>
+          <!-- the gate node, dark -->
+          <g><rect x="588" y="74" width="124" height="70" rx="11" fill="#9b1c1c" stroke="#9b1c1c"/><text x="650" y="99" font-weight="700" fill="#fff">Ship</text><text x="650" y="116" fill="#f3cfcf" font-size="11">go-live</text><text x="650" y="131" fill="#fff" font-size="11">★ THE GATE</text></g>
+          <g><rect x="736" y="78" width="118" height="62" rx="11" fill="#fff" stroke="#e7e7e7"/><text x="795" y="100" font-weight="700" fill="#0a0a0a">Measure</text><text x="795" y="117" fill="#8a8a8a">platform selects ·</text><text x="795" y="131" fill="#8a8a8a">read winners back</text></g>
+        </g>
+        <!-- arrows -->
+        <g stroke="#b3b3b3" stroke-width="1.5" fill="none">
+          <line x1="126" y1="109" x2="148" y2="109" marker-end="url(#ar)"/>
+          <line x1="268" y1="109" x2="290" y2="109" marker-end="url(#ar)"/>
+          <line x1="422" y1="109" x2="444" y2="109" marker-end="url(#ar)"/>
+          <line x1="564" y1="109" x2="586" y2="109" marker-end="url(#ar)"/>
+          <line x1="712" y1="109" x2="734" y2="109" marker-end="url(#ar)"/>
+          <!-- return loop -->
+          <path d="M795,140 L795,185 L67,185 L67,142" marker-end="url(#ar)"/>
+        </g>
+        <text x="431" y="205" text-anchor="middle" font-size="11.5" fill="#8a8a8a">winning element → did it lift? → calibration note → next hypothesis · the loop never ends, the employee never persists</text>
+        <!-- reach annotations -->
+        <text x="357" y="62" text-anchor="middle" font-size="10.5" fill="#1f7a4d">▲ analytics · market (read)</text>
+        <text x="650" y="62" text-anchor="middle" font-size="10.5" fill="#9b1c1c">▲ publish · send · spend (gated)</text>
+      </svg>
+    </div>
+    <p style="margin-top:16px">The dark node is the signature: <b>ship is a gate, not an action</b> — go-live above a consequence threshold (§09, §11) cannot happen without approval. Where Vera's signature node is <i>red-team the truth</i>, Mira's is <i>red-team the brand, then pass the gate</i>. A long launch may span more than one beat — each rehydrates the open subtree and the brand base where the last left off.</p>
+    <div class="status-note"><div class="lbl">Built — the dark node is closed for publish</div>The whole ship edge runs live, end-to-end: <code>cms_draft</code> stages an unpublished Strapi draft (invisible on the public blog) → <code>stage_go_live</code> opens the ApprovalGate and blocks the task → a human approves → Mira re-wakes and calls <code>execute_go_live</code> — fail-closed against the ledger, idempotent per approval — and the post appears on the public blog (<code>localhost:1337/blog</code>). Proven by a keyed 3-step e2e (<code>examples/marketer_go_live_run.py</code>). <b>Email SEND is live on the same seam</b> — an approved <code>execute_go_live(email)</code> sends the staged campaign via Resend (from <code>mira@arceus.sh</code>) to a real inbox, markdown rendered to HTML at the transport (<code>examples/marketer_email_send_run.py</code>). Only ad-<i>spend</i> reach is still unbuilt.</div>
+  </div>
+</section>
+
+<!-- 06 -->
+<section id="subagents">
+  <div class="wrap">
+    <h2>06 — The subagents under her</h2>
+    <div class="h2sub">Two tiers, declared in chorus, spawned by dream.</div>
+    <p>The <b>mechanism is dream's</b>, and it is no longer hypothetical: dream ships a native subagent system — a model-facing <code>spawn_subagent</code> tool, a depth cap, a per-session spawn cap, and <b>enforced capability-minimization</b> (each subagent's <code>tools</code> must be a subset of the parent's, intersected in the live path). That is exactly the "narrower-wins overlay, bounded, depth-capped, ephemeral swarm" this spec assumed — now a runtime guarantee, not a promise.</p>
+    <p>What chorus owns is the <b>roster</b>: the <i>exact</i> subagents are declared in <code>src/chorus/swarm/</code> as dream <code>Subagent</code> records — <code>(name, description, tools-subset, skills, spawned_by)</code> — assembled into a <code>SubagentSet</code> the role threads through <code>RoleManifest → build_harness(subagents=…)</code>. Tier 1 — role specialists are declared by Mira's plugin; Tier 2 — shared capability agents live in the shared <code>swarm/</code> registry, reusable across the workforce. The signature specialist is the <b>Brand-Critic</b> — the adversary that keeps her on-message, the exact twin of the Analyst's Critic.</p>
+
+    <h3>Tier 1 — role specialists <span class="muted" style="font-weight:400">· Mira's plugin</span></h3>
+    <div class="grid3" style="margin-top:8px">
+      <div class="card"><h4><span class="dot" style="background:var(--read)"></span>Strategist <span class="pill built">built</span></h4><div class="role">frame · plan · read</div><p>Turns the metric into a hypothesis and a channel plan — who, what message, what bet, what success looks like. Reads the funnel and the market; hands a brief to Creative.</p><div class="tag-row"><span class="pill read">analytics · read</span><span class="pill read">market · read</span></div></div>
+      <div class="card"><h4><span class="dot" style="background:var(--read)"></span>Audience / Market Researcher <span class="pill partial">via tier-2</span></h4><div class="role">external · qual · read</div><p>Gathers the outside picture — audience, competitors, positioning, what's being said. Every claim sourced and graded; spawns the shared Web-Research Orchestrator.</p><div class="tag-row"><span class="pill read">web · read</span><span class="pill read">market · read</span></div></div>
+      <div class="card"><h4><span class="dot" style="background:var(--write)"></span>Creative / Copywriter <span class="pill built">built</span></h4><div class="role">generate · many · draft</div><p>Produces the <i>variety</i> the tournament needs — headlines, creatives, copy, content — answer-first and GEO-aware, in the brand voice. Drafts to the worktree, never publishes.</p><div class="tag-row"><span class="pill write">artifact · draft</span><span class="pill read">brand · read</span></div></div>
+      <div class="card"><h4><span class="dot" style="background:var(--gate)"></span>Brand-Critic <span class="pill built">built</span></h4><div class="role">signature · attacks the message</div><p>The adversary. Hunts off-voice tone, unsubstantiated claims, compliance and legal risk, logo/asset misuse; demands the on-brand steelman. Owns the claim-substantiation check (§10).</p><div class="tag-row"><span class="pill gate">brand-fidelity</span><span class="pill gate">claim check</span></div></div>
+      <div class="card"><h4><span class="dot" style="background:var(--read)"></span>Experimenter / Analyst <span class="pill todo">deferred</span></h4><div class="role">eval · stats · read</div><p>Owns the offline-eval and the read-back: designs the A/B, predicts performance pre-flight, computes lift with power and significance, reads element-level winners. The honesty on the numbers.</p><div class="tag-row"><span class="pill read">analytics · read</span><span class="pill new">offline-eval</span></div></div>
+      <div class="card"><h4><span class="dot" style="background:var(--gate)"></span>Channel / Publisher <span class="pill partial">verbs built</span></h4><div class="role">the only one near the gate</div><p>The only specialist that touches a live surface — schedules the publish, queues the send, stages the spend. Every one of its acts is gated; it composes the go-live, it does not authorise it.</p><div class="tag-row"><span class="pill gate">publish · gated</span><span class="pill gate">send · spend · gated</span></div></div>
+    </div>
+
+    <div class="callout" style="margin-top:18px">
+      <div class="lbl">Coordination</div>
+      <p>Mira's beat is the planner; the Tier-1 specialists are swarm roles she dispatches and joins, and they in turn spawn shared Tier-2 agents for reusable reasoning. Authority is monotonic <b>by enforcement, not convention</b> — dream intersects each subagent's <code>tools</code> with the parent's, so no agent can escalate past Mira's manifest. Because her manifest has <b>no ungated external write</b>, the whole swarm is draft-plus-read by construction; the only path to a live surface runs through the Channel-Publisher and its gate. They all share Mira's one worktree (a subagent's <code>worktree_path</code> points at it), so the Brand-Critic reads the Creative's drafts <i>in place</i>. There is exactly one surface to guard — the <b>reach surface</b> (spend / send / publish) — and it is guarded twice: by the Brand-Critic on fidelity, and by the human gate on consequence.</p>
+    </div>
+
+    <h3>Tier 2 — shared capability agents <span class="muted" style="font-weight:400">· <code>src/chorus/swarm/</code> registry</span></h3>
+    <div class="grid2" style="margin-top:8px">
+      <div class="card"><h4>Query Orchestrator <span class="pill reuse">reused</span> <span class="pill todo">not wired</span></h4><div class="role">shared · nested · reasoning</div><p>Takes a question ("which audience's CAC rose?"), plans which sources to hit, writes the SQL, runs it, iterates on junk, returns an answer. Spawned by Strategist &amp; Experimenter. The same one Vera uses.</p><div class="tag-row"><span class="pill read">tool · warehouse.query</span></div></div>
+      <div class="card"><h4>Web-Research Orchestrator <span class="pill reuse">reused</span> <span class="pill built">built</span></h4><div class="role">shared · nested · reasoning</div><p>Takes a research question, plans a multi-source sweep, fetches and reads, cross-checks across sources, returns an answer with a citation graph. Spawned by the Audience Researcher. The one Vera's spec brought into existence.</p><div class="tag-row"><span class="pill read">tool · web.search/fetch</span></div></div>
+    </div>
+    <div class="callout">
+      <div class="lbl">The rule — tool vs. agent vs. skill</div>
+      <p>If it needs judgment, it's an agent + skill; if it's mechanical, it's a tool. The orchestrators reason and iterate, so they're Tier-2 agents — not flat tools. Their deterministic primitives (<code>warehouse.query</code>, <code>ad.publish</code>) stay tools underneath; the "creative testing" and "deliverability" skills are the know-how they consult.</p>
+    </div>
+    <div class="status-note"><div class="lbl">As built</div><b>Brand-Critic</b> (adversarial, read-only, in-beat verdict) and <b>Creative/Copywriter</b> (variety over a grounded seed → <code>candidates/variant_NN.md</code> + typed manifest, self-lints via <code>brand_lint</code>) ship in Mira's plugin; the <b>Web-Research Orchestrator</b> is live from the shared registry (Mira spawns it directly, covering the Researcher for now). The <b>Strategist</b> is built (§06): it frames the bet into <code>strategy_brief.md</code> and is the first employee to use bounded <b>depth-2</b> subagent nesting — it dispatches the Web-Research Orchestrator itself for cited market facts. Experimenter waits on the read-back; the Channel's <i>verbs</i> exist on Mira's shelf and both reaches are live (<code>cms_draft</code> → <code>stage_go_live</code> → <code>execute_go_live</code>, routing to blog PUBLISH or email SEND) — the subagent split is deferred.</div>
+  </div>
+</section>
+
+<!-- 07 -->
+<section id="integrations">
+  <div class="wrap">
+    <h2>07 — Integrations (MCP &amp; web plugins)</h2>
+    <div class="h2sub">Read reach to everything; go live only through a gate.</div>
+    <p>A WebPlugin = <code>(name, kind, capability, auth secret-ref, trust scope)</code>, auth bound to a secret ref (<code>ref:…</code>), never inline. Most are MCP servers. Unlike the Analyst — who has <i>no</i> write integrations at all — Mira's defining surfaces are the <b>writable</b> ones, and every one of them is graded and gated. The grades sort exactly as the market's stacks do: ads &amp; analytics read-only; CRM / email / publish write-but-gated; budget the highest gate.</p>
+    <table>
+      <thead><tr><th>Category</th><th>MCP / external</th><th>Capability</th><th>Secret ref</th><th>Used by</th></tr></thead>
+      <tbody>
+        <tr><td>Product analytics</td><td>Amplitude · GA4 · Mixpanel</td><td><span class="pill read">read</span></td><td><code>ref:analytics_ro</code></td><td>Strategist · Experimenter</td></tr>
+        <tr><td>Ad-platform reporting</td><td>Meta · Google · LinkedIn (insights)</td><td><span class="pill read">read</span></td><td><code>ref:ads_ro</code></td><td>Experimenter</td></tr>
+        <tr><td>Search / GEO console</td><td>Search Console · Ahrefs · Semrush · answer-engine visibility</td><td><span class="pill read">read</span></td><td><code>ref:seo_ro</code></td><td>Strategist · Creative</td></tr>
+        <tr><td>Web search + browse</td><td>Tavily · Exa · Brave + fetch</td><td><span class="pill read">read</span></td><td><code>ref:web_search</code></td><td>Researcher</td></tr>
+        <tr><td>Brand · DAM · docs</td><td>brand kit · asset library · Notion / Drive</td><td><span class="pill read">read</span></td><td><code>ref:brand_ro</code></td><td>Creative · Brand-Critic</td></tr>
+        <tr><td>CMS (draft)</td><td>WordPress · Webflow · Sanity</td><td><span class="pill write">write · reversible</span></td><td><code>ref:cms_rw</code></td><td>Channel</td></tr>
+        <tr><td>Social / publish</td><td>Buffer · Hootsuite · native APIs</td><td><span class="pill gate">send · gated</span></td><td><code>ref:publish</code></td><td>Channel</td></tr>
+        <tr><td>Email / lifecycle</td><td>Klaviyo · HubSpot · Customer.io</td><td><span class="pill gate">send · gated</span></td><td><code>ref:lifecycle</code></td><td>Channel</td></tr>
+        <tr><td>Ad budget</td><td>Meta · Google · LinkedIn Ads (mutate)</td><td><span class="pill gate">spend · gated</span></td><td><code>ref:ads_spend</code></td><td>Channel</td></tr>
+        <tr><td>Filesystem (her worktree)</td><td>filesystem MCP scoped to the beat worktree</td><td><span class="pill write">write · worktree</span></td><td>—</td><td>Creative</td></tr>
+        <tr><td>OKR tree / ledger</td><td>horizon stores</td><td><span class="pill read">read only</span></td><td><code>ref:okr_ro</code></td><td>Strategist</td></tr>
+      </tbody>
+    </table>
+    <div class="legend">
+      <span><span class="pill read">read</span> ungated, reversible — the whole funnel and market is readable</span>
+      <span><span class="pill write">write</span> reversible draft — CMS draft, her worktree; no audience touched</span>
+      <span><span class="pill gate">gate</span> publish · send · spend — irreversible reach, fail-closed, capped, approved</span>
+    </div>
+    <div class="callout gate">
+      <div class="lbl">Already built — the leash is not hypothetical</div>
+      <p>The grading isn't aspirational prose. chorus already ships the WebPlugin trust layer: <code>Capability{read · write_reversible · send · spend}</code> with <code>.gated</code>, <code>SpendCap</code> / <code>RateCap</code>, secret-ref binding, and a fail-closed <code>__post_init__</code> (a <code>send</code> grant <i>must</i> carry a bounded RateCap; a <code>spend</code> grant a bounded SpendCap; auth <i>must</i> be a <code>ref:</code>). Mira is the employee that exercises it. The <b>credential leash</b> — the grant↔employee binding that denies an unbound employee — is the trust boundary made physical.</p>
+    </div>
+  </div>
+</section>
+
+<!-- 08 -->
+<section id="tools">
+  <div class="wrap">
+    <h2>08 — Tools &amp; skills</h2>
+    <div class="h2sub">Three layers: reach, verbs, know-how.</div>
+    <p>Integrations, tools, and skills are different things. Keeping them distinct is what lets a capability be composed, scoped per subagent, and reused across the workforce.</p>
+    <div class="grid3" style="margin-top:8px">
+      <div class="card"><h4>Integration</h4><div class="role">raw reach — the hands</div><p>A trust-scoped WebPlugin / MCP (§07): <code>analytics.fetch(q)</code>, <code>ad.publish(set)</code>. Read on the funnel; gated on the audience and the budget.</p></div>
+      <div class="card"><h4>Tool</h4><div class="role">composed verb — built on reach</div><p>A registered entry in the toolset, scoped per subagent by <code>compute_minimum_toolset</code>. Mechanical and verifiable — not reasoning.</p></div>
+      <div class="card"><h4>Skill</h4><div class="role">know-how — shapes how</div><p>Authored reference: a playbook the agent reads. Not a callable verb. It's what stops a fluent model from being an on-budget, off-brand fabricator.</p></div>
+    </div>
+
+    <h3>Her tool shelf</h3>
+    <p>Deterministic, verifiable verbs — scoped per subagent. Open-ended reasoning is a Tier-2 agent instead (§06), so the orchestrators are not on this shelf; their primitives are.</p>
+    <table>
+      <thead><tr><th>Tool</th><th>Composes over</th><th>Owner</th><th>Surface</th></tr></thead>
+      <tbody>
+        <tr><td><code>analytics.fetch · funnel.query</code> <span class="pill todo">deferred</span></td><td>read integrations</td><td>Strategist · Experimenter</td><td><span class="pill read">read</span></td></tr>
+        <tr><td><code>web.search · web.fetch</code> <span class="pill built">built</span></td><td>search + browse</td><td>Researcher</td><td><span class="pill read">read</span></td></tr>
+        <tr><td><code>brand.lint · claim.check</code> <span class="pill built">built</span></td><td>brand kit + ontology</td><td>Brand-Critic</td><td><span class="pill read">read</span></td></tr>
+        <tr><td><code>variant.render · creative.gen</code> <span class="pill partial">creative subagent</span></td><td>brand voice + draft</td><td>Creative</td><td><span class="pill write">worktree</span></td></tr>
+        <tr><td><code>experiment.design · stats.power</code> <span class="pill todo">deferred</span></td><td>analytics + stats skill</td><td>Experimenter</td><td><span class="pill read">read</span></td></tr>
+        <tr><td><code>cms.draft</code> <span class="pill built">built</span></td><td>CMS reversible write</td><td>Channel</td><td><span class="pill write">write</span></td></tr>
+        <tr><td><code>publish.schedule</code> <span class="pill built">built</span></td><td>social / publish</td><td>Channel</td><td><span class="pill gate">send · gate</span></td></tr>
+        <tr><td><code>email.send</code> <span class="pill built">built</span></td><td>lifecycle</td><td>Channel</td><td><span class="pill gate">send · gate</span></td></tr>
+        <tr><td><code>ad.spend · budget.set</code> <span class="pill todo">deferred</span></td><td>ad budget</td><td>Channel</td><td><span class="pill gate">spend · gate</span></td></tr>
+      </tbody>
+    </table>
+
+    <div class="status-note"><div class="lbl">As built</div><code>web_search</code>/<code>web_extract</code> (Tavily-backed, allowlisted egress) · <code>brand_lint</code> (deterministic prohibited-phrase + unhedged-claim scan) · <code>cms_draft</code> (per-channel typed drafts, swappable backend: keyless Markdown or live Strapi, standing-draft idempotency per task) · <code>stage_go_live</code> (opens the ApprovalGate, never executes) · <code>execute_go_live</code> (the fail-closed executor: on an APPROVED gate, blog/social PUBLISH to the owned surface or email SEND to the operator-configured audience — reads the staged draft back so the model can never smuggle new copy past the gate, exactly once per approval) · email transports: keyless file <b>Outbox</b> or live <b>Resend</b> (markdown→HTML rendered at send) · the <code>skill</code> tool loads her authored <b>brand-voice</b> playbook.</div>
+
+    <h3>Her skills (know-how, not verbs)</h3>
+    <div class="grid2" style="margin-top:6px">
+      <div class="card">
+        <h4>Experiment &amp; measurement</h4>
+        <ul class="clean">
+          <li><b>A/B discipline</b> — sample size, MDE, power; <i>don't peek</i>, don't p-hack, hold the test.</li>
+          <li><b>Attribution vs. incrementality</b> — last-touch lies; holdouts and geo-lift over vanity ROAS.</li>
+          <li><b>Creative testing</b> — pre-flight scoring, multimodal element tagging, element-level win read-back.</li>
+          <li><b>Forecasting hygiene</b> — CAC/LTV ranges not points, reference classes, scored track record.</li>
+        </ul>
+        <p class="muted" style="font-size:13px;margin-top:10px">The research's blunt finding: <b>the differentiating skill is statistical, not generative.</b> Any model writes the copy; the moat is the measurement discipline.</p>
+      </div>
+      <div class="card">
+        <h4>Brand · channel · craft</h4>
+        <ul class="clean">
+          <li><b>Brand voice &amp; claim substantiation</b> <span class="pill built">built</span> — the voice spec, anti-personas, what claims need proof.</li>
+          <li><b>GEO / AEO + SEO</b> <span class="pill built">built</span> — answer-first structure, schema, entity density, citation-readiness.</li>
+          <li><b>Deliverability &amp; sender reputation</b> <span class="pill built">built</span> — warmup, list hygiene, the self-limiting ceiling on send.</li>
+          <li><b>Channel priors</b> <span class="pill built">built</span> — what format and cadence each surface rewards.</li>
+        </ul>
+      </div>
+    </div>
+    <h3>Skills vs. memory</h3>
+    <p>Skills ship with the role — the manual, identical for any Marketer on day 1. Memory accrues — which creatives won, which audiences converted, which channel burned, how calibrated her past CAC guesses turned out (§14). Skills are the training; memory is the scar tissue.</p>
+  </div>
+</section>
+
+<!-- 09 -->
+<section id="done">
+  <div class="wrap">
+    <h2>09 — How "done" is decided</h2>
+    <div class="h2sub">The DoD bends to the action class, not the epistemic class.</div>
+    <p>Mira reuses chorus's three existing verifier kinds — no new evaluator. The DoDGenerator picks the one that fits what the beat produced. For her, <b>HumanApproval</b> is the load-bearing case at go-live, and <b>AgentReview</b> (the Brand-Critic) is mandatory before it.</p>
+    <div class="grid3" style="margin-top:8px">
+      <div class="card"><h4>Command <span class="pill built">built</span></h4><div class="role">reversible · machine-checkable</div><p>The draft re-renders deterministically, the experiment plan validates, the variant set is well-formed. In-process, no human. The reversible half of the work.</p><p class="muted" style="font-size:13px"><b>Fits:</b> content draft · creative-set</p></div>
+      <div class="card" style="border-color:#d9c2c2"><h4>AgentReview <span class="pill gate">brand</span> <span class="pill built">built</span></h4><div class="role">the Brand-Critic verifies fidelity</div><p>The Brand-Critic checks the message is on-voice, every claim is substantiated, no compliance/legal landmine, no asset misuse. This is where "on-budget but off-brand" gets caught. Mandatory above an importance threshold.</p><p class="muted" style="font-size:13px"><b>Fits:</b> anything going live</p></div>
+      <div class="card" style="border-color:#d9c2c2"><h4>HumanApproval <span class="pill gate">go-live</span> <span class="pill built">built</span></h4><div class="role">load-bearing · the gate</div><p>The one that defines her. A live <b>send</b>, a <b>spend</b> over cap, a <b>publish</b> to an owned channel — the irreversible reach — signs off with a human. Common here, because her output <i>touches the world</i> the instant it lands.</p><p class="muted" style="font-size:13px"><b>Fits:</b> sequence · campaign · any spend</p></div>
+    </div>
+    <div class="callout gate" style="margin-top:18px">
+      <div class="lbl">Graded, not blanket — risk-tiered approval</div>
+      <p>The gate scales to consequence, exactly as the market's stacks do. A draft tweet or a $0 organic post needs no human; a full-list send or a budget bump cannot land without one. The research's tiering, adopted verbatim:</p>
+      <table style="margin-top:10px">
+        <thead><tr><th>Risk tier</th><th>Reach</th><th>Gate</th></tr></thead>
+        <tbody>
+          <tr><td><span class="yn y">LOW</span></td><td>organic social, a draft, a single segment</td><td>Brand-Critic only (AgentReview)</td></tr>
+          <tr><td><span class="yn" style="color:var(--write)">MED</span></td><td>a content publish, a bounded ad set, a sub-list send</td><td>Brand-Critic + one approver</td></tr>
+          <tr><td><span class="yn n">HIGH</span></td><td>full-list send, budget over cap, brand/positioning launch, regulated claim</td><td>Brand-Critic + human + (regulated) legal</td></tr>
+        </tbody>
+      </table>
+      <p style="margin-top:10px">The same consequence-grading the Analyst applies to epistemic weight, pointed at <b>reach</b> instead.</p>
+    </div>
+  </div>
+</section>
+
+<!-- 10 -->
+<section id="tournament">
+  <div class="wrap">
+    <h2>10 — Variety, read-back &amp; the brand layer</h2>
+    <div class="h2sub">Her signature primitives — and the cure for confident, on-budget wrongness.</div>
+    <p>Where Vera's signature is the grounded-assertion layer, Mira's is a pair: a <b>read-back loop</b> that turns served variety into a learned winner, and a <b>brand layer</b> that keeps every candidate on-message. The brand layer is the net-new plumbing; the read-back is a thin loop on top of machinery chorus already has. Both are role-agnostic — any creative employee inherits them.</p>
+
+    <div class="grid2" style="margin-top:8px">
+      <div class="card">
+        <h4><span class="pill new">new</span>Variety + element read-back</h4>
+        <p>Generate a <i>handful</i> of on-brand candidates → prune the weak ones offline → ship the set → <b>let the platform select at serve time</b> → read the winning <i>element</i> back into memory. Not a single best guess, but not an in-house bracket either.</p>
+        <p class="muted" style="font-size:13px;margin-top:8px"><b>Why so little is ours:</b> the ad platforms (Meta Andromeda, Google PMax) <i>are</i> the serve-time tournament — they test thousands of combinations Mira never could. So she doesn't out-pick them; she feeds them high-variety sets and owns the read-back of <i>which element</i> won. The offline prune is just the Engineer's existing eval pointed at creatives — it kills obvious losers before spend, nothing more. The genuinely new bit is the <b>read-back → calibration</b> loop, below.</p>
+      </div>
+      <div class="card">
+        <h4><span class="pill new">new</span>Brand layer — the validation sandwich</h4>
+        <p>A persistent voice model + brand ontology + anti-personas, the load-bearing component the market encodes as a <i>layer</i>, not a per-prompt instruction. Every generation passes a three-stage sandwich:</p>
+        <ul class="clean">
+          <li><b>Pre-gen</b> — block prohibited / off-limits prompts before any draft.</li>
+          <li><b>Live</b> — monitor voice, claims, compliance <i>during</i> generation.</li>
+          <li><b>Post-gen</b> — the Brand-Critic verifies before anything enters the gate.</li>
+        </ul>
+      </div>
+    </div>
+
+    <h3>Claim substantiation — the marketer's "confidently wrong"</h3>
+    <p>The Analyst's failure mode is a fluent unsourced certainty. Mira's is a fluent unsubstantiated <i>claim</i> — shipped to thousands. So the brand layer encodes which claims need proof, and the Brand-Critic refuses to let an unsubstantiated claim go live. <b>Confidence is bounded by the weakest substantiated link</b>, the exact mechanic of Vera's evidence grades, pointed at marketing claims.</p>
+
+    <div class="callout">
+      <div class="lbl">The calibration seam <span class="pill new" style="margin-left:8px">lattice</span></div>
+      <p>Per-campaign read-back ships in this spec — winning element, realised lift vs. predicted. The over-time half — scoring predicted CAC/lift against what actually happened, so Mira gets measurably better-calibrated and accrues <i>creative priors</i> — is a reserved lattice seam, exactly like the Analyst's calibration curve. The mechanism (the experiment, the prediction, the won element) lives in chorus; the learning policy that turns 40 campaigns into a calibrated creative instinct is the sibling loop. Reserved, not absorbed.</p>
+    </div>
+
+    <div class="callout gate">
+      <div class="lbl">The cautionary tale — why the gate must be fail-closed</div>
+      <p>The research's sharpest finding is a negative one. <b>Meta Advantage+</b>'s spend/targeting controls are opt-out, default-on, and re-enable on campaign duplication — making the gate, in independent reporting, <i>"functionally not a gate."</i> The lesson is exact and it is the one chorus already builds: a gate on send/spend must be <b>opt-in, sticky, and fail-closed</b> — never an opt-out toggle. Mira's <code>__post_init__</code> that <i>refuses to construct</i> a spend grant without a bounded cap is the structural answer to the market leader's mistake.</p>
+    </div>
+
+    <div class="status-note"><div class="lbl">Status</div><b>Variety</b> — built: the Creative subagent drafts on-brand variants over a grounded seed, Mira selects. <b>Claim substantiation</b> — built twice over: <code>brand_lint</code> (deterministic scan) + the Brand-Critic (judgment). <b>Element read-back</b> — deferred into the lattice/memory build by design.</div>
+  </div>
+</section>
+
+<!-- 11 -->
+<section id="authority">
+  <div class="wrap">
+    <h2>11 — Authority &amp; governance</h2>
+    <div class="h2sub">Graded by reach, not by reversibility of the draft.</div>
+    <p>Almost everything Mira does up to the gate is reversible — she reads, she reasons, she drafts. Her governance isn't about permission to <i>think</i>; it's about the bar a piece of reach must clear before it touches the world. The wider the reach, the harder the gate.</p>
+    <ul class="clean">
+      <li><b>Autonomous</b> — read any funnel/market source, run any offline-eval, draft any creative, stage any campaign in her worktree. Free, reversible, no gate.</li>
+      <li><b>Brand-gated</b> — anything going live above the importance threshold cannot ship until the Brand-Critic passes (§09).</li>
+      <li><b>Human-gated</b> — a live send, a spend over cap, a publish to an owned channel; legal too when the claim is regulated.</li>
+    </ul>
+    <p>This invents <b>no new governance machinery</b>: it reuses <code>ApprovalGate</code>, the two-gate budget model, <code>SpendCap</code> / <code>RateCap</code>, the WebPlugin credential leash, and the env secret-ref boundary chorus already ships. Ad and creative spend are first-class <code>cost_event</code>s, so a runaway campaign trips gate 2 like any other overrun.</p>
+    <div class="status-note"><div class="lbl">Status</div>The gate chain is <b>built and exercised end-to-end for publish</b>: <code>stage_go_live</code> opens the AUTHORIZATION ApprovalGate (and now refuses to re-stage while an approved gate awaits execution); <code>execute_go_live</code> is the fail-closed executor — only an APPROVED gate for THIS task publishes, exactly once per approval, with an approved-undelivered gate outranking any accidental duplicate. <b>Both reaches run through it live</b>: blog publish and email send, each proven by a keyed 3-step human-gated e2e. SpendCap/RateCap and the two-gate budget exist in chorus but are not yet bound to a marketer spend verb (no <code>ad.spend</code> yet).</div>
+
+    <h3>The hard boundary — she is not finance, and not the brand owner</h3>
+    <div class="grid2" style="margin-top:6px">
+      <div class="card">
+        <ul class="clean">
+          <li><span class="yn y">YES</span> read the funnel, the market, the brand kit, the whole company brain</li>
+          <li><span class="yn y">YES</span> generate variants, run experiments, draft any asset</li>
+          <li><span class="yn y">YES</span> stage a campaign and request its go-live</li>
+        </ul>
+      </div>
+      <div class="card">
+        <ul class="clean">
+          <li><span class="yn n">NO</span> spend over her cap, or move budget, without a gate</li>
+          <li><span class="yn n">NO</span> send to the full list, or publish to an owned channel, unapproved</li>
+          <li><span class="yn n">NO</span> edit the OKR tree, redefine the brand, or commit the company</li>
+        </ul>
+      </div>
+    </div>
+    <p style="margin-top:14px">She reaches the world only through a go-live someone chooses to <b>approve</b>. <b>Draft-and-stage, gate-out</b> — the mirror of the Analyst's read-in, advise-out.</p>
+  </div>
+</section>
+
+<!-- 12 -->
+<section id="voice">
+  <div class="wrap">
+    <h2>12 — Proactive voice</h2>
+    <div class="h2sub">A senior marketer flags the spend that matters — and ships the rest quietly.</div>
+    <p>The comms substrate already exists: <code>MessageKind = {INSTRUCTION, REPLY, ESCALATION, FYI}</code>, <code>Activity(SCRUM_PACKET)</code> for broadcast, and <code>Wake(reason=MESSAGE)</code> to turn a reply into a beat. So "proactive voice" is behaviour + a salience policy + a personality, not new plumbing. She can only speak during a beat, so every message is a side-output of a <code>run_task</code>.</p>
+    <table>
+      <thead><tr><th>She wants to…</th><th>Speech act</th><th>chorus type</th><th>Blocking?</th></tr></thead>
+      <tbody>
+        <tr><td>"Q3 email lift is in: +4% activation, p&lt;.05"</td><td>Result / status</td><td><code>Activity(SCRUM_PACKET)</code></td><td><span class="yn y">NO</span></td></tr>
+        <tr><td>"Heads up — CAC on the cold audience is creeping"</td><td>Insight to a peer</td><td><code>Message(FYI)</code> directed</td><td><span class="yn y">NO</span></td></tr>
+        <tr><td>"This claim needs legal before it ships"</td><td>Concern / flag</td><td><code>Message(FYI)</code> elevated</td><td><span class="yn y">NO</span></td></tr>
+        <tr><td>"Ready to launch — approve the $8k spend?"</td><td>Request go-live</td><td><code>ApprovalGate</code> request</td><td><span class="yn n">YES</span></td></tr>
+        <tr><td>"Blocked — ad account token expired"</td><td>Escalation</td><td><code>Message(ESCALATION)</code> + task blocked</td><td><span class="yn n">YES</span></td></tr>
+      </tbody>
+    </table>
+    <p style="margin-top:14px">Unlike the Analyst — who has no approval act because she can't spend or send — Mira's signature speech act <i>is</i> the <b>go-live request</b>. It's not new plumbing: it's the <code>ApprovalGate</code> she's already wired to.</p>
+
+    <h3>The crux — ask vs. assume</h3>
+    <div class="grid3" style="margin-top:6px">
+      <div class="card"><h4>a · Block &amp; wait</h4><div class="role">needy if overused</div><p>Task → blocked, ESCALATION, resume on REPLY. Right only when a wrong reading would mis-target the whole spend.</p></div>
+      <div class="card"><h4>b · Assume &amp; state</h4><div class="role">reckless if hidden</div><p>Make the sensible reading, state the assumption in the brief, keep drafting. Right for low-stakes forks — but never silent, and never past the gate.</p></div>
+      <div class="card" style="border-color:#cdd8cd"><h4>c · Graded <span class="pill" style="background:#e8f3ea;color:var(--read)">lean</span></h4><div class="role">a good colleague</div><p>(b) by default with the assumption logged; (a) when a wrong reading would burn budget or brand. The same consequence-grading as §09, pointed at framing.</p></div>
+    </div>
+    <div class="callout">
+      <div class="lbl">Salience — proactive ≠ chatty</div>
+      <p>The Activity stream is exhaustive and machine-facing (the audit log); the SCRUM_PACKET digest is curated and human-facing. The split is the noise filter: a marketer with read access to the whole funnel could narrate forever — so she surfaces only results past a lift threshold, genuine brand/spend concerns, and go-live requests. Her personality lives in <code>_brief.py</code>: <i>"lead with the metric, then the bet, then the expected lift; show the variant; name the spend; on-brand, always; no hype."</i> Volume scales with trust — proven Mira goes terse, new Mira shows her work.</p>
+    </div>
+  </div>
+</section>
+
+<!-- 13 -->
+<section id="routines">
+  <div class="wrap">
+    <h2>13 — Standing routines</h2>
+    <div class="h2sub">The clock that makes her a campaigner, not just a responder.</div>
+    <p>Mira ships <code>RoutineDeclaration</code>s with her plugin. At hire, <code>reconcile_declared_routines</code> mints them into <code>routine</code> + <code>routine_trigger</code> rows — zero kernel diff. Each firing spawns a fresh task; <code>concurrency=coalesce</code> keeps cycles from piling up. A bare Marketer is purely reactive (assigned a metric); routines make her a standing growth loop.</p>
+    <table>
+      <thead><tr><th>Routine</th><th>Schedule</th><th>What it mints</th><th>Concurrency</th></tr></thead>
+      <tbody>
+        <tr><td>Performance watch</td><td><code>0 9 * * 1</code></td><td>"Scan the funnel — what moved, what's decaying, where's CAC drifting?"</td><td>coalesce</td></tr>
+        <tr><td>Experiment readout</td><td><code>0 9 * * 3</code></td><td>"Read out the running tests — call winners, kill losers" (feeds calibration)</td><td>skip_if_active</td></tr>
+        <tr><td>Content / GEO refresh</td><td><code>0 9 1 * *</code></td><td>"Re-score owned content for ranking + AI-citation decay; restage refreshes"</td><td>coalesce</td></tr>
+        <tr><td>Brand-drift scan</td><td><code>0 9 * * 1</code></td><td>"Scan what shipped against the voice spec — flag anything off-message"</td><td>coalesce</td></tr>
+      </tbody>
+    </table>
+    <p style="margin-top:14px">The <b>experiment readout</b> is special to the Marketer: it's how calibration closes the loop. Predicted-vs-actual lift on a running test becomes a calibration note (§10), and a dead creative becomes a memory entry so she doesn't re-run it. Every routine that proposes a go-live still lands a <i>staged</i> campaign — it mints the work, it never trips the gate on its own.</p>
+    <div class="status-note" style="border-left-color:#8a8a8a;background:#f5f5f5;color:#3a3a3a"><div class="lbl" style="color:#8a8a8a">Status</div>As built: the routine ENGINE is fully built, and Mira now declares TWO analytics-free standing routines (hire-time reconciled, zero operator setup): <b>brand-drift scan</b> (weekly — reviews shipped content against brand_spec.md, report/propose only) and <b>content/GEO refresh</b> (monthly — re-scores owned content for GEO/AEO+SEO decay, stages refreshes). The remaining two (performance-watch, experiment-readout) wait on analytics data.</div>
+  </div>
+</section>
+
+<!-- 14 -->
+<section id="memory">
+  <div class="wrap">
+    <h2>14 — Tribal knowledge (memory)</h2>
+    <div class="h2sub">Why she gets sharper, not just busier.</div>
+    <p>Mira reads her campaign memory scope at the start of every beat and appends to it at the end. Over time it accumulates the org's marketing instinct:</p>
+    <ul class="clean">
+      <li><b>Creative ledger</b> — every variant, its predicted lift, and — crucially — what it actually did.</li>
+      <li><b>Channel / audience ledger</b> — which surface and segment converted, which burned out, at what CAC.</li>
+      <li><b>Brand-voice corpus</b> — the accumulating record of what's on-message and what got flagged off.</li>
+      <li><b>Dead campaigns</b> — what looked promising and wasn't, so she doesn't re-run a known loser.</li>
+    </ul>
+    <div class="callout">
+      <div class="lbl">The lattice seam</div>
+      <p>Raw append-only memory is chorus's default. <b>lattice</b> (the sibling consolidation policy) later compresses "ran 40 campaigns, overestimated cold-audience lift" into a learned prior — a calibrated CAC expectation and a sharpened creative instinct. Mira reads the consolidated prior, not the raw 40 rows. The mechanism stays in chorus; the learning policy is the sibling. This is the same seam reserved in §10 — the won-element and the realised lift are the substrate lattice consolidates over. Brand voice itself is a candidate consolidation: the corpus becomes a tighter voice model over time.</p>
+    </div>
+  </div>
+</section>
+
+<!-- 15 -->
+<section id="build">
+  <div class="wrap">
+    <h2>15 — Build map</h2>
+    <div class="h2sub">What's reused vs. net-new in chorus.</div>
+    <div class="grid2" style="margin-top:8px">
+      <div class="card">
+        <h4>Reused as-is <span class="pill reuse">no change</span></h4>
+        <ul class="clean">
+          <li>Employee rehydration / beat / <code>run_task</code> seam</li>
+          <li>Role overlay &amp; <code>compute_minimum_toolset</code> (subagent narrowing)</li>
+          <li><b>dream-native subagent system</b> — <code>spawn_subagent</code> tool + depth cap + spawn cap + <b>enforced tool-intersection</b>; the swarm <i>mechanism</i> is dream's, no chorus infra</li>
+          <li>Worktree + lander machinery (shared with the Engineer)</li>
+          <li>Command / AgentReview / HumanApproval verifiers</li>
+          <li>Routine engine + <code>RoutineDeclaration</code> + reconciler</li>
+          <li><b>WebPlugin trust leash + <code>SpendCap</code>/<code>RateCap</code> + credential binding</b> — already built</li>
+          <li><code>ApprovalGate</code> + two-gate budgets + <code>cost_event</code> + env secret-refs</li>
+          <li>Memory scopes + append-only writer + lattice seam</li>
+          <li>Query &amp; Web-Research Orchestrators (shared Tier-2)</li>
+          <li><b>The Engineer's offline-eval / branch-tournament</b> — pointed at creatives to prune losers before spend; no new module</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>Net-new (role-agnostic) <span class="pill new">build</span></h4>
+        <ul class="clean">
+          <li><b>Brand layer</b> <span class="pill partial">partial</span> — as built: brand_spec.md + the brand-voice skill + <code>brand_lint</code> + the Brand-Critic; voice ontology and the pre/live/post validation sandwich still pending.</li>
+          <li><b>Element read-back loop</b> <span class="pill todo">deferred → lattice</span> — a <i>thin</i> loop: capture which served element won → realised-vs-predicted lift → calibration note. Over-time calibration reserved to lattice. Sits on the lander + memory, not a kernel module.</li>
+          <li><b>Gated write WebPlugins</b> <span class="pill partial">publish path live</span> — the <code>publish</code> / <code>send</code> / <code>spend</code> grants + their fail-closed cap bindings, exercised end-to-end on the already-shipped leash.</li>
+          <li><b>The subagent roster + the chorus wire</b> <span class="pill partial">3 of 6 live</span> — the <i>exact</i> specialists declared as dream <code>Subagent</code>s in <code>src/chorus/swarm/</code> (Tier-2 shared) and the plugin (Tier-1), plus the one wire: <code>RoleManifest.subagents</code> → <code>build_harness(subagents=…)</code>. Declarations + plumbing, not a swarm engine.</li>
+          <li><b>Channel-Publisher swarm role</b> <span class="pill partial">verbs on Mira</span> — the only subagent near a live surface, gated by construction.</li>
+          <li><b>Campaign outcome family</b> <span class="pill partial">content lander live</span> — content · creative-set · sequence · campaign landers (asset + variants + brief + brand-check + experiment plan).</li>
+        </ul>
+      </div>
+    </div>
+    <p style="margin-top:16px">The selection engine is <i>not</i> ours to build — the ad platforms own it, and the offline prune is the Engineer's existing eval. What's genuinely net-new is the <b>brand layer</b> and the thin <b>read-back loop</b>; both are role-agnostic. <b>The Marketer is the forcing function, not a special case</b> — and because the WebPlugin leash already exists, she is the first employee to <i>exercise</i> a surface chorus built but never drove.</p>
+
+    <h3>Plugin anatomy</h3>
+    <pre class="tree">src/chorus_employee/marketer/
+  __init__.py        <span class="c"># marketer_plugin() → RolePlugin</span>
+  _brief.py          <span class="c"># Mira's standing identity + voice contract</span>
+  _config.py         <span class="c"># RoleManifest: read-all · draft worktree · gated publish/send/spend · subagents=marketer_swarm()</span>
+  _dod.py            <span class="c"># action-class DoD: Command | AgentReview | HumanApproval</span>
+  _lander.py         <span class="c"># lands content | creative-set | sequence | campaign</span>
+  _routines.py       <span class="c"># performance watch · experiment readout · GEO refresh · brand-drift</span>
+  _subagents.py      <span class="c"># Tier-1 roster → SubagentSet (Strategist/Researcher/Creative/Brand-Critic/Experimenter/Channel)</span>
+  _integrations.py   <span class="c"># graded WebPlugin grants: read-only + gated publish/send/spend</span>
+  _readback.py       <span class="c"># NEW thin loop: won element → realised-vs-predicted lift → calibration note</span>
+  <span class="c"># offline prune = reuse the Engineer's existing eval; no new module</span>
+<span class="new">src/chorus/swarm/</span>         <span class="c"># NEW — the subagent roster (declarations over dream's Subagent), shared Tier-2</span>
+  _web_research.py   <span class="c"># Web-Research Orchestrator (reusable swarm role)</span>
+  _query.py          <span class="c"># Query Orchestrator (shared with the Analyst)</span>
+  <span class="c"># spawn mechanism + tool-intersection + caps = dream.swarm; chorus only declares the roster</span>
+<span class="new">src/chorus/roles/_manifest.py</span> <span class="c"># EXTEND — RoleManifest.subagents threaded into build_harness(subagents=…)</span>
+<span class="new">src/chorus/brand/</span>         <span class="c"># NEW — the brand layer (the one heavy net-new piece)</span>
+  _voice.py          <span class="c"># voice model · ontology · anti-personas</span>
+  _sandbox.py        <span class="c"># pre / live / post validation sandwich</span>
+<span class="new">src/chorus/webplugins/</span>    <span class="c"># EXTEND — already ships the leash; add the live grants</span>
+  _outbound.py       <span class="c"># publish / send / spend grants + fail-closed caps (exercise existing trust layer)</span></pre>
+
+    <div class="status-note"><div class="lbl">As built (differs from the sketch above)</div><code>src/chorus_employee/marketer/</code> ships <code>_brief.py</code> · <code>_harness.py</code> (the RoleManifest) · <code>_subagents.py</code> (Brand-Critic + Creative) · <code>_creative_manifest.py</code> · <code>skills/brand-voice/</code>. The channel verbs live in <code>src/chorus_tools/</code> instead of WebPlugins: <code>_go_live.py</code> (the gate) · <code>_brand_lint.py</code> · <code>cms/</code> (typed drafts, Markdown+Strapi backends, standing-draft index) · <code>delivery/</code> (the executor: PublishBackend + EmailBackend seams, Strapi/Markdown publish, Outbox/Resend send, markdown→HTML renderer, delivery index, <code>execute_go_live</code>). The surfaces it lands on: a tiny blog served by Strapi itself at <code>localhost:1337/blog</code>, and real email in an inbox via Resend — both go live the moment an approved go-live executes.</div>
+
+    <h3>Design decisions locked <span class="muted" style="font-weight:400;font-size:13px">(redirect any of these)</span></h3>
+    <ul class="clean">
+      <li><b>No ungated reach</b> — every publish / send / spend is gated; she drafts and stages, a human or manager approves go-live. She is an IC, not finance.</li>
+      <li><b>Generates &amp; drafts freely</b> — variants, content, experiments to the worktree; her output lands as a staged campaign, not a live one.</li>
+      <li><b>Outcome kinds</b> = content · creative-set · sequence · campaign; the campaigner "launch the thing" facet is a <code>campaign</code>.</li>
+      <li><b>Selection is the platform's, not ours</b> — Mira generates on-brand variety, prunes losers with the Engineer's existing eval, and reads the winning element back; the brand layer is the heavy net-new piece. Calibration-over-time is a reserved lattice seam (described, not built here).</li>
+      <li><b>The swarm is dream-native; chorus only declares the roster</b> — the <i>exact</i> subagents live in <code>src/chorus/swarm/</code> (shared Tier-2) and the plugin (Tier-1); the spawn mechanism, depth/spawn caps, and tool-intersection are dream's, wired through one <code>RoleManifest.subagents</code> field.</li>
+      <li><b>Brand-Critic review is mandatory above an importance threshold</b>, graded — skipped for throwaway drafts.</li>
+      <li><b>The WebPlugin leash is reused, not reinvented</b> — Mira exercises the already-shipped <code>send</code>/<code>spend</code> grades; the fail-closed posture is the answer to the Meta anti-pattern.</li>
+      <li>Integration vendors are placeholders for categories (analytics / ads / SEO-GEO / CMS / publish / lifecycle / brand).</li>
+    </ul>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    Draft design · <code>docs/specs/marketer-employee.html</code> · chorus deep-employee archetype · the mirror twin of the Analyst — same skeleton, inverted crux: governed against reckless reach, not confident wrongness · grounded in two research sweeps (<code>docs/research/2026-06-30-marketing-agents.md</code> · <code>2026-06-30-growth-gtm-agents.md</code>) and the already-shipped WebPlugin trust leash.
+  </div>
+</footer>
+
+</body>
+</html>
