@@ -11,7 +11,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from chorus_employee.marketer._schemas import (
+from chorus_employee.marketer._subagents._creative._schema import (
     CreativeManifest,
     VariantEntry,
     creative_output_schema,

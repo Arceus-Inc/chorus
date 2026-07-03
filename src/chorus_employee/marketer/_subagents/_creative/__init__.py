@@ -2,14 +2,21 @@
 
 A Tier-1 specialist Mira spawns *after* a seed exists: given ONE research-grounded seed post, it
 drafts a handful of on-brand variants (§10 variety) to the worktree, self-lints each, and returns
-a typed manifest (``CreativeManifest``). It varies *expression*, never *evidence* — the seed's
-cited claims carry across verbatim — and it writes but never publishes or selects.
+a typed :class:`CreativeManifest`. It varies *expression*, never *evidence* — the seed's cited
+claims carry across verbatim — and it writes but never publishes or selects.
+
+The return contract (:mod:`._schema`) is pydantic-authored and emitted to the spec's
+``output_schema`` via :func:`creative_output_schema`, so dream validates the final message at runtime.
 """
 
 from __future__ import annotations
 
 from chorus.roles._subagent import SubagentSpec
-from chorus_employee.marketer._schemas import creative_output_schema
+from chorus_employee.marketer._subagents._creative._schema import (
+    CreativeManifest,
+    VariantEntry,
+    creative_output_schema,
+)
 
 CREATIVE_SUBAGENT = SubagentSpec(
     name="creative",
@@ -28,8 +35,9 @@ CREATIVE_SUBAGENT = SubagentSpec(
         "and the STRUCTURE. Do NOT just reword the seed.\n"
         '4. Run `brand_lint(doc="candidates/variant_NN.md")` on EACH variant and fix anything it '
         "flags before you finish, so the set arrives pre-checked.\n"
-        "5. Return a JSON manifest: the seed you varied and, per variant, its file, a one-line angle, "
-        "and whether brand_lint came back clean.\n\n"
+        "5. Return a JSON manifest matching your output contract: `seed` (the seed file you varied) "
+        "and `variants` — one entry per variant with its `file`, a one-line `angle`, and "
+        "`brand_lint_clean` (true when its brand_lint came back with no findings).\n\n"
         "## Hard rules\n"
         "- PRESERVE THE EVIDENCE. Every performance/outcome CLAIM in the seed is either already cited "
         "or already hedged — carry it across UNCHANGED. You may re-word prose, but you may NOT invent a "
@@ -48,4 +56,9 @@ CREATIVE_SUBAGENT = SubagentSpec(
     output_schema=creative_output_schema(),
 )
 
-__all__ = ["CREATIVE_SUBAGENT"]
+__all__ = [
+    "CREATIVE_SUBAGENT",
+    "CreativeManifest",
+    "VariantEntry",
+    "creative_output_schema",
+]

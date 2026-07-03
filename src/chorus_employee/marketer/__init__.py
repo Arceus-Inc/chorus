@@ -8,7 +8,8 @@ Marketer that harness, one component per module:
 - :mod:`._dod`      — the Definition of Done (intent -> typed :class:`~chorus.outcomes.Verifier`).
 - :mod:`._lander`   — the ``content`` :class:`~chorus.outcomes.OutcomeLander` (committed draft).
 - :mod:`._routines` — standing routines (performance watch, experiment readout, etc.).
-- :mod:`._subagents` — Tier-1 subagents (Brand-Critic).
+- :mod:`._subagents` — Tier-1 subagents (Strategist, Brand-Critic, Creative), each a subpackage
+  carrying its spec + pydantic return contract.
 
 :func:`marketer_plugin` assembles the role triple; :func:`marketer_lander` provides the matching
 :class:`~chorus.outcomes.OutcomeLander`. This is the **single source** of the Marketer:
@@ -23,15 +24,19 @@ from chorus_employee.marketer._dod import marketer_dod
 from chorus_employee.marketer._harness import marketer_manifest
 from chorus_employee.marketer._lander import MarketerLander, marketer_lander
 from chorus_employee.marketer._routines import MARKETER_BRAND_DRIFT_SCAN, MARKETER_ROUTINES
-from chorus_employee.marketer._schemas import (
-    CreativeManifest,
-    VariantEntry,
-    creative_output_schema,
-)
 from chorus_employee.marketer._subagents import (
     BRAND_CRITIC_SUBAGENT,
     CREATIVE_SUBAGENT,
     STRATEGIST_SUBAGENT,
+    BrandVerdict,
+    CreativeManifest,
+    EvidenceItem,
+    StrategyBrief,
+    VariantEntry,
+    Violation,
+    brand_verdict_output_schema,
+    creative_output_schema,
+    strategy_output_schema,
 )
 
 
@@ -54,10 +59,16 @@ __all__ = [
     "MARKETER_CONTENT_DOC",
     "MARKETER_ROUTINES",
     "STRATEGIST_SUBAGENT",
+    "BrandVerdict",
     "CreativeManifest",
+    "EvidenceItem",
     "MarketerLander",
+    "StrategyBrief",
     "VariantEntry",
+    "Violation",
+    "brand_verdict_output_schema",
     "creative_output_schema",
     "marketer_lander",
     "marketer_plugin",
+    "strategy_output_schema",
 ]

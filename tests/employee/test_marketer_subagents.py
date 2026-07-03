@@ -9,6 +9,7 @@ from chorus.roles._subagent import SubagentSpec
 from chorus_employee.marketer import (
     BRAND_CRITIC_SUBAGENT,
     CREATIVE_SUBAGENT,
+    STRATEGIST_SUBAGENT,
     marketer_plugin,
 )
 from chorus_harness._factory import _subagent_set
@@ -45,6 +46,29 @@ class TestBrandCriticDeclaration:
     def test_description_instructs_read_only(self) -> None:
         desc = BRAND_CRITIC_SUBAGENT.description.lower()
         assert "read-only" in desc or "read only" in desc
+
+    def test_brand_critic_carries_the_verdict_output_schema(self) -> None:
+        # The verdict is a typed BrandVerdict: PASS/FAIL enum + violations, enforced at runtime.
+        schema = BRAND_CRITIC_SUBAGENT.output_schema
+        assert schema is not None
+        assert schema.get("type") == "object"
+        assert {"verdict", "violations"} <= set(schema["required"])
+        assert schema["properties"]["verdict"]["enum"] == ["PASS", "FAIL"]
+
+
+# --- Strategist declaration (§06, §10) ---
+
+
+class TestStrategistDeclaration:
+    def test_subagent_name(self) -> None:
+        assert STRATEGIST_SUBAGENT.name == "strategist"
+
+    def test_strategist_carries_the_brief_output_schema(self) -> None:
+        # The bet is a typed StrategyBrief: artifact path + structured bet + cited evidence.
+        schema = STRATEGIST_SUBAGENT.output_schema
+        assert schema is not None
+        assert schema.get("type") == "object"
+        assert {"brief_file", "hypothesis", "evidence"} <= set(schema["required"])
 
 
 # --- Manifest integration ---
@@ -133,8 +157,7 @@ class TestMarketerManifestSubagents:
         for subagent in plugin.manifest.subagents:
             for tool in subagent.tools:
                 assert tool in parent_tools, (
-                    f"Subagent tool {tool!r} is not in parent's tools — "
-                    f"narrower-wins violation"
+                    f"Subagent tool {tool!r} is not in parent's tools — narrower-wins violation"
                 )
 
     def test_beat_config_carries_the_subagents(self) -> None:
