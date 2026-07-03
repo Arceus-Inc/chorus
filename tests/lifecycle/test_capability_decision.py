@@ -12,7 +12,7 @@ import pytest
 
 from chorus.ledger import SqliteLedger
 from chorus.ledger._models import RejectedAlternative
-from chorus.lifecycle._capability import CapabilityService, ClaimDraft
+from chorus.lifecycle._capability import CapabilityService, ClaimDraft, DecisionOutcome
 
 pytestmark = pytest.mark.integration
 
@@ -23,7 +23,7 @@ _CLAIMS = [
 _REJECTED = [RejectedAlternative(option="second provider", reason="outages are rare")]
 
 
-def _record(service: CapabilityService, *, revision: str = "r1") -> object:
+def _record(service: CapabilityService, *, revision: str = "r1") -> DecisionOutcome:
     return service.record_decision(
         task_id="t1",
         revision=revision,
@@ -60,6 +60,39 @@ def test_is_idempotent_per_task_revision(ledger: SqliteLedger) -> None:
     assert second.recorded is False and second.idempotent is True
     assert len(ledger.decisions.for_task("t1")) == 1
     assert len(ledger.claims.for_decisions([first.decision_id])) == 2  # not doubled
+
+
+def test_fresh_record_returns_the_canonical_content(ledger: SqliteLedger) -> None:
+    outcome = _record(CapabilityService(ledger))
+    assert outcome.record is not None
+    assert outcome.record.option == "build presence indicators"
+    assert {c.source_url for c in outcome.claims} == {"https://a", "https://b"}
+
+
+def test_idempotent_refire_returns_the_already_recorded_decision(ledger: SqliteLedger) -> None:
+    """A second call in the same beat is a no-op on the ledger AND reports the recorded decision.
+
+    The immutable record wins: a re-fire with *different* content must not report the rejected new
+    input, or the caller (the tool that mirrors decision.json) drifts from the ledger.
+    """
+    service = CapabilityService(ledger)
+    first = _record(service, revision="r1")  # option "build presence indicators"
+    second = service.record_decision(
+        task_id="t1",
+        revision="r1",  # same beat -> idempotent
+        option="build a run timeline instead",  # DIFFERENT content
+        rationale="changed my mind",
+        confidence=0.9,
+        outcome_metric="m",
+        revisit_trigger="t",
+        rejected=[],
+        claims=[ClaimDraft(text="z", source_url="https://z", confidence=0.9)],
+    )
+    assert second.idempotent is True and second.recorded is False
+    assert second.decision_id == first.decision_id
+    assert second.record is not None
+    assert second.record.option == "build presence indicators"  # the FIRST, authoritative one
+    assert {c.source_url for c in second.claims} == {"https://a", "https://b"}  # first's claims
 
 
 def test_a_new_revision_supersedes_with_a_distinct_id(ledger: SqliteLedger) -> None:

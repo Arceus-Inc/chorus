@@ -13,6 +13,7 @@ stays policy-free; the floor policy is imported here from the PM package (a comp
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 from pathlib import Path
 
 from dream.contracts.tool import ToolResult
@@ -22,7 +23,7 @@ from pydantic import BaseModel, Field, ValidationError
 
 from chorus.heartbeat import BeatContext
 from chorus.ledger import SqliteLedger
-from chorus.ledger._models import RejectedAlternative
+from chorus.ledger._models import Claim, DecisionRecord, RejectedAlternative
 from chorus.lifecycle import CapabilityService, ClaimDraft
 from chorus_employee.pm._decision import clears_floor
 
@@ -113,19 +114,48 @@ class RecordDecisionTool(BaseTool):
                 for c in args.claims
             ],
         )
-        self._mirror(ctx.working_dir, args, outcome.decision_id)
+        # Mirror the CANONICAL recorded decision (the immutable ledger row), never this call's input:
+        # on an idempotent re-fire ``outcome.record`` is the already-recorded decision, so decision.json
+        # (and the plan built from it) can never drift off the ledger. ``record`` is set on both paths.
+        record, claims = outcome.record, outcome.claims
+        assert (
+            record is not None
+        )  # record_decision always returns the canonical row on a write path
+        self._mirror(ctx.working_dir, record, claims)
+        if outcome.idempotent:
+            return self._already_recorded(record, len(claims))
         return ToolResult(
             content=(
-                f"Decision {outcome.decision_id} recorded · confidence {args.confidence:.2f} · "
-                f"{len(args.claims)} cited claims · floor cleared."
+                f"Decision {record.id} recorded · confidence {record.confidence:.2f} · "
+                f"{len(claims)} cited claims · floor cleared."
             ),
             structured={
                 "status": "success",
-                "decision_id": outcome.decision_id,
-                "confidence": args.confidence,
-                "claims": len(args.claims),
-                "next_actions": [f"write plan.md referencing decision {outcome.decision_id}"],
-                "artifacts": [_DECISION_MIRROR, outcome.decision_id],
+                "decision_id": record.id,
+                "confidence": record.confidence,
+                "claims": len(claims),
+                "next_actions": [f"write plan.md referencing decision {record.id}"],
+                "artifacts": [_DECISION_MIRROR, record.id],
+            },
+        )
+
+    @staticmethod
+    def _already_recorded(record: DecisionRecord, claim_count: int) -> ToolResult:
+        """A second call this beat is a no-op: the recorded decision is immutable and stands."""
+        return ToolResult(
+            content=(
+                f"Already recorded this beat: {record.id} — {record.option!r}. A decision is immutable "
+                "within a beat, so this call did NOT change it; decision.json still reflects the "
+                "recorded decision. Write plan.md to match the recorded decision above."
+            ),
+            structured={
+                "status": "already_recorded",
+                "decision_id": record.id,
+                "option": record.option,
+                "confidence": record.confidence,
+                "claims": claim_count,
+                "next_actions": [f"write plan.md referencing decision {record.id}"],
+                "artifacts": [_DECISION_MIRROR, record.id],
             },
         )
 
@@ -150,9 +180,27 @@ class RecordDecisionTool(BaseTool):
         )
 
     @staticmethod
-    def _mirror(working_dir: Path, args: RecordDecisionInput, decision_id: str) -> None:
-        """Write ``decision.json`` — the DoD floor's check surface + a human-diffable record."""
-        payload = {"decision_id": decision_id, **args.model_dump()}
+    def _mirror(working_dir: Path, record: DecisionRecord, claims: Sequence[Claim]) -> None:
+        """Write ``decision.json`` from the canonical ledger row — the DoD floor's check surface.
+
+        Mirrors the recorded ``DecisionRecord`` + ``Claim`` rows (not the caller's raw input), so the
+        worktree file always equals the immutable ledger decision.
+        """
+        payload = {
+            "decision_id": record.id,
+            "option": record.option,
+            "rationale": record.rationale,
+            "confidence": record.confidence,
+            "outcome_metric": record.outcome_metric,
+            "revisit_trigger": record.revisit_trigger,
+            "rejected_alternatives": [
+                {"option": r.option, "reason": r.reason} for r in record.rejected_alternatives
+            ],
+            "claims": [
+                {"text": c.text, "source_url": c.source_url, "confidence": c.confidence}
+                for c in claims
+            ],
+        }
         (working_dir / _DECISION_MIRROR).write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
 

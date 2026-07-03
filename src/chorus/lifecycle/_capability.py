@@ -130,11 +130,18 @@ class DecisionOutcome:
 
     ``recorded`` is ``True`` when this call created the decision + claims; ``idempotent`` is ``True``
     when the ``(task, revision)`` decision already existed and the call was a no-op.
+
+    ``record`` / ``claims`` carry the **canonical** recorded content — what this call wrote on a fresh
+    record, or the **already-recorded** rows on an idempotent re-fire. The caller mirrors from these (not
+    from its own input), so a second call with different content can never drift the mirror off the
+    immutable ledger row.
     """
 
     decision_id: str
     recorded: bool
     idempotent: bool = False
+    record: DecisionRecord | None = None
+    claims: tuple[Claim, ...] = ()
 
 
 class CapabilityService:
@@ -164,32 +171,43 @@ class CapabilityService:
         a failure mid-write leaves no partial decision behind.
         """
         decision_id = _decision_id(task_id, revision)
-        if self._ledger.decisions.get(decision_id) is not None:
-            return DecisionOutcome(decision_id, recorded=False, idempotent=True)
-        with self._ledger.transaction():
-            self._ledger.decisions.create(
-                DecisionRecord(
-                    id=decision_id,
-                    task_id=task_id,
-                    option=option,
-                    rationale=rationale,
-                    confidence=confidence,
-                    outcome_metric=outcome_metric,
-                    revisit_trigger=revisit_trigger,
-                    rejected_alternatives=tuple(rejected),
-                )
+        existing = self._ledger.decisions.get(decision_id)
+        if existing is not None:
+            # The record is immutable per beat: a re-fire is a no-op, and it reports the ALREADY-recorded
+            # decision (not this call's input) so the caller mirrors the ledger, never the rejected input.
+            recorded_claims = tuple(self._ledger.claims.for_decisions([decision_id]))
+            return DecisionOutcome(
+                decision_id,
+                recorded=False,
+                idempotent=True,
+                record=existing,
+                claims=recorded_claims,
             )
-            for index, claim in enumerate(claims):
-                self._ledger.claims.create(
-                    Claim(
-                        id=f"{decision_id}-c{index}",
-                        decision_id=decision_id,
-                        text=claim.text,
-                        source_url=claim.source_url,
-                        confidence=claim.confidence,
-                    )
-                )
-        return DecisionOutcome(decision_id, recorded=True)
+        record = DecisionRecord(
+            id=decision_id,
+            task_id=task_id,
+            option=option,
+            rationale=rationale,
+            confidence=confidence,
+            outcome_metric=outcome_metric,
+            revisit_trigger=revisit_trigger,
+            rejected_alternatives=tuple(rejected),
+        )
+        written_claims = tuple(
+            Claim(
+                id=f"{decision_id}-c{index}",
+                decision_id=decision_id,
+                text=claim.text,
+                source_url=claim.source_url,
+                confidence=claim.confidence,
+            )
+            for index, claim in enumerate(claims)
+        )
+        with self._ledger.transaction():
+            self._ledger.decisions.create(record)
+            for claim_row in written_claims:
+                self._ledger.claims.create(claim_row)
+        return DecisionOutcome(decision_id, recorded=True, record=record, claims=written_claims)
 
     def decompose(
         self, *, parent_id: str, revision: str, children: Sequence[ChildPlan]

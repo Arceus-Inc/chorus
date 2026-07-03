@@ -109,5 +109,39 @@ def test_is_idempotent_on_refire(ledger: SqliteLedger, tmp_path: Path) -> None:
     assert len(ledger.decisions.for_task("pm-task")) == 1  # no duplicate
 
 
+def test_refire_with_different_input_keeps_the_mirror_on_the_recorded_decision(
+    ledger: SqliteLedger, tmp_path: Path
+) -> None:
+    """A second call in the same beat with different content must NOT drift decision.json.
+
+    The recorded decision is immutable per beat; a re-fire is a no-op on the ledger. The mirror the DoD
+    floor + the plan read must keep reflecting the LEDGER, not the rejected new input — otherwise the
+    deliverable describes a decision the ledger never recorded (the live-run drift bug).
+    """
+    _seed_beat(tmp_path)
+    tool = RecordDecisionTool(ledger)
+    asyncio.run(
+        tool.execute(_grounded_input(), _ctx(tmp_path))
+    )  # option "build live presence indicators"
+    changed = _grounded_input() | {
+        "option": "build a run timeline instead",
+        "claims": [{"text": "different", "source_url": "https://z", "confidence": 0.9}],
+    }
+    second = asyncio.run(tool.execute(changed, _ctx(tmp_path)))
+
+    # Ledger unchanged: still the FIRST decision.
+    decisions = ledger.decisions.for_task("pm-task")
+    assert len(decisions) == 1 and decisions[0].option == "build live presence indicators"
+
+    # The mirror reflects the LEDGER (first), not the rejected second input.
+    mirrored = json.loads((tmp_path / "decision.json").read_text(encoding="utf-8"))
+    assert mirrored["option"] == "build live presence indicators"
+    assert mirrored["claims"][0]["source_url"] == "https://a"
+
+    # The tool tells the model it was already recorded (not a fresh success).
+    assert second.structured["status"] == "already_recorded"
+    assert second.is_error is False
+
+
 def test_declares_a_repo_write_trust_tier(ledger: SqliteLedger) -> None:
     assert RecordDecisionTool(ledger).declaration.tier_required == 1
