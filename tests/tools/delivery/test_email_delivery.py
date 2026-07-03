@@ -18,9 +18,8 @@ from chorus.ledger import Approval, ApprovalGate, ApprovalSubjectKind, SqliteLed
 from chorus_tools.cms import ContentType, DraftRef, EmailDraft, MarkdownCmsBackend
 from chorus_tools.cms._index import CmsDraftIndex
 from chorus_tools.delivery import DeliveryError, PublishedRef
-from chorus_tools.delivery._email_types import EmailMessage, EmailRouting
-from chorus_tools.delivery._send import EmailDelivery
 from chorus_tools.delivery._tool import ExecuteGoLiveTool
+from chorus_tools.delivery.email import EmailDelivery, EmailMessage, EmailRouting
 
 pytestmark = pytest.mark.integration
 

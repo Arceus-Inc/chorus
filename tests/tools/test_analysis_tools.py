@@ -7,6 +7,7 @@ import sqlite3
 from pathlib import Path
 
 import pytest
+from dream.tools._context import ToolExecutionContext
 
 from chorus_tools import (
     ChartRenderTool,
@@ -15,7 +16,6 @@ from chorus_tools import (
     WarehouseQueryTool,
     analysis_tool,
 )
-from dream.tools._context import ToolExecutionContext
 
 pytestmark = pytest.mark.unit
 

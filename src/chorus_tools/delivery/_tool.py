@@ -21,10 +21,10 @@ from chorus_tools._beat import task_id_or_none
 from chorus_tools._go_live import GoLiveAction
 from chorus_tools.cms import ContentType, DraftRef
 from chorus_tools.cms._index import CmsDraftIndex
-from chorus_tools.delivery._backend import PublishBackend
 from chorus_tools.delivery._index import DeliveryIndex
-from chorus_tools.delivery._send import EmailDelivery
 from chorus_tools.delivery._types import DeliveryError, DeliveryRecord
+from chorus_tools.delivery.email import EmailDelivery
+from chorus_tools.delivery.publish import PublishBackend
 
 # Worktree locations (beside the beat context the kernel writes).
 _DRAFTS_RELATIVE = Path(".harness") / "cms-drafts.json"

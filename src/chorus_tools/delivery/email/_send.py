@@ -9,9 +9,9 @@ half-sends.
 from __future__ import annotations
 
 from chorus_tools.cms import CmsBackend, CmsError, ContentType, DraftRef, EmailDraft
-from chorus_tools.delivery._email_backend import EmailBackend
-from chorus_tools.delivery._email_types import EmailMessage, EmailRouting
 from chorus_tools.delivery._types import DeliveryError, PublishedRef
+from chorus_tools.delivery.email._backend import EmailBackend
+from chorus_tools.delivery.email._types import EmailMessage, EmailRouting
 
 
 class EmailDelivery:

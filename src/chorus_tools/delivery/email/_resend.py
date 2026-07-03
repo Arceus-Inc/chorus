@@ -12,9 +12,9 @@ import httpx
 
 from chorus_tools._backends import BackendName
 from chorus_tools._http import ensure_ok, json_body
-from chorus_tools.delivery._email_html import render_email_html
-from chorus_tools.delivery._email_types import EmailMessage
 from chorus_tools.delivery._types import DeliveryError, PublishedRef
+from chorus_tools.delivery.email._html import render_email_html
+from chorus_tools.delivery.email._types import EmailMessage
 
 _ENDPOINT = "https://api.resend.com/emails"
 _DASHBOARD = "https://resend.com/emails"

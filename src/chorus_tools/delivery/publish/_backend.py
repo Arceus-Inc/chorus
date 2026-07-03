@@ -1,8 +1,8 @@
 """The `PublishBackend` seam — the one operation a publish executor implements.
 
 Turns a staged :class:`~chorus_tools.cms.DraftRef` into LIVE content and reports where it landed.
-Implementations: :class:`~chorus_tools.delivery._strapi_publish.StrapiPublishBackend` (hosted) and
-:class:`~chorus_tools.delivery._markdown_publish.MarkdownPublishBackend` (keyless static-site flip).
+Implementations: :class:`~chorus_tools.delivery.publish._strapi.StrapiPublishBackend` (hosted) and
+:class:`~chorus_tools.delivery.publish._markdown.MarkdownPublishBackend` (keyless static-site flip).
 The `email.send` executor's ``EmailBackend`` will sit beside this seam in a later slice.
 """
 

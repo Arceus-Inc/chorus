@@ -18,8 +18,7 @@ import pytest
 from chorus_tools.cms import BlogDraft, ContentType, DraftRef, MarkdownCmsBackend
 from chorus_tools.delivery import DeliveryError, PublishedRef
 from chorus_tools.delivery._config import publish_backend_from_env
-from chorus_tools.delivery._markdown_publish import MarkdownPublishBackend
-from chorus_tools.delivery._strapi_publish import StrapiPublishBackend
+from chorus_tools.delivery.publish import MarkdownPublishBackend, StrapiPublishBackend
 
 pytestmark = pytest.mark.unit
 

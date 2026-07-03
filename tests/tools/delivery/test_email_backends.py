@@ -15,13 +15,13 @@ import httpx
 import pytest
 
 from chorus_tools.delivery import DeliveryError
-from chorus_tools.delivery._email_types import (
+from chorus_tools.delivery.email import (
     EmailMessage,
     EmailRouting,
+    OutboxEmailBackend,
+    ResendEmailBackend,
     email_routing_from_env,
 )
-from chorus_tools.delivery._outbox_email import OutboxEmailBackend
-from chorus_tools.delivery._resend_email import ResendEmailBackend
 
 pytestmark = pytest.mark.unit
 

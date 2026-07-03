@@ -13,9 +13,7 @@ from typing import Any
 import httpx
 import pytest
 
-from chorus_tools.delivery._email_html import render_email_html
-from chorus_tools.delivery._email_types import EmailMessage
-from chorus_tools.delivery._resend_email import ResendEmailBackend
+from chorus_tools.delivery.email import EmailMessage, ResendEmailBackend, render_email_html
 
 pytestmark = pytest.mark.unit
 

@@ -11,8 +11,8 @@ import re
 from pathlib import Path
 
 from chorus_tools._backends import BackendName
-from chorus_tools.delivery._email_types import EmailMessage
 from chorus_tools.delivery._types import PublishedRef
+from chorus_tools.delivery.email._types import EmailMessage
 
 _OUTBOX_DIR = "outbox"
 _NON_SLUG = re.compile(r"[^a-z0-9]+")
