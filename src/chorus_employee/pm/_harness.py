@@ -64,11 +64,12 @@ def pm_manifest() -> RoleManifest:
         beat_timeout_s=900.0,
         lease_ttl_s=1200.0,
         # — turn / sprint budget —
-        # Read context, spawn the Researcher (one blocking turn), read its brief, write the plan: 15
-        # turns leaves headroom for a spawn + a revision; 3 sprints lets a thin first pass gather more
-        # evidence and converge on the grounded decision.
-        max_turns=15,
-        max_sprints=3,
+        # Read context, spawn the Researcher ONCE (one blocking turn), read its brief, record the
+        # decision, write the plan. A tight budget is deliberate: a wide one lets the model fan out the
+        # Researcher many times (7 spawns → ~50 web_search calls in one beat), so cap turns/sprints to
+        # force "one sweep, then decide" rather than research-until-timeout.
+        max_turns=10,
+        max_sprints=2,
         # — worktree containment (spec 04 §4) —
         isolation=Isolation.WORKTREE,
         # — trust posture (spec 04 §4) → .harness/sandbox.toml —

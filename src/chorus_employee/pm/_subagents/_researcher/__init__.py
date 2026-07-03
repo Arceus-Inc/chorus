@@ -29,11 +29,11 @@ RESEARCHER_SUBAGENT = SubagentSpec(
         "1. Read the task brief and any existing material in your working directory with `read_file` "
         "to understand exactly what decision the evidence must inform.\n"
         "2. Ground every fact in REAL sources — do NOT write market/user/competitor claims from "
-        "memory. You MUST dispatch the `web_research` subagent at least once: "
+        "memory. Dispatch the `web_research` subagent EXACTLY ONCE: "
         '`spawn_subagent(name="web_research", prompt="<one focused question naming the ACTUAL '
         'product/market/metric>")`. It returns a cited JSON answer; every item in your EVIDENCE comes '
-        "from it, with its source URL. Ask one or two FOCUSED questions (a narrow question saturates "
-        "fast); never a placeholder.\n"
+        "from it, with its source URL. One focused question is enough — do NOT spawn web_research again "
+        "or fan out extra searches; three or four cited claims is plenty.\n"
         "3. Write `research_brief.md` — a tight, skimmable brief: the QUESTION, the EVIDENCE (each "
         "fact with its source URL and a confidence), the NEW ANGLE the evidence surfaced, the GAPS "
         "(what you could not verify), and LEARNINGS worth keeping.\n"
@@ -54,8 +54,9 @@ RESEARCHER_SUBAGENT = SubagentSpec(
     tools=("read_file", "write_file", "web_search", "web_extract", "spawn_subagent"),
     # Depth-2: the Researcher dispatches the shared Web-Research Orchestrator for cited facts.
     spawnable=(WEB_RESEARCH_ORCHESTRATOR,),
-    # Read the ask, spawn web_research once or twice, write the brief — 10 leaves triangulation room.
-    max_turns=10,
+    # Read the ask, spawn web_research ONCE, write the brief — 6 keeps the sweep short (a wider budget
+    # let each Researcher run a long saturating sweep; a decision needs a few cited claims, not dozens).
+    max_turns=6,
     # Runtime-enforced return contract: the typed ResearchBrief (artifact path + cited findings).
     output_schema=research_output_schema(),
 )
