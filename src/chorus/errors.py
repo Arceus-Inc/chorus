@@ -57,18 +57,6 @@ class RolePluginConflict(ChorusError):
     code = "chorus.role_plugin_conflict"
 
 
-class WebPluginInvalid(ChorusError):
-    """WebPlugin registration failed validation — bad name, capability, or auth ref (spec GM §5)."""
-
-    code = "chorus.webplugin_invalid"
-
-
-class WebPluginConflict(ChorusError):
-    """A WebPlugin name was re-registered with a different definition without ``replace=True``."""
-
-    code = "chorus.webplugin_conflict"
-
-
 class SwarmRoleInvalid(ChorusError):
     """Shared swarm-role registration failed validation (spec GM §4)."""
 
@@ -104,6 +92,4 @@ __all__ = [
     "SwarmRoleConflict",
     "SwarmRoleInvalid",
     "UnknownEmployee",
-    "WebPluginConflict",
-    "WebPluginInvalid",
 ]
