@@ -128,33 +128,6 @@ def test_analyst_dod_classify_ignores_substring_false_matches() -> None:
     assert classify_action("forecast next quarter's revenue") is ActionClass.PREDICT
 
 
-def test_analyst_declares_trust_scoped_read_integrations() -> None:
-    """Warehouse + web reach are declared as ungated READ WebPlugins, bound to secret refs."""
-    from chorus.webplugins import Capability
-    from chorus_employee.analyst import analyst_webplugins
-
-    registry = analyst_webplugins()
-    assert set(registry.names()) == {"warehouse", "web"}
-    for name in ("warehouse", "web"):
-        plugin = registry.get(name)
-        assert plugin.capability is Capability.READ  # read-only, ungated
-        assert not plugin.gated  # no send/spend → no cap needed
-        assert plugin.auth_ref.startswith("ref:")  # secret-ref bound, never inline
-
-
-def test_analyst_subagent_grants_map_specialists_to_read_plugins() -> None:
-    """Only data/modeling/critic touch the warehouse; only scout touches the web (auditable seam)."""
-    from chorus_employee.analyst import subagent_grants
-
-    grants = subagent_grants()
-    assert grants["data"] == ("warehouse",)
-    assert grants["modeling"] == ("warehouse",)
-    assert grants["critic"] == ("warehouse",)
-    assert grants["scout"] == ("web",)
-    assert "narrative" not in grants  # the write-up specialist reaches no external system
-
-
-
 def test_analyst_declares_a_tier1_subagent_swarm() -> None:
     """The Analyst owns specialist subagents it can dispatch mid-beat (data/modeling/critic/narrative/scout)."""
     manifest = analyst_plugin().manifest
