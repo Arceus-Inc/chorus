@@ -57,6 +57,30 @@ class RolePluginConflict(ChorusError):
     code = "chorus.role_plugin_conflict"
 
 
+class WebPluginInvalid(ChorusError):
+    """WebPlugin registration failed validation — bad name, capability, or auth ref (spec GM §5)."""
+
+    code = "chorus.webplugin_invalid"
+
+
+class WebPluginConflict(ChorusError):
+    """A WebPlugin name was re-registered with a different definition without ``replace=True``."""
+
+    code = "chorus.webplugin_conflict"
+
+
+class SwarmRoleInvalid(ChorusError):
+    """Shared swarm-role registration failed validation (spec GM §4)."""
+
+    code = "chorus.swarm_role_invalid"
+
+
+class SwarmRoleConflict(ChorusError):
+    """A swarm-role name was re-registered with a different definition without ``replace=True``."""
+
+    code = "chorus.swarm_role_conflict"
+
+
 class BudgetBlocked(ChorusError):
     """A submit/dispatch was refused by a hard-stop budget gate (spec 04 §3)."""
 
@@ -77,5 +101,9 @@ __all__ = [
     "PackageImportError",
     "RolePluginConflict",
     "RolePluginInvalid",
+    "SwarmRoleConflict",
+    "SwarmRoleInvalid",
     "UnknownEmployee",
+    "WebPluginConflict",
+    "WebPluginInvalid",
 ]

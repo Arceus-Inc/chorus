@@ -45,6 +45,7 @@ from chorus_tools import (
     GoLiveTool,
     SubmitTaskTool,
     SubmitVerdictTool,
+    analysis_tool,
 )
 from chorus_tools.cms import CmsDraftTool, cms_backend_from_env
 from chorus_tools.delivery import (
@@ -79,8 +80,21 @@ _CHORUS_TO_DREAM_TOOL: dict[str, str] = {
     "working_memory_append": "working_memory_append",
     "memory_propose": "memory_propose",
     "spawn_subagent": "spawn_subagent",
+    # Web research: reuse dream's native Tavily built-ins (in default_registry) — identity-mapped so
+    # dream_tool_names keeps them and _role_registry picks them up; the subagent projection carries them.
     "web_search": "web_search",
     "web_extract": "web_extract",
+    # Reading spilled tool output: a large tool result (a web_extract page, a repo_search dump) is
+    # offloaded to the session scratch dir with a "Full output saved to: <file>" pointer — read_offloaded
+    # (tier-0, scratch-confined) is how a role pulls that full payload back. Without it a role loops on
+    # read_file (worktree-relative) and never reads the evidence it just fetched.
+    "read_offloaded": "read_offloaded",
+    # Analyst analysis tools (chorus-defined dream BaseTools; identity-mapped so dream_tool_names keeps
+    # them and the subagent projection can intersect them — they are registered from ``analysis_tool``).
+    "warehouse_query": "warehouse_query",
+    "repo_search": "repo_search",
+    "notebook_run": "notebook_run",
+    "chart_render": "chart_render",
     # brand_lint is a chorus capability tool (registered via _capability_tool, NOT a dream built-in),
     # but it is IDENTITY-mapped here so the subagent projection (``_subagent_set`` → dream_tool_names ∩
     # parent) keeps it for the Brand-Critic (§08 owner). ``_role_registry`` still skips it (no built-in)
@@ -104,6 +118,12 @@ _READ_ONLY_DREAM_SURFACE_TOOLS = frozenset(
         "memory_search",
         "memory_get",
         "working_memory_read",
+        # A read-only reviewer that reads a large artifact (a long findings.md) gets its read_file
+        # output offloaded to scratch with a "Full output saved to: <file>" pointer; without
+        # read_offloaded it cannot see the overflow and wrongly fails with "content is truncated /
+        # cannot verify". read_offloaded is safe (tier-0, scratch-confined, read-only), so a verifier
+        # head may hold it to read the full artifact it is judging.
+        "read_offloaded",
     }
 )
 
@@ -477,20 +497,25 @@ class EmployeeHarnessFactory:
                 ),
                 source=ToolSource.DEFAULT,
             )
+        # Analysis tools (ledger-free, worktree-scoped): warehouse_query / repo_search / notebook_run /
+        # chart_render. The generator runs tools=null, so registering them here is enough for the model
+        # to see and call them; they are not dream built-ins, so _role_registry skipped them above.
+        # (Web tools web_search/web_extract ARE dream built-ins, so _role_registry already picked them up.)
+        for name in config.tools:
+            atool = analysis_tool(name)
+            if atool is not None and registry.get(name) is None:
+                registry.register(atool, source=ToolSource.DEFAULT)
 
         # Subagents: project the role's Tier-1 declarations into dream's SubagentSet. The
         # spawn_subagent tool (already in the registry if "spawn_subagent" is in the role's tools)
         # discovers available subagents from this set at runtime.
         subagent_set = _subagent_set(config)
 
-        # The role's authored playbooks: discover ``{skills_root}/<slug>/SKILL.md`` into a registry the
-        # harness offers the model (catalogue in the prompt + the ``skill`` tool loads bodies).
+        # Every build_harness knob comes from the role config — this is where the employee *becomes*
+        # its harness. config.model overrides the deployment when set; an empty role env means None.
         skill_registry = None
         if config.skills_root:
             skill_registry, _shadows = load_skill_registry(project_dirs=[Path(config.skills_root)])
-
-        # Every build_harness knob comes from the role config — this is where the employee *becomes*
-        # its harness. config.model overrides the deployment when set; an empty role env means None.
         harness = dream.build_harness(
             model=config.model or self._deployment,
             api_key=self._api_key,
