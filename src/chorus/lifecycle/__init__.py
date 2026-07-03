@@ -35,6 +35,7 @@ from chorus.lifecycle._revise_dod import (
     RevisionAuthorityError,
     revise_dod,
 )
+from chorus.lifecycle._revisit import DEFAULT_REVISIT_WINDOW, revisit_sweep
 from chorus.lifecycle._transitions import (
     LEGAL_TRANSITIONS,
     TERMINAL,
@@ -46,13 +47,14 @@ from chorus.lifecycle._transitions import (
 
 __all__ = [
     "DEFAULT_REQUEST_DEPTH_CAP",
+    "DEFAULT_REVISIT_WINDOW",
     "LEGAL_TRANSITIONS",
     "TERMINAL",
     "CapabilityService",
     "ChildPlan",
+    "ChildSpec",
     "ClaimDraft",
     "DecisionOutcome",
-    "ChildSpec",
     "DecomposeResult",
     "DepthCapped",
     "Disposition",
@@ -74,4 +76,5 @@ __all__ = [
     "reconcile_disposition",
     "record_activity",
     "revise_dod",
+    "revisit_sweep",
 ]

@@ -9,9 +9,17 @@ single ``IN`` query so rendering a packet across many decisions never becomes N+
 from __future__ import annotations
 
 import sqlite3
+from datetime import datetime
 
 from chorus.ledger._models import Claim, DecisionRecord, RejectedAlternative
-from chorus.ledger.repos._base import dumps, from_iso, loads_list, require_persisted, utcnow_iso
+from chorus.ledger.repos._base import (
+    dumps,
+    from_iso,
+    loads_list,
+    require_persisted,
+    to_iso,
+    utcnow_iso,
+)
 
 
 class DecisionRepo:
@@ -40,7 +48,8 @@ class DecisionRepo:
                     ]
                 ),
                 decision.superseded_by,
-                utcnow_iso(),
+                # Stamp the write time, unless the caller supplied one (a backfill / imported row).
+                to_iso(decision.created_at) or utcnow_iso(),
             ),
         )
         self._conn.commit()
@@ -56,6 +65,19 @@ class DecisionRepo:
         rows = self._conn.execute(
             "SELECT * FROM decision_record WHERE task_id = ? ORDER BY created_at DESC, id DESC",
             (task_id,),
+        ).fetchall()
+        return [_row_to_decision(row) for row in rows]
+
+    def due_for_revisit(self, *, before: datetime) -> list[DecisionRecord]:
+        """Live decisions recorded on or before ``before`` — the revisit-sweep candidates (§13).
+
+        Excludes superseded rows (a successor already re-decided them); oldest first so a sweep reopens
+        the longest-standing decisions first.
+        """
+        rows = self._conn.execute(
+            "SELECT * FROM decision_record WHERE superseded_by IS NULL AND created_at <= ? "
+            "ORDER BY created_at, id",
+            (to_iso(before),),
         ).fetchall()
         return [_row_to_decision(row) for row in rows]
 
