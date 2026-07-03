@@ -16,6 +16,8 @@ from chorus.roles._manifest import (
     SandboxTier,
 )
 from chorus_employee.pm._brief import PM_BRIEF
+from chorus_employee.pm._subagents import RESEARCHER_SUBAGENT
+from swarm.web_research_orchestrator import WEB_RESEARCH_ORCHESTRATOR
 
 
 def pm_manifest() -> RoleManifest:
@@ -40,15 +42,30 @@ def pm_manifest() -> RoleManifest:
             # web_extract (fetch + clean read) — read a candidate source in full to ground a claim,
             # not just cite a search snippet. Same allowlisted host as web_search.
             "web_extract",
+            # spawn_subagent — dispatch the Tier-1 Researcher mid-beat (§06). The web tools above are
+            # also what the Researcher is capability-minimised from (it delegates them to web_research).
+            "spawn_subagent",
         ),
+        # — build_harness(subagents=…) — the Tier-1 specialists Piper may dispatch mid-beat (§06).
+        # The Researcher gathers cited evidence (depth-2 over the shared web_research orchestrator) and
+        # hands back a typed ResearchBrief whose source URLs the PM cites — clearing its grounding floor.
+        # web_research is also exposed top-level (as the Marketer does) so Piper can run a direct sweep
+        # without the Researcher wrapper; it is the Researcher's depth-2 child either way.
+        subagents=(RESEARCHER_SUBAGENT, WEB_RESEARCH_ORCHESTRATOR),
         # — build_harness(memory=…) —
         memory_scope=MemoryScope.PROJECT,
-        # — beat time budget (research reach) —
-        # A live web sweep blocks the beat in one uninterrupted call; the org defaults (90s beat /
-        # 300s lease) would reap the PM mid-research, so widen both. Inline (no depth-2 nesting yet),
-        # so lighter than the Marketer's 900/1200.
-        beat_timeout_s=300.0,
-        lease_ttl_s=600.0,
+        # — beat time budget (depth-2 research reach) —
+        # Piper can now spawn the Researcher, which itself nests web_research (depth-2) — a single beat
+        # can hold a depth-2 live sweep, so widen the wall-clock to the Marketer's depth-2 budget or the
+        # reaper claims it mid-nest. The org defaults (90s beat / 300s lease) are far too tight.
+        beat_timeout_s=900.0,
+        lease_ttl_s=1200.0,
+        # — turn / sprint budget —
+        # Read context, spawn the Researcher (one blocking turn), read its brief, write the plan: 15
+        # turns leaves headroom for a spawn + a revision; 3 sprints lets a thin first pass gather more
+        # evidence and converge on the grounded decision.
+        max_turns=15,
+        max_sprints=3,
         # — worktree containment (spec 04 §4) —
         isolation=Isolation.WORKTREE,
         # — trust posture (spec 04 §4) → .harness/sandbox.toml —
