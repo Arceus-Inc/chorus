@@ -7,6 +7,13 @@ floor import the policy from here, keeping the dependency arrow pointing inward 
 from __future__ import annotations
 
 from chorus_employee.pm._decision._confidence import CONFIDENCE_FLOOR, clears_floor
+from chorus_employee.pm._decision._mirror import DECISION_MIRROR_DOC, render_decision_mirror
 from chorus_employee.pm._decision._packet import render_packet
 
-__all__ = ["CONFIDENCE_FLOOR", "clears_floor", "render_packet"]
+__all__ = [
+    "CONFIDENCE_FLOOR",
+    "DECISION_MIRROR_DOC",
+    "clears_floor",
+    "render_decision_mirror",
+    "render_packet",
+]

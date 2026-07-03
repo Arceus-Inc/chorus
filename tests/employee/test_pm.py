@@ -215,6 +215,55 @@ class TestPmLander:
         assert artifact.resource_ref["branch"] == "chorus/pat"
         assert artifact.resource_ref["commit"]
 
+    def test_lander_rederives_decision_json_from_the_ledger(
+        self, ledger: SqliteLedger, tmp_path: Path
+    ) -> None:
+        """At landing, decision.json is re-derived from the ledger — repairing a model clobber.
+
+        The tool mirrors the recorded decision mid-beat, but the model can still ``write_file`` a
+        divergent decision.json afterward (seen in the live web e2e). The lander overwrites it with the
+        canonical ledger row so the landed decision.json, the ledger, and the sources.json packet agree.
+        """
+        from chorus.lifecycle._capability import CapabilityService, ClaimDraft
+
+        CapabilityService(ledger).record_decision(
+            task_id="decide-brief",
+            revision="r1",
+            option="build presence indicators",
+            rationale="run opacity is the top complaint",
+            confidence=0.82,
+            outcome_metric="'stuck' tickets drop 30%",
+            revisit_trigger="if flat in 4 weeks, reopen",
+            rejected=[],
+            claims=[
+                ClaimDraft(text="p", source_url="https://a", confidence=0.9),
+                ClaimDraft(text="q", source_url="https://b", confidence=0.8),
+            ],
+        )
+        workspace = CompanyWorkspace(tmp_path / "acme")
+        worktree = workspace.worktree_for("pat")
+        (worktree.path / PM_PLAN_DOC).write_text(
+            "# Plan\n\n## Decision\nShip it. Source: https://a\n", encoding="utf-8"
+        )
+        # The model clobbered decision.json with a divergent hand-written version.
+        (worktree.path / "decision.json").write_text(
+            json.dumps(
+                {
+                    "option": "build a run timeline instead",
+                    "confidence": 0.9,
+                    "claims": [{"text": "z", "source_url": "https://z", "confidence": 0.9}],
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        asyncio.run(pm_lander(tmp_path / "acme", ledger=ledger).land(_task("pat"), None))
+
+        mirror = json.loads((worktree.path / "decision.json").read_text(encoding="utf-8"))
+        assert mirror["option"] == "build presence indicators"  # ledger, not the clobber
+        assert {c["source_url"] for c in mirror["claims"]} == {"https://a", "https://b"}
+        assert mirror["decision_id"]  # full canonical shape, not the model's partial file
+
     def test_lander_records_a_missing_doc_as_absent(self, tmp_path: Path) -> None:
         workspace = CompanyWorkspace(tmp_path / "acme")
         workspace.worktree_for("pat")

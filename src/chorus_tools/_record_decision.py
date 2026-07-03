@@ -25,7 +25,7 @@ from chorus.heartbeat import BeatContext
 from chorus.ledger import SqliteLedger
 from chorus.ledger._models import Claim, DecisionRecord, RejectedAlternative
 from chorus.lifecycle import CapabilityService, ClaimDraft
-from chorus_employee.pm._decision import clears_floor
+from chorus_employee.pm._decision import clears_floor, render_decision_mirror
 
 _DECISION_MIRROR = "decision.json"
 
@@ -183,24 +183,11 @@ class RecordDecisionTool(BaseTool):
     def _mirror(working_dir: Path, record: DecisionRecord, claims: Sequence[Claim]) -> None:
         """Write ``decision.json`` from the canonical ledger row — the DoD floor's check surface.
 
-        Mirrors the recorded ``DecisionRecord`` + ``Claim`` rows (not the caller's raw input), so the
-        worktree file always equals the immutable ledger decision.
+        Mirrors the recorded ``DecisionRecord`` + ``Claim`` rows (not the caller's raw input) via the
+        shared renderer, so the worktree file always equals the immutable ledger decision and its shape
+        can never drift from the lander's re-derivation of the same file.
         """
-        payload = {
-            "decision_id": record.id,
-            "option": record.option,
-            "rationale": record.rationale,
-            "confidence": record.confidence,
-            "outcome_metric": record.outcome_metric,
-            "revisit_trigger": record.revisit_trigger,
-            "rejected_alternatives": [
-                {"option": r.option, "reason": r.reason} for r in record.rejected_alternatives
-            ],
-            "claims": [
-                {"text": c.text, "source_url": c.source_url, "confidence": c.confidence}
-                for c in claims
-            ],
-        }
+        payload = render_decision_mirror(record, claims)
         (working_dir / _DECISION_MIRROR).write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
 

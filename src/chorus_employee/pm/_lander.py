@@ -19,7 +19,11 @@ from typing import TYPE_CHECKING, Any
 from chorus.outcomes import Artifact, ArtifactType
 from chorus.workspace import CompanyWorkspace
 from chorus_employee.pm._brief import PM_PLAN_DOC
-from chorus_employee.pm._decision import render_packet
+from chorus_employee.pm._decision import (
+    DECISION_MIRROR_DOC,
+    render_decision_mirror,
+    render_packet,
+)
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -53,6 +57,7 @@ class PmLander:
         worktree = workspace.worktree_for(employee_id).path
         doc = worktree / PM_PLAN_DOC
         present = doc.is_file() and doc.stat().st_size > 0
+        self._write_decision_mirror(worktree, task.id)
         packet_written = self._write_packet(worktree, task.id)
         commit = workspace.snapshot(employee_id)  # commit the plan (+ packet) on chorus/{employee}
         # A plan that never reaches ``main`` is invisible to the engineers who must build to it: like
@@ -76,6 +81,24 @@ class PmLander:
                 "into": merge.into,
             },
         )
+
+    def _write_decision_mirror(self, worktree: Path, task_id: str) -> None:
+        """Re-derive ``decision.json`` from the ledger — the authoritative record wins over any clobber.
+
+        The ``record_decision`` tool mirrors the decision mid-beat, but the model can still ``write_file``
+        a divergent ``decision.json`` afterward. At landing we overwrite it with the recorded row so the
+        landed mirror, the ledger, and the ``sources.json`` packet all agree. No-op without a ledger, or
+        when nothing was recorded (an ungrounded plan the DoD floor would already have blocked).
+        """
+        if self._ledger is None:
+            return
+        decisions = self._ledger.decisions.for_task(task_id)
+        if not decisions:
+            return
+        record = decisions[-1]  # the most recent recorded decision for this task
+        claims = self._ledger.claims.for_decisions([record.id])
+        payload = render_decision_mirror(record, claims)
+        (worktree / DECISION_MIRROR_DOC).write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
     def _write_packet(self, worktree: Path, task_id: str) -> bool:
         """Render the §10 decision packet into the worktree; ``False`` when no ledger is bound."""
