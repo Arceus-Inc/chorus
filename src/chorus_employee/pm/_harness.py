@@ -79,10 +79,36 @@ def pm_manifest() -> RoleManifest:
         # the method behind the Decision OS (evidence -> options -> decision -> recommendation); later
         # slices add Discovery / Prioritization / Validation / Definition / Market / Business / etc.
         skills=(
+            # The curated top-20 PM playbooks — highest-leverage across the value chain (§08),
+            # ported from the Arceus PM library. The `skills` tuple documents the intended set;
+            # the live catalogue is whatever materializes from `skills_root`.
+            # Decision-core — the method behind the Decision OS (evidence → options → decision → rec).
             "evidence-brief",
             "options-set-generator",
             "decision-record",
             "recommendation-canvas",
+            # Discovery & framing — frame the problem and uncover unmet needs before any solution.
+            "problem-statement",
+            "problem-framing-canvas",
+            "jobs-to-be-done",
+            "proto-persona",
+            "discovery-process",
+            # Prioritization & roadmap — what to build next, and in what order.
+            "opportunity-solution-tree",
+            "prioritization-advisor",
+            "roadmap-planning",
+            # Definition — turn a decision into buildable requirements.
+            "prd-development",
+            "user-story-mapping",
+            # Validation — frame a bet as a testable hypothesis.
+            "epic-hypothesis",
+            "lean-ux-canvas",
+            # Market & positioning — how the product is framed and the forces around it.
+            "positioning-statement",
+            "pestel-analysis",
+            # Business & metrics — size the opportunity and read the growth signals.
+            "tam-sam-som-calculator",
+            "saas-revenue-growth-metrics",
         ),
         skills_root=_SKILLS_ROOT,
         # — build_harness(memory=…) —

@@ -78,6 +78,36 @@ _TASKS: tuple[SkillTask, ...] = (
         "Recommendation Canvas to `plan.md` for 'SmartReminders — an AI-timed invoice-reminder feature "
         "for freelancers'. Follow the template's structure and match the depth of the sample.",
     ),
+    # --- Discovery group ---
+    SkillTask(
+        "problem-statement",
+        "Load your `problem-statement` skill and READ its bundled `template.md` + `references/sample.md`, "
+        "then write a crisp user problem statement to `plan.md` for: freelance designers miss invoice due "
+        "dates because reminders are manual and easy to forget.",
+    ),
+    SkillTask(
+        "problem-framing-canvas",
+        "Load your `problem-framing-canvas` skill and READ its bundled `template.md` + "
+        "`references/sample.md`, then frame the problem space to `plan.md` for: low activation in a B2B "
+        "onboarding flow, separating the problem, context, and constraints from any fix.",
+    ),
+    SkillTask(
+        "discovery-process",
+        "Load your `discovery-process` skill and READ its bundled `template.md` + `references/sample.md`, "
+        "then draft an end-to-end discovery plan to `plan.md` for validating demand for an AI "
+        "meeting-notes feature (goals, segments, methods, synthesis).",
+    ),
+    SkillTask(
+        "jobs-to-be-done",
+        "Load your `jobs-to-be-done` skill and READ its bundled `template.md` + `references/sample.md`, "
+        "then produce a JTBD analysis to `plan.md` for freelancers managing client invoicing — functional, "
+        "social, and emotional jobs, plus pains and desired gains.",
+    ),
+    SkillTask(
+        "proto-persona",
+        "Load your `proto-persona` skill and READ its bundled `template.md` + `references/sample.md`, "
+        "then write a proto-persona to `plan.md` for the primary user of an AI invoice-reminder tool.",
+    ),
 )
 
 
