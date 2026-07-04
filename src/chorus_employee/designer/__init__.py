@@ -29,7 +29,11 @@ from chorus_employee.designer._brief import (
 from chorus_employee.designer._dod import designer_dod
 from chorus_employee.designer._harness import designer_manifest
 from chorus_employee.designer._lander import DesignerLander, designer_lander
-from chorus_employee.designer._routines import DESIGNER_ROUTINES
+from chorus_employee.designer._routines import (
+    DESIGNER_ACCESSIBILITY_AUDIT,
+    DESIGNER_ROUTINES,
+    DESIGNER_SYSTEM_DRIFT_SCAN,
+)
 from chorus_employee.designer._subagents import (
     DESIGN_CRITIC_SUBAGENT,
     EXPLORER_SUBAGENT,
@@ -63,6 +67,8 @@ __all__ = [
     "DESIGN_CRITIC_SUBAGENT",
     "DESIGN_SPEC_DOC",
     "DESIGN_SYSTEM_DOC",
+    "DESIGNER_ACCESSIBILITY_AUDIT",
+    "DESIGNER_SYSTEM_DRIFT_SCAN",
     "EXPLORER_SUBAGENT",
     "UX_RESEARCHER_SUBAGENT",
     "DesignVerdict",

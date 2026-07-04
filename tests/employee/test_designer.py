@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import pytest
 
+from chorus.ledger import RoutineConcurrency
 from chorus.outcomes import DoDKind
 from chorus.roles._manifest import Isolation, MemoryScope, PermissionMode
 
@@ -56,6 +57,28 @@ class TestDesignerManifest:
         assert manifest.memory_scope is MemoryScope.PROJECT
         assert manifest.working_memory is True
 
+    def test_declares_the_design_craft_skills(self) -> None:
+        manifest = self._manifest()
+        assert set(manifest.skills) >= {
+            "design-system-authoring",
+            "token-scale-discipline",
+            "wcag-conformance",
+            "design-spec-writing",
+        }
+
+    def test_declared_skills_are_all_discoverable(self) -> None:
+        # Every declared skill resolves to a real SKILL.md with valid frontmatter dream can load —
+        # a manifest can't name a skill that isn't authored on disk.
+        from pathlib import Path
+
+        from dream.skills import load_skill_registry
+
+        manifest = self._manifest()
+        assert manifest.skills_root is not None
+        registry, _shadows = load_skill_registry(project_dirs=[Path(manifest.skills_root)])
+        discovered = {m.name for m in registry.list_meta()}
+        assert set(manifest.skills) <= discovered
+
 
 class TestDesignerDoD:
     def test_dod_is_a_deterministic_command_floor(self) -> None:
@@ -94,3 +117,36 @@ class TestDesignerLander:
 
         registry = default_landers(tmp_path)
         assert registry.get("design") is not None
+
+
+class TestDesignerRoutines:
+    def test_declares_the_standing_routines(self) -> None:
+        # §14: standing routines that make the Designer a steward of the system, not a pure
+        # responder. Both are read/report cadences — they mint work, never trip a gate on their own.
+        from chorus_employee.designer import DESIGNER_ROUTINES, designer_plugin
+
+        plugin = designer_plugin()
+        assert plugin.declared_routines == DESIGNER_ROUTINES
+        keys = {r.routine_key for r in DESIGNER_ROUTINES}
+        assert keys == {"designer-system-drift-scan", "designer-accessibility-audit"}
+        assert all(r.concurrency is RoutineConcurrency.COALESCE for r in DESIGNER_ROUTINES)
+
+    def test_system_drift_scan_reads_the_design_system(self) -> None:
+        from chorus_employee.designer import DESIGN_SYSTEM_DOC, DESIGNER_ROUTINES
+
+        drift = next(
+            r for r in DESIGNER_ROUTINES if r.routine_key == "designer-system-drift-scan"
+        )
+        assert drift.schedule == "0 9 * * 1"  # weekly, Monday 09:00
+        assert DESIGN_SYSTEM_DOC in drift.intent_template
+        assert "do not" in drift.intent_template.lower()  # report/propose only
+
+    def test_accessibility_audit_is_monthly_and_report_only(self) -> None:
+        from chorus_employee.designer import DESIGNER_ROUTINES
+
+        a11y = next(
+            r for r in DESIGNER_ROUTINES if r.routine_key == "designer-accessibility-audit"
+        )
+        assert a11y.schedule == "0 9 1 * *"  # monthly, 1st at 09:00
+        assert "accessib" in a11y.intent_template.lower() or "a11y" in a11y.intent_template.lower()
+        assert "do not" in a11y.intent_template.lower()  # report/propose only
