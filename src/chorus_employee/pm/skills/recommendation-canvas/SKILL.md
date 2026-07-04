@@ -283,7 +283,7 @@ Use SMART metrics (Specific, Measurable, Attainable, Relevant, Time-Bound):
 
 ## Examples
 
-See `examples/sample.md` for a full recommendation canvas example.
+See `references/sample.md` for a full recommendation canvas example.
 
 Mini example excerpt:
 

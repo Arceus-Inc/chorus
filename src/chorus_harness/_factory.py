@@ -37,6 +37,7 @@ from chorus.trust import TrustPolicy
 from chorus.workforce import Employee
 from chorus.workspace import CompanyWorkspace, default_work_root
 from chorus_employee import default_landers
+from chorus_harness._skills import materialize_skills
 from chorus_harness._trust import apply_trust
 from chorus_tools import (
     AssignTaskTool,
@@ -533,9 +534,13 @@ class EmployeeHarnessFactory:
 
         # Every build_harness knob comes from the role config — this is where the employee *becomes*
         # its harness. config.model overrides the deployment when set; an empty role env means None.
+        # Skills: materialize the role's bundle *into* the worktree (read-only, git-excluded) so the
+        # model can reach the bundled reference files with its worktree-confined read_file — then point
+        # dream's registry at that in-worktree copy, so SKILL.md load and reference reads share a path.
         skill_registry = None
         if config.skills_root:
-            skill_registry, _shadows = load_skill_registry(project_dirs=[Path(config.skills_root)])
+            skills_dir = materialize_skills(root, config.skills_root)
+            skill_registry, _shadows = load_skill_registry(project_dirs=[skills_dir])
         harness = dream.build_harness(
             model=config.model or self._deployment,
             api_key=self._api_key,

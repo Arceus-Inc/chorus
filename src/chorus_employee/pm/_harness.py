@@ -62,6 +62,11 @@ def pm_manifest() -> RoleManifest:
             # skill — load an authored playbook on demand (§08). The PM's competence is its skill library,
             # not more verbs; this is the load-bearing tool for how it frames, decides, and writes.
             "skill",
+            # read_offloaded — pairs with `skill`: a large playbook body (or any large tool result) is
+            # truncated inline and offloaded to scratch with a "Full output saved to: <file>" pointer.
+            # Without this the PM only ever sees the first ~800 chars of a big SKILL.md; with it, it pulls
+            # the full playbook (and any bundled file it read) back into context. Tier-0, scratch-confined.
+            "read_offloaded",
         ),
         # — build_harness(subagents=…) — the Tier-1 specialists Piper may dispatch mid-beat (§06).
         # The Researcher gathers cited evidence (depth-2 over the shared web_research orchestrator) and
