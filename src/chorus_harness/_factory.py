@@ -30,7 +30,7 @@ from dream.tools.builtin import default_registry
 
 from chorus.adapters import DreamBeatRunner, TokenPricing
 from chorus.heartbeat import BeatRunner, IntegrateContextPacket
-from chorus.outcomes import LanderRegistry
+from chorus.outcomes import LanderRegistry, runtime_brief_block
 from chorus.roles import RoleBeatConfig, RoleRegistry, role_beat_config
 from chorus.roles._subagent import SubagentSpec
 from chorus.trust import TrustPolicy
@@ -477,6 +477,16 @@ class EmployeeHarnessFactory:
         if self._ledger is not None and _DELEGATING_TOOLS.intersection(config.tools):
             roster = _team_roster(self._ledger, exclude=employee.id)
             config = replace(config, system_prompt=config.system_prompt + roster)
+
+        # Operating environment: a role that RUNS commands (a build engineer) gets a factual runtime
+        # block appended to its brief — the OS, the shell run_command lands on, and which build runtimes
+        # (Node/npm/Playwright) are on PATH — so it writes portable commands and its DoD is known to be
+        # platform-agnostic instead of guessed. dream advertises OS/shell/Python to every role already;
+        # this adds the toolchain facts only a command-running role needs (doc/review roles run nothing).
+        if "run_command" in config.tools:
+            config = replace(
+                config, system_prompt=config.system_prompt + "\n\n" + runtime_brief_block()
+            )
 
         # ``working_dir`` IS the worktree, because dream confines its tools to it — that is what
         # isolates one employee's edits from another's. A non-worktree posture falls back to a flat
