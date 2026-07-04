@@ -58,6 +58,10 @@ def designer_manifest() -> RoleManifest:
             # the load-bearing primitive: the deterministic a11y/token scan the Critic grounds its
             # verdict on (designer §08/§10 — the exact analog of the Marketer's brand_lint).
             "design_lint",
+            # read-only exemplar fetcher: pulls a vendored real-world DESIGN.md (Stripe/Linear/…) from
+            # the design-md-exemplars library — which lives in the chorus package, NOT the worktree, so
+            # a worktree-confined read_file can't reach it. This is how the exemplars become readable.
+            "design_exemplar",
             # the `skill` tool loads the authored design-craft playbooks on demand (designer §08).
             "skill",
         ),

@@ -255,9 +255,22 @@ def _report(
             f"design_lint: {color_n} off-token colour(s), {space_n} off-scale spacing, "
             f"{a11y_n} a11y gap(s) — {len(findings)} finding(s){system_note}"
         )
+        hard_n = color_n + space_n
         next_actions = [
-            "Fix each finding, then re-lint.",
-            "Replace off-scale values with tokens; add the missing accessibility notes.",
+            (
+                f"HARD findings: fix the {hard_n} off-token colour/off-scale spacing breach(es) — "
+                "swap each for a token DESIGN.md declares. These must reach zero."
+                if hard_n
+                else "No hard on-system breaches — colours and spacing are on-scale."
+            ),
+            (
+                f"ADVISORY: the {a11y_n} a11y finding(s) are heuristic (an interactive element named "
+                "with no a11y cue on the same line — it over-fires on prose and won't reach zero on a "
+                "rich spec). Clear the genuine gaps, then let the Design-Critic adjudicate the rest — "
+                "do NOT loop lint→edit to chase this count to zero."
+                if a11y_n
+                else "No mechanical a11y gaps flagged."
+            ),
         ]
         detail = "\n".join(f"  L{f.line} [{f.kind}] {f.quote}  → {f.fix}" for f in findings)
         content = f"{summary}\n{detail}"

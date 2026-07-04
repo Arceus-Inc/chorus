@@ -41,7 +41,7 @@ class TestDesignerManifest:
 
     def test_holds_design_lint_and_the_read_write_shelf(self) -> None:
         tools = self._manifest().tools
-        for expected in ("design_lint", "read_file", "write_file", "skill", "web_search"):
+        for expected in ("design_lint", "design_exemplar", "read_file", "write_file", "skill", "web_search"):
             assert expected in tools
 
     def test_has_no_run_command_or_git(self) -> None:

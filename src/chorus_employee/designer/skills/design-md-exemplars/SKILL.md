@@ -41,17 +41,18 @@ This maps directly onto the rest of the Designer's craft: §2–3 are `token-sca
 
 ## The exemplar library
 
-The full files are vendored (MIT, © VoltAgent — see the reference `NOTICE.md`) at:
+The full files are vendored (MIT, © VoltAgent — see the reference `NOTICE.md`). They live in the
+chorus package, **not** in your worktree, so a worktree-confined `read_file` can't reach them. Read
+them with the **`design_exemplar` tool** instead:
 
-```
-chorus_employee/designer/references/awesome-design-md/<company>/DESIGN.md
-```
+- Call `design_exemplar()` with NO argument to list every available exemplar slug.
+- Call `design_exemplar(company="<slug>")` (e.g. `design_exemplar(company="linear.app")`) to read that
+  exemplar's full `DESIGN.md`.
 
-If that reference tree is reachable in your workspace, `read_file` the specific exemplar for concrete
-detail. If it isn't (sandboxed run), you still have the inline catalog below, and you have `web_search`
-/ `web_extract` to study the live site — or spawn the `ux_researcher` subagent. The upstream workflow
-is also valid: an operator can copy a chosen exemplar into the project root as a starting `DESIGN.md`,
-which you then read and adapt like any project design system.
+If the tool is unavailable for some reason, you still have the inline catalog below, and you have
+`web_search` / `web_extract` to study the live site — or spawn the `ux_researcher` subagent. The
+upstream workflow is also valid: an operator can copy a chosen exemplar into the project root as a
+starting `DESIGN.md`, which you then read and adapt like any project design system.
 
 ### Catalog (58 exemplars, grouped by feel)
 
@@ -78,7 +79,8 @@ Pick the closest starting point to the desired atmosphere, read that file, then 
    name the one or two closest exemplars, say *why* they fit (and what you rejected), and write that
    justification into the DESIGN.md's **Visual Theme & Atmosphere** section. A style chosen without a
    stated reason is a style you can't defend when the brief changes.
-2. **Read it for structure and rigor.** Notice how it names colors semantically, tables its type ramp,
+2. **Read it for structure and rigor** (via `design_exemplar(company="<slug>")`). Notice how it names
+   colors semantically, tables its type ramp,
    enumerates component states, and writes concrete do/don't rules — that's the bar for your output.
 3. **Adapt, don't transplant.** Re-derive every value from the project's real brand. Keep the *shape*
    (9 sections, semantic tokens, stateful components); replace the *content*.

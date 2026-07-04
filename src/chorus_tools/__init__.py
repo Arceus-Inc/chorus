@@ -17,6 +17,11 @@ from chorus_tools._analysis import (
 )
 from chorus_tools._brand_lint import BrandFinding, BrandLintInput, BrandLintTool
 from chorus_tools._decompose import DecomposeInput, DecomposeTool
+from chorus_tools._design_exemplar import (
+    DesignExemplarInput,
+    DesignExemplarTool,
+    available_exemplars,
+)
 from chorus_tools._design_lint import DesignFinding, DesignLintInput, DesignLintTool, DesignTokens
 from chorus_tools._go_live import GoLiveAction, GoLiveInput, GoLiveTool
 from chorus_tools._manager_actions import (
@@ -37,6 +42,8 @@ __all__ = [
     "ChartRenderTool",
     "DecomposeInput",
     "DecomposeTool",
+    "DesignExemplarInput",
+    "DesignExemplarTool",
     "DesignFinding",
     "DesignLintInput",
     "DesignLintTool",
@@ -52,5 +59,6 @@ __all__ = [
     "SubmitVerdictTool",
     "WarehouseQueryTool",
     "analysis_tool",
+    "available_exemplars",
     "chorus_tool_registry",
 ]
