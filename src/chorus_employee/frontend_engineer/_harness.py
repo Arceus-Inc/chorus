@@ -6,9 +6,9 @@ output into a durable evidence bundle; and iterates until green**. So unlike the
 spec and runs nothing), it needs **command execution** (Node, npm, Playwright, a static server) and
 **git** — an autonomous build role. Each field below names the dream component it drives.
 
-Slices layer in: the ``test_evidence`` scan tool (a deterministic read-only view of the bundle), the
-UI-Tester + Code-Reviewer subagents (in-beat quality pressure) with the Playwright MCP they drive, and the
-authored build/testing craft skills.
+Slices layer in: the ``test_evidence`` scan tool (a deterministic read-only view of the bundle) and the
+Code-Reviewer + UI-Tester subagents (in-beat quality pressure, both read-only) are wired here; the
+authored build/testing craft skills land next.
 """
 
 from __future__ import annotations
@@ -21,6 +21,10 @@ from chorus.roles._manifest import (
     SandboxTier,
 )
 from chorus_employee.frontend_engineer._brief import FRONTEND_ENGINEER_BRIEF
+from chorus_employee.frontend_engineer._subagents import (
+    CODE_REVIEWER_SUBAGENT,
+    UI_TESTER_SUBAGENT,
+)
 
 
 def frontend_engineer_manifest() -> RoleManifest:
@@ -32,8 +36,8 @@ def frontend_engineer_manifest() -> RoleManifest:
         permission_mode=PermissionMode.ACCEPT_EDITS,
         # --- build_harness(registry=...) ---
         # Read + repo-write + run gates + git (a build role), plus durable/task memory and read-only web
-        # research for API/pattern/a11y facts. spawn_subagent and skill are added in later slices as
-        # their backing pieces land; test_evidence (the deterministic bundle scan) is wired here.
+        # research for API/pattern/a11y facts. test_evidence (the deterministic bundle scan) and
+        # spawn_subagent (the Code-Reviewer + UI-Tester review layer) are wired here; skill lands next.
         tools=(
             "read_file",
             "write_file",
@@ -41,6 +45,8 @@ def frontend_engineer_manifest() -> RoleManifest:
             "git",
             # deterministic read-only self-check of the test-evidence bundle before declaring done.
             "test_evidence",
+            # dispatch the Tier-1 review subagents (Code-Reviewer, UI-Tester) after building + running.
+            "spawn_subagent",
             "memory_search",
             "memory_get",
             "working_memory_read",
@@ -70,7 +76,12 @@ def frontend_engineer_manifest() -> RoleManifest:
         # build all the way to green rather than stopping mid-way and depending on re-dispatch.
         max_sprints=6,
         # --- build_harness(mcp=...) / build_harness(plugins=...) ---
-        mcp=False,  # the Playwright MCP (interactive UI driving) is wired in the subagent slice
+        # mcp stays False deliberately (mirrors the gold-standard Designer deferring its Figma MCP): the
+        # real-browser gate is already covered by `npx playwright test` run via run_command AND re-run by
+        # the DoD floor, producing durable evidence — so a live per-beat `npx @playwright/mcp` connect
+        # would add latency + a network dependency to every beat for no gate the deterministic e2e
+        # doesn't already provide. Interactive MCP driving is a follow-up once the core loop is proven.
+        mcp=False,
         plugins=False,
         # --- build_harness(env=...) ---
         env=(),
@@ -88,7 +99,14 @@ def frontend_engineer_manifest() -> RoleManifest:
         # command-deny list, and worktree confinement still apply.
         sandbox=SandboxTier.UNRESTRICTED,
         # --- subagents (Tier-1, role-owned) ---
-        subagents=(),  # UI-Tester + Code-Reviewer + Web-Research land in the subagent slice
+        # The post-build review layer: a Code-Reviewer (correctness / a11y / test integrity) and a
+        # UI-Tester (auditor of the PROOF — does the e2e genuinely drive + assert the real UI). Both are
+        # read-only (read_file / working_memory_read / test_evidence, all ⊆ this role's shelf), so the
+        # projection keeps every tool; neither can edit or run, so the engineer keeps ownership of fixes.
+        subagents=(
+            CODE_REVIEWER_SUBAGENT,
+            UI_TESTER_SUBAGENT,
+        ),
     )
 
 
