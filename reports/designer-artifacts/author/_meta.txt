@@ -1,0 +1,5 @@
+key=author
+passed=False
+summary=plan incomplete: 0/1 done, 1 blocked
+intent=We are building Relay, a self-hosted webhook-inspection tool for developers, and we have no design system yet. Design the first-run onboarding flow (connect a source, send a test event, see it arrive) and establish the visual language it uses. Deliver something an engineer can build directly to.
+working_dir=Q:\projects\inspired-arc\chorus\.chorus\work\designer-hard-author\worktrees\dara

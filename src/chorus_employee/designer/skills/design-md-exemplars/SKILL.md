@@ -74,6 +74,10 @@ Pick the closest starting point to the desired atmosphere, read that file, then 
 
 1. **Match the feel, not the brand.** Choose the exemplar whose *atmosphere* fits the project's goal
    (e.g. a developer tool → study `linear.app`/`vercel`; a fintech dashboard → `stripe`/`wise`).
+   **Reason the pick out loud and record it:** map the product's domain and intent to a feel-group,
+   name the one or two closest exemplars, say *why* they fit (and what you rejected), and write that
+   justification into the DESIGN.md's **Visual Theme & Atmosphere** section. A style chosen without a
+   stated reason is a style you can't defend when the brief changes.
 2. **Read it for structure and rigor.** Notice how it names colors semantically, tables its type ramp,
    enumerates component states, and writes concrete do/don't rules — that's the bar for your output.
 3. **Adapt, don't transplant.** Re-derive every value from the project's real brand. Keep the *shape*

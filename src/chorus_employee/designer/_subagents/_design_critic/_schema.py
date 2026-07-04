@@ -21,7 +21,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class DesignViolation(BaseModel):
-    """One real design breach — the offending element, the rule, and a concrete fix."""
+    """One real design breach — the offending element, the rule, its severity, and a concrete fix."""
 
     model_config = ConfigDict(str_strip_whitespace=True)
 
@@ -33,6 +33,14 @@ class DesignViolation(BaseModel):
         min_length=1,
         description="the design-system or accessibility rule this element breaches",
     )
+    severity: Literal["blocker", "major", "minor"] = Field(
+        description=(
+            "how much it matters: 'blocker' ships a broken or inaccessible screen (off-system value "
+            "where a token exists, a control with no a11y treatment, a WCAG contrast failure); 'major' "
+            "is a missing state or a structural breach of the system; 'minor' is advisory polish. Any "
+            "open blocker or major forces a FAIL."
+        )
+    )
     fix: str = Field(min_length=1, description="a concrete suggested fix for the element")
 
 
@@ -42,10 +50,20 @@ class DesignVerdict(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True)
 
     verdict: Literal["PASS", "FAIL"] = Field(
-        description="PASS when no real violations remain; FAIL otherwise"
+        description=(
+            "FAIL when any blocker or major violation is open; PASS when only minors remain or none "
+            "do — the bar is 'on-system and accessible', not 'perfect'"
+        )
     )
     violations: list[DesignViolation] = Field(
-        description="each real violation found; empty on PASS"
+        description="each real violation found, severity-tagged; empty on a clean PASS"
+    )
+    strengths: list[str] = Field(
+        default_factory=list,
+        description=(
+            "what the spec gets RIGHT — on-system choices, complete states, sound a11y — so the "
+            "designer converges the loop without regressing what already works"
+        ),
     )
     notes: str = Field(
         default="",

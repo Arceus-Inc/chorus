@@ -31,6 +31,14 @@ class VariantEntry(BaseModel):
     approach: str = Field(
         min_length=1, description="one-line description of this variant's layout/interaction approach"
     )
+    rationale: str = Field(
+        min_length=1,
+        description=(
+            "the design BET this variant makes and when it wins — the distinguishing axis (layout / "
+            "hierarchy / interaction model / density) and the tradeoff it accepts, so the designer can "
+            "make a reasoned selection rather than a coin flip"
+        ),
+    )
     design_lint_clean: bool = Field(
         strict=True,
         description="true when Explorer's design_lint on this variant returned no findings",
