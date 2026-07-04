@@ -42,6 +42,12 @@ def pm_manifest() -> RoleManifest:
             # web_extract (fetch + clean read) — read a candidate source in full to ground a claim,
             # not just cite a search snippet. Same allowlisted host as web_search.
             "web_extract",
+            # Product-state read (§03 input ①) — the internal half of the evidence, beside the web:
+            # repo_search reads the codebase (what's shipped / feasibility) and warehouse_query reads
+            # usage/funnel metrics (is this the real gap?). Both tier-0 read-only, so they clear the
+            # REPO_WRITE_NET sandbox — no command execution, no writes.
+            "repo_search",
+            "warehouse_query",
             # spawn_subagent — dispatch the Tier-1 Researcher mid-beat (§06). The web tools above are
             # also what the Researcher is capability-minimised from (it delegates them to web_research).
             "spawn_subagent",

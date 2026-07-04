@@ -105,6 +105,23 @@ class TestPmWebResearch:
         # Egress is only reachable under REPO_WRITE_NET; without it the allowlisted call is blocked.
         assert pm_plugin().manifest.sandbox == SandboxTier.REPO_WRITE_NET
 
+    def test_manifest_grants_product_state_read(self) -> None:
+        # §03 input ①: the PM grounds a decision on product state, not only the web — repo (feasibility /
+        # what's shipped) + the warehouse (usage/funnel metrics). Both are tier-0, read-only.
+        tools = pm_plugin().manifest.tools
+        assert "repo_search" in tools
+        assert "warehouse_query" in tools
+
+    def test_product_state_tools_reach_the_beat_config(self) -> None:
+        # The manifest is the single source; role_beat_config projects it into what the factory registers.
+        config = role_beat_config(pm_plugin().manifest)
+        assert "repo_search" in config.tools
+        assert "warehouse_query" in config.tools
+
+    def test_brief_directs_reading_product_state(self) -> None:
+        # The reach is only useful if the PM consults it — the brief must name the internal surfaces.
+        assert "repo_search" in PM_BRIEF and "warehouse_query" in PM_BRIEF
+
     def test_brief_points_the_pm_at_research_when_evidence_is_thin(self) -> None:
         # §10 confidence policy: weak evidence triggers acquisition, not a hedge.
         assert "web_search" in PM_BRIEF
