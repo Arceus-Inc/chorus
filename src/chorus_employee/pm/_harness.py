@@ -8,6 +8,8 @@ field below names the dream component it drives.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from chorus.roles._manifest import (
     Isolation,
     MemoryScope,
@@ -18,6 +20,9 @@ from chorus.roles._manifest import (
 from chorus_employee.pm._brief import PM_BRIEF
 from chorus_employee.pm._subagents import RESEARCHER_SUBAGENT
 from swarm.web_research_orchestrator import WEB_RESEARCH_ORCHESTRATOR
+
+# The PM's authored playbooks live beside this package; the `skill` tool loads a body on demand (§08).
+_SKILLS_ROOT = str(Path(__file__).parent / "skills")
 
 
 def pm_manifest() -> RoleManifest:
@@ -54,6 +59,9 @@ def pm_manifest() -> RoleManifest:
             # record_decision — the §10 Decision OS write: record the decision as an immutable, cited
             # ledger object (confidence-floor-gated, mirrors decision.json). The PM's only ledger write.
             "record_decision",
+            # skill — load an authored playbook on demand (§08). The PM's competence is its skill library,
+            # not more verbs; this is the load-bearing tool for how it frames, decides, and writes.
+            "skill",
         ),
         # — build_harness(subagents=…) — the Tier-1 specialists Piper may dispatch mid-beat (§06).
         # The Researcher gathers cited evidence (depth-2 over the shared web_research orchestrator) and
@@ -61,6 +69,17 @@ def pm_manifest() -> RoleManifest:
         # web_research is also exposed top-level (as the Marketer does) so Piper can run a direct sweep
         # without the Researcher wrapper; it is the Researcher's depth-2 child either way.
         subagents=(RESEARCHER_SUBAGENT, WEB_RESEARCH_ORCHESTRATOR),
+        # — build_harness(skill_registry=…) — the PM's authored playbooks, discovered from this package's
+        # ``skills/`` dir and offered via the `skill` tool (§08). Slice 1 ships the Decision-core group —
+        # the method behind the Decision OS (evidence -> options -> decision -> recommendation); later
+        # slices add Discovery / Prioritization / Validation / Definition / Market / Business / etc.
+        skills=(
+            "evidence-brief",
+            "options-set-generator",
+            "decision-record",
+            "recommendation-canvas",
+        ),
+        skills_root=_SKILLS_ROOT,
         # — build_harness(memory=…) —
         memory_scope=MemoryScope.PROJECT,
         # — beat time budget (depth-2 research reach) —

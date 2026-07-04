@@ -13,7 +13,10 @@ PM_PLAN_DOC = "plan.md"
 
 PM_BRIEF = (
     "You are a product manager. Turn the task's goal into a grounded decision, then a plan an engineer "
-    "can build to. Read any existing material first with `read_file`.\n\n"
+    "can build to. Read any existing material first with `read_file`. Your competence is your playbooks: "
+    "load the relevant one with the `skill` tool before you work — `evidence-brief` to gather evidence, "
+    "`options-set-generator` to weigh bets, `decision-record` to record the call, `recommendation-canvas` "
+    "to write the plan.\n\n"
     "1. GATHER EVIDENCE when what you were handed is thin — a decision that cites no evidence is not "
     "shippable. Ground it in BOTH the product's own state and the outside world. Do this ONCE, then "
     "decide; do not keep researching:\n"

@@ -13,6 +13,7 @@ import asyncio
 import json
 import subprocess
 from pathlib import Path
+from typing import ClassVar
 
 import pytest
 
@@ -131,6 +132,39 @@ class TestPmWebResearch:
         manifest = pm_plugin().manifest
         assert manifest.beat_timeout_s is not None and manifest.beat_timeout_s >= 300.0
         assert manifest.lease_ttl_s is not None and manifest.lease_ttl_s >= manifest.beat_timeout_s
+
+
+class TestPmSkillLibrary:
+    """§08: the PM's competence is a deep skill library, not more verbs. Slice 1 wires the `skill` tool
+    and authors the Decision-core group — the playbooks that ARE the Decision OS method (evidence →
+    options → decision → recommendation). Later slices add the Discovery / Prioritization / … groups.
+    """
+
+    _DECISION_CORE: ClassVar[frozenset[str]] = frozenset(
+        {"evidence-brief", "options-set-generator", "decision-record", "recommendation-canvas"}
+    )
+
+    def test_manifest_declares_the_decision_core_skills(self) -> None:
+        manifest = pm_plugin().manifest
+        assert self._DECISION_CORE <= set(manifest.skills)
+        assert manifest.skills_root is not None
+        assert "skill" in manifest.tools  # the tool that loads a skill body on demand
+
+    def test_declared_skills_resolve_to_valid_skill_files(self) -> None:
+        """Every declared skill is a discoverable SKILL.md with valid frontmatter (no dangling names)."""
+        from pathlib import Path
+
+        from dream.skills import load_skill_registry
+
+        manifest = pm_plugin().manifest
+        assert manifest.skills_root is not None
+        registry, _shadows = load_skill_registry(project_dirs=[Path(manifest.skills_root)])
+        discovered = {meta.name for meta in registry.list_meta()}
+        assert set(manifest.skills) <= discovered
+
+    def test_brief_promotes_the_skill_library(self) -> None:
+        # The reach is useless if the PM doesn't reach for it — the brief must point at `skill`.
+        assert "skill" in PM_BRIEF
 
     def test_beat_config_carries_the_widened_timeouts(self) -> None:
         manifest = pm_plugin().manifest
