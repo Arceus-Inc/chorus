@@ -32,13 +32,15 @@ def frontend_engineer_manifest() -> RoleManifest:
         permission_mode=PermissionMode.ACCEPT_EDITS,
         # --- build_harness(registry=...) ---
         # Read + repo-write + run gates + git (a build role), plus durable/task memory and read-only web
-        # research for API/pattern/a11y facts. The test_evidence scan tool, spawn_subagent, and skill are
-        # added in later slices as their backing pieces land.
+        # research for API/pattern/a11y facts. spawn_subagent and skill are added in later slices as
+        # their backing pieces land; test_evidence (the deterministic bundle scan) is wired here.
         tools=(
             "read_file",
             "write_file",
             "run_command",
             "git",
+            # deterministic read-only self-check of the test-evidence bundle before declaring done.
+            "test_evidence",
             "memory_search",
             "memory_get",
             "working_memory_read",

@@ -47,6 +47,7 @@ from chorus_tools import (
     GoLiveTool,
     SubmitTaskTool,
     SubmitVerdictTool,
+    TestEvidenceTool,
     analysis_tool,
 )
 from chorus_tools.cms import CmsDraftTool, cms_backend_from_env
@@ -113,6 +114,10 @@ _CHORUS_TO_DREAM_TOOL: dict[str, str] = {
     # (NOT the worktree), so a worktree-confined read_file can't reach it. A chorus capability tool
     # registered via _capability_tool; identity-mapped so dream_tool_names/projection keep it.
     "design_exemplar": "design_exemplar",
+    # test_evidence — the Frontend Engineer's deterministic pre-done scan of its own test bundle: a
+    # chorus capability tool (registered via _capability_tool, NOT a dream built-in), IDENTITY-mapped
+    # so the subagent projection keeps it. The exact structural analog of design_lint (pure reader).
+    "test_evidence": "test_evidence",
     # cms_draft — a chorus capability tool (reversible CMS write, §08 Channel). Identity-mapped for the
     # same reason as brand_lint: so the projection keeps it; it is registered in the materialize flow
     # (it needs the worktree for the Markdown backend, which _capability_tool has no access to).
@@ -212,6 +217,8 @@ def _capability_tool(name: str, ledger: SqliteLedger | None) -> BaseTool | None:
         return DesignLintTool()  # pure file reader — same uniform seam as brand_lint
     if name == "design_exemplar":
         return DesignExemplarTool()  # pure file reader over the vendored exemplar library
+    if name == "test_evidence":
+        return TestEvidenceTool()  # pure worktree reader — same uniform seam as design_lint
     return None
 
 
@@ -220,7 +227,9 @@ def _capability_tool(name: str, ledger: SqliteLedger | None) -> BaseTool | None:
 # runner or any path that builds the factory without a live ledger); otherwise a role silently loses
 # them and the model, seeing them named in its brief but absent from its toolset, mis-routes (e.g.
 # ``spawn_subagent(name="design_lint")`` or a worktree ``read_file`` of the exemplar path) and errors.
-_LEDGER_FREE_CAPABILITY_TOOLS = frozenset({"brand_lint", "design_lint", "design_exemplar"})
+_LEDGER_FREE_CAPABILITY_TOOLS = frozenset(
+    {"brand_lint", "design_lint", "design_exemplar", "test_evidence"}
+)
 
 # Capability tools that route work to *other* employees — a role holding one needs to know its reports.
 _DELEGATING_TOOLS = frozenset({"decompose", "submit_task", "assign_task"})
