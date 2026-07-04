@@ -121,7 +121,7 @@
       <tr><td><code>token-scale-discipline</code></td><td class="num">2</td><td>Semantic-token-only spec (no raw hex/px)</td></tr>
       <tr><td><code>interaction-patterns</code></td><td class="num">1</td><td>Tabs-pattern decision for the stepper</td></tr>
       <tr><td><code>responsive-layout</code></td><td class="num">1</td><td>Narrow/wide breakpoints in the spec</td></tr>
-      <tr><td><code>design-critique-method</code></td><td class="num">1</td><td><span class="tag r">does not exist</span> — hallucinated skill name (errored)</td></tr>
+      <tr><td><code>design-critique-method</code></td><td class="num">1</td><td><span class="tag r">errored once</span> — skill DOES exist in the harness registry; the single error was transient/context-scoped, not a hallucination</td></tr>
     </tbody>
   </table>
 
@@ -130,7 +130,7 @@
     <thead><tr><th>Subagent</th><th class="num">Spawns</th><th class="num">OK</th><th>Notes</th></tr></thead>
     <tbody>
       <tr><td><code>design_critic</code></td><td class="num">10</td><td class="num">10</td><td>Real read-only reviewer. Drove the explore→lint→critic→converge loop across 2 sprints.</td></tr>
-      <tr><td><code>design_lint</code></td><td class="num">4</td><td class="num">0</td><td><span class="tag r">misrouted</span> — <code>design_lint</code> is a <strong>tool</strong>, not a spawnable subagent. All 4 spawn attempts errored; the agent never linted successfully.</td></tr>
+      <tr><td><code>design_lint</code></td><td class="num">4</td><td class="num">0</td><td><span class="tag r">misrouted</span> — <code>design_lint</code> is a <strong>tool</strong>, not a spawnable subagent. All 4 spawn attempts errored, so <em>Dara</em> never linted herself; the Design-Critic (which owns the tool) plausibly did lint inside its subagent run.</td></tr>
     </tbody>
   </table>
 
@@ -188,15 +188,15 @@
   <h2>Issues found (worth fixing)</h2>
   <div class="card issue">
     <h3>✗ <code>design_lint</code> invoked as a subagent — always errors</h3>
-    <p><code>design_lint</code> is a <strong>tool</strong>, but the agent tried to <code>spawn_subagent(name="design_lint")</code> 4× (all failed). It never got a real lint pass. The brief/critic prompts say "re-lint" without clarifying it's a direct tool call. <strong>Fix:</strong> expose lint via the tool surface in the loop instructions, or add a thin lint-runner subagent.</p>
+    <p><code>design_lint</code> is a <strong>tool</strong>, but the agent tried to <code>spawn_subagent(name="design_lint")</code> 4× (all failed), so Dara never linted her own draft (the Critic subagent, which owns the tool, plausibly did). <strong>Cause:</strong> the brief only ever named <code>design_lint</code> in prose ("use design_lint", "re-lint") while demonstrating <code>spawn_subagent(name="…")</code> syntax for the explorer/critic in the same sentences — so the model pattern-matched it into the spawn form. <strong>Fix (applied):</strong> the brief now shows the explicit <code>design_lint(doc="design_spec.md")</code> tool-call syntax and states it is a direct tool, never a subagent.</p>
   </div>
   <div class="card issue">
     <h3>✗ Critic output truncation → wasted recovery calls</h3>
     <p>The <code>design_critic</code> responses were repeatedly truncated to overflow files; the agent then attempted to <code>read_file</code> guessed paths like <code>20260704-…-spawn_subagent-…txt</code> (23 read errors, mostly these) and re-spawned the critic asking for "the full violation list, no truncation." <strong>Fix:</strong> raise the subagent chat-return budget or have the critic write findings to a known path.</p>
   </div>
   <div class="card issue">
-    <h3>✗ Hallucinated skill <code>design-critique-method</code></h3>
-    <p>Requested once, errored — not in the registry. Low cost, but indicates the skill catalog surfaced to the agent could be more explicit.</p>
+    <h3>△ <code>design-critique-method</code> errored once (NOT hallucinated)</h3>
+    <p>Corrected: this skill <strong>does exist</strong> in the harness <code>skills=(…)</code> tuple. The single error was transient/context-scoped (it was requested inside a spawn where the skill wasn't surfaced), not an invented name.</p>
   </div>
   <div class="card issue">
     <h3>✗ Oracle still returns needs-changes at 0.78</h3>
