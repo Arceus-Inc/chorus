@@ -120,6 +120,10 @@ class TestPmManifestWiresResearcher:
         names = {sa.name for sa in pm_plugin().manifest.subagents}
         assert "researcher" in names
 
+    def test_manifest_declares_the_critic(self) -> None:
+        names = {sa.name for sa in pm_plugin().manifest.subagents}
+        assert "critic" in names
+
     def test_subagent_tools_are_a_subset_of_parent_tools(self) -> None:
         parent_tools = set(pm_plugin().manifest.tools)
         for subagent in pm_plugin().manifest.subagents:
@@ -131,7 +135,7 @@ class TestPmManifestWiresResearcher:
     def test_beat_config_flattens_the_depth_2_set(self) -> None:
         # role_beat_config surfaces both the declared Researcher and its depth-2 web_research child.
         config = role_beat_config(pm_plugin().manifest)
-        assert {sa.name for sa in config.subagents} == {"researcher", "web_research"}
+        assert {sa.name for sa in config.subagents} == {"researcher", "web_research", "critic"}
 
     def test_brief_points_the_pm_at_the_researcher(self) -> None:
         from chorus_employee.pm import PM_BRIEF

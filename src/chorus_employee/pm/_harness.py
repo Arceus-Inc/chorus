@@ -18,7 +18,7 @@ from chorus.roles._manifest import (
     SandboxTier,
 )
 from chorus_employee.pm._brief import PM_BRIEF
-from chorus_employee.pm._subagents import RESEARCHER_SUBAGENT
+from chorus_employee.pm._subagents import CRITIC_SUBAGENT, RESEARCHER_SUBAGENT
 from swarm.web_research_orchestrator import WEB_RESEARCH_ORCHESTRATOR
 
 # The PM's authored playbooks live beside this package; the `skill` tool loads a body on demand (§08).
@@ -73,7 +73,10 @@ def pm_manifest() -> RoleManifest:
         # hands back a typed ResearchBrief whose source URLs the PM cites — clearing its grounding floor.
         # web_research is also exposed top-level (as the Marketer does) so Piper can run a direct sweep
         # without the Researcher wrapper; it is the Researcher's depth-2 child either way.
-        subagents=(RESEARCHER_SUBAGENT, WEB_RESEARCH_ORCHESTRATOR),
+        # The Critic (read-only, adversarial) red-teams the drafted decision BEFORE record_decision —
+        # the qualitative pre-record check the deterministic grounding floor cannot make (the Marketer's
+        # Brand-Critic analog); it returns a typed DecisionCritique (PASS/REVISE + findings).
+        subagents=(RESEARCHER_SUBAGENT, WEB_RESEARCH_ORCHESTRATOR, CRITIC_SUBAGENT),
         # — build_harness(skill_registry=…) — the PM's authored playbooks, discovered from this package's
         # ``skills/`` dir and offered via the `skill` tool (§08). Slice 1 ships the Decision-core group —
         # the method behind the Decision OS (evidence -> options -> decision -> recommendation); later
@@ -120,12 +123,13 @@ def pm_manifest() -> RoleManifest:
         beat_timeout_s=900.0,
         lease_ttl_s=1200.0,
         # — turn / sprint budget —
-        # Read context, spawn the Researcher ONCE (one blocking turn), read its brief, record the
-        # decision, write the plan. A tight budget is deliberate: a wide one lets the model fan out the
-        # Researcher many times (7 spawns → ~50 web_search calls in one beat), so cap turns/sprints to
-        # force "one sweep, then decide" rather than research-until-timeout.
-        max_turns=10,
-        max_sprints=2,
+        # The full loop is: gather evidence, draft the plan, red-team it with the Critic ONCE, apply the
+        # verdict, then record + finalize. A tight budget is deliberate (a wide one lets the model fan
+        # out the Researcher/Critic many times), but 2 sprints left no room to record AFTER the Critic's
+        # revise — so 3 sprints: draft → critique → revise+record. The Critic is calibrated to PASS a
+        # sound decision, so this does not reopen the fan-out loop.
+        max_turns=12,
+        max_sprints=3,
         # — worktree containment (spec 04 §4) —
         isolation=Isolation.WORKTREE,
         # — trust posture (spec 04 §4) → .harness/sandbox.toml —

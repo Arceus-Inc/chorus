@@ -17,6 +17,13 @@ description — imperative, so the specialist actually produces its deliverable.
 
 from __future__ import annotations
 
+from chorus_employee.pm._subagents._critic import (
+    CRITIC_SUBAGENT,
+    DecisionCritique,
+    Dimension,
+    Finding,
+    decision_critique_output_schema,
+)
 from chorus_employee.pm._subagents._researcher import (
     RESEARCHER_SUBAGENT,
     EvidenceItem,
@@ -25,8 +32,13 @@ from chorus_employee.pm._subagents._researcher import (
 )
 
 __all__ = [
+    "CRITIC_SUBAGENT",
     "RESEARCHER_SUBAGENT",
+    "DecisionCritique",
+    "Dimension",
     "EvidenceItem",
+    "Finding",
     "ResearchBrief",
+    "decision_critique_output_schema",
     "research_output_schema",
 ]
