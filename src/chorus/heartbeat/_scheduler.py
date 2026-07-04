@@ -49,12 +49,7 @@ from chorus.ledger._models import (
     TaskStatus,
     WakeReason,
 )
-from chorus.lifecycle import (
-    DEFAULT_REVISIT_WINDOW,
-    TERMINAL,
-    record_activity,
-    revisit_sweep,
-)
+from chorus.lifecycle import TERMINAL, record_activity
 from chorus.memory import SprintDelta
 from chorus.outcomes import AgentReview, DoDKind, ReviewedBuild, Verifier
 from chorus.recovery import reconcile
@@ -271,7 +266,6 @@ class Scheduler:
         transient_retries: int = 2,
         max_integrate_iterations: int = 3,
         max_review_rounds: int = 2,
-        revisit_window: timedelta = DEFAULT_REVISIT_WINDOW,
         memory_writer: MemoryWriter | None = None,
         ledger: SqliteLedger | None = None,
         workforce: Workforce | None = None,
@@ -299,9 +293,6 @@ class Scheduler:
         # How many times a reviewer may block a standalone (no-manager) deliverable and have its author
         # self-repair before the kernel opens a recovery card for a human (M3 load-bearing Reviewer).
         self.max_review_rounds = max_review_rounds
-        # How long a recorded decision stands before the revisit sweep reopens it as a fresh problem
-        # ("did the metric move?") — the §13 discovery loop's feedback edge.
-        self._revisit_window = revisit_window
         self._ledger = ledger
         self._workforce = workforce
         # The beat seam is per-employee (resolve a role-faithful runner for the dispatched employee). A
@@ -348,12 +339,6 @@ class Scheduler:
         for trigger in ledger.routine_triggers.due(now=now):
             if fire_routine(ledger, trigger, now=now) is not None:
                 routines_fired += 1
-
-        # (b2) REVISIT — reopen decisions past their window as fresh problems (§13). A deterministic
-        # maintenance sweep (peer of RECOVER): a routine can only spawn a prose task, so the scan runs
-        # here, in code. Each reopen enqueues a wake dispatched below this same pulse; idempotent, so a
-        # re-tick never re-reopens.
-        decisions_reopened = len(revisit_sweep(ledger, now=now, window=self._revisit_window))
 
         # (c) MONITORS — drain deferred self-wakes; a one-shot fire wakes the owner, an exhausted
         # monitor escalates per its recovery policy instead.
@@ -446,7 +431,6 @@ class Scheduler:
             at=now,
             recovered=recovered,
             routines_fired=routines_fired,
-            decisions_reopened=decisions_reopened,
             wakes_dispatched=dispatched,
             beats_started=dispatched,
             blocked_by_budget=blocked_by_budget,
