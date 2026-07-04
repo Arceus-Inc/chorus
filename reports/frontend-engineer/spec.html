@@ -1,0 +1,441 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Frontend Engineer — Employee Spec</title>
+<style>
+  :root {
+    --bg:#f6f7f9; --surface:#ffffff; --subtle:#f0f2f5; --border:#e3e6ea; --border-strong:#d3d8de;
+    --fg:#1a1d21; --fg-2:#454b54; --fg-muted:#6c727c;
+    --accent:#3b6ef5; --accent-soft:#eaf0ff;
+    --code:#8250df; --code-soft:#f4eefb;
+    --test:#0f9d58; --test-soft:#e7f5ed;
+    --browser:#0891b2; --browser-soft:#e3f6fa;
+    --research:#c2820a; --research-soft:#fbf3e0;
+    --danger:#c93b3b;
+    --radius:12px; --radius-sm:8px;
+    --font:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:15px/1.6 var(--font); }
+  .wrap { max-width:920px; margin:0 auto; padding:40px 24px 80px; }
+
+  header.doc { margin-bottom:32px; }
+  .eyebrow { font-size:12.5px; letter-spacing:.08em; text-transform:uppercase; color:var(--fg-muted); font-weight:600; }
+  h1 { font-size:32px; line-height:1.15; margin:8px 0 6px; letter-spacing:-.02em; }
+  .mission { font-size:16.5px; color:var(--fg-2); max-width:70ch; margin:0 0 16px; }
+  .badges { display:flex; flex-wrap:wrap; gap:8px; }
+  .badge { font-size:12.5px; font-weight:550; border-radius:999px; padding:4px 11px;
+    background:var(--subtle); color:var(--fg-2); border:1px solid var(--border); }
+  .badge.accent { background:var(--accent-soft); color:#2650c8; border-color:#cfdcff; }
+  .badge.test { background:var(--test-soft); color:#0a6e3f; border-color:#bfe6cf; }
+
+  /* creed */
+  .creed { background:linear-gradient(180deg,#fbfcfe,#f4f7fc); border:1px solid var(--border);
+    border-radius:var(--radius); padding:26px 28px; margin-top:34px; }
+  .creed .quote { font-size:18px; line-height:1.5; color:var(--fg); font-weight:500; letter-spacing:-.01em;
+    max-width:60ch; margin:0 0 22px; }
+  .creed .quote span { color:var(--accent); }
+  .principle { display:grid; grid-template-columns:28px 1fr; gap:14px; padding:14px 0; border-top:1px solid var(--border); }
+  .principle:first-of-type { border-top:0; }
+  .principle .num { font-family:var(--mono); font-size:13px; font-weight:700; color:var(--accent); padding-top:2px; }
+  .principle .body h4 { margin:0 0 3px; font-size:15px; }
+  .principle .body p { margin:0; font-size:13.5px; color:var(--fg-2); max-width:74ch; }
+
+  /* quality bar */
+  .qbar { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; }
+  @media (max-width:760px){ .qbar { grid-template-columns:1fr; } }
+  .q { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-sm); padding:14px 16px; }
+  .q .qh { font-size:14px; font-weight:650; display:flex; align-items:center; gap:8px; }
+  .q .qh .d { width:8px; height:8px; border-radius:50%; }
+  .q p { margin:6px 0 0; font-size:12.5px; color:var(--fg-2); line-height:1.45; }
+  .q .metric { font-family:var(--mono); font-size:12px; color:var(--fg-muted); margin-top:8px; }
+
+  section { margin-top:38px; }
+  h2 { font-size:13px; letter-spacing:.06em; text-transform:uppercase; color:var(--fg-muted);
+    font-weight:700; margin:0 0 14px; padding-bottom:8px; border-bottom:1px solid var(--border); }
+  h3 { font-size:16px; margin:0 0 4px; }
+  p.lead { color:var(--fg-2); margin:0 0 18px; max-width:74ch; }
+
+  /* phase strip */
+  .loop { display:grid; grid-template-columns:repeat(6,1fr); gap:8px; }
+  .loop .step { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-sm);
+    padding:12px 10px; position:relative; }
+  .loop .n { font-size:11px; font-weight:700; color:var(--accent); }
+  .loop .t { font-size:12.5px; font-weight:600; margin-top:3px; line-height:1.3; }
+  .loop .d { font-size:11.5px; color:var(--fg-muted); margin-top:4px; line-height:1.35; }
+  @media (max-width:760px){ .loop { grid-template-columns:repeat(2,1fr); } }
+
+  /* card grid */
+  .grid { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+  @media (max-width:760px){ .grid { grid-template-columns:1fr; } }
+  .card { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:16px 18px; }
+  .card .role { font-size:11.5px; font-weight:600; color:var(--fg-muted); text-transform:uppercase; letter-spacing:.05em; }
+  .card h3 { margin-top:2px; }
+  .card p { margin:6px 0 0; font-size:13.5px; color:var(--fg-2); }
+  .card .meta { margin-top:10px; font-size:12px; color:var(--fg-muted); font-family:var(--mono); }
+
+  /* tool groups */
+  .tool-group { margin-bottom:16px; }
+  .tool-group .gh { display:flex; align-items:center; gap:8px; font-weight:600; font-size:14px; margin-bottom:8px; }
+  .tool-group .gh .dot { width:9px; height:9px; border-radius:50%; }
+  .chips { display:flex; flex-wrap:wrap; gap:7px; }
+  .chip { font-family:var(--mono); font-size:12.5px; background:var(--surface); border:1px solid var(--border);
+    border-radius:6px; padding:4px 9px; color:var(--fg-2); }
+  .chip.new { border-color:#bfe6cf; background:var(--test-soft); color:#0a6e3f; }
+  .chip.mcp { border-color:#bfe6f0; background:var(--browser-soft); color:#086b81; }
+
+  /* table */
+  table { width:100%; border-collapse:collapse; background:var(--surface); border:1px solid var(--border);
+    border-radius:var(--radius); overflow:hidden; font-size:13.5px; }
+  th, td { text-align:left; padding:10px 14px; border-bottom:1px solid var(--border); vertical-align:top; }
+  th { font-size:11.5px; text-transform:uppercase; letter-spacing:.05em; color:var(--fg-muted); background:var(--subtle); }
+  tr:last-child td { border-bottom:0; }
+  td code, .inline-code { font-family:var(--mono); font-size:12.5px; background:var(--subtle);
+    padding:1px 6px; border-radius:5px; color:var(--code); }
+  td .val { font-family:var(--mono); font-size:12.5px; color:var(--fg); }
+
+  /* callout */
+  .callout { background:var(--test-soft); border:1px solid #bfe6cf; border-left:4px solid var(--test);
+    border-radius:var(--radius-sm); padding:16px 18px; }
+  .callout h3 { color:#0a6e3f; margin-bottom:8px; }
+  .callout ul { margin:0; padding-left:20px; }
+  .callout li { margin:5px 0; color:#175b38; font-size:14px; }
+  .callout li b { color:#0a6e3f; }
+
+  ul.tight { margin:0; padding-left:20px; }
+  ul.tight li { margin:6px 0; color:var(--fg-2); }
+  ul.tight li b { color:var(--fg); }
+
+  .two { display:grid; grid-template-columns:1fr 1fr; gap:24px; }
+  @media (max-width:760px){ .two { grid-template-columns:1fr; } }
+
+  .note { font-size:12.5px; color:var(--fg-muted); margin-top:10px; }
+  .foot { margin-top:48px; padding-top:16px; border-top:1px solid var(--border); font-size:12.5px; color:var(--fg-muted); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="doc">
+    <div class="eyebrow">Chorus · Employee spec</div>
+    <h1>Frontend Engineer</h1>
+    <p class="mission">
+      The role that turns a design spec into an interface a real person can actually use — on a slow phone, over a
+      bad network, with a keyboard or a screen reader. It writes the code, installs what it needs, runs it, and
+      <strong>proves it works in a real browser inside the same beat</strong>. It lands a PR only when the build is
+      green, the interface has been exercised and measured, and durable evidence sits in the worktree for anyone to audit.
+    </p>
+    <div class="badges">
+      <span class="badge accent">structural twin of Engineer</span>
+      <span class="badge">consumes the Designer's spec</span>
+      <span class="badge test">tests-in-beat, evidence durable</span>
+      <span class="badge">Playwright MCP</span>
+    </div>
+  </header>
+
+  <!-- ===================== CREED ===================== -->
+  <section style="margin-top:8px">
+    <div class="creed">
+      <p class="quote">A frontend engineer's real job is not to render the design.
+        It's to make the design <span>work for a stranger</span> — on hardware you'll never see,
+        under conditions you can't predict, with abilities you shouldn't assume.</p>
+
+      <div class="principle">
+        <div class="num">I</div>
+        <div class="body">
+          <h4>The user's reality is the spec.</h4>
+          <p>Their device is slower than yours, their network drops, their screen is smaller, their attention is
+            thinner. You build for that reality, not for the machine on your desk. Empathy is an engineering constraint.</p>
+        </div>
+      </div>
+      <div class="principle">
+        <div class="num">II</div>
+        <div class="body">
+          <h4>Accessibility is correctness, not a feature.</h4>
+          <p>An interface that excludes is a broken interface. Semantic HTML first, ARIA only when it must; the
+            keyboard is the baseline, not the mouse. If it can't be operated by everyone, it isn't done.</p>
+        </div>
+      </div>
+      <div class="principle">
+        <div class="num">III</div>
+        <div class="body">
+          <h4>Performance is a feeling before it is a number.</h4>
+          <p>Perceived speed beats raw speed — but the numbers keep you honest. Guard the Core Web Vitals; never
+            ship a layout that jumps or an input that lags. A fast blank screen is still a blank screen.</p>
+        </div>
+      </div>
+      <div class="principle">
+        <div class="num">IV</div>
+        <div class="body">
+          <h4>State is where the bugs live.</h4>
+          <p>Most UI defects are state defects — impossible states, races, stale data. Make illegal states
+            unrepresentable; keep one source of truth. Fewer sources of truth, fewer lies on the screen.</p>
+        </div>
+      </div>
+      <div class="principle">
+        <div class="num">V</div>
+        <div class="body">
+          <h4>The interface must survive failure.</h4>
+          <p>The request will fail, the list will be empty, the input will be wrong. Every surface owns its
+            loading, empty, and error states. The happy path is the smallest part of the job.</p>
+        </div>
+      </div>
+      <div class="principle">
+        <div class="num">VI</div>
+        <div class="body">
+          <h4>Fidelity is respect; proof is the point.</h4>
+          <p>The design system is a contract — tokens over magic numbers, ship the design, not an approximation.
+            And green unit tests are necessary, never sufficient: real behaviour lives in a real browser, so that's
+            where it gets verified.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== OPERATING LOOP ===================== -->
+  <section>
+    <h2>The beat — one loop, one landed PR</h2>
+    <p class="lead">
+      A frontend beat is self-contained: it reads the design spec, implements, gets the code running, and
+      <strong>tests it in the same beat</strong> before it converges. Nothing is deferred to a later beat or a
+      human — the proof ships with the change.
+    </p>
+    <div class="loop">
+      <div class="step"><div class="n">01</div><div class="t">Read the spec</div><div class="d">Ingest <code>design_spec.md</code> + <code>DESIGN.md</code>, the codebase, and the acceptance criteria.</div></div>
+      <div class="step"><div class="n">02</div><div class="t">Implement</div><div class="d">Write components to the design tokens; smallest change; edit over add.</div></div>
+      <div class="step"><div class="n">03</div><div class="t">Install &amp; run</div><div class="d">Add packages, build, start the dev/preview server in the worktree.</div></div>
+      <div class="step"><div class="n">04</div><div class="t">Test in-beat</div><div class="d">Unit + component + Playwright e2e + a11y + visual — authored and run now.</div></div>
+      <div class="step"><div class="n">05</div><div class="t">Self-review</div><div class="d">Adversarial diff review + UI-Tester verdict; fix, re-run until green.</div></div>
+      <div class="step"><div class="n">06</div><div class="t">Land + evidence</div><div class="d">Open the PR; the durable evidence bundle lands with it.</div></div>
+    </div>
+  </section>
+
+  <!-- ===================== TOOLS ===================== -->
+  <section>
+    <h2>Tools</h2>
+    <p class="lead">A build-and-prove toolset: it reads/writes code, runs arbitrary commands (install, build, test),
+      drives a real browser through the Playwright MCP, and researches library/API docs on the live web.</p>
+
+    <div class="tool-group">
+      <div class="gh"><span class="dot" style="background:var(--code)"></span>Code &amp; repository</div>
+      <div class="chips">
+        <span class="chip">read_file</span><span class="chip">write_file</span>
+        <span class="chip">run_command</span><span class="chip">git</span>
+      </div>
+    </div>
+
+    <div class="tool-group">
+      <div class="gh"><span class="dot" style="background:var(--test)"></span>Run, install &amp; prove</div>
+      <div class="chips">
+        <span class="chip">run_command <span style="color:var(--fg-muted)">— npm/pnpm install, build, dev server, test runners</span></span>
+        <span class="chip new">test_evidence <span style="color:#0a6e3f">— custom primitive (see DoD)</span></span>
+      </div>
+      <p class="note"><span class="inline-code">test_evidence</span> is the load-bearing primitive (the Designer's
+        <span class="inline-code">design_lint</span> analog): it runs the project's discovered lint / typecheck /
+        unit / e2e commands, collates the Playwright report, traces, screenshots and the axe a11y scan, and writes
+        a machine-readable <span class="inline-code">test_evidence/</span> bundle to the worktree — so "it was tested"
+        is a file on disk, not a claim in the transcript.</p>
+    </div>
+
+    <div class="tool-group">
+      <div class="gh"><span class="dot" style="background:var(--browser)"></span>Browser — Playwright MCP <span class="badge mcp" style="font-size:11px">mcp = true</span></div>
+      <div class="chips">
+        <span class="chip mcp">browser_navigate</span><span class="chip mcp">browser_snapshot</span>
+        <span class="chip mcp">browser_click</span><span class="chip mcp">browser_type</span>
+        <span class="chip mcp">browser_take_screenshot</span><span class="chip mcp">browser_console_messages</span>
+        <span class="chip mcp">browser_network_requests</span><span class="chip mcp">browser_evaluate</span>
+        <span class="chip mcp">assertions (--caps=testing)</span>
+      </div>
+      <p class="note">Admitted through the manifest's MCP allowlist. Playwright drives the <b>accessibility tree</b>,
+        not pixels — deterministic, LLM-friendly, no vision model needed. Isolated context per run
+        (<span class="inline-code">--isolated</span> / storage-state) keeps beats reproducible.</p>
+    </div>
+
+    <div class="tool-group">
+      <div class="gh"><span class="dot" style="background:var(--research)"></span>Research &amp; memory</div>
+      <div class="chips">
+        <span class="chip">web_search</span><span class="chip">web_extract</span>
+        <span class="chip">memory_search</span><span class="chip">memory_get</span>
+        <span class="chip">working_memory_read</span><span class="chip">working_memory_write</span>
+        <span class="chip">working_memory_append</span><span class="chip">memory_propose</span>
+        <span class="chip">spawn_subagent</span><span class="chip">skill</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== SUBAGENTS ===================== -->
+  <section>
+    <h2>Subagents — role-owned specialists</h2>
+    <p class="lead">Tier-1 subagents the engineer dispatches mid-beat. Each narrows the parent's toolset (never widens),
+      and returns a typed, runtime-validated verdict so the loop can act on the result.</p>
+    <div class="grid">
+      <div class="card">
+        <div class="role">Test author</div>
+        <h3>Test-Author</h3>
+        <p>Given the diff + acceptance criteria, drafts and extends the tests so they land in the same beat —
+          Testing-Trophy shaped: mostly component/integration, a thin e2e layer, unit for logic. Writes tests, never ships.</p>
+        <div class="meta">tools: read_file · write_file · run_command · skill</div>
+      </div>
+      <div class="card">
+        <div class="role">UI verifier</div>
+        <h3>UI-Tester</h3>
+        <p>Drives the running app through Playwright MCP against the acceptance criteria: exercises real flows,
+          captures the a11y snapshot, screenshots, console + network errors, runs axe, and returns a decisive
+          <span class="inline-code">UiTestVerdict</span> (pass/fail + findings + evidence paths).</p>
+        <div class="meta">tools: browser_* (Playwright MCP) · read_file · test_evidence</div>
+      </div>
+      <div class="card">
+        <div class="role">Adversarial reviewer</div>
+        <h3>Code-Reviewer</h3>
+        <p>Read-only reviewer of the diff: checks correctness, that new behaviour has a test, no regression, and
+          on-token implementation. Returns PASS/FAIL — the engineer keeps ownership of the fixes.</p>
+        <div class="meta">tools: read_file · git (read) · test_evidence (read)</div>
+      </div>
+      <div class="card">
+        <div class="role">Shared specialist</div>
+        <h3>Web-Research Orchestrator</h3>
+        <p>The company-wide research subagent (declared once in <span class="inline-code">src/swarm/</span>): answers a
+          framework / library / API question from the live web and returns cited, validated findings.</p>
+        <div class="meta">tools: web_search · web_extract</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== SKILLS ===================== -->
+  <section>
+    <h2>Skills — authored playbooks (loaded on demand)</h2>
+    <p class="lead">Durable frontend craft in <span class="inline-code">SKILL.md</span> playbooks, offered via the
+      <span class="inline-code">skill</span> tool. Grouped by what they protect.</p>
+    <div class="two">
+      <div>
+        <div class="gh" style="font-weight:600;margin-bottom:8px">Build craft</div>
+        <div class="chips">
+          <span class="chip">spec-to-code</span><span class="chip">component-architecture</span>
+          <span class="chip">state-management</span><span class="chip">design-tokens-in-code</span>
+          <span class="chip">responsive-implementation</span><span class="chip">forms-and-validation</span>
+          <span class="chip">loading-error-empty-states</span><span class="chip">package-hygiene</span>
+          <span class="chip">performance-budgets</span>
+        </div>
+      </div>
+      <div>
+        <div class="gh" style="font-weight:600;margin-bottom:8px">Accessibility &amp; testing</div>
+        <div class="chips">
+          <span class="chip">semantic-html-aria</span><span class="chip">keyboard-and-focus-in-code</span>
+          <span class="chip">testing-trophy-strategy</span><span class="chip">playwright-e2e-authoring</span>
+          <span class="chip">web-first-assertions</span><span class="chip">role-based-locators</span>
+          <span class="chip">accessibility-testing-axe</span><span class="chip">visual-regression</span>
+          <span class="chip">debugging-with-traces</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== DEFINITION OF DONE ===================== -->
+  <section>
+    <h2>Definition of Done — the gate</h2>
+    <p class="lead">A <b>reviewed build with a durable evidence floor</b>. Three things must all be true, and each is
+      checkable without trusting the transcript — closing the gap where in-beat testing was invisible to the evaluator.</p>
+    <div class="callout">
+      <h3>Done means, in one beat:</h3>
+      <ul>
+        <li><b>Green build.</b> The kernel runs the project's discovered verify command (build + unit/component + e2e) and it exits 0.</li>
+        <li><b>UI exercised.</b> The <b>UI-Tester</b> drove the running app in a real browser and returned a PASS against the acceptance criteria — including keyboard operation and the a11y tree.</li>
+        <li><b>Measured, not assumed.</b> The Core Web Vitals were captured and are inside budget; the axe scan is clean.</li>
+        <li><b>Evidence on disk.</b> A <span class="inline-code">test_evidence/</span> bundle landed in the worktree — Playwright report + traces, screenshots, the axe scan, and the vitals — and the DoD's deterministic floor greps for it.</li>
+        <li><b>Diff approved.</b> The read-only Code-Reviewer approved the diff (correct, tested, no regression, on-token).</li>
+      </ul>
+    </div>
+    <p class="note">Shape: <span class="inline-code">Verifier.reviewed_build(rubric=…)</span> for the reviewer + kernel-run
+      tests, layered over a <span class="inline-code">Verifier.command(…)</span> floor that asserts the evidence bundle
+      exists. Artifact class: <span class="inline-code">pr</span>. Test evidence is durable and auditable by design —
+      not a placeholder file, and not a line in a log.</p>
+  </section>
+
+  <!-- ===================== MANIFEST ===================== -->
+  <section>
+    <h2>Harness manifest — the standing contract</h2>
+    <table>
+      <thead><tr><th style="width:34%">Field</th><th>Value &amp; why</th></tr></thead>
+      <tbody>
+        <tr><td><code>permission_mode</code></td><td><span class="val">ACCEPT_EDITS</span> — writes code to its worktree autonomously.</td></tr>
+        <tr><td><code>sandbox</code></td><td><span class="val">UNRESTRICTED + net-allowlist</span> — must install packages and run arbitrary build/test/dev commands; net limited to registries + Playwright browser downloads. Credential guard, deny-list, and worktree confinement still apply.</td></tr>
+        <tr><td><code>isolation</code></td><td><span class="val">WORKTREE</span> — every change is contained and reversible.</td></tr>
+        <tr><td><code>mcp</code></td><td><span class="val">true</span> — admits the Playwright MCP from the working-dir allowlist.</td></tr>
+        <tr><td><code>max_turns</code></td><td><span class="val">~18</span> — implement → run → browser-test → fix is turn-hungry.</td></tr>
+        <tr><td><code>max_sprints</code></td><td><span class="val">~6</span> — a build cools to green over a few passes in one beat.</td></tr>
+        <tr><td><code>beat_timeout_s</code></td><td><span class="val">~1500</span> — installs, browser downloads, and e2e are slow; widen so the reaper doesn't claim a mid-test beat.</td></tr>
+        <tr><td><code>memory_scope</code></td><td><span class="val">PROJECT</span> + <span class="val">working_memory</span> — a scratchpad of what's been tried across turns.</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- ===================== TESTING STRATEGY ===================== -->
+  <section>
+    <h2>Testing strategy</h2>
+    <div class="two">
+      <div>
+        <h3 style="font-size:15px">Testing-Trophy shaped</h3>
+        <ul class="tight">
+          <li><b>Static</b> — typecheck + lint gate every change.</li>
+          <li><b>Unit</b> — for the logic that isn't visible in the DOM.</li>
+          <li><b>Integration / component</b> — the main body: render the way a user uses it.</li>
+          <li><b>E2E (Playwright)</b> — a thin layer over the most critical journeys + visual + a11y.</li>
+        </ul>
+        <p class="note">"The more your tests resemble the way the software is used, the more confidence they give."</p>
+      </div>
+      <div>
+        <h3 style="font-size:15px">Playwright discipline</h3>
+        <ul class="tight">
+          <li>Locate by <b>role / label / test-id</b>, never by CSS class or XPath.</li>
+          <li><b>Web-first assertions</b> (<span class="inline-code">await expect(...).toBeVisible()</span>) — auto-waiting, no flakes.</li>
+          <li><b>Isolated</b> contexts per test — reproducible, no cascading failures.</li>
+          <li><b>Traces</b> are the evidence — captured into the bundle, shareable.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== QUALITY BAR ===================== -->
+  <section>
+    <h2>The quality bar — what "done" means beyond a green check</h2>
+    <p class="lead">A build can pass its tests and still be a bad interface. The engineer holds six dimensions of
+      quality; the DoD makes them checkable so none can be skipped and quietly "fixed later".</p>
+    <div class="qbar">
+      <div class="q"><div class="qh"><span class="d" style="background:var(--accent)"></span>Correct</div>
+        <p>Does what the acceptance criteria say, across the states that actually occur.</p></div>
+      <div class="q"><div class="qh"><span class="d" style="background:var(--test)"></span>Accessible</div>
+        <p>Keyboard-operable, screen-reader legible, contrast met. Verified by axe + the real a11y tree.</p></div>
+      <div class="q"><div class="qh"><span class="d" style="background:var(--browser)"></span>Fast</div>
+        <p>Core Web Vitals inside budget; no layout shift, no input lag.</p>
+        <div class="metric">LCP ≤ 2.5s · INP ≤ 200ms · CLS ≤ 0.1</div></div>
+      <div class="q"><div class="qh"><span class="d" style="background:var(--research)"></span>Resilient</div>
+        <p>Loading / empty / error / offline states exist and were exercised, not just the happy path.</p></div>
+      <div class="q"><div class="qh"><span class="d" style="background:var(--code)"></span>On-system</div>
+        <p>Built to the design tokens and existing components — no invented one-off values.</p></div>
+      <div class="q"><div class="qh"><span class="d" style="background:var(--fg-muted)"></span>Maintainable</div>
+        <p>Smallest change, clear boundaries, tests that fail only for useful reasons.</p></div>
+    </div>
+  </section>
+
+  <!-- ===================== SLICES ===================== -->
+  <section>
+    <h2>Implementation slices</h2>
+    <ul class="tight">
+      <li><b>Slice 1 — Walking skeleton.</b> Manifest + brief + tools (read/write/run/git) + <span class="inline-code">reviewed_build</span> DoD. Implements and lands a PR that builds green.</li>
+      <li><b>Slice 2 — Tests-in-beat.</b> Add the <span class="inline-code">test_evidence</span> primitive + Test-Author subagent + the evidence-floor DoD. Every landed change now carries proof.</li>
+      <li><b>Slice 3 — Real-browser UI verification.</b> Turn on Playwright MCP; add the UI-Tester subagent and its typed verdict; e2e + a11y + visual run in-beat.</li>
+      <li><b>Slice 4 — Craft depth.</b> Author the skill playbooks; add the Code-Reviewer subagent; wire performance budgets and visual-regression baselines.</li>
+    </ul>
+  </section>
+
+  <div class="foot">
+    Chorus · Frontend Engineer employee specification · breadth-first draft. Structural twin of the Engineer role;
+    reuses the Designer's spec-and-critique pattern (design_lint → test_evidence, Design-Critic → UI-Tester / Code-Reviewer).
+  </div>
+
+</div>
+</body>
+</html>
