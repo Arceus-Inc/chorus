@@ -42,6 +42,7 @@ from chorus_tools import (
     AssignTaskTool,
     BrandLintTool,
     DecomposeTool,
+    DesignLintTool,
     GoLiveTool,
     SubmitTaskTool,
     SubmitVerdictTool,
@@ -102,6 +103,10 @@ _CHORUS_TO_DREAM_TOOL: dict[str, str] = {
     # parent's role-allowlist ceiling too. The MARKETER BRIEF must NOT instruct the parent to call it —
     # it is the critic's primitive; over-instructing the parent makes it mis-spawn brand_lint.
     "brand_lint": "brand_lint",
+    # design_lint — the Designer's deterministic pre-gen scan (§08 tool / §10 sandwich): a chorus
+    # capability tool (registered via _capability_tool, NOT a dream built-in), IDENTITY-mapped so the
+    # subagent projection keeps it for the Design-Critic. The exact structural analog of brand_lint.
+    "design_lint": "design_lint",
     # cms_draft — a chorus capability tool (reversible CMS write, §08 Channel). Identity-mapped for the
     # same reason as brand_lint: so the projection keeps it; it is registered in the materialize flow
     # (it needs the worktree for the Markdown backend, which _capability_tool has no access to).
@@ -193,6 +198,8 @@ def _capability_tool(name: str, ledger: SqliteLedger) -> BaseTool | None:
         return GoLiveTool(ledger)
     if name == "brand_lint":
         return BrandLintTool()  # pure file reader — the ledger arg is unused (kept for a uniform seam)
+    if name == "design_lint":
+        return DesignLintTool()  # pure file reader — same uniform seam as brand_lint
     return None
 
 
