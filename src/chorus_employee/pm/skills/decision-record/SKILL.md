@@ -1,44 +1,111 @@
 ---
 name: decision-record
-description: How to write the decision of record — an immutable, ADR-style bet with its rationale, confidence, the metric that should move, a revisit trigger, cited claims, and the alternatives it beat. Use when calling record_decision, the moment you commit.
-when_to_use: Use at the moment of commitment, when you call the record_decision tool — to make the recorded decision complete, honest, and auditable rather than a bare option string.
+description: Generate a lightweight Decision Record (DR/ADR-style) with context, decision, alternatives, rationale, risks, metrics, and revisit triggers. Use when documenting a product or technical decision, creating an ADR, or when the user asks 'what would change this decision?'.
+when_to_use: Use when documenting a product or technical decision, creating an ADR, or answering 'what would change this decision?' — after options and evidence are in hand.
 ---
 
-# Decision record
+## Purpose
 
-The PM's signature deliverable is not a document — it is a **recorded decision**: an immutable, cited,
-ADR-style bet the org can act on and later hold to account. `record_decision` writes it to the ledger;
-this skill is how to fill it so the record is worth trusting.
+Produce a **Decision Record** that captures *why* a decision was made, *what alternatives were considered*, and **what new evidence would change this decision** (revisit triggers). Use this to reduce re-litigation, improve trust, and make decisions auditable.
 
-## When NOT to use this
-- The evidence hasn't cleared the confidence floor — go gather evidence first (see `evidence-brief`),
-  or escalate. Do not record a low-confidence, uncited decision "to make progress".
-- You are only revising execution details of an already-recorded decision — that's the plan, not a new
-  record.
+## Key concepts
 
-## The fields, and how to fill each
+### DR structure (required fields)
+
+| Section | Purpose |
+|--------|---------|
+| **Context** | What situation prompted this decision? |
+| **Decision** | What we decided (one clear statement). |
+| **Alternatives considered** | ≥2 options we rejected and why. |
+| **Rationale** | Why this option, why now. |
+| **Risks** | What could go wrong; mitigations. |
+| **Metrics** | How we'll measure success. |
+| **Revisit triggers** | What new evidence would change this decision? (first-class) |
+
+### Revisit triggers (critical)
+
+Answer: *"What would make us revisit or reverse this decision?"*
+
+Examples:
+- "If activation rate does not improve by 20% within 60 days, we revisit."
+- "If 3+ enterprise customers request SSO in the next quarter, we prioritize."
+- "If competitor X ships feature Y with >50% adoption, we reassess."
+
+## Application
+
+### Step 1: Gather inputs
+
+- Problem statement or PRD context
+- Options considered (use `options-set-generator` if needed)
+- Evidence cited (use `evidence-brief` if needed)
+
+### Step 2: Fill the template
+
+```markdown
+# Decision Record: [Title]
+
+**ID:** DEC-YYYYMMDD-NNN  
+**Date:** YYYY-MM-DD  
+**Owner:** [Name/team]  
+**Status:** Proposed | Accepted | Superseded
+
+## Context
+
+[What situation prompted this decision? 2–3 sentences.]
+
+## Decision
+
+[One clear statement: "We will [do X] because [reason]."]
+
+## Alternatives considered
+
+| Option | Why not chosen |
+|--------|----------------|
+| A | [Reason] |
+| B | [Reason] |
+
+## Rationale
+
+[Why this option, why now. Link to evidence if available.]
+
+## Risks
+
+- [Risk 1]: [Mitigation]
+- [Risk 2]: [Mitigation]
+
+## Metrics
+
+- **Primary:** [Metric] — target [X] by [date]
+- **Guardrails:** [What should NOT get worse]
+
+## Revisit triggers
+
+**What new evidence would change this decision?**
+
+- [ ] [Trigger 1: e.g. "If metric X does not reach Y by date Z"]
+- [ ] [Trigger 2: e.g. "If N customers request feature F"]
+- [ ] [Trigger 3: e.g. "If competitor ships X with adoption >Y%"]
 ```
-option               the bet, in one decisive line — a mechanism, not a wish ("build X", not "improve trust")
-rationale            WHY this over the others — decisive prose that names the evidence and the tradeoff
-confidence           0..1, honestly — your calibrated belief, not a number chosen to clear the floor
-outcome_metric       the ONE metric that should move if you're right, with a direction and rough size
-revisit_trigger      what would reopen this: "if <metric> is flat within <window>, revisit" — testable
-rejected_alternatives each real option you beat, with the specific reason it lost (from options-set-generator)
-claims               the cited facts it rests on — each a text + source_url + confidence (from evidence-brief)
-```
 
-## Rules
-- **Decisive, not hedged.** State the bet. "We will build live presence indicators" — not "we could
-  consider some form of visibility." If you cannot commit, you are not done deciding.
-- **Cite ≥1 internal and ≥1 external fact** where both exist. The claims are the receipts; a decision
-  whose claims are all vibes fails the grounding floor for good reason.
-- **Confidence is a self-assessment you'll be measured against.** Below the floor without cited
-  evidence, the tool refuses — that's the system working. Don't inflate the number; gather evidence.
-- **The outcome metric must be falsifiable.** "Improve UX" is not a metric. "Cut time-to-cancel 20% in
-  2 weeks" is — it can be checked and the decision revisited against it.
-- **The revisit trigger is a promise to look again.** Pin a metric and a window so the revisit sweep
-  can reopen it. A decision with no revisit trigger is fire-and-forget.
-- **Rejections carry reasons.** "Second provider — improves reliability but not the opaque-progress
-  complaint; defer" beats a bare list. The reasons are how a reader trusts the choice.
-- **It's immutable.** Once recorded, a change is a *new* record that supersedes this one — never an edit.
-  Record it right, or supersede it deliberately.
+### Step 3: Cite evidence
+
+Every rationale and risk should cite evidence IDs (e.g. `EVD-xxx`) when available. Use the evidence store for traceability.
+
+## When to use
+
+- Documenting a product or technical decision
+- Creating an ADR (Architecture Decision Record)
+- User asks "what would change this decision?"
+- Before committing to a major initiative
+
+## When not to use
+
+- Exploratory brainstorming (use options-set-generator first)
+- Evidence synthesis only (use evidence-brief)
+- Full PRD (use prd-development)
+
+## References
+
+- `options-set-generator` — generate ≥3 options before writing the DR
+- `evidence-brief` — confidence + gaps for cited evidence
+- `packet-export-spec` — DR entries feed into shareable packets

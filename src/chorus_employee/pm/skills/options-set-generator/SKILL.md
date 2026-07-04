@@ -1,48 +1,115 @@
 ---
 name: options-set-generator
-description: How to generate 2–5 genuinely distinct options before deciding — real bets with different mechanisms and tradeoffs, not a favourite flanked by strawmen. Use after the evidence brief and before recording the decision.
-when_to_use: Use once the evidence is gathered and before you commit to a bet — to widen the choice so the decision is a real choice, not a rationalisation of the first idea.
+description: Generate >=3 options with constraints, tradeoffs, and second-order effects. Use when comparing alternatives, evaluating choices, or before writing a Decision Record.
+when_to_use: Use when comparing alternatives before a decision, or before writing a Decision Record — to avoid anchoring on the first idea.
 ---
 
-# Options-set generator
+## Purpose
 
-A decision is only as good as the option set it chose from. The most common PM failure is deciding
-first and generating a decoy "alternatives" list to justify it. Widen the space *before* you commit —
-the goal is a real choice among real bets.
+Produce an **Options Set** of ≥3 viable alternatives with explicit tradeoffs, constraints, and second-order effects. Use this to avoid anchoring on the first idea, surface hidden tradeoffs, and prepare for a Decision Record.
 
-## When NOT to use this
-- The task is genuinely binary and the two poles are obvious and well-understood (ship / don't).
-- A prior decision already fixed the option and you are only revisiting its execution.
+## Key concepts
 
-## How to generate real options
-Aim for **2–5** options that differ in *mechanism*, not just in degree:
+### Options Set structure
 
-- **Vary the lever.** Same goal, different means: build it in-product vs. integrate vs. change a
-  default vs. change pricing vs. do nothing (the always-include baseline).
-- **Vary the bet size.** A smallest-shippable version, a fuller build, and a cheap experiment that buys
-  information before the full build.
-- **Include the strong opposing bet.** The option a smart skeptic would push instead — the one your
-  evidence makes you least comfortable dismissing. If you can't name it, you haven't looked hard enough.
+| Element | Purpose |
+|--------|---------|
+| **Options** | ≥3 distinct alternatives (not just "do nothing" vs "do something") |
+| **Constraints** | What each option must satisfy (time, cost, risk) |
+| **Tradeoffs** | What you gain vs give up with each option |
+| **Second-order effects** | Unintended consequences, downstream impacts |
 
-Kill decoys: if an option exists only to lose, remove it. Three real options beat five with two strawmen.
+### Tradeoff matrix (recommended)
 
-## Score each option on the same axes
-Compare like-for-like so the tradeoff is visible, not asserted:
+Compare options across dimensions:
 
+| Dimension | Option A | Option B | Option C |
+|-----------|----------|----------|----------|
+| Value | High | Medium | Low |
+| Effort | Low | Medium | High |
+| Risk | Medium | Low | High |
+| Time-to-learn | 2 weeks | 4 weeks | 8 weeks |
+
+## Application
+
+### Step 1: Define the decision space
+
+- What are we deciding? (e.g. "How to improve onboarding activation")
+- What constraints apply? (timeline, budget, team capacity)
+- What success looks like (primary metric)
+
+### Step 2: Generate ≥3 options
+
+Each option must be:
+- **Actionable** — we could actually do it
+- **Distinct** — meaningfully different from others
+- **Comparable** — same decision space
+
+Avoid:
+- False dichotomy (only 2 options)
+- Straw-man options (obviously bad)
+- "Do nothing" as the only alternative
+
+### Step 3: Build tradeoff matrix
+
+```markdown
+# Options Set: [Decision Title]
+
+**Context:** [1–2 sentences]
+
+## Options
+
+### Option A: [Name]
+- **Summary:** [One sentence]
+- **Constraints:** [What it requires]
+- **Tradeoffs:** Gain X, give up Y
+- **Second-order effects:** [Unintended impacts]
+
+### Option B: [Name]
+- **Summary:** [One sentence]
+- **Constraints:** [What it requires]
+- **Tradeoffs:** Gain X, give up Y
+- **Second-order effects:** [Unintended impacts]
+
+### Option C: [Name]
+- **Summary:** [One sentence]
+- **Constraints:** [What it requires]
+- **Tradeoffs:** Gain X, give up Y
+- **Second-order effects:** [Unintended impacts]
+
+## Tradeoff matrix
+
+| Dimension | Option A | Option B | Option C |
+|-----------|----------|----------|----------|
+| Value | | | |
+| Effort | | | |
+| Risk | | | |
+| Time-to-learn | | | |
+
+## Recommendation (if ready)
+
+[Which option and why. Otherwise: "Requires Decision Record."]
 ```
-OPTION        the bet, in one line (the mechanism, not the outcome)
-MOVES         which outcome metric it moves, and roughly how much
-EVIDENCE FOR  the claims from the brief that support it (with sources)
-COST / RISK   effort, blast radius, what could go wrong, what it forecloses
-REVERSIBLE?   can we undo it cheaply if wrong? (one-way vs. two-way door)
-```
 
-## Rules
-- **Distinct mechanisms.** Two options that differ only in wording are one option.
-- **Ground every option in the brief.** An option no evidence speaks to is a hunch — mark it as such.
-- **Same axes for all.** A fair comparison scores every option on the same criteria; cherry-picked
-  strengths hide the real tradeoff.
-- **Reversibility is a first-class axis.** Bias toward reversible bets under uncertainty; reserve the
-  slow, careful call for one-way doors.
-- **Carry the losers forward.** The 1–2 options you reject become the decision's `rejected_alternatives`
-  — each with the specific reason it lost, not "worse". Rejections are part of the record.
+### Step 4: Link to evidence
+
+Cite evidence IDs for constraints and tradeoffs when available.
+
+## When to use
+
+- Comparing alternatives before a decision
+- User asks "what are our options?"
+- Before writing a Decision Record
+- Avoiding anchoring on first idea
+
+## When not to use
+
+- Single obvious choice (skip to Decision Record)
+- Pure brainstorming (no structure needed yet)
+- Evidence synthesis only (use evidence-brief)
+
+## References
+
+- `decision-record` — use options set as input
+- `tradeoff-matrix` — structured comparison (when added)
+- `evidence-brief` — support tradeoffs with evidence
