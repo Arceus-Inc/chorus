@@ -61,6 +61,7 @@ class TestDesignerManifest:
         manifest = self._manifest()
         assert set(manifest.skills) >= {
             "design-system-authoring",
+            "design-md-exemplars",
             "token-scale-discipline",
             "wcag-conformance",
             "design-spec-writing",
@@ -78,6 +79,22 @@ class TestDesignerManifest:
         registry, _shadows = load_skill_registry(project_dirs=[Path(manifest.skills_root)])
         discovered = {m.name for m in registry.list_meta()}
         assert set(manifest.skills) <= discovered
+
+    def test_design_md_exemplar_library_is_vendored(self) -> None:
+        # The design-md-exemplars skill promises a vendored library of real-world DESIGN.md files;
+        # a handful of well-known ones must actually be present next to the package.
+        from pathlib import Path
+
+        import chorus_employee.designer as designer_pkg
+
+        refs = Path(designer_pkg.__file__).parent / "references" / "awesome-design-md"
+        assert refs.is_dir()
+        for company in ("stripe", "linear.app", "vercel", "notion"):
+            assert (refs / company / "DESIGN.md").is_file()
+        # A meaningful library, not a token sample, and attribution is preserved.
+        assert len(list(refs.glob("*/DESIGN.md"))) >= 50
+        assert (refs / "LICENSE").is_file()
+        assert (refs / "NOTICE.md").is_file()
 
 
 class TestDesignerDoD:

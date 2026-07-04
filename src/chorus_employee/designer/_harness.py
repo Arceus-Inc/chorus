@@ -67,6 +67,7 @@ def designer_manifest() -> RoleManifest:
         # interaction, flow, handoff), loaded on demand via the `skill` tool, discovered from skills/.
         skills=(
             "design-system-authoring",
+            "design-md-exemplars",
             "token-scale-discipline",
             "component-api-design",
             "wcag-conformance",

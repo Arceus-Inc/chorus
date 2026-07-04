@@ -11,6 +11,11 @@ variant, a one-off color, or a bespoke spacing value — each a small fork that 
 playbook is the craft that prevents that. It is general know-how; the company's specific system lives
 in `DESIGN.md` — always read that first, and when the two disagree, `DESIGN.md` wins.
 
+When the project has **no** `DESIGN.md` yet (or only a thin one), you author or extend it in the
+canonical 9-section format — load the `design-md-exemplars` skill, which carries that format and a
+vendored library of 58 real-world `DESIGN.md` files (Stripe, Linear, Notion, …) to learn structure and
+rigor from. Adapt their shape to this project's brand; never lift their specifics.
+
 ## The one rule
 
 **Reuse before you invent.** Every color, space, radius, type ramp, and component you place comes from
