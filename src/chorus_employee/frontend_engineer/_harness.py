@@ -6,12 +6,14 @@ output into a durable evidence bundle; and iterates until green**. So unlike the
 spec and runs nothing), it needs **command execution** (Node, npm, Playwright, a static server) and
 **git** — an autonomous build role. Each field below names the dream component it drives.
 
-Slices layer in: the ``test_evidence`` scan tool (a deterministic read-only view of the bundle) and the
-Code-Reviewer + UI-Tester subagents (in-beat quality pressure, both read-only) are wired here; the
-authored build/testing craft skills land next.
+Slices layer in: the ``test_evidence`` scan tool (a deterministic read-only view of the bundle), the
+Code-Reviewer + UI-Tester subagents (in-beat quality pressure, both read-only), and the authored
+build/testing craft skills (loaded on demand via the ``skill`` tool) are all wired here.
 """
 
 from __future__ import annotations
+
+from pathlib import Path
 
 from chorus.roles._manifest import (
     Isolation,
@@ -25,6 +27,10 @@ from chorus_employee.frontend_engineer._subagents import (
     CODE_REVIEWER_SUBAGENT,
     UI_TESTER_SUBAGENT,
 )
+
+# Authored build/testing craft playbooks discovered from this package's ``skills/`` dir and offered on
+# demand via the ``skill`` tool (mirrors the Designer's §08 skill library).
+_SKILLS_ROOT = str(Path(__file__).parent / "skills")
 
 
 def frontend_engineer_manifest() -> RoleManifest:
@@ -56,11 +62,30 @@ def frontend_engineer_manifest() -> RoleManifest:
             # read-only egress for grounding (MDN/WAI-ARIA/framework docs) — needs the net tier below.
             "web_search",
             "web_extract",
+            # loads the authored build/testing craft playbooks on demand (spec-to-code, a11y, testing).
+            "skill",
         ),
         disallowed_tools=(),
         # --- build_harness(skills=...) / build_harness(skill_registry=...) ---
-        skills=(),  # authored build/testing craft playbooks land in a later slice
-        skills_root=None,
+        # Authored build/testing craft playbooks — durable know-how (scoping, semantic/keyboard/color
+        # accessibility, module architecture, unit + e2e testing, evidence, debugging, forms, packaging),
+        # loaded on demand via the `skill` tool, discovered from this package's skills/ dir.
+        skills=(
+            "spec-to-working-app",
+            "semantic-html-and-aria",
+            "keyboard-and-focus",
+            "color-and-contrast",
+            "state-driven-ui",
+            "es-module-architecture",
+            "forms-and-validation",
+            "unit-testing-with-node-test",
+            "playwright-e2e-authoring",
+            "web-first-assertions",
+            "test-evidence-discipline",
+            "debugging-failing-tests",
+            "package-and-run-hygiene",
+        ),
+        skills_root=_SKILLS_ROOT,
         # --- build_harness(memory=...) + working_memory ---
         memory_scope=MemoryScope.PROJECT,
         working_memory=True,  # keeps a scratchpad of what was built / what failed across the build loop

@@ -130,6 +130,50 @@ class TestFrontendEngineerManifest:
         assert manifest.lease_ttl_s is not None and manifest.lease_ttl_s >= manifest.beat_timeout_s
 
 
+class TestFrontendEngineerSkills:
+    def _manifest(self):
+        from chorus_employee.frontend_engineer import frontend_engineer_plugin
+
+        return frontend_engineer_plugin().manifest
+
+    def test_holds_the_skill_tool(self) -> None:
+        # The `skill` tool is how the authored craft playbooks get loaded on demand.
+        assert "skill" in self._manifest().tools
+
+    def test_declares_the_build_and_testing_craft_skills(self) -> None:
+        # A representative core of the library must be declared (scoping, a11y, both test layers,
+        # and the evidence discipline that makes the work verifiable).
+        assert set(self._manifest().skills) >= {
+            "spec-to-working-app",
+            "semantic-html-and-aria",
+            "keyboard-and-focus",
+            "unit-testing-with-node-test",
+            "playwright-e2e-authoring",
+            "test-evidence-discipline",
+        }
+
+    def test_declared_skills_are_all_discoverable(self) -> None:
+        # Every declared skill resolves to a real SKILL.md with valid frontmatter dream can load —
+        # a manifest can't name a skill that isn't authored on disk.
+        from dream.skills import load_skill_registry
+
+        manifest = self._manifest()
+        assert manifest.skills_root is not None
+        registry, _shadows = load_skill_registry(project_dirs=[Path(manifest.skills_root)])
+        discovered = {m.name for m in registry.list_meta()}
+        assert set(manifest.skills) <= discovered
+
+    def test_skills_root_points_at_this_packages_skills_dir(self) -> None:
+        manifest = self._manifest()
+        assert manifest.skills_root is not None
+        root = Path(manifest.skills_root)
+        assert root.is_dir()
+        assert root.name == "skills"
+        # each declared skill is a directory holding a SKILL.md
+        for name in manifest.skills:
+            assert (root / name / "SKILL.md").is_file(), name
+
+
 class TestFrontendEngineerDoD:
     def test_dod_is_a_deterministic_command_floor_landing_a_pr(self) -> None:
         from chorus_employee.frontend_engineer import frontend_engineer_dod
