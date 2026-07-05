@@ -159,6 +159,23 @@ _TASKS: tuple[_Task, ...] = (
             "up with fast typing without feeling janky."
         ),
     ),
+    _Task(
+        key="budget",
+        intent=(
+            "Build a personal budget tracker that works as a real multi-screen app. A person sees a "
+            "dashboard summarizing their spending — the total spent this month and a breakdown by "
+            "category — and can open a full transactions view to browse every transaction, search them "
+            "by text, and filter by category. They can add a transaction through a form that validates "
+            "its inputs (a description, a positive amount, a category, and a date) and keeps submit "
+            "unavailable until everything is valid, telling them clearly what is wrong with each field in "
+            "a way a screen-reader user also hears. They can open any transaction to see and edit its "
+            "details, or delete it. Everything they enter survives a page refresh and a browser restart. "
+            "The whole app must work well from a narrow phone (a single column, no sideways scrolling) up "
+            "to a wide desktop (a denser, multi-column layout), and moving between the dashboard, the "
+            "list, a transaction's detail, and the add form must use real URLs so the browser's back and "
+            "forward buttons and a shared link all land on the right screen with the right data."
+        ),
+    ),
 )
 
 
