@@ -23,14 +23,11 @@ from __future__ import annotations
 
 from chorus.roles._plugin import RolePlugin
 from chorus_employee.frontend_engineer._brief import (
-    APP_ENTRY,
     E2E_TEST_LOG,
-    E2E_TESTS_DIR,
     FRONTEND_ENGINEER_BRIEF,
     TEST_EVIDENCE_DIR,
     TEST_EVIDENCE_SUMMARY,
     UNIT_TEST_LOG,
-    UNIT_TESTS_DIR,
 )
 from chorus_employee.frontend_engineer._dod import frontend_engineer_dod
 from chorus_employee.frontend_engineer._harness import frontend_engineer_manifest
@@ -49,14 +46,11 @@ def frontend_engineer_plugin() -> RolePlugin:
 
 
 __all__ = [
-    "APP_ENTRY",
-    "E2E_TESTS_DIR",
     "E2E_TEST_LOG",
     "FRONTEND_ENGINEER_BRIEF",
     "FRONTEND_ENGINEER_ROUTINES",
     "TEST_EVIDENCE_DIR",
     "TEST_EVIDENCE_SUMMARY",
-    "UNIT_TESTS_DIR",
     "UNIT_TEST_LOG",
     "frontend_engineer_dod",
     "frontend_engineer_manifest",

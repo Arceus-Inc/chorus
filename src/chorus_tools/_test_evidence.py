@@ -1,9 +1,12 @@
 """``test_evidence`` — the Frontend Engineer's deterministic pre-done scan of its own test bundle.
 
-A read-only verb that scans a worktree's ``test_evidence/`` bundle and the test suites that produced it,
-then returns structured findings: whether the app entry exists, whether a unit suite and an e2e suite are
-present, whether each suite's **captured run log** looks like real runner output — and, going beyond the
-DoD floor, whether either log shows **failures**, and whether the human-readable summary is substantive.
+A read-only verb that scans a worktree's ``test_evidence/`` bundle and the project that produced it, then
+returns structured findings: whether a real, runnable project exists (a ``package.json``), whether an
+end-to-end harness is configured (a Playwright config — the one stack-independent browser check), whether
+each suite's **captured run log** looks like real runner output — and, going beyond the DoD floor,
+whether either log shows **failures**, and whether the human-readable summary is substantive. It is
+deliberately **framework-agnostic**: it names no entry file, language, or framework, so a vanilla, React,
+Vue, or Svelte project is scanned identically.
 
 It is the mechanical half of the "am I actually done?" sandwich — the exact structural analog of
 ``design_lint`` re-pointed onto the test-evidence substrate: off-token value → missing/absent artifact,
@@ -30,9 +33,8 @@ from dream.tools._context import ToolExecutionContext
 from pydantic import BaseModel, Field, ValidationError
 
 FindingKind = Literal[
-    "missing_app_entry",
-    "missing_unit_tests",
-    "missing_e2e_tests",
+    "missing_project",
+    "missing_e2e_harness",
     "missing_unit_log",
     "unit_not_run",
     "unit_failing",
@@ -43,11 +45,11 @@ FindingKind = Literal[
     "thin_summary",
 ]
 
-# Output that only a real test runner emits — node:test TAP (``# tests`` / ``# pass`` / ``ok`` /
-# ``not ok``), Playwright (``N passed`` / ``Running N tests`` / ``playwright``), and the pass/fail
-# glyphs both runners use (incl. the check/cross node prints on a Windows console). Deliberately
-# lenient: the point is "a runner ran", not "which runner". Glyphs are \u-escaped to keep the source
-# ASCII (no ambiguous-unicode lint).
+# Output that only a real test runner emits — TAP (``# tests`` / ``# pass`` / ``ok`` / ``not ok`` — as
+# node:test prints), the ``N passed`` / ``N failed`` tallies vitest/jest/Playwright print, ``Running N
+# tests`` / ``playwright``, and the pass/fail glyphs runners use (incl. the check/cross node prints on a
+# Windows console). Deliberately lenient and runner-neutral: the point is "a runner ran", not "which
+# runner". Glyphs are \u-escaped to keep the source ASCII (no ambiguous-unicode lint).
 _RUN_MARKERS = re.compile(
     r"# tests|# pass|# fail|\bnot ok\b|\bok \d|\d+\s+passed|\d+\s+failed|running\s+\d+\s+test|"
     r"playwright|[\u2713\u2714\u221a\u2717\u2718\u00d7]",
@@ -65,17 +67,16 @@ _FAILED = re.compile(r"# fail\s+(\d+)|(\d+)\s+failed", re.IGNORECASE)
 class EvidenceSpec:
     """The evidence contract ``test_evidence`` checks against — worktree-relative paths and thresholds.
 
-    Defaults mirror the Frontend Engineer's fixed deliverable, but live here (not imported from the
-    employee package) to keep ``chorus_tools`` free of any ``chorus_employee`` dependency.
+    Defaults mirror the Frontend Engineer's framework-agnostic evidence contract, but live here (not
+    imported from the employee package) to keep ``chorus_tools`` free of any ``chorus_employee`` dep.
     """
 
-    app_entry: str = "index.html"
-    unit_tests_glob: str = "tests/**/*.test.*"
-    e2e_tests_glob: str = "e2e/**/*.spec.*"
+    project_manifest: str = "package.json"  # a real, runnable project (any stack)
+    e2e_config_glob: str = "playwright.config.*"  # the stack-independent browser harness
     unit_log: str = "test_evidence/unit.txt"
     e2e_log: str = "test_evidence/e2e.txt"
     summary: str = "test_evidence/summary.md"
-    summary_min_words: int = 120
+    summary_min_words: int = 150
 
 
 @dataclass(frozen=True, slots=True)
@@ -115,9 +116,8 @@ class EvidenceFinding:
 class EvidenceReport:
     """The full deterministic verdict over a worktree's test-evidence bundle."""
 
-    app_entry_present: bool
-    unit_tests_present: bool
-    e2e_tests_present: bool
+    project_present: bool
+    e2e_harness_present: bool
     unit: LogAssessment
     e2e: LogAssessment
     summary_present: bool
@@ -181,9 +181,8 @@ def scan_evidence(root: Path, spec: EvidenceSpec | None = None) -> EvidenceRepor
     is stable across runs. Mirrors ``design_lint.lint_design`` in shape.
     """
     spec = spec or EvidenceSpec()
-    app_entry_present = (root / spec.app_entry).is_file()
-    unit_tests_present = _glob_hit(root, spec.unit_tests_glob)
-    e2e_tests_present = _glob_hit(root, spec.e2e_tests_glob)
+    project_present = (root / spec.project_manifest).is_file()
+    e2e_harness_present = _glob_hit(root, spec.e2e_config_glob)
     unit = assess_log(_read_text(root / spec.unit_log))
     e2e = assess_log(_read_text(root / spec.e2e_log))
     summary_text = _read_text(root / spec.summary)
@@ -191,31 +190,23 @@ def scan_evidence(root: Path, spec: EvidenceSpec | None = None) -> EvidenceRepor
     summary_words = _word_count(summary_text)
 
     findings: list[EvidenceFinding] = []
-    if not app_entry_present:
+    if not project_present:
         findings.append(
             EvidenceFinding(
-                "missing_app_entry",
-                f"no app entry at {spec.app_entry!r}",
-                f"build the working app and save its entry point as {spec.app_entry!r}",
+                "missing_project",
+                f"no project manifest at {spec.project_manifest!r}",
+                "scaffold a real, runnable project (a package.json) for your chosen stack",
             )
         )
-    if not unit_tests_present:
+    if not e2e_harness_present:
         findings.append(
             EvidenceFinding(
-                "missing_unit_tests",
-                f"no unit tests match {spec.unit_tests_glob!r}",
-                "add a unit suite for the app's logic",
+                "missing_e2e_harness",
+                f"no end-to-end harness matches {spec.e2e_config_glob!r}",
+                "add a Playwright config that serves your app and drives it in a real browser",
             )
         )
-    if not e2e_tests_present:
-        findings.append(
-            EvidenceFinding(
-                "missing_e2e_tests",
-                f"no e2e tests match {spec.e2e_tests_glob!r}",
-                "add a Playwright e2e spec that drives the real UI",
-            )
-        )
-    findings.extend(_log_findings("unit", unit, spec.unit_log, "node --test"))
+    findings.extend(_log_findings("unit", unit, spec.unit_log, "npm test"))
     findings.extend(_log_findings("e2e", e2e, spec.e2e_log, "npx playwright test"))
     if not summary_present:
         findings.append(
@@ -235,9 +226,8 @@ def scan_evidence(root: Path, spec: EvidenceSpec | None = None) -> EvidenceRepor
         )
 
     return EvidenceReport(
-        app_entry_present=app_entry_present,
-        unit_tests_present=unit_tests_present,
-        e2e_tests_present=e2e_tests_present,
+        project_present=project_present,
+        e2e_harness_present=e2e_harness_present,
         unit=unit,
         e2e=e2e,
         summary_present=summary_present,
@@ -287,15 +277,16 @@ def _glob_hit(root: Path, pattern: str) -> bool:
 
 
 class TestEvidenceInput(BaseModel):
-    """Typed contract for ``test_evidence`` — every field defaults to the standard bundle layout."""
+    """Typed contract for ``test_evidence`` — every field defaults to the framework-agnostic layout."""
 
-    app_entry: str = Field(default="index.html", description="the app's entry point")
-    unit_tests_glob: str = Field(default="tests/**/*.test.*", description="glob for the unit suite")
-    e2e_tests_glob: str = Field(default="e2e/**/*.spec.*", description="glob for the e2e suite")
+    project_manifest: str = Field(default="package.json", description="the project manifest (any stack)")
+    e2e_config_glob: str = Field(
+        default="playwright.config.*", description="glob for the Playwright end-to-end config"
+    )
     unit_log: str = Field(default="test_evidence/unit.txt", description="captured unit-run log")
     e2e_log: str = Field(default="test_evidence/e2e.txt", description="captured e2e-run log")
     summary: str = Field(default="test_evidence/summary.md", description="human-readable summary")
-    summary_min_words: int = Field(default=120, ge=1, description="minimum substantive summary length")
+    summary_min_words: int = Field(default=150, ge=1, description="minimum substantive summary length")
 
 
 class TestEvidenceTool(BaseTool):
@@ -304,11 +295,13 @@ class TestEvidenceTool(BaseTool):
     name = "test_evidence"
     description = (
         "Deterministically scan your worktree's test-evidence bundle and report what's still missing "
-        "or red: the app entry, a unit suite, an e2e suite, the captured unit + e2e run logs (must look "
-        "like real runner output AND be green), and a substantive summary. Read-only; returns structured "
-        "findings with concrete fixes. Run this BEFORE you declare done — it is the same mechanical check "
-        "the Definition of Done enforces, plus failure detection. Args are all optional and default to "
-        "the standard bundle layout (index.html, tests/, e2e/, test_evidence/)."
+        "or red: a real runnable project (a package.json), an end-to-end harness (a Playwright config), "
+        "the captured unit + e2e run logs (must look like real runner output AND be green), and a "
+        "substantive summary. Framework-agnostic — it assumes no entry file, language, or stack. "
+        "Read-only; returns structured findings with concrete fixes. Run this BEFORE you declare done — "
+        "it is the same mechanical check the Definition of Done enforces, plus failure detection. Args "
+        "are all optional and default to the standard bundle layout (package.json, playwright.config.*, "
+        "test_evidence/)."
     )
     declaration = ToolDeclaration(risk="safe", tier_required=0, timeout_seconds=15.0)
     input_model = TestEvidenceInput
@@ -320,9 +313,8 @@ class TestEvidenceTool(BaseTool):
             return _rejected(str(exc))
 
         spec = EvidenceSpec(
-            app_entry=args.app_entry,
-            unit_tests_glob=args.unit_tests_glob,
-            e2e_tests_glob=args.e2e_tests_glob,
+            project_manifest=args.project_manifest,
+            e2e_config_glob=args.e2e_config_glob,
             unit_log=args.unit_log,
             e2e_log=args.e2e_log,
             summary=args.summary,
@@ -335,7 +327,7 @@ class TestEvidenceTool(BaseTool):
 def _report(report: EvidenceReport) -> ToolResult:
     if report.ok:
         summary = (
-            f"test_evidence: complete — app entry present, unit + e2e suites ran green"
+            f"test_evidence: complete — project + e2e harness present, unit + e2e suites ran green"
             f"{_tally(report)}, summary is substantive."
         )
         return ToolResult(
@@ -377,9 +369,8 @@ def _tally(report: EvidenceReport) -> str:
 
 def _artifacts(report: EvidenceReport) -> dict[str, object]:
     return {
-        "app_entry_present": report.app_entry_present,
-        "unit_tests_present": report.unit_tests_present,
-        "e2e_tests_present": report.e2e_tests_present,
+        "project_present": report.project_present,
+        "e2e_harness_present": report.e2e_harness_present,
         "unit_ran_green": report.unit.clean_run,
         "e2e_ran_green": report.e2e.clean_run,
         "summary_words": report.summary_words,

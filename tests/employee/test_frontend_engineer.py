@@ -1,11 +1,11 @@
 """The Frontend Engineer employee — role triple, harness posture, and its evidence-bundle DoD.
 
-Slice 1 (walking skeleton): the Frontend Engineer builds a working static web app in its worktree, writes
-and RUNS unit + e2e tests, and lands a durable ``test_evidence/`` bundle. "Done" is a deterministic,
-cross-platform floor — the app entry, the unit + e2e suites, and the captured evidence all exist and are
-substantive. The ``test_evidence`` scan tool, the UI-Tester/Code-Reviewer subagents, and the craft skills
-are later slices; these tests lock the identity, the build tool shelf, the trust posture, and — via a real
-shell round-trip — that the cross-platform DoD floor actually gates on this OS.
+The Frontend Engineer builds a working frontend app in its worktree — in whatever stack it judges best
+(vanilla, React, Vue, Svelte, …) — writes and RUNS unit + e2e tests, and lands a durable
+``test_evidence/`` bundle. "Done" is a deterministic, cross-platform, FRAMEWORK-AGNOSTIC floor: a real
+runnable project (a ``package.json`` with a wired ``test`` script), a Playwright end-to-end harness, and
+the captured evidence — all substantive. These tests lock the identity, the build-tool shelf, the trust
+posture, and — via a real shell round-trip — that the cross-platform DoD floor actually gates on this OS.
 """
 
 from __future__ import annotations
@@ -29,24 +29,20 @@ def _run_floor(command: str, cwd: Path) -> subprocess.CompletedProcess[str]:
 
 
 def _complete_worktree(root: Path) -> None:
-    """Materialise a worktree that satisfies the full evidence contract."""
-    (root / "index.html").write_text(
-        "<!doctype html><html lang='en'><body><main><button id='go'>Go</button></main>"
-        "<script type='module' src='./app.js'></script></body></html>",
+    """Materialise a worktree that satisfies the full framework-agnostic evidence contract."""
+    (root / "package.json").write_text(
+        '{\n'
+        '  "name": "app",\n'
+        '  "private": true,\n'
+        '  "scripts": {\n'
+        '    "test": "node --test",\n'
+        '    "build": "true"\n'
+        '  }\n'
+        '}\n',
         encoding="utf-8",
     )
-    (root / "app.js").write_text("export const add = (a, b) => a + b;\n", encoding="utf-8")
-    (root / "tests").mkdir()
-    (root / "tests" / "logic.test.js").write_text(
-        "import { test } from 'node:test';\nimport assert from 'node:assert';\n"
-        "import { add } from '../app.js';\ntest('add', () => assert.equal(add(1, 2), 3));\n",
-        encoding="utf-8",
-    )
-    (root / "e2e").mkdir()
-    (root / "e2e" / "flow.spec.js").write_text(
-        "import { test, expect } from '@playwright/test';\n"
-        "test('user can go', async ({ page }) => {\n"
-        "  await page.goto('/');\n  await page.getByRole('button', { name: 'Go' }).click();\n});\n",
+    (root / "playwright.config.ts").write_text(
+        "import { defineConfig } from '@playwright/test';\nexport default defineConfig({});\n",
         encoding="utf-8",
     )
     ev = root / "test_evidence"
@@ -55,11 +51,15 @@ def _complete_worktree(root: Path) -> None:
     (ev / "e2e.txt").write_text("Running 1 test using 1 worker\n  1 passed (1.2s)\n", encoding="utf-8")
     (ev / "summary.md").write_text(
         "# Test evidence\n\n"
-        + "This build ships a small counter app wired with an event listener that updates the DOM. "
-        + "The unit tests cover the pure add reducer and its edge cases; the Playwright e2e test drives "
-        + "the real button click and asserts the visible result updates. Both suites pass. Accessibility: "
-        + "the control is a semantic button with an accessible name, keyboard operable, with a visible "
-        + "focus ring and AA contrast. Loading, empty, and error states are handled. "
+        "## Stack decision\n"
+        "I chose a small dependency-light stack for this slice because the surface is a single view with "
+        "simple local state; a heavier framework would not have earned its cost here. The rationale and "
+        "trade-off are recorded so a reviewer can judge the choice.\n\n"
+        "This build ships a counter wired with an event listener that updates the DOM. The unit tests "
+        "cover the pure reducer and its edge cases; the Playwright e2e test drives the real button click "
+        "and asserts the visible result updates. Both suites pass. Accessibility: the control is a "
+        "semantic button with an accessible name, keyboard operable, with a visible focus ring and AA "
+        "contrast. Loading, empty, and error states are handled. "
         + "word " * 60,
         encoding="utf-8",
     )
@@ -212,19 +212,22 @@ class TestFrontendEngineerDoD:
         assert result.returncode != 0
         assert "DoD FAIL" in result.stderr
 
-    def test_floor_fails_without_e2e_tests(self, tmp_path: Path) -> None:
+    def test_floor_fails_without_the_e2e_harness(self, tmp_path: Path) -> None:
         from chorus_employee.frontend_engineer import frontend_engineer_dod
 
         _complete_worktree(tmp_path)
-        (tmp_path / "e2e" / "flow.spec.js").unlink()
+        (tmp_path / "playwright.config.ts").unlink()
         (step,) = frontend_engineer_dod("anything").verification_steps()
         assert _run_floor(step.command, tmp_path).returncode != 0
 
-    def test_floor_fails_without_unit_tests(self, tmp_path: Path) -> None:
+    def test_floor_fails_without_a_test_script(self, tmp_path: Path) -> None:
         from chorus_employee.frontend_engineer import frontend_engineer_dod
 
         _complete_worktree(tmp_path)
-        (tmp_path / "tests" / "logic.test.js").unlink()
+        # a package.json with no `test` script — the unit runner is not wired.
+        (tmp_path / "package.json").write_text(
+            '{\n  "name": "app",\n  "scripts": {\n    "build": "true"\n  }\n}\n', encoding="utf-8"
+        )
         (step,) = frontend_engineer_dod("anything").verification_steps()
         assert _run_floor(step.command, tmp_path).returncode != 0
 
@@ -236,11 +239,11 @@ class TestFrontendEngineerDoD:
         (step,) = frontend_engineer_dod("anything").verification_steps()
         assert _run_floor(step.command, tmp_path).returncode != 0
 
-    def test_floor_fails_without_the_app_entry(self, tmp_path: Path) -> None:
+    def test_floor_fails_without_a_project(self, tmp_path: Path) -> None:
         from chorus_employee.frontend_engineer import frontend_engineer_dod
 
         _complete_worktree(tmp_path)
-        (tmp_path / "index.html").unlink()
+        (tmp_path / "package.json").unlink()
         (step,) = frontend_engineer_dod("anything").verification_steps()
         assert _run_floor(step.command, tmp_path).returncode != 0
 

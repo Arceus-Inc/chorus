@@ -85,17 +85,17 @@ class TestAssessLog:
 
 
 def _complete(root: Path) -> None:
-    """A worktree that satisfies the full evidence contract with green runs."""
-    (root / "index.html").write_text("<!doctype html><title>x</title>", encoding="utf-8")
-    (root / "tests").mkdir()
-    (root / "tests" / "logic.test.js").write_text("// unit\n", encoding="utf-8")
-    (root / "e2e").mkdir()
-    (root / "e2e" / "flow.spec.js").write_text("// e2e\n", encoding="utf-8")
+    """A worktree that satisfies the full framework-agnostic evidence contract with green runs."""
+    (root / "package.json").write_text(
+        '{\n  "name": "app",\n  "scripts": {\n    "test": "node --test"\n  }\n}\n',
+        encoding="utf-8",
+    )
+    (root / "playwright.config.ts").write_text("export default {};\n", encoding="utf-8")
     ev = root / "test_evidence"
     ev.mkdir()
     (ev / "unit.txt").write_text(_NODE_GREEN, encoding="utf-8")
     (ev / "e2e.txt").write_text(_PW_GREEN, encoding="utf-8")
-    (ev / "summary.md").write_text("word " * 130, encoding="utf-8")
+    (ev / "summary.md").write_text("word " * 160, encoding="utf-8")
 
 
 class TestScanEvidence:
@@ -106,19 +106,17 @@ class TestScanEvidence:
         assert report.findings == ()
         assert report.unit.clean_run and report.e2e.clean_run
 
-    def test_missing_app_entry(self, tmp_path: Path) -> None:
+    def test_missing_project(self, tmp_path: Path) -> None:
         _complete(tmp_path)
-        (tmp_path / "index.html").unlink()
+        (tmp_path / "package.json").unlink()
         kinds = {f.kind for f in scan_evidence(tmp_path).findings}
-        assert "missing_app_entry" in kinds
+        assert "missing_project" in kinds
 
-    def test_missing_unit_and_e2e_suites(self, tmp_path: Path) -> None:
+    def test_missing_e2e_harness(self, tmp_path: Path) -> None:
         _complete(tmp_path)
-        (tmp_path / "tests" / "logic.test.js").unlink()
-        (tmp_path / "e2e" / "flow.spec.js").unlink()
+        (tmp_path / "playwright.config.ts").unlink()
         kinds = {f.kind for f in scan_evidence(tmp_path).findings}
-        assert "missing_unit_tests" in kinds
-        assert "missing_e2e_tests" in kinds
+        assert "missing_e2e_harness" in kinds
 
     def test_missing_captured_logs(self, tmp_path: Path) -> None:
         _complete(tmp_path)
