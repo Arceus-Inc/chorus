@@ -32,6 +32,7 @@ from chorus.adapters import DreamBeatRunner, TokenPricing
 from chorus.heartbeat import BeatRunner, IntegrateContextPacket
 from chorus.outcomes import LanderRegistry, runtime_brief_block
 from chorus.roles import RoleBeatConfig, RoleRegistry, role_beat_config
+from chorus.roles._manifest import McpServerSpec
 from chorus.roles._subagent import SubagentSpec
 from chorus.trust import TrustPolicy
 from chorus.workforce import Employee
@@ -354,6 +355,35 @@ def write_sandbox_config(harness_dir: Path, sandbox: str) -> None:
     (harness / "sandbox.toml").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
+def write_mcp_allowlist(harness_dir: Path, servers: tuple[McpServerSpec, ...]) -> None:
+    """Write dream's ``.harness/mcp-allowlist.toml`` — the MCP admission authority (spec 06).
+
+    Only the servers the role declares are admitted; dream reads this file lazily on the first session
+    and connects each ``[[mcp]]`` entry, registering its tools. A failed connect is non-fatal (recorded,
+    not raised), so a missing runtime never aborts the beat. (Excluded from the branch by the
+    workspace's ``info/exclude``.) No-op when the role declares no servers.
+    """
+    if not servers:
+        return
+    harness = harness_dir / ".harness"
+    harness.mkdir(parents=True, exist_ok=True)
+    blocks: list[str] = []
+    for server in servers:
+        lines = [
+            "[[mcp]]",
+            f'name = "{_toml_escape(server.name)}"',
+            f'endpoint = "{_toml_escape(server.endpoint)}"',
+            f'transport = "{_toml_escape(server.transport)}"',
+        ]
+        if server.tier_required:
+            lines.append(f'tier_required = "{_toml_escape(server.tier_required)}"')
+        if server.tools:
+            items = ", ".join(f'"{_toml_escape(tool)}"' for tool in server.tools)
+            lines.append(f"tools = [{items}]")
+        blocks.append("\n".join(lines))
+    (harness / "mcp-allowlist.toml").write_text("\n\n".join(blocks) + "\n", encoding="utf-8")
+
+
 @dataclass(frozen=True)
 class EmployeeHarness:
     """The materialized result for one employee — its runner plus what a front-end surfaces."""
@@ -516,6 +546,10 @@ class EmployeeHarnessFactory:
         root.mkdir(parents=True, exist_ok=True)
         write_role_overlays(root, config)  # the employee's identity overlays the whole harness
         write_sandbox_config(root, config.sandbox)  # the role's trust posture → .harness/sandbox.toml
+        # The role's admitted MCP servers → .harness/mcp-allowlist.toml (only when the role opts in via
+        # ``mcp`` AND declares servers; dream connects them lazily on the first session).
+        if config.mcp and config.mcp_servers:
+            write_mcp_allowlist(root, config.mcp_servers)
 
         registry = _role_registry(dream_tool_names(config.tools))
         # Bind the role's chorus capability tools. The ledger-free ones (pure file readers:

@@ -20,6 +20,7 @@ from pathlib import Path
 
 from chorus.roles._manifest import (
     Isolation,
+    McpServerSpec,
     MemoryScope,
     PermissionMode,
     RoleManifest,
@@ -110,13 +111,29 @@ def frontend_engineer_manifest() -> RoleManifest:
         # build all the way to green rather than stopping mid-way and depending on re-dispatch.
         max_sprints=6,
         # --- build_harness(mcp=...) / build_harness(plugins=...) ---
-        # mcp stays False deliberately (mirrors the gold-standard Designer deferring its Figma MCP): the
-        # real-browser gate is already covered by `npx playwright test` run via run_command AND re-run by
-        # the DoD floor, producing durable evidence — so a live per-beat `npx @playwright/mcp` connect
-        # would add latency + a network dependency to every beat for no gate the deterministic e2e
-        # doesn't already provide. Interactive MCP driving is a follow-up once the core loop is proven.
-        mcp=False,
+        # mcp is ON: the engineer admits the Playwright MCP (declared in ``mcp_servers`` below), so it
+        # can drive a real browser INTERACTIVELY mid-build — navigate the running app, inspect the
+        # accessibility tree, and discover robust locators — before committing the deterministic
+        # ``npx playwright test`` spec that remains the after-beat gate. The committed e2e (re-run by the
+        # DoD floor) is still the proof; the MCP is the scouting tool that makes that proof easier to
+        # author. A failed connect is non-fatal (dream records it, never raises), so the beat is robust
+        # even if the MCP runtime is unavailable on a given host.
+        mcp=True,
         plugins=False,
+        # The MCP servers this role admits → written to ``.harness/mcp-allowlist.toml`` at materialize.
+        # Playwright's MCP is a local stdio server run via ``npx`` (the MCP SDK resolves ``npx``→
+        # ``npx.cmd`` on Windows and spawns it through a platform-compatible process); ``--headless``
+        # keeps it GUI-less for an autonomous beat and ``--isolated`` gives each session a fresh,
+        # in-memory browser profile. The version is pinned so a future breaking release can't silently
+        # change the tool surface. tier_required=repo_write keeps the browser tools above tier 0.
+        mcp_servers=(
+            McpServerSpec(
+                name="playwright",
+                endpoint="stdio://npx @playwright/mcp@0.0.77 --headless --isolated",
+                transport="stdio",
+                tier_required="repo_write",
+            ),
+        ),
         # --- build_harness(env=...) ---
         env=(),
         # --- beat time budget (build + install + real-browser test runs) ---

@@ -63,6 +63,26 @@ class SandboxTier(StrEnum):
 
 
 @dataclass(frozen=True)
+class McpServerSpec:
+    """One MCP server a role admits — projected to a ``.harness/mcp-allowlist.toml`` ``[[mcp]]`` entry.
+
+    ``endpoint`` is the transport-prefixed target dream's allowlist parses: e.g.
+    ``"stdio://npx @playwright/mcp --headless"`` for a stdio server (the command line after
+    ``stdio://`` is shell-split into ``command`` + ``args``), or an ``https://…`` / ``ws://…`` URL for
+    the http / ws transports. ``tools`` narrows the admitted tool coverage (empty = every advertised
+    tool is admitted); ``tier_required`` names the tool tier the server's tools land at. Only meaningful
+    on a role whose ``mcp`` flag is True — the allowlist is the authority, so an empty ``mcp_servers``
+    admits nothing even when ``mcp`` is True. Frozen so the manifest stays hashable across async beats.
+    """
+
+    name: str
+    endpoint: str
+    transport: str = "stdio"
+    tier_required: str = ""
+    tools: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
 class RoleManifest:
     """One org-role's standing contract — the complete identity of a dream harness.
 
@@ -94,6 +114,10 @@ class RoleManifest:
     wake_model: str | None = None  # a cheaper model for heartbeat/wake turns
     mcp: bool = False  # admit the working dir's MCP allowlist (opt-in)
     plugins: bool = False  # load the working dir's repo-local plugins (opt-in)
+    # The MCP servers this role admits — projected to ``.harness/mcp-allowlist.toml`` at materialize
+    # when ``mcp`` is True (the allowlist is the admission authority; empty here wires nothing). Carried
+    # through overlays like the other engine scalars — a surface never widens it.
+    mcp_servers: tuple[McpServerSpec, ...] = ()
     env: tuple[tuple[str, str], ...] = ()  # host-resolution env (e.g. DREAM_HOME); never secrets
     # — beat time budget — how long ONE beat of this role may run before it's cut off / reaped. A
     # research-heavy role (spawns a multi-minute web_research sweep in one uninterrupted call) needs
@@ -113,6 +137,7 @@ class RoleManifest:
 
 __all__ = [
     "Isolation",
+    "McpServerSpec",
     "MemoryScope",
     "PermissionMode",
     "RoleManifest",

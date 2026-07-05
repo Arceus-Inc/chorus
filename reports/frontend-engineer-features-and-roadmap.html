@@ -57,6 +57,7 @@
   .prio.p1 { background:#dcfce7; color:#166534; }
   .prio.p2 { background:#fef9c3; color:#854d0e; }
   .prio.p3 { background:#e0e7ff; color:#3730a3; }
+  .prio.done { background:#ccfbf1; color:#0f766e; }
   .how { font-size:12.5px; color:var(--muted); }
   .how b { color:var(--ink); font-weight:600; }
   .theme { font-size:13px; text-transform:uppercase; letter-spacing:.05em; color:#6b21a8;
@@ -135,7 +136,7 @@
   <div class="feat"><h4><span class="ic">🌐</span>Read-only web grounding</h4><p><span class="mono-inline">web_search</span> + <span class="mono-inline">web_extract</span> for grounding on MDN / WAI-ARIA / framework docs — read-only egress, no write access to the net.</p></div>
 </div>
 
-<div class="note"><b>One deliberate deferral:</b> live MCP is off (<span class="mono-inline">mcp=False</span>), mirroring the gold-standard Designer deferring its Figma MCP. The real-browser gate is already covered by <span class="mono-inline">npx playwright test</span> run through <span class="mono-inline">run_command</span> and re-run by the DoD floor, so a live per-beat Playwright-MCP connect would add latency + a network dependency for no gate the deterministic e2e doesn't already provide. Turning it on is the first roadmap item below.</div>
+<div class="note"><b>Update — now shipped:</b> the Playwright MCP is wired ON (<span class="mono-inline">mcp=True</span>). Finn admits a local <span class="mono-inline">@playwright/mcp</span> stdio server declared on its manifest and projected to <span class="mono-inline">.harness/mcp-allowlist.toml</span> at materialize, giving it 23 live browser tools for interactive UI driving. The committed <span class="mono-inline">npx playwright test</span> spec (re-run by the DoD floor) remains the gate; the MCP is the scouting tool. A failed connect is non-fatal (recorded, never raised), so the beat stays robust if the runtime is unavailable. See shipped item #8 below.</div>
 
 <span class="parttag two">Part 2</span>
 <h2 class="part">Proposed advanced features</h2>
@@ -208,7 +209,7 @@
     <h4>Enable Playwright MCP for interactive UI driving</h4>
     <p>Turn on the deferred <span class="mono-inline">mcp</span> for <em>exploratory</em> debugging and self-healing selector discovery — letting Finn open the running app, inspect the accessibility tree, and find robust locators before writing the deterministic spec. The committed e2e stays the gate; MCP is the scouting tool.</p>
   </div></div>
-  <div class="rcard-foot"><span class="prio p2">Priority 2</span><span class="how"><b>Plugs in as:</b> flip <span class="mono-inline">mcp=True</span> + wire <span class="mono-inline">@playwright/mcp</span>; the design already anticipates this.</span></div>
+  <div class="rcard-foot"><span class="prio done">Shipped &check;</span><span class="how"><b>Delivered as:</b> a role-declared <span class="mono-inline">mcp_servers</span> field on the manifest → <span class="mono-inline">.harness/mcp-allowlist.toml</span> at materialize, with <span class="mono-inline">mcp=True</span>. Verified end-to-end: connects on Windows (SDK resolves <span class="mono-inline">npx→npx.cmd</span>), advertises 23 browser tools, and drives a real browser (navigate + snapshot).</span></div>
 </div>
 
 <div class="rcard">
@@ -236,7 +237,7 @@
 </div>
 
 <h3 class="sec">Suggested sequencing</h3>
-<p class="lead">Do the <span class="prio p1" style="padding:1px 8px">Priority 1</span> items first — they close the biggest gap (Finn authors for a11y/visuals but doesn't yet machine-verify them) and add framework depth without touching Python. <span class="prio p2" style="padding:1px 8px">Priority 2</span> broadens trust (perf/type/security budgets, existing-repo mode, interactive MCP). <span class="prio p3" style="padding:1px 8px">Priority 3</span> is delivery polish and richer inputs (CI, stories/tokens, screenshot-to-code). Every item lands as a skill, a DoD signal, a subagent, or an MCP flip — the framework-agnostic core stays intact.</p>
+<p class="lead">Do the <span class="prio p1" style="padding:1px 8px">Priority 1</span> items first — they close the biggest gap (Finn authors for a11y/visuals but doesn't yet machine-verify them) and add framework depth without touching Python. <span class="prio p2" style="padding:1px 8px">Priority 2</span> broadens trust (perf/type/security budgets, existing-repo mode); interactive Playwright MCP (item #8) is already <span class="prio done" style="padding:1px 8px">Shipped</span>. <span class="prio p3" style="padding:1px 8px">Priority 3</span> is delivery polish and richer inputs (CI, stories/tokens, screenshot-to-code). Every item lands as a skill, a DoD signal, a subagent, or an MCP flip — the framework-agnostic core stays intact.</p>
 
 <footer>Chorus · Frontend Engineer (Finn) — Features &amp; Roadmap · Part 1 reflects the shipped harness manifest, skills, subagents, and DoD; Part 2 is a proposed roadmap grounded in the current architecture.</footer>
 
