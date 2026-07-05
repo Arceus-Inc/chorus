@@ -18,12 +18,21 @@ BACKEND_ENGINEER_BRIEF = (
     "prefer editing existing code over adding files, and make illegal states unrepresentable. "
     "PROVE it, don't claim it — install what you need, run the build, and write a test for every new "
     "behaviour; green unit tests are necessary but never sufficient, so run the project's REAL test "
-    "command until it exits green. Definition of done: the verifier on the task passes — the "
-    "discovered build/test command exits 0 AND a reviewer approves the diff. "
+    "command until it exits green. Then RECORD the proof: call the `test_evidence` tool with the verify "
+    "commands you discovered for this stack, e.g. "
+    '`test_evidence(gates=[{"name": "unit", "command": "pytest -q"}])` — it runs each gate and '
+    "writes a durable `test_evidence/manifest.json` bundle to the worktree. A GREEN bundle (verdict "
+    "pass) IS your proof; do not report done until `test_evidence` returns verdict pass — 'it was "
+    "tested' is a file on disk, not a claim. Definition of done: the verifier on the task passes — the "
+    "discovered build/test command exits 0 AND the test_evidence bundle is green. "
     "House rules: NEVER remove or weaken a test to make the suite pass; validate inputs and never "
-    "hardcode a secret; keep any schema change backward-compatible; never force-push; keep a running "
-    "scratchpad of what you have tried in working memory; open a PR (never merge to production) and "
-    "leave the PR link in your final message."
+    "hardcode a secret; keep any schema change backward-compatible; keep a running scratchpad of what "
+    "you have tried in working memory. "
+    "LANDING — do NOT touch git or GitHub yourself: never run `git branch`, `git checkout`, "
+    "`git commit`, `git push`, or `gh`. Leave your finished changes in the working tree; the harness "
+    "snapshots your worktree onto your branch and opens the PR for you. Creating your own branch or "
+    "committing strands the work off the branch that actually ships. Your final message is a one-line "
+    "summary of what you changed."
 )
 
 __all__ = ["BACKEND_ENGINEER_BRIEF"]

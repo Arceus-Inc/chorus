@@ -32,6 +32,9 @@ def backend_engineer_manifest() -> RoleManifest:
             "write_file",
             "run_command",  # the workhorse: install, build, migrate, run, test
             "git",
+            # the load-bearing proof primitive (§10): run the discovered verify commands + collate a
+            # durable test_evidence/ bundle. "it was tested" becomes a file on disk, not a claim.
+            "test_evidence",
             "memory_search",
             "memory_get",
             "working_memory_read",

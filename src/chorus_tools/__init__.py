@@ -26,6 +26,14 @@ from chorus_tools._manager_actions import (
 )
 from chorus_tools._registry import chorus_tool_registry
 from chorus_tools._submit_verdict import SubmitVerdictInput, SubmitVerdictTool
+from chorus_tools._test_evidence import (
+    EvidenceManifest,
+    GateResult,
+    GateSpec,
+    TestEvidenceInput,
+    TestEvidenceTool,
+    write_bundle,
+)
 
 __all__ = [
     "AssignTaskInput",
@@ -36,6 +44,9 @@ __all__ = [
     "ChartRenderTool",
     "DecomposeInput",
     "DecomposeTool",
+    "EvidenceManifest",
+    "GateResult",
+    "GateSpec",
     "GoLiveAction",
     "GoLiveInput",
     "GoLiveTool",
@@ -45,7 +56,10 @@ __all__ = [
     "SubmitTaskTool",
     "SubmitVerdictInput",
     "SubmitVerdictTool",
+    "TestEvidenceInput",
+    "TestEvidenceTool",
     "WarehouseQueryTool",
     "analysis_tool",
     "chorus_tool_registry",
+    "write_bundle",
 ]

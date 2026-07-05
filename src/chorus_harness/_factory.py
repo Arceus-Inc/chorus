@@ -45,6 +45,7 @@ from chorus_tools import (
     GoLiveTool,
     SubmitTaskTool,
     SubmitVerdictTool,
+    TestEvidenceTool,
     analysis_tool,
 )
 from chorus_tools.cms import CmsDraftTool, cms_backend_from_env
@@ -106,6 +107,11 @@ _CHORUS_TO_DREAM_TOOL: dict[str, str] = {
     # same reason as brand_lint: so the projection keeps it; it is registered in the materialize flow
     # (it needs the worktree for the Markdown backend, which _capability_tool has no access to).
     "cms_draft": "cms_draft",
+    # test_evidence — the Backend Engineer's proof primitive (§10). Not a dream built-in; a pure
+    # worktree runner (no ledger). IDENTITY-mapped so the subagent projection keeps it, and registered
+    # UNCONDITIONALLY in the materialize flow below — the design_lint lesson: never behind the ledger
+    # gate, so it always exists in a ledger-less run instead of being mis-routed as a subagent.
+    "test_evidence": "test_evidence",
     # execute_go_live — the §05 dark-node executor: publishes the staged draft ONLY once its
     # stage_go_live gate is APPROVED (fail-closed + idempotent). Registered in materialize (needs
     # ledger for the gate check + the worktree for the draft/delivery indexes).
@@ -130,7 +136,9 @@ _READ_ONLY_DREAM_SURFACE_TOOLS = frozenset(
 
 def dream_tool_names(chorus_tools: tuple[str, ...]) -> tuple[str, ...]:
     """Map a role's chorus tool allow-list to dream built-in names, dropping chorus-only tools."""
-    return tuple(_CHORUS_TO_DREAM_TOOL[name] for name in chorus_tools if name in _CHORUS_TO_DREAM_TOOL)
+    return tuple(
+        _CHORUS_TO_DREAM_TOOL[name] for name in chorus_tools if name in _CHORUS_TO_DREAM_TOOL
+    )
 
 
 def _project_spec(spec: SubagentSpec, parent_tools: frozenset[str]) -> Subagent:
@@ -192,7 +200,9 @@ def _capability_tool(name: str, ledger: SqliteLedger) -> BaseTool | None:
     if name == "stage_go_live":
         return GoLiveTool(ledger)
     if name == "brand_lint":
-        return BrandLintTool()  # pure file reader — the ledger arg is unused (kept for a uniform seam)
+        return (
+            BrandLintTool()
+        )  # pure file reader — the ledger arg is unused (kept for a uniform seam)
     return None
 
 
@@ -215,13 +225,16 @@ def _team_roster(ledger: SqliteLedger, *, exclude: str) -> str:
     lines = [f"- {emp.id} ({emp.role})" for emp in reports]
     body = "\n".join(lines) if lines else "(no other employees are currently hired)"
     roster = (
-        "\n\n## Your reports (assign each subtask's `assignee` to one of these employee ids)\n" + body
+        "\n\n## Your reports (assign each subtask's `assignee` to one of these employee ids)\n"
+        + body
     )
     manager_reports = [emp for emp in reports if emp.role == "manager"]
     if manager_reports:
         ids = ", ".join(emp.id for emp in manager_reports)
         roster += (
-            "\n\n## You are a director — delegate whole AREAS to your manager reports (" + ids + ")\n"
+            "\n\n## You are a director — delegate whole AREAS to your manager reports ("
+            + ids
+            + ")\n"
             "Some of your reports are themselves managers who run their own teams. Delegate a COMPLETE, "
             "self-contained AREA (a multi-file sub-goal) to each manager — NOT a single file — and let "
             "each manager sub-decompose its area into their own engineers. Do NOT break the goal down "
@@ -399,7 +412,11 @@ class EmployeeHarnessFactory:
         ).runner
 
     def materialize(
-        self, employee: Employee, *, task_id: str | None = None, review_worktree_of: str | None = None
+        self,
+        employee: Employee,
+        *,
+        task_id: str | None = None,
+        review_worktree_of: str | None = None,
     ) -> EmployeeHarness:
         """Resolve ``employee``'s role into a configured dream harness in its isolated worktree.
 
@@ -470,7 +487,9 @@ class EmployeeHarnessFactory:
             root = self._company_root / employee.id
         root.mkdir(parents=True, exist_ok=True)
         write_role_overlays(root, config)  # the employee's identity overlays the whole harness
-        write_sandbox_config(root, config.sandbox)  # the role's trust posture → .harness/sandbox.toml
+        write_sandbox_config(
+            root, config.sandbox
+        )  # the role's trust posture → .harness/sandbox.toml
 
         registry = _role_registry(dream_tool_names(config.tools))
         if self._ledger is not None:  # bind the role's chorus capability tools to the live ledger
@@ -485,6 +504,11 @@ class EmployeeHarnessFactory:
             registry.register(
                 CmsDraftTool(cms_backend_from_env(root / "cms_drafts")), source=ToolSource.DEFAULT
             )
+        # test_evidence (Backend Engineer §10): a pure worktree runner — it runs the discovered verify
+        # commands via the execution context and writes the test_evidence/ bundle. No ledger, so it
+        # registers UNCONDITIONALLY (not behind the `self._ledger is not None` gate) — the design_lint fix.
+        if "test_evidence" in config.tools:
+            registry.register(TestEvidenceTool(), source=ToolSource.DEFAULT)
         # execute_go_live pairs with cms_draft: it publishes the staged draft once the human approves
         # the stage_go_live gate. Needs BOTH the ledger (fail-closed gate check) and the worktree
         # (standing-draft + delivery indexes), so it registers here rather than in _capability_tool.
@@ -539,7 +563,9 @@ class EmployeeHarnessFactory:
                 pricing=self._pricing,
                 max_sprints=config.max_sprints,  # the role's per-beat sprint budget (spec 05)
                 # A research-heavy role widens its beat wall-clock past the org default (spec 06).
-                timeout_s=config.beat_timeout_s if config.beat_timeout_s is not None else self._timeout_s,
+                timeout_s=config.beat_timeout_s
+                if config.beat_timeout_s is not None
+                else self._timeout_s,
                 working_dir=root,
                 employee_id=employee.id,  # stamped into each beat's context for capability tools
             ),

@@ -1,22 +1,24 @@
-"""Backend Engineer proof-bundle slice (backend-engineer spec §10 / §16 Slice 2) — one keyed LLM beat.
+"""Backend Engineer stack-agnostic proof (backend-engineer spec §03 discover-not-assume) — one keyed beat.
 
-An end-to-end proof that the ``backend_engineer`` employee exists and proves its work: seed a tiny
-Python service, hire a Backend Engineer, assign a ticket, and tick the kernel. A real model probes the
-stack, implements the function + a test, runs the tests to green, then calls ``test_evidence`` to write
-a durable ``test_evidence/`` bundle; the evidence-floor DoD passes only on an all-green manifest, and a
-``pr`` artifact lands (the same ``pr`` lander the Engineer uses — outcome_kind matches). Solo: no reviewer.
+The twin of ``backend_engineer_smoke.py``, but seeded with a **Go module** instead of a Python package.
+Nothing about the employee changes — same brief, same ``test_evidence`` floor, same ``pr`` lander. The
+only difference is the repo it wakes up in. A real model must probe the manifest (``go.mod``), bind to
+Go rather than assume pytest, write Go + a Go ``_test.go``, run ``go test`` to green, then call
+``test_evidence`` with the Go verify command it discovered so the durable bundle proves it. If Go ships
+just like Python did, the "framework-agnostic, discover-not-assume" claim is real, not marketing.
 
     AZURE_OPENAI_API_KEY=... AZURE_OPENAI_BASE_URL=... AZURE_OPENAI_DEPLOYMENT=...
-    uv run python examples/backend_engineer_smoke.py
+    uv run python examples/backend_engineer_go_smoke.py
 
-Skips cleanly (exit 0) when those env vars are unset. Exits non-zero if keyed but the beat did not land
-the deliverable — so it is a real assertion, not just a demo.
+Skips cleanly (exit 0) when those env vars are unset, or when the Go toolchain is absent. Exits non-zero
+if keyed but the beat did not land a green Go bundle — a real assertion, not a demo.
 """
 
 from __future__ import annotations
 
 import asyncio
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -36,11 +38,11 @@ from chorus_employee import default_landers
 from chorus_harness import EmployeeHarnessFactory
 
 _TASK = (
-    "In slugify.py add a function slugify(s: str) -> str that lowercases s, replaces every run of "
-    "non-alphanumeric characters with a single '-', and strips any leading or trailing '-'. "
-    "In test_slugify.py add a pytest test asserting slugify('Hello, World!') == 'hello-world'. "
-    "Keep the existing health() function and its test. Make the changes directly in those files and "
-    "make the tests pass."
+    "In slugify.go add an exported function Slugify(s string) string that lowercases s, replaces every "
+    "run of non-alphanumeric characters with a single '-', and strips any leading or trailing '-'. "
+    'In slugify_test.go add a Go test asserting Slugify("Hello, World!") == "hello-world". '
+    "Keep the existing Health() function and its test. Make the changes directly in those files and "
+    "make `go test ./...` pass."
 )
 
 
@@ -56,7 +58,7 @@ def _git(repo: Path, *args: str) -> str:
 
 
 class _TraceBus(EventBus):
-    """Prints tool calls + the evaluator verdict, so the implement→run→prove loop is visible."""
+    """Prints tool calls + the evaluator verdict, so the probe→implement→prove loop is visible."""
 
     def __init__(self) -> None:
         super().__init__(log_path=None)
@@ -72,12 +74,16 @@ class _TraceBus(EventBus):
 
 
 def _seed_service(path: Path) -> None:
-    """A tiny, valid Python project the Backend Engineer probes + extends (a real pytest repo)."""
+    """A tiny, valid Go module the Backend Engineer probes + extends (a real `go test` repo)."""
     path.mkdir(parents=True)
     subprocess.run(["git", "-C", str(path), "init", "-b", "trunk"], check=True, capture_output=True)
-    (path / "app.py").write_text('def health() -> str:\n    return "ok"\n', encoding="utf-8")
-    (path / "test_app.py").write_text(
-        'from app import health\n\n\ndef test_health() -> None:\n    assert health() == "ok"\n',
+    (path / "go.mod").write_text("module demo\n\ngo 1.21\n", encoding="utf-8")
+    (path / "health.go").write_text(
+        'package demo\n\nfunc Health() string {\n\treturn "ok"\n}\n', encoding="utf-8"
+    )
+    (path / "health_test.go").write_text(
+        'package demo\n\nimport "testing"\n\n'
+        'func TestHealth(t *testing.T) {\n\tif Health() != "ok" {\n\t\tt.Fatalf("want ok")\n\t}\n}\n',
         encoding="utf-8",
     )
     subprocess.run(["git", "-C", str(path), "add", "-A"], check=True, capture_output=True)
@@ -100,6 +106,9 @@ def _seed_service(path: Path) -> None:
 
 
 def main() -> int:
+    if shutil.which("go") is None:
+        _log("skipping: the Go toolchain is not on PATH (this example needs `go test`)")
+        return 0
     api_key = os.environ.get("AZURE_OPENAI_API_KEY")
     base_url = os.environ.get("AZURE_OPENAI_BASE_URL")
     deployment = os.environ.get("AZURE_OPENAI_DEPLOYMENT")
@@ -107,7 +116,7 @@ def main() -> int:
         _log("skipping: set AZURE_OPENAI_API_KEY, AZURE_OPENAI_BASE_URL, AZURE_OPENAI_DEPLOYMENT")
         return 0
 
-    base = Path(tempfile.mkdtemp(prefix="chorus-backend-eng-"))
+    base = Path(tempfile.mkdtemp(prefix="chorus-backend-eng-go-"))
     os.chdir(base)
     seed = base / "source"
     _seed_service(seed)
@@ -129,9 +138,7 @@ def main() -> int:
         cfg = role_beat_config(registry.get("backend_engineer").manifest)
         mat = factory.materialize(ledger.employees.get("bex"))  # type: ignore[arg-type]
         _log("=" * 72)
-        _log(
-            "1. EMPLOYEE — materialized as backend_engineer (spec §16 Slice 2 — test_evidence floor)"
-        )
+        _log("1. EMPLOYEE — materialized as backend_engineer (spec §03 — Go, discover-not-assume)")
         _log(f"   tools     : {', '.join(cfg.tools)}")
         _log(f"   sandbox   : {cfg.sandbox}   permission: {cfg.permission_mode}")
         _log(f"   worktree  : {mat.working_dir}")
@@ -139,11 +146,8 @@ def main() -> int:
 
         ledger.tasks.submit(Task(id="t1", intent=_TASK))
         assign_task(ledger, "t1", "bex")
-        # Slice 2 — the evidence floor. A single backend engineer lands SOLO, gated not on a transient
-        # `pytest` run but on the DURABLE proof bundle: the DoD passes only when a `test_evidence/`
-        # manifest exists in the worktree with an all-green verdict. So the model must call the
-        # `test_evidence` tool (which runs the gates + writes the bundle) — "it was tested" is a file on
-        # disk the DoD greps, not a claim. No reviewer needed — a single-beat Command DoD over the bundle.
+        # Same evidence floor as the Python twin — the DoD greps a green `test_evidence/` bundle. The
+        # employee had to DISCOVER that the gate command here is `go test ./...`, not `pytest`.
         ledger.dod.create(
             "t1",
             Verifier.command(
@@ -170,7 +174,7 @@ def main() -> int:
 
         for n in range(
             1, 4
-        ):  # one deliverable beat gates on pytest + lands; headroom for self-repair
+        ):  # one deliverable beat gates on the bundle + lands; headroom for repair
             task = ledger.tasks.get("t1")
             if task is None or task.status in (TaskStatus.DONE, TaskStatus.BLOCKED):
                 break
@@ -191,22 +195,19 @@ def main() -> int:
         artifacts = ledger.artifacts.list_for_task("t1")
         company_main = factory.company_root / "repo"
         landed = bool(artifacts)
-        shipped = (company_main / "slugify.py").exists() and "slugify" in (
-            (company_main / "slugify.py").read_text(encoding="utf-8")
-            if (company_main / "slugify.py").exists()
-            else ""
-        )
+        slug = company_main / "slugify.go"
+        shipped = slug.exists() and "Slugify" in slug.read_text(encoding="utf-8")
         if landed:
             _log(
                 f"   ★ PR ARTIFACT LANDED: {artifacts[0].type.value} ref={artifacts[0].resource_ref}"
             )
-            _log(f"   company main slugify.py present + integrated: {shipped}")
+            _log(f"   company main slugify.go present + integrated: {shipped}")
         else:
             _log("   no artifact landed (DoD not green this run — see run/DoD status above).")
 
         ok = landed and shipped and final is not None and final.status is TaskStatus.DONE
         _log(
-            "\n   → PASS: backend_engineer shipped a proven PR."
+            "\n   → PASS: backend_engineer shipped a proven Go PR (stack-agnostic)."
             if ok
             else "\n   → FAIL: nothing landed."
         )
