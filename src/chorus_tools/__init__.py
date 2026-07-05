@@ -25,6 +25,14 @@ from chorus_tools._manager_actions import (
     SubmitTaskTool,
 )
 from chorus_tools._registry import chorus_tool_registry
+from chorus_tools._secret_scan import (
+    SecretFinding,
+    SecretScanInput,
+    SecretScanReport,
+    SecretScanTool,
+    scan_text,
+    write_report,
+)
 from chorus_tools._submit_verdict import SubmitVerdictInput, SubmitVerdictTool
 from chorus_tools._test_evidence import (
     EvidenceManifest,
@@ -52,6 +60,10 @@ __all__ = [
     "GoLiveTool",
     "NotebookRunTool",
     "RepoSearchTool",
+    "SecretFinding",
+    "SecretScanInput",
+    "SecretScanReport",
+    "SecretScanTool",
     "SubmitTaskInput",
     "SubmitTaskTool",
     "SubmitVerdictInput",
@@ -61,5 +73,7 @@ __all__ = [
     "WarehouseQueryTool",
     "analysis_tool",
     "chorus_tool_registry",
+    "scan_text",
     "write_bundle",
+    "write_report",
 ]

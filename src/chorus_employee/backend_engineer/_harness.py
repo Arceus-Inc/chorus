@@ -36,6 +36,9 @@ def backend_engineer_manifest() -> RoleManifest:
             # the load-bearing proof primitive (§10): run the discovered verify commands + collate a
             # durable test_evidence/ bundle. "it was tested" becomes a file on disk, not a claim.
             "test_evidence",
+            # the safety floor (§09): scan the worktree for hardcoded credentials + write a durable
+            # security_scan/ report. "no secrets in the diff" becomes a file on disk, not a claim.
+            "secret_scan",
             "memory_search",
             "memory_get",
             "working_memory_read",

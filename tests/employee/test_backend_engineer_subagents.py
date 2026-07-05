@@ -127,6 +127,11 @@ class TestApiVerifierWiring:
         plugin = backend_engineer_plugin()
         assert "spawn_subagent" in plugin.manifest.tools
 
+    def test_manifest_grants_the_secret_scan_safety_tool(self) -> None:
+        # The §09 safety floor: the engineer must be able to prove no hardcoded secrets before landing.
+        plugin = backend_engineer_plugin()
+        assert "secret_scan" in plugin.manifest.tools
+
     def test_verifier_tools_are_a_subset_of_the_parent(self) -> None:
         plugin = backend_engineer_plugin()
         parent_tools = set(plugin.manifest.tools)

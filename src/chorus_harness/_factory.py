@@ -43,6 +43,7 @@ from chorus_tools import (
     BrandLintTool,
     DecomposeTool,
     GoLiveTool,
+    SecretScanTool,
     SubmitTaskTool,
     SubmitVerdictTool,
     TestEvidenceTool,
@@ -112,6 +113,7 @@ _CHORUS_TO_DREAM_TOOL: dict[str, str] = {
     # UNCONDITIONALLY in the materialize flow below — the design_lint lesson: never behind the ledger
     # gate, so it always exists in a ledger-less run instead of being mis-routed as a subagent.
     "test_evidence": "test_evidence",
+    "secret_scan": "secret_scan",
     # execute_go_live — the §05 dark-node executor: publishes the staged draft ONLY once its
     # stage_go_live gate is APPROVED (fail-closed + idempotent). Registered in materialize (needs
     # ledger for the gate check + the worktree for the draft/delivery indexes).
@@ -509,6 +511,10 @@ class EmployeeHarnessFactory:
         # registers UNCONDITIONALLY (not behind the `self._ledger is not None` gate) — the design_lint fix.
         if "test_evidence" in config.tools:
             registry.register(TestEvidenceTool(), source=ToolSource.DEFAULT)
+        # secret_scan is the same shape: a pure worktree scanner that reads files + writes the
+        # security_scan/ report. No ledger, so it registers UNCONDITIONALLY too.
+        if "secret_scan" in config.tools:
+            registry.register(SecretScanTool(), source=ToolSource.DEFAULT)
         # execute_go_live pairs with cms_draft: it publishes the staged draft once the human approves
         # the stage_go_live gate. Needs BOTH the ledger (fail-closed gate check) and the worktree
         # (standing-draft + delivery indexes), so it registers here rather than in _capability_tool.
