@@ -26,13 +26,16 @@ export default defineConfig({
   testDir: './e2e',
   use: { baseURL: 'http://127.0.0.1:4173' },
   webServer: {
-    // Serve the app HOWEVER your chosen stack serves it — Playwright starts this itself.
-    //   static / no build:     'python -m http.server 4173'   (or 'npx serve -l 4173')
-    //   a built bundle:         'npm run build && npm run preview -- --port 4173'
-    //   a dev server:           'npm run dev -- --port 4173'
-    command: 'npm run preview -- --port 4173',
+    // Serve the app HOWEVER your chosen stack serves it — Playwright starts this itself. Bind the
+    // SAME host + port as baseURL/url. Use 127.0.0.1 explicitly: a bare `localhost` / `npm run preview`
+    // can bind IPv6 `::1`, so a check against `http://127.0.0.1` never answers and the webServer TIMES
+    // OUT. `--strictPort` fails fast instead of silently drifting to 4174.
+    //   static / no build:  'npx serve -l 4173'   (or 'python -m http.server 4173')
+    //   a dev server:       'npm run dev -- --host 127.0.0.1 --port 4173 --strictPort'
+    command: 'npm run build && npm run preview -- --host 127.0.0.1 --port 4173 --strictPort',
     url: 'http://127.0.0.1:4173',
     reuseExistingServer: true,
+    timeout: 120_000,
   },
 });
 ```
@@ -40,7 +43,10 @@ export default defineConfig({
 - `npm install -D @playwright/test` (you'll already have a `package.json` from scaffolding your stack).
   No `npx playwright install` is needed — the browsers are cached.
 - `webServer` lets Playwright start the server itself, so the run is self-contained. Point `command` at
-  whatever serves YOUR build; keep `baseURL`/`url`/port in sync.
+  whatever serves YOUR build; keep `baseURL`/`url`/port in sync AND bind the same host — use
+  `127.0.0.1`, never a bare `localhost` (which can resolve to IPv6 `::1` and never answer a `127.0.0.1`
+  check, timing the whole run out). `reuseExistingServer: true` reuses a server already on the port
+  instead of colliding when the suite is re-run.
 
 ## Write the spec
 

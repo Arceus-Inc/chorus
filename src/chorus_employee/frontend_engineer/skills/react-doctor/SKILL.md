@@ -1,7 +1,7 @@
 ---
 name: react-doctor
 description: How to avoid the React footguns that ship subtle bugs — the Rules of Hooks, correct effect dependencies and cleanup, stable keys in lists, colocating and lifting state correctly, and taming needless re-renders.
-when_to_use: Read when you have chosen React (or a React meta-framework). It is the correctness checklist for hooks, effects, keys, and state; pair it with component-testing to prove the behavior and scaffolding-with-vite to set the project up.
+when_to_use: Read when you have chosen React (or a React meta-framework). It is the correctness checklist for hooks, effects, keys, and state; pair it with frontend-patterns for the component/hook/state patterns themselves, component-testing to prove the behavior, and scaffolding-with-vite to set the project up.
 ---
 
 # React Doctor

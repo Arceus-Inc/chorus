@@ -147,6 +147,18 @@ _TASKS: tuple[_Task, ...] = (
             "in the cart survives all of that moving around."
         ),
     ),
+    _Task(
+        key="catalog",
+        intent=(
+            "Build a browsable product catalog that feels right on any screen. On a narrow phone the "
+            "products stack in a single readable column with no sideways scrolling; as the screen gets "
+            "wider the same grid fills the space with more and more columns. A person can type in a "
+            "search box and the visible products narrow down as they type, and they can open any product "
+            "to see a larger detail view and get back to the grid. The experience must stay smooth and "
+            "legible the whole way from a small phone to a wide desktop monitor, and the search must keep "
+            "up with fast typing without feeling janky."
+        ),
+    ),
 )
 
 

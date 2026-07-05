@@ -12,21 +12,42 @@ the way. The job here is to scaffold **non-interactively** and wire the scripts 
 
 ## The one rule
 
-**Scaffold the framework with Vite, then wire CI-safe `test` + `build` + `preview` scripts and point
-Playwright's `webServer` at the preview — so a non-interactive re-run reaches green on its own.**
+**Scaffold the framework with Vite AT THE WORKTREE ROOT, then wire CI-safe `test` + `build` + `preview`
+scripts and point Playwright's `webServer` at the preview — so a non-interactive re-run reaches green on
+its own.**
 
-## Scaffold non-interactively
+## Put the project at the worktree ROOT (non-negotiable)
 
+**Your worktree root IS the project root — `package.json` must sit at the TOP LEVEL of the worktree.**
+The after-beat evidence floor and the re-run (`npm test`, `npx playwright test`) run from the worktree
+root; a project inside a `my-app/` subfolder fails with "package.json not found" **even when the app is
+perfect** — the single most common way a good build scores zero.
+
+**⛔ Never run `npm create vite@latest .` (scaffold into the current directory).** The worktree root
+already holds `.git` / `.harness`, so create-vite sees a non-empty directory and HANGS forever on a
+"Current directory is not empty. Remove existing files and continue?" prompt a non-interactive beat can
+never answer. A blocked/timed-out beat with no `package.json` is exactly this mistake.
+
+### Do this — write the project files at the root yourself (deterministic, no prompt, no hoist)
+A Vite app is a small, known set of files. Write them DIRECTLY at the worktree root with `write_file`:
+
+- `package.json` — your stack's deps + the CI-safe scripts below.
+- `index.html` — the Vite entry: a `<div id="root">` and `<script type="module" src="/src/main.tsx">`.
+- `tsconfig.json` (+ `tsconfig.node.json`) and `vite.config.ts` (with `@vitejs/plugin-react` for React).
+- `src/` — `main.tsx` (mounts the app onto `#root`), `App.tsx`, and your components.
+
+Then `npm install` from the worktree root. This never hangs and needs no hoisting — prefer it.
+
+### Only if you insist on the scaffolder: create a SUBFOLDER, then hoist to root
 ```bash
-# pick the template for your chosen framework: react, react-ts, vue, vue-ts, svelte, svelte-ts, solid, …
-npm create vite@latest app -- --template react-ts
-cd app && npm install
+npm create vite@latest app -- --template react-ts   # a NAMED subfolder; --template avoids the prompt
+# move EVERYTHING (incl. dotfiles) up to the worktree root, then delete the empty folder:
+#   Windows (cmd.exe):  robocopy app . /E /MOVE   (robocopy exits 1 on SUCCESS — that is NOT an error)
+#   POSIX:              (shopt -s dotglob; mv app/* . ) && rmdir app
 ```
 
-- Always pass the `--template` flag: the bare command is interactive and will HANG a non-interactive
-  beat. The `--` forwards the flag through `npm create`.
-- This is a real project with a `package.json`, a build, and a dev server — exactly what the DoD floor
-  expects.
+**Confirm `package.json` is at the worktree root** (`dir package.json` / `ls package.json`) BEFORE you
+write app code. Never `cd app` and build inside the subfolder.
 
 ## Meta-frameworks
 
@@ -59,9 +80,12 @@ cd app && npm install
 
   ```js
   webServer: {
-    command: 'npm run build && npm run preview -- --port 4173',
+    // Bind 127.0.0.1 explicitly (a bare `npm run preview` can bind IPv6 `::1` and never answer a
+    // 127.0.0.1 check → the webServer times out). `--strictPort` fails fast instead of drifting ports.
+    command: 'npm run build && npm run preview -- --host 127.0.0.1 --port 4173 --strictPort',
     url: 'http://127.0.0.1:4173',
-    reuseExistingServer: true,
+    reuseExistingServer: true,   // reuse a running server instead of colliding on the port on re-run
+    timeout: 120_000,
   }
   ```
 
@@ -69,7 +93,8 @@ cd app && npm install
 
 ## Before you finish
 
-1. Did you scaffold non-interactively (`--template …`), so nothing waited on a prompt?
-2. Is `npm test` wired to a run-once unit runner (no watch mode)?
-3. Does Playwright's `webServer` build + serve the app, with ports in sync?
-4. Do `npm test` and `npx playwright test` both reach green from a clean `npm install`?
+1. Is `package.json` at the worktree ROOT (not inside a scaffolded subfolder)?
+2. Did you scaffold non-interactively (`--template …`), so nothing waited on a prompt?
+3. Is `npm test` wired to a run-once unit runner (no watch mode)?
+4. Does Playwright's `webServer` build + serve the app, with ports in sync?
+5. Do `npm test` and `npx playwright test` both reach green from a clean `npm install`?

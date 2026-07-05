@@ -92,6 +92,8 @@ def frontend_engineer_manifest() -> RoleManifest:
             "es-module-architecture",
             "scaffolding-with-vite",
             "react-doctor",
+            # React/Next component, hook, state, and performance patterns (loaded if React is chosen).
+            "frontend-patterns",
             "forms-and-validation",
             "unit-testing-with-node-test",
             "component-testing",
@@ -100,6 +102,8 @@ def frontend_engineer_manifest() -> RoleManifest:
             "test-evidence-discipline",
             "debugging-failing-tests",
             "package-and-run-hygiene",
+            # adapting the UI across screen sizes (breakpoints, container queries, fluid type, grid).
+            "responsive-design",
         ),
         skills_root=_SKILLS_ROOT,
         # --- build_harness(memory=...) + working_memory ---
