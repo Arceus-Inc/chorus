@@ -1,0 +1,5 @@
+key=baseline
+passed=False
+summary=plan incomplete: 0/1 done, 1 blocked
+intent=Our product Nimbus already has a design system (see DESIGN.md in your working directory). Design the user **Account Settings** page: profile fields, password change, and a danger zone to delete the account. It must stay on the existing system. Write a spec an engineer can build directly to.
+working_dir=Q:\projects\inspired-arc\chorus\.chorus\work\designer-hard-baseline\worktrees\dara

@@ -1,0 +1,5 @@
+key=dense
+passed=False
+summary=plan incomplete: 0/1 done, 1 blocked
+intent=On the Nimbus system (see DESIGN.md), design the **Events** screen: a dense, sortable table of incoming webhook events with column filters, multi-select bulk actions (retry, delete), and pagination. It must be fully operable by keyboard and meet WCAG AA. Account for what the screen shows before any events arrive, while loading, and when a fetch fails. Write a spec an engineer can build directly to.
+working_dir=Q:\projects\inspired-arc\chorus\.chorus\work\designer-hard-dense\worktrees\dara

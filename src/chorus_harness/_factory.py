@@ -42,6 +42,8 @@ from chorus_tools import (
     AssignTaskTool,
     BrandLintTool,
     DecomposeTool,
+    DesignExemplarTool,
+    DesignLintTool,
     GoLiveTool,
     SubmitTaskTool,
     SubmitVerdictTool,
@@ -102,6 +104,15 @@ _CHORUS_TO_DREAM_TOOL: dict[str, str] = {
     # parent's role-allowlist ceiling too. The MARKETER BRIEF must NOT instruct the parent to call it —
     # it is the critic's primitive; over-instructing the parent makes it mis-spawn brand_lint.
     "brand_lint": "brand_lint",
+    # design_lint — the Designer's deterministic pre-gen scan (§08 tool / §10 sandwich): a chorus
+    # capability tool (registered via _capability_tool, NOT a dream built-in), IDENTITY-mapped so the
+    # subagent projection keeps it for the Design-Critic. The exact structural analog of brand_lint.
+    "design_lint": "design_lint",
+    # design_exemplar — the Designer's read-only exemplar fetcher (§08 tool): returns a vendored
+    # real-world DESIGN.md from the design-md-exemplars library, which lives in the chorus package
+    # (NOT the worktree), so a worktree-confined read_file can't reach it. A chorus capability tool
+    # registered via _capability_tool; identity-mapped so dream_tool_names/projection keep it.
+    "design_exemplar": "design_exemplar",
     # cms_draft — a chorus capability tool (reversible CMS write, §08 Channel). Identity-mapped for the
     # same reason as brand_lint: so the projection keeps it; it is registered in the materialize flow
     # (it needs the worktree for the Markdown backend, which _capability_tool has no access to).
@@ -179,8 +190,12 @@ def _role_registry(dream_names: tuple[str, ...]) -> ToolRegistry:
     return registry
 
 
-def _capability_tool(name: str, ledger: SqliteLedger) -> BaseTool | None:
-    """Build the chorus capability tool for ``name`` (ledger-bound), or ``None`` if it isn't one."""
+def _capability_tool(name: str, ledger: SqliteLedger | None) -> BaseTool | None:
+    """Build the chorus capability tool for ``name``, or ``None`` if it isn't one.
+
+    The ledger-bound tools require a live ``ledger``; the ledger-free ones (``brand_lint`` /
+    ``design_lint`` / ``design_exemplar``) ignore it, so ``ledger`` may be ``None`` for those.
+    """
     if name == "decompose":
         return DecomposeTool(ledger)
     if name == "submit_task":
@@ -193,8 +208,19 @@ def _capability_tool(name: str, ledger: SqliteLedger) -> BaseTool | None:
         return GoLiveTool(ledger)
     if name == "brand_lint":
         return BrandLintTool()  # pure file reader — the ledger arg is unused (kept for a uniform seam)
+    if name == "design_lint":
+        return DesignLintTool()  # pure file reader — same uniform seam as brand_lint
+    if name == "design_exemplar":
+        return DesignExemplarTool()  # pure file reader over the vendored exemplar library
     return None
 
+
+# Chorus capability tools that are pure file readers — they take no ledger (the arg is a uniform seam
+# they ignore). They MUST register even in a ledger-free materialization (e.g. a standalone example
+# runner or any path that builds the factory without a live ledger); otherwise a role silently loses
+# them and the model, seeing them named in its brief but absent from its toolset, mis-routes (e.g.
+# ``spawn_subagent(name="design_lint")`` or a worktree ``read_file`` of the exemplar path) and errors.
+_LEDGER_FREE_CAPABILITY_TOOLS = frozenset({"brand_lint", "design_lint", "design_exemplar"})
 
 # Capability tools that route work to *other* employees — a role holding one needs to know its reports.
 _DELEGATING_TOOLS = frozenset({"decompose", "submit_task", "assign_task"})
@@ -473,11 +499,17 @@ class EmployeeHarnessFactory:
         write_sandbox_config(root, config.sandbox)  # the role's trust posture → .harness/sandbox.toml
 
         registry = _role_registry(dream_tool_names(config.tools))
-        if self._ledger is not None:  # bind the role's chorus capability tools to the live ledger
-            for name in config.tools:
-                capability = _capability_tool(name, self._ledger)
-                if capability is not None:
-                    registry.register(capability, source=ToolSource.DEFAULT)
+        # Bind the role's chorus capability tools. The ledger-free ones (pure file readers:
+        # design_lint / design_exemplar / brand_lint) register regardless — they need no ledger, and
+        # withholding them when the factory has none is the bug that makes a role's own primitives
+        # vanish from its toolset. The ledger-bound ones (decompose / submit_task / …) need the live
+        # ledger and fail closed — dropped — when it is absent.
+        for name in config.tools:
+            if self._ledger is None and name not in _LEDGER_FREE_CAPABILITY_TOOLS:
+                continue
+            capability = _capability_tool(name, self._ledger)
+            if capability is not None:
+                registry.register(capability, source=ToolSource.DEFAULT)
         # cms_draft is registered here (not in _capability_tool): its Markdown fallback backend needs the
         # worktree, and the backend (Strapi when its env is set, else Markdown) is config-selected. No
         # ledger needed — a reversible CMS write, below the go-live gate.
