@@ -1,10 +1,13 @@
 """The Frontend Engineer's dream-harness manifest — every ``build_harness`` component, in one place.
 
-A Frontend Engineer **reads the intent + any existing code/design system; builds a working static web app
-in its worktree; writes unit + real-browser e2e tests; RUNS them via ``run_command`` and captures the
-output into a durable evidence bundle; and iterates until green**. So unlike the Designer (which writes a
-spec and runs nothing), it needs **command execution** (Node, npm, Playwright, a static server) and
-**git** — an autonomous build role. Each field below names the dream component it drives.
+A Frontend Engineer **reads the intent + any existing code/design system; CHOOSES the stack that fits
+(hand-written HTML/JS, a component framework, or a meta-framework); builds a working app in its worktree;
+writes unit + real-browser e2e tests; RUNS them via ``run_command`` and captures the output into a
+durable evidence bundle; and iterates until green**. So unlike the Designer (which writes a spec and runs
+nothing), it needs **command execution** (Node, npm, a scaffolder, Playwright, a server) and **git** — an
+autonomous build role. The role is framework-agnostic by construction: no stack is named in this file or
+in the brief; framework specifics live only in the authored skills. Each field below names the dream
+component it drives.
 
 Slices layer in: the ``test_evidence`` scan tool (a deterministic read-only view of the bundle), the
 Code-Reviewer + UI-Tester subagents (in-beat quality pressure, both read-only), and the authored
@@ -67,18 +70,24 @@ def frontend_engineer_manifest() -> RoleManifest:
         ),
         disallowed_tools=(),
         # --- build_harness(skills=...) / build_harness(skill_registry=...) ---
-        # Authored build/testing craft playbooks — durable know-how (scoping, semantic/keyboard/color
-        # accessibility, module architecture, unit + e2e testing, evidence, debugging, forms, packaging),
-        # loaded on demand via the `skill` tool, discovered from this package's skills/ dir.
+        # Authored craft playbooks — durable, FRAMEWORK-AGNOSTIC know-how loaded on demand via the
+        # `skill` tool, discovered from this package's skills/ dir. The neutral core (scoping, choosing
+        # the stack, the pure/view seam, a11y, evidence, debugging, forms, packaging) plus stack-specific
+        # playbooks (react-doctor, scaffolding-with-vite, component-testing) the engineer loads only if
+        # it picks that stack. No stack is mandated; the choice + its playbooks are the engineer's.
         skills=(
             "spec-to-working-app",
+            "choosing-a-frontend-stack",
             "semantic-html-and-aria",
             "keyboard-and-focus",
             "color-and-contrast",
             "state-driven-ui",
             "es-module-architecture",
+            "scaffolding-with-vite",
+            "react-doctor",
             "forms-and-validation",
             "unit-testing-with-node-test",
+            "component-testing",
             "playwright-e2e-authoring",
             "web-first-assertions",
             "test-evidence-discipline",

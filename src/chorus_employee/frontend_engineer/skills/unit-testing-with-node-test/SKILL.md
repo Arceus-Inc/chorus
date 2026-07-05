@@ -1,14 +1,16 @@
 ---
 name: unit-testing-with-node-test
 description: How to write fast, zero-dependency unit tests with Node's built-in runner — importing your pure ES modules directly, asserting real behavior, and covering the branches that matter (including error paths).
-when_to_use: Read while writing tests under tests/. It relies on es-module-architecture's pure/glue seam; playwright-e2e-authoring covers the browser flow this can't reach.
+when_to_use: Read when unit-testing with Node's built-in runner — the zero-dependency, no-framework path. If you scaffolded a framework, you'll likely use its runner instead (see `component-testing` for Vitest + Testing Library); the branch-coverage and anti-hollow discipline below is identical for any runner.
 ---
 
 # Unit Testing with node:test
 
 Node ships a test runner and assertion library — `node --test` with `node:test` and `node:assert` — so
-unit tests need zero dependencies and run in milliseconds. Their job is to prove your pure logic is
-correct across its real branches, not to inflate a pass count with tests that assert nothing.
+unit tests need zero dependencies and run in milliseconds. This is the **no-framework path**; a framework
+stack uses its own runner (`vitest run`, `jest`) wired to `npm test` instead — but the goal is the same:
+prove your logic is correct across its real branches, not inflate a pass count with tests that assert
+nothing. Whichever runner you use, wire it to `npm test` so the evidence and the re-run line up.
 
 ## The one rule
 

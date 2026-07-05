@@ -141,10 +141,11 @@ class TestFrontendEngineerSkills:
         assert "skill" in self._manifest().tools
 
     def test_declares_the_build_and_testing_craft_skills(self) -> None:
-        # A representative core of the library must be declared (scoping, a11y, both test layers,
-        # and the evidence discipline that makes the work verifiable).
+        # A representative core of the library must be declared: scoping, the framework-agnostic stack
+        # decision, a11y, both test layers, and the evidence discipline that makes the work verifiable.
         assert set(self._manifest().skills) >= {
             "spec-to-working-app",
+            "choosing-a-frontend-stack",
             "semantic-html-and-aria",
             "keyboard-and-focus",
             "unit-testing-with-node-test",

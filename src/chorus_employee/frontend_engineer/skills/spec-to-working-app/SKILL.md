@@ -1,7 +1,7 @@
 ---
 name: spec-to-working-app
 description: How to turn a one-line intent into the smallest interface that actually works — sizing the slice, naming the user-visible behavior that means "done", and wiring it end to end before polishing.
-when_to_use: Read FIRST on every build, before writing any code. It is the sizing-and-scoping discipline the whole workflow hangs off; component-architecture and state-driven-ui build on the slice it defines.
+when_to_use: Read FIRST on every build, before writing any code. It is the sizing-and-scoping discipline the whole workflow hangs off; pair it with `choosing-a-frontend-stack` to pick the tech, and component/state skills build on the slice it defines.
 ---
 
 # Spec → Working App
@@ -24,6 +24,9 @@ it end to end, and run it — before you add anything else.**
   target and your first e2e assertion.
 - Cut to the smallest slice that delivers that sentence. Defer everything else. A working small thing
   beats an impressive broken thing every time.
+- Once you know the slice, choose the stack that FITS it — see `choosing-a-frontend-stack`. Right-size:
+  don't reach for a heavyweight framework for a mostly-static page, and don't hand-roll routing/state/
+  rendering that a framework you're already pulling in should own. The stack is a decision you justify.
 
 ## Wire it end to end, early
 
@@ -44,4 +47,5 @@ it end to end, and run it — before you add anything else.**
 1. Can you state the one user-visible behavior that means "working"? Does an e2e test assert exactly it?
 2. Is the whole path wired — does clicking/typing actually change what the user sees?
 3. Did you build only the slice the intent asked for, and all of it?
-4. Does it open with no build step (`python -m http.server`, load `index.html`)?
+4. Does it actually RUN and pass its tests — `npm test` green and `npx playwright test` green against the
+   app served however your chosen stack serves it (a static file, a dev server, a preview build)?
