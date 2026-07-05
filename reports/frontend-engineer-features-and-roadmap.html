@@ -1,0 +1,243 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Frontend Engineer (Finn) — Features &amp; Roadmap</title>
+<style>
+  :root {
+    --bg:#f6f8fa; --card:#ffffff; --ink:#1f2328; --muted:#57606a; --line:#d0d7de;
+    --accent:#0d9488; --accent-soft:#ecfeff;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink);
+    font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; }
+  .wrap { max-width:1000px; margin:0 auto; padding:32px 20px 80px; }
+  header.top { background:linear-gradient(135deg,#ecfeff,#f6f8fa); border:1px solid var(--line);
+    border-radius:16px; padding:28px 28px 22px; margin-bottom:22px; }
+  header.top .eyebrow { color:var(--accent); font-weight:700; letter-spacing:.06em;
+    text-transform:uppercase; font-size:12px; }
+  header.top h1 { margin:.2em 0 .3em; font-size:26px; }
+  header.top .sub { color:var(--muted); margin:0; }
+  header.top .sub b { color:var(--ink); }
+  .parttag { display:inline-block; background:var(--accent); color:#fff; font-weight:700;
+    font-size:12px; letter-spacing:.05em; text-transform:uppercase; padding:4px 12px;
+    border-radius:999px; margin:34px 0 6px; }
+  .parttag.two { background:#6b21a8; }
+  h2.part { font-size:22px; margin:4px 0 6px; }
+  .lead { color:var(--muted); margin:0 0 18px; font-size:14.5px; max-width:78ch; }
+  h3.sec { font-size:13px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted);
+    margin:26px 0 12px; }
+  .mono-inline { font:12.5px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:14px; }
+  .feat { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:16px 18px; }
+  .feat h4 { margin:0 0 6px; font-size:15px; display:flex; align-items:center; gap:9px; }
+  .feat .ic { flex:0 0 auto; width:28px; height:28px; border-radius:8px; background:var(--accent-soft);
+    color:#0e7490; display:grid; place-items:center; font-size:15px; }
+  .feat p { margin:0; color:var(--muted); font-size:13.5px; }
+  .feat .tags { margin-top:10px; display:flex; flex-wrap:wrap; gap:6px; }
+  .tag { font-size:11.5px; font-weight:600; padding:2px 9px; border-radius:999px;
+    background:#eef2ff; color:#3730a3; border:1px solid #c7d2fe; }
+  .tag.mono { font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-weight:500; }
+  .chips { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:12px; margin:20px 0; }
+  .chip { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:14px 16px;
+    color:var(--muted); font-size:12.5px; }
+  .chip span { display:block; font-size:24px; font-weight:750; color:var(--ink); line-height:1.1; }
+  .skills { display:flex; flex-wrap:wrap; gap:8px; margin:2px 0 8px; }
+  .skill { background:#f3e8ff; color:#6b21a8; border:1px solid #e9d5ff; border-radius:999px;
+    padding:4px 12px; font-size:12.5px; font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; }
+  .skill.new { background:#dcfce7; color:#166534; border-color:#bbf7d0; }
+  .rcard { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:0; overflow:hidden;
+    margin-bottom:14px; }
+  .rcard-head { display:flex; align-items:flex-start; gap:14px; padding:16px 18px 14px; }
+  .rcard-head .rn { flex:0 0 auto; width:30px; height:30px; border-radius:50%; background:#6b21a8;
+    color:#fff; font-weight:750; display:grid; place-items:center; font-size:14px; }
+  .rcard-head h4 { margin:2px 0 4px; font-size:16px; }
+  .rcard-head p { margin:0; color:var(--muted); font-size:13.5px; }
+  .rcard-foot { display:flex; flex-wrap:wrap; gap:8px; align-items:center; padding:0 18px 14px 62px; }
+  .prio { font-size:11.5px; font-weight:700; padding:2px 10px; border-radius:999px; }
+  .prio.p1 { background:#dcfce7; color:#166534; }
+  .prio.p2 { background:#fef9c3; color:#854d0e; }
+  .prio.p3 { background:#e0e7ff; color:#3730a3; }
+  .how { font-size:12.5px; color:var(--muted); }
+  .how b { color:var(--ink); font-weight:600; }
+  .theme { font-size:13px; text-transform:uppercase; letter-spacing:.05em; color:#6b21a8;
+    font-weight:700; margin:24px 0 10px; }
+  .note { background:#fffbeb; border:1px solid #fde68a; border-radius:12px; padding:13px 18px;
+    color:#854d0e; font-size:13px; margin:16px 0; }
+  .note b { color:#713f12; }
+  footer { color:var(--muted); font-size:12px; text-align:center; margin-top:44px;
+    border-top:1px solid var(--line); padding-top:18px; }
+</style></head>
+<body><div class="wrap">
+
+<header class="top">
+  <div class="eyebrow">Chorus · Frontend Engineer (Finn)</div>
+  <h1>Features &amp; Roadmap</h1>
+  <p class="sub"><b>Part 1</b> documents what Finn is today — an autonomous, <b>framework-agnostic</b> Frontend Engineer employee that reads an intent, chooses its own stack, builds a working app, and proves it works with real tests. <b>Part 2</b> proposes advanced features that would deepen that "prove it works" identity and broaden what Finn can take on.</p>
+</header>
+
+<span class="parttag">Part 1</span>
+<h2 class="part">What Finn is today</h2>
+<p class="lead">Finn is a build role, not a spec role: it runs commands, scaffolds a project, writes and executes tests in a real browser, and iterates red→green inside an isolated git worktree. Its defining principle is <b>evidence</b> — nothing is "done" until the tests have actually run and the output is captured.</p>
+
+<div class="chips">
+  <div class="chip"><span>17</span>Craft skills<br>(loaded on demand)</div>
+  <div class="chip"><span>2</span>Review subagents<br>(read-only)</div>
+  <div class="chip"><span>15</span>Tools on the shelf</div>
+  <div class="chip"><span>0</span>Framework names<br>in Python or prompt</div>
+  <div class="chip"><span>6</span>Sprints / beat<br>(red→green budget)</div>
+</div>
+
+<h3 class="sec">Framework-agnostic by construction</h3>
+<div class="grid">
+  <div class="feat"><h4><span class="ic">◇</span>The engineer chooses the stack</h4><p>No framework is named anywhere in the Python code or the brief. Finn reads the intent + any existing code, loads <span class="mono-inline">choosing-a-frontend-stack</span>, and decides: hand-written HTML/JS, a component framework (React/Vue/Svelte), or a meta-framework. Validated live — for the storefront task it independently chose React + TypeScript + Vite + Playwright and passed every gate.</p></div>
+  <div class="feat"><h4><span class="ic">▤</span>Neutral brief &amp; DoD</h4><p>The brief describes <em>outcomes</em> (a working, accessible, tested app) and a pure/view seam — never a library. The Definition-of-Done floor checks stack-agnostic markers: a <span class="mono-inline">package.json</span> with a <span class="mono-inline">"test"</span> script, a <span class="mono-inline">playwright.config.*</span>, captured unit + e2e logs, and a ≥150-word summary that must record the <b>stack decision</b> and the <b>test results</b>.</p></div>
+</div>
+
+<h3 class="sec">Prove-it-works machinery</h3>
+<div class="grid">
+  <div class="feat"><h4><span class="ic">⌘</span>Real command execution</h4><p><span class="mono-inline">run_command</span> + <span class="mono-inline">git</span> in an <b>UNRESTRICTED</b> sandbox, confined to an isolated <b>worktree</b>. Finn installs deps, scaffolds, runs a dev/preview server, and drives Node, npm, and <span class="mono-inline">npx playwright</span> for itself — an autonomous build loop, not a suggestion engine.</p></div>
+  <div class="feat"><h4><span class="ic">🔎</span><span style="font-size:15px">test_evidence</span> scanner</h4><p>A deterministic, <b>read-only</b> tool that scans the worktree and reports exactly what proof exists or is missing (project manifest, e2e harness, unit log, e2e log, summary) with typed findings like <span class="mono-inline">unit_not_run</span> or <span class="mono-inline">thin_summary</span>. Finn self-checks it before declaring done; the DoD floor re-checks it after.</p></div>
+  <div class="feat"><h4><span class="ic">↻</span>Independent re-verification</h4><p>After the beat, the harness re-runs <span class="mono-inline">npm test</span> and <span class="mono-inline">npx playwright test</span> itself with <span class="mono-inline">CI=1</span> in the shipped worktree — so a "pass" means the code went green again under the harness's <em>own</em> hands, not just Finn's self-report.</p></div>
+  <div class="feat"><h4><span class="ic">▦</span>Per-task flow reports</h4><p>Each run emits a self-contained HTML flow report: the phase-by-phase tool timeline, subagent activity, sprint evaluations, the independent re-verification verdict, and the produced artifacts — a readable audit trail of how the app was built.</p></div>
+</div>
+
+<h3 class="sec">In-beat quality pressure — two read-only subagents</h3>
+<div class="grid">
+  <div class="feat"><h4><span class="ic">✓</span>Code-Reviewer</h4><p>Reads <span class="mono-inline">package.json</span> + source and reviews correctness, accessibility, and <b>test integrity</b> through a <b>MISFIT-STACK lens</b> — flagging both over-engineering (a framework where vanilla would do) and under-engineering. Read-only (<span class="mono-inline">read_file</span> / <span class="mono-inline">working_memory_read</span> / <span class="mono-inline">test_evidence</span>), so Finn keeps ownership of fixes.</p></div>
+  <div class="feat"><h4><span class="ic">◉</span>UI-Tester</h4><p>Audits the <em>proof</em>: does the e2e genuinely drive the real UI and assert real behaviour, or is it hollow? Guards against tests that pass without testing anything. Also read-only.</p></div>
+</div>
+
+<h3 class="sec">17 craft skills — loaded on demand via the <span class="mono-inline">skill</span> tool</h3>
+<div class="skills">
+  <span class="skill">spec-to-working-app</span>
+  <span class="skill new">choosing-a-frontend-stack</span>
+  <span class="skill">semantic-html-and-aria</span>
+  <span class="skill">keyboard-and-focus</span>
+  <span class="skill">color-and-contrast</span>
+  <span class="skill">state-driven-ui</span>
+  <span class="skill">es-module-architecture</span>
+  <span class="skill new">scaffolding-with-vite</span>
+  <span class="skill new">react-doctor</span>
+  <span class="skill">forms-and-validation</span>
+  <span class="skill">unit-testing-with-node-test</span>
+  <span class="skill new">component-testing</span>
+  <span class="skill">playwright-e2e-authoring</span>
+  <span class="skill">web-first-assertions</span>
+  <span class="skill">test-evidence-discipline</span>
+  <span class="skill">debugging-failing-tests</span>
+  <span class="skill">package-and-run-hygiene</span>
+</div>
+<p class="lead" style="font-size:13px"><span class="skill new" style="padding:1px 8px">green</span> = added in the framework-agnostic upgrade. Framework specifics (React hooks/effects/keys, Vite scaffolding, component testing) live <b>only</b> in these skills, loaded only if Finn picks that stack — keeping the Python code stack-free.</p>
+
+<h3 class="sec">Also on the shelf</h3>
+<div class="grid">
+  <div class="feat"><h4><span class="ic">🧠</span>Memory &amp; working memory</h4><p>Project-scoped durable memory (<span class="mono-inline">memory_search</span>/<span class="mono-inline">get</span>/<span class="mono-inline">propose</span>) plus a per-beat working-memory scratchpad tracking what was built and what failed across the build loop.</p></div>
+  <div class="feat"><h4><span class="ic">🌐</span>Read-only web grounding</h4><p><span class="mono-inline">web_search</span> + <span class="mono-inline">web_extract</span> for grounding on MDN / WAI-ARIA / framework docs — read-only egress, no write access to the net.</p></div>
+</div>
+
+<div class="note"><b>One deliberate deferral:</b> live MCP is off (<span class="mono-inline">mcp=False</span>), mirroring the gold-standard Designer deferring its Figma MCP. The real-browser gate is already covered by <span class="mono-inline">npx playwright test</span> run through <span class="mono-inline">run_command</span> and re-run by the DoD floor, so a live per-beat Playwright-MCP connect would add latency + a network dependency for no gate the deterministic e2e doesn't already provide. Turning it on is the first roadmap item below.</div>
+
+<span class="parttag two">Part 2</span>
+<h2 class="part">Proposed advanced features</h2>
+<p class="lead">Finn's identity is "prove it works." The highest-leverage additions <b>widen what "works" is machine-checked to mean</b> — accessibility, visuals, performance, and security — and then broaden the stacks and workflows Finn can take on. Each proposal notes how it plugs into the existing harness (a new skill, a DoD signal, a subagent, or an MCP), so none of it is a rewrite.</p>
+
+<div class="theme">Theme A · Deepen the proof (highest leverage)</div>
+
+<div class="rcard">
+  <div class="rcard-head"><span class="rn">1</span><div>
+    <h4>Automated accessibility auditing (axe-core)</h4>
+    <p>Finn already <em>authors</em> accessibly (semantic HTML, focus, contrast skills) but never <em>machine-verifies</em> it. Wire <span class="mono-inline">@axe-core/playwright</span> into the e2e to run a WCAG scan on each key view, and add an <b>a11y DoD signal</b> that fails on serious/critical violations. Closes the loop between the three a11y skills and actual evidence.</p>
+  </div></div>
+  <div class="rcard-foot"><span class="prio p1">Priority 1</span><span class="how"><b>Plugs in as:</b> a new <span class="mono-inline">accessibility-auditing</span> skill + a <span class="mono-inline">test_evidence</span> finding + an optional a11y-auditor subagent.</span></div>
+</div>
+
+<div class="rcard">
+  <div class="rcard-head"><span class="rn">2</span><div>
+    <h4>Visual-regression / screenshot-diff testing</h4>
+    <p>DOM assertions miss visual breakage (layout, overflow, contrast, dark-mode). Adopt Playwright's <span class="mono-inline">toHaveScreenshot()</span> with committed baselines so unintended visual changes fail the e2e. Especially valuable once Finn iterates on an existing app across beats.</p>
+  </div></div>
+  <div class="rcard-foot"><span class="prio p1">Priority 1</span><span class="how"><b>Plugs in as:</b> a <span class="mono-inline">visual-regression</span> skill + baseline artifacts in the evidence bundle.</span></div>
+</div>
+
+<div class="rcard">
+  <div class="rcard-head"><span class="rn">3</span><div>
+    <h4>Performance &amp; bundle-size budgets</h4>
+    <p>Run Lighthouse (or an equivalent) against the preview build for perf/best-practice scores, and add a <b>bundle-size budget</b> (Finn already emits a known build size — ~240 kB / 76 kB gzip for the storefront). Fail when a budget is exceeded, so quality doesn't silently regress.</p>
+  </div></div>
+  <div class="rcard-foot"><span class="prio p2">Priority 2</span><span class="how"><b>Plugs in as:</b> a <span class="mono-inline">performance-budgets</span> skill + a DoD signal reading the build report.</span></div>
+</div>
+
+<div class="rcard">
+  <div class="rcard-head"><span class="rn">4</span><div>
+    <h4>Explicit type-strictness &amp; dependency-security gates</h4>
+    <p>Make <span class="mono-inline">tsc --noEmit</span> (strict) an explicit DoD signal rather than an implicit build side-effect, and run <span class="mono-inline">npm audit</span> (or a supply-chain check) so Finn refuses to ship with high-severity advisories. Cheap, high-trust guardrails.</p>
+  </div></div>
+  <div class="rcard-foot"><span class="prio p2">Priority 2</span><span class="how"><b>Plugs in as:</b> two <span class="mono-inline">test_evidence</span> findings (<span class="mono-inline">types_not_checked</span>, <span class="mono-inline">vulnerable_deps</span>).</span></div>
+</div>
+
+<div class="theme">Theme B · Broaden the stacks &amp; decisions</div>
+
+<div class="rcard">
+  <div class="rcard-head"><span class="rn">5</span><div>
+    <h4>Framework doctor skills for Vue, Svelte, SolidJS &amp; Angular</h4>
+    <p>Today <span class="mono-inline">react-doctor</span> is the only deep framework playbook, so <span class="mono-inline">choosing-a-frontend-stack</span> can genuinely pick React but is thinner behind the other options. Author matching doctor skills (reactivity/stores for Svelte &amp; Solid, composition API for Vue, signals/DI for Angular) so every choice has real depth behind it.</p>
+  </div></div>
+  <div class="rcard-foot"><span class="prio p1">Priority 1</span><span class="how"><b>Plugs in as:</b> new on-demand skills — no Python change (the whole point of the agnostic design).</span></div>
+</div>
+
+<div class="rcard">
+  <div class="rcard-head"><span class="rn">6</span><div>
+    <h4>A "framework-fit scorer"</h4>
+    <p>An up-front decision aid that scores the chosen stack against the task shape (does the intent justify a meta-framework? is a state library overkill for three views?). Complements the Code-Reviewer's after-the-fact MISFIT-STACK lens by catching a poor fit <em>before</em> the build.</p>
+  </div></div>
+  <div class="rcard-foot"><span class="prio p3">Priority 3</span><span class="how"><b>Plugs in as:</b> a skill section in <span class="mono-inline">choosing-a-frontend-stack</span>, or a lightweight pre-build subagent.</span></div>
+</div>
+
+<div class="rcard">
+  <div class="rcard-head"><span class="rn">7</span><div>
+    <h4>Incremental building on an existing repo</h4>
+    <p>Finn currently shines at greenfield scaffolds. Add a mode that <b>reads an existing codebase's conventions</b> (stack, structure, test setup) and extends it across beats — matching the house style instead of imposing a new one. This is what most real frontend work actually is.</p>
+  </div></div>
+  <div class="rcard-foot"><span class="prio p2">Priority 2</span><span class="how"><b>Plugs in as:</b> a <span class="mono-inline">working-in-an-existing-app</span> skill + a "detect, don't scaffold" branch in the brief.</span></div>
+</div>
+
+<div class="theme">Theme C · Delivery &amp; richer inputs</div>
+
+<div class="rcard">
+  <div class="rcard-head"><span class="rn">8</span><div>
+    <h4>Enable Playwright MCP for interactive UI driving</h4>
+    <p>Turn on the deferred <span class="mono-inline">mcp</span> for <em>exploratory</em> debugging and self-healing selector discovery — letting Finn open the running app, inspect the accessibility tree, and find robust locators before writing the deterministic spec. The committed e2e stays the gate; MCP is the scouting tool.</p>
+  </div></div>
+  <div class="rcard-foot"><span class="prio p2">Priority 2</span><span class="how"><b>Plugs in as:</b> flip <span class="mono-inline">mcp=True</span> + wire <span class="mono-inline">@playwright/mcp</span>; the design already anticipates this.</span></div>
+</div>
+
+<div class="rcard">
+  <div class="rcard-head"><span class="rn">9</span><div>
+    <h4>CI workflow generation</h4>
+    <p>Emit a GitHub Actions (or equivalent) workflow that runs the exact build + unit + e2e gates Finn ran locally — so the proof reproduces in CI on every push, not just once at build time. Makes Finn's evidence durable for the team, not just the beat.</p>
+  </div></div>
+  <div class="rcard-foot"><span class="prio p3">Priority 3</span><span class="how"><b>Plugs in as:</b> a <span class="mono-inline">ci-workflow-authoring</span> skill emitting a <span class="mono-inline">.github/workflows</span> file into the worktree.</span></div>
+</div>
+
+<div class="rcard">
+  <div class="rcard-head"><span class="rn">10</span><div>
+    <h4>Component stories &amp; design-token adherence</h4>
+    <p>Generate Storybook stories for built components (isolated review + a visual catalog that pairs with proposal #2), and — when a Designer handoff supplies a design system — lint that the app uses <b>design tokens</b> rather than magic values. Tightens the Designer→Engineer seam already present in Chorus.</p>
+  </div></div>
+  <div class="rcard-foot"><span class="prio p3">Priority 3</span><span class="how"><b>Plugs in as:</b> a <span class="mono-inline">component-stories</span> skill + a <span class="mono-inline">design-token-adherence</span> check keyed off the handed-off system.</span></div>
+</div>
+
+<div class="rcard">
+  <div class="rcard-head"><span class="rn">11</span><div>
+    <h4>Screenshot-to-code (multimodal input)</h4>
+    <p>Accept a design image as the intent and reproduce it, then <b>verify with a visual diff against the input</b> (reusing #2's machinery). Turns "here's a mockup" into a tested, working app — a natural capstone once visual-regression and the Designer seam are in place.</p>
+  </div></div>
+  <div class="rcard-foot"><span class="prio p3">Priority 3</span><span class="how"><b>Plugs in as:</b> a multimodal intent path + a visual-diff acceptance gate.</span></div>
+</div>
+
+<h3 class="sec">Suggested sequencing</h3>
+<p class="lead">Do the <span class="prio p1" style="padding:1px 8px">Priority 1</span> items first — they close the biggest gap (Finn authors for a11y/visuals but doesn't yet machine-verify them) and add framework depth without touching Python. <span class="prio p2" style="padding:1px 8px">Priority 2</span> broadens trust (perf/type/security budgets, existing-repo mode, interactive MCP). <span class="prio p3" style="padding:1px 8px">Priority 3</span> is delivery polish and richer inputs (CI, stories/tokens, screenshot-to-code). Every item lands as a skill, a DoD signal, a subagent, or an MCP flip — the framework-agnostic core stays intact.</p>
+
+<footer>Chorus · Frontend Engineer (Finn) — Features &amp; Roadmap · Part 1 reflects the shipped harness manifest, skills, subagents, and DoD; Part 2 is a proposed roadmap grounded in the current architecture.</footer>
+
+</div></body></html>
