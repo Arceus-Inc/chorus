@@ -411,21 +411,22 @@ def build_html(task_dir: Path) -> str:
         if ".config." in low or ".test." in low or ".spec." in low or "/e2e/" in low or low.startswith("e2e/"):
             continue
         art_parts.append(_artifact_block(task_dir, rel, f"{rel} — source"))
-    # unit tests wherever they live (tests/, test/, or co-located *.test.* / *.spec.* under src/).
+    # test suites wherever they live (tests/, test/, e2e/, or co-located *.test.* / *.spec.* under
+    # src/). We classify each by CONTENT, not by folder: a spec that imports the neutral e2e harness
+    # (Playwright) is an e2e spec; everything else is a unit/component test. That stays correct no
+    # matter which layout the chosen stack happens to use.
     test_rels: list[str] = []
     for ext in src_exts:
-        for pat in (f"tests/**/*.{ext}", f"test/**/*.{ext}", f"src/**/*.test.{ext}", f"src/**/*.spec.{ext}"):
+        for pat in (
+            f"tests/**/*.{ext}", f"test/**/*.{ext}", f"e2e/**/*.{ext}",
+            f"src/**/*.test.{ext}", f"src/**/*.spec.{ext}",
+        ):
             test_rels += _sorted_rel(task_dir, pat)
     for rel in sorted(set(test_rels)):
-        if "e2e" in rel.lower():
-            continue
-        art_parts.append(_artifact_block(task_dir, rel, f"{rel} — unit test"))
-    # e2e specs wherever the project keeps them.
-    e2e_rels: list[str] = []
-    for ext in src_exts:
-        e2e_rels += _sorted_rel(task_dir, f"e2e/**/*.{ext}") + _sorted_rel(task_dir, f"tests/e2e/**/*.{ext}")
-    for rel in sorted(set(e2e_rels)):
-        art_parts.append(_artifact_block(task_dir, rel, f"{rel} — e2e spec"))
+        body, _ = _read(task_dir, rel)
+        is_e2e = "@playwright/test" in body or "/e2e/" in rel.lower() or rel.lower().startswith("e2e/")
+        label = "e2e spec" if is_e2e else "unit test"
+        art_parts.append(_artifact_block(task_dir, rel, f"{rel} — {label}"))
     # build + e2e config (any extension the stack uses).
     for rel in _sorted_rel(task_dir, "vite.config.*") + _sorted_rel(task_dir, "playwright.config.*"):
         art_parts.append(_artifact_block(task_dir, rel, f"{rel} — config"))

@@ -1,0 +1,8 @@
+key=shop
+beat_passed=True
+reverify_unit_exit=0
+reverify_e2e_exit=0
+truly_passed=True
+intent=Build a small storefront that works as one continuous experience across three connected views: a browsable list of products, a single product's detail page, and a cart. From the list a person can open any product to see its details and add it to the cart; from a product's details they can return to browsing; and from anywhere they can open the cart to change item quantities or remove items. A running count of items in the cart and the current total are visible at all times and stay correct as things are added, changed, and removed while moving between the different views. Navigating the storefront must feel like a real app: a person can use the browser's back and forward buttons to retrace their steps, opening a link to a specific product or the cart directly lands on the right view, and whatever is in the cart survives all of that moving around.
+working_dir=q:\projects\inspired-arc\chorus\.chorus\work\frontend-eng-hard-shop\worktrees\finn
+summary=plan complete: 1/1 steps done
