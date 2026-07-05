@@ -1,0 +1,14 @@
+[WebServer] ::ffff:127.0.0.1 - - [05/Jul/2026 11:10:40] "GET / HTTP/1.1" 200 -
+
+Running 2 tests using 1 worker
+
+[WebServer] ::ffff:127.0.0.1 - - [05/Jul/2026 11:10:41] "GET / HTTP/1.1" 200 -
+[WebServer] ::ffff:127.0.0.1 - - [05/Jul/2026 11:10:41] "GET /src/app.js HTTP/1.1" 200 -
+[WebServer] ::ffff:127.0.0.1 - - [05/Jul/2026 11:10:41] "GET /src/validation.js HTTP/1.1" 200 -
+  ✓  1 e2e\rsvp.spec.js:3:1 › RSVP form enables submit when valid and shows a confirmation view (396ms)
+[WebServer] ::ffff:127.0.0.1 - - [05/Jul/2026 11:10:42] "GET / HTTP/1.1" 200 -
+[WebServer] ::ffff:127.0.0.1 - - [05/Jul/2026 11:10:42] "GET /src/app.js HTTP/1.1" 200 -
+[WebServer] ::ffff:127.0.0.1 - - [05/Jul/2026 11:10:42] "GET /src/validation.js HTTP/1.1" 200 -
+  ✓  2 e2e\rsvp.spec.js:32:1 › attempting to submit an invalid form focuses the first invalid field (217ms)
+
+  2 passed (2.5s)

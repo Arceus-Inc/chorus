@@ -1,0 +1,8 @@
+key=board
+beat_passed=True
+reverify_unit_exit=0
+reverify_e2e_exit=0
+truly_passed=True
+intent=Build a small task board with three lanes: to do, in progress, and done. A person can add a card to the first lane, move any card forward or backward between adjacent lanes, and remove a card. Every one of those actions must be fully doable using only the keyboard, and the board must show the same cards in the same lanes after the browser is refreshed as it did before.
+working_dir=q:\projects\inspired-arc\chorus\.chorus\work\frontend-eng-hard-board\worktrees\finn
+summary=plan complete: 1/1 steps done

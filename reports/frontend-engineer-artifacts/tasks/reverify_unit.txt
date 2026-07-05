@@ -1,0 +1,49 @@
+$ node --test
+[exit 0]
+
+TAP version 13
+# Subtest: addTask: adds a trimmed task (prepends) and increments remaining count
+ok 1 - addTask: adds a trimmed task (prepends) and increments remaining count
+  ---
+  duration_ms: 1.4036
+  type: 'test'
+  ...
+# Subtest: addTask: rejects empty/whitespace-only titles
+ok 2 - addTask: rejects empty/whitespace-only titles
+  ---
+  duration_ms: 0.877
+  type: 'test'
+  ...
+# Subtest: toggleTask: flips done/undone and updates remaining count
+ok 3 - toggleTask: flips done/undone and updates remaining count
+  ---
+  duration_ms: 0.3067
+  type: 'test'
+  ...
+# Subtest: removeTask: removes a task and updates remaining count
+ok 4 - removeTask: removes a task and updates remaining count
+  ---
+  duration_ms: 0.3659
+  type: 'test'
+  ...
+# Subtest: filter selector: returns visible tasks for all/todo/done
+ok 5 - filter selector: returns visible tasks for all/todo/done
+  ---
+  duration_ms: 1.1145
+  type: 'test'
+  ...
+# Subtest: setFilter: ignores invalid filter values
+ok 6 - setFilter: ignores invalid filter values
+  ---
+  duration_ms: 0.1579
+  type: 'test'
+  ...
+1..6
+# tests 6
+# suites 0
+# pass 6
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 156.2964

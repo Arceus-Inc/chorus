@@ -1,0 +1,245 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Run Board</title>
+    <style>
+      :root {
+        --bg: #0b1020;
+        --panel: #121a33;
+        --panel-2: #0f1730;
+        --text: #f3f6ff;
+        --muted: #b9c2e5;
+        --border: #2a355f;
+        --focus: #7dd3fc;
+        --danger: #fecaca;
+        --danger-bg: #7f1d1d;
+        --btn: #1d2a57;
+        --btn-hover: #233264;
+      }
+
+      * { box-sizing: border-box; }
+
+      body {
+        margin: 0;
+        font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+        background: radial-gradient(1000px 600px at 50% -10%, #1c2b62 0%, var(--bg) 55%);
+        color: var(--text);
+      }
+
+      a { color: inherit; }
+
+      .skip-link {
+        position: absolute;
+        left: 0.75rem;
+        top: 0.75rem;
+        transform: translateY(-200%);
+        background: #ffffff;
+        color: #000000;
+        padding: 0.5rem 0.75rem;
+        border-radius: 0.5rem;
+        z-index: 1000;
+      }
+      .skip-link:focus { transform: translateY(0); }
+
+      header {
+        padding: 1.25rem 1rem 0.5rem;
+        max-width: 1100px;
+        margin: 0 auto;
+      }
+
+      h1 {
+        margin: 0;
+        font-size: 1.5rem;
+        letter-spacing: 0.2px;
+      }
+
+      .sub {
+        margin: 0.4rem 0 0;
+        color: var(--muted);
+        max-width: 75ch;
+      }
+
+      main {
+        max-width: 1100px;
+        margin: 0 auto;
+        padding: 1rem;
+      }
+
+      .panel {
+        background: color-mix(in srgb, var(--panel) 92%, transparent);
+        border: 1px solid var(--border);
+        border-radius: 0.75rem;
+        padding: 1rem;
+      }
+
+      form {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 0.75rem;
+        align-items: end;
+      }
+
+      label {
+        display: block;
+        font-weight: 600;
+        margin-bottom: 0.35rem;
+      }
+
+      input[type="text"] {
+        width: 100%;
+        padding: 0.65rem 0.75rem;
+        border-radius: 0.6rem;
+        border: 1px solid var(--border);
+        background: var(--panel-2);
+        color: var(--text);
+      }
+
+      button {
+        border: 1px solid var(--border);
+        background: var(--btn);
+        color: var(--text);
+        padding: 0.65rem 0.85rem;
+        border-radius: 0.6rem;
+        cursor: pointer;
+        font-weight: 600;
+      }
+      button:hover { background: var(--btn-hover); }
+      button:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+      }
+
+      :focus-visible {
+        outline: 3px solid var(--focus);
+        outline-offset: 2px;
+      }
+
+      .help {
+        margin-top: 0.4rem;
+        color: var(--muted);
+        font-size: 0.925rem;
+      }
+
+      .error {
+        margin-top: 0.6rem;
+        background: var(--danger-bg);
+        color: var(--danger);
+        border: 1px solid color-mix(in srgb, var(--danger) 40%, transparent);
+        border-radius: 0.6rem;
+        padding: 0.6rem 0.75rem;
+      }
+
+      .board {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 1rem;
+        margin-top: 1rem;
+      }
+
+      .lane {
+        background: color-mix(in srgb, var(--panel) 88%, transparent);
+        border: 1px solid var(--border);
+        border-radius: 0.75rem;
+        padding: 0.75rem;
+        min-height: 18rem;
+      }
+
+      .lane h2 {
+        margin: 0;
+        font-size: 1.05rem;
+      }
+
+      .lane .hint {
+        margin: 0.5rem 0 0.75rem;
+        color: var(--muted);
+        font-size: 0.9rem;
+      }
+
+      .cards {
+        list-style: none;
+        padding: 0;
+        margin: 0.5rem 0 0;
+        display: grid;
+        gap: 0.75rem;
+      }
+
+      .card {
+        border: 1px solid var(--border);
+        background: var(--panel-2);
+        border-radius: 0.75rem;
+        padding: 0.75rem;
+      }
+
+      .card-title {
+        font-weight: 700;
+        margin: 0;
+      }
+
+      .card-actions {
+        display: flex;
+        gap: 0.5rem;
+        flex-wrap: wrap;
+        margin-top: 0.6rem;
+      }
+
+      .btn-danger {
+        background: #3b0a0a;
+        border-color: #6a1a1a;
+      }
+      .btn-danger:hover { background: #4b0d0d; }
+
+      @media (max-width: 900px) {
+        .board { grid-template-columns: 1fr; }
+        form { grid-template-columns: 1fr; }
+      }
+    </style>
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to board</a>
+    <header>
+      <h1>Run Board</h1>
+      <p class="sub">A three-lane task board that works with keyboard-only controls and persists to this browser.</p>
+    </header>
+
+    <main id="main">
+      <section class="panel" aria-labelledby="add-card-heading">
+        <h2 id="add-card-heading" style="margin:0 0 0.75rem">Add a task</h2>
+        <form id="add-form" novalidate>
+          <div>
+            <label for="task-title">Task title</label>
+            <input id="task-title" name="taskTitle" type="text" autocomplete="off" required maxlength="120" />
+            <div class="help" id="task-help">Press Enter or activate Add. The new card starts in “To do”.</div>
+            <div class="error" id="task-error" role="alert" hidden></div>
+          </div>
+          <button type="submit" id="add-button">Add</button>
+        </form>
+      </section>
+
+      <div id="storage-error" class="error" role="alert" hidden></div>
+
+      <section class="board" aria-label="Task board">
+        <section class="lane" aria-labelledby="lane-todo">
+          <h2 id="lane-todo">To do</h2>
+          <p class="hint">Cards you haven’t started.</p>
+          <ul class="cards" id="cards-todo"></ul>
+        </section>
+
+        <section class="lane" aria-labelledby="lane-inprogress">
+          <h2 id="lane-inprogress">In progress</h2>
+          <p class="hint">Cards you’re actively working on.</p>
+          <ul class="cards" id="cards-inprogress"></ul>
+        </section>
+
+        <section class="lane" aria-labelledby="lane-done">
+          <h2 id="lane-done">Done</h2>
+          <p class="hint">Cards you’ve completed.</p>
+          <ul class="cards" id="cards-done"></ul>
+        </section>
+      </section>
+    </main>
+
+    <script type="module" src="./src/app.js"></script>
+  </body>
+</html>

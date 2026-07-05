@@ -1,0 +1,277 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Tip + Bill Splitter</title>
+    <style>
+      :root {
+        --bg: #0b1220;
+        --panel: #111a2e;
+        --text: #eef2ff;
+        --muted: #c7d2fe;
+        --border: #2a3a62;
+        --focus: #fbbf24;
+        --danger: #fecaca;
+      }
+
+      * { box-sizing: border-box; }
+
+      body {
+        margin: 0;
+        font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+        background: radial-gradient(1200px 600px at 20% 0%, #172554 0%, var(--bg) 55%);
+        color: var(--text);
+        line-height: 1.4;
+      }
+
+      header {
+        padding: 24px 16px 12px;
+      }
+
+      header .wrap {
+        max-width: 720px;
+        margin: 0 auto;
+      }
+
+      header h1 {
+        font-size: 1.3rem;
+        margin: 0 0 6px;
+      }
+
+      header p {
+        margin: 0;
+        color: var(--muted);
+        max-width: 60ch;
+      }
+
+      main {
+        padding: 0 16px 32px;
+        max-width: 720px;
+        margin: 0 auto;
+      }
+
+      .grid {
+        display: grid;
+        gap: 16px;
+      }
+
+      @media (min-width: 640px) {
+        .grid {
+          grid-template-columns: 1fr 1fr;
+          align-items: start;
+        }
+      }
+
+      .card {
+        background: color-mix(in oklab, var(--panel) 92%, black);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 16px;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+      }
+
+      fieldset {
+        border: 0;
+        margin: 0;
+        padding: 0;
+      }
+
+      .field {
+        display: grid;
+        gap: 6px;
+        margin-bottom: 14px;
+      }
+
+      label {
+        font-weight: 650;
+      }
+
+      input[type="number"],
+      select {
+        width: 100%;
+        padding: 10px 12px;
+        border-radius: 10px;
+        border: 1px solid var(--border);
+        background: #0a1020;
+        color: var(--text);
+      }
+
+      input[type="number"]::-webkit-outer-spin-button,
+      input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+
+      .hint {
+        color: var(--muted);
+        font-size: 0.92rem;
+      }
+
+      .error {
+        color: var(--danger);
+        font-size: 0.92rem;
+      }
+
+      :focus-visible {
+        outline: 3px solid var(--focus);
+        outline-offset: 2px;
+      }
+
+      .results {
+        display: grid;
+        gap: 12px;
+      }
+
+      .resultRow {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        gap: 10px;
+        padding: 12px;
+        border-radius: 10px;
+        background: rgba(255, 255, 255, 0.04);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+      }
+
+      .resultRow dt {
+        font-weight: 650;
+      }
+
+      .resultRow dd {
+        margin: 0;
+        font-variant-numeric: tabular-nums;
+        font-size: 1.1rem;
+      }
+
+      footer {
+        padding: 16px;
+        color: var(--muted);
+        font-size: 0.9rem;
+        max-width: 720px;
+        margin: 0 auto;
+      }
+
+      .srOnly {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        margin: -1px;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        white-space: nowrap;
+        border-width: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="wrap">
+        <h1>Tip + bill splitter</h1>
+        <p>
+          Enter a bill, tip percent, and number of people. Results update instantly.
+        </p>
+      </div>
+    </header>
+
+    <main>
+      <div class="grid">
+        <section class="card" aria-labelledby="inputsTitle">
+          <h2 id="inputsTitle" style="margin: 0 0 10px; font-size: 1.05rem">Inputs</h2>
+
+          <form id="tipForm" novalidate>
+            <fieldset>
+              <div class="field">
+                <label for="billAmount">Bill amount ($)</label>
+                <input
+                  id="billAmount"
+                  name="billAmount"
+                  type="number"
+                  inputmode="decimal"
+                  min="0"
+                  step="0.01"
+                  placeholder="0.00"
+                  autocomplete="off"
+                />
+                <div id="billError" class="error" role="status" aria-live="polite"></div>
+              </div>
+
+              <div class="field">
+                <label for="tipPercent">Tip preset (%)</label>
+                <select id="tipPercent" name="tipPercent">
+                  <option value="0">0%</option>
+                  <option value="10">10%</option>
+                  <option value="15" selected>15%</option>
+                  <option value="18">18%</option>
+                  <option value="20">20%</option>
+                  <option value="25">25%</option>
+                  <option value="custom">Custom…</option>
+                </select>
+                <div class="hint" id="tipHint">Choose a preset, or select “Custom…”</div>
+              </div>
+
+              <div class="field" id="customTipField" hidden>
+                <label for="customTip">Custom tip percentage (%)</label>
+                <input
+                  id="customTip"
+                  name="customTip"
+                  type="number"
+                  inputmode="decimal"
+                  min="0"
+                  step="0.1"
+                  placeholder="e.g. 17.5"
+                  autocomplete="off"
+                />
+                <div id="tipError" class="error" role="status" aria-live="polite"></div>
+              </div>
+
+              <div class="field">
+                <label for="peopleCount">People sharing</label>
+                <input
+                  id="peopleCount"
+                  name="peopleCount"
+                  type="number"
+                  inputmode="numeric"
+                  min="1"
+                  step="1"
+                  placeholder="1"
+                  autocomplete="off"
+                />
+                <div id="peopleError" class="error" role="status" aria-live="polite"></div>
+              </div>
+            </fieldset>
+          </form>
+        </section>
+
+        <section class="card" aria-labelledby="resultsTitle">
+          <h2 id="resultsTitle" style="margin: 0 0 10px; font-size: 1.05rem">Results</h2>
+
+          <p class="hint" id="resultsHint">
+            Values show as $0.00 until the bill is greater than $0 and at least 1 person is entered.
+          </p>
+
+          <dl class="results" aria-live="polite" aria-atomic="true">
+            <div class="resultRow">
+              <dt>Tip amount</dt>
+              <dd id="tipAmount">$0.00</dd>
+            </div>
+            <div class="resultRow">
+              <dt>Total (with tip)</dt>
+              <dd id="totalAmount">$0.00</dd>
+            </div>
+            <div class="resultRow">
+              <dt>Per person</dt>
+              <dd id="perPersonAmount">$0.00</dd>
+            </div>
+          </dl>
+
+          <div class="srOnly" id="announce" aria-live="polite" aria-atomic="true"></div>
+        </section>
+      </div>
+    </main>
+
+    <footer>
+      <span>All amounts shown in USD.</span>
+    </footer>
+
+    <script type="module" src="./src/app.js"></script>
+  </body>
+</html>

@@ -1,0 +1,61 @@
+$ node --test
+[exit 0]
+
+TAP version 13
+# Subtest: addCard adds a trimmed title into the To do lane
+ok 1 - addCard adds a trimmed title into the To do lane
+  ---
+  duration_ms: 2.8418
+  type: 'test'
+  ...
+# Subtest: addCard throws on empty/whitespace title
+ok 2 - addCard throws on empty/whitespace title
+  ---
+  duration_ms: 0.6004
+  type: 'test'
+  ...
+# Subtest: moveCard moves only to adjacent lanes forward/backward
+ok 3 - moveCard moves only to adjacent lanes forward/backward
+  ---
+  duration_ms: 0.416
+  type: 'test'
+  ...
+# Subtest: moveCard is a no-op for unknown card id
+ok 4 - moveCard is a no-op for unknown card id
+  ---
+  duration_ms: 0.1569
+  type: 'test'
+  ...
+# Subtest: removeCard removes a card by id and is a no-op if id not found
+ok 5 - removeCard removes a card by id and is a no-op if id not found
+  ---
+  duration_ms: 0.3103
+  type: 'test'
+  ...
+# Subtest: encodeState/decodeState round-trip
+ok 6 - encodeState/decodeState round-trip
+  ---
+  duration_ms: 0.4644
+  type: 'test'
+  ...
+# Subtest: decodeState falls back to empty on corrupted or wrong-shape input
+ok 7 - decodeState falls back to empty on corrupted or wrong-shape input
+  ---
+  duration_ms: 0.3531
+  type: 'test'
+  ...
+# Subtest: persistence helpers use the expected storage key
+ok 8 - persistence helpers use the expected storage key
+  ---
+  duration_ms: 0.265
+  type: 'test'
+  ...
+1..8
+# tests 8
+# suites 0
+# pass 8
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 151.4109

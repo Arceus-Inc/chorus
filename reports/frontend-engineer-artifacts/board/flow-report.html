@@ -1,0 +1,972 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Frontend Engineer — Run Flow Report (board)</title>
+<style>
+  :root {
+    --bg:#f6f8fa; --card:#ffffff; --ink:#1f2328; --muted:#57606a; --line:#d0d7de;
+    --accent:#0d9488; --accent-soft:#ecfeff;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink);
+    font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; }
+  .wrap { max-width:960px; margin:0 auto; padding:32px 20px 80px; }
+  header.top { background:linear-gradient(135deg,#ecfeff,#f6f8fa); border:1px solid var(--line);
+    border-radius:16px; padding:28px 28px 22px; margin-bottom:22px; }
+  header.top .eyebrow { color:var(--accent); font-weight:700; letter-spacing:.06em;
+    text-transform:uppercase; font-size:12px; }
+  header.top h1 { margin:.2em 0 .3em; font-size:26px; }
+  header.top .intent { color:var(--muted); margin:0; }
+  header.top .intent b { color:var(--ink); }
+  .badge { font-size:12px; font-weight:700; padding:3px 10px; border-radius:999px; }
+  .badge.ok { background:#dcfce7; color:#166534; }
+  .badge.warn { background:#fef9c3; color:#854d0e; }
+  .badge.info { background:var(--accent-soft); color:#0e7490; }
+  .reverify { background:var(--card); border:1px solid var(--line); border-radius:14px;
+    padding:6px 20px 18px; margin:22px 0; }
+  .reverify h2 { font-size:13px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted);
+    margin:16px 0 6px; }
+  .vrow { display:flex; align-items:center; gap:12px; padding:8px 0; border-bottom:1px dashed var(--line); }
+  .vrow:last-of-type { border-bottom:none; }
+  .vlabel { min-width:230px; font-weight:600; font-size:14px; }
+  .vrow .muted { color:var(--muted); font-size:12.5px; }
+  .overall { display:flex; align-items:center; gap:14px; margin-top:14px; padding:14px 16px;
+    border-radius:12px; }
+  .overall.ok { background:#f0fdf4; border:1px solid #bbf7d0; }
+  .overall.warn { background:#fffbeb; border:1px solid #fde68a; }
+  .overall .big { font-size:18px; font-weight:800; letter-spacing:.02em; }
+  .overall.ok .big { color:#166534; }
+  .overall.warn .big { color:#854d0e; }
+  .overall p { margin:0; color:var(--muted); font-size:13px; }
+  .chips { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; margin:22px 0; }
+  .chip { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:14px 16px;
+    color:var(--muted); font-size:12.5px; }
+  .chip span { display:block; font-size:24px; font-weight:750; color:var(--ink); line-height:1.1; }
+  .subchips { display:flex; flex-wrap:wrap; gap:8px; margin:-6px 0 22px; }
+  .subchip { background:#f3e8ff; color:#6b21a8; border:1px solid #e9d5ff; border-radius:999px;
+    padding:4px 12px; font-size:13px; }
+  h2.sec { font-size:15px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted);
+    margin:34px 0 12px; }
+  .legend { display:flex; flex-wrap:wrap; gap:14px; margin-bottom:14px; font-size:12.5px; color:var(--muted); }
+  .leg { display:inline-flex; align-items:center; gap:6px; }
+  .dot { width:9px; height:9px; border-radius:50%; display:inline-block; flex:0 0 auto; }
+  .phase { background:var(--card); border:1px solid var(--line); border-radius:14px;
+    margin-bottom:16px; overflow:hidden; }
+  .phase-head { display:flex; gap:14px; align-items:flex-start; padding:18px 20px 14px;
+    border-bottom:1px solid var(--line); background:#fbfcfe; }
+  .pnum { flex:0 0 auto; width:30px; height:30px; border-radius:50%; background:var(--accent);
+    color:#fff; font-weight:750; display:grid; place-items:center; }
+  .phase-head h3 { margin:2px 0 3px; font-size:17px; }
+  .phase-head p { margin:0; color:var(--muted); font-size:13.5px; }
+  .phase-body { padding:12px 16px 16px; display:flex; flex-direction:column; gap:5px; }
+  .step { display:flex; align-items:center; gap:9px; padding:5px 8px; border-radius:8px; font-size:13.5px; }
+  .step:hover { background:#f6f8fa; }
+  .step .tool { font-weight:650; }
+  .step .arg { color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+    font:12.5px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; }
+  .err { font-size:10.5px; font-weight:700; color:#b91c1c; background:#fee2e2; border-radius:5px;
+    padding:1px 6px; }
+  details.sub { border:1px solid #e9d5ff; border-radius:10px; background:#faf5ff; margin:3px 0; }
+  details.sub > summary { cursor:pointer; list-style:none; padding:8px 12px; display:flex;
+    align-items:center; gap:9px; font-size:13.5px; }
+  details.sub > summary::-webkit-details-marker { display:none; }
+  details.sub > summary::before { content:"▶"; font-size:9px; color:#a855f7; transition:transform .15s; }
+  details.sub[open] > summary::before { transform:rotate(90deg); }
+  details.sub .agent { font-weight:750; color:#6b21a8; }
+  details.sub .count { margin-left:auto; color:var(--muted); font-size:12px; }
+  .subbody { padding:2px 12px 12px 26px; display:flex; flex-direction:column; gap:3px;
+    border-top:1px dashed #e9d5ff; }
+  .empty { color:var(--muted); font-size:13px; padding:6px; }
+  .eval { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px 18px;
+    margin-bottom:12px; }
+  .eval-top { display:flex; align-items:center; gap:12px; }
+  .eval-top .score { margin-left:auto; color:var(--muted); font-size:13px; }
+  .bar { height:8px; background:#eaeef2; border-radius:999px; margin:10px 0 8px; overflow:hidden; }
+  .bar span { display:block; height:100%; background:linear-gradient(90deg,#14b8a6,#0d9488); }
+  .notes { margin:0; color:var(--muted); font-size:13px; }
+  details.art { background:var(--card); border:1px solid var(--line); border-radius:12px;
+    margin-bottom:12px; }
+  details.art > summary { cursor:pointer; padding:14px 18px; font-weight:650; }
+  details.art pre { margin:0; padding:0 18px 18px; white-space:pre-wrap; word-wrap:break-word;
+    font:12.5px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; color:#24292f; }
+  .note { background:#fffbeb; border:1px solid #fde68a; border-radius:12px; padding:14px 18px;
+    color:#854d0e; font-size:13.5px; margin-top:8px; }
+  footer { color:var(--muted); font-size:12px; text-align:center; margin-top:40px; }
+</style></head>
+<body><div class="wrap">
+
+<header class="top">
+  <div class="eyebrow">Chorus · Frontend Engineer (Finn) · task &ldquo;board&rdquo;</div>
+  <h1>Run Flow Report</h1>
+  <p class="intent"><b>Intent:</b> Build a small task board with three lanes: to do, in progress, and done. A person can add a card to the first lane, move any card forward or backward between adjacent lanes, and remove a card. Every one of those actions must be fully doable using only the keyboard, and the board must show the same cards in the same lanes after the browser is refreshed as it did before.</p>
+</header>
+
+<div class="reverify">
+  <h2>Independent verification — did the shipped code actually work?</h2>
+  <div class="vrow"><span class="vlabel">DoD floor (after-beat gate)</span><span class="badge ok">pass</span></div><div class="vrow"><span class="vlabel">Independent unit re-run</span><span class="badge ok">exit 0</span> <span class="muted">node --test, clean process, shipped worktree</span></div><div class="vrow"><span class="vlabel">Independent e2e re-run</span><span class="badge ok">exit 0</span> <span class="muted">npx playwright test, real browser</span></div>
+  <div class="overall ok"><span class="big">TRULY PASSED</span><p>the shipped code passed the DoD floor AND both suites went green again under the harness's own hands</p></div>
+</div>
+
+<div class="chips"><div class="chip"><span>97</span>Total tool calls</div><div class="chip"><span>2</span>Subagents spawned</div><div class="chip"><span>23</span>run_command calls</div><div class="chip"><span>7</span>skills loaded</div><div class="chip"><span>1</span>Sprints</div></div>
+<div class="subchips"><span class="subchip">code_reviewer <b>&times;1</b></span><span class="subchip">ui_tester <b>&times;1</b></span></div>
+
+<h2 class="sec">The flow, phase by phase</h2>
+<div class="legend"><span class="leg"><span class="dot" style="background:#7c3aed"></span>subagent</span><span class="leg"><span class="dot" style="background:#0d9488"></span>run</span><span class="leg"><span class="dot" style="background:#d97706"></span>git</span><span class="leg"><span class="dot" style="background:#2563eb"></span>evidence</span><span class="leg"><span class="dot" style="background:#16a34a"></span>write</span><span class="leg"><span class="dot" style="background:#6b7280"></span>read</span><span class="leg"><span class="dot" style="background:#db2777"></span>skill</span></div>
+<section class="phase"><div class="phase-head"><span class="pnum">0</span><div><h3>Understand &amp; size</h3><p>Read the intent and any existing code, load the craft <b>skill</b> that fits, and pick the smallest slice that <em>actually works</em>.</p></div></div><div class="phase-body"><div class="step"><span class="dot" style="background:#db2777"></span><span class="tool">skill</span><span class="arg">spec-to-working-app</span></div><div class="step"><span class="dot" style="background:#db2777"></span><span class="tool">skill</span><span class="arg">state-driven-ui</span></div><div class="step"><span class="dot" style="background:#db2777"></span><span class="tool">skill</span><span class="arg">semantic-html-and-aria</span></div><div class="step"><span class="dot" style="background:#db2777"></span><span class="tool">skill</span><span class="arg">keyboard-and-focus</span></div><div class="step"><span class="dot" style="background:#db2777"></span><span class="tool">skill</span><span class="arg">unit-testing-with-node-test</span></div><div class="step"><span class="dot" style="background:#db2777"></span><span class="tool">skill</span><span class="arg">playwright-e2e-authoring</span></div><div class="step"><span class="dot" style="background:#db2777"></span><span class="tool">skill</span><span class="arg">web-first-assertions</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">cd /d q:\\projects\\inspired-arc\\chorus\\.chorus\\work\\frontend-eng-hard-board\\worktr…</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">cd /d q:\\projects\\inspired-arc\\chorus\\.chorus\\work\\frontend-eng-hard-board\\worktr…</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">docs/DESIGN.md</span> <span class="err" title="benign — usually a retry reading an offloaded scratch file or a Windows-only DoD floor probe">err</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">cd /d q:\\projects\\inspired-arc\\chorus\\.chorus\\work\\frontend-eng-hard-board\\worktr…</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">cd /d q:\\projects\\inspired-arc\\chorus\\.chorus\\work\\frontend-eng-hard-board\\worktr…</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">cd /d q:\\projects\\inspired-arc\\chorus\\.chorus\\work\\frontend-eng-hard-board\\worktr…</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">docs/exec-plans/active/run-board.md</span></div></div></section><section class="phase"><div class="phase-head"><span class="pnum">1</span><div><h3>Build the slice</h3><p>Write the running app — <code>index.html</code> + ES modules + CSS — accessible by construction and wired end to end so the behaviour happens in the browser.</p></div></div><div class="phase-body"><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">index.html</span></div><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">src/boardState.js</span></div><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">src/app.js</span></div></div></section><section class="phase"><div class="phase-head"><span class="pnum">2</span><div><h3>Author the tests</h3><p>Write Node <b>unit</b> specs for the logic and a real-browser <b>Playwright</b> e2e that drives the app the way a user does.</p></div></div><div class="phase-body"><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">tests/boardState.test.js</span></div><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">package.json</span></div><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">playwright.config.js</span></div><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">e2e/board.spec.js</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">cd /d q:\\projects\\inspired-arc\\chorus\\.chorus\\work\\frontend-eng-hard-board\\worktr…</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">cd /d q:\\projects\\inspired-arc\\chorus\\.chorus\\work\\frontend-eng-hard-board\\worktr…</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">cd /d q:\\projects\\inspired-arc\\chorus\\.chorus\\work\\frontend-eng-hard-board\\worktr…</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">cd /d q:\\projects\\inspired-arc\\chorus\\.chorus\\work\\frontend-eng-hard-board\\worktr…</span> <span class="err" title="benign — usually a retry reading an offloaded scratch file or a Windows-only DoD floor probe">err</span></div><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">e2e/board.spec.js</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">cd /d q:\\projects\\inspired-arc\\chorus\\.chorus\\work\\frontend-eng-hard-board\\worktr…</span> <span class="err" title="benign — usually a retry reading an offloaded scratch file or a Windows-only DoD floor probe">err</span></div><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">src/boardState.js</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">cd /d q:\\projects\\inspired-arc\\chorus\\.chorus\\work\\frontend-eng-hard-board\\worktr…</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">cd /d q:\\projects\\inspired-arc\\chorus\\.chorus\\work\\frontend-eng-hard-board\\worktr…</span> <span class="err" title="benign — usually a retry reading an offloaded scratch file or a Windows-only DoD floor probe">err</span></div><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">e2e/board.spec.js</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">cd /d q:\\projects\\inspired-arc\\chorus\\.chorus\\work\\frontend-eng-hard-board\\worktr…</span> <span class="err" title="benign — usually a retry reading an offloaded scratch file or a Windows-only DoD floor probe">err</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">cd /d q:\\projects\\inspired-arc\\chorus\\.chorus\\work\\frontend-eng-hard-board\\worktr…</span> <span class="err" title="benign — usually a retry reading an offloaded scratch file or a Windows-only DoD floor probe">err</span></div><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">e2e/board.spec.js</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">cd /d q:\\projects\\inspired-arc\\chorus\\.chorus\\work\\frontend-eng-hard-board\\worktr…</span> <span class="err" title="benign — usually a retry reading an offloaded scratch file or a Windows-only DoD floor probe">err</span></div><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">src/app.js</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">cd /d q:\\projects\\inspired-arc\\chorus\\.chorus\\work\\frontend-eng-hard-board\\worktr…</span> <span class="err" title="benign — usually a retry reading an offloaded scratch file or a Windows-only DoD floor probe">err</span></div><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">e2e/board.spec.js</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">cd /d q:\\projects\\inspired-arc\\chorus\\.chorus\\work\\frontend-eng-hard-board\\worktr…</span> <span class="err" title="benign — usually a retry reading an offloaded scratch file or a Windows-only DoD floor probe">err</span></div><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">e2e/board.spec.js</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">cd /d q:\\projects\\inspired-arc\\chorus\\.chorus\\work\\frontend-eng-hard-board\\worktr…</span> <span class="err" title="benign — usually a retry reading an offloaded scratch file or a Windows-only DoD floor probe">err</span></div><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">playwright.config.js</span></div><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">e2e/board.spec.js</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">cd /d q:\\projects\\inspired-arc\\chorus\\.chorus\\work\\frontend-eng-hard-board\\worktr…</span> <span class="err" title="benign — usually a retry reading an offloaded scratch file or a Windows-only DoD floor probe">err</span></div><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">e2e/board.spec.js</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">cd /d q:\\projects\\inspired-arc\\chorus\\.chorus\\work\\frontend-eng-hard-board\\worktr…</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">cd /d q:\\projects\\inspired-arc\\chorus\\.chorus\\work\\frontend-eng-hard-board\\worktr…</span></div></div></section><section class="phase"><div class="phase-head"><span class="pnum">3</span><div><h3>Run &amp; capture the proof</h3><p>Install deps, run both suites, and tee the <em>real</em> output into the durable <code>test_evidence/</code> bundle.</p></div></div><div class="phase-body"><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">test_evidence/summary.md</span></div></div></section><section class="phase"><div class="phase-head"><span class="pnum">4</span><div><h3>Review under pressure</h3><p>Spawn the read-only <b>code_reviewer</b> and <b>ui_tester</b>, self-check with <b>test_evidence</b>, address every blocker/major, and re-run until green.</p></div></div><div class="phase-body"><details class="sub"><summary><span class="dot" style="background:#7c3aed"></span><b>spawn_subagent</b> <span class="agent">code_reviewer</span><span class="count">27 inner calls · 6 benign err</span></summary><div class="subbody"><div class="step"><span class="dot" style="background:#2563eb"></span><span class="tool">test_evidence</span><span class="arg">(scan the worktree)</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">index.html</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">tests/runboard.test.js</span> <span class="err" title="benign — usually a retry reading an offloaded scratch file or a Windows-only DoD floor probe">err</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">e2e/runboard.spec.js</span> <span class="err" title="benign — usually a retry reading an offloaded scratch file or a Windows-only DoD floor probe">err</span></div><div class="step"><span class="dot" style="background:#d97706"></span><span class="tool">git</span><span class="arg">git diff --name-only</span> <span class="err" title="benign — usually a retry reading an offloaded scratch file or a Windows-only DoD floor probe">err</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">dir /s /b tests e2e 2&gt;nul &amp; dir /b test_evidence 2&gt;nul &amp; dir /b</span> <span class="err" title="benign — usually a retry reading an offloaded scratch file or a Windows-only DoD floor probe">err</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">20260705-111805-read_file-b5bf380f42a2.txt</span> <span class="err" title="benign — usually a retry reading an offloaded scratch file or a Windows-only DoD floor probe">err</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">test_evidence/unit.txt</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">test_evidence/e2e.txt</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">e2e/board.spec.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">tests/boardState.test.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/app.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/boardState.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">test_evidence/summary.md</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">index.html</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">20260705-111820-read_file-f15134ec05af.txt</span> <span class="err" title="benign — usually a retry reading an offloaded scratch file or a Windows-only DoD floor probe">err</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">index.html</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">index.html</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">index.html</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/app.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/app.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/app.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/app.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/app.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/app.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/app.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/app.js</span></div></div></details><details class="sub"><summary><span class="dot" style="background:#7c3aed"></span><b>spawn_subagent</b> <span class="agent">ui_tester</span><span class="count">6 inner calls · 1 benign err</span></summary><div class="subbody"><div class="step"><span class="dot" style="background:#2563eb"></span><span class="tool">test_evidence</span><span class="arg">(scan the worktree)</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">e2e/board.spec.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">test_evidence/e2e.txt</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">index.html</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">test_evidence/summary.md</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">20260705-111855-read_file-d6b6f0d979a4.txt</span> <span class="err" title="benign — usually a retry reading an offloaded scratch file or a Windows-only DoD floor probe">err</span></div></div></details><div class="step"><span class="dot" style="background:#2563eb"></span><span class="tool">test_evidence</span><span class="arg">(scan the worktree)</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg"></span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">index.html</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">test_evidence/summary.md</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">test_evidence/unit.txt</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">test_evidence/e2e.txt</span></div><div class="step"><span class="dot" style="background:#d97706"></span><span class="tool">git</span><span class="arg">git status --porcelain</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/boardState.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/app.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">e2e/board.spec.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">tests/boardState.test.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">20260705-111927-read_file-d1f83dddda7b.txt</span> <span class="err" title="benign — usually a retry reading an offloaded scratch file or a Windows-only DoD floor probe">err</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">index.html</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">index.html</span></div></div></section>
+
+<h2 class="sec">Sprint evaluations</h2>
+<div class="eval"><div class="eval-top"><span class="badge ok">sprint 1: pass</span><span class="score">score 1.00</span></div><div class="bar"><span style="width:100%"></span></div><p class="notes">All acceptance criteria satisfied: 3-lane board, add/move/remove with localStorage persistence, keyboard operability, accessible semantics/names, unit + Playwright e2e tests with passing captured evidence.</p></div>
+
+<h2 class="sec">Artifacts produced</h2>
+<details class="art"><summary>index.html — the running app entry · 246 lines</summary><pre>&lt;!doctype html&gt;
+&lt;html lang=&quot;en&quot;&gt;
+  &lt;head&gt;
+    &lt;meta charset=&quot;utf-8&quot; /&gt;
+    &lt;meta name=&quot;viewport&quot; content=&quot;width=device-width, initial-scale=1&quot; /&gt;
+    &lt;title&gt;Run Board&lt;/title&gt;
+    &lt;style&gt;
+      :root {
+        --bg: #0b1020;
+        --panel: #121a33;
+        --panel-2: #0f1730;
+        --text: #f3f6ff;
+        --muted: #b9c2e5;
+        --border: #2a355f;
+        --focus: #7dd3fc;
+        --danger: #fecaca;
+        --danger-bg: #7f1d1d;
+        --btn: #1d2a57;
+        --btn-hover: #233264;
+      }
+
+      * { box-sizing: border-box; }
+
+      body {
+        margin: 0;
+        font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+        background: radial-gradient(1000px 600px at 50% -10%, #1c2b62 0%, var(--bg) 55%);
+        color: var(--text);
+      }
+
+      a { color: inherit; }
+
+      .skip-link {
+        position: absolute;
+        left: 0.75rem;
+        top: 0.75rem;
+        transform: translateY(-200%);
+        background: #ffffff;
+        color: #000000;
+        padding: 0.5rem 0.75rem;
+        border-radius: 0.5rem;
+        z-index: 1000;
+      }
+      .skip-link:focus { transform: translateY(0); }
+
+      header {
+        padding: 1.25rem 1rem 0.5rem;
+        max-width: 1100px;
+        margin: 0 auto;
+      }
+
+      h1 {
+        margin: 0;
+        font-size: 1.5rem;
+        letter-spacing: 0.2px;
+      }
+
+      .sub {
+        margin: 0.4rem 0 0;
+        color: var(--muted);
+        max-width: 75ch;
+      }
+
+      main {
+        max-width: 1100px;
+        margin: 0 auto;
+        padding: 1rem;
+      }
+
+      .panel {
+        background: color-mix(in srgb, var(--panel) 92%, transparent);
+        border: 1px solid var(--border);
+        border-radius: 0.75rem;
+        padding: 1rem;
+      }
+
+      form {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 0.75rem;
+        align-items: end;
+      }
+
+      label {
+        display: block;
+        font-weight: 600;
+        margin-bottom: 0.35rem;
+      }
+
+      input[type=&quot;text&quot;] {
+        width: 100%;
+        padding: 0.65rem 0.75rem;
+        border-radius: 0.6rem;
+        border: 1px solid var(--border);
+        background: var(--panel-2);
+        color: var(--text);
+      }
+
+      button {
+        border: 1px solid var(--border);
+        background: var(--btn);
+        color: var(--text);
+        padding: 0.65rem 0.85rem;
+        border-radius: 0.6rem;
+        cursor: pointer;
+        font-weight: 600;
+      }
+      button:hover { background: var(--btn-hover); }
+      button:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+      }
+
+      :focus-visible {
+        outline: 3px solid var(--focus);
+        outline-offset: 2px;
+      }
+
+      .help {
+        margin-top: 0.4rem;
+        color: var(--muted);
+        font-size: 0.925rem;
+      }
+
+      .error {
+        margin-top: 0.6rem;
+        background: var(--danger-bg);
+        color: var(--danger);
+        border: 1px solid color-mix(in srgb, var(--danger) 40%, transparent);
+        border-radius: 0.6rem;
+        padding: 0.6rem 0.75rem;
+      }
+
+      .board {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 1rem;
+        margin-top: 1rem;
+      }
+
+      .lane {
+        background: color-mix(in srgb, var(--panel) 88%, transparent);
+        border: 1px solid var(--border);
+        border-radius: 0.75rem;
+        padding: 0.75rem;
+        min-height: 18rem;
+      }
+
+      .lane h2 {
+        margin: 0;
+        font-size: 1.05rem;
+      }
+
+      .lane .hint {
+        margin: 0.5rem 0 0.75rem;
+        color: var(--muted);
+        font-size: 0.9rem;
+      }
+
+      .cards {
+        list-style: none;
+        padding: 0;
+        margin: 0.5rem 0 0;
+        display: grid;
+        gap: 0.75rem;
+      }
+
+      .card {
+        border: 1px solid var(--border);
+        background: var(--panel-2);
+        border-radius: 0.75rem;
+        padding: 0.75rem;
+      }
+
+      .card-title {
+        font-weight: 700;
+        margin: 0;
+      }
+
+      .card-actions {
+        display: flex;
+        gap: 0.5rem;
+        flex-wrap: wrap;
+        margin-top: 0.6rem;
+      }
+
+      .btn-danger {
+        background: #3b0a0a;
+        border-color: #6a1a1a;
+      }
+      .btn-danger:hover { background: #4b0d0d; }
+
+      @media (max-width: 900px) {
+        .board { grid-template-columns: 1fr; }
+        form { grid-template-columns: 1fr; }
+      }
+    &lt;/style&gt;
+  &lt;/head&gt;
+  &lt;body&gt;
+    &lt;a class=&quot;skip-link&quot; href=&quot;#main&quot;&gt;Skip to board&lt;/a&gt;
+    &lt;header&gt;
+      &lt;h1&gt;Run Board&lt;/h1&gt;
+      &lt;p class=&quot;sub&quot;&gt;A three-lane task board that works with keyboard-only controls and persists to this browser.&lt;/p&gt;
+    &lt;/header&gt;
+
+    &lt;main id=&quot;main&quot;&gt;
+      &lt;section class=&quot;panel&quot; aria-labelledby=&quot;add-card-heading&quot;&gt;
+        &lt;h2 id=&quot;add-card-heading&quot; style=&quot;margin:0 0 0.75rem&quot;&gt;Add a task&lt;/h2&gt;
+        &lt;form id=&quot;add-form&quot; novalidate&gt;
+          &lt;div&gt;
+            &lt;label for=&quot;task-title&quot;&gt;Task title&lt;/label&gt;
+            &lt;input id=&quot;task-title&quot; name=&quot;taskTitle&quot; type=&quot;text&quot; autocomplete=&quot;off&quot; required maxlength=&quot;120&quot; /&gt;
+            &lt;div class=&quot;help&quot; id=&quot;task-help&quot;&gt;Press Enter or activate Add. The new card starts in “To do”.&lt;/div&gt;
+            &lt;div class=&quot;error&quot; id=&quot;task-error&quot; role=&quot;alert&quot; hidden&gt;&lt;/div&gt;
+          &lt;/div&gt;
+          &lt;button type=&quot;submit&quot; id=&quot;add-button&quot;&gt;Add&lt;/button&gt;
+        &lt;/form&gt;
+      &lt;/section&gt;
+
+      &lt;div id=&quot;storage-error&quot; class=&quot;error&quot; role=&quot;alert&quot; hidden&gt;&lt;/div&gt;
+
+      &lt;section class=&quot;board&quot; aria-label=&quot;Task board&quot;&gt;
+        &lt;section class=&quot;lane&quot; aria-labelledby=&quot;lane-todo&quot;&gt;
+          &lt;h2 id=&quot;lane-todo&quot;&gt;To do&lt;/h2&gt;
+          &lt;p class=&quot;hint&quot;&gt;Cards you haven’t started.&lt;/p&gt;
+          &lt;ul class=&quot;cards&quot; id=&quot;cards-todo&quot;&gt;&lt;/ul&gt;
+        &lt;/section&gt;
+
+        &lt;section class=&quot;lane&quot; aria-labelledby=&quot;lane-inprogress&quot;&gt;
+          &lt;h2 id=&quot;lane-inprogress&quot;&gt;In progress&lt;/h2&gt;
+          &lt;p class=&quot;hint&quot;&gt;Cards you’re actively working on.&lt;/p&gt;
+          &lt;ul class=&quot;cards&quot; id=&quot;cards-inprogress&quot;&gt;&lt;/ul&gt;
+        &lt;/section&gt;
+
+        &lt;section class=&quot;lane&quot; aria-labelledby=&quot;lane-done&quot;&gt;
+          &lt;h2 id=&quot;lane-done&quot;&gt;Done&lt;/h2&gt;
+          &lt;p class=&quot;hint&quot;&gt;Cards you’ve completed.&lt;/p&gt;
+          &lt;ul class=&quot;cards&quot; id=&quot;cards-done&quot;&gt;&lt;/ul&gt;
+        &lt;/section&gt;
+      &lt;/section&gt;
+    &lt;/main&gt;
+
+    &lt;script type=&quot;module&quot; src=&quot;./src/app.js&quot;&gt;&lt;/script&gt;
+  &lt;/body&gt;
+&lt;/html&gt;
+</pre></details><details class="art"><summary>src/app.js — ES module · 186 lines</summary><pre>import {
+  addCard,
+  createEmptyState,
+  laneLabels,
+  loadFromStorage,
+  moveCard,
+  removeCard,
+  saveToStorage,
+} from &#x27;./boardState.js&#x27;;
+
+const els = {
+  form: /** @type {HTMLFormElement} */ (document.getElementById(&#x27;add-form&#x27;)),
+  input: /** @type {HTMLInputElement} */ (document.getElementById(&#x27;task-title&#x27;)),
+  error: /** @type {HTMLDivElement} */ (document.getElementById(&#x27;task-error&#x27;)),
+  storageError: /** @type {HTMLDivElement} */ (document.getElementById(&#x27;storage-error&#x27;)),
+  lists: {
+    todo: /** @type {HTMLUListElement} */ (document.getElementById(&#x27;cards-todo&#x27;)),
+    inprogress: /** @type {HTMLUListElement} */ (document.getElementById(&#x27;cards-inprogress&#x27;)),
+    done: /** @type {HTMLUListElement} */ (document.getElementById(&#x27;cards-done&#x27;)),
+  },
+};
+
+/** @typedef {{ state: import(&#x27;./boardState.js&#x27;).BoardState, lastMovedCardId: string|null }} AppState */
+
+/** @type {AppState} */
+let app = { state: createEmptyState(), lastMovedCardId: null };
+
+function showInlineError(message) {
+  els.error.textContent = message;
+  els.error.hidden = !message;
+}
+
+function showStorageError(message) {
+  els.storageError.textContent = message;
+  els.storageError.hidden = !message;
+}
+
+function persist() {
+  try {
+    saveToStorage(window.localStorage, app.state);
+    showStorageError(&#x27;&#x27;);
+  } catch {
+    showStorageError(&#x27;Could not save to browser storage. Your changes may not persist.&#x27;);
+  }
+}
+
+function focusCardById(cardId) {
+  if (!cardId) return;
+  const btn = document.querySelector(`[data-focus-card-id=&quot;${CSS.escape(cardId)}&quot;]`);
+  if (btn &amp;&amp; btn instanceof HTMLElement) btn.focus();
+}
+
+function render() {
+  for (const lane of /** @type {const} */ ([&#x27;todo&#x27;, &#x27;inprogress&#x27;, &#x27;done&#x27;])) {
+    els.lists[lane].replaceChildren();
+    const cards = app.state.cards.filter((c) =&gt; c.lane === lane);
+
+    if (cards.length === 0) {
+      const li = document.createElement(&#x27;li&#x27;);
+      li.className = &#x27;help&#x27;;
+      li.textContent = &#x27;Empty.&#x27;;
+      els.lists[lane].append(li);
+      continue;
+    }
+
+    for (const card of cards) {
+      const li = document.createElement(&#x27;li&#x27;);
+      li.className = &#x27;card&#x27;;
+
+      const title = document.createElement(&#x27;p&#x27;);
+      title.className = &#x27;card-title&#x27;;
+      title.textContent = card.title;
+
+      const actions = document.createElement(&#x27;div&#x27;);
+      actions.className = &#x27;card-actions&#x27;;
+
+      const moveLeft = document.createElement(&#x27;button&#x27;);
+      moveLeft.type = &#x27;button&#x27;;
+      moveLeft.textContent = &#x27;Move left&#x27;;
+      moveLeft.dataset.action = &#x27;move-backward&#x27;;
+      moveLeft.dataset.cardId = card.id;
+      moveLeft.setAttribute(&#x27;aria-label&#x27;, `Move “${card.title}” to previous lane`);
+      moveLeft.disabled = lane === &#x27;todo&#x27;;
+
+      const moveRight = document.createElement(&#x27;button&#x27;);
+      moveRight.type = &#x27;button&#x27;;
+      moveRight.textContent = &#x27;Move right&#x27;;
+      moveRight.dataset.action = &#x27;move-forward&#x27;;
+      moveRight.dataset.cardId = card.id;
+      moveRight.setAttribute(&#x27;aria-label&#x27;, `Move “${card.title}” to next lane`);
+      moveRight.disabled = lane === &#x27;done&#x27;;
+
+      const remove = document.createElement(&#x27;button&#x27;);
+      remove.type = &#x27;button&#x27;;
+      remove.textContent = &#x27;Remove&#x27;;
+      remove.className = &#x27;btn-danger&#x27;;
+      remove.dataset.action = &#x27;remove&#x27;;
+      remove.dataset.cardId = card.id;
+      remove.setAttribute(&#x27;aria-label&#x27;, `Remove “${card.title}”`);
+
+      // The first enabled control becomes the focus target when we move.
+      const focusTarget = !moveLeft.disabled ? moveLeft : moveRight;
+      focusTarget.setAttribute(&#x27;data-focus-card-id&#x27;, card.id);
+
+      actions.append(moveLeft, moveRight, remove);
+      li.append(title, actions);
+      els.lists[lane].append(li);
+    }
+  }
+
+  if (app.lastMovedCardId) {
+    const id = app.lastMovedCardId;
+    app.lastMovedCardId = null;
+    queueMicrotask(() =&gt; focusCardById(id));
+  }
+}
+
+function dispatch(action) {
+  showInlineError(&#x27;&#x27;);
+
+  try {
+    switch (action.type) {
+      case &#x27;add&#x27;: {
+        app.state = addCard(app.state, action.title);
+        app.lastMovedCardId = app.state.cards[0]?.id ?? null;
+        persist();
+        render();
+        els.input.focus();
+        els.input.select();
+        return;
+      }
+      case &#x27;move&#x27;: {
+        app.state = moveCard(app.state, action.cardId, action.direction);
+        app.lastMovedCardId = action.cardId;
+        persist();
+        render();
+        return;
+      }
+      case &#x27;remove&#x27;: {
+        app.state = removeCard(app.state, action.cardId);
+        persist();
+        render();
+        els.input.focus();
+        return;
+      }
+      default:
+        return;
+    }
+  } catch (e) {
+    showInlineError(e instanceof Error ? e.message : &#x27;Something went wrong&#x27;);
+  }
+}
+
+function onBoardClick(e) {
+  const target = e.target;
+  if (!(target instanceof HTMLButtonElement)) return;
+  const action = target.dataset.action;
+  const cardId = target.dataset.cardId;
+  if (!action || !cardId) return;
+
+  if (action === &#x27;remove&#x27;) dispatch({ type: &#x27;remove&#x27;, cardId });
+  if (action === &#x27;move-forward&#x27;) dispatch({ type: &#x27;move&#x27;, cardId, direction: &#x27;forward&#x27; });
+  if (action === &#x27;move-backward&#x27;) dispatch({ type: &#x27;move&#x27;, cardId, direction: &#x27;backward&#x27; });
+}
+
+function hydrate() {
+  try {
+    app.state = loadFromStorage(window.localStorage);
+    showStorageError(&#x27;&#x27;);
+  } catch {
+    app.state = createEmptyState();
+    showStorageError(&#x27;Could not read browser storage; starting with an empty board.&#x27;);
+  }
+}
+
+document.addEventListener(&#x27;click&#x27;, onBoardClick);
+els.form.addEventListener(&#x27;submit&#x27;, (e) =&gt; {
+  e.preventDefault();
+  dispatch({ type: &#x27;add&#x27;, title: els.input.value });
+});
+
+hydrate();
+render();
+
+window.__RUN_BOARD_LANES__ = laneLabels;
+</pre></details><details class="art"><summary>src/boardState.js — ES module · 104 lines</summary><pre>const LANES = /** @type {const} */ ([&#x27;todo&#x27;, &#x27;inprogress&#x27;, &#x27;done&#x27;]);
+
+export const laneLabels = /** @type {const} */ ({
+  todo: &#x27;To do&#x27;,
+  inprogress: &#x27;In progress&#x27;,
+  done: &#x27;Done&#x27;,
+});
+
+export const storageKey = &#x27;run-board:v1&#x27;;
+
+/**
+ * @typedef {typeof LANES[number]} Lane
+ * @typedef {{ id: string, title: string, lane: Lane }} Card
+ * @typedef {{ cards: Card[] }} BoardState
+ */
+
+export function createEmptyState() {
+  /** @type {BoardState} */
+  return { cards: [] };
+}
+
+export function laneIndex(lane) {
+  return LANES.indexOf(lane);
+}
+
+export function canMove(cardLane, direction) {
+  const idx = laneIndex(cardLane);
+  if (idx === -1) return false;
+  const next = direction === &#x27;forward&#x27; ? idx + 1 : idx - 1;
+  return next &gt;= 0 &amp;&amp; next &lt; LANES.length;
+}
+
+function defaultIdFactory() {
+  // Prefer crypto.randomUUID in browsers; fall back to time+random for tests/older envs.
+  if (typeof crypto !== &#x27;undefined&#x27; &amp;&amp; typeof crypto.randomUUID === &#x27;function&#x27;) return crypto.randomUUID();
+  return `c_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+export function addCard(state, title, idFactory = defaultIdFactory) {
+  const trimmed = String(title ?? &#x27;&#x27;).trim();
+  if (!trimmed) throw new Error(&#x27;Title is required&#x27;);
+  /** @type {Card} */
+  const card = { id: idFactory(), title: trimmed, lane: &#x27;todo&#x27; };
+  return { cards: [card, ...state.cards] };
+}
+
+export function moveCard(state, cardId, direction) {
+  const idx = state.cards.findIndex((c) =&gt; c.id === cardId);
+  if (idx === -1) return state;
+  const card = state.cards[idx];
+  if (!canMove(card.lane, direction)) return state;
+
+  const newLane = /** @type {Lane} */ (
+    LANES[laneIndex(card.lane) + (direction === &#x27;forward&#x27; ? 1 : -1)]
+  );
+
+  const nextCards = state.cards.slice();
+  nextCards[idx] = { ...card, lane: newLane };
+  return { cards: nextCards };
+}
+
+export function removeCard(state, cardId) {
+  const nextCards = state.cards.filter((c) =&gt; c.id !== cardId);
+  if (nextCards.length === state.cards.length) return state;
+  return { cards: nextCards };
+}
+
+export function encodeState(state) {
+  return JSON.stringify({ v: 1, cards: state.cards });
+}
+
+export function decodeState(raw) {
+  if (typeof raw !== &#x27;string&#x27; || raw.trim() === &#x27;&#x27;) return createEmptyState();
+  try {
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== &#x27;object&#x27;) return createEmptyState();
+    if (parsed.v !== 1 || !Array.isArray(parsed.cards)) return createEmptyState();
+
+    /** @type {Card[]} */
+    const cards = [];
+    for (const c of parsed.cards) {
+      if (!c || typeof c !== &#x27;object&#x27;) continue;
+      const id = c.id;
+      const title = c.title;
+      const lane = c.lane;
+      if (typeof id !== &#x27;string&#x27; || typeof title !== &#x27;string&#x27;) continue;
+      if (!LANES.includes(lane)) continue;
+      cards.push({ id, title, lane });
+    }
+    return { cards };
+  } catch {
+    return createEmptyState();
+  }
+}
+
+export function loadFromStorage(storage) {
+  const raw = storage.getItem(storageKey);
+  return decodeState(raw);
+}
+
+export function saveToStorage(storage, state) {
+  storage.setItem(storageKey, encodeState(state));
+}
+</pre></details><details class="art"><summary>tests/boardState.test.js — unit suite · 92 lines</summary><pre>import { test } from &#x27;node:test&#x27;;
+import assert from &#x27;node:assert/strict&#x27;;
+
+import {
+  addCard,
+  createEmptyState,
+  decodeState,
+  encodeState,
+  moveCard,
+  removeCard,
+  storageKey,
+} from &#x27;../src/boardState.js&#x27;;
+
+test(&#x27;addCard adds a trimmed title into the To do lane&#x27;, () =&gt; {
+  const idFactory = () =&gt; &#x27;c1&#x27;;
+  const next = addCard(createEmptyState(), &#x27;  Write tests  &#x27;, idFactory);
+  assert.equal(next.cards.length, 1);
+  assert.deepEqual(next.cards[0], { id: &#x27;c1&#x27;, title: &#x27;Write tests&#x27;, lane: &#x27;todo&#x27; });
+});
+
+test(&#x27;addCard throws on empty/whitespace title&#x27;, () =&gt; {
+  assert.throws(() =&gt; addCard(createEmptyState(), &#x27;   &#x27;, () =&gt; &#x27;x&#x27;), /Title is required/);
+});
+
+test(&#x27;moveCard moves only to adjacent lanes forward/backward&#x27;, () =&gt; {
+  const state = {
+    cards: [
+      { id: &#x27;a&#x27;, title: &#x27;A&#x27;, lane: &#x27;todo&#x27; },
+      { id: &#x27;b&#x27;, title: &#x27;B&#x27;, lane: &#x27;inprogress&#x27; },
+      { id: &#x27;c&#x27;, title: &#x27;C&#x27;, lane: &#x27;done&#x27; },
+    ],
+  };
+
+  const s1 = moveCard(state, &#x27;a&#x27;, &#x27;forward&#x27;);
+  assert.equal(s1.cards.find((c) =&gt; c.id === &#x27;a&#x27;)?.lane, &#x27;inprogress&#x27;);
+
+  const s2 = moveCard(state, &#x27;b&#x27;, &#x27;backward&#x27;);
+  assert.equal(s2.cards.find((c) =&gt; c.id === &#x27;b&#x27;)?.lane, &#x27;todo&#x27;);
+
+  // Cannot move past ends.
+  assert.equal(moveCard(state, &#x27;a&#x27;, &#x27;backward&#x27;), state);
+  assert.equal(moveCard(state, &#x27;c&#x27;, &#x27;forward&#x27;), state);
+});
+
+test(&#x27;moveCard is a no-op for unknown card id&#x27;, () =&gt; {
+  const state = { cards: [{ id: &#x27;a&#x27;, title: &#x27;A&#x27;, lane: &#x27;todo&#x27; }] };
+  assert.equal(moveCard(state, &#x27;nope&#x27;, &#x27;forward&#x27;), state);
+});
+
+test(&#x27;removeCard removes a card by id and is a no-op if id not found&#x27;, () =&gt; {
+  const state = {
+    cards: [
+      { id: &#x27;a&#x27;, title: &#x27;A&#x27;, lane: &#x27;todo&#x27; },
+      { id: &#x27;b&#x27;, title: &#x27;B&#x27;, lane: &#x27;done&#x27; },
+    ],
+  };
+
+  const s1 = removeCard(state, &#x27;a&#x27;);
+  assert.deepEqual(
+    s1.cards.map((c) =&gt; c.id),
+    [&#x27;b&#x27;],
+  );
+
+  assert.equal(removeCard(state, &#x27;nope&#x27;), state);
+});
+
+test(&#x27;encodeState/decodeState round-trip&#x27;, () =&gt; {
+  const state = {
+    cards: [
+      { id: &#x27;a&#x27;, title: &#x27;A&#x27;, lane: &#x27;todo&#x27; },
+      { id: &#x27;b&#x27;, title: &#x27;B&#x27;, lane: &#x27;inprogress&#x27; },
+      { id: &#x27;c&#x27;, title: &#x27;C&#x27;, lane: &#x27;done&#x27; },
+    ],
+  };
+
+  const raw = encodeState(state);
+  const decoded = decodeState(raw);
+  assert.deepEqual(decoded, state);
+});
+
+test(&#x27;decodeState falls back to empty on corrupted or wrong-shape input&#x27;, () =&gt; {
+  assert.deepEqual(decodeState(&#x27;&#x27;), createEmptyState());
+  assert.deepEqual(decodeState(&#x27;not json&#x27;), createEmptyState());
+  assert.deepEqual(decodeState(&#x27;{&quot;v&quot;:2,&quot;cards&quot;:[]}&#x27;), createEmptyState());
+  assert.deepEqual(decodeState(&#x27;{&quot;v&quot;:1,&quot;cards&quot;:[{&quot;id&quot;:1,&quot;title&quot;:true,&quot;lane&quot;:&quot;todo&quot;}]}&#x27;), createEmptyState());
+});
+
+test(&#x27;persistence helpers use the expected storage key&#x27;, () =&gt; {
+  assert.equal(typeof storageKey, &#x27;string&#x27;);
+  assert.match(storageKey, /run-board/);
+});
+</pre></details><details class="art"><summary>e2e/board.spec.js — e2e suite · 43 lines</summary><pre>import { test, expect } from &#x27;@playwright/test&#x27;;
+
+test.beforeEach(async ({ page }) =&gt; {
+  await page.goto(&#x27;/&#x27;);
+  await page.evaluate(() =&gt; window.localStorage.clear());
+});
+
+test(&#x27;add a card, move across lanes, refresh, and it stays in Done&#x27;, async ({ page }) =&gt; {
+  await page.getByLabel(&#x27;Task title&#x27;).fill(&#x27;Ship sprint 1&#x27;);
+  await page.getByRole(&#x27;button&#x27;, { name: &#x27;Add&#x27; }).click();
+
+  const todoLane = page.getByRole(&#x27;region&#x27;, { name: &#x27;To do&#x27; });
+  await expect(todoLane.getByText(&#x27;Ship sprint 1&#x27;)).toBeVisible();
+
+  await todoLane.getByRole(&#x27;button&#x27;, { name: &#x27;Move “Ship sprint 1” to next lane&#x27; }).click();
+  const inProgressLane = page.getByRole(&#x27;region&#x27;, { name: &#x27;In progress&#x27; });
+  await expect(inProgressLane.getByText(&#x27;Ship sprint 1&#x27;)).toBeVisible();
+
+  await inProgressLane.getByRole(&#x27;button&#x27;, { name: &#x27;Move “Ship sprint 1” to next lane&#x27; }).click();
+  const doneLane = page.getByRole(&#x27;region&#x27;, { name: &#x27;Done&#x27; });
+  await expect(doneLane.getByText(&#x27;Ship sprint 1&#x27;)).toBeVisible();
+
+  await page.reload();
+  await expect(page.getByRole(&#x27;region&#x27;, { name: &#x27;Done&#x27; }).getByText(&#x27;Ship sprint 1&#x27;)).toBeVisible();
+});
+
+test(&#x27;keyboard-only: add, move right twice, then remove&#x27;, async ({ page }) =&gt; {
+  await page.getByLabel(&#x27;Task title&#x27;).fill(&#x27;Keyboard only&#x27;);
+  await page.getByRole(&#x27;button&#x27;, { name: &#x27;Add&#x27; }).press(&#x27;Enter&#x27;);
+
+  await page.getByRole(&#x27;button&#x27;, { name: &#x27;Move “Keyboard only” to next lane&#x27; }).focus();
+  await page.keyboard.press(&#x27;Enter&#x27;);
+  await expect(page.getByRole(&#x27;region&#x27;, { name: &#x27;In progress&#x27; }).getByText(&#x27;Keyboard only&#x27;)).toBeVisible();
+
+  await page.getByRole(&#x27;button&#x27;, { name: &#x27;Move “Keyboard only” to next lane&#x27; }).focus();
+  await page.keyboard.press(&#x27;Enter&#x27;);
+  await expect(page.getByRole(&#x27;region&#x27;, { name: &#x27;Done&#x27; }).getByText(&#x27;Keyboard only&#x27;)).toBeVisible();
+
+  await page.getByRole(&#x27;button&#x27;, { name: &#x27;Remove “Keyboard only”&#x27; }).focus();
+  await page.keyboard.press(&#x27;Enter&#x27;);
+  await expect(page.getByText(&#x27;Keyboard only&#x27;)).toHaveCount(0);
+});
+</pre></details><details class="art"><summary>playwright.config.js · 19 lines</summary><pre>import { defineConfig } from &#x27;@playwright/test&#x27;;
+
+export default defineConfig({
+  testDir: &#x27;./e2e&#x27;,
+  use: {
+    baseURL: &#x27;http://127.0.0.1:4173&#x27;,
+  },
+  // Force all e2e tests to share the same storage state (same origin)
+  // so localStorage persists across page reloads within a test.
+  contextOptions: {
+    storageState: undefined,
+  },
+  webServer: {
+    command: &#x27;python -m http.server 4173&#x27;,
+    url: &#x27;http://127.0.0.1:4173&#x27;,
+    reuseExistingServer: true,
+  },
+});
+</pre></details><details class="art"><summary>test_evidence/summary.md — the written proof · 448 words</summary><pre># Sprint 1 — run-board
+
+## What shipped
+
+A dependency-light, static three-lane task board you can open via `python -m http.server` and load `index.html`.
+
+User-visible behavior:
+- The board always renders **exactly three lanes**: **To do**, **In progress**, and **Done**.
+- You can add a new task using the **“Task title”** text input and the **“Add”** button. New tasks always start in **To do**.
+- Each card has explicit controls to:
+  - **Move left** (to the previous lane)
+  - **Move right** (to the next lane)
+  - **Remove** (delete the card)
+- All mutations persist to **`localStorage`**; refreshing the page restores the same cards in the same lanes.
+
+Implementation notes:
+- Pure logic lives in `src/boardState.js` (add/move/remove + persistence encode/decode).
+- DOM wiring lives in `src/app.js` and renders from a single in-memory state object.
+
+## Accessibility &amp; keyboard operability
+
+- Semantic elements by construction:
+  - Add flow is a real `&lt;form&gt;` with a `&lt;label for&gt;` and a submit `&lt;button&gt;`.
+  - Card actions are real `&lt;button&gt;` elements (no clickable divs).
+  - Lanes are `&lt;section&gt;` elements labeled by headings, so automated tests (and AT) can locate them as **regions**.
+- Every interactive control has an accessible name:
+  - “Add” button is named by its visible label.
+  - Move/remove buttons include specific `aria-label` text like `Move “{title}” to next lane` and `Remove “{title}”`.
+- Keyboard-only operation:
+  - Tab reaches the input and every card control.
+  - Buttons activate via Enter/Space (native button behavior).
+  - Focus is visible via `:focus-visible` outline with a high-contrast ring.
+
+## Resilience
+
+- Empty lanes render an “Empty.” hint (no blank/white screen).
+- Storage failures are handled with a non-blocking alert message; the app still renders and works in-memory.
+
+## Unit tests (Node)
+
+- Runner: `node --test`
+- File: `tests/boardState.test.js`
+- Coverage:
+  - `addCard` trims input, requires a non-empty title, and adds into the `todo` lane.
+  - `moveCard` enforces adjacent-lane moves only and blocks moving past the ends.
+  - `removeCard` removes by id and is a no-op when the id doesn’t exist.
+  - `encodeState`/`decodeState` round-trip and corrupted/wrong-shape decode fallback to an empty board.
+
+Result: **8/8 unit tests passed** (see `test_evidence/unit.txt`).
+
+## E2E tests (Playwright)
+
+- Runner: `npx playwright test`
+- File: `e2e/board.spec.js`
+- Coverage:
+  1. Adds a card, moves it across lanes into **Done**, refreshes the page, and verifies it is still visible in the **Done** lane.
+  2. Verifies **keyboard-only** operation by focusing buttons and using **Enter** to move a card and then remove it.
+
+Result: **2/2 e2e tests passed** (see `test_evidence/e2e.txt`).
+
+## Known gaps / tradeoffs
+
+- Focus after remove currently returns to the add input (simple and predictable). A more elaborate approach could focus the next card in the lane, but wasn’t required for this slice.
+</pre></details><details class="art"><summary>reverify_unit.txt — the harness&#x27;s OWN unit re-run · 62 lines</summary><pre>$ node --test
+[exit 0]
+
+TAP version 13
+# Subtest: addCard adds a trimmed title into the To do lane
+ok 1 - addCard adds a trimmed title into the To do lane
+  ---
+  duration_ms: 2.8418
+  type: &#x27;test&#x27;
+  ...
+# Subtest: addCard throws on empty/whitespace title
+ok 2 - addCard throws on empty/whitespace title
+  ---
+  duration_ms: 0.6004
+  type: &#x27;test&#x27;
+  ...
+# Subtest: moveCard moves only to adjacent lanes forward/backward
+ok 3 - moveCard moves only to adjacent lanes forward/backward
+  ---
+  duration_ms: 0.416
+  type: &#x27;test&#x27;
+  ...
+# Subtest: moveCard is a no-op for unknown card id
+ok 4 - moveCard is a no-op for unknown card id
+  ---
+  duration_ms: 0.1569
+  type: &#x27;test&#x27;
+  ...
+# Subtest: removeCard removes a card by id and is a no-op if id not found
+ok 5 - removeCard removes a card by id and is a no-op if id not found
+  ---
+  duration_ms: 0.3103
+  type: &#x27;test&#x27;
+  ...
+# Subtest: encodeState/decodeState round-trip
+ok 6 - encodeState/decodeState round-trip
+  ---
+  duration_ms: 0.4644
+  type: &#x27;test&#x27;
+  ...
+# Subtest: decodeState falls back to empty on corrupted or wrong-shape input
+ok 7 - decodeState falls back to empty on corrupted or wrong-shape input
+  ---
+  duration_ms: 0.3531
+  type: &#x27;test&#x27;
+  ...
+# Subtest: persistence helpers use the expected storage key
+ok 8 - persistence helpers use the expected storage key
+  ---
+  duration_ms: 0.265
+  type: &#x27;test&#x27;
+  ...
+1..8
+# tests 8
+# suites 0
+# pass 8
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 151.4109
+</pre></details><details class="art"><summary>reverify_e2e.txt — the harness&#x27;s OWN e2e re-run · 27 lines</summary><pre>$ npx playwright test
+[exit 0]
+
+[WebServer] ::ffff:127.0.0.1 - - [05/Jul/2026 11:19:43] &quot;GET / HTTP/1.1&quot; 200 -
+
+
+Running 2 tests using 1 worker
+
+[WebServer] ::ffff:127.0.0.1 - - [05/Jul/2026 11:19:44] &quot;GET / HTTP/1.1&quot; 200 -
+
+[WebServer] ::ffff:127.0.0.1 - - [05/Jul/2026 11:19:44] &quot;GET /src/app.js HTTP/1.1&quot; 200 -
+
+[WebServer] ::ffff:127.0.0.1 - - [05/Jul/2026 11:19:44] &quot;GET /src/boardState.js HTTP/1.1&quot; 200 -
+
+[WebServer] ::ffff:127.0.0.1 - - [05/Jul/2026 11:19:44] &quot;GET / HTTP/1.1&quot; 304 -
+
+  ✓  1 e2e\board.spec.js:8:1 › add a card, move across lanes, refresh, and it stays in Done (435ms)
+[WebServer] ::ffff:127.0.0.1 - - [05/Jul/2026 11:19:44] &quot;GET / HTTP/1.1&quot; 200 -
+
+[WebServer] ::ffff:127.0.0.1 - - [05/Jul/2026 11:19:44] &quot;GET /src/app.js HTTP/1.1&quot; 200 -
+
+[WebServer] ::ffff:127.0.0.1 - - [05/Jul/2026 11:19:44] &quot;GET /src/boardState.js HTTP/1.1&quot; 200 -
+
+  ✓  2 e2e\board.spec.js:27:1 › keyboard-only: add, move right twice, then remove (216ms)
+
+  2 passed (2.6s)
+</pre></details>
+
+<div class="note"><b>Reading the errors:</b> most <span class="err">err</span> markers are benign — the
+model retrying a <code>read_file</code> against an offloaded scratch path, a reviewer probing a file
+that doesn't exist, or the DoD oracle's Windows-only floor probe. The engineering flow itself completed:
+size → build → unit + e2e tests → run &amp; capture → review under pressure. The verdict box at the top
+is the honest answer: it re-runs the shipped suites in a clean process.</div>
+
+<footer>Generated from reports/frontend-engineer-artifacts/board/flow.log — Frontend Engineer beat, model gpt-5.2 (Azure). Press E to expand all, C to collapse subagents.</footer>
+</div>
+
+<script>
+  document.addEventListener('keydown', e => {
+    if (e.key === 'e' || e.key === 'E') document.querySelectorAll('details').forEach(d => d.open = true);
+    if (e.key === 'c' || e.key === 'C') document.querySelectorAll('details.sub').forEach(d => d.open = false);
+  });
+</script>
+</body></html>
