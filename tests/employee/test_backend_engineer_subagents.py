@@ -115,6 +115,26 @@ class TestApiVerifierDeclaration:
         assert "restart" in desc
 
 
+# --- the beat time budget (the heaviest beat: build a running service, boot it, restart it, verify) ---
+
+
+class TestBackendEngineerBeatBudget:
+    def test_beat_timeout_is_sized_for_the_full_sandwich(self) -> None:
+        # The backend beat boots the built service AND restarts it (durability) AND runs the test
+        # sandwich — far more wall-clock than the 90s DreamBeatRunner default. It must set its own.
+        manifest = backend_engineer_plugin().manifest
+        assert manifest.beat_timeout_s is not None
+        assert manifest.beat_timeout_s >= 300.0
+
+    def test_lease_ttl_outlives_the_beat_timeout(self) -> None:
+        # The stale-run reaper must not claim a beat that is still legitimately running: the run lease
+        # has to outlive the beat's own wall-clock budget.
+        manifest = backend_engineer_plugin().manifest
+        assert manifest.lease_ttl_s is not None
+        assert manifest.beat_timeout_s is not None
+        assert manifest.lease_ttl_s >= manifest.beat_timeout_s
+
+
 # --- harness wiring ---
 
 
@@ -140,7 +160,7 @@ class TestApiVerifierWiring:
 
     def test_beat_config_carries_the_subagent(self) -> None:
         config = role_beat_config(backend_engineer_plugin().manifest)
-        assert {sa.name for sa in config.subagents} == {"api_verifier"}
+        assert "api_verifier" in {sa.name for sa in config.subagents}
 
     def test_projection_offers_the_verifier_at_runtime(self) -> None:
         config = role_beat_config(backend_engineer_plugin().manifest)

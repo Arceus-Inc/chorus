@@ -18,7 +18,10 @@ from chorus.roles._manifest import (
     SandboxTier,
 )
 from chorus_employee.backend_engineer._brief import BACKEND_ENGINEER_BRIEF
-from chorus_employee.backend_engineer._subagents import API_VERIFIER_SUBAGENT
+from chorus_employee.backend_engineer._subagents import (
+    API_VERIFIER_SUBAGENT,
+    TEST_AUTHOR_SUBAGENT,
+)
 
 
 def backend_engineer_manifest() -> RoleManifest:
@@ -61,6 +64,14 @@ def backend_engineer_manifest() -> RoleManifest:
         max_turns=18,
         # — per-beat sprint budget (spec 05): a build cools to green over a few passes in one beat —
         max_sprints=6,
+        # — wall-clock per beat (DreamBeatRunner) — the heaviest beat of any role: it BUILDS a running
+        # service, BOOTS it, RESTARTS it (durability proof), and runs the full test sandwich (test_author
+        # + api_verifier + test_evidence), each of which spends real wall-clock (server polls, sleeps,
+        # subprocesses) on top of many model turns. The 90s default is far too tight; size it to the work.
+        beat_timeout_s=600.0,
+        # — run-lease TTL — must OUTLIVE the beat's own wall-clock budget so the stale-run reaper never
+        # claims a beat that is still legitimately running.
+        lease_ttl_s=900.0,
         # — opt-in surfaces off by default (the Playwright/DB MCP + net-allowlist are later slices) —
         mcp=False,
         plugins=False,
@@ -73,10 +84,11 @@ def backend_engineer_manifest() -> RoleManifest:
         # dream's credential guard, command-deny list, and worktree confinement still apply.
         sandbox=SandboxTier.UNRESTRICTED,
         # — subagents (Tier-1, role-owned) —
-        # The API-Verifier: an independent grader the engineer spawns after the unit bundle is green,
-        # to prove the service RUNS — it boots the built service on a real port and probes it over
-        # HTTP, returning a typed ApiTestVerdict. Read + run + write only; it verifies, never fixes.
-        subagents=(API_VERIFIER_SUBAGENT,),
+        # The validation sandwich (spec §06): the Test-Author writes the tests for the change
+        # independently of the code (the 'pre' layer), and the API-Verifier boots the built service and
+        # probes it over real HTTP (the 'live' layer, proving it RUNS). Each is capability-minimised to
+        # a subset of Bex's tools and returns a typed, runtime-validated verdict.
+        subagents=(TEST_AUTHOR_SUBAGENT, API_VERIFIER_SUBAGENT),
     )
 
 

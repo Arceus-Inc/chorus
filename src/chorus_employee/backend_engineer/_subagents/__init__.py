@@ -13,10 +13,18 @@ from chorus_employee.backend_engineer._subagents._api_verifier import (
     ApiTestVerdict,
     api_test_verdict_output_schema,
 )
+from chorus_employee.backend_engineer._subagents._test_author import (
+    TEST_AUTHOR_SUBAGENT,
+    TestPlanVerdict,
+    plan_verdict_output_schema,
+)
 
 __all__ = [
     "API_VERIFIER_SUBAGENT",
+    "TEST_AUTHOR_SUBAGENT",
     "ApiCheck",
     "ApiTestVerdict",
+    "TestPlanVerdict",
     "api_test_verdict_output_schema",
+    "plan_verdict_output_schema",
 ]

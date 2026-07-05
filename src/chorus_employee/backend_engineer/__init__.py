@@ -22,9 +22,12 @@ from chorus_employee.backend_engineer._dod import backend_engineer_dod
 from chorus_employee.backend_engineer._harness import backend_engineer_manifest
 from chorus_employee.backend_engineer._subagents import (
     API_VERIFIER_SUBAGENT,
+    TEST_AUTHOR_SUBAGENT,
     ApiCheck,
     ApiTestVerdict,
+    TestPlanVerdict,
     api_test_verdict_output_schema,
+    plan_verdict_output_schema,
 )
 
 
@@ -41,10 +44,13 @@ def backend_engineer_plugin() -> RolePlugin:
 __all__ = [
     "API_VERIFIER_SUBAGENT",
     "BACKEND_ENGINEER_BRIEF",
+    "TEST_AUTHOR_SUBAGENT",
     "ApiCheck",
     "ApiTestVerdict",
+    "TestPlanVerdict",
     "api_test_verdict_output_schema",
     "backend_engineer_dod",
     "backend_engineer_manifest",
     "backend_engineer_plugin",
+    "plan_verdict_output_schema",
 ]
