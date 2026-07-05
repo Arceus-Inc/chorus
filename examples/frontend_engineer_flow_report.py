@@ -11,8 +11,9 @@ file with inline CSS + tiny JS for the collapsibles.
 What makes this report different from a transcript: it leads with the **independent re-verification
 verdict** — the DoD floor result plus the exit codes of the unit and e2e suites RE-RUN by the harness in
 a clean process against the shipped worktree. A green transcript that fails the honest re-run reads
-``NOT PROVEN`` here. It also embeds the produced artifacts (``index.html``, the ES modules, the unit +
-e2e suites, the evidence summary, and the captured re-run logs).
+``NOT PROVEN`` here. It also embeds the produced artifacts (the ``package.json`` that reveals the chosen
+stack, the app entry + its source/components, the unit + e2e suites, the evidence summary, and the
+captured re-run logs) — globbed across whatever layout the stack the engineer picked happens to use.
 
 Usage:
   uv run python examples/frontend_engineer_flow_report.py            # regenerate every task's report
@@ -179,9 +180,9 @@ def parse_log(text: str) -> tuple[str, list[Node], list[Eval], dict[str, str]]:
 # --- phase grouping ---------------------------------------------------------
 
 _PHASES = [
-    ("Understand &amp; size", "Read the intent and any existing code, load the craft <b>skill</b> that fits, and pick the smallest slice that <em>actually works</em>."),
-    ("Build the slice", "Write the running app — <code>index.html</code> + ES modules + CSS — accessible by construction and wired end to end so the behaviour happens in the browser."),
-    ("Author the tests", "Write Node <b>unit</b> specs for the logic and a real-browser <b>Playwright</b> e2e that drives the app the way a user does."),
+    ("Understand &amp; size", "Read the intent and any existing code, load the craft <b>skill</b> that fits, <b>choose the stack</b> that suits the job, and pick the smallest slice that <em>actually works</em>."),
+    ("Build the slice", "Write the running app in the stack it chose — accessible by construction and wired end to end so the behaviour happens in the browser."),
+    ("Author the tests", "Write <b>unit</b> tests for the logic (in whatever runner the stack uses) and a real-browser <b>Playwright</b> e2e that drives the app the way a user does."),
     ("Run &amp; capture the proof", "Install deps, run both suites, and tee the <em>real</em> output into the durable <code>test_evidence/</code> bundle."),
     ("Review under pressure", "Spawn the read-only <b>code_reviewer</b> and <b>ui_tester</b>, self-check with <b>test_evidence</b>, address every blocker/major, and re-run until green."),
 ]
@@ -197,7 +198,7 @@ def phase_for(node: Node, current: int) -> int:
         wanted = max(wanted, 4)
     elif node.tool in {"bash", "run_command"}:
         cmd = node.payload.lower()
-        if any(k in cmd for k in ("npm install", "npm test", "playwright test", "node --test", "npm ci")):
+        if any(k in cmd for k in ("npm install", "npm test", "npm run", "playwright test", "vitest", "jest", "node --test", "npm ci")):
             wanted = max(wanted, 3)
     elif node.tool == "write_file":
         p = node.payload
@@ -349,7 +350,7 @@ def build_html(task_dir: Path) -> str:
         _verdict_row("DoD floor (after-beat gate)", "pass" if dod_pass else "fail", dod_pass)
         + _verdict_row(
             "Independent unit re-run", f"exit {unit_exit}", unit_ok,
-            "node --test, clean process, shipped worktree",
+            "npm test, clean process, shipped worktree",
         )
         + _verdict_row(
             "Independent e2e re-run", f"exit {e2e_exit}", e2e_ok,
@@ -390,20 +391,49 @@ def build_html(task_dir: Path) -> str:
         for name, n in sorted(subs.items(), key=lambda kv: -kv[1])
     )
 
-    # Artifacts: the running app, its modules, both suites, the evidence summary, and the re-run proof.
+    # Artifacts: the manifest (the stack decision), the app + its source/components, both suites, the
+    # evidence summary, and the re-run proof — globbed across whatever layout the chosen stack uses.
+    src_exts = ("js", "mjs", "cjs", "ts", "mts", "jsx", "tsx", "vue", "svelte")
     art_parts: list[str] = []
-    art_parts.append(_artifact_block(task_dir, "index.html", "index.html — the running app entry"))
-    for rel in _sorted_rel(task_dir, "src/**/*.js") + _sorted_rel(task_dir, "*.js"):
-        if rel.endswith(".config.js"):
-            continue
-        art_parts.append(_artifact_block(task_dir, rel, f"{rel} — ES module"))
-    for rel in _sorted_rel(task_dir, "tests/**/*.js"):
-        art_parts.append(_artifact_block(task_dir, rel, f"{rel} — unit suite"))
-    for rel in _sorted_rel(task_dir, "e2e/**/*.js"):
-        art_parts.append(_artifact_block(task_dir, rel, f"{rel} — e2e suite"))
-    art_parts.append(_artifact_block(task_dir, "playwright.config.js", "playwright.config.js"))
+    # the manifest first — it reveals the chosen stack, its dependencies, and the wired scripts.
     art_parts.append(
-        _artifact_block(task_dir, "test_evidence/summary.md", "test_evidence/summary.md — the written proof", code=False)
+        _artifact_block(task_dir, "package.json", "package.json — the chosen stack + wired scripts", code=False)
+    )
+    # the app entry, if the stack has an HTML entry point.
+    art_parts.append(_artifact_block(task_dir, "index.html", "index.html — the app entry"))
+    # source modules / components (top-level + under src/ or app/), excluding config + test files.
+    src_rels: list[str] = []
+    for ext in src_exts:
+        for pat in (f"src/**/*.{ext}", f"app/**/*.{ext}", f"*.{ext}"):
+            src_rels += _sorted_rel(task_dir, pat)
+    for rel in sorted(set(src_rels)):
+        low = rel.lower()
+        if ".config." in low or ".test." in low or ".spec." in low or "/e2e/" in low or low.startswith("e2e/"):
+            continue
+        art_parts.append(_artifact_block(task_dir, rel, f"{rel} — source"))
+    # unit tests wherever they live (tests/, test/, or co-located *.test.* / *.spec.* under src/).
+    test_rels: list[str] = []
+    for ext in src_exts:
+        for pat in (f"tests/**/*.{ext}", f"test/**/*.{ext}", f"src/**/*.test.{ext}", f"src/**/*.spec.{ext}"):
+            test_rels += _sorted_rel(task_dir, pat)
+    for rel in sorted(set(test_rels)):
+        if "e2e" in rel.lower():
+            continue
+        art_parts.append(_artifact_block(task_dir, rel, f"{rel} — unit test"))
+    # e2e specs wherever the project keeps them.
+    e2e_rels: list[str] = []
+    for ext in src_exts:
+        e2e_rels += _sorted_rel(task_dir, f"e2e/**/*.{ext}") + _sorted_rel(task_dir, f"tests/e2e/**/*.{ext}")
+    for rel in sorted(set(e2e_rels)):
+        art_parts.append(_artifact_block(task_dir, rel, f"{rel} — e2e spec"))
+    # build + e2e config (any extension the stack uses).
+    for rel in _sorted_rel(task_dir, "vite.config.*") + _sorted_rel(task_dir, "playwright.config.*"):
+        art_parts.append(_artifact_block(task_dir, rel, f"{rel} — config"))
+    art_parts.append(
+        _artifact_block(
+            task_dir, "test_evidence/summary.md",
+            "test_evidence/summary.md — the written proof (incl. the stack decision)", code=False,
+        )
     )
     art_parts.append(
         _artifact_block(task_dir, "reverify_unit.txt", "reverify_unit.txt — the harness's OWN unit re-run")

@@ -1,17 +1,20 @@
 """Frontend Engineer hard tasks — increasingly hard, INTENT-ONLY, independently re-verified.
 
 Each task states ONLY the user-visible behaviour we want — the product and what a person can do with
-it — and says NOTHING about how to build it, what files to write, what to test, or how the work will be
-checked. Finn (the frontend_engineer role) must choose everything end to end: size the slice, build a
-working static web app, unit-test the logic, drive it in a real browser with Playwright, capture the
-evidence, run the two review subagents, and go green.
+it — and says NOTHING about how to build it, what files to write, what to test, WHICH STACK to use, or
+how the work will be checked. Finn (the frontend_engineer role) must choose everything end to end: size
+the slice, CHOOSE the frontend stack that fits (hand-written HTML/JS, a component framework, or a
+meta-framework), build a working app, unit-test the logic, drive it in a real browser with Playwright,
+capture the evidence, run the two review subagents, and go green.
 
 The load-bearing part of this script is the INDEPENDENT re-verification. After each beat lands, we do
-NOT trust the transcript or even the captured logs: we re-run the shipped code ourselves — Node's test
-runner over the unit suite and Playwright over the e2e suite — from a clean process, in the worktree the
-employee actually produced. A task only counts as truly passed when the deterministic DoD floor passes
-AND both suites go green again under our own hands. That is what makes a fabricated log or a test that
-doesn't match the app impossible to hide.
+NOT trust the transcript or even the captured logs: we re-run the shipped code ourselves — the project's
+wired unit runner via ``npm test`` and Playwright over the e2e suite — from a clean process, in the
+worktree the employee actually produced. Both re-runs are done with ``CI=1`` so any watch-mode runner
+exits instead of hanging. A task only counts as truly passed when the deterministic DoD floor passes AND
+both suites go green again under our own hands. That is what makes a fabricated log or a test that
+doesn't match the app impossible to hide — and it stays framework-agnostic because it drives only the
+neutral, stack-declared entry points (``npm test`` + ``npx playwright test``).
 
 Each task uses its own company id so the worktrees never collide. The script skips cleanly (exit 0) when
 the AZURE_OPENAI_* env vars are unset, and accepts an optional list of task keys on argv to run a subset
@@ -33,9 +36,7 @@ from chorus.events import Event, EventKind
 from chorus.roles import RoleRegistry, default_roles
 from chorus.workforce import Employee
 from chorus_employee.frontend_engineer import (
-    E2E_TESTS_DIR,
     TEST_EVIDENCE_DIR,
-    UNIT_TESTS_DIR,
     frontend_engineer_plugin,
 )
 from chorus_harness import EmployeeHarnessFactory
@@ -131,6 +132,21 @@ _TASKS: tuple[_Task, ...] = (
             "before."
         ),
     ),
+    _Task(
+        key="shop",
+        intent=(
+            "Build a small storefront that works as one continuous experience across three connected "
+            "views: a browsable list of products, a single product's detail page, and a cart. From the "
+            "list a person can open any product to see its details and add it to the cart; from a "
+            "product's details they can return to browsing; and from anywhere they can open the cart to "
+            "change item quantities or remove items. A running count of items in the cart and the current "
+            "total are visible at all times and stay correct as things are added, changed, and removed "
+            "while moving between the different views. Navigating the storefront must feel like a real "
+            "app: a person can use the browser's back and forward buttons to retrace their steps, opening "
+            "a link to a specific product or the cart directly lands on the right view, and whatever is "
+            "in the cart survives all of that moving around."
+        ),
+    ),
 )
 
 
@@ -194,11 +210,13 @@ def _force_rmtree(path: Path) -> None:
         shutil.rmtree(path, onerror=_onerror)
 
 
-async def _rerun(cmd: str, cwd: Path, timeout_s: float) -> tuple[int | None, str]:
+async def _rerun(cmd: str, cwd: Path, timeout_s: float, *, env: dict[str, str] | None = None) -> tuple[int | None, str]:
     """Independently run a command in the shipped worktree and capture combined output + exit code.
 
     Uses the same shell dream's oracle uses (cmd.exe on Windows, /bin/sh on POSIX), so this re-run is a
     faithful reproduction of the after-beat verification — no setup, no install, just the code as shipped.
+    ``env`` (when given) fully replaces the child environment; callers pass ``CI=1`` so a watch-mode
+    unit runner (vitest/jest) exits instead of hanging the re-run.
     """
     try:
         proc = await asyncio.create_subprocess_shell(
@@ -206,6 +224,7 @@ async def _rerun(cmd: str, cwd: Path, timeout_s: float) -> tuple[int | None, str
             cwd=str(cwd),
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,
+            env=env,
         )
     except OSError as exc:  # shell/tool genuinely not launchable
         return None, f"[could not launch] {cmd}: {exc}"
@@ -226,15 +245,18 @@ def _copy_worktree_artifacts(working_dir: Path, dest: Path) -> list[str]:
     def _ignore(_dir: str, names: list[str]) -> set[str]:
         return {n for n in names if n in {"node_modules", ".git", "test-results", "playwright-report"}}
 
-    # top-level source files
-    for pat in ("*.html", "*.js", "*.mjs", "*.cjs", "*.css", "*.json"):
+    # top-level source files (any stack: vanilla, TS, JSX/TSX, Vue SFC, Svelte, + config/manifests)
+    for pat in (
+        "*.html", "*.js", "*.mjs", "*.cjs", "*.ts", "*.mts", "*.jsx", "*.tsx",
+        "*.vue", "*.svelte", "*.css", "*.json",
+    ):
         for f in working_dir.glob(pat):
             if f.is_file():
                 with contextlib.suppress(Exception):
                     shutil.copy2(f, dest / f.name)
                     saved.append(f.name)
-    # source + evidence directories
-    for sub in (UNIT_TESTS_DIR, E2E_TESTS_DIR, TEST_EVIDENCE_DIR, "src"):
+    # source + test + evidence directories (whatever layout the chosen stack uses)
+    for sub in ("src", "tests", "test", "e2e", "public", "app", TEST_EVIDENCE_DIR):
         srcdir = working_dir / sub
         if srcdir.is_dir():
             with contextlib.suppress(Exception):
@@ -292,19 +314,21 @@ async def _run_one(task: _Task, key: str, base: str, dep: str, api_key: str) -> 
     # --- INDEPENDENT RE-VERIFICATION: prove the shipped code actually works, from a clean process ------
     wd = mat.working_dir
     print(f"[{task.key}] re-verifying shipped code in {wd} ...")
-    # Node 22 treats a bare positional dir (`node --test tests`) as a module to load and dies with
-    # MODULE_NOT_FOUND; with NO path it auto-discovers **/*.test.js, ignores node_modules, and skips
-    # the e2e *.spec.js files. That is the correct honest unit re-run.
-    unit_code, unit_out = await _rerun("node --test", wd, timeout_s=180.0)
-    print(f"[{task.key}]   node --test  -> exit {unit_code}")
-    e2e_code, e2e_out = await _rerun("npx playwright test", wd, timeout_s=420.0)
+    # Framework-agnostic re-run: `npm test` runs whatever unit runner the engineer wired into the
+    # project's `test` script (node --test / vitest run / jest), and Playwright drives the real browser.
+    # Both run with CI=1 so a watch-mode runner exits once instead of hanging the beat; the unit budget
+    # is wider than a bare node run because a framework build/transpile is slower.
+    ci_env = {**os.environ, "CI": "1"}
+    unit_code, unit_out = await _rerun("npm test", wd, timeout_s=300.0, env=ci_env)
+    print(f"[{task.key}]   npm test     -> exit {unit_code}")
+    e2e_code, e2e_out = await _rerun("npx playwright test", wd, timeout_s=600.0, env=ci_env)
     print(f"[{task.key}]   playwright   -> exit {e2e_code}")
 
     # --- artifacts ------------------------------------------------------------------------------------
     dest = _artifacts_root() / task.key
     saved = _copy_worktree_artifacts(wd, dest)
     (dest / "reverify_unit.txt").write_text(
-        f"$ node --test\n[exit {unit_code}]\n\n{unit_out}", encoding="utf-8"
+        f"$ npm test\n[exit {unit_code}]\n\n{unit_out}", encoding="utf-8"
     )
     (dest / "reverify_e2e.txt").write_text(
         f"$ npx playwright test\n[exit {e2e_code}]\n\n{e2e_out}", encoding="utf-8"
