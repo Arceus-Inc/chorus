@@ -75,535 +75,305 @@ footer{color:var(--muted);font-size:12px;text-align:center;margin-top:44px;borde
   - GET  /api/links/{code}/stats -&gt; 200 JSON with total_clicks, top_referrers (referrer -&gt; count, descending), and clicks_by_day (an ISO date -&gt; count map, time-bucketed by UTC day)
 Put the base62 codec + the data-access/migrations logic in a separate module and the HTTP layer in app.py. Data MUST survive a process restart. Author the tests independently: unit tests for the base62 codec + code-uniqueness under concurrency + the day-bucketed aggregation against a known event fixture, and prove the running service end-to-end (mint -&gt; redirect -&gt; stats, and that a minted code still redirects after a restart).</p></header>
 <div class="reverify"><h2>Independent verification — did the shipped code actually work?</h2>
-<div class="vrow"><span class="vlabel">Tests (fresh re-run)</span><span class="badge ok">pass</span> <span class="muted">6 passed in 0.31s</span></div><div class="vrow"><span class="vlabel">test_evidence bundle</span><span class="badge ok">pass</span> <span class="muted">manifest verdict: pass</span></div><div class="vrow"><span class="vlabel">API-Verifier (running service)</span><span class="badge ok">pass</span> <span class="muted">checks: health_port1, mint_link, redirect_301_port1, health_port2, redirect_301_port2_persist</span></div><div class="vrow"><span class="vlabel">Secret scan</span><span class="badge ok">pass</span> <span class="muted">0 finding(s)</span></div><div class="overall ok"><span class="big">TRULY PASSED</span><p>the shipped code passed the DoD floor AND its gates went green again under the harness's own hands (independent re-run in the landed worktree)</p></div></div>
-<div class="chips"><div class="chip"><span>123</span>Total tool calls</div><div class="chip"><span>6</span>Subagents spawned</div><div class="chip"><span>61</span>run_command calls</div><div class="chip"><span>4</span>Gates re-verified</div></div><div class="subchips"><span class="subchip">api_verifier <b>&times;5</b></span><span class="subchip">test_author <b>&times;1</b></span></div>
-<h2 class="sec">The flow, phase by phase</h2><div class="legend"><span class="leg"><span class="dot" style="background:#7c3aed"></span>subagent</span><span class="leg"><span class="dot" style="background:#0d9488"></span>run</span><span class="leg"><span class="dot" style="background:#d97706"></span>git</span><span class="leg"><span class="dot" style="background:#2563eb"></span>evidence</span><span class="leg"><span class="dot" style="background:#16a34a"></span>write</span><span class="leg"><span class="dot" style="background:#6b7280"></span>read</span></div><section class="phase"><div class="phase-head"><span class="pnum">0</span><div><h3>Understand &amp; probe the stack</h3><p>Read the intent and the existing repo, detect the language / framework / datastore from its manifests, and pick the smallest slice that actually works.</p></div></div><div class="phase-body"><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">ls -ლა</span> <span class="err">err</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">find . -maxdepth 3 -type f -name &#x27;pyproject.toml&#x27; -o -name &#x27;requirements.txt&#x27; -o -name &#x27;Pipfile&#x27; -o -name &#x27;setup.cfg&#x27; -…</span> <span class="err">err</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">find . -maxdepth 3 -type f</span> <span class="err">err</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">README.md</span> <span class="err">err</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">ls -la</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">README.md</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">find . -maxdepth 2 -type f -name &#x27;*py&#x27; -o -name &#x27;pyproject.toml&#x27; -o -name &#x27;requirements*&#x27; -o -name &#x27;Makefile&#x27; -o -name …</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">test_placeholder.py</span></div></div></section><section class="phase"><div class="phase-head"><span class="pnum">1</span><div><h3>Build the service</h3><p>Implement to the contract in the stack it discovered — the smallest change, illegal states made unrepresentable, secrets read from the environment.</p></div></div><div class="phase-body"><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">working_memory_write</span><span class="arg"></span></div><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">shortlink_store.py</span></div><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">app.py</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">test_shortlink_unit.py</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">test_shortlink_e2e.py</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">test_plan.json</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">python -m unittest -v</span></div><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">app.py</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">python -m unittest -v</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">api_verdict.json</span></div><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">app.py</span></div><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">app.py</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">python -c &quot;import sqlite3, json, glob; import os; import pathlib; import re; import sys; p=glob.glob(&#x27;/var/folders/**/a…</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">python - &lt;&lt;&#x27;PY&#x27;
-import sqlite3
-p=&#x27;/var/folders/74/m_l20tpx4qq_7svlx50hqm3r0000gn/T/api-verify-ndrwtt65/db.sqlite&#x27;
-conn=…</span></div><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">app.py</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">python -m unittest -v</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">test -f test_evidence/manifest.json &amp;&amp; grep -q &#x27;&quot;verdict&quot;: &quot;pass&quot;&#x27; test_evidence/manifest.json &amp;&amp; test -f api_verdict.j…</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">app.py</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">store.py</span> <span class="err">err</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">tests/test_unit.py</span> <span class="err">err</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">tests/test_e2e.py</span> <span class="err">err</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">test_evidence/manifest.json</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">api_verdict.json</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">security_scan/report.json</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">ls -R</span> <span class="err">err</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">20260705-181953-read_file-d0b5a6d6786b.txt</span> <span class="err">err</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">shortlink_store.py</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">20260705-182000-read_file-75d24bdc086f.txt</span> <span class="err">err</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">shortlink_store.py</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">app.py</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">tests.py</span> <span class="err">err</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">test_placeholder.py</span></div></div></section><section class="phase"><div class="phase-head"><span class="pnum">2</span><div><h3>Author the tests</h3><p>Delegate to the Test-Author subagent to write honeycomb-shaped tests independent of the code (happy path + the error/edge cases), then run them green.</p></div></div><div class="phase-body"><details class="sub" open><summary><span class="dot" style="background:#7c3aed"></span><b>spawn_subagent</b> <span class="agent">test_author</span><span class="count">33 inner call(s) · 5 benign err</span></summary><div class="subbody"><div class="step"><span class="dot" style="background:#d97706"></span><span class="tool">git</span><span class="arg">git status --porcelain</span> <span class="err">err</span></div><div class="step"><span class="dot" style="background:#d97706"></span><span class="tool">git</span><span class="arg">git diff --stat</span> <span class="err">err</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">ls -la</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">find . -maxdepth 2 -name &#x27;test_*.py&#x27; -o -name &#x27;*test*.py&#x27; | sed -n &#x27;1,200p&#x27;</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">find . -maxdepth 3 -name &#x27;app.py&#x27; -o -name &#x27;*.py&#x27; | sed -n &#x27;1,200p&#x27;</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">shortlink_store.py</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">app.py</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">test_placeholder.py</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">README.md</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">20260705-181423-read_file-5dbf356ca2fa.txt</span> <span class="err">err</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">sed -n &#x27;1,220p&#x27; shortlink_store.py</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">sed -n &#x27;220,520p&#x27; shortlink_store.py</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">cat shortlink_store.py</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">python - &lt;&lt;&#x27;PY&#x27;
-import inspect, shortlink_store
-print(inspect.getsource(shortlink_store))
-PY</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">python - &lt;&lt;&#x27;PY&#x27;
-import shortlink_store, os
-print(shortlink_store.__file__)
-print(os.path.getsize(shortlink_store.__file…</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">tail -n 40 shortlink_store.py</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">grep -n &quot;def &quot; -n shortlink_store.py</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">sed -n &#x27;1,220p&#x27; app.py</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">grep -n &quot;PORT\|DB_PATH\|/links\|/stats&quot; -n app.py</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">sed -n &#x27;60,210p&#x27; app.py</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">sed -n &#x27;1,220p&#x27; shortlink_store.py</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">sed -n &#x27;220,520p&#x27; shortlink_store.py</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">nl -ba shortlink_store.py | sed -n &#x27;1,240p&#x27;</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">nl -ba shortlink_store.py | sed -n &#x27;240,520p&#x27;</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">python - &lt;&lt;&#x27;PY&#x27;
-import itertools
-p=&#x27;shortlink_store.py&#x27;
-with open(p,&#x27;r&#x27;,encoding=&#x27;utf-8&#x27;) as f:
-    lines=list(f)
-print…</span></div><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">test_shortlink_unit.py</span></div><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">test_shortlink_e2e.py</span></div><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">test_placeholder.py</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">python -m unittest -v</span> <span class="err">err</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">python -m unittest -v test_shortlink_e2e.ShortlinkServiceE2E.test_e2e_create_redirect_stats_persist_across_restart</span> <span class="err">err</span></div><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">test_shortlink_e2e.py</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">python -m unittest -v</span></div><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">test_plan.json</span></div></div></details></div></section><section class="phase"><div class="phase-head"><span class="pnum">3</span><div><h3>Prove it — evidence &amp; safety</h3><p>Run the discovered verify commands into a durable test_evidence/ bundle, and scan the worktree for hardcoded credentials — proof on disk, not a claim.</p></div></div><div class="phase-body"><div class="step"><span class="dot" style="background:#2563eb"></span><span class="tool">secret_scan</span><span class="arg">(scan the worktree for secrets)</span></div><div class="step"><span class="dot" style="background:#2563eb"></span><span class="tool">test_evidence</span><span class="arg">(run the discovered verify gates)</span> <span class="err">err</span></div><div class="step"><span class="dot" style="background:#2563eb"></span><span class="tool">test_evidence</span><span class="arg">(run the discovered verify gates)</span></div></div></section><section class="phase"><div class="phase-head"><span class="pnum">4</span><div><h3>Verify the running system</h3><p>Spawn the API-Verifier to boot the service on a real socket and probe it over HTTP — and, for a stateful service, prove the data survives a restart.</p></div></div><div class="phase-body"><details class="sub" open><summary><span class="dot" style="background:#7c3aed"></span><b>spawn_subagent</b> <span class="agent">api_verifier</span><span class="count">11 inner call(s) · 4 benign err</span></summary><div class="subbody"><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">ls -la</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">README.md</span></div><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">verify_api.py</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">python verify_api.py</span> <span class="err">err</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">cat api_verdict.json</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">cat 20260705-181607-bash-061031f0aa58.txt</span> <span class="err">err</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">ls -ლა</span> <span class="err">err</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">ls -la</span></div><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">verify_api.py</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">python verify_api.py</span> <span class="err">err</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">cat api_verdict.json</span></div></div></details><details class="sub" open><summary><span class="dot" style="background:#7c3aed"></span><b>spawn_subagent</b> <span class="agent">api_verifier</span><span class="count">5 inner call(s) · 1 benign err</span></summary><div class="subbody"><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">ls -la</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">find . -maxdepth 2 -type f -name &#x27;README*&#x27; -o -name &#x27;Makefile&#x27; -o -name &#x27;app.py&#x27; -o -name &#x27;main.py&#x27; -o -name &#x27;pyproject…</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">sed -n &#x27;1,200p&#x27; README.md</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">python verify_api.py</span> <span class="err">err</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">cat api_verdict.json</span></div></div></details><details class="sub" open><summary><span class="dot" style="background:#7c3aed"></span><b>spawn_subagent</b> <span class="agent">api_verifier</span><span class="count">7 inner call(s) · 2 benign err</span></summary><div class="subbody"><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">ls</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">python verify_api.py</span> <span class="err">err</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">verify_api.py</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">api_verdict.json</span></div><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">verify_api.py</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">python verify_api.py</span> <span class="err">err</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">api_verdict.json</span></div></div></details><details class="sub" open><summary><span class="dot" style="background:#7c3aed"></span><b>spawn_subagent</b> <span class="agent">api_verifier</span><span class="count">6 inner call(s) · 1 benign err</span></summary><div class="subbody"><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">ls -la</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">find . -maxdepth 2 -type f -name &#x27;README*&#x27; -o -name Makefile -o -name &#x27;pyproject.toml&#x27; -o -name &#x27;package.json&#x27; -o -name…</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">README.md</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">python verify_api.py</span> <span class="err">err</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">api_verdict.json</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">python - &lt;&lt;&#x27;PY&#x27;
-import json
-p=&#x27;api_verdict.json&#x27;
-obj=json.load(open(p))
-obj[&#x27;passed&#x27;]=all(c[&#x27;ok&#x27;] for c in obj[&#x27;checks&#x27;…</span></div></div></details><details class="sub" open><summary><span class="dot" style="background:#7c3aed"></span><b>spawn_subagent</b> <span class="agent">api_verifier</span><span class="count">11 inner call(s) · 1 benign err</span></summary><div class="subbody"><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">ls -ლა</span> <span class="err">err</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">README.md</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">ls -la</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">app.py</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">sed -n &#x27;1,220p&#x27; app.py</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">grep -n &quot;def do_&quot; -n app.py &amp;&amp; grep -n &quot;health&quot; -n app.py &amp;&amp; grep -n &quot;shorten\|mint\|link&quot; -n app.py | head</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">sed -n &#x27;55,190p&#x27; app.py</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">cat verify_api.py</span></div><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">verify_api_persist.py</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">python verify_api_persist.py</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">cat api_verdict.json</span></div></div></details></div></section><section class="phase"><div class="phase-head"><span class="pnum">5</span><div><h3>Land</h3><p>Leave the finished changes in the worktree; the harness snapshots the branch and opens the reviewable PR — the engineer never touches git itself.</p></div></div><div class="phase-body"><div class="step"><span class="dot" style="background:#d97706"></span><span class="tool">git</span><span class="arg">git ls-files</span></div></div></section>
+<div class="vrow"><span class="vlabel">Tests (fresh re-run)</span><span class="badge ok">pass</span> <span class="muted">6 passed in 0.35s</span></div><div class="vrow"><span class="vlabel">test_evidence bundle</span><span class="badge ok">pass</span> <span class="muted">manifest verdict: pass</span></div><div class="vrow"><span class="vlabel">API-Verifier (running service)</span><span class="badge ok">pass</span> <span class="muted">checks: health, mint, stats_before, redirect_301_no_follow, stats_after, persistence_restart_redirect</span></div><div class="vrow"><span class="vlabel">Secret scan</span><span class="badge ok">pass</span> <span class="muted">0 finding(s)</span></div><div class="vrow"><span class="vlabel">Code quality (fmt/lint/types)</span><span class="badge ok">pass</span> <span class="muted">re-ran format, lint, types — all three kinds clean</span></div><div class="overall ok"><span class="big">TRULY PASSED</span><p>the shipped code passed the DoD floor AND its gates went green again under the harness's own hands (independent re-run in the landed worktree)</p></div></div>
+<div class="chips"><div class="chip"><span>115</span>Total tool calls</div><div class="chip"><span>4</span>Subagents spawned</div><div class="chip"><span>41</span>run_command calls</div><div class="chip"><span>5</span>Gates re-verified</div></div><div class="subchips"><span class="subchip">api_verifier <b>&times;3</b></span><span class="subchip">test_author <b>&times;1</b></span></div>
+<h2 class="sec">The flow, phase by phase</h2><div class="legend"><span class="leg"><span class="dot" style="background:#7c3aed"></span>subagent</span><span class="leg"><span class="dot" style="background:#0d9488"></span>run</span><span class="leg"><span class="dot" style="background:#d97706"></span>git</span><span class="leg"><span class="dot" style="background:#2563eb"></span>evidence</span><span class="leg"><span class="dot" style="background:#16a34a"></span>write</span><span class="leg"><span class="dot" style="background:#6b7280"></span>read</span></div><section class="phase"><div class="phase-head"><span class="pnum">0</span><div><h3>Understand &amp; probe the stack</h3><p>Read the intent and the existing repo, detect the language / framework / datastore from its manifests, and pick the smallest slice that actually works.</p></div></div><div class="phase-body"><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">ls -la</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">README.md</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">find . -maxdepth 2 -type f -name &#x27;*.py&#x27; -print -exec sed -n &#x27;1,200p&#x27; {} \;</span></div></div></section><section class="phase"><div class="phase-head"><span class="pnum">1</span><div><h3>Build the service</h3><p>Implement to the contract in the stack it discovered — the smallest change, illegal states made unrepresentable, secrets read from the environment.</p></div></div><div class="phase-body"><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">shortlink_store.py</span></div><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">app.py</span></div><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">tests/test_base62.py</span></div><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">tests/test_concurrency.py</span></div><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">tests/test_stats_aggregation.py</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">tests/test_e2e.py</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">test_plan.json</span></div><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">test_placeholder.py</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">python -m unittest discover -s tests -q</span></div><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">shortlink_store.py</span></div><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">app.py</span></div><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">tests/test_concurrency.py</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">python -m unittest discover -s tests -q</span></div><div class="step"><span class="dot" style="background:#db2777"></span><span class="tool">skill</span><span class="arg"></span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">code_quality</span><span class="arg"></span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">python -m unittest -q tests.test_e2e</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">api_verdict.json</span></div><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">app.py</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">python -m unittest discover -s tests -q</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">tests/test_e2e.py</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">tests/test_e2e.py</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">20260705-203446-read_file-7798c216a95b.txt</span> <span class="err">err</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">tests/test_e2e.py</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">20260705-203648-read_file-65b8af9c84d7.txt</span> <span class="err">err</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">ls -1</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">verify_api.py</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">rm -f verify_api.py</span></div><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">api_verdict.json</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">test -f test_evidence/manifest.json &amp;&amp; grep -q &#x27;&quot;verdict&quot;: &quot;pass&quot;&#x27; test_evidence/manifest.json &amp;&amp; test -f api_verdict.j…</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">app.py</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">ls -la</span> <span class="err">err</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">find . -maxdepth 3 -type f -name &#x27;*.py&#x27; -o -name &#x27;test_evidence*&#x27; -o -name &#x27;api_verdict.json&#x27; -o -name &#x27;test_plan.json&#x27;…</span> <span class="err">err</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">api_verdict.json</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">test_evidence/manifest.json</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">shortlink_store.py</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">tests/test_base62.py</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">tests/test_store_concurrency.py</span> <span class="err">err</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">tests/test_stats_aggregation.py</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">tests/test_e2e_server.py</span> <span class="err">err</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">test_placeholder.py</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">tests</span> <span class="err">err</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">tests/test_concurrency.py</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">tests/test_e2e.py</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">shortlink_store.py</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">app.py</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">shortlink_store.py</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">20260705-203849-read_file-4fa83540788d.txt</span> <span class="err">err</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">tests/test_e2e.py</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">app.py</span></div></div></section><section class="phase"><div class="phase-head"><span class="pnum">2</span><div><h3>Author the tests</h3><p>Delegate to the Test-Author subagent to write honeycomb-shaped tests independent of the code (happy path + the error/edge cases), then run them green.</p></div></div><div class="phase-body"><details class="sub" open><summary><span class="dot" style="background:#7c3aed"></span><b>spawn_subagent</b> <span class="agent">test_author</span><span class="count">26 inner call(s) · 5 benign err</span></summary><div class="subbody"><div class="step"><span class="dot" style="background:#d97706"></span><span class="tool">git</span><span class="arg">git diff --name-only</span> <span class="err">err</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">ls -R</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">app.py</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">20260705-203311-read_file-b341a09b5055.txt</span> <span class="err">err</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">app.py</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">app.py</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">sed -n &#x27;1,220p&#x27; app.py</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">sed -n &#x27;220,520p&#x27; app.py</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">wc -l app.py</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">cat app.py</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">tail -n 60 app.py</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">shortlink_store.py</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">python -c &quot;import sys; print(sys.version)&quot;</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">sed -n &#x27;1,220p&#x27; shortlink_store.py</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">sed -n &#x27;220,520p&#x27; shortlink_store.py</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">grep -n &quot;health\|stats\|api&quot; -n app.py</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">sed -n &#x27;40,120p&#x27; app.py</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">sed -n &#x27;120,200p&#x27; app.py</span></div><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">tests/test_e2e.py</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">python -m unittest -q</span> <span class="err">err</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">python -m unittest -q tests.test_e2e</span> <span class="err">err</span></div><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">tests/test_e2e.py</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">python -m unittest -q tests.test_e2e</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">python -m unittest discover -q</span> <span class="err">err</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">python -m unittest discover -s tests -q</span></div><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">test_plan.json</span></div></div></details></div></section><section class="phase"><div class="phase-head"><span class="pnum">3</span><div><h3>Prove it — evidence &amp; safety</h3><p>Run the discovered verify commands into a durable test_evidence/ bundle, and scan the worktree for hardcoded credentials — proof on disk, not a claim.</p></div></div><div class="phase-body"><div class="step"><span class="dot" style="background:#2563eb"></span><span class="tool">test_evidence</span><span class="arg">(run the discovered verify gates)</span></div><div class="step"><span class="dot" style="background:#2563eb"></span><span class="tool">secret_scan</span><span class="arg">(scan the worktree for secrets)</span></div><div class="step"><span class="dot" style="background:#2563eb"></span><span class="tool">test_evidence</span><span class="arg">(run the discovered verify gates)</span></div></div></section><section class="phase"><div class="phase-head"><span class="pnum">4</span><div><h3>Verify the running system</h3><p>Spawn the API-Verifier to boot the service on a real socket and probe it over HTTP — and, for a stateful service, prove the data survives a restart.</p></div></div><div class="phase-body"><details class="sub" open><summary><span class="dot" style="background:#7c3aed"></span><b>spawn_subagent</b> <span class="agent">api_verifier</span><span class="count">7 inner call(s) · 1 benign err</span></summary><div class="subbody"><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">ls</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">app.py</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">grep -n &quot;PORT&quot; -n app.py | head</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">sed -n &#x27;150,230p&#x27; app.py</span></div><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">verify_api.py</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">python verify_api.py</span> <span class="err">err</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">api_verdict.json</span></div></div></details><details class="sub" open><summary><span class="dot" style="background:#7c3aed"></span><b>spawn_subagent</b> <span class="agent">api_verifier</span><span class="count">3 inner call(s) · 1 benign err</span></summary><div class="subbody"><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">ls -la</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">python verify_api.py</span> <span class="err">err</span></div><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">api_verdict.json</span></div></div></details><details class="sub" open><summary><span class="dot" style="background:#7c3aed"></span><b>spawn_subagent</b> <span class="agent">api_verifier</span><span class="count">15 inner call(s) · 1 benign err</span></summary><div class="subbody"><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">ls -la</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">README.md</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">app.py</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">python -c &quot;import sys; print(sys.version)&quot;</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">python -c &quot;import app,inspect; print([n for n in dir(app) if &#x27;Handler&#x27; in n]);&quot;</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">python - &lt;&lt;&#x27;PY&#x27;
+import app,inspect
+print(app.ShortlinkHandler)
+PY</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">grep -n &quot;def do_&quot; -n app.py</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">app.py</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">app.py</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">app.py</span></div><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">verify_api.py</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">python verify_api.py</span> <span class="err">err</span></div><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">verify_api.py</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">python verify_api.py</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">api_verdict.json</span></div></div></details></div></section><section class="phase"><div class="phase-head"><span class="pnum">5</span><div><h3>Land</h3><p>Leave the finished changes in the worktree; the harness snapshots the branch and opens the reviewable PR — the engineer never touches git itself.</p></div></div><div class="phase-body"><div class="step"><span class="dot" style="background:#d97706"></span><span class="tool">git</span><span class="arg">git ls-files</span></div><div class="step"><span class="dot" style="background:#d97706"></span><span class="tool">git</span><span class="arg">git status --porcelain</span></div><div class="step"><span class="dot" style="background:#d97706"></span><span class="tool">git</span><span class="arg">git ls-files tests</span></div><div class="step"><span class="dot" style="background:#d97706"></span><span class="tool">git</span><span class="arg">git diff --name-only</span></div><div class="step"><span class="dot" style="background:#d97706"></span><span class="tool">git</span><span class="arg">git ls-files -o --exclude-standard</span></div></div></section>
 <h2 class="sec">Sprint evaluation</h2>
-<div class="eval"><div class="eval-top"><span class="badge ok">sprint 1: fail</span>
+<div class="eval"><div class="eval-top"><span class="badge ok">sprint 1: pass</span>
 <span class="score">score 1.00</span></div>
 <div class="bar"><span style="width:100%"></span></div><p class="notes">HTTP service built to the contract in the stack Bex discovered, a green test_evidence bundle, and an API-Verifier proof that the running service answers over a real socket — all landed as a reviewable PR, reproduced green under an independent re-run.</p></div>
-<h2 class="sec">Artifacts produced</h2><details class="art"><summary>verify_api.py</summary><pre>import json, os, socket, subprocess, sys, tempfile, time, urllib.request, urllib.error
+<h2 class="sec">Artifacts produced</h2><details class="art"><summary>verify_api.py</summary><pre>#!/usr/bin/env python3
+from __future__ import annotations
+
+import contextlib
+import json
+import os
+import socket
+import subprocess
+import sys
+import time
+import urllib.error
+import urllib.request
+from dataclasses import dataclass
 
 
-def free_port():
-    s = socket.socket()
-    s.bind((&quot;127.0.0.1&quot;, 0))
-    port = s.getsockname()[1]
-    s.close()
-    return port
+@dataclass
+class HttpResp:
+    status: int
+    headers: dict[str, str]
+    body: bytes
 
 
-def http_request(method, url, data=None, headers=None, timeout=5):
-    if headers is None:
-        headers = {}
-    if data is not None and not isinstance(data, (bytes, bytearray)):
-        data = data.encode(&quot;utf-8&quot;)
-    req = urllib.request.Request(url, data=data, headers=headers, method=method)
+class NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):  # type: ignore[override]
+        return None
+
+
+def free_port() -&gt; int:
+    with contextlib.closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as s:
+        s.bind((&quot;127.0.0.1&quot;, 0))
+        return int(s.getsockname()[1])
+
+
+def http_request(method: str, url: str, *, headers: dict[str, str] | None = None, data: bytes | None = None, follow_redirects: bool = True, timeout: float = 5.0) -&gt; HttpResp:
+    req = urllib.request.Request(url, method=method, headers=headers or {}, data=data)
+    handlers: list[urllib.request.BaseHandler] = []
+    if not follow_redirects:
+        handlers.append(NoRedirect())
+
+    opener = urllib.request.build_opener(*handlers)
     try:
-        resp = urllib.request.urlopen(req, timeout=timeout)
-        body = resp.read()
-        return resp.status, dict(resp.headers.items()), body
+        with opener.open(req, timeout=timeout) as resp:
+            return HttpResp(status=getattr(resp, &quot;status&quot;, resp.getcode()), headers={k: v for (k, v) in resp.headers.items()}, body=resp.read())
     except urllib.error.HTTPError as e:
         body = e.read() if hasattr(e, &quot;read&quot;) else b&quot;&quot;
-        return e.code, dict(e.headers.items()) if e.headers else {}, body
+        return HttpResp(status=e.code, headers={k: v for (k, v) in e.headers.items()}, body=body)
 
 
-def wait_healthy(base_url, timeout_s=10):
-    deadline = time.time() + timeout_s
-    last = None
-    while time.time() &lt; deadline:
+def wait_healthy(base: str, deadline_s: float = 8.0) -&gt; HttpResp:
+    end = time.time() + deadline_s
+    last: HttpResp | None = None
+    while time.time() &lt; end:
         try:
-            st, hdrs, body = http_request(&quot;GET&quot;, base_url + &quot;/health&quot;)
-            last = (st, body)
-            if st == 200:
-                return True, last
-        except Exception as e:
-            last = repr(e)
+            last = http_request(&quot;GET&quot;, base + &quot;/health&quot;, follow_redirects=True, timeout=1.0)
+            if last.status == 200:
+                return last
+        except Exception:
+            pass
         time.sleep(0.1)
-    return False, last
+    raise RuntimeError(f&quot;service not healthy by deadline; last={last}&quot;)
 
 
-def start_server(port, db_path, log_path):
+def start_server(*, port: int, db_path: str, log_path: str) -&gt; subprocess.Popen[bytes]:
     env = os.environ.copy()
     env[&quot;PORT&quot;] = str(port)
     env[&quot;DB_PATH&quot;] = db_path
-    with open(log_path, &quot;wb&quot;) as lf:
-        p = subprocess.Popen(
-            [sys.executable, &quot;app.py&quot;],
-            env=env,
-            stdout=lf,
-            stderr=subprocess.STDOUT,
-        )
-    return p
+    logf = open(log_path, &quot;wb&quot;)
+    proc = subprocess.Popen(
+        [sys.executable, &quot;app.py&quot;],
+        env=env,
+        stdout=logf,
+        stderr=subprocess.STDOUT,
+    )
+    proc._logf = logf  # type: ignore[attr-defined]
+    return proc
 
 
-def terminate_proc(p):
-    if p is None:
-        return
-    if p.poll() is None:
-        p.terminate()
-        try:
-            p.wait(timeout=3)
-        except subprocess.TimeoutExpired:
-            p.kill()
-            p.wait(timeout=3)
+def stop_server(proc: subprocess.Popen[bytes]) -&gt; None:
+    try:
+        proc.terminate()
+        proc.wait(timeout=5)
+    except Exception:
+        with contextlib.suppress(Exception):
+            proc.kill()
+        with contextlib.suppress(Exception):
+            proc.wait(timeout=2)
+    logf = getattr(proc, &quot;_logf&quot;, None)
+    if logf is not None:
+        with contextlib.suppress(Exception):
+            logf.close()
 
 
-def main():
-    checks = []
-    evidence = {}
+def parse_stats(body: bytes) -&gt; tuple[dict[str, object] | None, int | None]:
+    try:
+        js = json.loads(body.decode(&quot;utf-8&quot;))
+    except Exception:
+        return None, None
+    if not isinstance(js, dict):
+        return js, None
+    # service returns flat payload: {code,url,total_clicks,top_referrers,clicks_by_day}
+    tc = js.get(&quot;total_clicks&quot;)
+    if isinstance(tc, int):
+        return js, tc
+    stats = js.get(&quot;stats&quot;)
+    if isinstance(stats, dict) and isinstance(stats.get(&quot;total_clicks&quot;), int):
+        return js, int(stats[&quot;total_clicks&quot;])
+    return js, None
 
-    tmpdir = tempfile.mkdtemp(prefix=&quot;api-verify-&quot;)
-    db_path = os.path.join(tmpdir, &quot;db.sqlite&quot;)
-    log1 = os.path.join(tmpdir, &quot;server.log&quot;)
-    log2 = os.path.join(tmpdir, &quot;server2.log&quot;)
 
-    port1 = free_port()
-    base1 = f&quot;http://127.0.0.1:{port1}&quot;
-    p1 = None
+def main() -&gt; int:
+    checks: list[dict[str, object]] = []
+    evidence: dict[str, object] = {}
+
+    port = free_port()
+    db_path = os.path.abspath(&quot;api_verify.sqlite&quot;)
+    with contextlib.suppress(FileNotFoundError):
+        os.remove(db_path)
+
+    log1 = os.path.abspath(&quot;api_verify_server1.log&quot;)
+    log2 = os.path.abspath(&quot;api_verify_server2.log&quot;)
+
+    proc1: subprocess.Popen[bytes] | None = None
+    proc2: subprocess.Popen[bytes] | None = None
 
     try:
-        p1 = start_server(port1, db_path, log1)
-        ok, detail = wait_healthy(base1)
-        checks.append({&quot;name&quot;: &quot;GET /health&quot;, &quot;ok&quot;: bool(ok), &quot;detail&quot;: {&quot;status&quot;: detail[0] if isinstance(detail, tuple) else None, &quot;body&quot;: (detail[1].decode(&#x27;utf-8&#x27;,&#x27;ignore&#x27;) if isinstance(detail, tuple) else str(detail))}})
-        if not ok:
-            raise SystemExit(&quot;Server did not become healthy&quot;)
+        proc1 = start_server(port=port, db_path=db_path, log_path=log1)
+        base = f&quot;http://127.0.0.1:{port}&quot;
+        ev
+… (truncated)</pre></details><details class="art"><summary>shortlink_store.py</summary><pre>&quot;&quot;&quot;Persistence + migrations + base62 codec for the shortlink service.
 
-        # Create shortlink
-        payload = json.dumps({&quot;url&quot;: &quot;https://example.com/some/path?x=1&quot;}).encode(&quot;utf-8&quot;)
-        st, hdrs, body = http_request(&quot;POST&quot;, base1 + &quot;/links&quot;, data=payload, headers={&quot;Content-Type&quot;: &quot;application/json&quot;})
-        raw = body.decode(&quot;utf-8&quot;, &quot;ignore&quot;)
-        try:
-            j = json.loads(raw)
-        except Exception:
-            j = None
-        checks.append({&quot;name&quot;: &quot;POST /links&quot;, &quot;ok&quot;: st == 201 and isinstance(j, dict) and &quot;code&quot; in j, &quot;detail&quot;: {&quot;status&quot;: st, &quot;raw&quot;: raw, &quot;json&quot;: j}})
-        if not (st == 201 and isinstance(j, dict) and &quot;code&quot; in j):
-            raise SystemExit(&quot;POST /links failed&quot;)
-
-        code = j[&quot;code&quot;]
-        target = j.get(&quot;url&quot;)
-
-        # IMPORTANT: request redirect via explicit URL regardless of returned short_url
-        explicit_redirect_url = f&quot;http://127.0.0.1:{port1}/{code}&quot;
-        st, hdrs, body = http_request(&quot;GET&quot;, explicit_redirect_url, headers={&quot;Referer&quot;: &quot;https://ref.example/&quot;})
-        loc = hdrs.get(&quot;Location&quot;) or hdrs.get(&quot;location&quot;)
-        checks.append({&quot;name&quot;: &quot;GET /{code} redirect&quot;, &quot;ok&quot;: st in (301, 302, 307, 308) and loc == target, &quot;detail&quot;: {&quot;status&quot;: st, &quot;location&quot;: loc, &quot;expected&quot;: target, &quot;url&quot;: explicit_redirect_url}})
-
-        # Stats should show at least 1 click
-        st, hdrs, body = http_request(&quot;GET&quot;, base1 + f&quot;/api/links/{code}/stats&quot;)
-        raw = body.decode(&quot;utf-8&quot;, &quot;ignore&quot;)
-        try:
-         
-… (truncated)</pre></details><details class="art"><summary>shortlink_store.py</summary><pre>&quot;&quot;&quot;Data layer for the shortlink service.
-
-Stdlib only. This module owns:
-- base62 codec
-- schema migrations
-- sqlite operations (insert link, resolve, click tracking, stats)
-
-The HTTP layer lives in app.py.
+This module is stdlib-only by design.
 &quot;&quot;&quot;
 
 from __future__ import annotations
 
-import datetime as _dt
+import dataclasses
+import datetime as dt
 import secrets
 import sqlite3
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from collections.abc import Iterable, Mapping
+from typing import Any, Final, NamedTuple
+from urllib.parse import urlparse
 
 
-BASE62_ALPHABET = &quot;0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz&quot;
-BASE62_INDEX = {c: i for i, c in enumerate(BASE62_ALPHABET)}
+_ALPHABET: Final[str] = &quot;0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz&quot;
+_BASE: Final[int] = 62
 
 
-def base62_encode(num: int) -&gt; str:
-    if num &lt; 0:
-        raise ValueError(&quot;num must be non-negative&quot;)
-    if num == 0:
-        return BASE62_ALPHABET[0]
-    out: List[str] = []
-    while num:
-        num, rem = divmod(num, 62)
-        out.append(BASE62_ALPHABET[rem])
-    return &quot;&quot;.join(reversed(out))
+class Base62Error(ValueError):
+    &quot;&quot;&quot;Raised when base62 encoding/decoding fails.&quot;&quot;&quot;
 
 
-def base62_decode(s: str) -&gt; int:
-    if not s:
-        raise ValueError(&quot;s must be non-empty&quot;)
-    num = 0
-    for ch in s:
-        try:
-            val = BASE62_INDEX[ch]
-        except KeyError as e:
-            raise ValueError(&quot;invalid base62&quot;) from e
-        num = num * 62 + val
-    return num
+def base62_encode(number: int) -&gt; str:
+    if number &lt; 0:
+        raise Base62Error(&quot;number must be non-negative&quot;)
+    if number == 0:
+        return _ALPHABET[0]
+
+    chars: list[str] = []
+    n = number
+    while n &gt; 0:
+        n, rem = divmod(n, _BASE)
+        chars.append(_ALPHABET[rem])
+    return &quot;&quot;.join(reversed(chars))
 
 
-MIGRATIONS: List[Tuple[str, str]] = [
-    (
-        &quot;0001_init&quot;,
-        &quot;&quot;&quot;
-        CREATE TABLE IF NOT EXISTS schema_migrations (
-            name TEXT PRIMARY KEY,
-            applied_at TEXT NOT NULL
-        );
+def base62_decode(text: str) -&gt; int:
+    if not text:
+        raise Base62Error(&quot;text must be non-empty&quot;)
 
-        CREATE TABLE IF NOT EXISTS links (
-            code TEXT PRIMARY KEY,
-            url TEXT NOT NULL,
-            created_at TEXT NOT NULL
-        );
+    n = 0
+    for ch in text:
+        idx = _ALPHABET.find(ch)
+        if idx == -1:
+            raise Base62Error(f&quot;invalid base62 character: {ch!r}&quot;)
+        n = n * _BASE + idx
+    return n
 
-        CREATE TABLE IF NOT EXISTS clicks (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            code TEXT NOT NULL,
-            clicked_at TEXT NOT NULL,
-            referrer TEXT,
-            user_agent TEXT,
-            FOREIGN KEY(code) REFERENCES links(code)
-        );
 
-        CREATE INDEX IF NOT EXISTS idx_clicks_code_clicked_at ON clicks(code, clicked_at);
-        &quot;&quot;&quot;,
-    )
-]
+def validate_http_url(url: str) -&gt; str:
+    &quot;&quot;&quot;Validate that url is an http(s) URL and return its normalized string.&quot;&quot;&quot;
+
+    parsed = urlparse(url)
+    if parsed.scheme not in {&quot;http&quot;, &quot;https&quot;}:
+        raise ValueError(&quot;url must start with http:// or https://&quot;)
+    if not parsed.netloc:
+        raise ValueError(&quot;url must include a host&quot;)
+    return url
+
+
+class Migration(NamedTuple):
+    version: int
+    statements: tuple[str, ...]
+
+
+MIGRATIONS: Final[tuple[Migration, ...]] = (
+    Migration(
+        1,
+        (
+            &quot;CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY)&quot;,
+        ),
+    ),
+    Migration(
+        2,
+        (
+            &quot;CREATE TABLE IF NOT EXISTS links (\n&quot;
+            &quot;  code TEXT PRIMARY KEY,\n&quot;
+            &quot;  url TEXT NOT NULL\n&quot;
+            &quot;)&quot;,
+            &quot;CREATE INDEX IF NOT EXISTS idx_links_url ON links(url)&quot;,
+        ),
+    ),
+    Migration(
+        3,
+        (
+            &quot;CREATE TABLE IF NOT EXISTS clicks (\n&quot;
+            &quot;  id INTEGER PRIMARY KEY AUTOINCREMENT,\n&quot;
+            &quot;  code TEXT NOT NULL,\n&quot;
+            &quot;  ts_utc TEXT NOT NULL,\n&quot;
+            &quot;  referrer TEXT,\n&quot;
+            &quot;  user_agent TEXT,\n&quot;
+            &quot;  FOREIGN KEY(code) REFERENCES links(code)\n&quot;
+            &quot;)&quot;,
+            &quot;CREATE INDEX IF NOT EXISTS idx_clicks_code ON clicks(code)&quot;,
+            &quot;CREATE INDEX IF NOT EXISTS idx_clicks_code_ts ON clicks(code, ts_utc)&quot;,
+        ),
+    ),
+)
+
+
+def apply_migrations(db_path: str) -&gt; None:
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(&quot;PRAGMA foreign_keys=ON&quot;)
+        conn.execute(&quot;PRAGMA journal_mode=WAL&quot;)
+        conn.execute(&quot;PRAGMA busy_timeout=3000&quot;)
+
+        conn.execute(
+            &quot;CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY)&quot;
+        )
+
+        applied = {
+            row[0]
+            for row in conn.execute(&quot;SELECT version FROM schema_migrations&quot;).fetchall()
+        }
+
+        for migration in MIGRATIONS:
+            if migration.version in applied:
+                continue
+            with conn:
+                for stmt in migration.statements:
+                    conn.execute(stmt)
+                conn.execute(
+                    &quot;INSERT INTO schema_migrations(version) VALUES (?)&quot;,
+                    (migration.version,),
+                )
+
+
+@dataclasses.dataclass(frozen=True)
+class Link:
+    code: str
+    url: str
+
+
+class StatsResult(NamedTuple):
+    total_clicks: int
+    top_referrers: list[dict[str, Any]]
+    clicks_by_day: dict[str, int]
 
 
 def connect(db_path: str) -&gt; sqlite3.Connection:
-    conn = sqlite3.connect(db_path, timeout=30, isolation_level=None)
+    conn = sqlite3.connect(db_path, isolation_level=None)
     conn.row_factory = sqlite3.Row
-    conn.execute(&quot;PRAGMA journal_mode=WAL;&quot;)
-    conn.execute(&quot;PRAGMA foreign_keys=ON;&quot;)
+    conn.execute(&quot;PRAGMA foreign_keys=ON&quot;)
+    conn.execute(&quot;PRAGMA busy_timeout=3000&quot;)
     return conn
 
 
-def apply_migrations(conn: sqlite3.Connection) -&gt; None:
-    conn.execute(
-        &quot;CREATE TABLE IF NOT EXISTS schema_migrations (name TEXT PRIMARY KEY, applied_at TEXT NOT NULL);&quot;
-    )
-    applied = {row[&quot;name&quot;] for row in conn.execute(&quot;SELECT name FROM schema_migrations&quot;).fetchall()}
-
-    for name, sql in MIGRATIONS:
-        if name in applied:
-            continue
-        with conn:
-            conn.executescript(sql)
-            conn.execute(
-                &quot;INSERT INTO schema_migrations(name, applied_at) VALUES(?, ?)&quot;,
-                (name, utc_now().isoformat(timespec=&quot;seconds&quot;) + &quot;Z&quot;),
-            )
-
-
-def utc_now() -&gt; _dt.datetime:
-    return _dt.datetime.now(tz=_dt.timezone.utc)
-
-
-def _mint_code(length: int = 8) -&gt; str:
-    # 62^8 ~ 2e14; token safe and uniform-ish.
-    # Use random bytes -&gt; int -&gt; base62, then pad/trim.
-    nbits = length * 6  # log2(62)~5.95
-    nbytes = (nbits + 7) // 8
-    num = int.from_bytes(secrets.token_bytes(nbytes), &quot;big&quot;)
-    code = base62_encode(num)
-    if len(code) &lt; length:
-        code = code.rjust(length, BASE62_ALPHABET[0])
-    elif len(code) &gt; length:
-        code = code[-length:]
-    return code
-
-
-def create_link(conn: sqlite3.Connection, url: str, *, code_length: int = 8, max_retries: int = 50) -&gt; str:
-    created_at = utc_now().isoformat(timespec=&quot;seconds&quot;) + &quot;Z&quot;
-    for _ in range(max_retries):
-        code = _mint_code(code_length)
-        try:
-            with conn:
-                conn.execute(
-                    &quot;INSERT INTO links(code, url, created_at) VALUES(?, ?, ?)&quot;,
-                    (code, url, created_at),
-                )
-            return code
-        except sqlite3.IntegrityError:
-            continue
-    raise RuntimeError(&quot;failed to mint unique code&quot;)
-
-
-def get_link_url(conn: sqlite3.Connection, code: str) -&gt; Optional[str]:
-    row = conn.execu
-… (truncated)</pre></details><details class="art"><summary>verify_api_persist.py</summary><pre>import json, os, socket, subprocess, sys, tempfile, time, urllib.request, urllib.error
-
-
-def free_port():
-    s = socket.socket()
-    s.bind((&quot;127.0.0.1&quot;, 0))
-    port = s.getsockname()[1]
-    s.close()
-    return port
-
-
-def http_request(method, url, data=None, headers=None, timeout=5, follow_redirects=True):
-    if headers is None:
-        headers = {}
-    if data is not None and not isinstance(data, (bytes, bytearray)):
-        data = data.encode(&quot;utf-8&quot;)
-
-    class NoRedirect(urllib.request.HTTPRedirectHandler):
-        def redirect_request(self, req, fp, code, msg, hdrs, newurl):
-            return None
-
-    opener = urllib.request.build_opener(*( [] if follow_redirects else [NoRedirect()] ))
-    req = urllib.request.Request(url, data=data, headers=headers, method=method)
-    try:
-        resp = opener.open(req, timeout=timeout)
-        body = resp.read()
-        return resp.status, dict(resp.headers.items()), body
-    except urllib.error.HTTPError as e:
-        body = e.read() if hasattr(e, &quot;read&quot;) else b&quot;&quot;
-        return e.code, dict(e.headers.items()), body
-
-
-def start_server(port, db_path, log_path):
-    env = os.environ.copy()
-    env[&quot;PORT&quot;] = str(port)
-    env[&quot;DB_PATH&quot;] = db_path
-    env[&quot;QUIET_LOGS&quot;] = &quot;1&quot;
-    log = open(log_path, &quot;ab&quot;, buffering=0)
-    p = subprocess.Popen([sys.executable, &quot;app.py&quot;], stdout=log, stderr=log, env=env)
-    return p
-
-
-def wait_health(port, deadline=5.0):
-    t0 = time.time()
-    last = None
-    while time.time() - t0 &lt; deadline:
-        try:
-            st, hdrs, body = http_request(&quot;GET&quot;, f&quot;http://127.0.0.1:{port}/health&quot;, timeout=1)
-            last = (st, body)
-            if st == 200 and body.strip() == b&quot;ok&quot;:
-                return True, last
-        except Exception as e:
-            last = repr(e)
-        time.sleep(0.05)
-    return False, last
-
-
-def main():
-    checks = []
-    evidence = {&quot;boot&quot;: [], &quot;db_path&quot;: None, &quot;ports&quot;: []}
-
-    with tempfile.TemporaryDirectory() as td:
-        db_path = os.path.join(td, &quot;shortlink.db&quot;)
-        evidence[&quot;db_path&quot;] = db_path
-        log1 = os.path.join(td, &quot;srv1.log&quot;)
-        log2 = os.path.join(td, &quot;srv2.log&quot;)
-
-        port1 = free_port()
-        evidence[&quot;ports&quot;].append(port1)
-        p1 = start_server(port1, db_path, log1)
-        evidence[&quot;boot&quot;].append({&quot;cmd&quot;: [sys.executable, &quot;app.py&quot;], &quot;PORT&quot;: port1, &quot;DB_PATH&quot;: db_path, &quot;log&quot;: log1})
-        try:
-            ok, detail = wait_health(port1)
-            checks.append({&quot;name&quot;: &quot;health_port1&quot;, &quot;ok&quot;: ok, &quot;detail&quot;: str(detail)})
-            if not ok:
-                raise SystemExit(1)
-
-            # mint link
-            target_url = &quot;https://example.com/hello&quot;
-            payload = json.dumps({&quot;url&quot;: target_url}).encode(&quot;utf-8&quot;)
-            st, hdrs, body = http_request(
-                &quot;POST&quot;,
-                f&quot;http://127.0.0.1:{port1}/links&quot;,
-                data=payload,
-                headers={&quot;Content-Type&quot;: &quot;application/json&quot;},
-                timeout=5,
-            )
-            detail = {&quot;status&quot;: st, &quot;headers&quot;: hdrs, &quot;body&quot;: body.decode(&quot;utf-8&quot;, &quot;replace&quot;)}
-            ok = st == 201
-            checks.append({&quot;name&quot;: &quot;mint_link&quot;, &quot;ok&quot;: ok, &quot;detail&quot;: json.dumps(detail)})
-            if not ok:
-                raise SystemExit(1)
-            resp = json.loads(body.decode(&quot;utf-8&quot;))
-            code = resp.get(&quot;code&quot;)
-
-            # explicit GET /{code} and assert 301 Location (no follow)
-            st, hdrs, body = http_request(
-                &quot;GET&quot;,
-                f&quot;http://127.0.0.1:{port1}/{code}&quot;,
-                timeout=5,
-                follow_redirects=False,
-            )
-            detail = {&quot;status&quot;: st, &quot;location&quot;: hdrs.get(&quot;Location&quot;), &quot;headers&quot;: hdrs}
-            ok = (st == 301 and hdrs.get(&quot;Location&quot;) == target_url)
-            checks.append({&quot;name&quot;: &quot;redirect_301_port1&quot;, &quot;ok&quot;: ok, &quot;detail&quot;: json.dumps(detail)})
-            if not ok:
-                raise SystemExit(1)
-
-        finally:
-            p1.terminate()
-            try:
-                p1.wait(t
-… (truncated)</pre></details><details class="art"><summary>app.py</summary><pre>from __future__ import annotations
-
-import json
+def _random_code() -&gt; str:
+    # 48 bits of entr
+… (truncated)</pre></details><details class="art"><summary>tests/test_e2e.py</summary><pre>import json
 import os
-import re
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from typing import Any, Dict, Optional, Tuple
-from urllib.parse import urlparse
-
-import shortlink_store as store
-
-
-def _json_bytes(obj: Any) -&gt; bytes:
-    return (json.dumps(obj, separators=(&quot;,&quot;, &quot;:&quot;)) + &quot;\n&quot;).encode(&quot;utf-8&quot;)
-
-
-def _send_json(handler: BaseHTTPRequestHandler, status: int, obj: Any) -&gt; None:
-    body = _json_bytes(obj)
-    handler.send_response(status)
-    handler.send_header(&quot;Content-Type&quot;, &quot;application/json; charset=utf-8&quot;)
-    handler.send_header(&quot;Content-Length&quot;, str(len(body)))
-    handler.end_headers()
-    handler.wfile.write(body)
-
-
-def _read_json(handler: BaseHTTPRequestHandler) -&gt; Tuple[Optional[Dict[str, Any]], Optional[str]]:
-    length = handler.headers.get(&quot;Content-Length&quot;)
-    if length is None:
-        return None, &quot;missing Content-Length&quot;
-    try:
-        n = int(length)
-    except ValueError:
-        return None, &quot;invalid Content-Length&quot;
-    raw = handler.rfile.read(n)
-    try:
-        data = json.loads(raw.decode(&quot;utf-8&quot;))
-    except Exception:
-        return None, &quot;invalid JSON&quot;
-    if not isinstance(data, dict):
-        return None, &quot;JSON body must be an object&quot;
-    return data, None
-
-
-def _is_valid_http_url(url: str) -&gt; bool:
-    try:
-        p = urlparse(url)
-    except Exception:
-        return False
-    if p.scheme not in (&quot;http&quot;, &quot;https&quot;):
-        return False
-    if not p.netloc:
-        return False
-    return True
-
-
-_CODE_RE = re.compile(r&quot;^[0-9A-Za-z]{1,64}$&quot;)
-
-
-class Handler(BaseHTTPRequestHandler):
-    server_version = &quot;shortlink/1.0&quot;
-
-    def _db(self):
-        return store.connect(self.server.db_path)  # type: ignore[attr-defined]
-
-    def do_GET(self) -&gt; None:  # noqa: N802
-        path = self.path.split(&quot;?&quot;, 1)[0]
-
-        if path == &quot;/health&quot;:
-            body = b&quot;ok&quot;
-            self.send_response(200)
-            self.send_header(&quot;Content-Type&quot;, &quot;text/plain; charset=utf-8&quot;)
-            self.send_header(&quot;Content-Length&quot;, str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
-            return
-
-        if path.startswith(&quot;/api/links/&quot;) and path.endswith(&quot;/stats&quot;):
-            parts = path.split(&quot;/&quot;)
-            if len(parts) != 5:
-                _send_json(self, 404, {&quot;error&quot;: &quot;not found&quot;})
-                return
-            code = parts[3]
-            if not _CODE_RE.match(code):
-                _send_json(self, 404, {&quot;error&quot;: &quot;not found&quot;})
-                return
-            conn = self._db()
-            try:
-                stats = store.get_stats(conn, code)
-            finally:
-                conn.close()
-            if stats is None:
-                _send_json(self, 404, {&quot;error&quot;: &quot;not found&quot;})
-                return
-            _send_json(self, 200, stats)
-            return
-
-        if path.startswith(&quot;/&quot;) and len(path) &gt; 1 and &quot;/&quot; not in path[1:]:
-            code = path[1:]
-            if not _CODE_RE.match(code):
-                self.send_response(404)
-                self.end_headers()
-                return
-            conn = self._db()
-            try:
-                url = store.get_link_url(conn, code)
-                if url is None:
-                    self.send_response(404)
-                    self.end_headers()
-                    return
-                store.record_click(
-                    conn,
-                    code,
-                    referrer=self.headers.get(&quot;Referer&quot;),
-                    user_agent=self.headers.get(&quot;User-Agent&quot;),
-                )
-            finally:
-                conn.close()
-            self.send_response(301)
-            self.send_header(&quot;Location&quot;, url)
-            self.end_headers()
-            return
-
-        self.send_response(404)
-        self.end_headers()
-
-    def do_POST(self) -&gt; None:  # noqa: N802
-        path = self.path.split(&quot;?&quot;, 1)[0]
-        if path != &quot;/links&quot;:
-            self.send_response(404)
-            self.end_headers()
-            retur
-… (truncated)</pre></details><details class="art"><summary>test_shortlink_e2e.py</summary><pre>import json
-import os
+import signal
 import socket
 import subprocess
 import tempfile
 import time
 import unittest
+import urllib.error
 import urllib.request
-from urllib.error import HTTPError
-from urllib.request import Request, urlopen
 
 
 def _pick_free_port() -&gt; int:
@@ -612,239 +382,390 @@ def _pick_free_port() -&gt; int:
         return int(s.getsockname()[1])
 
 
-def _wait_http_ok(url: str, timeout_s: float = 10.0) -&gt; None:
-    deadline = time.time() + timeout_s
-    last_err = None
-    while time.time() &lt; deadline:
+def _http_request(
+    url: str,
+    *,
+    method: str = &quot;GET&quot;,
+    headers: dict[str, str] | None = None,
+    body: bytes | None = None,
+):
+    req = urllib.request.Request(url, method=method, headers=headers or {}, data=body)
+    try:
+        return urllib.request.urlopen(req, timeout=2)
+    except urllib.error.HTTPError as e:  # HTTPError is also a response object
+        return e
+
+
+def _wait_for_health(base_url: str, proc: subprocess.Popen[bytes], timeout_s: float = 10.0) -&gt; None:
+    deadline = time.monotonic() + timeout_s
+    last_err: Exception | None = None
+    while time.monotonic() &lt; deadline:
+        if proc.poll() is not None:
+            raise RuntimeError(f&quot;server exited early with code {proc.returncode}&quot;)
         try:
-            with urlopen(url, timeout=1) as resp:
-                if resp.status == 200:
-                    return
-        except Exception as e:  # pragma: no cover
+            resp = _http_request(f&quot;{base_url}/health&quot;)
+            body = resp.read().decode(&quot;utf-8&quot;, errors=&quot;replace&quot;)
+            if getattr(resp, &quot;status&quot;, None) == 200 and body == &quot;ok&quot;:
+                return
+        except Exception as e:  # noqa: BLE001 - polling
             last_err = e
-        time.sleep(0.1)
-    raise AssertionError(f&quot;service did not become ready: {last_err}&quot;)
+        time.sleep(0.05)
+    raise TimeoutError(f&quot;timed out waiting for /health; last_err={last_err!r}&quot;)
 
 
-class _NoRedirect(urllib.request.HTTPRedirectHandler):
-    def redirect_request(self, req, fp, code, msg, headers, newurl):
-        return None
+class _ServerProcess:
+    def __init__(self, *, port: int, db_path: str):
+        self.port = port
+        self.db_path = db_path
+        self.base_url = f&quot;http://127.0.0.1:{port}&quot;
+        self.proc: subprocess.Popen[bytes] | None = None
 
-
-class ShortlinkServiceE2E(unittest.TestCase):
-    def _start_service(self, port: int, db_path: str) -&gt; subprocess.Popen:
+    def start(self) -&gt; None:
         env = os.environ.copy()
-        env[&quot;PORT&quot;] = str(port)
-        env[&quot;DB_PATH&quot;] = db_path
-        env[&quot;QUIET_LOGS&quot;] = &quot;1&quot;
-        env[&quot;PYTHONUNBUFFERED&quot;] = &quot;1&quot;
+        env[&quot;PORT&quot;] = str(self.port)
+        env[&quot;DB_PATH&quot;] = self.db_path
 
-        p = subprocess.Popen(
+        # setsid =&gt; new process group; lets us terminate reliably.
+        self.proc = subprocess.Popen(
             [&quot;python&quot;, &quot;app.py&quot;],
             env=env,
             stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
+            stderr=subprocess.STDOUT,
+            preexec_fn=os.setsid,
         )
-        _wait_http_ok(f&quot;http://127.0.0.1:{port}/health&quot;, timeout_s=10)
-        return p
+        _wait_for_health(self.base_url, self.proc)
 
-    def _stop_service(self, p: subprocess.Popen) -&gt; None:
-        if p.poll() is not None:
+    def stop(self) -&gt; None:
+        if self.proc is None:
             return
-        p.terminate()
-        try:
-            p.wait(timeout=10)
-        except subprocess.TimeoutExpired:  # pragma: no cover
-            p.kill()
-            p.wait(timeout=10)
 
-    def _get_redirect_location(self, url: str, headers: dict) -&gt; str:
-        opener = urllib.request.build_opener(_NoRedirect)
-        req = Request(url, method=&quot;GET&quot;, headers=headers)
-        try:
-            with opener.open(req, timeout=5) as resp:  # pragma: no cover
-                # If no redirect happens, that&#x27;s unexpected for this test.
-                self.fail(f&quot;expected redirect, got {resp.status}&quot;)
-        except HTTPError as e:
-            self.assertEqual(e.code, 301)
-            return e.headers.get(&quot;Location&quot;)
-
-    def test_e2e_create_redirect_stats_persist_across_restart(self):
-        port = _pick_free_port()
-        with tempfile.TemporaryDirectory() as td:
-            db_path = os.path.join(td, &quot;shortlink.db&quot;)
-
-            p1 = self._start_service(port, db_path)
+        if self.proc.poll() is None:
             try:
-                payload = json.dumps({&quot;url&quot;: &quot;https://example.com/target&quot;}).encode(&quot;utf-8&quot;)
-                req = Request(
-                    f&quot;http://127.0.0.1:{port}/links&quot;,
-                    data=payload,
+                os.killpg(self.proc.pid, signal.SIGTERM)
+            except ProcessLookupError:
+                pass
+            try:
+                self.proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                try:
+                    os.killpg(self.proc.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                self.proc.wait(timeout=5)
+
+        # Drain pipes to avoid ResourceWarning in some environments.
+        try:
+            if self.proc.stdout is not None:
+                self.proc.stdout.read()
+        except Exception:
+            pass
+
+
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):  # type: ignore[override]
+        return None
+
+
+class ShortlinkE2ETest(unittest.TestCase):
+    def test_mint_redirect_stats_and_persistence_across_restart(self) -&gt; None:
+        with tempfile.TemporaryDirectory() as td:
+            db_path = os.path.join(td, &quot;shortlink.sqlite&quot;)
+            port = _pick_free_port()
+
+            server = _ServerProcess(port=port, db_path=db_path)
+            try:
+                server.start()
+
+                # POST /links to mint a code
+                target_url = &quot;https://example.com/some/path?q=1&quot;
+                payload = json.dumps({&quot;url&quot;: target_url}).encode(&quot;utf-8&quot;)
+                resp = _http_request(
+                    f&quot;{server.base_url}/links&quot;,
                     method=&quot;POST&quot;,
-                    headers={&quot;Content-Type&quot;: &quot;application/json&quot;},
+                    headers={&quot;Content-Type&quot;: &quot;application/json&quot;, &quot;Content-Length&quot;: str(len(payload))},
+                    body=payload,
                 )
-                with urlopen(req, timeout=5) as resp:
-                    self.assertEqual(resp.status, 201)
-                    body = json.loads(resp.read().decode(&quot;utf-8&quot;))
-                code = body[&quot;code&quot;]
-                self.assertTrue(code)
+                self.assertEqual(201, resp.status)
+… (truncated)</pre></details><details class="art"><summary>app.py</summary><pre>from __future__ import annotations
 
-                redirect_url = f&quot;http://127.0.0.1:{port}/{code}&quot;
-                location = self._get_redirect_location(
-                    redirect_url,
-                    headers={&quot;Referer&quot;: &quot;https://ref.example/path&quot;, &quot;User-Agent&quot;: &quot;unittest-agent/1.0&quot;},
+import datetime as dt
+import json
+import os
+import re
+from http import HTTPStatus
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from typing import Any
+
+import shortlink_store
+
+
+_CODE_RE = re.compile(r&quot;^[0-9A-Za-z]{1,32}$&quot;)
+
+
+def _read_json(handler: BaseHTTPRequestHandler) -&gt; tuple[dict[str, Any] | None, str | None]:
+    length_raw = handler.headers.get(&quot;Content-Length&quot;)
+    if length_raw is None:
+        return None, &quot;missing Content-Length&quot;
+    try:
+        length = int(length_raw)
+    except ValueError:
+        return None, &quot;invalid Content-Length&quot;
+    if length &lt; 0 or length &gt; 1_000_000:
+        return None, &quot;invalid Content-Length&quot;
+
+    body = handler.rfile.read(length)
+    try:
+        data = json.loads(body.decode(&quot;utf-8&quot;))
+    except UnicodeDecodeError:
+        return None, &quot;request body must be utf-8&quot;
+    except json.JSONDecodeError:
+        return None, &quot;request body must be valid JSON&quot;
+
+    if not isinstance(data, dict):
+        return None, &quot;JSON body must be an object&quot;
+    return data, None
+
+
+def _send_json(handler: BaseHTTPRequestHandler, status: int, payload: Any) -&gt; None:
+    body = json.dumps(payload, separators=(&quot;,&quot;, &quot;:&quot;)).encode(&quot;utf-8&quot;)
+    handler.send_response(status)
+    handler.send_header(&quot;Content-Type&quot;, &quot;application/json&quot;)
+    handler.send_header(&quot;Content-Length&quot;, str(len(body)))
+    handler.end_headers()
+    handler.wfile.write(body)
+
+
+def _send_text(handler: BaseHTTPRequestHandler, status: int, text: str) -&gt; None:
+    body = text.encode(&quot;utf-8&quot;)
+    handler.send_response(status)
+    handler.send_header(&quot;Content-Type&quot;, &quot;text/plain; charset=utf-8&quot;)
+    handler.send_header(&quot;Content-Length&quot;, str(len(body)))
+    handler.end_headers()
+    handler.wfile.write(body)
+
+
+class ShortlinkHandler(BaseHTTPRequestHandler):
+    server: &quot;ShortlinkServer&quot;  # type: ignore[assignment]
+
+    def log_message(self, fmt: str, *args: object) -&gt; None:
+        return
+
+    def do_GET(self) -&gt; None:  # noqa: N802 (stdlib naming)
+        path = self.path.split(&quot;?&quot;, 1)[0]
+
+        if path == &quot;/health&quot;:
+            _send_text(self, HTTPStatus.OK, &quot;ok&quot;)
+            return
+
+        m = re.fullmatch(r&quot;/api/links/([^/]+)/stats&quot;, path)
+        if m:
+            code = m.group(1)
+            if not _CODE_RE.fullmatch(code):
+                _send_json(self, HTTPStatus.NOT_FOUND, {&quot;error&quot;: &quot;not found&quot;})
+                return
+
+            with shortlink_store.open_connection(self.server.db_path) as conn:
+                link = shortlink_store.get_link(conn, code)
+                if link is None:
+                    _send_json(self, HTTPStatus.NOT_FOUND, {&quot;error&quot;: &quot;not found&quot;})
+                    return
+                stats = shortlink_store.get_stats(conn, code)
+
+            _send_json(
+                self,
+                HTTPStatus.OK,
+                {
+                    &quot;code&quot;: code,
+                    &quot;url&quot;: link.url,
+                    &quot;total_clicks&quot;: stats.total_clicks,
+                    &quot;top_referrers&quot;: stats.top_referrers,
+                    &quot;clicks_by_day&quot;: stats.clicks_by_day,
+                },
+            )
+            return
+
+        m = re.fullmatch(r&quot;/([0-9A-Za-z]{1,32})&quot;, path)
+        if m:
+            code = m.group(1)
+            with shortlink_store.open_connection(self.server.db_path) as conn:
+                link = shortlink_store.get_link(conn, code)
+                if link is None:
+                    _send_json(self, HTTPStatus.NOT_FOUND, {&quot;error&quot;: &quot;not found&quot;})
+                    return
+
+                shortlink_store.record_click(
+                    conn,
+                    code=code,
+                    ts_utc=dt.datetime.now(dt.UTC),
+                    referrer=self.headers.get(&quot;Referer&quot;),
+                    user_agent=self.headers.get(&quot;User-Agent&quot;),
                 )
-                self.assertEqual(location, &quot;https://example.com/target&quot;)
 
-                with urlopen(f&quot;http://127.0.0.1:{port}/api/links/{code}/stats&quot;, timeout=5) as resp:
-                    self.assertEqual(resp.status, 200)
-                    stats = json.loads(resp.read().decode(&quot;utf-8&quot;))
-                self.assertEqual(stats[&quot;code&quot;], code)
-                self.assertEqual(stats[&quot;total_clicks&quot;], 1)
-                self.assertTrue(isinstance(stats.get(&quot;clicks_by_day&quot;), dict))
-           
-… (truncated)</pre></details><details class="art"><summary>test_shortlink_unit.py</summary><pre>import datetime
+            self.send_response(HTTPStatus.MOVED_PERMANENTLY)
+            self.send_header(&quot;Location&quot;, link.url)
+            self.send_header(&quot;Content-Length&quot;, &quot;0&quot;)
+          
+… (truncated)</pre></details><details class="art"><summary>tests/test_stats_aggregation.py</summary><pre>import datetime as dt
+import os
+import tempfile
+import unittest
+
+import shortlink_store
+
+
+class StatsAggregationTests(unittest.TestCase):
+    def test_day_bucket_and_top_referrers(self) -&gt; None:
+        with tempfile.TemporaryDirectory() as td:
+            db_path = os.path.join(td, &quot;t.db&quot;)
+            shortlink_store.apply_migrations(db_path)
+            with shortlink_store.connect(db_path) as conn:
+                link = shortlink_store.create_link(conn, &quot;https://example.com&quot;)
+
+                events = [
+                    {
+                        &quot;ts_utc&quot;: dt.datetime(2025, 1, 1, 0, 1, tzinfo=dt.UTC),
+                        &quot;referrer&quot;: &quot;https://a.example&quot;,
+                        &quot;user_agent&quot;: &quot;ua&quot;,
+                    },
+                    {
+                        &quot;ts_utc&quot;: dt.datetime(2025, 1, 1, 23, 59, tzinfo=dt.UTC),
+                        &quot;referrer&quot;: &quot;https://a.example&quot;,
+                        &quot;user_agent&quot;: &quot;ua&quot;,
+                    },
+                    {
+                        &quot;ts_utc&quot;: dt.datetime(2025, 1, 2, 0, 0, tzinfo=dt.UTC),
+                        &quot;referrer&quot;: &quot;https://b.example&quot;,
+                        &quot;user_agent&quot;: &quot;ua&quot;,
+                    },
+                    {
+                        &quot;ts_utc&quot;: dt.datetime(2025, 1, 2, 12, 0, tzinfo=dt.UTC),
+                        &quot;referrer&quot;: &quot;https://a.example&quot;,
+                        &quot;user_agent&quot;: &quot;ua&quot;,
+                    },
+                ]
+                shortlink_store.seed_clicks(conn, link.code, events)
+
+                stats = shortlink_store.get_stats(conn, link.code)
+
+            self.assertEqual(stats.total_clicks, 4)
+            self.assertEqual(stats.clicks_by_day, {&quot;2025-01-01&quot;: 2, &quot;2025-01-02&quot;: 2})
+
+            # a has 3, b has 1
+            self.assertEqual(stats.top_referrers[0][&quot;referrer&quot;], &quot;https://a.example&quot;)
+            self.assertEqual(stats.top_referrers[0][&quot;clicks&quot;], 3)
+            self.assertEqual(stats.top_referrers[1][&quot;referrer&quot;], &quot;https://b.example&quot;)
+            self.assertEqual(stats.top_referrers[1][&quot;clicks&quot;], 1)
+</pre></details><details class="art"><summary>tests/test_concurrency.py</summary><pre>import os
 import tempfile
 import threading
 import unittest
 
-import shortlink_store as store
+import shortlink_store
 
 
-class TestBase62Codec(unittest.TestCase):
-    def test_base62_roundtrip_known_values(self):
-        # include boundary-ish values and some larger ints
-        nums = [0, 1, 61, 62, 63, 12345, 62**5 + 17, 10**12]
-        for n in nums:
-            s = store.base62_encode(n)
-            self.assertIsInstance(s, str)
-            self.assertGreater(len(s), 0)
-            self.assertEqual(store.base62_decode(s), n)
+class ConcurrencyTests(unittest.TestCase):
+    def test_codes_unique_under_concurrent_creation(self) -&gt; None:
+        with tempfile.TemporaryDirectory() as td:
+            db_path = os.path.join(td, &quot;t.db&quot;)
+            shortlink_store.apply_migrations(db_path)
 
-    def test_base62_encode_rejects_negative(self):
-        with self.assertRaises(ValueError):
-            store.base62_encode(-1)
-
-
-class TestCreateLinkConcurrency(unittest.TestCase):
-    def test_create_link_concurrent_uniqueness(self):
-        # Uses a real sqlite file so multiple connections/threads contend on the same DB.
-        with tempfile.NamedTemporaryFile(suffix=&quot;.db&quot;) as tf:
-            db_path = tf.name
-
-            conn = store.connect(db_path)
-            try:
-                store.apply_migrations(conn)
-            finally:
-                conn.close()
-
-            n_threads = 25
-            codes = []
-            codes_lock = threading.Lock()
-            errors = []
+            created: list[str] = []
+            created_lock = threading.Lock()
+            errors: list[BaseException] = []
 
             def worker(i: int) -&gt; None:
                 try:
-                    c = store.connect(db_path)
-                    try:
-                        code = store.create_link(c, f&quot;https://example.com/{i}&quot;)
-                    finally:
-                        c.close()
-                    with codes_lock:
-                        codes.append(code)
-                except Exception as e:  # pragma: no cover (diagnostics)
-                    with codes_lock:
+                    with shortlink_store.open_connection(db_path) as conn:
+                        link = shortlink_store.create_link(conn, f&quot;https://example.com/{i}&quot;)
+                    with created_lock:
+                        created.append(link.code)
+                except BaseException as e:  # noqa: BLE001 - test harness
+                    with created_lock:
                         errors.append(e)
 
-            threads = [threading.Thread(target=worker, args=(i,)) for i in range(n_threads)]
+            threads = [threading.Thread(target=worker, args=(i,)) for i in range(50)]
             for t in threads:
                 t.start()
             for t in threads:
-                t.join(timeout=10)
+                t.join(timeout=5)
 
-            self.assertFalse(errors, f&quot;unexpected errors: {errors}&quot;)
-            self.assertEqual(len(codes), n_threads)
-            self.assertEqual(len(set(codes)), n_threads, &quot;codes must be unique under concurrency&quot;)
+            if errors:
+                raise errors[0]
 
+            self.assertEqual(len(created), 50)
+            self.assertEqual(len(set(created)), 50)
+</pre></details><details class="art"><summary>tests/test_base62.py</summary><pre>import unittest
 
-class TestStatsDayBucketUTC(unittest.TestCase):
-    def test_stats_aggregates_by_utc_day(self):
-        with tempfile.NamedTemporaryFile(suffix=&quot;.db&quot;) as tf:
-            conn = store.connect(tf.name)
-            try:
-                store.apply_migrations(conn)
-
-                code = store.create_link(conn, &quot;https://example.com&quot;)
-
-                # Patch utc_now to return deterministic UTC timestamps across day boundary.
-                original_utc_now = store.utc_now
-                try:
-                    seq = [
-                        datetime.datetime(2025, 1, 1, 23, 59, 59, tzinfo=datetime.timezone.utc),
-                        datetime.datetime(2025, 1, 2, 0, 0, 1, tzinfo=datetime.timezone.utc),
-                        datetime.datetime(2025, 1, 2, 12, 0, 0, tzinfo=datetime.timezone.utc),
-                    ]
-                    it = iter(seq)
-
-                    def fake_utc_now():
-                        return next(it)
-
-                    store.utc_now = fake_utc_now
-
-                    store.record_click(conn, code, referrer=None, user_agent=&quot;ua&quot;)
-                    store.record_click(conn, code, referrer=&quot;https://ref.example&quot;, user_agent=&quot;ua&quot;)
-                    store.record_click(conn, code, referrer=&quot;https://ref.example&quot;, user_agent=&quot;ua&quot;)
-                finally:
-                    store.utc_now = original_utc_now
-
-                stats = store.get_stats(conn, code)
-                self.assertIsNotNone(stats)
-                self.assertEqual(stats[&quot;total_clicks&quot;], 3)
-
-                # Day buckets are keyed as YYYY-MM-DD.
-                self.assertEqual(stats[&quot;clicks_by_day&quot;], {&quot;2025-01-01&quot;: 1, &quot;2025-01-02&quot;: 2})
-            finally:
-                conn.close()
-</pre></details><details class="art"><summary>test_placeholder.py</summary><pre>import unittest
+import shortlink_store
 
 
-class TestPlaceholder(unittest.TestCase):
-    def test_placeholder(self):
-        self.assertTrue(True)
-</pre></details><details class="art"><summary>test_plan.json</summary><pre>{
-  &quot;scope&quot;: &quot;stdlib unittest coverage for shortlink service&quot;,
-  &quot;unit_tests&quot;: [
+class Base62Tests(unittest.TestCase):
+    def test_roundtrip(self) -&gt; None:
+        values = [0, 1, 61, 62, 12345, 2**48 - 1]
+        for n in values:
+            enc = shortlink_store.base62_encode(n)
+            dec = shortlink_store.base62_decode(enc)
+            self.assertEqual(dec, n)
+
+    def test_decode_rejects_invalid_chars(self) -&gt; None:
+        with self.assertRaises(shortlink_store.Base62Error):
+            shortlink_store.base62_decode(&quot;abc+&quot;)
+
+    def test_encode_rejects_negative(self) -&gt; None:
+        with self.assertRaises(shortlink_store.Base62Error):
+            shortlink_store.base62_encode(-1)
+</pre></details><details class="art"><summary>test_placeholder.py</summary><pre># legacy placeholder removed in favor of real unittest suite</pre></details><details class="art"><summary>test_plan.json</summary><pre>{
+  &quot;scope&quot;: &quot;stdlib-only end-to-end integration tests for shortlink HTTP service&quot;,
+  &quot;approach&quot;: [
+    &quot;Boot the real server as a subprocess (python app.py) with PORT and DB_PATH set&quot;,
+    &quot;Poll /health until it returns 200 OK with body &#x27;ok&#x27;&quot;,
+    &quot;Exercise the public HTTP API via urllib (stdlib): POST /links, GET /{code}, GET /api/links/{code}/stats&quot;,
+    &quot;Terminate the subprocess cleanly, restart against the same DB_PATH, and re-verify redirect persistence&quot;
+  ],
+  &quot;tests&quot;: [
     {
-      &quot;file&quot;: &quot;test_shortlink_unit.py&quot;,
+      &quot;file&quot;: &quot;tests/test_e2e.py&quot;,
+      &quot;name&quot;: &quot;ShortlinkE2ETest.test_mint_redirect_stats_and_persistence_across_restart&quot;,
       &quot;covers&quot;: [
-        &quot;base62_encode/base62_decode roundtrip for representative integers and 0 handling&quot;,
-        &quot;base62_encode rejects negative input&quot;,
-        &quot;create_link produces unique codes under concurrent attempts against a real sqlite DB&quot;,
-        &quot;get_stats aggregates clicks into UTC day buckets using a fixed utc_now click fixture&quot;
+        &quot;Server boots via subprocess with PORT/DB_PATH env vars and becomes healthy on /health&quot;,
+        &quot;POST /links mints a short code and returns 201 with JSON containing code&quot;,
+        &quot;GET /{code} returns 301 with Location pointing at the minted URL&quot;,
+        &quot;GET /api/links/{code}/stats returns 200 JSON with total_clicks incrementing after redirects&quot;,
+        &quot;top_referrers includes the Referer header used for the redirect request&quot;,
+        &quot;Persistence across restart: after stopping and restarting the server with the same DB_PATH, the same code still redirects&quot;
       ]
     }
   ],
-  &quot;end_to_end_tests&quot;: [
-    {
-      &quot;file&quot;: &quot;test_shortlink_e2e.py&quot;,
-      &quot;covers&quot;: [
-        &quot;boot service via &#x27;python app.py&#x27; on a free port with temp DB_PATH&quot;,
-        &quot;POST /links returns code and persists link&quot;,
-        &quot;GET /{code} returns 301 Location and records click metadata (Referer, User-Agent)&quot;,
-        &quot;GET /api/links/{code}/stats returns aggregated stats&quot;,
-        &quot;restart process and verify existing link redirect still works (DB persistence)&quot;,
-        &quot;service process terminated cleanly (terminate then kill fallback)&quot;
-      ]
-    }
+  &quot;out_of_scope&quot;: [
+    &quot;Non-stdlib test frameworks (pytest)&quot;,
+    &quot;Direct unit testing of storage internals beyond what is observable via HTTP&quot;,
+    &quot;Performance/benchmark testing&quot;
   ]
 }
 </pre></details><details class="art"><summary>test_evidence/manifest.json</summary><pre>{
   &quot;verdict&quot;: &quot;pass&quot;,
   &quot;gates&quot;: [
     {
+      &quot;name&quot;: &quot;format&quot;,
+      &quot;command&quot;: &quot;python -m compileall -q .&quot;,
+      &quot;status&quot;: &quot;pass&quot;,
+      &quot;returncode&quot;: 0
+    },
+    {
+      &quot;name&quot;: &quot;lint&quot;,
+      &quot;command&quot;: &quot;python -m compileall -q .&quot;,
+      &quot;status&quot;: &quot;pass&quot;,
+      &quot;returncode&quot;: 0
+    },
+    {
+      &quot;name&quot;: &quot;types&quot;,
+      &quot;command&quot;: &quot;python -m compileall -q .&quot;,
+      &quot;status&quot;: &quot;pass&quot;,
+      &quot;returncode&quot;: 0
+    },
+    {
       &quot;name&quot;: &quot;unit&quot;,
-      &quot;command&quot;: &quot;python -m unittest -v&quot;,
+      &quot;command&quot;: &quot;python -m unittest discover -s tests -q&quot;,
       &quot;status&quot;: &quot;pass&quot;,
       &quot;returncode&quot;: 0
     }
@@ -857,58 +778,97 @@ class TestPlaceholder(unittest.TestCase):
 </pre></details><details class="art"><summary>api_verdict.json</summary><pre>{
   &quot;checks&quot;: [
     {
-      &quot;detail&quot;: &quot;(200, b&#x27;ok&#x27;)&quot;,
-      &quot;name&quot;: &quot;health_port1&quot;,
+      &quot;detail&quot;: {
+        &quot;body&quot;: &quot;ok&quot;,
+        &quot;status&quot;: 200
+      },
+      &quot;name&quot;: &quot;health&quot;,
       &quot;ok&quot;: true
     },
     {
-      &quot;detail&quot;: &quot;{\&quot;status\&quot;: 201, \&quot;headers\&quot;: {\&quot;Server\&quot;: \&quot;shortlink/1.0 Python/3.13.11\&quot;, \&quot;Date\&quot;: \&quot;Sun, 05 Jul 2026 12:49:26 GMT\&quot;, \&quot;Content-Type\&quot;: \&quot;application/json; charset=utf-8\&quot;, \&quot;Content-Length\&quot;: \&quot;100\&quot;}, \&quot;body\&quot;: \&quot;{\\\&quot;code\\\&quot;:\\\&quot;KpTA1iKc\\\&quot;,\\\&quot;short_url\\\&quot;:\\\&quot;http://127.0.0.1:55367/KpTA1iKc\\\&quot;,\\\&quot;url\\\&quot;:\\\&quot;https://example.com/hello\\\&quot;}\\n\&quot;}&quot;,
-      &quot;name&quot;: &quot;mint_link&quot;,
+      &quot;detail&quot;: {
+        &quot;body&quot;: &quot;{\&quot;code\&quot;:\&quot;7rapGSDg\&quot;,\&quot;short_url\&quot;:\&quot;http://127.0.0.1:54168/7rapGSDg\&quot;,\&quot;url\&quot;:\&quot;https://example.com/\&quot;}&quot;,
+        &quot;json&quot;: {
+          &quot;code&quot;: &quot;7rapGSDg&quot;,
+          &quot;short_url&quot;: &quot;http://127.0.0.1:54168/7rapGSDg&quot;,
+          &quot;url&quot;: &quot;https://example.com/&quot;
+        },
+        &quot;status&quot;: 201
+      },
+      &quot;name&quot;: &quot;mint&quot;,
       &quot;ok&quot;: true
     },
     {
-      &quot;detail&quot;: &quot;{\&quot;status\&quot;: 301, \&quot;location\&quot;: \&quot;https://example.com/hello\&quot;, \&quot;headers\&quot;: {\&quot;Server\&quot;: \&quot;shortlink/1.0 Python/3.13.11\&quot;, \&quot;Date\&quot;: \&quot;Sun, 05 Jul 2026 12:49:26 GMT\&quot;, \&quot;Location\&quot;: \&quot;https://example.com/hello\&quot;}}&quot;,
-      &quot;name&quot;: &quot;redirect_301_port1&quot;,
+      &quot;detail&quot;: {
+        &quot;json&quot;: {
+          &quot;clicks_by_day&quot;: {},
+          &quot;code&quot;: &quot;7rapGSDg&quot;,
+          &quot;top_referrers&quot;: [],
+          &quot;total_clicks&quot;: 0,
+          &quot;url&quot;: &quot;https://example.com/&quot;
+        },
+        &quot;status&quot;: 200,
+        &quot;total_clicks&quot;: 0
+      },
+      &quot;name&quot;: &quot;stats_before&quot;,
       &quot;ok&quot;: true
     },
     {
-      &quot;detail&quot;: &quot;(200, b&#x27;ok&#x27;)&quot;,
-      &quot;name&quot;: &quot;health_port2&quot;,
+      &quot;detail&quot;: {
+        &quot;headers&quot;: {
+          &quot;Content-Length&quot;: &quot;0&quot;,
+          &quot;Date&quot;: &quot;Sun, 05 Jul 2026 15:08:01 GMT&quot;,
+          &quot;Location&quot;: &quot;https://example.com/&quot;,
+          &quot;Server&quot;: &quot;BaseHTTP/0.6 Python/3.13.11&quot;
+        },
+        &quot;location&quot;: &quot;https://example.com/&quot;,
+        &quot;status&quot;: 301
+      },
+      &quot;name&quot;: &quot;redirect_301_no_follow&quot;,
       &quot;ok&quot;: true
     },
     {
-      &quot;detail&quot;: &quot;{\&quot;status\&quot;: 301, \&quot;location\&quot;: \&quot;https://example.com/hello\&quot;, \&quot;headers\&quot;: {\&quot;Server\&quot;: \&quot;shortlink/1.0 Python/3.13.11\&quot;, \&quot;Date\&quot;: \&quot;Sun, 05 Jul 2026 12:49:26 GMT\&quot;, \&quot;Location\&quot;: \&quot;https://example.com/hello\&quot;}, \&quot;note\&quot;: \&quot;persist\&quot;}&quot;,
-      &quot;name&quot;: &quot;redirect_301_port2_persist&quot;,
+      &quot;detail&quot;: {
+        &quot;after&quot;: 1,
+        &quot;before&quot;: 0,
+        &quot;json&quot;: {
+          &quot;clicks_by_day&quot;: {
+            &quot;2026-07-05&quot;: 1
+          },
+          &quot;code&quot;: &quot;7rapGSDg&quot;,
+          &quot;top_referrers&quot;: [
+            {
+              &quot;clicks&quot;: 1,
+              &quot;referrer&quot;: &quot;&quot;
+            }
+          ],
+          &quot;total_clicks&quot;: 1,
+          &quot;url&quot;: &quot;https://example.com/&quot;
+        },
+        &quot;status&quot;: 200
+      },
+      &quot;name&quot;: &quot;stats_after&quot;,
+      &quot;ok&quot;: true
+    },
+    {
+      &quot;detail&quot;: {
+        &quot;location&quot;: &quot;https://example.com/&quot;,
+        &quot;status&quot;: 301
+      },
+      &quot;name&quot;: &quot;persistence_restart_redirect&quot;,
       &quot;ok&quot;: true
     }
   ],
   &quot;evidence&quot;: {
-    &quot;boot&quot;: [
-      {
-        &quot;DB_PATH&quot;: &quot;/var/folders/74/m_l20tpx4qq_7svlx50hqm3r0000gn/T/tmpnnwfkhsl/shortlink.db&quot;,
-        &quot;PORT&quot;: 55367,
-        &quot;cmd&quot;: [
-          &quot;/Users/divyansh/chorus/.venv/bin/python&quot;,
-          &quot;app.py&quot;
-        ],
-        &quot;log&quot;: &quot;/var/folders/74/m_l20tpx4qq_7svlx50hqm3r0000gn/T/tmpnnwfkhsl/srv1.log&quot;
-      },
-      {
-        &quot;DB_PATH&quot;: &quot;/var/folders/74/m_l20tpx4qq_7svlx50hqm3r0000gn/T/tmpnnwfkhsl/shortlink.db&quot;,
-        &quot;PORT&quot;: 55372,
-        &quot;cmd&quot;: [
-          &quot;/Users/divyansh/chorus/.venv/bin/python&quot;,
-          &quot;app.py&quot;
-        ],
-        &quot;log&quot;: &quot;/var/folders/74/m_l20tpx4qq_7svlx50hqm3r0000gn/T/tmpnnwfkhsl/srv2.log&quot;
-      }
+    &quot;db_path&quot;: &quot;/private/var/folders/74/m_l20tpx4qq_7svlx50hqm3r0000gn/T/chorus-bex-report-g50ggjom/.chorus/work/acme/worktrees/bex/api_verify.sqlite&quot;,
+    &quot;logs&quot;: [
+      &quot;/private/var/folders/74/m_l20tpx4qq_7svlx50hqm3r0000gn/T/chorus-bex-report-g50ggjom/.chorus/work/acme/worktrees/bex/api_verify_server1.log&quot;,
+      &quot;/private/var/folders/74/m_l20tpx4qq_7svlx50hqm3r0000gn/T/chorus-bex-report-g50ggjom/.chorus/work/acme/worktrees/bex/api_verify_server2.log&quot;
     ],
-    &quot;db_path&quot;: &quot;/var/folders/74/m_l20tpx4qq_7svlx50hqm3r0000gn/T/tmpnnwfkhsl/shortlink.db&quot;,
-    &quot;ports&quot;: [
-      55367,
-      55372
-    ]
+    &quot;port&quot;: 54168,
+    &quot;start_cmd&quot;: &quot;PORT=54168 DB_PATH=/private/var/folders/74/m_l20tpx4qq_7svlx50hqm3r0000gn/T/chorus-bex-report-g50ggjom/.chorus/work/acme/worktrees/bex/api_verify.sqlite /Users/divyansh/chorus/.venv/bin/python app.py&quot;
   },
+  &quot;notes&quot;: &quot;Verified redirect without following (custom NoRedirect handler). Verified persist/persistence across restart using same DB_PATH.&quot;,
   &quot;passed&quot;: true
 }</pre></details>
 <footer>Chorus · Backend Engineer (Bex) — Run Flow Report · generated from a live keyed beat and an independent re-run of the shipped worktree.</footer>

@@ -41,6 +41,7 @@ from chorus_harness._trust import apply_trust
 from chorus_tools import (
     AssignTaskTool,
     BrandLintTool,
+    CodeQualityTool,
     DecomposeTool,
     GoLiveTool,
     SecretScanTool,
@@ -114,6 +115,7 @@ _CHORUS_TO_DREAM_TOOL: dict[str, str] = {
     # gate, so it always exists in a ledger-less run instead of being mis-routed as a subagent.
     "test_evidence": "test_evidence",
     "secret_scan": "secret_scan",
+    "code_quality": "code_quality",
     # execute_go_live — the §05 dark-node executor: publishes the staged draft ONLY once its
     # stage_go_live gate is APPROVED (fail-closed + idempotent). Registered in materialize (needs
     # ledger for the gate check + the worktree for the draft/delivery indexes).
@@ -515,6 +517,10 @@ class EmployeeHarnessFactory:
         # security_scan/ report. No ledger, so it registers UNCONDITIONALLY too.
         if "secret_scan" in config.tools:
             registry.register(SecretScanTool(), source=ToolSource.DEFAULT)
+        # code_quality: a stack-blind executor that runs the discovered fmt/lint/type checks + writes
+        # the durable code_quality/ report. No ledger — registers UNCONDITIONALLY, like the above.
+        if "code_quality" in config.tools:
+            registry.register(CodeQualityTool(), source=ToolSource.DEFAULT)
         # execute_go_live pairs with cms_draft: it publishes the staged draft once the human approves
         # the stage_go_live gate. Needs BOTH the ledger (fail-closed gate check) and the worktree
         # (standing-draft + delivery indexes), so it registers here rather than in _capability_tool.

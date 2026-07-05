@@ -16,6 +16,14 @@ from chorus_tools._analysis import (
     analysis_tool,
 )
 from chorus_tools._brand_lint import BrandFinding, BrandLintInput, BrandLintTool
+from chorus_tools._code_quality import (
+    CodeQualityInput,
+    CodeQualityTool,
+    QualityCheck,
+    QualityCheckSpec,
+    QualityReport,
+)
+from chorus_tools._code_quality import write_report as write_quality_report
 from chorus_tools._decompose import DecomposeInput, DecomposeTool
 from chorus_tools._go_live import GoLiveAction, GoLiveInput, GoLiveTool
 from chorus_tools._manager_actions import (
@@ -50,6 +58,8 @@ __all__ = [
     "BrandLintInput",
     "BrandLintTool",
     "ChartRenderTool",
+    "CodeQualityInput",
+    "CodeQualityTool",
     "DecomposeInput",
     "DecomposeTool",
     "EvidenceManifest",
@@ -59,6 +69,9 @@ __all__ = [
     "GoLiveInput",
     "GoLiveTool",
     "NotebookRunTool",
+    "QualityCheck",
+    "QualityCheckSpec",
+    "QualityReport",
     "RepoSearchTool",
     "SecretFinding",
     "SecretScanInput",
@@ -75,5 +88,6 @@ __all__ = [
     "chorus_tool_registry",
     "scan_text",
     "write_bundle",
+    "write_quality_report",
     "write_report",
 ]

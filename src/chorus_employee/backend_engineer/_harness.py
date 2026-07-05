@@ -10,6 +10,8 @@ built service and probes it over real HTTP); the net-allowlist refinement lands 
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from chorus.roles._manifest import (
     Isolation,
     MemoryScope,
@@ -22,6 +24,9 @@ from chorus_employee.backend_engineer._subagents import (
     API_VERIFIER_SUBAGENT,
     TEST_AUTHOR_SUBAGENT,
 )
+
+# Authored playbooks discovered from this package's ``skills/`` dir and offered via the ``skill`` tool.
+_SKILLS_ROOT = str(Path(__file__).parent / "skills")
 
 
 def backend_engineer_manifest() -> RoleManifest:
@@ -42,6 +47,10 @@ def backend_engineer_manifest() -> RoleManifest:
             # the safety floor (§09): scan the worktree for hardcoded credentials + write a durable
             # security_scan/ report. "no secrets in the diff" becomes a file on disk, not a claim.
             "secret_scan",
+            # the §09 Maintainable floor: a stack-blind executor for the format/lint/type checks the
+            # engineer discovers via the verifying-any-stack skill → durable code_quality/ report.
+            "code_quality",
+            "skill",  # load the backend-craft playbooks on demand (verifying-any-stack, …)
             "memory_search",
             "memory_get",
             "working_memory_read",
@@ -53,7 +62,11 @@ def backend_engineer_manifest() -> RoleManifest:
             "spawn_subagent",
         ),
         disallowed_tools=(),
-        skills=(),  # the backend-craft skill library lands in a later slice
+        # — build_harness(skills=…) / (skill_registry=…) — authored craft playbooks, loaded on demand
+        # via the `skill` tool; discovered from this package's skills/ dir. The first is the
+        # framework-agnostic quality-gate know-how behind the code_quality tool.
+        skills=("verifying-any-stack",),
+        skills_root=_SKILLS_ROOT,
         # — build_harness(memory=…) + working_memory —
         memory_scope=MemoryScope.PROJECT,
         working_memory=True,  # a scratchpad across the implement → run → fix turns

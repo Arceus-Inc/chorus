@@ -623,6 +623,33 @@ def _reverify(repo: Path) -> tuple[bool, list[GateRow]]:
         data = json.loads(report.read_text(encoding="utf-8"))
         n = len(data.get("findings", []))
         gate("Secret scan", "security_scan report", bool(data.get("clean")), f"{n} finding(s)")
+
+    # Code quality — the harness's OWN hands: re-run the exact fmt/lint/type commands the code_quality
+    # tool recorded (no hardcoded `ruff` here — the stack knowledge lives in the tool's report).
+    quality = repo / "code_quality" / "report.json"
+    if quality.exists():
+        checks = json.loads(quality.read_text(encoding="utf-8")).get("checks", [])
+        failed: list[str] = []
+        for check in checks:
+            cmd = str(check.get("command", ""))
+            if not cmd:
+                continue
+            rerun = subprocess.run(["bash", "-c", cmd], cwd=repo, capture_output=True, text=True)
+            if rerun.returncode != 0:
+                failed.append(str(check.get("name", "?")))
+        # Independently confirm BREADTH — a green report must prove format AND lint AND types, not one.
+        kinds = {str(c.get("kind", "")) for c in checks}
+        missing = {"format", "lint", "types"} - kinds
+        names = ", ".join(str(c.get("name", "?")) for c in checks)
+        gate(
+            "Code quality (fmt/lint/types)",
+            "re-run recorded checks",
+            not failed and not missing,
+            f"re-ran {names or 'none'}"
+            + (f"; RED: {', '.join(failed)}" if failed else "")
+            + (f"; MISSING kind(s): {', '.join(sorted(missing))}" if missing else "")
+            + ("" if (failed or missing) else " — all three kinds clean"),
+        )
     return ok, rows
 
 
