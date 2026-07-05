@@ -93,6 +93,14 @@ _CHORUS_TO_DREAM_TOOL: dict[str, str] = {
     # (tier-0, scratch-confined) is how a role pulls that full payload back. Without it a role loops on
     # read_file (worktree-relative) and never reads the evidence it just fetched.
     "read_offloaded": "read_offloaded",
+    # Code navigation (read-only, tier 0): glob = find files by name/path shape, grep = find text by
+    # regex, lsp = Python symbol intelligence (def/refs/hover — Python-only by design). Identity-mapped
+    # dream built-ins (in default_registry), so dream_tool_names keeps them + _role_registry picks them
+    # up. Offered platform-wide; a role admits only the ones that fit its worktree (a JS/TS frontend
+    # role takes grep+glob but not lsp; a Python-writing role can take all three).
+    "grep": "grep",
+    "glob": "glob",
+    "lsp": "lsp",
     # Analyst analysis tools (chorus-defined dream BaseTools; identity-mapped so dream_tool_names keeps
     # them and the subagent projection can intersect them — they are registered from ``analysis_tool``).
     "warehouse_query": "warehouse_query",
@@ -140,8 +148,11 @@ _READ_ONLY_DREAM_SURFACE_TOOLS = frozenset(
         # read_offloaded it cannot see the overflow and wrongly fails with "content is truncated /
         # cannot verify". read_offloaded is safe (tier-0, scratch-confined, read-only), so a verifier
         # head may hold it to read the full artifact it is judging.
-        "read_offloaded",
-    }
+        "read_offloaded",        # Code navigation is read-only (tier 0), so a read-only planner/evaluator head or reviewer may
+        # hold it to locate + inspect code under review without mutating anything.
+        "grep",
+        "glob",
+        "lsp",    }
 )
 
 

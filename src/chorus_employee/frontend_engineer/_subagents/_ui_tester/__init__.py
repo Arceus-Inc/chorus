@@ -63,7 +63,7 @@ UI_TESTER_SUBAGENT = SubagentSpec(
     ),
     # Read-only audit shelf: run the deterministic evidence scan, read the e2e specs + captured log +
     # the app. All ⊆ the Frontend Engineer's toolset, so the projection keeps them (narrower-wins).
-    tools=("read_file", "working_memory_read", "test_evidence"),
+    tools=("read_file", "grep", "glob", "working_memory_read", "test_evidence"),
     # run test_evidence + read the e2e spec(s), the captured log, and index.html + reason — 8 fits.
     max_turns=8,
     # Runtime-enforced return contract: the typed UiTestVerdict shape (verdict + severity-tagged gaps).

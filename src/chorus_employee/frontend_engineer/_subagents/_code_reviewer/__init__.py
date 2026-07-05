@@ -70,7 +70,7 @@ CODE_REVIEWER_SUBAGENT = SubagentSpec(
     ),
     # Read-only review shelf: read the app + tests, run the deterministic evidence scan, keep context.
     # All ⊆ the Frontend Engineer's toolset, so the projection keeps them (narrower-wins).
-    tools=("read_file", "working_memory_read", "test_evidence"),
+    tools=("read_file", "grep", "glob", "working_memory_read", "test_evidence"),
     # run test_evidence + read the entry, a module or two, the unit spec, the e2e spec + reason — 8 fits.
     max_turns=8,
     # Runtime-enforced return contract: the typed ReviewVerdict shape (verdict + severity-tagged issues).

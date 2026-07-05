@@ -50,6 +50,12 @@ def frontend_engineer_manifest() -> RoleManifest:
         # spawn_subagent (the Code-Reviewer + UI-Tester review layer) are wired here; skill lands next.
         tools=(
             "read_file",
+            # code navigation (read-only, tier 0): glob finds files by name/path shape, grep finds text
+            # by regex — so the engineer locates its own source/tests/config precisely instead of blindly
+            # re-reading. (dream's `lsp` is Python-only by design, so it is intentionally omitted: a
+            # JS/TS/Vue/Svelte worktree has no Python target for it to resolve.)
+            "grep",
+            "glob",
             "write_file",
             "run_command",
             "git",
