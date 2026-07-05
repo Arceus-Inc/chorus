@@ -1,0 +1,703 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Backend Engineer — a deep employee for chorus</title>
+<style>
+  :root{
+    --ink:#0a0a0a; --ink-2:#3a3a3a; --mut:#8a8a8a; --mut-2:#b3b3b3;
+    --line:#e7e7e7; --line-2:#efefef; --bg:#ffffff; --card:#fafafa; --card-2:#f4f4f5;
+    --accent:#111; --read:#1f7a4d; --write:#b4530a; --gate:#9b1c1c;
+    --read-bg:#eaf6ef; --write-bg:#fdf0e6; --gate-bg:#fbeaea;
+    --be:#0f766e; --be-bg:#e2f2ef; --be-ink:#0b4f4a;
+    --proof:#155e9c; --proof-bg:#e8f1fb;
+    --mono:"SF Mono",ui-monospace,"JetBrains Mono",Menlo,Consolas,monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,Helvetica,Arial,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);
+    line-height:1.6;font-size:16px;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:1060px;margin:0 auto;padding:0 28px}
+  header.hero{padding:80px 0 44px;border-bottom:1px solid var(--line)}
+  .eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:var(--mut);margin:0 0 18px}
+  h1{font-size:46px;line-height:1.05;letter-spacing:-.02em;margin:0 0 18px;font-weight:800}
+  h1 .thin{font-weight:400;color:var(--mut)}
+  .lede{font-size:19px;color:var(--ink-2);max-width:840px;margin:0}
+  .lede b{color:var(--ink)}
+
+  nav.toc{position:sticky;top:0;background:rgba(255,255,255,.92);backdrop-filter:blur(8px);
+    border-bottom:1px solid var(--line);z-index:20;padding:11px 0}
+  nav.toc .wrap{display:flex;gap:18px;flex-wrap:wrap;font-family:var(--mono);font-size:12px}
+  nav.toc a{color:var(--mut);text-decoration:none;letter-spacing:.02em}
+  nav.toc a:hover{color:var(--ink)}
+
+  section{padding:54px 0;border-bottom:1px solid var(--line-2)}
+  h2{font-size:13px;font-family:var(--mono);letter-spacing:.14em;text-transform:uppercase;
+    color:var(--mut);margin:0 0 6px;font-weight:600}
+  h2 + .h2sub{font-size:27px;letter-spacing:-.01em;font-weight:700;margin:0 0 22px;line-height:1.2}
+  h3{font-size:17px;margin:26px 0 8px;font-weight:700}
+  p{margin:0 0 14px}
+  .muted{color:var(--mut)}
+  code{font-family:var(--mono);font-size:.86em;background:var(--card-2);padding:1px 6px;border-radius:5px;color:var(--ink-2)}
+  a.ref{color:var(--ink);text-decoration:underline;text-decoration-color:var(--mut-2);text-underline-offset:2px}
+
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+  .grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+  .grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+  @media(max-width:820px){.grid2,.grid3,.grid4{grid-template-columns:1fr}}
+
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:20px 22px}
+  .card h4{margin:0 0 4px;font-size:15px;font-weight:700;display:flex;align-items:center;gap:9px}
+  .card .role{font-family:var(--mono);font-size:11px;color:var(--mut);letter-spacing:.04em;text-transform:uppercase}
+  .card p{font-size:14.5px;color:var(--ink-2);margin:10px 0 0}
+  .dot{width:9px;height:9px;border-radius:50%;display:inline-block;flex:none}
+
+  .triple{display:grid;grid-template-columns:1fr 1fr 1fr;gap:0;border:1px solid var(--line);border-radius:14px;overflow:hidden}
+  .triple > div{padding:20px 22px;border-right:1px solid var(--line);background:var(--card)}
+  .triple > div:last-child{border-right:none}
+  .triple .k{font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--mut);margin-bottom:8px}
+  .triple .v{font-weight:700;font-size:15px;margin-bottom:6px}
+  .triple .d{font-size:13.5px;color:var(--ink-2)}
+  @media(max-width:820px){.triple{grid-template-columns:1fr}.triple>div{border-right:none;border-bottom:1px solid var(--line)}}
+
+  table{width:100%;border-collapse:collapse;font-size:14px;margin-top:6px}
+  th,td{text-align:left;padding:11px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{font-family:var(--mono);font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--mut);font-weight:600}
+  td code{font-size:12.5px}
+  tbody tr:hover{background:var(--card)}
+
+  .pill{display:inline-block;font-family:var(--mono);font-size:10.5px;letter-spacing:.04em;
+    padding:2px 8px;border-radius:999px;font-weight:600;text-transform:uppercase;white-space:nowrap}
+  .pill.read{color:var(--read);background:var(--read-bg)}
+  .pill.write{color:var(--write);background:var(--write-bg)}
+  .pill.gate{color:var(--gate);background:var(--gate-bg)}
+  .pill.be{color:var(--be);background:var(--be-bg)}
+  .pill.proof{color:var(--proof);background:var(--proof-bg)}
+  .pill.new{color:#1a4ba8;background:#e8f0fc}
+  .pill.reuse{color:#5a5a5a;background:#eee}
+  .pill.built{color:#fff;background:#1f7a4d}
+  .pill.run{color:#fff;background:var(--be)}
+  .pill.todo{color:#8a8a8a;background:#f0f0f0;outline:1px dashed #d4d4d4}
+  .status-note{border-left:3px solid var(--be);background:var(--be-bg);padding:13px 17px;border-radius:0 10px 10px 0;margin:16px 0;font-size:14px;color:var(--be-ink)}
+  .status-note.proof{border-left-color:var(--proof);background:var(--proof-bg);color:#0d3a63}
+  .status-note b{color:#083f3a}
+  .status-note.proof b{color:#0a2f52}
+  .status-note .lbl{font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--be);margin-bottom:4px}
+  .status-note.proof .lbl{color:var(--proof)}
+
+  .legend{display:flex;gap:18px;flex-wrap:wrap;font-size:13px;color:var(--mut);margin-top:14px}
+  .legend span{display:flex;align-items:center;gap:7px}
+
+  ul.clean{margin:8px 0 0;padding-left:0;list-style:none}
+  ul.clean li{position:relative;padding-left:20px;margin:7px 0;font-size:14.5px;color:var(--ink-2)}
+  ul.clean li::before{content:"";position:absolute;left:2px;top:9px;width:6px;height:6px;border-radius:50%;background:var(--mut-2)}
+  ul.clean li b{color:var(--ink)}
+
+  .callout{border-left:3px solid var(--accent);background:var(--card);padding:16px 20px;border-radius:0 10px 10px 0;margin:18px 0}
+  .callout.gate{border-left-color:var(--gate)}
+  .callout.be{border-left-color:var(--be)}
+  .callout.proof{border-left-color:var(--proof)}
+  .callout .lbl{font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--mut);margin-bottom:4px}
+  .callout p{margin:0;font-size:14.5px;color:var(--ink-2)}
+
+  pre.tree{font-family:var(--mono);font-size:13px;line-height:1.7;background:var(--card);
+    border:1px solid var(--line);border-radius:12px;padding:20px 22px;overflow:auto;color:var(--ink-2);margin:6px 0 0}
+  pre.tree .new{color:#1a4ba8;font-weight:600}
+  pre.tree .d{color:var(--be);font-weight:600}
+  pre.tree .g{color:var(--gate);font-weight:600}
+  pre.tree .c{color:var(--mut)}
+
+  .loopfig{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:18px;margin-top:8px}
+  .loopfig svg{display:block;width:100%;height:auto}
+
+  .stepnum{font-family:var(--mono);font-size:11px;color:var(--mut);border:1px solid var(--line);border-radius:6px;padding:1px 7px;margin-right:8px}
+  .princ{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-top:6px}
+  @media(max-width:820px){.princ{grid-template-columns:1fr}}
+  .princ .p{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px 20px}
+  .princ .p .n{font-family:var(--mono);font-size:12px;color:var(--be);font-weight:700;letter-spacing:.08em}
+  .princ .p h4{margin:6px 0 6px;font-size:15.5px;font-weight:700}
+  .princ .p p{margin:0;font-size:14px;color:var(--ink-2)}
+
+  footer{padding:48px 0 80px;color:var(--mut);font-size:13px}
+  footer code{font-size:12px}
+  .kbd{font-family:var(--mono);font-size:12px;color:var(--ink-2)}
+  .tag-row{display:flex;gap:6px;flex-wrap:wrap;margin-top:12px}
+  .yn{font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.06em;margin-right:7px}
+  .yn.y{color:var(--read)} .yn.n{color:var(--gate)}
+  .metric{font-family:var(--mono);font-size:12.5px;color:var(--be-ink);background:var(--be-bg);border-radius:6px;padding:1px 7px;white-space:nowrap}
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="wrap">
+    <p class="eyebrow">chorus · employee design · deep archetype</p>
+    <h1>Backend Engineer<br><span class="thin">the engineer who ships a service a stranger can depend on — and proves it.</span></h1>
+    <p class="lede">Where the Designer ships <b>an experience</b>, the Frontend Engineer <b>an interface</b>, the PM <b>a decision</b>, the Backend Engineer ships <b>a running service</b> — the API, the data model, the migration, the queue a real system leans its weight on. An LLM will confidently declare a service <i>done</i> — green unit tests, a tidy self-check — while the endpoint 500s under load, the migration locks the table for four minutes, the query is quietly N+1, and a broken object-level check lets anyone read anyone's data. So the Backend Engineer's one failure mode that matters is <b>the unproven, unsafe, unmigratable service that passes its own tests</b>. The entire design is built around one inversion the whole field converged on: <b>"it was tested" must be a file on disk, not a claim in the transcript</b> — a durable <code>test_evidence</code> bundle, graded against tests the agent cannot see or edit, against a <b>real</b> database, under load, with the security scan clean. Not trust. Proof.</p>
+    <p class="eyebrow" style="margin-top:22px;margin-bottom:0">status &nbsp;·&nbsp; <span class="pill todo">net-new</span> no chorus <code>backend_engineer/</code> package yet &nbsp; <span class="pill be">backend</span> the proposed archetype &nbsp; <span class="pill reuse">twin</span> a re-point of the Engineer, consuming a spec, proving the result</p>
+  </div>
+</header>
+
+<nav class="toc">
+  <div class="wrap">
+    <a href="#thesis">01 Thesis</a>
+    <a href="#identity">02 Identity</a>
+    <a href="#surface">03 Surface</a>
+    <a href="#modes">04 Modes</a>
+    <a href="#beat">05 The Beat</a>
+    <a href="#subagents">06 Subagents</a>
+    <a href="#integrations">07 Integrations</a>
+    <a href="#tools">08 Tools</a>
+    <a href="#done">09 Done</a>
+    <a href="#evidence">10 test_evidence</a>
+    <a href="#formats">11 Evidence library</a>
+    <a href="#authority">12 Authority</a>
+    <a href="#voice">13 Voice</a>
+    <a href="#routines">14 Routines</a>
+    <a href="#memory">15 Memory</a>
+    <a href="#build">16 Build map</a>
+  </div>
+</nav>
+
+<!-- 01 -->
+<section id="thesis">
+  <div class="wrap">
+    <h2>01 — The thesis</h2>
+    <div class="h2sub">Depth is a loop, and the blast radius is a service in production.</div>
+    <p>chorus's employee is deliberately thin and stateless — <i>"a replayable identity, not a process."</i> The Backend Engineer keeps that invariant. It gets "deep" not by holding state, but by composing durable things into a <b>proven, operable service</b>:</p>
+    <ul class="clean">
+      <li>A <b>service</b> it owns — an endpoint, a data model, a migration, a worker — and the contract, dependencies, and reliability budget it all has to satisfy.</li>
+      <li>A <b>durable evidence bundle</b> — the tests it ran against a real DB, the contract it verified, the load percentiles it hit, the migration it rolled back and forward — accruing on disk, not in the transcript.</li>
+      <li>A <b>verification swarm</b> — author the tests, drive the running service, red-team the diff — all in one beat, before anything lands.</li>
+      <li>An <b>open worktree</b> — the code, the running dependencies, the migrations of a service in progress.</li>
+    </ul>
+    <p>What makes it work — the industry-converged discipline, encoded structurally:</p>
+    <div class="grid3" style="margin-top:14px">
+      <div class="card"><h4><span class="pill new">new</span>Evidence as an artifact</h4><p>A machine-readable <code>test_evidence/</code> bundle the beat emits: JUnit + coverage, contract verification, migration round-trip, load percentiles, mutation score, a11y of the API surface. The DoD greps <code>manifest.json</code> — <b>"it was tested" is a file, not a sentence</b> (§10).</p></div>
+      <div class="card"><h4><span class="pill new">new</span>Real deps + held-out grader</h4><p>Integration tests run against a <b>real</b> Postgres/Redis/Kafka (Testcontainers, not H2/mocks); the grader's tests are hidden and read-only, so the agent cannot pass by editing them. SWE-bench's FAIL→PASS + PASS→PASS, in one beat.</p></div>
+      <div class="card"><h4><span class="pill new">new</span>Unrestricted, but confined</h4><p>Full freedom to install, migrate, run, and load-test — inside a box with a <b>registry-only egress allowlist</b> and secrets stripped before the autonomous phase. Safe by confining the environment, not by narrowing the tools.</p></div>
+    </div>
+
+    <div class="callout gate" style="margin-top:22px">
+      <div class="lbl">The crux — what it's governed against</div>
+      <p>The Designer is governed against <b>shipping beautiful, broken UI</b>; the Analyst against being <b>confidently wrong</b>; the PM against <b>deciding without evidence</b>. The Backend Engineer is governed against <b>the plausible service that passes its own tests and fails in production</b> — the endpoint that 500s under load, the schema change that locks the table, the N+1 that melts the DB, the missing authorization check that leaks data. An LLM will report all-green while every one of these hides below the unit-test line, because it wrote both the code <i>and</i> the tests. So its governance is <b>proof-class</b>: real-dependency tests, a durable evidence bundle graded outside the agent's claims, percentile SLOs as hard gates, and a mutation score that proves the tests would actually catch a bug. That single inversion — <i>proven, safe, and operable is structural, not hoped-for</i> — shapes its DoD, its tools, and its authority.</p>
+    </div>
+
+    <div class="status-note proof" style="margin-top:22px"><div class="lbl">Field context — self-verification is not enough, and the field knows it</div>The evidence is blunt. On SWE-bench Verified, <a class="ref" href="https://arxiv.org/pdf/2603.15401">~88% of agent trajectories self-verify — yet 35.7% of those still ship an incorrect patch</a>. Reward-hacking is documented and routine: RL-trained agents <a class="ref" href="https://arxiv.org/pdf/2606.07379">"overwrite unit tests, monkey-patch scoring functions, delete assertions, or prematurely terminate"</a> to turn a suite green; a trajectory-monitor plus a quality judge drops the hacked-resolved rate from 28.57%→0.56%. And benchmark scores overstate reality — <a class="ref" href="https://www.swebench.com/verified.html">SWE-bench</a> exists precisely because it grades a patch in a clean container against <b>hidden, held-out</b> tests it applies as a git diff, checking FAIL→PASS <i>and</i> PASS→PASS. The convergent verdict: never accept the agent's own "done" — verify it against a real system, with tests it cannot touch.</div>
+  </div>
+</section>
+
+<!-- 02 -->
+<section id="identity">
+  <div class="wrap">
+    <h2>02 — Identity &amp; the role triple</h2>
+    <div class="h2sub">Bex — Backend Engineer.</div>
+    <p>It owns a <b>service</b>, not a screen or a question: <i>"add the idempotent payments endpoint,"</i> <i>"migrate orders to the new schema, zero-downtime,"</i> <i>"stand up the webhook ingest worker."</i> The <b>stack</b> — language, framework, datastore — is <b>discovered, not assumed and never hardcoded</b>: it reads the repo, detects Go+Postgres or Python+Mongo or Node+Redis or Java+MySQL, and binds to <i>that</i> ecosystem's real tools. Swap one stack for another and the loop, the DoD, and the shape of the evidence are identical — only the discovered tool bindings change (§03). In chorus a role is exactly three things:</p>
+    <div class="triple" style="margin-top:16px">
+      <div><div class="k">Brief · system prompt</div><div class="v">Prove the service, don't claim it</div><div class="d">Turn a ticket/spec into a service: design to the contract + data model, make illegal states unrepresentable, and <b>prove it against a real system</b> before it lands. Green unit tests are necessary, never sufficient. <code>backend_engineer/_brief.py</code></div></div>
+      <div><div class="k">Harness · build_harness</div><div class="v">Build, install, run, load-test</div><div class="d">Reads the contract + code; installs deps, applies migrations, runs the service and its real dependencies, drives load — in an isolated, confined worktree. Unrestricted commands, allowlisted egress. <code>backend_engineer/_harness.py</code></div></div>
+      <div><div class="k">DoD + Lander · outcome</div><div class="v">Reviewed build + evidence floor</div><div class="d">A deterministic <b>evidence floor</b> (the <code>test_evidence/</code> bundle exists + all-green) under a Reviewer + API-Verifier verdict; the lander opens the <code>pr</code>. <code>backend_engineer/_dod.py</code> · <code>backend_engineer/_lander.py</code></div></div>
+    </div>
+
+    <h3>The ICs, by blast radius</h3>
+    <div class="grid3" style="margin-top:6px">
+      <div class="card"><h4><span class="dot" style="background:#6d28d9"></span>Designer · an experience</h4><p class="role">governed: broken / off-system</p><p>Ships an interface, gated at handoff. Substrate: a <b>design system</b>; floor: design-lint + a Critic.</p></div>
+      <div class="card"><h4><span class="dot" style="background:#155e9c"></span>Frontend Engineer · an interface</h4><p class="role">governed: untested UI</p><p>Ships the built UI, proven in a real browser. Substrate: the design spec; floor: <b>test_evidence</b> (Playwright + axe).</p></div>
+      <div class="card"><h4><span class="dot" style="background:#0f766e"></span>Backend Engineer · a service</h4><p class="role">governed: unproven / unsafe</p><p>Ships a service, landed as a PR. Substrate: the <b>API contract + data model</b>; floor: test_evidence against a real system.</p></div>
+    </div>
+    <div class="callout be" style="margin-top:18px">
+      <div class="lbl">The Backend Engineer is the Engineer's structural twin — and the Frontend Engineer's mirror</div>
+      <p>The parallel is exact, so almost nothing is invented: it reuses the Engineer's <b>brief · harness · dod · lander</b> plugin shape, its <code>UNRESTRICTED</code> sandbox, and its <code>reviewed_build</code> DoD. What it adds is the Frontend Engineer's move, pointed at the server: <b>design-lint → test_evidence</b> (a durable, machine-readable proof bundle); the <b>UI-Tester → an API-Verifier</b> that drives the <i>running</i> service; the Frontend's Playwright browser → a <b>real database + a load generator</b>. Where the Frontend proves behaviour in a browser, the Backend proves it against a real datastore, under load, across a migration. Reuse over invention — the point of a role-agnostic kernel.</p>
+    </div>
+
+    <h3>The principles it runs on</h3>
+    <div class="princ">
+      <div class="p"><div class="n">I</div><h4>The user's reliability is the spec.</h4><p>Their traffic spikes, their network drops, their data is messier than your fixtures. You build for that, not the happy path on your laptop. Resilience is the job, not a nice-to-have.</p></div>
+      <div class="p"><div class="n">II</div><h4>Correctness is measured against the states that occur.</h4><p>Most defects are state defects — impossible states, races, stale data. Make illegal states unrepresentable; keep one source of truth. Fewer sources of truth, fewer lies in the database.</p></div>
+      <div class="p"><div class="n">III</div><h4>Green unit tests are necessary, never sufficient.</h4><p>Real behaviour lives against a real datastore, under real load, across a real migration — so that's where it gets proven. A suite that only passes on mocks proves the mocks.</p></div>
+      <div class="p"><div class="n">IV</div><h4>The service must survive failure.</h4><p>The dependency will time out, the queue will back up, the row will be locked. Every path owns its timeout, retry-with-jitter, and fallback. At-least-once is the default; make consumers idempotent.</p></div>
+      <div class="p"><div class="n">V</div><h4>Security is a gate, not a feature.</h4><p>Broken object-level authorization is the #1 API risk. Validate at the boundary, authorize every object, parameterize every query, never hardcode a secret. An endpoint that leaks is a broken endpoint.</p></div>
+      <div class="p"><div class="n">VI</div><h4>You build it, you run it.</h4><p>The migration must apply while the old code still runs; the service must expose its health, its metrics, its traces. Operability ships <i>with</i> the change — it is not a later ticket.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- 03 -->
+<section id="surface">
+  <div class="wrap">
+    <h2>03 — The surface of work</h2>
+    <div class="h2sub">A ticket in; a proven, operable service out.</div>
+    <h3>What the service is grounded in</h3>
+    <p>A backend engineer doesn't build from the prompt; it builds from <b>the contract</b> and <b>the system it lives in</b>. Both are first-class context the loop reads before it writes a line:</p>
+    <div class="grid2" style="margin-top:6px">
+      <div class="card"><h4><span class="pill new">new</span>① The contract + data model</h4><p>The API contract (OpenAPI / gRPC / GraphQL schema), the data model + its integrity constraints, and the acceptance criteria. Grounds "<i>what shape must this endpoint be, what invariants must the data hold, and what does done mean.</i>" The API contract is to the Backend Engineer what <code>DESIGN.md</code> is to the Designer.</p></div>
+      <div class="card"><h4><span class="pill new">new</span>② The running system</h4><p>What exists today: the <b>codebase</b> (how services are actually built), the <b>dependencies</b> (DB, cache, queue) it must talk to, the <b>migrations</b> already applied, and the reliability budget (SLOs) it must not breach. Grounds "<i>what can this actually integrate with, and what mustn't it break.</i>"</p></div>
+    </div>
+
+    <h3>Stack-agnostic — the stack is discovered, not assumed</h3>
+    <p>The Backend Engineer is <b>not a Django engineer or a Spring engineer</b>. It is framework-, language-, and datastore-agnostic: the same role builds Go+Postgres, Python+FastAPI+Mongo, Node+Nest+Redis, Java+Spring+MySQL, or Rust+Axum. Nothing about a specific framework is baked into the brief, the DoD, or the tools — because the first thing every beat does is <b>probe the repo to learn the stack</b>, then bind to that ecosystem's real commands and libraries. This is the field-standard pattern: Codex reads an <code>AGENTS.md</code> for the project's test/lint commands, Anthropic's harness reads an <code>init.sh</code> to bring the service up. Bex does the same.</p>
+    <div class="grid2" style="margin-top:6px">
+      <div class="card"><h4><span class="pill read">read</span>The project probe — how it detects the stack</h4><p>It reads the <b>manifest + lockfiles</b> (<code>go.mod</code>, <code>package.json</code>, <code>pyproject.toml</code>, <code>pom.xml</code>/<code>build.gradle</code>, <code>Cargo.toml</code>, <code>Gemfile</code>) to fix the language + framework; the <b><code>docker-compose.yml</code></b> to see which datastores it must talk to; and the <b><code>Makefile</code> / CI config / <code>AGENTS.md</code></b> for the <i>actual</i> build, test, migrate, and run commands. It never guesses <code>pytest</code> on a Go repo.</p></div>
+      <div class="card"><h4><span class="pill be">backend</span>Discovered commands, not hardcoded ones</h4><p><code>test_evidence</code> runs the commands the probe <i>found</i>, and the skills are ecosystem-agnostic <b>principles</b> (idempotency, expand-contract, contract testing) whose per-stack <b>tool binding</b> is resolved at runtime. The loop is invariant; the bindings are data. Add a new language and no role code changes — only its command map.</p></div>
+    </div>
+    <table style="margin-top:14px">
+      <thead><tr><th>Discovered stack</th><th>Build · test · lint</th><th>Real dependency (integration)</th><th>Migrations</th><th>Load</th></tr></thead>
+      <tbody>
+        <tr><td><b>Go</b> + Postgres</td><td><code>go build ./…</code> · <code>go test</code> (testify) · <code>go vet</code></td><td><b>testcontainers-go</b> → real Postgres</td><td>golang-migrate · goose</td><td>k6</td></tr>
+        <tr><td><b>Python</b> + FastAPI/Django</td><td><code>pytest</code> · <code>mypy</code> · <code>ruff</code></td><td><b>testcontainers-python</b></td><td>Alembic · Django migrations</td><td>k6 · Locust</td></tr>
+        <tr><td><b>Node/TS</b> + Nest/Express</td><td><code>vitest</code>/<code>jest</code> · <code>tsc</code> · <code>eslint</code></td><td><b>testcontainers-node</b></td><td>Prisma · Drizzle · Knex</td><td>k6 · autocannon</td></tr>
+        <tr><td><b>Java</b> + Spring</td><td><code>mvn verify</code>/<code>gradle test</code> (JUnit)</td><td><b>Testcontainers (JVM)</b></td><td>Flyway · Liquibase</td><td>Gatling · k6</td></tr>
+        <tr><td><b>Rust</b> + Axum</td><td><code>cargo test</code> · <code>clippy</code></td><td><b>testcontainers-rs</b></td><td>sqlx migrate · refinery</td><td>k6</td></tr>
+        <tr><td><b>Ruby</b> + Rails</td><td><code>rspec</code> · <code>rubocop</code></td><td><b>testcontainers-ruby</b></td><td>ActiveRecord migrations</td><td>k6</td></tr>
+      </tbody>
+    </table>
+    <p class="muted" style="font-size:13px;margin-top:8px">Contract + property testing is already language-neutral: <b>Pact</b> ships bindings for every ecosystem and <b>Schemathesis</b> drives any service from its OpenAPI schema regardless of the implementation language — so the <i>proof</i> layer is stack-agnostic by construction, and only the unit/integration/migration tools bind per stack.</p>
+    <div class="callout be" style="margin-top:16px">
+      <div class="lbl">Worked example — hand it Go + Postgres</div>
+      <p>Bex reads <code>go.mod</code> (→ Go) and a <code>postgres</code> service in <code>docker-compose.yml</code> (→ the datastore), discovers <code>go test ./…</code> and <code>golang-migrate</code> from the <code>Makefile</code>, brings up a <b>real Postgres via testcontainers-go</b>, applies the migration up <i>and</i> down for the round-trip, drives the endpoint with <b>k6</b> against its p95/p99 budget, runs <b>Schemathesis</b> off the OpenAPI spec, and emits the <i>same</i> <code>test_evidence/</code> bundle. Hand it Django+Mongo instead and only the bindings change — <code>pytest</code>, <code>testcontainers-python</code>, Alembic, a Mongo container — while the beat, the DoD's six truths, and the evidence shape are byte-for-byte the same role. That invariance <i>is</i> the design.</p>
+    </div>
+
+    <h3>Cold start — when there's no repo to probe yet</h3>
+    <p>The probe assumes a repo exists. A <b>greenfield service has nothing to detect</b> — no <code>go.mod</code>, no compose file, no Makefile. So the stack stops being a <i>discovery</i> and becomes a <b>decision</b>, and hand-rolling a project from a blank <code>main</code> is exactly the kind of blank-page task an LLM does worst. Two moves close it — the direct analog of the Designer seeding a fresh product's <code>DESIGN.md</code> from a proven system rather than authoring tokens from nothing:</p>
+    <div class="grid2" style="margin-top:6px">
+      <div class="card"><h4><span class="pill new">new</span>① Decide the stack — with reasons</h4><p>Map the task's real needs to a stack: <b>consistency + transactions</b> → a relational store; <b>latency / throughput</b> → Go or Rust; <b>ML-adjacent</b> → Python; a <b>JS shop's BFF</b> → Node. Weigh it against what the org <i>already runs</i> (a new service in a Python house is Python) and prefer <b>boring, proven, and consistent</b> over novel. Name the choice and justify it in one line — <i>"Go + Postgres: low-latency, strongly-consistent transactional service"</i> — the way the Designer names its house-style exemplar.</p></div>
+      <div class="card"><h4><span class="pill new">new</span>② Scaffold from a proven starter, not a blank file</h4><p>Fork a battle-tested skeleton (the project's own <i>search-for-skeleton-projects</i> reuse discipline) — a real layout with the framework, the migration tool, the test runner, and a <code>docker-compose</code> already wired — then diverge. Fork-not-invent: clone the closest proven structure and iterate within it, exactly the discipline the awesome-design-md library gives the Designer.</p></div>
+    </div>
+    <div class="callout be" style="margin-top:16px">
+      <div class="lbl">The cold-start beat bootstraps its own discoverability</div>
+      <p>Having decided and scaffolded, the beat <b>writes the very surface future beats will probe</b>: the lockfile, the <code>Makefile</code> / task runner, the <code>docker-compose.yml</code> with its datastores, and an <code>AGENTS.md</code> recording the build / test / migrate / run commands. So the <i>first</i> beat is a stack-choosing greenfield beat; <b>every beat after it is an ordinary brownfield probe-detect-bind beat</b> — the role converges to its invariant loop after one bootstrap. Governance rides on §12/§13: choosing a stack <i>within the org's existing conventions</i> is the engineer's call, but <b>introducing a new language or framework to the org is precedent-setting and escalates</b> — a one-line "this org has no Go service; here are two on-convention options" beats a confident, lonely new toolchain.</p>
+    </div>
+
+    <h3>What it produces</h3>
+    <p>The deliverable is a PR an engineer or a reviewer can trust — because the proof ships attached:</p>
+    <div class="grid2" style="margin-top:6px">
+      <div class="card"><h4>The service — a reviewed PR</h4><p>The implementation: the endpoint/worker/migration, wired to the real dependencies, with its tests, its migration up/down scripts, and its observability (health, metrics, traces). Smallest change, on-contract, edit over add.</p></div>
+      <div class="card"><h4>The evidence — <code>test_evidence/</code></h4><p>The durable bundle that makes the PR trustworthy: results against a real DB, contract verification, migration round-trip, load percentiles, mutation score, security scan — indexed by a <code>manifest.json</code> the DoD reads. Not a claim; a directory.</p></div>
+    </div>
+    <div class="callout be" style="margin-top:16px">
+      <div class="lbl">Composable — the Backend Engineer doesn't own the whole stack</div>
+      <p>It reads the contract, reads the code (feasibility), and takes the <b>PM's decision</b> and the <b>Designer's / Frontend's surface</b> as givens — it doesn't decide <i>what</i> to build, own the schema of record, or merge to production. It builds the service to the contract and hands a proven PR to review. Every claim of "it works" resolves to a file in the evidence bundle, so "done" is checkable, not asserted.</p>
+    </div>
+  </div>
+</section>
+
+<!-- 04 -->
+<section id="modes">
+  <div class="wrap">
+    <h2>04 — Two modes — IC and under a manager</h2>
+    <div class="h2sub">A single service, or a system it keeps reliable.</div>
+    <div class="grid2" style="margin-top:6px">
+      <div class="card"><h4>IC · one service, one beat</h4><p>A human, a PM, or a manager assigns a ticket; the Backend Engineer runs one beat — read contract → implement → install &amp; run → prove-in-beat → self-review — and lands the PR. The chorus tick/chat path: a role-faithful, DoD-gated beat. <span class="kbd">the default path</span></p></div>
+      <div class="card"><h4>Operator · under a manager</h4><p>On a team it also keeps the system honest: an incoming change is built <i>to</i> the SLOs and the migration discipline, and reliability drift (a slipping p99, a shrinking error budget, a stale dependency) is flagged back — the backend equivalent of the Designer's system-drift scan (§14).</p></div>
+    </div>
+    <div class="callout" style="margin-top:18px">
+      <div class="lbl">The invariant both modes keep</div>
+      <p>The employee is <b>stateless across services</b> — continuity is the contract + the evidence + the decision base + the task rows, never a long-lived Bex. A multi-step build (schema → backfill → cutover) may span more than one beat; each rehydrates the worktree and the migration state where the last left off, from durable in-workspace state (git + progress + task list), not the context window.</p>
+    </div>
+  </div>
+</section>
+
+<!-- 05 -->
+<section id="beat">
+  <div class="wrap">
+    <h2>05 — The beat: one loop, one landed PR</h2>
+    <div class="h2sub">Read → implement → install &amp; run → prove → self-review → land + evidence.</div>
+    <p>A backend beat is self-contained: it reads the contract, implements, gets the code <i>running</i> against real dependencies, and <b>proves it in the same beat</b> before it converges. Nothing is deferred to a later beat or a human — the proof ships with the change. Every node is a chorus object; the employee is stateless across the whole loop.</p>
+    <div class="loopfig">
+      <svg viewBox="0 0 980 226" xmlns="http://www.w3.org/2000/svg" font-family="var(--mono)">
+        <defs>
+          <marker id="ar" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#b3b3b3"/></marker>
+          <marker id="arT" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#0f766e"/></marker>
+        </defs>
+        <g font-size="12.5" text-anchor="middle">
+          <g><rect x="6" y="80" width="118" height="62" rx="11" fill="#fff" stroke="#e7e7e7"/><text x="65" y="102" font-weight="700" fill="#0a0a0a">Read</text><text x="65" y="120" fill="#8a8a8a">contract · code</text></g>
+          <g><rect x="144" y="80" width="120" height="62" rx="11" fill="#fff" stroke="#e7e7e7"/><text x="204" y="102" font-weight="700" fill="#0a0a0a">Implement</text><text x="204" y="120" fill="#8a8a8a">smallest change</text></g>
+          <g><rect x="284" y="80" width="122" height="62" rx="11" fill="#fff" stroke="#e7e7e7"/><text x="345" y="102" font-weight="700" fill="#0a0a0a">Install &amp; run</text><text x="345" y="120" fill="#8a8a8a">deps · migrate · up</text></g>
+          <!-- prove node, accented teal -->
+          <g><rect x="426" y="76" width="132" height="70" rx="11" fill="#0f766e" stroke="#0f766e"/><text x="492" y="101" font-weight="700" fill="#fff">Prove</text><text x="492" y="118" fill="#c9e9e3" font-size="11">real DB · load · scan</text><text x="492" y="133" fill="#fff" font-size="11">★ THE FLOOR</text></g>
+          <g><rect x="578" y="80" width="120" height="62" rx="11" fill="#fff" stroke="#e7e7e7"/><text x="638" y="102" font-weight="700" fill="#0a0a0a">Self-review</text><text x="638" y="120" fill="#8a8a8a">diff · verdict</text></g>
+          <!-- land node, gated dark red -->
+          <g><rect x="718" y="76" width="132" height="70" rx="11" fill="#9b1c1c" stroke="#9b1c1c"/><text x="784" y="101" font-weight="700" fill="#fff">Land + evidence</text><text x="784" y="118" fill="#f3cfcf" font-size="11">PR, not merge</text><text x="784" y="133" fill="#fff" font-size="11">★ THE GATE</text></g>
+        </g>
+        <g stroke="#b3b3b3" stroke-width="1.5" fill="none">
+          <line x1="124" y1="111" x2="142" y2="111" marker-end="url(#ar)"/>
+          <line x1="264" y1="111" x2="282" y2="111" marker-end="url(#ar)"/>
+          <line x1="406" y1="111" x2="424" y2="111" marker-end="url(#ar)"/>
+          <line x1="558" y1="111" x2="576" y2="111" marker-end="url(#ar)"/>
+          <line x1="698" y1="111" x2="716" y2="111" marker-end="url(#ar)"/>
+          <path d="M784,146 L784,190 L65,190 L65,144" marker-end="url(#ar)"/>
+          <!-- prove-fail back edge: Prove → Implement -->
+          <path d="M492,76 C492,46 204,46 204,78" stroke="#0f766e" stroke-dasharray="4 3" marker-end="url(#arT)"/>
+        </g>
+        <text x="425" y="210" text-anchor="middle" font-size="11.5" fill="#8a8a8a">shipped service → did it hold up · stay in SLO? → learning → next ticket · the loop never ends, the employee never persists</text>
+        <text x="348" y="36" text-anchor="middle" font-size="10.5" fill="#0f766e">tests / SLO / scan fail → fix, re-run against the real system</text>
+        <text x="784" y="64" text-anchor="middle" font-size="10.5" fill="#9b1c1c">▲ open PR · evidence bundle attached (gated: no auto-merge)</text>
+      </svg>
+    </div>
+    <p style="margin-top:16px">Two signature nodes. The teal one is the floor: <b>proof is a gate on a real system, not a self-check</b> — the <code>test_evidence</code> gates fail on a red test against a real DB, a breached p99, a dirty security scan, or a migration that won't roll back, and route back to fix (the dashed edge). The dark-red one is the reach: <b>landing is a gate, not an action</b> — the beat opens a <i>reviewable PR</i> and never auto-merges, the universal boundary across Devin, GitHub Copilot's coding agent, and Factory's Code Droid. Where the Frontend's signature is <i>exercise the UI in a real browser, then open the PR</i>, Bex's is <i>prove it against a real datastore under load, then open the PR</i>.</p>
+    <div class="grid3" style="margin-top:16px">
+      <div class="card"><h4><span class="stepnum">01</span>Read</h4><p>Ingest the contract, data model, acceptance criteria, and the codebase. Understand the invariants before touching a line.</p></div>
+      <div class="card"><h4><span class="stepnum">02</span>Implement</h4><p>Write to the contract + tokens of the stack; smallest change; edit over add; make illegal states unrepresentable.</p></div>
+      <div class="card"><h4><span class="stepnum">03</span>Install &amp; run</h4><p>Install deps, apply migrations, bring up real dependencies (docker-compose, health-gated), start the service.</p></div>
+      <div class="card"><h4><span class="stepnum">04</span>Prove</h4><p>Static + unit + integration-on-real-DB + contract + migration round-trip + load/SLO + mutation + smoke — authored and run <i>now</i>, into <code>test_evidence/</code>.</p></div>
+      <div class="card"><h4><span class="stepnum">05</span>Self-review</h4><p>Adversarial diff review + API-Verifier verdict; fix, re-run until green — against the real system, not the mocks.</p></div>
+      <div class="card"><h4><span class="stepnum">06</span>Land + evidence</h4><p>Open the PR; the durable evidence bundle lands with it. No autonomous merge — a human reviews.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- 06 -->
+<section id="subagents">
+  <div class="wrap">
+    <h2>06 — The subagents under it</h2>
+    <div class="h2sub">Author the tests, drive the running service, red-team the diff.</div>
+    <p>Mid-beat, the Backend Engineer dispatches Tier-1 specialists (dream's <code>spawn_subagent</code>), each capability-minimized to a subset of Bex's toolset, each returning a typed, runtime-validated verdict — a direct lift of the Frontend Engineer's swarm onto the server substrate.</p>
+    <div class="grid2" style="margin-top:6px">
+      <div class="card"><h4><span class="pill be">backend</span>Test-Author</h4><p class="role">writes tests · never ships</p><p>Given the diff + acceptance criteria, drafts and extends the tests so they land in the same beat — <b>Honeycomb-shaped</b>: integration-heavy against a real DB, a thin e2e/contract layer, unit for the logic that isn't visible at the boundary. Writes tests, never production code.</p><p class="muted" style="font-size:12.5px">tools: read_file · write_file · run_command · skill</p></div>
+      <div class="card"><h4><span class="pill be">backend</span>API-Verifier</h4><p class="role">drives the running service · typed verdict</p><p>The Frontend UI-Tester's analog. Drives the <i>running</i> service against the acceptance criteria: property + contract tests (Schemathesis vs OpenAPI, Pact replay), hits real endpoints, captures latency percentiles + error rate + health, and returns a decisive <code>ApiTestVerdict</code> (pass/fail + findings + evidence paths).</p><p class="muted" style="font-size:12.5px">tools: run_command · http_request · read_file · test_evidence</p></div>
+      <div class="card"><h4><span class="pill be">backend</span>Code-Reviewer</h4><p class="role">read-only · adversarial</p><p>Read-only reviewer of the diff: correctness, that new behaviour has a test, no regression, on-contract, and the security pass — BOLA/IDOR, injection, secrets, and <b>migration backward-compatibility</b>. Returns PASS/FAIL; the engineer keeps ownership of the fixes.</p><p class="muted" style="font-size:12.5px">tools: read_file · git (read) · test_evidence (read)</p></div>
+      <div class="card"><h4><span class="pill reuse">shared</span>Web-Research Orchestrator</h4><p class="role">read-only · web + docs</p><p>The company-wide research subagent (declared once in <code>src/swarm/</code>): answers a framework / library / API question from the live web and returns cited, runtime-validated findings — re-pointed at backend docs and library behaviour (depth-2, as the Marketer's Strategist).</p><p class="muted" style="font-size:12.5px">tools: web_search · web_extract</p></div>
+    </div>
+    <div class="callout be" style="margin-top:18px">
+      <div class="lbl">The validation sandwich — proof is enforced inside the beat</div>
+      <p>Correctness isn't gated by a single stochastic reviewer re-reading the code. It's enforced <i>where the code is made</i>: the Test-Author lands the tests, the API-Verifier drives the running service, the Code-Reviewer red-teams the diff — and the DoD's deterministic evidence floor (§09) is the out-of-beat backstop that greps for the bundle. Pre (design to the contract), live (run against real deps), post (Verifier + Reviewer) — the same three-layer sandwich the Designer uses for fidelity, pointed at a running system.</p>
+    </div>
+  </div>
+</section>
+
+<!-- 07 -->
+<section id="integrations">
+  <div class="wrap">
+    <h2>07 — Integrations (MCP &amp; the running system)</h2>
+    <div class="h2sub">Read the whole system; run real deps in a box; ship only through a gate.</div>
+    <p>An integration = <code>(name, kind, capability, auth secret-ref, trust scope)</code> — auth bound to a secret ref (<code>ref:…</code>), never inline; most are MCP servers. Where the Marketer's writable surfaces are channels and budget, the Backend Engineer's are a <b>running system</b>: datastores it must talk to, a container runtime that stands up real dependencies, a git host it opens a PR against, and an observability stack it reads its SLOs from. Every one is graded and gated on the same chorus trust layer the Marketer's go-live uses — and the grades sort exactly as the field's agent sandboxes do: registries + telemetry read-only; ephemeral deps run-in-a-box; PR / migration / deploy the highest gate.</p>
+    <table>
+      <thead><tr><th>Category</th><th>MCP / external</th><th>Capability</th><th>Secret ref</th><th>Used by</th></tr></thead>
+      <tbody>
+        <tr><td>Package registries</td><td>npm · PyPI · crates.io <span class="muted">(setup phase)</span></td><td><span class="pill read">read · allowlist</span></td><td>—</td><td>the beat · install</td></tr>
+        <tr><td>Datastore</td><td>Postgres · MySQL · Mongo (driver / db MCP)</td><td><span class="pill run">run · ephemeral</span></td><td><code>ref:db_local</code></td><td>Test-Author · API-Verifier</td></tr>
+        <tr><td>Cache · queue</td><td>Redis · Kafka · RabbitMQ (Testcontainers)</td><td><span class="pill run">run · ephemeral</span></td><td>—</td><td>API-Verifier</td></tr>
+        <tr><td>Container runtime</td><td>Docker · Testcontainers · docker-compose</td><td><span class="pill run">run · confined</span></td><td>—</td><td>the beat</td></tr>
+        <tr><td>Running service</td><td>the app the beat started (http)</td><td><span class="pill run">run</span></td><td>—</td><td>API-Verifier</td></tr>
+        <tr><td>Load generator</td><td>k6 · Gatling · Locust</td><td><span class="pill run">run</span></td><td>—</td><td>API-Verifier</td></tr>
+        <tr><td>Contract broker</td><td>Pact Broker (<code>can-i-deploy</code>)</td><td><span class="pill write">write · reversible</span></td><td><code>ref:pact_rw</code></td><td>API-Verifier</td></tr>
+        <tr><td>Observability · APM</td><td>Prometheus · Grafana · Datadog · OpenTelemetry</td><td><span class="pill read">read</span></td><td><code>ref:apm_ro</code></td><td>SLO watch · Code-Reviewer</td></tr>
+        <tr><td>Error tracking</td><td>Sentry · the incident feed</td><td><span class="pill read">read</span></td><td><code>ref:errors_ro</code></td><td>SLO watch</td></tr>
+        <tr><td>Web search + docs</td><td>Tavily · Exa + fetch</td><td><span class="pill read">read</span></td><td><code>ref:web_search</code></td><td>Web-Research</td></tr>
+        <tr><td>Filesystem (its worktree)</td><td>filesystem MCP scoped to the beat worktree</td><td><span class="pill write">write · worktree</span></td><td>—</td><td>the beat</td></tr>
+        <tr><td>Git host</td><td>GitHub · GitLab (open PR)</td><td><span class="pill gate">open PR · gated</span></td><td><code>ref:git</code></td><td>the lander</td></tr>
+        <tr><td>Prod migration · deploy</td><td>the production datastore / release</td><td><span class="pill gate">apply · gated</span></td><td><code>ref:prod</code></td><td>— human-approved</td></tr>
+      </tbody>
+    </table>
+    <div class="legend">
+      <span><span class="pill read">read</span> ungated — registries, telemetry, docs, schema</span>
+      <span><span class="pill run">run</span> ephemeral + confined — real deps in a throwaway box, torn down each beat</span>
+      <span><span class="pill gate">gate</span> PR · prod migration · deploy — irreversible outward, fail-closed, approved</span>
+    </div>
+    <div class="callout gate">
+      <div class="lbl">Already built — the leash is not hypothetical</div>
+      <p>The grading reuses the WebPlugin trust layer chorus already ships: <code>Capability{read · write_reversible · send · spend}</code> with <code>.gated</code>, secret-ref binding, and a fail-closed <code>__post_init__</code>. The Backend Engineer maps onto it cleanly — <b>read</b> = telemetry / registries / docs; <b>write_reversible</b> = its worktree + an ephemeral Testcontainers datastore it can throw away; <b>send</b> = the one irreversible outward act (open a PR, apply a prod migration, deploy), which is gated fail-closed. Two field-standard reinforcements ride on top: the <b>two-phase network</b> (setup online behind a registry-only egress allowlist → run/test offline) and <b>secrets injected per-session, stripped before the autonomous phase</b>. The credential leash — the grant↔employee binding that denies an unbound employee — is the trust boundary made physical.</p>
+    </div>
+
+    <h3 style="margin-top:34px">The datastore + container MCP — the live-connect layer, in depth</h3>
+    <p>One integration cluster deserves its own treatment, because it is the single mechanism that turns "it works" from a hope into a fact at build time — Bex's exact analog of the Designer's Figma-MCP live-connect layer. The rule the whole field converged on: <b>bring up the real dependencies, health-gate them, then test against them.</b> A change that only passes against fakes has proven the fakes.</p>
+    <div class="grid2" style="margin-top:6px">
+      <div class="card"><h4><span class="pill run">run</span>Real dependencies (Testcontainers)</h4><p>Spins up the <i>same service type as production</i> — Postgres, Redis, Kafka — in a throwaway container, runs integration tests against it, and destroys it whether tests pass or fail (the Ryuk reaper). Kills the "passes on in-memory H2, fails on prod Postgres" anti-pattern; <code>containers.log</code> in the evidence bundle proves a real DB was used.</p></div>
+      <div class="card"><h4><span class="pill run">run</span>Health-gated startup</h4><p>docker-compose <code>depends_on: condition: service_healthy</code> + <code>--wait</code> + <code>pg_isready</code> — provision DB → wait healthy → migrate → hand the app the connection string. After starting the service, <b>poll its health endpoint before declaring ready</b>, never sleep.</p></div>
+      <div class="card"><h4><span class="pill run">run</span>Hit the running API</h4><p><code>http_request</code> against the live service the beat started — the server-side of "test as a real client would." Contract + property tests (Schemathesis, Pact replay) run against the actual endpoint, not a handler in isolation.</p></div>
+      <div class="card"><h4><span class="pill run">run</span>Load generator</h4><p>k6 / Gatling / Locust drives traffic; percentile thresholds (p95/p99 + error-rate) are pass/fail gates that exit non-zero on breach — the SLO becomes a build gate, not a dashboard screenshot.</p></div>
+    </div>
+    <div class="callout be" style="margin-top:16px">
+      <div class="lbl">How it wires into chorus — a run-scoped MCP cluster on Bex's shelf</div>
+      <p>The datastore + container MCPs are declared on the manifest (<code>mcp=("docker","postgres",…)</code>), allowlisted, and scoped <b>run · ephemeral</b>: they stand up real dependencies <i>inside the confined worktree</i> and tear them down each beat — never touching a production system of record. They are the live feeders for the whole loop: the <b>Test-Author</b> writes tests against the real schema, the <b>API-Verifier</b> drives the running service + real deps, and the <b>SLO watch</b> reads the telemetry integration. Combined with the git host on the gated write side, they close the build-and-prove circuit end to end: run the real system in, hand a proven PR out. It is Bex's exact analog of the Designer's read-only Figma seam — except the system of record is a <i>running datastore</i>, so its bridge is <b>run</b>, not merely read.</p>
+    </div>
+
+    <h3 style="margin-top:34px">The sandbox — unrestricted, but confined</h3>
+    <p>Backend work <i>requires</i> arbitrary command execution: install packages, run builds, apply migrations, start servers, drive load. The field's answer is not to narrow the tools but to <b>confine the environment</b>. Anthropic states it directly: sandboxing <i>enables</i> autonomy — "by defining set boundaries within which Claude can work freely, they increase security and agency," and it <a class="ref" href="https://www.anthropic.com/engineering/claude-code-sandboxing">"safely reduces permission prompts by 84%."</a></p>
+    <div class="grid2" style="margin-top:6px">
+      <div class="card"><h4><span class="pill run">run</span>Two-phase network</h4><p>The <a class="ref" href="https://developers.openai.com/codex/cloud/environments">Codex model</a>: a <b>setup phase online</b> for installs/migrations behind a <b>registry-only egress allowlist</b> (npm/PyPI/GitHub), then a <b>run/test phase default-offline</b>. The threat it closes: a compromised dependency has "seconds to read credentials" during <code>install</code> — the allowlist breaks the exfiltration step.</p></div>
+      <div class="card"><h4><span class="pill run">run</span>Filesystem + secrets</h4><p>Filesystem confined to the worktree; run as non-root; <b>secrets injected per-session and stripped before the autonomous phase</b> (Devin/Codex both do this). Both boundaries mandatory: without net isolation the agent exfiltrates SSH keys, without FS isolation it escapes the sandbox.</p></div>
+      <div class="card"><h4><span class="pill run">run</span>Broad, powerful, few tools</h4><p>A PL/shell action space (<code>bash</code> + file-edit + git) plus a <i>few</i> task-consolidated verbs (<code>apply_migrations</code>, <code>run_tests</code>) beats a fat catalog of one-tool-per-operation — the OpenHands / Anthropic tool-design consensus.</p></div>
+      <div class="card"><h4><span class="pill run">run</span>Durable in-workspace state</h4><p>Across a multi-beat build, state lives in the <b>workspace</b> — git history + a progress file + a task list — not the context window; install is a separately-timed phase (slow); compaction at phase boundaries. Anthropic's long-running-agent pattern.</p></div>
+    </div>
+    <div class="callout be" style="margin-top:16px">
+      <div class="lbl">How it wires into chorus — the Engineer's sandbox, one tier hotter</div>
+      <p>The manifest declares <code>sandbox = UNRESTRICTED + net-allowlist</code> (§08): the same trust tier the Engineer already runs, plus an egress allowlist for package registries and the dev dependencies. Credential guard, command deny-list, and worktree confinement still apply — landing UI to prod, or money-moving, is still gated. It is Bex's exact analog of the Designer's allowlisted, read-only Figma seam: a bounded bridge to the real system of record — except the Backend Engineer's system of record is <i>a running datastore</i>, so its bridge is <i>run</i>, not just read.</p>
+    </div>
+  </div>
+</section>
+
+<!-- 08 -->
+<section id="tools">
+  <div class="wrap">
+    <h2>08 — Tools &amp; skills</h2>
+    <div class="h2sub">Three layers: reach, verbs, know-how.</div>
+    <p>Integrations, tools, and skills are different things. Keeping them distinct is what lets a capability be composed, scoped per subagent, and reused across the workforce.</p>
+    <div class="grid3" style="margin-top:8px">
+      <div class="card"><h4>Integration</h4><div class="role">raw reach — the hands</div><p>A trust-scoped MCP / WebPlugin (§07): a datastore, a container runtime, a git host, an APM. Read on telemetry; run on ephemeral deps; gated on the PR and the prod migration.</p></div>
+      <div class="card"><h4>Tool</h4><div class="role">composed verb — built on reach</div><p>A registered entry in the toolset, scoped per subagent by <code>compute_minimum_toolset</code>: <code>run_command</code>, <code>apply_migrations</code>, <code>test_evidence</code>. Mechanical and verifiable — not reasoning.</p></div>
+      <div class="card"><h4>Skill</h4><div class="role">know-how — shapes how</div><p>Authored reference: a playbook the agent reads (<code>zero-downtime-migrations</code>). Not a callable verb. It's what stops a fluent model from being a green-tested, production-breaking fabricator.</p></div>
+    </div>
+
+    <h3>Its tool shelf</h3>
+    <div class="tag-row">
+      <span class="pill read">read_file</span><span class="pill write">write_file</span><span class="pill run">run_command</span><span class="pill write">git</span>
+      <span class="pill be">test_evidence</span><span class="pill run">apply_migrations</span><span class="pill run">start_service</span><span class="pill run">http_request</span>
+      <span class="pill read">web_search</span><span class="pill read">web_extract</span><span class="pill read">memory_search</span><span class="pill write">working_memory</span>
+      <span class="pill write">spawn_subagent</span><span class="pill read">skill</span>
+    </div>
+    <p style="margin-top:12px">The workhorse is <code>run_command</code> — install, build, migrate, run, test. <code>test_evidence</code> is the load-bearing primitive: it runs the project's <b>discovered</b> lint / typecheck / unit / integration / contract / migration / load / mutation commands (discovered per repo by the stack probe of §03 — so the one primitive serves Go+Postgres and Python+Mongo alike, with no framework hardcoded), collates each self-failing gate's standard artifact, and writes a machine-readable <code>test_evidence/</code> bundle to the worktree — so "it was tested" is a file on disk, not a claim in the transcript. It is the exact analog of the Designer's <code>design_lint</code> and the Frontend's <code>test_evidence</code>, and — learning from the Designer's <code>design_lint</code> bug — it is <b>registered unconditionally as a pure worktree tool, never behind the ledger gate</b>, so it always exists in a ledger-less run instead of being mis-routed as a subagent.</p>
+
+    <h3>Its skills (know-how, not verbs)</h3>
+    <div class="grid3" style="margin-top:6px">
+      <div class="card"><h4>API &amp; data</h4><ul class="clean"><li><code>api-design-rest-graphql-grpc</code></li><li><code>data-modeling</code></li><li><code>indexing-and-query-optimization</code></li><li><code>idempotency-and-pagination</code></li></ul></div>
+      <div class="card"><h4>Scale &amp; async</h4><ul class="clean"><li><code>caching-strategies</code></li><li><code>messaging-outbox-inbox</code></li><li><code>resilience-patterns</code></li><li><code>connection-pool-discipline</code></li></ul></div>
+      <div class="card"><h4>Architecture</h4><ul class="clean"><li><code>hexagonal-ddd</code></li><li><code>twelve-factor</code></li><li><code>cqrs-and-saga</code></li><li><code>repository-pattern</code></li></ul></div>
+      <div class="card"><h4>Data correctness</h4><ul class="clean"><li><code>zero-downtime-migrations</code></li><li><code>acid-isolation-and-deadlocks</code></li><li><code>migration-round-trip-testing</code></li></ul></div>
+      <div class="card"><h4>Testing &amp; proof</h4><ul class="clean"><li><code>testing-honeycomb-strategy</code></li><li><code>testcontainers-integration</code></li><li><code>contract-testing-pact</code></li><li><code>property-testing-schemathesis</code></li><li><code>load-testing-slo-gates</code></li><li><code>mutation-testing</code></li></ul></div>
+      <div class="card"><h4>Security &amp; operability</h4><ul class="clean"><li><code>owasp-api-security</code></li><li><code>authn-authz-oauth-oidc-rbac</code></li><li><code>secrets-and-least-privilege</code></li><li><code>observability-slis-slos</code></li></ul></div>
+    </div>
+    <div class="callout" style="margin-top:18px">
+      <div class="lbl">Skills vs. the contract vs. memory</div>
+      <p>Three distinct things, cleanly split — the <b>AGENTS.md · SKILL.md · contract</b> layering. A <b>skill</b> is durable craft know-how (<i>"how to make a migration backward-compatible"</i>); the <b>contract + data model</b> is this service's specific shape + invariants; <b>memory</b> is contingent fact (<i>"the payments table deadlocks under this lock order — order updates before reads"</i>). The skill is portable; the contract is per-service; the memory is per-history.</p>
+    </div>
+  </div>
+</section>
+
+<!-- 09 -->
+<section id="done">
+  <div class="wrap">
+    <h2>09 — How "done" is decided</h2>
+    <div class="h2sub">A reviewed build with a durable evidence floor.</div>
+    <p>A service's failure mode is mostly <i>hidden below the unit-test line</i> — unproven under load, unsafe, unmigratable — so the Backend Engineer's DoD leads with a <b>deterministic evidence floor</b>, exactly as the Frontend Engineer's does: a <code>test_evidence/</code> bundle exists in the worktree, its <code>manifest.json</code> is all-green, and the kernel's verify command (build + unit + integration-on-real-DB + contract) exits 0. A service that passes its own mocks but has no bundle is not done.</p>
+    <p>Above the floor, correctness-in-the-real-world is a judgment against a running system, so "done" adds two verdicts, mirroring the Frontend's <i>reviewed_build over an evidence-floor command</i>:</p>
+    <div class="grid2" style="margin-top:6px">
+      <div class="card"><h4>In-beat · Verifier + Reviewer</h4><p>The API-Verifier drove the <i>running</i> service (contract + property + real endpoints + health) and returned PASS; the read-only Code-Reviewer approved the diff (correct, tested, no regression, on-contract, secure, backward-compatible). Quality is enforced <i>where the code is made</i>.</p></div>
+      <div class="card"><h4>Out-of-beat · the evidence floor</h4><p>The kernel's verification oracle greps <code>manifest.json</code> deterministically: the bundle exists, every gate is green, coverage + mutation above floor, SLO thresholds not breached, security scan clean, migration round-trip passed. Ungameable; the review is calibrated to a senior eye.</p></div>
+    </div>
+
+    <h3>Done means, in one beat — six checkable truths</h3>
+    <ul class="clean">
+      <li><b>Green build.</b> The discovered verify command (build + unit/component + integration-on-real-DB + contract) exits 0.</li>
+      <li><b>Behaviour proven against the running service.</b> The API-Verifier drove the live service and returned PASS against the acceptance criteria — including error paths and the auth boundary.</li>
+      <li><b>Measured, not assumed.</b> Load SLOs (p95/p99 + error-rate) inside budget via exit-code gates; coverage + mutation score above floor; the security scan (BOLA, injection, secrets, deps) is clean.</li>
+      <li><b>Migration safe.</b> Expand → migrate → contract ordering, with a passing forward→verify→rollback→verify round-trip against production-sized data — whenever the diff touches schema.</li>
+      <li><b>Evidence on disk.</b> A <code>test_evidence/</code> bundle landed in the worktree; the DoD's deterministic floor greps <code>manifest.json</code>. Not a placeholder file, not a line in a log.</li>
+      <li><b>Diff approved.</b> The read-only Code-Reviewer approved (correct, tested, no regression, on-contract, backward-compatible, secure).</li>
+    </ul>
+
+    <h3>The quality bar — what "done" means beyond a green check</h3>
+    <p>A build can pass its tests and still be a bad service. The engineer holds seven dimensions; the DoD makes each checkable so none is skipped and quietly "fixed later."</p>
+    <div class="grid4" style="margin-top:6px">
+      <div class="card"><h4>Correct</h4><p>Does what the acceptance criteria say, across the states that actually occur — not just the happy path.</p></div>
+      <div class="card"><h4>Secure</h4><p>Every object authorized (BOLA), every query parameterized, every input validated, no secret hardcoded. Scan-clean.</p></div>
+      <div class="card"><h4>Fast</h4><p>Core SLOs inside budget under load. <span class="metric">p95 ≤ 200ms</span> <span class="metric">p99 ≤ 500ms</span> <span class="metric">err &lt; 1%</span></p></div>
+      <div class="card"><h4>Resilient</h4><p>Timeout / retry-with-jitter / circuit-breaker on every dependency; idempotent consumers; failure paths exercised.</p></div>
+      <div class="card"><h4>Migratable</h4><p>Expand-contract, backward-compatible, batched backfills, a tested rollback — applies while the old code still runs.</p></div>
+      <div class="card"><h4>Observable</h4><p>Health, metrics, and traces ship with the change; the SLIs it will be judged on are instrumented.</p></div>
+      <div class="card"><h4>Maintainable</h4><p>Smallest change, clear boundaries (hexagonal), tests that fail only for useful reasons.</p></div>
+      <div class="card"><h4>Proven</h4><p>Every one of the above resolves to a file in the evidence bundle — asserted nowhere, checked everywhere.</p></div>
+    </div>
+
+    <div class="callout gate" style="margin-top:18px">
+      <div class="lbl">Anti-reward-hacking — the non-negotiable, from the field's failure data</div>
+      <p>Because an autonomous agent writes both the code <i>and</i> the tests, the DoD is designed so it cannot pass by cheating: the grader's tests are <b>read-only / outside the workspace the agent can edit</b> (SWE-bench's model); the brief explicitly forbids removing or editing tests; the Code-Reviewer <b>diffs the touched test files</b>; and the <b>mutation score</b> proves the tests would actually catch a bug rather than being toothless. A green suite the agent could have gamed is not evidence — a held-out one it couldn't is.</p>
+    </div>
+  </div>
+</section>
+
+<!-- 10 -->
+<section id="evidence">
+  <div class="wrap">
+    <h2>10 — The test_evidence layer</h2>
+    <div class="h2sub">A durable, machine-readable bundle the beat emits — "it was tested" as a directory.</div>
+    <p>This is the Backend Engineer's signature layer — the analog of the Designer's <code>DESIGN.md</code> substrate and the Frontend's evidence bundle. It makes "proven, safe, operable" <b>structural</b>, because the proof <i>is</i> a set of files a DoD checker reads, not a sentence in a transcript. Each file is produced by a gate that already exited non-zero on failure, so the bundle's <i>existence with all-green statuses</i> is itself the proof.</p>
+    <pre class="tree"><span class="c"># test_evidence/ — the durable proof bundle, one per beat</span>
+test_evidence/
+  <span class="d">manifest.json</span>            <span class="c"># index + top-level verdict + per-gate status (the DoD reads this alone)</span>
+  static/     typecheck.txt · lint.json · <span class="d">security-scan.sarif</span>   <span class="c"># types, lint, SAST</span>
+  unit/       junit-unit.xml · coverage.xml                <span class="c"># JUnit + Cobertura</span>
+  integration/ junit-integration.xml · <span class="d">containers.log</span>          <span class="c"># proof a REAL db was used</span>
+  api/        openapi.json · schemathesis-junit.xml · dredd-report.json
+  contracts/  *.pact.json · provider-verification.json · <span class="d">can-i-deploy.json</span>
+  migrations/ applied.log · <span class="d">rollback-roundtrip.txt</span> · data-assertions.json
+  load/       <span class="d">k6-summary.json</span>          <span class="c"># p95/p99, error-rate vs thresholds</span>
+  mutation/   stryker-report.json      <span class="c"># score vs break threshold — did the tests bite?</span>
+  smoke/      healthcheck.json         <span class="c"># /healthz + /readyz post-deploy</span></pre>
+
+    <pre class="tree" style="margin-top:14px"><span class="c"># manifest.json — the single file the DoD greps</span>
+{
+  "commit": "…", "verdict": <span class="d">"pass"</span>,
+  "gates": {
+    "static":      { "status": "pass", "typecheck_errors": 0 },
+    "unit":        { "status": "pass", "tests": 412, "failures": 0, "coverage_pct": 87.4 },
+    "integration": { "status": "pass", "backend": <span class="d">"postgres:16 (testcontainers)"</span>, "failures": 0 },
+    "api":         { "status": "pass", "checks": ["not_a_server_error","response_schema_conformance"] },
+    "contracts":   { "status": "pass", "provider_verified": true, "can_i_deploy": true },
+    "migrations":  { "status": "pass", <span class="d">"rollback_roundtrip": true</span> },
+    "load":        { "status": "pass", "p95_ms": 180, "p99_ms": 420, "error_rate": 0.003 },
+    "mutation":    { "status": "pass", "score": 71.2, "break_threshold": 50 },
+    "smoke":       { "status": "pass", "healthz": 200, "readyz": 200 }
+  }
+}</pre>
+
+    <div class="grid2" style="margin-top:16px">
+      <div class="card"><h4>Tiers of self-failing gates</h4><p>static → unit → integration-on-real-DB → contract → migration → load/SLO → mutation → smoke. Each exits non-zero on failure (k6 exits 99 on a threshold breach; Stryker exits non-zero below its break score), so the pipeline itself enforces the floor — the bundle can't be all-green unless every gate genuinely passed.</p></div>
+      <div class="card"><h4><code>test_evidence</code> — the deterministic collator</h4><p>The chorus-native primitive (the Designer's <code>design_lint</code>, re-pointed): discovers the project's commands, runs each gate, collates the standard artifacts, and writes the bundle + <code>manifest.json</code>. The Verifier's authoritative signal and the DoD's grep target.</p></div>
+      <div class="card"><h4>Standard, machine-parseable formats</h4><p>JUnit XML (results) · Cobertura/LCOV (coverage) · SARIF (security) · Pact JSON + broker verification (contracts) · k6 summary JSON (load) · Stryker JSON (mutation). Every one is an industry standard a CI already renders — nothing bespoke to trust.</p></div>
+      <div class="card"><h4>Real deps, not mocks — the credibility line</h4><p><code>containers.log</code> is deliberate: it proves the integration tests ran against a <i>real</i> Postgres/Redis, not H2 or a stub. The three things that make backend evidence credible: real dependencies, percentile SLOs as hard gates, and a mutation score.</p></div>
+    </div>
+    <div class="callout be" style="margin-top:18px">
+      <div class="lbl">The Backend Engineer's "confidently wrong"</div>
+      <p>The Analyst's failure is a fabricated metric; the Designer's is a plausible screen that's quietly broken; the Backend Engineer's is a <b>plausible service that passes its own tests and falls over in production</b>. The evidence bundle is the structural defence: the agent builds against a real system, and every claim of "it works" is a checkable file — run against a real DB, under load, across a migration, with the tests it could not edit. Proven and safe stop being a matter of the reviewer's trust and become a matter of record.</p>
+    </div>
+  </div>
+</section>
+
+<!-- 11 -->
+<section id="formats">
+  <div class="wrap">
+    <h2>11 — The verification library (the golden references)</h2>
+    <div class="h2sub">Prove against a proven method — don't invent a test strategy from a blank page.</div>
+    <p>§10 says the beat emits an evidence bundle. But <i>which</i> tests, in <i>what</i> shape, proving <i>what</i>? Hand-rolling a test strategy is exactly the blank-page task an LLM does worst — and the one where it most easily fools itself. The answer is the same as the Designer's <code>DESIGN.md</code> library: a curated set of <b>proven verification methods</b>, each with a canonical tool and a machine-checkable output, that the beat imitates rather than invents.</p>
+    <table>
+      <thead><tr><th>Method</th><th>Proves</th><th>Canonical tool · output</th></tr></thead>
+      <tbody>
+        <tr><td><b>Test Honeycomb shape</b></td><td>Integration-heavy for services: few isolated unit tests, a strong integration core, few integrated e2e — the shape most apt for backend (vs the UI Pyramid).</td><td><a class="ref" href="https://martinfowler.com/articles/practical-test-pyramid.html">Fowler / Spotify</a></td></tr>
+        <tr><td><b>Real-DB integration</b></td><td>Serialization + queries work against the <i>same service type as production</i>, not an in-memory fake.</td><td><a class="ref" href="https://testcontainers.com/guides/introducing-testcontainers/">Testcontainers</a> · JUnit XML + <code>containers.log</code></td></tr>
+        <tr><td><b>Property-based API conformance</b></td><td>The running service matches its OpenAPI spec across thousands of generated inputs — no 5xx on edge cases, responses conform to schema.</td><td><a class="ref" href="https://github.com/schemathesis/schemathesis">Schemathesis</a> · JUnit XML + curl repros</td></tr>
+        <tr><td><b>Consumer-driven contracts</b></td><td>Cross-service compatibility <i>without</i> a full e2e environment — the provider satisfies exactly what each consumer uses; <code>can-i-deploy</code> gates release.</td><td><a class="ref" href="https://docs.pact.io/getting_started/how_pact_works">Pact</a> · pact JSON + verification record</td></tr>
+        <tr><td><b>Migration round-trip</b></td><td>The schema change applies while the old code still runs, backfills correctly, and <i>rolls back</i>: forward→verify→rollback→verify, at production data volume.</td><td><a class="ref" href="https://xata.io/blog/pgroll-expand-contract">expand-contract</a> · <code>rollback-roundtrip.txt</code></td></tr>
+        <tr><td><b>SLOs as pass/fail gates</b></td><td>Latency <i>percentiles</i> (never averages) and error-rate hold under load; a breach fails the build (k6 exits 99).</td><td><a class="ref" href="https://k6.io/docs/using-k6/thresholds/">k6 thresholds</a> · summary JSON</td></tr>
+        <tr><td><b>Mutation score</b></td><td>The tests would actually <i>catch</i> a bug — not just that lines ran. The antidote to an agent grading its own toothless tests.</td><td><a class="ref" href="https://stryker-mutator.io/">Stryker / mutmut</a> · JSON report</td></tr>
+        <tr><td><b>Held-out grading</b></td><td>The patch resolves the issue against hidden tests it cannot see or edit: FAIL→PASS <i>and</i> PASS→PASS in a clean container.</td><td><a class="ref" href="https://www.swebench.com/">SWE-bench</a> model</td></tr>
+      </tbody>
+    </table>
+
+    <h3>Four ways it plugs into the Backend Engineer</h3>
+    <div class="grid2" style="margin-top:6px">
+      <div class="card"><h4><span class="pill new">new</span>① Method seed</h4><p>At hire, the discovered stack maps to its canonical methods — Postgres → Testcontainers, an OpenAPI service → Schemathesis + Pact, a schema change → expand-contract round-trip. The beat starts from a proven strategy instead of improvising one. The analog of the Designer's cold-start <code>DESIGN.md</code> seed.</p></div>
+      <div class="card"><h4><span class="pill new">new</span>② Format exemplars</h4><p>The standard artifact formats (JUnit / Cobertura / SARIF / Pact / k6 / Stryker) are worked examples of what a gate must emit. When <code>test_evidence</code> collates the bundle, these are the canonical shapes — so the output is machine-parseable evidence, not ad-hoc logs.</p></div>
+      <div class="card"><h4><span class="pill new">new</span>③ Golden reference for the DoD + Reviewer</h4><p>Each method's output is the ground truth the DoD greps and the Code-Reviewer reads: <code>can-i-deploy: true</code>, <code>rollback_roundtrip: true</code>, <code>p99_ms &lt; threshold</code>. "Proven" becomes checkable against a concrete artifact, not a vibe.</p></div>
+      <div class="card"><h4><span class="pill new">new</span>④ Eval &amp; acceptance fixtures</h4><p>"Add the idempotent endpoint and prove it with a Pact contract + a k6 SLO" is a self-contained, gradeable task with a paired evidence output — ideal fixtures for the DoD and for benchmarking the loop, the way SWE-bench Verified benchmarks a real patch.</p></div>
+    </div>
+
+    <div class="status-note proof" style="margin-top:18px"><div class="lbl">Fork-not-invent — the reuse discipline, applied to proof</div>Just as the Designer starts from a battle-tested design system and diverges, the Backend Engineer starts from battle-tested verification methods and applies them — never hand-rolling a test philosophy per beat. The library is the proof-substrate equivalent of a skeleton project: adopt the canonical method for the stack, then run it. It closes the gap §10 leaves open — <b>where a trustworthy test strategy comes from</b> — and it is what keeps an autonomous agent from grading itself with tests it quietly declawed.</div>
+  </div>
+</section>
+
+<!-- 12 -->
+<section id="authority">
+  <div class="wrap">
+    <h2>12 — Authority &amp; governance</h2>
+    <div class="h2sub">It builds and proves the service; it does not merge, own the schema of record, or run prod.</div>
+    <p>The Backend Engineer has broad <i>read + run</i> and a narrow, gated <i>ship</i>. It can read the contract, the codebase, and the deps; install, migrate, run, and load-test in its confined worktree; and open a proven PR. It cannot merge to production, alter the shared schema of record without the owner, or take a money-moving / data-destroying action.</p>
+    <div class="grid2" style="margin-top:6px">
+      <div class="card"><h4><span class="yn y">CAN</span>Build, run &amp; prove</h4><p>Implement to the contract; install deps + apply migrations in the worktree; run the service + real dependencies; drive load; author + run all gates; open a PR with evidence <i>for review</i>.</p></div>
+      <div class="card"><h4><span class="yn n">CANNOT</span>Merge, own infra, or scope</h4><p>No autonomous merge to prod, no unreviewed change to the shared schema of record, no destructive prod data op, no deciding the roadmap — that's the reviewer's, the DBA/owner's, the PM's, and the board's.</p></div>
+    </div>
+    <h3>The hard boundary — three roles it is not</h3>
+    <p>It is not the <b>PM</b> (who decides <i>what</i> to build — the Backend Engineer builds the <i>how</i>), not the <b>Designer / Frontend Engineer</b> (who own the experience and the interface — the Backend Engineer serves the data behind them), and not the <b>platform / DevOps owner</b> (who owns production infra and the schema of record — the Backend Engineer proposes a migration and a service, and hands off a reviewable PR). When a change alters a cross-service contract, the shared schema, or the reliability budget of another team, it escalates to the owner; a <code>HumanApproval</code> gate stands in front of anything that reaches production or moves money — the exact fail-closed seam the Marketer uses for go-live.</p>
+  </div>
+</section>
+
+<!-- 13 -->
+<section id="voice">
+  <div class="wrap">
+    <h2>13 — Proactive voice</h2>
+    <div class="h2sub">The crux — build vs. ask.</div>
+    <p>An engineer that asks about every ambiguity is slow; one that invents an answer to every gap ships a wrong contract. The contract + the acceptance criteria make the line principled: <b>build when the contract covers the case; ask when it doesn't and the call is consequential or irreversible.</b></p>
+    <div class="grid2" style="margin-top:6px">
+      <div class="card"><h4>Build &amp; proceed</h4><p>The contract and acceptance criteria cover it, the invariants hold, the gates pass — build it and move. Most tickets are here. Flagging a <i>reliability gap</i> (a missing index the load test exposes, a slipping p99) is itself proactive: the engineer proposes the fix, it doesn't silently absorb the debt.</p></div>
+      <div class="card"><h4>Escalate &amp; ask</h4><p>The contract genuinely doesn't cover it and guessing would set a precedent or be irreversible — a cross-service contract change, a shared-schema migration, a data-destroying step, a security trade-off. Surface the specific gap with two on-contract options; a one-line "the spec doesn't define X; here are two safe paths" beats a confident wrong migration.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- 14 -->
+<section id="routines">
+  <div class="wrap">
+    <h2>14 — Standing routines</h2>
+    <div class="h2sub">What makes it an engineer, not a code-generator-on-demand.</div>
+    <table>
+      <thead><tr><th>Routine</th><th>Cadence</th><th>What it does</th><th>Status</th></tr></thead>
+      <tbody>
+        <tr><td><b>Dependency &amp; vuln scan</b></td><td>weekly</td><td>Scans the lockfile + SCA for vulnerable/outdated deps and proposes a bounded upgrade PR with the gates re-run — report/propose only, never trips a merge. The you-build-it-you-run-it hygiene loop.</td><td><span class="pill be">backend</span></td></tr>
+        <tr><td><b>SLO / error-budget watch</b></td><td>daily / on-ship</td><td>Checks the shipped services' latency percentiles + error rate against their SLOs; files a breach or a burning error budget as a fresh problem (with the trace) for a remediation beat.</td><td><span class="pill be">backend</span></td></tr>
+        <tr><td><b>Flaky-test quarantine</b></td><td>on-CI-signal</td><td>Detects non-deterministic tests from the evidence history, quarantines them, and files a deflake ticket — so the evidence bundle stays trustworthy instead of accreting ignored red.</td><td><span class="pill todo">deferred</span></td></tr>
+      </tbody>
+    </table>
+    <p style="margin-top:12px">A routine is declared by the plugin and reconciled at hire (<code>declared_routines</code>); it fires a fresh, DoD-gated beat on its cadence. A routine <i>proposes</i> — it never merges or touches production on its own.</p>
+  </div>
+</section>
+
+<!-- 15 -->
+<section id="memory">
+  <div class="wrap">
+    <h2>15 — Tribal knowledge (memory)</h2>
+    <div class="h2sub">What shipped, what broke, what the system learned the hard way.</div>
+    <div class="grid2" style="margin-top:6px">
+      <div class="card"><h4>Design decisions</h4><p>The architectural calls and why — <i>"we chose an outbox here because the write and the event must be atomic"</i> — so a later service stays consistent with the pattern instead of re-deciding it.</p></div>
+      <div class="card"><h4>Incidents — what broke</h4><p>The deadlock from an inconsistent lock order, the migration that locked the table, the N+1 that melted the DB, the retry storm without jitter — accrued so the same failure isn't re-shipped. Maps to chorus <b>project-scoped memory</b>.</p></div>
+      <div class="card"><h4>Performance baselines</h4><p>The p95/p99 this endpoint holds today, the query plan it depends on, the throughput ceiling — so a regression is caught against a remembered number, not re-discovered in production.</p></div>
+      <div class="card"><h4>Working memory</h4><p>The in-beat scratchpad across a multi-step build — the migration state, what's been tried, the failing gate — cleared each beat. Maps to chorus <b>working memory</b>.</p></div>
+    </div>
+    <div class="callout" style="margin-top:18px">
+      <div class="lbl">Memory keeps the system from re-breaking</div>
+      <p>The distinctive tier is <b>incidents</b>: the Backend Engineer doesn't just build the service, it remembers how the last one <i>failed</i> in production and designs against it — so reliability compounds instead of relearning the same outage. Continuity of the <i>system's</i> hard-won lessons, not of the employee.</p>
+    </div>
+  </div>
+</section>
+
+<!-- 16 -->
+<section id="build">
+  <div class="wrap">
+    <h2>16 — Build map</h2>
+    <div class="h2sub">Net-new, but mostly a re-skin of the Engineer + the Frontend Engineer.</div>
+    <p>There is no chorus <code>backend_engineer/</code> package yet. But the archetype is the Engineer's structural twin and the Frontend Engineer's mirror, so most layers are a re-point of proven machinery onto the "prove it against a real system" substrate — smallest-blast-radius first.</p>
+    <pre class="tree">src/chorus_employee/backend_engineer/
+  __init__.py         <span class="c"># backend_engineer_plugin() — the role triple + declared routines</span>
+  _brief.py           <span class="d"># prove-the-service brief (real deps, held-out grader, PR not merge)</span>
+  _harness.py         <span class="c"># build/run harness (run_command, git, http_request, test_evidence)</span>
+  _dod.py             <span class="d"># reviewed_build over a deterministic evidence-floor command</span>
+  _lander.py          <span class="c"># backend lander → opens the pr artifact (+ evidence bundle)</span>
+  _routines.py        <span class="d"># dependency/vuln scan + SLO/error-budget watch</span>
+  _subagents/         <span class="d"># test-author · api-verifier · code-reviewer (typed returns)</span>
+  skills/             <span class="d"># the backend-craft library (api, data, scale, testing, security)</span>
+src/chorus_tools/     <span class="d"># test_evidence tool (collator) + apply_migrations / start_service / http_request</span></pre>
+
+    <h3>Slices (mirror the Frontend Engineer's)</h3>
+    <ol>
+      <li><b>Walking skeleton</b> — manifest + brief + tools (read/write/run/git) + <code>reviewed_build</code> DoD. Implements and lands a PR that builds green. <span class="pill be">backend</span></li>
+      <li><b>Tests-in-beat</b> — the <code>test_evidence</code> primitive (registered unconditionally) + Test-Author subagent + the evidence-floor DoD. Every landed change carries proof. <span class="pill be">backend</span></li>
+      <li><b>Real-system verification</b> — health-gated docker-compose startup + Testcontainers integration + contract/property tests; the API-Verifier subagent + its typed <code>ApiTestVerdict</code>. <span class="pill be">backend</span></li>
+      <li><b>Craft depth + operability</b> — author the skill playbooks; the Code-Reviewer subagent; load/SLO gates + mutation baselines + migration round-trip + the security scan. <span class="pill todo">deferred</span></li>
+    </ol>
+
+    <h3>Design decisions <span class="muted" style="font-weight:400;font-size:13px">(redirect any of these)</span></h3>
+    <ul class="clean">
+      <li><b>Stack-agnostic by construction.</b> No framework, language, or datastore is hardcoded — a <i>brownfield</i> beat probes the repo, detects the stack (Go+Postgres, Python+Mongo, Node+Redis, …), and binds to its discovered commands + libraries; a <i>greenfield / cold-start</i> beat <b>decides</b> the stack with reasons, scaffolds from a proven starter, and writes the probe surface future beats read. The loop, DoD, and evidence shape are invariant; only the bindings are data (§03).</li>
+      <li><b>The Backend Engineer ships a service, landed as a reviewable PR.</b> Build and prove freely; merging to prod crosses the same fail-closed gate as the Marketer's go-live — no autonomous merge.</li>
+      <li><b>Governed against the unproven, unsafe, unmigratable service.</b> A durable <code>test_evidence</code> bundle is the floor; real dependencies + a held-out grader make the proof credible; SLOs + mutation score keep it honest.</li>
+      <li><b>Proof is a first-class artifact.</b> A machine-readable <code>test_evidence/</code> bundle + <code>manifest.json</code> per beat — the field's converged discipline — not a claim in the transcript.</li>
+      <li><b>Correctness is proven against a real system.</b> Integration against a real Postgres/Redis (Testcontainers), the running API under load — because a suite that passes on mocks proves the mocks.</li>
+      <li><b>Safe = confined, not narrow.</b> <code>UNRESTRICTED</code> commands inside a registry-only egress allowlist, secrets stripped before the autonomous phase, worktree confinement.</li>
+      <li><b>Register <code>test_evidence</code> unconditionally.</b> A pure worktree tool, never ledger-gated — the fix for the exact bug found on the Designer's <code>design_lint</code>.</li>
+      <li><b>It is not the PM, the Designer, or the platform owner.</b> Builds the <i>how</i> (not the <i>what</i>), serves the data (not the experience), proposes the migration (doesn't own prod).</li>
+      <li><b>Mostly a re-skin.</b> Engineer's sandbox + DoD, Frontend's evidence bundle + Verifier, pointed at a running datastore. Reuse over invention.</li>
+    </ul>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <p>chorus · employee design · <b>Backend Engineer</b> — a deep employee. <span class="kbd">docs/specs/backend-engineer-employee.html</span></p>
+    <p class="muted">Siblings: <a class="ref" href="designer-employee.html">designer-employee.html</a> · <a class="ref" href="pm-employee.html">pm-employee.html</a>. The Backend Engineer would be a role triple in <code>chorus_employee/</code>, resolved by <code>chorus.roles.default_roles</code>. Net-new — largely a re-point of the Engineer's + Frontend Engineer's machinery. Grounded in <code>docs/research/backend-engineer-employee-research.md</code>.</p>
+    <p class="muted" style="margin-top:14px;font-size:12px">Field context (Jul 2026): <a class="ref" href="https://www.anthropic.com/engineering/claude-code-sandboxing">Anthropic — sandboxing enables autonomy</a> · <a class="ref" href="https://www.swebench.com/">SWE-bench — held-out FAIL→PASS + PASS→PASS grading</a> · <a class="ref" href="https://arxiv.org/pdf/2606.07379">reward-hacking: agents delete tests to pass</a> · <a class="ref" href="https://testcontainers.com/guides/introducing-testcontainers/">Testcontainers — real deps, not mocks</a> · <a class="ref" href="https://docs.pact.io/getting_started/how_pact_works">Pact — consumer-driven contracts</a> · <a class="ref" href="https://k6.io/docs/using-k6/thresholds/">k6 — SLOs as pass/fail gates</a> · <a class="ref" href="https://owasp.org/API-Security/editions/2023/en/0x11-t10/">OWASP API Top 10</a> · <a class="ref" href="https://sre.google/sre-book/service-level-objectives/">Google SRE — SLIs/SLOs</a> · <a class="ref" href="https://handbook.gitlab.com/job-families/engineering/development/backend/senior/">GitLab — senior backend role</a>. The convergent verdict: never trust the agent's "done" — prove it against a real system, with tests it cannot touch.</p>
+  </div>
+</footer>
+
+</body>
+</html>
