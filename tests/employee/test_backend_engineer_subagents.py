@@ -107,6 +107,13 @@ class TestApiVerifierDeclaration:
     def test_max_turns_bounded(self) -> None:
         assert API_VERIFIER_SUBAGENT.max_turns <= 10
 
+    def test_description_proves_durability_for_stateful_services(self) -> None:
+        # A stateless boot+curl can't catch a mock: an in-memory fake passes POST->GET too. The
+        # verifier must prove persistence survives a RESTART — the real-datastore proof (§16 Slice 3).
+        desc = API_VERIFIER_SUBAGENT.description.lower()
+        assert "persist" in desc
+        assert "restart" in desc
+
 
 # --- harness wiring ---
 
