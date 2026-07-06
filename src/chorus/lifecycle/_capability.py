@@ -22,8 +22,11 @@ from chorus.ledger._models import (
     Artifact,
     ArtifactRevision,
     ArtifactType,
+    Claim,
+    DecisionRecord,
     DodStatus,
     OriginKind,
+    RejectedAlternative,
     Task,
     TaskStatus,
 )
@@ -106,11 +109,105 @@ def _child_id(parent_id: str, label: str) -> str:
     return f"task_{digest}"
 
 
+def _decision_id(task_id: str, revision: str) -> str:
+    """A deterministic decision id per ``(task, revision)`` so a re-fired record is idempotent."""
+    digest = hashlib.sha1(f"{task_id}::{revision}".encode()).hexdigest()[:12]
+    return f"dec_{digest}"
+
+
+@dataclass(frozen=True)
+class ClaimDraft:
+    """The content of one cited claim as the PM supplies it — the service assigns the row ids."""
+
+    text: str
+    source_url: str
+    confidence: float
+
+
+@dataclass(frozen=True)
+class DecisionOutcome:
+    """The result of a ``record_decision`` call: the id, and whether this call wrote the rows.
+
+    ``recorded`` is ``True`` when this call created the decision + claims; ``idempotent`` is ``True``
+    when the ``(task, revision)`` decision already existed and the call was a no-op.
+
+    ``record`` / ``claims`` carry the **canonical** recorded content — what this call wrote on a fresh
+    record, or the **already-recorded** rows on an idempotent re-fire. The caller mirrors from these (not
+    from its own input), so a second call with different content can never drift the mirror off the
+    immutable ledger row.
+    """
+
+    decision_id: str
+    recorded: bool
+    idempotent: bool = False
+    record: DecisionRecord | None = None
+    claims: tuple[Claim, ...] = ()
+
+
 class CapabilityService:
     """Ledger-mutating capabilities a manager beat invokes (``decompose`` for M3 Slice 1)."""
 
     def __init__(self, ledger: SqliteLedger) -> None:
         self._ledger = ledger
+
+    def record_decision(
+        self,
+        *,
+        task_id: str,
+        revision: str,
+        option: str,
+        rationale: str,
+        confidence: float,
+        outcome_metric: str,
+        revisit_trigger: str,
+        rejected: Sequence[RejectedAlternative],
+        claims: Sequence[ClaimDraft],
+    ) -> DecisionOutcome:
+        """Record a decision and its claims atomically, idempotent per ``(task_id, revision)`` (§10).
+
+        Pure write: no confidence policy lives here — the grounding floor is enforced by the caller
+        (the ``record_decision`` tool). A re-fired call with the same ``(task_id, revision)`` returns
+        the existing id and writes nothing. The decision and every claim commit in one transaction, so
+        a failure mid-write leaves no partial decision behind.
+        """
+        decision_id = _decision_id(task_id, revision)
+        existing = self._ledger.decisions.get(decision_id)
+        if existing is not None:
+            # The record is immutable per beat: a re-fire is a no-op, and it reports the ALREADY-recorded
+            # decision (not this call's input) so the caller mirrors the ledger, never the rejected input.
+            recorded_claims = tuple(self._ledger.claims.for_decisions([decision_id]))
+            return DecisionOutcome(
+                decision_id,
+                recorded=False,
+                idempotent=True,
+                record=existing,
+                claims=recorded_claims,
+            )
+        record = DecisionRecord(
+            id=decision_id,
+            task_id=task_id,
+            option=option,
+            rationale=rationale,
+            confidence=confidence,
+            outcome_metric=outcome_metric,
+            revisit_trigger=revisit_trigger,
+            rejected_alternatives=tuple(rejected),
+        )
+        written_claims = tuple(
+            Claim(
+                id=f"{decision_id}-c{index}",
+                decision_id=decision_id,
+                text=claim.text,
+                source_url=claim.source_url,
+                confidence=claim.confidence,
+            )
+            for index, claim in enumerate(claims)
+        )
+        with self._ledger.transaction():
+            self._ledger.decisions.create(record)
+            for claim_row in written_claims:
+                self._ledger.claims.create(claim_row)
+        return DecisionOutcome(decision_id, recorded=True, record=record, claims=written_claims)
 
     def decompose(
         self, *, parent_id: str, revision: str, children: Sequence[ChildPlan]
@@ -168,9 +265,7 @@ class CapabilityService:
                 self._ledger.dependencies.add(ids[child.label], ids[blocker_label])
         return DecomposeResult(child_ids=ids)
 
-    def submit_one(
-        self, *, parent_id: str, revision: str, child: ChildPlan
-    ) -> SubmitTaskResult:
+    def submit_one(self, *, parent_id: str, revision: str, child: ChildPlan) -> SubmitTaskResult:
         """Submit one incremental child task during an integrate beat.
 
         This is the manager's bounded "create one follow-up" move. It uses the same exact-once
@@ -258,7 +353,11 @@ class CapabilityService:
         if reviewer_id == task.assignee_employee_id:
             return RecordVerdictResult(self_review=True)
         status = DodStatus.PASSED if approve else DodStatus.FAILED
-        verdict: dict[str, object] = {"approve": approve, "feedback": feedback, "reviewer": reviewer_id}
+        verdict: dict[str, object] = {
+            "approve": approve,
+            "feedback": feedback,
+            "reviewer": reviewer_id,
+        }
         if verify_command:  # only a reviewed_build carries a command for the kernel to run
             verdict["verify_command"] = verify_command
         self._ledger.dod.record_verdict(dod.id, status, verdict=verdict, run_id=run_id)

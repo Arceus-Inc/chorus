@@ -8,6 +8,11 @@ from chorus.ledger._models._budget import (
     BudgetPolicy,
     CostEvent,
 )
+from chorus.ledger._models._decision import (
+    Claim,
+    DecisionRecord,
+    RejectedAlternative,
+)
 from chorus.ledger._models._enums import (
     ActivityVerb,
     ApprovalAction,
@@ -85,7 +90,9 @@ __all__ = [
     "BudgetPolicy",
     "BudgetScope",
     "BudgetThreshold",
+    "Claim",
     "CostEvent",
+    "DecisionRecord",
     "DecompositionClaim",
     "DecompositionStatus",
     "Dod",
@@ -102,6 +109,7 @@ __all__ = [
     "RecoveryKind",
     "RecoveryOutcome",
     "RecoveryStatus",
+    "RejectedAlternative",
     "Routine",
     "RoutineCatchUp",
     "RoutineConcurrency",

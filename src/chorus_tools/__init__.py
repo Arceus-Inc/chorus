@@ -30,6 +30,7 @@ from chorus_tools._manager_actions import (
     SubmitTaskInput,
     SubmitTaskTool,
 )
+from chorus_tools._record_decision import RecordDecisionInput, RecordDecisionTool
 from chorus_tools._registry import chorus_tool_registry
 from chorus_tools._submit_verdict import SubmitVerdictInput, SubmitVerdictTool
 from chorus_tools._test_evidence import (
@@ -64,6 +65,8 @@ __all__ = [
     "GoLiveTool",
     "LogAssessment",
     "NotebookRunTool",
+    "RecordDecisionInput",
+    "RecordDecisionTool",
     "RepoSearchTool",
     "SubmitTaskInput",
     "SubmitTaskTool",
