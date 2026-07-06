@@ -43,11 +43,34 @@ from chorus_employee.frontend_engineer._brief import (
 # (very leniently — any of these words) rejects an empty or hand-waved file without being brittle about
 # WHICH runner ran (node:test, vitest, jest, ...). The authoritative anti-fabrication check is the
 # after-beat re-run of `npm test` / `npx playwright test`.
-_UNIT_RUN_MARKERS = (r"\btests?\b", r"\bpass", r"\bfail", r"\bok\b", r"assert", r"# tests", r"\bsuites?\b")
-_E2E_RUN_MARKERS = (r"passed", r"failed", r"\bpass", r"\bfail", r"playwright", r"\brunning\b", r"\bspec")
+_UNIT_RUN_MARKERS = (
+    r"\btests?\b",
+    r"\bpass",
+    r"\bfail",
+    r"\bok\b",
+    r"assert",
+    r"# tests",
+    r"\bsuites?\b",
+)
+_E2E_RUN_MARKERS = (
+    r"passed",
+    r"failed",
+    r"\bpass",
+    r"\bfail",
+    r"playwright",
+    r"\brunning\b",
+    r"\bspec",
+)
 # Neutral decision words — the summary must record WHICH stack was chosen and why. No framework NAMES
 # here on purpose: the floor must never bias the engineer toward any particular stack.
-_STACK_DECISION_MARKERS = (r"\bstack\b", r"\bframework\b", r"\bchose\b", r"\bchosen\b", r"\brationale\b", r"trade")
+_STACK_DECISION_MARKERS = (
+    r"\bstack\b",
+    r"\bframework\b",
+    r"\bchose\b",
+    r"\bchosen\b",
+    r"\brationale\b",
+    r"trade",
+)
 
 
 def _dod_checks() -> list[dict[str, object]]:
@@ -63,15 +86,21 @@ def _dod_checks() -> list[dict[str, object]]:
         glob_at_least("playwright.config.*", 1),
         # (4) the unit run was captured and looks like real runner output.
         file_exists(UNIT_TEST_LOG),
-        file_matches_any(UNIT_TEST_LOG, list(_UNIT_RUN_MARKERS), label="captured unit-test run output"),
+        file_matches_any(
+            UNIT_TEST_LOG, list(_UNIT_RUN_MARKERS), label="captured unit-test run output"
+        ),
         # (5) the e2e run was captured and looks like real Playwright output.
         file_exists(E2E_TEST_LOG),
-        file_matches_any(E2E_TEST_LOG, list(_E2E_RUN_MARKERS), label="captured e2e-test run output"),
+        file_matches_any(
+            E2E_TEST_LOG, list(_E2E_RUN_MARKERS), label="captured e2e-test run output"
+        ),
         # (6) a substantive human-readable summary that records the stack decision and the test result.
         file_exists(TEST_EVIDENCE_SUMMARY),
         min_words(TEST_EVIDENCE_SUMMARY, 150),
         file_matches_any(
-            TEST_EVIDENCE_SUMMARY, list(_STACK_DECISION_MARKERS), label="the stack decision + rationale"
+            TEST_EVIDENCE_SUMMARY,
+            list(_STACK_DECISION_MARKERS),
+            label="the stack decision + rationale",
         ),
         file_matches(
             TEST_EVIDENCE_SUMMARY,

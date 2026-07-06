@@ -38,7 +38,9 @@ def test_analyst_declares_its_analysis_toolset() -> None:
         "working_memory_write",
         "working_memory_append",
     )
-    assert manifest.permission_mode.value == "acceptEdits"  # writes its findings under its own posture
+    assert (
+        manifest.permission_mode.value == "acceptEdits"
+    )  # writes its findings under its own posture
     assert manifest.memory_scope.value == "project"
     assert manifest.system_prompt  # a real operating brief, not a placeholder
 
@@ -118,9 +120,12 @@ def test_analyst_dod_classify_ignores_substring_false_matches() -> None:
     # The bare word "model" (esp. inside hyphenated compounds) must NOT force a prediction beat —
     # a research/analysis task about models is still FINDINGS. Regression guard for the live run where
     # "large-language-model inference servers" was mis-routed to a Command DoD.
-    assert classify_action(
-        "compare open-source large-language-model inference servers by adoption and tradeoffs"
-    ) is ActionClass.FINDINGS
+    assert (
+        classify_action(
+            "compare open-source large-language-model inference servers by adoption and tradeoffs"
+        )
+        is ActionClass.FINDINGS
+    )
     assert classify_action("document our data model and its business model") is ActionClass.FINDINGS
     assert classify_action("assess the goodness of fit of last year's plan") is ActionClass.FINDINGS
     # But a genuine predictive beat still routes to PREDICT via unambiguous cues.

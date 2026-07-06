@@ -79,9 +79,7 @@ def test_a_handler_error_is_reported_not_fatal(session: CliSession) -> None:
 
 def test_run_repl_quits_on_quit_command(session: CliSession, make_input: MakeInput) -> None:
     out = io.StringIO()
-    code = run_repl(
-        session, REGISTRY, input_func=make_input(["quit"]), output=out, colour=False
-    )
+    code = run_repl(session, REGISTRY, input_func=make_input(["quit"]), output=out, colour=False)
     assert code == 0
     assert "chorus console" in out.getvalue()  # the banner printed
 

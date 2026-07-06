@@ -46,7 +46,9 @@ def test_warehouse_query_returns_rows(tmp_path: Path) -> None:
     _seed_warehouse(tmp_path)
     res = _run(
         WarehouseQueryTool().execute(
-            {"sql": "SELECT region, SUM(revenue) AS total FROM sales GROUP BY region ORDER BY region"},
+            {
+                "sql": "SELECT region, SUM(revenue) AS total FROM sales GROUP BY region ORDER BY region"
+            },
             _ctx(tmp_path),
         )
     )
@@ -132,7 +134,8 @@ def test_chart_render_writes_png(tmp_path: Path) -> None:
     (tmp_path / "d.csv").write_text("x,y\n1,10\n2,20\n3,15\n", encoding="utf-8")
     res = _run(
         ChartRenderTool().execute(
-            {"data": "d.csv", "kind": "line", "x": "x", "y": "y", "output": "out.png"}, _ctx(tmp_path)
+            {"data": "d.csv", "kind": "line", "x": "x", "y": "y", "output": "out.png"},
+            _ctx(tmp_path),
         )
     )
     assert not res.is_error, res.content
@@ -141,7 +144,11 @@ def test_chart_render_writes_png(tmp_path: Path) -> None:
 
 def test_chart_render_rejects_unknown_kind(tmp_path: Path) -> None:
     (tmp_path / "d.csv").write_text("x,y\n1,2\n", encoding="utf-8")
-    res = _run(ChartRenderTool().execute({"data": "d.csv", "kind": "pie", "x": "x", "y": "y"}, _ctx(tmp_path)))
+    res = _run(
+        ChartRenderTool().execute(
+            {"data": "d.csv", "kind": "pie", "x": "x", "y": "y"}, _ctx(tmp_path)
+        )
+    )
     assert res.is_error and "unknown chart kind" in res.content
 
 

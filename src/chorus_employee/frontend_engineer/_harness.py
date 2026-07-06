@@ -9,7 +9,7 @@ autonomous build role. The role is framework-agnostic by construction: no stack 
 in the brief; framework specifics live only in the authored skills. Each field below names the dream
 component it drives.
 
-Slices layer in: the ``test_evidence`` scan tool (a deterministic read-only view of the bundle), the
+Slices layer in: the ``evidence_scan`` scan tool (a deterministic read-only view of the bundle), the
 Code-Reviewer + UI-Tester subagents (in-beat quality pressure, both read-only), and the authored
 build/testing craft skills (loaded on demand via the ``skill`` tool) are all wired here.
 """
@@ -60,7 +60,7 @@ def frontend_engineer_manifest() -> RoleManifest:
             "run_command",
             "git",
             # deterministic read-only self-check of the test-evidence bundle before declaring done.
-            "test_evidence",
+            "evidence_scan",
             # dispatch the Tier-1 review subagents (Code-Reviewer, UI-Tester) after building + running.
             "spawn_subagent",
             "memory_search",

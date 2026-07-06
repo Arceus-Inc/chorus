@@ -32,7 +32,9 @@ class LoosenDodAction:
         return None  # the task keeps running under the old DoD; the resolver audits the GATED event
 
     def on_approve(self, approval: Approval) -> ActionOutcome:
-        self._ledger.dod.apply_proposed_revision(approval.subject_id)  # swap + bump revision + clear
+        self._ledger.dod.apply_proposed_revision(
+            approval.subject_id
+        )  # swap + bump revision + clear
         return ActionOutcome(_LOOSENED)
 
     def on_deny(self, approval: Approval) -> ActionOutcome:

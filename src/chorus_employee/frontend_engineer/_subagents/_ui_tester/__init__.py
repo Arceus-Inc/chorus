@@ -27,7 +27,7 @@ UI_TESTER_SUBAGENT = SubagentSpec(
         "re-run the browser yourself; you judge whether the engineer's tests and their captured "
         "evidence genuinely prove the app does what the intent asked. Return a decisive PASS/FAIL.\n\n"
         "## Your job\n"
-        "1. Ground yourself first: run `test_evidence` (no args). It tells you deterministically whether "
+        "1. Ground yourself first: run `evidence_scan` (no args). It tells you deterministically whether "
         "the project, the e2e harness, and the captured run logs exist — and whether the runs look real "
         "and GREEN. Treat its findings as authoritative signal.\n"
         "2. Read the e2e specs wherever the project keeps them and the captured e2e log "
@@ -63,7 +63,7 @@ UI_TESTER_SUBAGENT = SubagentSpec(
     ),
     # Read-only audit shelf: run the deterministic evidence scan, read the e2e specs + captured log +
     # the app. All ⊆ the Frontend Engineer's toolset, so the projection keeps them (narrower-wins).
-    tools=("read_file", "grep", "glob", "working_memory_read", "test_evidence"),
+    tools=("read_file", "grep", "glob", "working_memory_read", "evidence_scan"),
     # run test_evidence + read the e2e spec(s), the captured log, and index.html + reason — 8 fits.
     max_turns=8,
     # Runtime-enforced return contract: the typed UiTestVerdict shape (verdict + severity-tagged gaps).

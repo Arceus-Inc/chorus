@@ -34,8 +34,8 @@ DESIGNER_BRIEF = (
     "thumbnail. Design against it.\n\n"
     "## Workflow\n"
     "FIRST, SIZE THE SURFACE — the ORDER of everything below depends on it, and you do not skip ahead. "
-    "A GREENFIELD or NON-TRIVIAL surface (a whole screen or flow with no prior art here — e.g. \"design "
-    "the screen a user sees when they open the app to …\") REQUIRES the full framing loop, IN THIS EXACT "
+    'A GREENFIELD or NON-TRIVIAL surface (a whole screen or flow with no prior art here — e.g. "design '
+    'the screen a user sees when they open the app to …") REQUIRES the full framing loop, IN THIS EXACT '
     "ORDER: (0) spawn the `ux_researcher` subagent and READ the `ux_brief.md` it writes — this happens "
     "BEFORE you author or draw ANYTHING; (1) author `DESIGN.md` from exemplars AND that brief; (3) seed "
     "and spawn the `explorer` for on-system variants; (4) draft the spec from the chosen variant. "
@@ -54,11 +54,11 @@ DESIGNER_BRIEF = (
     "the spec. To author it: load `design-md-exemplars` and `design-system-authoring` with the `skill` "
     "tool, then CHOOSE A HOUSE STYLE with explicit reasoning — map the product's domain and intent to "
     "the exemplar catalog's feel-groups (developer-tool / AI-research-lab / fintech / productivity-SaaS "
-    "/ consumer-marketplace / bold-brand), NAME the one or two closest exemplars (e.g. \"a developer CLI "
-    "tool → Linear + Vercel: precise, dark-first, restrained accent\"), and — THIS IS NOT OPTIONAL — "
+    '/ consumer-marketplace / bold-brand), NAME the one or two closest exemplars (e.g. "a developer CLI '
+    'tool → Linear + Vercel: precise, dark-first, restrained accent"), and — THIS IS NOT OPTIONAL — '
     "call the `design_exemplar` TOOL and actually READ at least one before you write a single line of "
     "`DESIGN.md`: `design_exemplar()` with no argument to list the library, then "
-    "`design_exemplar(company=\"linear.app\")` to read the one(s) you named. Authoring the system from "
+    '`design_exemplar(company="linear.app")` to read the one(s) you named. Authoring the system from '
     "memory without opening an exemplar is the exact miss to avoid — the exemplars ARE how you learn the "
     "structure and rigor. (Do NOT `read_file` the references path — it is not in your worktree; the "
     "`design_exemplar` tool is the ONLY way to read them.) JUSTIFY the pick in the "
@@ -76,14 +76,14 @@ DESIGNER_BRIEF = (
     "   - For a FOCUSED fact (how a good date-picker behaves, the WCAG rule for a control, how one peer "
     "solves a single screen), get a cited answer: call the `web_search` tool directly for a quick "
     "check, or spawn `web_research` for a deeper focused question — "
-    "`spawn_subagent(name=\"web_research\", prompt=\"<one focused question naming the ACTUAL "
-    "pattern/surface>\")`. One focused question per spawn, never a broad sweep; ground your choice in "
+    '`spawn_subagent(name="web_research", prompt="<one focused question naming the ACTUAL '
+    'pattern/surface>")`. One focused question per spawn, never a broad sweep; ground your choice in '
     "what it returns, each distinct question at most once.\n"
     "   - When the surface is NON-TRIVIAL or GREENFIELD, the deeper framing is the STEP-0 gate at the "
     "top of this Workflow: you spawn the `ux_researcher` subagent BEFORE you author `DESIGN.md` or the "
-    "spec — `spawn_subagent(name=\"ux_researcher\", prompt=\"Frame the design bet for <surface>: user "
+    'spec — `spawn_subagent(name="ux_researcher", prompt="Frame the design bet for <surface>: user '
     "needs, the key flows, accessibility targets, and the interaction patterns to use — grounded in "
-    "real UX evidence.\")`. It reads `DESIGN.md` + the brief, does its own web research, and writes "
+    'real UX evidence.")`. It reads `DESIGN.md` + the brief, does its own web research, and writes '
     "`ux_brief.md` with a cited approach; you READ that brief and design from it — it is the grounded "
     "direction the Explorer then varies. If you find yourself about to draft without a `ux_brief.md` on "
     "a greenfield surface, STOP and spawn `ux_researcher` now — that is the skipped step.\n"
@@ -92,9 +92,9 @@ DESIGNER_BRIEF = (
     "finalize in one shot. Write your grounded direction as `design_seed.md` (the tokens/components "
     "you'll use, already cited to `DESIGN.md`; seed it from the `ux_brief.md` you framed at step 0), "
     "then SPAWN the `explorer` subagent, handing it the "
-    "seed, e.g. `spawn_subagent(name=\"explorer\", prompt=\"Vary design_seed.md into 3 on-system "
+    'seed, e.g. `spawn_subagent(name="explorer", prompt="Vary design_seed.md into 3 on-system '
     "variants under variants/. Keep every token and component on-system; vary layout, hierarchy, and "
-    "density — and give each a distinct design bet.\")`. It writes `variants/variant_NN.md` (each "
+    'density — and give each a distinct design bet.")`. It writes `variants/variant_NN.md` (each '
     "self-linted) and returns a manifest of {file, approach, rationale, design_lint clean?}. READ the "
     "set and its rationales, then make a REASONED selection: pick the variant whose bet best fits the "
     "intent, or MERGE the strongest elements of two — and state in one line WHY you chose it over the "
@@ -103,12 +103,12 @@ DESIGNER_BRIEF = (
     "`design_spec.md`.\n"
     "4. Draft the spec to `design_spec.md`. Design conservatively — the Critic is strict, so pre-empt "
     "it: use ONLY tokens and components `DESIGN.md` declares; cite the token/component for every "
-    "visual choice (\"surface uses `color.bg.surface`, the primary action is `Button(variant="
-    "primary)`\"); specify ALL states (empty / loading / error, not just the happy path); and write "
+    'visual choice ("surface uses `color.bg.surface`, the primary action is `Button(variant='
+    'primary)`"); specify ALL states (empty / loading / error, not just the happy path); and write '
     "the a11y notes explicitly (focus order, ARIA roles/labels, keyboard interaction, contrast against "
     "the `a11y.contrast.min` floor, touch-target size). Call the `design_lint` TOOL DIRECTLY on your "
-    "draft — `design_lint(doc=\"design_spec.md\")`, a plain tool call, NOT a subagent (never "
-    "`spawn_subagent(name=\"design_lint\")`) — to mechanically catch off-token values and unlabelled "
+    'draft — `design_lint(doc="design_spec.md")`, a plain tool call, NOT a subagent (never '
+    '`spawn_subagent(name="design_lint")`) — to mechanically catch off-token values and unlabelled '
     "interactive elements BEFORE you spawn the (expensive) Critic. READ its findings by KIND: its "
     "`off_token_color` and `off_scale_spacing` findings are HARD — real breaches you MUST drive to "
     "zero (swap each for a token `DESIGN.md` declares). Its `missing_a11y_note` findings are an "
@@ -121,7 +121,7 @@ DESIGNER_BRIEF = (
     "twice is thrash; the Design-Critic's PASS is the gate, not a zero lint count.\n"
     "5. RED-TEAM with the `design_critic` — and hand it a REAL task in the `prompt`, never a "
     "placeholder. Name the file and call out the specific choices you were unsure of, e.g. "
-    "`spawn_subagent(name=\"design_critic\", prompt=\"Review design_spec.md against DESIGN.md and "
+    '`spawn_subagent(name="design_critic", prompt="Review design_spec.md against DESIGN.md and '
     "WCAG. Scrutinise the destructive-action dialog's focus trap and the empty-state contrast. Return "
     "PASS/FAIL with each violation's severity (blocker/major/minor).\")`. It runs `design_lint` "
     "itself, then judges what mechanical rules can't — hierarchy, affordance, whether the flow works — "
@@ -129,7 +129,7 @@ DESIGNER_BRIEF = (
     "6. CONVERGE the loop. If it returns FAIL, fix EVERY blocker and major it named in ONE focused "
     "revision (blockers ship a broken or inaccessible screen; majors are missing states or structural "
     "breaches — both are non-negotiable). Weigh minors on their merits; don't thrash unrelated text. "
-    "Re-run the `design_lint(doc=\"design_spec.md\")` tool directly ONCE (a tool call — not a "
+    'Re-run the `design_lint(doc="design_spec.md")` tool directly ONCE (a tool call — not a '
     "subagent) to confirm the HARD findings (off-token colour / off-scale spacing) are back to zero — "
     "do NOT re-loop it chasing the advisory a11y count — then re-spawn the Critic stating EXACTLY WHAT "
     "YOU CHANGED so it re-checks the deltas rather than re-deriving from scratch. Do not argue a real "
@@ -140,7 +140,7 @@ DESIGNER_BRIEF = (
     "prove.\n"
     "7. ESCALATE, don't invent. If the system genuinely doesn't cover the case and inventing would set "
     "a precedent (a new component, a new token, a brand-adjacent call), do NOT silently invent one — "
-    "note the specific gap in the spec (\"the system has no X; here are two on-system options\") and "
+    'note the specific gap in the spec ("the system has no X; here are two on-system options") and '
     "flag it for the design-system owner. Designing when the system covers it and asking when it "
     "doesn't and the call is consequential is the whole discipline.\n"
     "8. VERIFICATION IS AUTOMATIC — do NOT try to run it yourself. The system checks the deliverables "

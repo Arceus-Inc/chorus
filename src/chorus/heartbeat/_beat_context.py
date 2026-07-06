@@ -130,8 +130,12 @@ class IntegrateContextPacket:
         return cls.recommend(cls._children_for(ledger, parent_task_id))
 
     @classmethod
-    def _children_for(cls, ledger: SqliteLedger, parent_task_id: str) -> tuple[ChildOutcomeContext, ...]:
-        return tuple(_child_outcome(ledger, child.id) for child in ledger.tasks.children(parent_task_id))
+    def _children_for(
+        cls, ledger: SqliteLedger, parent_task_id: str
+    ) -> tuple[ChildOutcomeContext, ...]:
+        return tuple(
+            _child_outcome(ledger, child.id) for child in ledger.tasks.children(parent_task_id)
+        )
 
     @staticmethod
     def iteration_for(ledger: SqliteLedger, parent_task_id: str) -> int:
@@ -176,7 +180,9 @@ class IntegrateContextPacket:
                     "iteration": iteration,
                     "child_count": len(children),
                     "completed_children": sum(
-                        1 for child in children if child.status in {TaskStatus.DONE.value, TaskStatus.CANCELLED.value}
+                        1
+                        for child in children
+                        if child.status in {TaskStatus.DONE.value, TaskStatus.CANCELLED.value}
                     ),
                     "blocked_children": sum(1 for child in children if child.blockers),
                     "direct_reports": [report.id for report in reports],
@@ -209,7 +215,9 @@ def _child_outcome(ledger: SqliteLedger, task_id: str) -> ChildOutcomeContext:
     task = ledger.tasks.get(task_id)
     if task is None:
         raise KeyError(task_id)
-    assignee = ledger.employees.get(task.assignee_employee_id) if task.assignee_employee_id else None
+    assignee = (
+        ledger.employees.get(task.assignee_employee_id) if task.assignee_employee_id else None
+    )
     dod = ledger.dod.get_for_task(task.id)
     runs = ledger.runs.for_task(task.id)
     latest_run = runs[-1] if runs else None

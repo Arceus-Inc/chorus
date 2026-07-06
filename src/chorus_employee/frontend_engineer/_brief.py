@@ -32,9 +32,13 @@ from __future__ import annotations
 # after the beat by the deterministic verifier. This is the fix for "in-beat testing is invisible to the
 # oracle" — and it holds identically whether the app is vanilla, React, Vue, Svelte, or anything else.
 TEST_EVIDENCE_DIR = "test_evidence"
-TEST_EVIDENCE_SUMMARY = "test_evidence/summary.md"  # the stack decision + what was built, tested, results
+TEST_EVIDENCE_SUMMARY = (
+    "test_evidence/summary.md"  # the stack decision + what was built, tested, results
+)
 UNIT_TEST_LOG = "test_evidence/unit.txt"  # captured stdout+stderr of the unit run (`npm test`)
-E2E_TEST_LOG = "test_evidence/e2e.txt"  # captured stdout+stderr of the end-to-end run (`npx playwright test`)
+E2E_TEST_LOG = (
+    "test_evidence/e2e.txt"  # captured stdout+stderr of the end-to-end run (`npx playwright test`)
+)
 
 
 FRONTEND_ENGINEER_BRIEF = (
@@ -113,14 +117,20 @@ FRONTEND_ENGINEER_BRIEF = (
     "this machine, so no download is needed — then RUN the suites and TEE their real output into the "
     "evidence bundle:\n"
     "   • unit:  run `npm test` and write the full stdout+stderr to `" + UNIT_TEST_LOG + "`.\n"
-    "   • e2e:   run `npx playwright test` and write the full stdout+stderr to `" + E2E_TEST_LOG + "`.\n"
-    "   Redirect the actual command output into those files (e.g. append ` > " + UNIT_TEST_LOG + " 2>&1`) "
+    "   • e2e:   run `npx playwright test` and write the full stdout+stderr to `"
+    + E2E_TEST_LOG
+    + "`.\n"
+    "   Redirect the actual command output into those files (e.g. append ` > "
+    + UNIT_TEST_LOG
+    + " 2>&1`) "
     "— do NOT hand-write them. The suites are RE-RUN after your beat against the code you shipped, so "
     "fabricated logs or tests that don't match the app are caught. Make them real.\n"
     "6. GO GREEN. If a run fails, READ the failure, fix the CODE (or the test if the test is wrong), and "
     "re-run — capturing fresh output each time. Iterate until unit and e2e both pass. A red suite is not "
     "done; deleting or skipping a failing test to go green is a worse failure than the red.\n"
-    "7. WRITE THE SUMMARY. Author `" + TEST_EVIDENCE_SUMMARY + "` (a real report, not a stub): the STACK "
+    "7. WRITE THE SUMMARY. Author `"
+    + TEST_EVIDENCE_SUMMARY
+    + "` (a real report, not a stub): the STACK "
     "you chose and WHY (the trade-off you made); what you built and how it's wired; what the unit tests "
     "cover; what the e2e flow exercises; the RESULT of each suite (how many passed); the accessibility "
     "decisions you made (semantics, keyboard, focus, contrast); and any tradeoff or known gap. This is "
@@ -139,7 +149,7 @@ FRONTEND_ENGINEER_BRIEF = (
     "Minor items are your judgement. Do not stop while a blocker or major is open — a reviewer's FAIL is "
     "as real as a red test.\n"
     "9. VERIFICATION IS AUTOMATIC — do NOT try to run the final gate yourself. Before you stop, call the "
-    "`test_evidence` tool: it deterministically scans your worktree and tells you exactly what is still "
+    "`evidence_scan` tool: it deterministically scans your worktree and tells you exactly what is still "
     "missing or red (a suite that never ran, a log that shows failures, a thin summary). Clear every "
     "finding it reports. After the beat, the system checks IN THE WORKTREE that a real project "
     "(`package.json` with a `test` script), a Playwright end-to-end harness, and the `test_evidence/` "
@@ -160,8 +170,16 @@ FRONTEND_ENGINEER_BRIEF = (
     "Definition of done: a REAL, runnable frontend project (a `package.json`, your app, and the "
     "dependencies + scripts to run it) that you built and ran; a `test` script whose unit tests PASS "
     "under `npm test`; a Playwright end-to-end test that PASSES under `npx playwright test`; and a "
-    "durable `" + TEST_EVIDENCE_DIR + "/` bundle — captured unit output in `" + UNIT_TEST_LOG + "`, "
-    "captured e2e output in `" + E2E_TEST_LOG + "`, and a substantive `" + TEST_EVIDENCE_SUMMARY + "` "
+    "durable `"
+    + TEST_EVIDENCE_DIR
+    + "/` bundle — captured unit output in `"
+    + UNIT_TEST_LOG
+    + "`, "
+    "captured e2e output in `"
+    + E2E_TEST_LOG
+    + "`, and a substantive `"
+    + TEST_EVIDENCE_SUMMARY
+    + "` "
     "that records the stack decision. "
     "House rules: choose the right-sized stack and justify it; build the smallest thing that actually "
     "works; run everything you write and capture the real output; make it accessible by construction; "

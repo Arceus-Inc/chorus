@@ -21,14 +21,18 @@ pytestmark = pytest.mark.integration
 
 def _run(line: str, session: CliSession) -> tuple[LoopSignal, str]:
     buffer = io.StringIO()
-    signal = dispatch(line, session=session, console=Console(out=buffer, colour=False), registry=REGISTRY)
+    signal = dispatch(
+        line, session=session, console=Console(out=buffer, colour=False), registry=REGISTRY
+    )
     return signal, buffer.getvalue()
 
 
 # -- hire (through the workforce) -------------------------------------------------------------------
 
 
-def test_hire_mints_a_slug_id_and_persists_the_row(session: CliSession, ledger: SqliteLedger) -> None:
+def test_hire_mints_a_slug_id_and_persists_the_row(
+    session: CliSession, ledger: SqliteLedger
+) -> None:
     _, out = _run("hire Alice engineer", session)
     assert "hired alice (engineer)" in out
     assert ledger.employees.get("alice") is not None

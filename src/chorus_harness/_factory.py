@@ -43,11 +43,14 @@ from chorus_harness._trust import apply_trust
 from chorus_tools import (
     AssignTaskTool,
     BrandLintTool,
+    CodeQualityTool,
     DecomposeTool,
     DesignExemplarTool,
     DesignLintTool,
+    EvidenceScanTool,
     GoLiveTool,
     RecordDecisionTool,
+    SecretScanTool,
     SubmitTaskTool,
     SubmitVerdictTool,
     TestEvidenceTool,
@@ -86,6 +89,10 @@ _CHORUS_TO_DREAM_TOOL: dict[str, str] = {
     "working_memory_append": "working_memory_append",
     "memory_propose": "memory_propose",
     "spawn_subagent": "spawn_subagent",
+    # Durable cross-beat checklist: dream's todo_write builtin atomically writes TODO.md to the worktree
+    # (not in-context), so a re-dispatched beat resumes from it. Identity-mapped so dream_tool_names keeps
+    # it and _role_registry enables it from default_registry.
+    "todo_write": "todo_write",
     # Web research: reuse dream's native Tavily built-ins (in default_registry) — identity-mapped so
     # dream_tool_names keeps them and _role_registry picks them up; the subagent projection carries them.
     "web_search": "web_search",
@@ -125,14 +132,22 @@ _CHORUS_TO_DREAM_TOOL: dict[str, str] = {
     # (NOT the worktree), so a worktree-confined read_file can't reach it. A chorus capability tool
     # registered via _capability_tool; identity-mapped so dream_tool_names/projection keep it.
     "design_exemplar": "design_exemplar",
-    # test_evidence — the Frontend Engineer's deterministic pre-done scan of its own test bundle: a
-    # chorus capability tool (registered via _capability_tool, NOT a dream built-in), IDENTITY-mapped
-    # so the subagent projection keeps it. The exact structural analog of design_lint (pure reader).
-    "test_evidence": "test_evidence",
+    # evidence_scan — the Frontend Engineer's deterministic pre-done scan of its own test_evidence/
+    # bundle: a chorus capability tool (registered via _capability_tool, NOT a dream built-in),
+    # IDENTITY-mapped so the subagent projection keeps it. The structural analog of design_lint (pure
+    # reader). Distinct from the Backend Engineer's test_evidence gate-runner, which WRITES the bundle.
+    "evidence_scan": "evidence_scan",
     # cms_draft — a chorus capability tool (reversible CMS write, §08 Channel). Identity-mapped for the
     # same reason as brand_lint: so the projection keeps it; it is registered in the materialize flow
     # (it needs the worktree for the Markdown backend, which _capability_tool has no access to).
     "cms_draft": "cms_draft",
+    # test_evidence — the Backend Engineer's proof primitive (§10). Not a dream built-in; a pure
+    # worktree runner (no ledger). IDENTITY-mapped so the subagent projection keeps it, and registered
+    # UNCONDITIONALLY in the materialize flow below — the design_lint lesson: never behind the ledger
+    # gate, so it always exists in a ledger-less run instead of being mis-routed as a subagent.
+    "test_evidence": "test_evidence",
+    "secret_scan": "secret_scan",
+    "code_quality": "code_quality",
     # execute_go_live — the §05 dark-node executor: publishes the staged draft ONLY once its
     # stage_go_live gate is APPROVED (fail-closed + idempotent). Registered in materialize (needs
     # ledger for the gate check + the worktree for the draft/delivery indexes).
@@ -154,11 +169,12 @@ _READ_ONLY_DREAM_SURFACE_TOOLS = frozenset(
         # read_offloaded it cannot see the overflow and wrongly fails with "content is truncated /
         # cannot verify". read_offloaded is safe (tier-0, scratch-confined, read-only), so a verifier
         # head may hold it to read the full artifact it is judging.
-        "read_offloaded",        # Code navigation is read-only (tier 0), so a read-only planner/evaluator head or reviewer may
+        "read_offloaded",  # Code navigation is read-only (tier 0), so a read-only planner/evaluator head or reviewer may
         # hold it to locate + inspect code under review without mutating anything.
         "grep",
         "glob",
-        "lsp",    }
+        "lsp",
+    }
 )
 
 
@@ -221,28 +237,33 @@ def _capability_tool(name: str, ledger: SqliteLedger | None) -> BaseTool | None:
     The ledger-bound tools require a live ``ledger``; the ledger-free ones (``brand_lint`` /
     ``design_lint`` / ``design_exemplar``) ignore it, so ``ledger`` may be ``None`` for those.
     """
-    if name == "decompose":
-        return DecomposeTool(ledger)
-    if name == "submit_task":
-        return SubmitTaskTool(ledger)
-    if name == "assign_task":
-        return AssignTaskTool(ledger)
-    if name == "submit_verdict":
-        return SubmitVerdictTool(ledger)
-    if name == "stage_go_live":
-        return GoLiveTool(ledger)
+    # Ledger-bound tools only build when a live ledger is present (the caller guarantees this via the
+    # _LEDGER_FREE_CAPABILITY_TOOLS guard); the `is not None` check also narrows the type for mypy.
+    if ledger is not None:
+        if name == "decompose":
+            return DecomposeTool(ledger)
+        if name == "submit_task":
+            return SubmitTaskTool(ledger)
+        if name == "assign_task":
+            return AssignTaskTool(ledger)
+        if name == "submit_verdict":
+            return SubmitVerdictTool(ledger)
+        if name == "stage_go_live":
+            return GoLiveTool(ledger)
+        if name == "record_decision":
+            return RecordDecisionTool(ledger)
     if name == "brand_lint":
         return (
             BrandLintTool()
         )  # pure file reader — the ledger arg is unused (kept for a uniform seam)
-    if name == "record_decision":
-        return RecordDecisionTool(ledger)
     if name == "design_lint":
         return DesignLintTool()  # pure file reader — same uniform seam as brand_lint
     if name == "design_exemplar":
         return DesignExemplarTool()  # pure file reader over the vendored exemplar library
-    if name == "test_evidence":
-        return TestEvidenceTool()  # pure worktree reader — same uniform seam as design_lint
+    if name == "evidence_scan":
+        return (
+            EvidenceScanTool()
+        )  # Frontend Engineer's pure worktree scanner of the test_evidence/ bundle
     return None
 
 
@@ -252,7 +273,7 @@ def _capability_tool(name: str, ledger: SqliteLedger | None) -> BaseTool | None:
 # them and the model, seeing them named in its brief but absent from its toolset, mis-routes (e.g.
 # ``spawn_subagent(name="design_lint")`` or a worktree ``read_file`` of the exemplar path) and errors.
 _LEDGER_FREE_CAPABILITY_TOOLS = frozenset(
-    {"brand_lint", "design_lint", "design_exemplar", "test_evidence"}
+    {"brand_lint", "design_lint", "design_exemplar", "evidence_scan"}
 )
 
 # Capability tools that route work to *other* employees — a role holding one needs to know its reports.
@@ -575,7 +596,9 @@ class EmployeeHarnessFactory:
             root = self._company_root / employee.id
         root.mkdir(parents=True, exist_ok=True)
         write_role_overlays(root, config)  # the employee's identity overlays the whole harness
-        write_sandbox_config(root, config.sandbox)  # the role's trust posture → .harness/sandbox.toml
+        write_sandbox_config(
+            root, config.sandbox
+        )  # the role's trust posture → .harness/sandbox.toml
         # The role's admitted MCP servers → .harness/mcp-allowlist.toml (only when the role opts in via
         # ``mcp`` AND declares servers; dream connects them lazily on the first session).
         if config.mcp and config.mcp_servers:
@@ -600,6 +623,19 @@ class EmployeeHarnessFactory:
             registry.register(
                 CmsDraftTool(cms_backend_from_env(root / "cms_drafts")), source=ToolSource.DEFAULT
             )
+        # test_evidence (Backend Engineer §10): a pure worktree runner — it runs the discovered verify
+        # commands via the execution context and writes the test_evidence/ bundle. No ledger, so it
+        # registers UNCONDITIONALLY (not behind the `self._ledger is not None` gate) — the design_lint fix.
+        if "test_evidence" in config.tools:
+            registry.register(TestEvidenceTool(), source=ToolSource.DEFAULT)
+        # secret_scan is the same shape: a pure worktree scanner that reads files + writes the
+        # security_scan/ report. No ledger, so it registers UNCONDITIONALLY too.
+        if "secret_scan" in config.tools:
+            registry.register(SecretScanTool(), source=ToolSource.DEFAULT)
+        # code_quality: a stack-blind executor that runs the discovered fmt/lint/type checks + writes
+        # the durable code_quality/ report. No ledger — registers UNCONDITIONALLY, like the above.
+        if "code_quality" in config.tools:
+            registry.register(CodeQualityTool(), source=ToolSource.DEFAULT)
         # execute_go_live pairs with cms_draft: it publishes the staged draft once the human approves
         # the stage_go_live gate. Needs BOTH the ledger (fail-closed gate check) and the worktree
         # (standing-draft + delivery indexes), so it registers here rather than in _capability_tool.

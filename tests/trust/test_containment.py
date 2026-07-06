@@ -66,4 +66,6 @@ def test_low_trust_requires_an_isolated_worktree() -> None:
 
 def test_low_trust_passes_non_secret_env_through() -> None:
     resolved = _low_trust(set())
-    assert_contained(resolved, isolation=Isolation.WORKTREE, env=[("PATH", "/usr/bin"), ("HOME", "/h")])
+    assert_contained(
+        resolved, isolation=Isolation.WORKTREE, env=[("PATH", "/usr/bin"), ("HOME", "/h")]
+    )

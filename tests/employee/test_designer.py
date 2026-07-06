@@ -41,7 +41,14 @@ class TestDesignerManifest:
 
     def test_holds_design_lint_and_the_read_write_shelf(self) -> None:
         tools = self._manifest().tools
-        for expected in ("design_lint", "design_exemplar", "read_file", "write_file", "skill", "web_search"):
+        for expected in (
+            "design_lint",
+            "design_exemplar",
+            "read_file",
+            "write_file",
+            "skill",
+            "web_search",
+        ):
             assert expected in tools
 
     def test_has_no_run_command_or_git(self) -> None:
@@ -151,9 +158,7 @@ class TestDesignerRoutines:
     def test_system_drift_scan_reads_the_design_system(self) -> None:
         from chorus_employee.designer import DESIGN_SYSTEM_DOC, DESIGNER_ROUTINES
 
-        drift = next(
-            r for r in DESIGNER_ROUTINES if r.routine_key == "designer-system-drift-scan"
-        )
+        drift = next(r for r in DESIGNER_ROUTINES if r.routine_key == "designer-system-drift-scan")
         assert drift.schedule == "0 9 * * 1"  # weekly, Monday 09:00
         assert DESIGN_SYSTEM_DOC in drift.intent_template
         assert "do not" in drift.intent_template.lower()  # report/propose only
@@ -161,9 +166,7 @@ class TestDesignerRoutines:
     def test_accessibility_audit_is_monthly_and_report_only(self) -> None:
         from chorus_employee.designer import DESIGNER_ROUTINES
 
-        a11y = next(
-            r for r in DESIGNER_ROUTINES if r.routine_key == "designer-accessibility-audit"
-        )
+        a11y = next(r for r in DESIGNER_ROUTINES if r.routine_key == "designer-accessibility-audit")
         assert a11y.schedule == "0 9 1 * *"  # monthly, 1st at 09:00
         assert "accessib" in a11y.intent_template.lower() or "a11y" in a11y.intent_template.lower()
         assert "do not" in a11y.intent_template.lower()  # report/propose only

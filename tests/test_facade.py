@@ -234,4 +234,3 @@ def test_export_then_import_workforce_round_trips_through_the_ledger(tmp_path: P
             fresh.close()
     finally:
         ledger.close()
-

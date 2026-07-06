@@ -33,7 +33,8 @@ class _RecordingBeat:
         intent: str,
         verification: tuple[VerificationStep, ...] = (),
         observer: object = None,
-        rubric: object = "", run_id: str | None = None,
+        rubric: object = "",
+        run_id: str | None = None,
     ) -> BeatOutcome:
         self.calls.append(task_id)
         self.verification = verification
@@ -100,7 +101,9 @@ async def test_run_beat_with_no_dod_passes_no_verification(ledger: SqliteLedger)
 # -- DoD at intake: a task inherits its assignee role's DoD when none is set (spec 04 §1 / 06 §2) ----
 
 
-def _scheduler_with_roles(ledger: SqliteLedger, beat: _RecordingBeat, employee: Employee) -> Scheduler:
+def _scheduler_with_roles(
+    ledger: SqliteLedger, beat: _RecordingBeat, employee: Employee
+) -> Scheduler:
     from chorus.roles import RoleRegistry, default_roles
 
     return Scheduler(
@@ -141,7 +144,9 @@ async def test_intake_does_not_override_an_explicit_dod(ledger: SqliteLedger) ->
     assert beat.verification == (VerificationStep(command="custom-check"),)  # explicit wins
 
 
-async def test_intake_without_a_roles_registry_leaves_the_task_dod_free(ledger: SqliteLedger) -> None:
+async def test_intake_without_a_roles_registry_leaves_the_task_dod_free(
+    ledger: SqliteLedger,
+) -> None:
     employee = _seed(ledger)
     beat = _RecordingBeat()
     _scheduler(ledger, beat, employee)  # the plain scheduler carries no roles
@@ -151,7 +156,9 @@ async def test_intake_without_a_roles_registry_leaves_the_task_dod_free(ledger: 
     assert beat.verification == ()  # no registry → no intake DoD (back-compat)
 
 
-async def test_run_beat_with_a_human_approval_dod_passes_no_verification(ledger: SqliteLedger) -> None:
+async def test_run_beat_with_a_human_approval_dod_passes_no_verification(
+    ledger: SqliteLedger,
+) -> None:
     employee = _seed(ledger)
     ledger.dod.create("t1", Verifier.human_approval())  # not an objective check
     beat = _RecordingBeat()
@@ -190,8 +197,14 @@ class _GatingBeat:
         self._ledger = ledger
 
     async def run_task(
-        self, *, task_id: str, intent: str, verification: tuple[VerificationStep, ...] = (),
-        observer: object = None, rubric: object = "", run_id: str | None = None,
+        self,
+        *,
+        task_id: str,
+        intent: str,
+        verification: tuple[VerificationStep, ...] = (),
+        observer: object = None,
+        rubric: object = "",
+        run_id: str | None = None,
     ) -> BeatOutcome:
         del intent, verification, observer, rubric, run_id
         GovernanceResolver(self._ledger).open_task_gate(
@@ -200,7 +213,9 @@ class _GatingBeat:
         return BeatOutcome(passed=True, outcome={}, summary="staged a go-live")
 
 
-async def test_pending_gate_wins_over_the_dod_so_the_task_stays_blocked(ledger: SqliteLedger) -> None:
+async def test_pending_gate_wins_over_the_dod_so_the_task_stays_blocked(
+    ledger: SqliteLedger,
+) -> None:
     # A tool (e.g. stage_go_live) opens a gate mid-beat → task BLOCKED. Even though the beat then
     # passes its Command DoD, the pending human gate must win: the task must NOT finalise `done`,
     # else resolving the gate (blocked → todo) becomes an illegal `done → todo`.

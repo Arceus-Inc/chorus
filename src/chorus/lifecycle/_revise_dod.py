@@ -86,7 +86,9 @@ def _require_manager_authority(ledger: SqliteLedger, task_id: str, revised_by: s
     task = ledger.tasks.get(task_id)
     assignee_id = task.assignee_employee_id if task is not None else None
     if assignee_id is None:
-        raise RevisionAuthorityError(f"task {task_id!r} is unassigned — no manager to authorize a revision")
+        raise RevisionAuthorityError(
+            f"task {task_id!r} is unassigned — no manager to authorize a revision"
+        )
     assignee = ledger.employees.get(assignee_id)
     manager_id = assignee.reports_to if assignee is not None else None
     if manager_id is None or revised_by != manager_id:

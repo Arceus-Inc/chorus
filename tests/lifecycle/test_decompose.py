@@ -90,9 +90,7 @@ def test_decompose_creates_children_with_inherited_structure(
         assert child.depth == 2  # bumped from source's 1
 
 
-def test_gating_child_becomes_a_first_class_dependency(
-    ledger: SqliteLedger, source: Task
-) -> None:
+def test_gating_child_becomes_a_first_class_dependency(ledger: SqliteLedger, source: Task) -> None:
     decompose(
         ledger,
         source_task_id=source.id,

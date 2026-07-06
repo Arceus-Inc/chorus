@@ -16,6 +16,15 @@ from chorus_tools._analysis import (
     analysis_tool,
 )
 from chorus_tools._brand_lint import BrandFinding, BrandLintInput, BrandLintTool
+from chorus_tools._code_quality import (
+    CodeQualityInput,
+    CodeQualityTool,
+    QualityCheck,
+    QualityCheckSpec,
+    QualityReport,
+    is_noop_quality_command,
+)
+from chorus_tools._code_quality import write_report as write_quality_report
 from chorus_tools._decompose import DecomposeInput, DecomposeTool
 from chorus_tools._design_exemplar import (
     DesignExemplarInput,
@@ -23,6 +32,14 @@ from chorus_tools._design_exemplar import (
     available_exemplars,
 )
 from chorus_tools._design_lint import DesignFinding, DesignLintInput, DesignLintTool, DesignTokens
+from chorus_tools._evidence_scan import (
+    EvidenceFinding,
+    EvidenceReport,
+    EvidenceScanInput,
+    EvidenceScanTool,
+    EvidenceSpec,
+    LogAssessment,
+)
 from chorus_tools._go_live import GoLiveAction, GoLiveInput, GoLiveTool
 from chorus_tools._manager_actions import (
     AssignTaskInput,
@@ -32,14 +49,22 @@ from chorus_tools._manager_actions import (
 )
 from chorus_tools._record_decision import RecordDecisionInput, RecordDecisionTool
 from chorus_tools._registry import chorus_tool_registry
+from chorus_tools._secret_scan import (
+    SecretFinding,
+    SecretScanInput,
+    SecretScanReport,
+    SecretScanTool,
+    scan_text,
+    write_report,
+)
 from chorus_tools._submit_verdict import SubmitVerdictInput, SubmitVerdictTool
 from chorus_tools._test_evidence import (
-    EvidenceFinding,
-    EvidenceReport,
-    EvidenceSpec,
-    LogAssessment,
+    EvidenceManifest,
+    GateResult,
+    GateSpec,
     TestEvidenceInput,
     TestEvidenceTool,
+    write_bundle,
 )
 
 __all__ = [
@@ -49,6 +74,8 @@ __all__ = [
     "BrandLintInput",
     "BrandLintTool",
     "ChartRenderTool",
+    "CodeQualityInput",
+    "CodeQualityTool",
     "DecomposeInput",
     "DecomposeTool",
     "DesignExemplarInput",
@@ -58,16 +85,28 @@ __all__ = [
     "DesignLintTool",
     "DesignTokens",
     "EvidenceFinding",
+    "EvidenceManifest",
     "EvidenceReport",
+    "EvidenceScanInput",
+    "EvidenceScanTool",
     "EvidenceSpec",
+    "GateResult",
+    "GateSpec",
     "GoLiveAction",
     "GoLiveInput",
     "GoLiveTool",
     "LogAssessment",
     "NotebookRunTool",
+    "QualityCheck",
+    "QualityCheckSpec",
+    "QualityReport",
     "RecordDecisionInput",
     "RecordDecisionTool",
     "RepoSearchTool",
+    "SecretFinding",
+    "SecretScanInput",
+    "SecretScanReport",
+    "SecretScanTool",
     "SubmitTaskInput",
     "SubmitTaskTool",
     "SubmitVerdictInput",
@@ -78,4 +117,9 @@ __all__ = [
     "analysis_tool",
     "available_exemplars",
     "chorus_tool_registry",
+    "is_noop_quality_command",
+    "scan_text",
+    "write_bundle",
+    "write_quality_report",
+    "write_report",
 ]

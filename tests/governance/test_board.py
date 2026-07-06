@@ -43,12 +43,16 @@ def _landed_artifact(ledger: SqliteLedger) -> str:
 
 
 def _open_board_gate(ledger: SqliteLedger, artifact_id: str) -> str:
-    return GovernanceResolver(ledger).open(
-        action=ApprovalAction.BOARD_APPROVAL,
-        subject_kind=ApprovalSubjectKind.ARTIFACT,
-        subject_id=artifact_id,
-        reason="promote",
-    ).id
+    return (
+        GovernanceResolver(ledger)
+        .open(
+            action=ApprovalAction.BOARD_APPROVAL,
+            subject_kind=ApprovalSubjectKind.ARTIFACT,
+            subject_id=artifact_id,
+            reason="promote",
+        )
+        .id
+    )
 
 
 def test_approve_records_a_promoted_activity(ledger: SqliteLedger) -> None:

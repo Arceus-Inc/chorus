@@ -16,7 +16,7 @@ validates the child's final message at runtime.
 
 Tier-1, role-owned. Each spec's ``tools`` are CHORUS names (mapped to dream + intersected with the
 Frontend Engineer's toolset at materialize — both hold only ``read_file`` / ``working_memory_read`` /
-``test_evidence``, all ⊆ the parent, so the projection keeps them). Each spawned child's system prompt
+``evidence_scan``, all ⊆ the parent, so the projection keeps them). Each spawned child's system prompt
 is generated from name + description, so the full brief lives *in* the description — imperative, so the
 specialist actually reads the files and returns its verdict rather than claiming it cannot.
 """

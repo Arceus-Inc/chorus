@@ -33,7 +33,9 @@ def test_hire_then_get_roundtrips(wf: LedgerWorkforce) -> None:
     assert wf.get("alice") == hired
 
 
-def test_hired_employee_is_a_real_assignable_ledger_row(ledger: SqliteLedger, wf: LedgerWorkforce) -> None:
+def test_hired_employee_is_a_real_assignable_ledger_row(
+    ledger: SqliteLedger, wf: LedgerWorkforce
+) -> None:
     # The point of the fix: hire writes the ledger employee table the FKs point at.
     wf.hire(name="Alice", role="engineer")
     assert ledger.employees.get("alice") is not None

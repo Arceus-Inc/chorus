@@ -263,6 +263,7 @@ class Scheduler:
         max_concurrent_runs: int = 4,
         lease_ttl_s: float = 300.0,
         max_repair_attempts: int = 2,
+        max_resume_attempts: int = 2,
         transient_retries: int = 2,
         max_integrate_iterations: int = 3,
         max_review_rounds: int = 2,
@@ -284,6 +285,10 @@ class Scheduler:
         self.max_repair_attempts = (
             max_repair_attempts  # DoD-failure self-repair budget (spec 04 §1)
         )
+        # Budget-exhaustion RESUME budget: how many times a timed-out beat re-dispatches to continue
+        # from its worktree + TODO.md before the task strands as too-big-for-one-beat. Distinct from the
+        # DoD repair budget — a timeout is unfinished work, not a rejected attempt.
+        self.max_resume_attempts = max_resume_attempts
         # In-beat retry budget for *transient* engine faults (a planner/evaluator parse blip): re-run the
         # beat this many times before stranding it onto the recovery ladder (spec 05 §5).
         self.transient_retries = transient_retries
@@ -684,10 +689,11 @@ class Scheduler:
                     now=now,
                 )
         elif result.disposition is BeatDisposition.ERRORED:
-            # Engine/tool fault: the run failed and the task is stranded onto the recovery ladder with
-            # the phase on the evidence, owner preserved — never collapsed into a DoD failure (§5).
+            # Engine/tool fault: the run failed. A wall-clock TIMEOUT is unfinished-not-wrong — resume it
+            # (re-dispatch from the persistent worktree + TODO.md, bounded); any other fault strands onto
+            # the recovery ladder with the phase on the evidence, owner preserved (§5).
             ledger.runs.finish(run_id, RunStatus.FAILED, outcome=verdict)
-            self._strand_errored(task_id, employee_id=employee.id, result=result)
+            self._resume_or_strand(task_id, employee_id=employee.id, result=result)
         elif result.passed:
             ledger.runs.finish(run_id, RunStatus.SUCCEEDED, outcome=verdict)
             await self._land_passed(
@@ -1244,6 +1250,36 @@ class Scheduler:
                     next_action="fix the failing check or revise the DoD",
                 )
             )
+
+    def _resume_or_strand(self, task_id: str, *, employee_id: str, result: BeatOutcome) -> None:
+        """A wall-clock TIMEOUT RESUMES the same task; any other engine fault strands (resumption Slice B).
+
+        Budget exhaustion is unfinished-not-wrong: the persistent worktree — and the ``TODO.md``
+        checklist ``todo_write`` left in it — survive, so re-dispatching the SAME task to the SAME
+        employee lets the next beat reconcile the checklist against git+tests and continue. Bounded by
+        ``max_resume_attempts`` (counted over the task's timed-out runs, NOT the DoD repair budget);
+        once spent, repeated exhaustion means the task is too big for one beat, so it strands for a human.
+        """
+        ledger = self._require_ledger()
+        is_timeout = "TimeoutError" in str(result.outcome.get("error", ""))
+        if is_timeout:
+            timeouts = sum(
+                1
+                for run in ledger.runs.for_task(task_id)
+                if run.status is RunStatus.FAILED and "TimeoutError" in str(run.outcome)
+            )
+            if timeouts <= self.max_resume_attempts:
+                ledger.tasks.set_status(task_id, TaskStatus.TODO)  # re-dispatchable; not stuck
+                ledger.wakes.enqueue(
+                    Wake(
+                        id=mint_id("wake"),
+                        employee_id=employee_id,
+                        reason=WakeReason.RECOVERY,
+                        payload={"task_id": task_id, "cause": "budget_resume"},
+                    )
+                )
+                return
+        self._strand_errored(task_id, employee_id=employee_id, result=result)
 
     def _strand_errored(self, task_id: str, *, employee_id: str, result: BeatOutcome) -> None:
         """An engine-faulted beat strands its task onto the recovery ladder (spec 05 §5, spec 02 §6).

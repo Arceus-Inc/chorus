@@ -33,7 +33,14 @@ _NOW = datetime.fromisoformat("2026-06-16T12:00:00+00:00")
 
 class _FakeBeat:
     async def run_task(
-        self, *, task_id: str, intent: str, verification: object = (), rubric: object = "", observer: object = None, run_id: str | None = None
+        self,
+        *,
+        task_id: str,
+        intent: str,
+        verification: object = (),
+        rubric: object = "",
+        observer: object = None,
+        run_id: str | None = None,
     ) -> BeatOutcome:
         return BeatOutcome(passed=True, outcome={}, summary="done")
 
@@ -46,9 +53,7 @@ class _FakeWorkforce:
         return self._by_id[employee_id]
 
 
-def _wired(
-    ledger: SqliteLedger, *employees: Employee, max_concurrent_runs: int = 4
-) -> Scheduler:
+def _wired(ledger: SqliteLedger, *employees: Employee, max_concurrent_runs: int = 4) -> Scheduler:
     return Scheduler(
         max_concurrent_runs=max_concurrent_runs,
         ledger=ledger,
@@ -58,13 +63,9 @@ def _wired(
 
 
 def _routine(ledger: SqliteLedger, *, eid: str = "e1") -> None:
-    ledger.routines.create(
-        Routine(id="r1", employee_id=eid, intent_template="hourly sweep")
-    )
+    ledger.routines.create(Routine(id="r1", employee_id=eid, intent_template="hourly sweep"))
     ledger.routine_triggers.create(
-        RoutineTrigger(
-            id="trig_r1", routine_id="r1", cron_expression="0 * * * *", next_run_at=_NOW
-        )
+        RoutineTrigger(id="trig_r1", routine_id="r1", cron_expression="0 * * * *", next_run_at=_NOW)
     )
 
 

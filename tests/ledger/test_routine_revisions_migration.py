@@ -47,9 +47,17 @@ def test_routine_revision_table_exists_with_history_columns() -> None:
         MigrationRunner(MIGRATIONS).apply(conn)
         cols = _columns(conn, "routine_revision")
         assert {
-            "id", "routine_id", "revision_no", "intent_template", "target",
-            "concurrency_policy", "catch_up_policy", "env", "change_summary",
-            "restored_from_revision_id", "created_at",
+            "id",
+            "routine_id",
+            "revision_no",
+            "intent_template",
+            "target",
+            "concurrency_policy",
+            "catch_up_policy",
+            "env",
+            "change_summary",
+            "restored_from_revision_id",
+            "created_at",
         } <= cols
         assert "routine_revision_no_uq" in _index_names(conn)
     finally:
@@ -93,9 +101,7 @@ def test_existing_routine_is_carried_forward_with_a_synthesized_revision_1() -> 
         head_id = routine["latest_revision_id"]
         assert head_id is not None
 
-        rev = conn.execute(
-            "SELECT * FROM routine_revision WHERE id = ?", (head_id,)
-        ).fetchone()
+        rev = conn.execute("SELECT * FROM routine_revision WHERE id = ?", (head_id,)).fetchone()
         assert rev is not None
         assert rev["routine_id"] == "r1"
         assert rev["revision_no"] == 1

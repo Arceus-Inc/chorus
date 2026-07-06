@@ -155,9 +155,7 @@ def _validate_declaration(role: str, decl: RoutineDeclaration) -> None:
     try:
         assert_no_inline_secrets(decl.env)
     except InvalidIntake as exc:
-        raise RolePluginInvalid(
-            f"role {role!r} routine {decl.routine_key!r} env: {exc}"
-        ) from exc
+        raise RolePluginInvalid(f"role {role!r} routine {decl.routine_key!r} env: {exc}") from exc
 
 
 def _same_definition(a: RolePlugin, b: RolePlugin) -> bool:

@@ -144,12 +144,24 @@ def test_gate1_paused_policy_is_not_masked_by_an_over_policy_in_same_scope(
     # bp2 (monthly) gets paused; bp1 (weekly) ends up merely over and sorts first by id, so a
     # first-match loop would report EMPLOYEE_OVER and mask the pause — paused must still win.
     _emp(ledger, "e1")
-    _policy(ledger, scope=BudgetScope.EMPLOYEE, scope_id="e1", amount=50,
-            policy_id="bp2", window_kind="monthly")
+    _policy(
+        ledger,
+        scope=BudgetScope.EMPLOYEE,
+        scope_id="e1",
+        amount=50,
+        policy_id="bp2",
+        window_kind="monthly",
+    )
     enf = _enforcer(ledger)
     enf.on_cost_event(_spend(ledger, "e1", 60), now=NOW)  # bp2 hard breach -> paused
-    _policy(ledger, scope=BudgetScope.EMPLOYEE, scope_id="e1", amount=100,
-            policy_id="bp1", window_kind="weekly")
+    _policy(
+        ledger,
+        scope=BudgetScope.EMPLOYEE,
+        scope_id="e1",
+        amount=100,
+        policy_id="bp1",
+        window_kind="weekly",
+    )
     _spend(ledger, "e1", 60)  # total 120 -> bp1 (weekly) is over (recorded only, not evaluated)
     assert enf.invocation_block("e1", now=NOW) is BlockReason.EMPLOYEE_PAUSED
 
@@ -313,7 +325,9 @@ def test_gate1_company_paused(ledger: SqliteLedger) -> None:
     _policy(ledger, scope=BudgetScope.COMPANY, scope_id=COMPANY, amount=100)
     enf = _enforcer(ledger)
     enf.on_cost_event(_spend(ledger, "e1", 120), now=NOW)  # company hard incident
-    ledger.budget_policies.set_amount("bp1", 1000)  # under budget, but the company incident persists
+    ledger.budget_policies.set_amount(
+        "bp1", 1000
+    )  # under budget, but the company incident persists
     assert enf.invocation_block("e1", now=NOW) is BlockReason.COMPANY_PAUSED
 
 

@@ -91,8 +91,9 @@ def _task_with_dod(ledger: SqliteLedger, tid: str = "t1") -> str:
 
 def test_finalize_passed_marks_done_and_records_verdict(ledger: SqliteLedger) -> None:
     _task_with_dod(ledger)
-    ledger.finalize_beat(task_id="t1", run_id="r1", dod_status=DodStatus.PASSED,
-                         verdict={"score": 1})
+    ledger.finalize_beat(
+        task_id="t1", run_id="r1", dod_status=DodStatus.PASSED, verdict={"score": 1}
+    )
     task = ledger.tasks.get("t1")
     dod = ledger.dod.get_for_task("t1")
     assert task is not None and task.status is TaskStatus.DONE
@@ -130,8 +131,9 @@ def test_finalize_failed_records_verdict_but_not_done(ledger: SqliteLedger) -> N
 def test_finalize_fires_deps_resolved_for_unblocked_dependent(ledger: SqliteLedger) -> None:
     _emp(ledger, "e2")
     ledger.tasks.submit(Task(id="a", intent="blocker"))
-    ledger.tasks.submit(Task(id="b", intent="dependent", status=TaskStatus.TODO,
-                             assignee_employee_id="e2"))
+    ledger.tasks.submit(
+        Task(id="b", intent="dependent", status=TaskStatus.TODO, assignee_employee_id="e2")
+    )
     ledger.dependencies.add("b", "a")  # b depends on a
     fired = ledger.finalize_beat(task_id="a", run_id="r", dod_status=DodStatus.PASSED)
     assert [(w.reason, w.employee_id, w.payload["task_id"]) for w in fired] == [

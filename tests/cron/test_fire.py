@@ -160,7 +160,8 @@ def test_coalesce_folds_onto_the_live_run(ledger: SqliteLedger) -> None:
     first = fire_routine(ledger, trig, now=_NOW)  # spawns task #1 (open) + a dispatched run
     assert first is not None
     survivor = next(
-        r.id for r in ledger.routine_runs.by_routine("r1")
+        r.id
+        for r in ledger.routine_runs.by_routine("r1")
         if r.status is RoutineRunStatus.DISPATCHED
     )
     # re-arm the edge; fire again while the prior task is still open
@@ -174,7 +175,9 @@ def test_coalesce_folds_onto_the_live_run(ledger: SqliteLedger) -> None:
     result = fire_routine(ledger, re_armed, now=_NOW + timedelta(hours=1))
 
     assert result is None  # no new task — folded onto the live run
-    coalesced = [r for r in ledger.routine_runs.by_routine("r1") if r.status is RoutineRunStatus.COALESCED]
+    coalesced = [
+        r for r in ledger.routine_runs.by_routine("r1") if r.status is RoutineRunStatus.COALESCED
+    ]
     assert len(coalesced) == 1
     assert coalesced[0].coalesced_into_run_id == survivor
     # only the one routine-spawned task exists
@@ -210,7 +213,9 @@ def test_backfill_one_advances_a_single_step(ledger: SqliteLedger) -> None:
     fire_routine(ledger, trig, now=_NOW + timedelta(hours=3, minutes=30))  # now = 15:30
     advanced = ledger.routine_triggers.get(trig.id)
     assert advanced is not None
-    assert advanced.next_run_at == _NOW + timedelta(hours=1)  # 13:00, still behind -> refires next tick
+    assert advanced.next_run_at == _NOW + timedelta(
+        hours=1
+    )  # 13:00, still behind -> refires next tick
 
 
 def test_skip_if_active_fires_once_prior_task_is_terminal(ledger: SqliteLedger) -> None:

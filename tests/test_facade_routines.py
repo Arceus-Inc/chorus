@@ -64,9 +64,7 @@ def test_add_routine_resolves_a_name_to_its_slug() -> None:
     try:
         chorus = _chorus(ledger)
         chorus.hire(name="Big Moe", role="manager")
-        view = chorus.routines.add(
-            employee="Big Moe", intent_template="x", schedule="0 * * * *"
-        )
+        view = chorus.routines.add(employee="Big Moe", intent_template="x", schedule="0 * * * *")
         assert view.employee_id == "big-moe"
     finally:
         ledger.close()

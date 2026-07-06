@@ -54,7 +54,7 @@ def test_human_approval_has_no_rubric_or_command() -> None:
 
 def test_command_archetype_runs_an_objective_gate() -> None:
     """The Command archetype (a human may set it via `dod set`) is the objective oracle."""
-    v = Verifier.command("python -c \"import sys; sys.exit(0)\"", artifact_class="finding")
+    v = Verifier.command('python -c "import sys; sys.exit(0)"', artifact_class="finding")
     assert v.kind is DoDKind.COMMAND
     steps = v.verification_steps()
     assert len(steps) == 1 and "python" in steps[0].command

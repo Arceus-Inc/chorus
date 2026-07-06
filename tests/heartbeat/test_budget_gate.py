@@ -37,7 +37,14 @@ class _FakeBeat:
         self.calls: list[str] = []
 
     async def run_task(
-        self, *, task_id: str, intent: str, verification: object = (), rubric: object = "", observer: object = None, run_id: str | None = None
+        self,
+        *,
+        task_id: str,
+        intent: str,
+        verification: object = (),
+        rubric: object = "",
+        observer: object = None,
+        run_id: str | None = None,
     ) -> BeatOutcome:
         self.calls.append(task_id)
         return BeatOutcome(
@@ -71,8 +78,14 @@ def _employee_cap(ledger: SqliteLedger, employee_id: str, amount: int) -> None:
 
 def _spend(ledger: SqliteLedger, employee_id: str, cents: int) -> None:
     ledger.cost_events.record(
-        CostEvent(id=f"seed_{cents}", employee_id=employee_id, provider="p", model="m",
-                  cost_cents=cents, occurred_at=_NOW)
+        CostEvent(
+            id=f"seed_{cents}",
+            employee_id=employee_id,
+            provider="p",
+            model="m",
+            cost_cents=cents,
+            occurred_at=_NOW,
+        )
     )
 
 
@@ -81,8 +94,12 @@ def _assigned_wake(ledger: SqliteLedger, *, task_id: str, employee_id: str, wake
         Task(id=task_id, intent="ship", status=TaskStatus.TODO, assignee_employee_id=employee_id)
     )
     ledger.wakes.enqueue(
-        Wake(id=wake_id, employee_id=employee_id, reason=WakeReason.TASK_ASSIGNED,
-             payload={"task_id": task_id})
+        Wake(
+            id=wake_id,
+            employee_id=employee_id,
+            reason=WakeReason.TASK_ASSIGNED,
+            payload={"task_id": task_id},
+        )
     )
 
 

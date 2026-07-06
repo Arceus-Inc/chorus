@@ -36,8 +36,14 @@ class _FakeBeat:
     exercised end-to-end without Azure creds."""
 
     async def run_task(
-        self, *, task_id: str, intent: str, verification: object = (), rubric: object = "",
-        observer: object = None, run_id: str | None = None,
+        self,
+        *,
+        task_id: str,
+        intent: str,
+        verification: object = (),
+        rubric: object = "",
+        observer: object = None,
+        run_id: str | None = None,
     ) -> BeatOutcome:
         return BeatOutcome(passed=True, outcome={}, summary="brand-drift scan done")
 
@@ -135,8 +141,9 @@ def test_a_fresh_plugin_schedules_with_no_kernel_change() -> None:
     hire — proof that a new role brings its own recurring work without touching the engine."""
     widget = RolePlugin(
         name="widget",
-        manifest=RoleManifest(system_prompt="make widgets", tools=("read_file",),
-                              memory_scope=MemoryScope.PROJECT),
+        manifest=RoleManifest(
+            system_prompt="make widgets", tools=("read_file",), memory_scope=MemoryScope.PROJECT
+        ),
         dod_generator=lambda intent: Verifier.command("pytest -q"),
         outcome_kind="pr",
         declared_routines=(

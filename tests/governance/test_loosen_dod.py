@@ -30,7 +30,9 @@ def _loosened_with_open_gate(ledger: SqliteLedger) -> str:
     ledger.tasks.submit(Task(id="t1", intent="ship", status=TaskStatus.IN_PROGRESS))
     assign_task(ledger, "t1", "ada")
     ledger.dod.create("t1", Verifier.reviewed_build())
-    outcome = revise_dod(ledger, task_id="t1", new_verifier=Verifier.command("pytest"), revised_by="moe")
+    outcome = revise_dod(
+        ledger, task_id="t1", new_verifier=Verifier.command("pytest"), revised_by="moe"
+    )
     assert outcome.approval_id is not None
     return outcome.approval_id
 
@@ -51,7 +53,9 @@ def test_approve_promotes_the_looser_dod(ledger: SqliteLedger) -> None:
 
     dod = ledger.dod.get_for_task("t1")
     assert dod is not None and dod.revision == 2 and dod.proposed_revision is None
-    assert ledger.dod.verifier_for_task("t1").kind is DoDKind.COMMAND  # the loosen is in force  # type: ignore[union-attr]
+    assert (
+        ledger.dod.verifier_for_task("t1").kind is DoDKind.COMMAND
+    )  # the loosen is in force  # type: ignore[union-attr]
 
 
 def test_deny_keeps_the_stricter_dod(ledger: SqliteLedger) -> None:
@@ -62,7 +66,9 @@ def test_deny_keeps_the_stricter_dod(ledger: SqliteLedger) -> None:
     )
 
     dod = ledger.dod.get_for_task("t1")
-    assert dod is not None and dod.revision == 1 and dod.proposed_revision is None  # staging dropped
+    assert (
+        dod is not None and dod.revision == 1 and dod.proposed_revision is None
+    )  # staging dropped
     assert ledger.dod.verifier_for_task("t1").kind is DoDKind.REVIEWED_BUILD  # type: ignore[union-attr]
 
 

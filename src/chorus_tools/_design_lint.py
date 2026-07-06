@@ -107,9 +107,7 @@ def parse_design_tokens(system_text: str) -> DesignTokens:
     spacing: frozenset[int] = frozenset()
     scale_match = re.search(r"space\.scale\s*:\s*\[([^\]]*)\]", block, re.IGNORECASE)
     if scale_match:
-        spacing = frozenset(
-            int(tok) for tok in re.findall(r"\d+", scale_match.group(1))
-        )
+        spacing = frozenset(int(tok) for tok in re.findall(r"\d+", scale_match.group(1)))
 
     contrast_min: float | None = None
     contrast_match = re.search(
@@ -188,9 +186,7 @@ def lint_design(doc_text: str, tokens: DesignTokens) -> tuple[DesignFinding, ...
 class DesignLintInput(BaseModel):
     """Typed contract for ``design_lint`` — validated before any file is read."""
 
-    doc: str = Field(
-        min_length=1, description="the drafted design spec to lint, e.g. 'design.md'"
-    )
+    doc: str = Field(min_length=1, description="the drafted design spec to lint, e.g. 'design.md'")
     system: str = Field(
         default="DESIGN.md", description="the design-system contract (tokens + guardrails)"
     )
@@ -231,8 +227,10 @@ class DesignLintTool(BaseTool):
         system_path = ctx.working_dir / args.system
         if system_path.is_file():
             tokens = parse_design_tokens(system_path.read_text(encoding="utf-8"))
-            system_note = "" if not tokens.is_empty else (
-                f" (system {args.system!r} has no token block — judged a11y only)"
+            system_note = (
+                ""
+                if not tokens.is_empty
+                else (f" (system {args.system!r} has no token block — judged a11y only)")
             )
         else:
             tokens = DesignTokens.empty()

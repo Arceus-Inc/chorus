@@ -35,7 +35,9 @@ def test_build_threads_landers_into_the_scheduler() -> None:
 
 def test_build_defaults_to_no_landers() -> None:
     org = _build()
-    assert org._scheduler._landers is None  # unset → a passed beat lands without recording an artifact
+    assert (
+        org._scheduler._landers is None
+    )  # unset → a passed beat lands without recording an artifact
 
 
 def test_build_shares_an_injected_ledger() -> None:
@@ -46,7 +48,10 @@ def test_build_shares_an_injected_ledger() -> None:
     store = SqliteLedger.open(":memory:")
     try:
         org = Chorus.build(
-            ledger=store, org_repo="/tmp/chorus-f7-org", memory_repo="/tmp/chorus-f7-mem", dream=None
+            ledger=store,
+            org_repo="/tmp/chorus-f7-org",
+            memory_repo="/tmp/chorus-f7-mem",
+            dream=None,
         )
         assert org._ledger is store  # the injected store is the one the kernel uses
     finally:
@@ -60,7 +65,11 @@ def test_build_rejects_both_db_path_and_ledger() -> None:
     try:
         with pytest.raises(ValueError, match="db_path"):
             Chorus.build(
-                db_path=":memory:", ledger=store, org_repo="/tmp/o", memory_repo="/tmp/m", dream=None
+                db_path=":memory:",
+                ledger=store,
+                org_repo="/tmp/o",
+                memory_repo="/tmp/m",
+                dream=None,
             )
     finally:
         store.close()

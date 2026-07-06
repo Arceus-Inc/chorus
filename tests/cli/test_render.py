@@ -43,11 +43,7 @@ def test_kv_with_no_pairs_writes_nothing() -> None:
 def test_table_aligns_columns_under_headers() -> None:
     console, buffer = _console()
     console.table(("id", "role"), [("alice", "engineer"), ("bo", "pm")])
-    assert buffer.getvalue() == (
-        "id     role\n"
-        "alice  engineer\n"
-        "bo     pm\n"
-    )
+    assert buffer.getvalue() == ("id     role\nalice  engineer\nbo     pm\n")
 
 
 def test_empty_table_prints_a_placeholder() -> None:

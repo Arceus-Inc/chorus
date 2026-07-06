@@ -42,7 +42,10 @@ def test_unknown_model_uses_the_default_rate() -> None:
 
 def test_unknown_model_without_a_default_contributes_zero() -> None:
     pricing = TokenPricing(rates={})  # no rate, no default
-    assert pricing.cost_cents({"mystery": _Usage(input_tokens=1_000_000, output_tokens=1_000_000)}) == 0
+    assert (
+        pricing.cost_cents({"mystery": _Usage(input_tokens=1_000_000, output_tokens=1_000_000)})
+        == 0
+    )
 
 
 def test_empty_usage_is_zero() -> None:

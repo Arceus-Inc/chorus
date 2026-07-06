@@ -20,7 +20,9 @@ pytestmark = pytest.mark.integration
 
 def _run(line: str, session: CliSession) -> tuple[LoopSignal, str]:
     buffer = io.StringIO()
-    signal = dispatch(line, session=session, console=Console(out=buffer, colour=False), registry=REGISTRY)
+    signal = dispatch(
+        line, session=session, console=Console(out=buffer, colour=False), registry=REGISTRY
+    )
     return signal, buffer.getvalue()
 
 

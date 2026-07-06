@@ -23,22 +23,20 @@ pytestmark = pytest.mark.integration
 
 def _run_floor(command: str, cwd: Path) -> subprocess.CompletedProcess[str]:
     """Run the DoD command through the OS shell exactly as dream's verification oracle does."""
-    return subprocess.run(
-        command, shell=True, cwd=cwd, capture_output=True, text=True, check=False
-    )
+    return subprocess.run(command, shell=True, cwd=cwd, capture_output=True, text=True, check=False)
 
 
 def _complete_worktree(root: Path) -> None:
     """Materialise a worktree that satisfies the full framework-agnostic evidence contract."""
     (root / "package.json").write_text(
-        '{\n'
+        "{\n"
         '  "name": "app",\n'
         '  "private": true,\n'
         '  "scripts": {\n'
         '    "test": "node --test",\n'
         '    "build": "true"\n'
-        '  }\n'
-        '}\n',
+        "  }\n"
+        "}\n",
         encoding="utf-8",
     )
     (root / "playwright.config.ts").write_text(
@@ -48,7 +46,9 @@ def _complete_worktree(root: Path) -> None:
     ev = root / "test_evidence"
     ev.mkdir()
     (ev / "unit.txt").write_text("# tests 1\n# pass 1\n# fail 0\nok 1 - add\n", encoding="utf-8")
-    (ev / "e2e.txt").write_text("Running 1 test using 1 worker\n  1 passed (1.2s)\n", encoding="utf-8")
+    (ev / "e2e.txt").write_text(
+        "Running 1 test using 1 worker\n  1 passed (1.2s)\n", encoding="utf-8"
+    )
     (ev / "summary.md").write_text(
         "# Test evidence\n\n"
         "## Stack decision\n"
@@ -59,8 +59,7 @@ def _complete_worktree(root: Path) -> None:
         "cover the pure reducer and its edge cases; the Playwright e2e test drives the real button click "
         "and asserts the visible result updates. Both suites pass. Accessibility: the control is a "
         "semantic button with an accessible name, keyboard operable, with a visible focus ring and AA "
-        "contrast. Loading, empty, and error states are handled. "
-        + "word " * 60,
+        "contrast. Loading, empty, and error states are handled. " + "word " * 60,
         encoding="utf-8",
     )
 

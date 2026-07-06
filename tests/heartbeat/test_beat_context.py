@@ -29,11 +29,21 @@ def test_integrate_context_packet_summarizes_child_feedback(
     ledger.employees.create(Employee(id="mgr", name="Mgr", role="manager"))
     ledger.employees.create(Employee(id="lead", name="Lead", role="manager", reports_to="mgr"))
     ledger.employees.create(Employee(id="ada", name="Ada", role="engineer", reports_to="lead"))
-    ledger.tasks.submit(Task(id="P", intent="ship the pantry", status=TaskStatus.BLOCKED, assignee_employee_id="mgr"))
+    ledger.tasks.submit(
+        Task(
+            id="P", intent="ship the pantry", status=TaskStatus.BLOCKED, assignee_employee_id="mgr"
+        )
+    )
     # The parent's own beats define the loop depth: 1 kickoff + 2 integrate beats → iteration == 2.
     for n, status in enumerate(("kickoff", "integrate1", "integrate2")):
         ledger.runs.create(
-            Run(id=f"run_p{n}", employee_id="mgr", task_id="P", status=RunStatus.SUCCEEDED, outcome={"summary": status})
+            Run(
+                id=f"run_p{n}",
+                employee_id="mgr",
+                task_id="P",
+                status=RunStatus.SUCCEEDED,
+                outcome={"summary": status},
+            )
         )
     ledger.tasks.submit(
         Task(
@@ -74,7 +84,9 @@ def test_integrate_context_packet_summarizes_child_feedback(
     assert loaded.iteration == 2
     # every child is done with a passing DoD and no blockers → the kernel recommends ACCEPT
     assert loaded.recommended_action == "accept"
-    assert [(report.id, report.role) for report in loaded.available_reports] == [("lead", "manager")]
+    assert [(report.id, report.role) for report in loaded.available_reports] == [
+        ("lead", "manager")
+    ]
     child = loaded.children[0]
     assert child.task_id == "C1"
     assert child.assignee == "lead"
@@ -95,10 +107,30 @@ def test_recommended_action_is_react_when_a_child_is_unresolved(
     # when everything is green the recommendation is `accept`; only a real gap flips it to `react`.
     ledger.employees.create(Employee(id="mgr", name="Mgr", role="manager"))
     ledger.employees.create(Employee(id="ada", name="Ada", role="engineer", reports_to="mgr"))
-    ledger.tasks.submit(Task(id="P", intent="ship it", status=TaskStatus.BLOCKED, assignee_employee_id="mgr"))
-    ledger.runs.create(Run(id="run_p0", employee_id="mgr", task_id="P", status=RunStatus.SUCCEEDED, outcome={}))
-    ledger.tasks.submit(Task(id="C_ok", parent_id="P", intent="part a", status=TaskStatus.DONE, assignee_employee_id="ada"))
-    ledger.tasks.submit(Task(id="C_bad", parent_id="P", intent="part b", status=TaskStatus.BLOCKED, assignee_employee_id="ada"))
+    ledger.tasks.submit(
+        Task(id="P", intent="ship it", status=TaskStatus.BLOCKED, assignee_employee_id="mgr")
+    )
+    ledger.runs.create(
+        Run(id="run_p0", employee_id="mgr", task_id="P", status=RunStatus.SUCCEEDED, outcome={})
+    )
+    ledger.tasks.submit(
+        Task(
+            id="C_ok",
+            parent_id="P",
+            intent="part a",
+            status=TaskStatus.DONE,
+            assignee_employee_id="ada",
+        )
+    )
+    ledger.tasks.submit(
+        Task(
+            id="C_bad",
+            parent_id="P",
+            intent="part b",
+            status=TaskStatus.BLOCKED,
+            assignee_employee_id="ada",
+        )
+    )
 
     packet = IntegrateContextPacket.build(ledger, parent_task_id="P")
 

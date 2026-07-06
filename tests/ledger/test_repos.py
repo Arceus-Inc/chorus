@@ -129,8 +129,12 @@ def test_open_for_assignee_returns_none_without_a_workable_task(ledger: SqliteLe
     # no tasks at all
     assert ledger.tasks.open_for_assignee("e1") is None
     # a task assigned to someone else, and one of ours that is terminal, are both ignored
-    ledger.tasks.submit(Task(id="t1", intent="x", status=TaskStatus.TODO, assignee_employee_id="e2"))
-    ledger.tasks.submit(Task(id="t2", intent="y", status=TaskStatus.DONE, assignee_employee_id="e1"))
+    ledger.tasks.submit(
+        Task(id="t1", intent="x", status=TaskStatus.TODO, assignee_employee_id="e2")
+    )
+    ledger.tasks.submit(
+        Task(id="t2", intent="y", status=TaskStatus.DONE, assignee_employee_id="e1")
+    )
     ledger.tasks.submit(
         Task(id="t3", intent="z", status=TaskStatus.CANCELLED, assignee_employee_id="e1")
     )
@@ -139,7 +143,9 @@ def test_open_for_assignee_returns_none_without_a_workable_task(ledger: SqliteLe
 
 def test_open_for_assignee_returns_the_workable_task(ledger: SqliteLedger) -> None:
     ledger.employees.create(Employee(id="e1", name="a", role="engineer"))
-    ledger.tasks.submit(Task(id="t1", intent="x", status=TaskStatus.TODO, assignee_employee_id="e1"))
+    ledger.tasks.submit(
+        Task(id="t1", intent="x", status=TaskStatus.TODO, assignee_employee_id="e1")
+    )
     got = ledger.tasks.open_for_assignee("e1")
     assert got is not None
     assert got.id == "t1"
@@ -150,8 +156,12 @@ def test_open_for_assignee_returns_the_workable_task(ledger: SqliteLedger) -> No
 
 def test_open_for_assignee_prefers_the_most_recent(ledger: SqliteLedger) -> None:
     ledger.employees.create(Employee(id="e1", name="a", role="engineer"))
-    ledger.tasks.submit(Task(id="t1", intent="x", status=TaskStatus.TODO, assignee_employee_id="e1"))
-    ledger.tasks.submit(Task(id="t2", intent="y", status=TaskStatus.TODO, assignee_employee_id="e1"))
+    ledger.tasks.submit(
+        Task(id="t1", intent="x", status=TaskStatus.TODO, assignee_employee_id="e1")
+    )
+    ledger.tasks.submit(
+        Task(id="t2", intent="y", status=TaskStatus.TODO, assignee_employee_id="e1")
+    )
     got = ledger.tasks.open_for_assignee("e1")
     assert got is not None
     assert got.id == "t2"
@@ -184,7 +194,9 @@ def test_run_create_and_finish(ledger: SqliteLedger) -> None:
     ledger.tasks.submit(Task(id="t1", intent="x"))
     ledger.runs.create(Run(id="r1", employee_id="e1", task_id="t1"))
     assert ledger.runs.get("r1").status is RunStatus.QUEUED  # type: ignore[union-attr]
-    ledger.runs.finish("r1", RunStatus.SUCCEEDED, liveness_state="completed", outcome={"passed": True})
+    ledger.runs.finish(
+        "r1", RunStatus.SUCCEEDED, liveness_state="completed", outcome={"passed": True}
+    )
     got = ledger.runs.get("r1")
     assert got is not None
     assert got.status is RunStatus.SUCCEEDED

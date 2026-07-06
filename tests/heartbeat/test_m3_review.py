@@ -46,8 +46,16 @@ class _Worker(_Runner):
         super().__init__(working_dir)
         self._decide = decide
 
-    async def run_task(self, *, task_id: str, intent: str, verification: object = (),
-                       rubric: object = "", observer: object = None, run_id: str | None = None) -> BeatOutcome:
+    async def run_task(
+        self,
+        *,
+        task_id: str,
+        intent: str,
+        verification: object = (),
+        rubric: object = "",
+        observer: object = None,
+        run_id: str | None = None,
+    ) -> BeatOutcome:
         passed = True if self._decide is None else bool(self._decide(task_id))  # type: ignore[operator]
         return BeatOutcome(passed=passed, outcome={}, summary="produced", model="m")
 
@@ -58,19 +66,38 @@ class _Reviewer(_Runner):
     ``verify_command`` (when set) is reported on the verdict — the kernel runs it as the objective floor.
     """
 
-    def __init__(self, ledger: SqliteLedger, *, reviewer_id: str, decide: object, working_dir: Path,
-                 verify_command: str = "") -> None:
+    def __init__(
+        self,
+        ledger: SqliteLedger,
+        *,
+        reviewer_id: str,
+        decide: object,
+        working_dir: Path,
+        verify_command: str = "",
+    ) -> None:
         super().__init__(working_dir)
         self._ledger = ledger
         self._id = reviewer_id
         self._decide = decide
         self._verify_command = verify_command
 
-    async def run_task(self, *, task_id: str, intent: str, verification: object = (),
-                       rubric: object = "", observer: object = None, run_id: str | None = None) -> BeatOutcome:
+    async def run_task(
+        self,
+        *,
+        task_id: str,
+        intent: str,
+        verification: object = (),
+        rubric: object = "",
+        observer: object = None,
+        run_id: str | None = None,
+    ) -> BeatOutcome:
         approve = bool(self._decide(task_id))  # type: ignore[operator]
         CapabilityService(self._ledger).record_verdict(
-            task_id=task_id, run_id=str(run_id), reviewer_id=self._id, approve=approve, feedback="fb",
+            task_id=task_id,
+            run_id=str(run_id),
+            reviewer_id=self._id,
+            approve=approve,
+            feedback="fb",
             verify_command=self._verify_command,
         )
         return BeatOutcome(passed=True, outcome={}, summary="reviewed", model="m")
@@ -79,8 +106,16 @@ class _Reviewer(_Runner):
 class _SilentReviewer(_Runner):
     """A reviewer that runs but never calls submit_verdict (renders no verdict)."""
 
-    async def run_task(self, *, task_id: str, intent: str, verification: object = (),
-                       rubric: object = "", observer: object = None, run_id: str | None = None) -> BeatOutcome:
+    async def run_task(
+        self,
+        *,
+        task_id: str,
+        intent: str,
+        verification: object = (),
+        rubric: object = "",
+        observer: object = None,
+        run_id: str | None = None,
+    ) -> BeatOutcome:
         return BeatOutcome(passed=True, outcome={}, summary="said nothing", model="m")
 
 
@@ -89,12 +124,24 @@ class _SlowReviewer(_Reviewer):
     sweeps) *while the review run is in flight* — the genuine ``run_forever`` condition, not a hand-poked
     reconcile. The approved deliverable must still land ``done``."""
 
-    async def run_task(self, *, task_id: str, intent: str, verification: object = (),
-                       rubric: object = "", observer: object = None, run_id: str | None = None) -> BeatOutcome:
+    async def run_task(
+        self,
+        *,
+        task_id: str,
+        intent: str,
+        verification: object = (),
+        rubric: object = "",
+        observer: object = None,
+        run_id: str | None = None,
+    ) -> BeatOutcome:
         for _ in range(6):
             await asyncio.sleep(0)  # yield: let run()'s pulses interleave with the in-flight review
         return await super().run_task(
-            task_id=task_id, intent=intent, verification=verification, observer=observer, run_id=run_id
+            task_id=task_id,
+            intent=intent,
+            verification=verification,
+            observer=observer,
+            run_id=run_id,
         )
 
 
@@ -107,11 +154,23 @@ class _ReconcilingReviewer(_Reviewer):
     and strands the approved work — the bug that only surfaces under continuous ticking, never tick+drain.
     """
 
-    async def run_task(self, *, task_id: str, intent: str, verification: object = (),
-                       rubric: object = "", observer: object = None, run_id: str | None = None) -> BeatOutcome:
+    async def run_task(
+        self,
+        *,
+        task_id: str,
+        intent: str,
+        verification: object = (),
+        rubric: object = "",
+        observer: object = None,
+        run_id: str | None = None,
+    ) -> BeatOutcome:
         reconcile(self._ledger, now=_NOW + timedelta(seconds=1))  # a concurrent tick's RECOVER step
         return await super().run_task(
-            task_id=task_id, intent=intent, verification=verification, observer=observer, run_id=run_id
+            task_id=task_id,
+            intent=intent,
+            verification=verification,
+            observer=observer,
+            run_id=run_id,
         )
 
 
@@ -123,26 +182,52 @@ class _Manager(_Runner):
         self._ledger = ledger
         self._parent = parent
 
-    async def run_task(self, *, task_id: str, intent: str, verification: object = (),
-                       rubric: object = "", observer: object = None, run_id: str | None = None) -> BeatOutcome:
+    async def run_task(
+        self,
+        *,
+        task_id: str,
+        intent: str,
+        verification: object = (),
+        rubric: object = "",
+        observer: object = None,
+        run_id: str | None = None,
+    ) -> BeatOutcome:
         svc = CapabilityService(self._ledger)
         if not self._ledger.tasks.has_children(self._parent):
-            svc.decompose(parent_id=self._parent, revision=str(run_id),
-                          children=[ChildPlan(label="draft", intent="draft the spec", assignee="pen")])
+            svc.decompose(
+                parent_id=self._parent,
+                revision=str(run_id),
+                children=[ChildPlan(label="draft", intent="draft the spec", assignee="pen")],
+            )
             return BeatOutcome(passed=False, outcome={}, summary="delegated", model="m")
         if IntegrateContextPacket.recommended_for(self._ledger, self._parent) == "react":
-            svc.submit_one(parent_id=self._parent, revision=str(run_id),
-                           child=ChildPlan(label="redraft", intent="redraft the spec", assignee="paul"))
-            return BeatOutcome(passed=False, outcome={}, summary="reacted to the rejection", model="m")
+            svc.submit_one(
+                parent_id=self._parent,
+                revision=str(run_id),
+                child=ChildPlan(label="redraft", intent="redraft the spec", assignee="paul"),
+            )
+            return BeatOutcome(
+                passed=False, outcome={}, summary="reacted to the rejection", model="m"
+            )
         return BeatOutcome(passed=True, outcome={}, summary="accepted", model="m")
 
 
 class _Org:
     """A fake harness factory: a role-faithful fake runner per employee, plus the review seam."""
 
-    def __init__(self, ledger: SqliteLedger, *, decide: object, root: Path, parent: str = "M",
-                 silent: bool = False, verify_command: str = "", reconciling: bool = False,
-                 slow_review: bool = False, worker_decide: object = None) -> None:
+    def __init__(
+        self,
+        ledger: SqliteLedger,
+        *,
+        decide: object,
+        root: Path,
+        parent: str = "M",
+        silent: bool = False,
+        verify_command: str = "",
+        reconciling: bool = False,
+        slow_review: bool = False,
+        worker_decide: object = None,
+    ) -> None:
         self._ledger = ledger
         self._decide = decide
         self._root = root
@@ -151,12 +236,16 @@ class _Org:
         self._verify_command = verify_command
         self._reconciling = reconciling
         self._slow_review = slow_review
-        self._worker_decide = worker_decide  # spec 16: an agent_review worker renders its verdict in-beat
+        self._worker_decide = (
+            worker_decide  # spec 16: an agent_review worker renders its verdict in-beat
+        )
 
     def runner_for(self, employee: Employee, *, task_id: str | None = None) -> object:
         return self._for(employee)
 
-    def review_runner_for(self, reviewer: Employee, *, task_id: str, worktree_owner_id: str) -> object:
+    def review_runner_for(
+        self, reviewer: Employee, *, task_id: str, worktree_owner_id: str
+    ) -> object:
         return self._for(reviewer)
 
     def _for(self, employee: Employee) -> object:
@@ -168,8 +257,13 @@ class _Org:
                 reviewer_cls = _ReconcilingReviewer
             elif self._slow_review:
                 reviewer_cls = _SlowReviewer
-            return reviewer_cls(self._ledger, reviewer_id=employee.id, decide=self._decide,
-                                working_dir=self._root, verify_command=self._verify_command)
+            return reviewer_cls(
+                self._ledger,
+                reviewer_id=employee.id,
+                decide=self._decide,
+                working_dir=self._root,
+                verify_command=self._verify_command,
+            )
         if employee.role == "manager":
             return _Manager(self._ledger, parent=self._parent, working_dir=self._root)
         return _Worker(self._root, decide=self._worker_decide)
@@ -177,10 +271,14 @@ class _Org:
 
 def _sched(ledger: SqliteLedger, org: _Org, root: Path, *, max_review_rounds: int = 2) -> Scheduler:
     return Scheduler(
-        ledger=ledger, workforce=LedgerWorkforce(ledger.employees), beat_runner_for=org,  # type: ignore[arg-type]
+        ledger=ledger,
+        workforce=LedgerWorkforce(ledger.employees),
+        beat_runner_for=org,  # type: ignore[arg-type]
         roles=RoleRegistry.from_plugins(default_roles()),
         landers=default_landers(root, ledger=ledger),
-        clock=lambda: _NOW, max_concurrent_runs=4, max_review_rounds=max_review_rounds,
+        clock=lambda: _NOW,
+        max_concurrent_runs=4,
+        max_review_rounds=max_review_rounds,
     )
 
 
@@ -198,7 +296,9 @@ async def test_approve_lands_the_deliverable_done(ledger: SqliteLedger, tmp_path
     await sched.drain()
 
     assert ledger.tasks.get("spec").status is TaskStatus.DONE  # type: ignore[union-attr]
-    assert not [r for r in ledger.runs.for_task("spec") if r.id.startswith("rev_")]  # one run, no review beat
+    assert not [
+        r for r in ledger.runs.for_task("spec") if r.id.startswith("rev_")
+    ]  # one run, no review beat
     assert not [a for a in ledger.artifacts.list_for_task("spec") if a.type.value == "verdict"]
 
 
@@ -214,7 +314,9 @@ async def test_review_run_survives_a_concurrent_recover_sweep(
     Spec 16 keeps the Reviewer beat for ``reviewed_build``, so this rides its gate (POSIX command floor).
     """
     _reviewed_build_task(ledger)
-    org = _Org(ledger, decide=lambda _tid: True, root=tmp_path, reconciling=True, verify_command="true")
+    org = _Org(
+        ledger, decide=lambda _tid: True, root=tmp_path, reconciling=True, verify_command="true"
+    )
     sched = _sched(ledger, org, tmp_path)
 
     await sched.tick_once()
@@ -250,26 +352,36 @@ async def test_run_forever_lands_a_reviewed_deliverable_done(
     Reviewer beat for ``reviewed_build``, so this rides its gate (POSIX command floor).
     """
     _reviewed_build_task(ledger)
-    org = _Org(ledger, decide=lambda _tid: True, root=tmp_path, slow_review=True, verify_command="true")
+    org = _Org(
+        ledger, decide=lambda _tid: True, root=tmp_path, slow_review=True, verify_command="true"
+    )
 
     pulses = 0
-    _SAFETY_CAP = 2000  # an instant injected sleep lets run() spin many no-op pulses; cap so a genuine
+    _SAFETY_CAP = (
+        2000  # an instant injected sleep lets run() spin many no-op pulses; cap so a genuine
+    )
     # stall (the deliverable never settling) fails fast instead of looping forever.
 
     async def _sleep(_seconds: float) -> None:
         nonlocal pulses
         pulses += 1
         await asyncio.sleep(0)  # one real yield so the in-flight review can advance between pulses
-        if pulses > _SAFETY_CAP or ledger.tasks.get("code") is None or (
-            (task := ledger.tasks.get("code")) is not None and task.status is TaskStatus.DONE
+        if (
+            pulses > _SAFETY_CAP
+            or ledger.tasks.get("code") is None
+            or ((task := ledger.tasks.get("code")) is not None and task.status is TaskStatus.DONE)
         ):
             sched.stop()
 
     sched = Scheduler(
-        ledger=ledger, workforce=LedgerWorkforce(ledger.employees), beat_runner_for=org,  # type: ignore[arg-type]
+        ledger=ledger,
+        workforce=LedgerWorkforce(ledger.employees),
+        beat_runner_for=org,  # type: ignore[arg-type]
         roles=RoleRegistry.from_plugins(default_roles()),
         landers=default_landers(tmp_path, ledger=ledger),
-        clock=lambda: _NOW, max_concurrent_runs=4, sleep=_sleep,
+        clock=lambda: _NOW,
+        max_concurrent_runs=4,
+        sleep=_sleep,
     )
     await sched.run()
 
@@ -286,6 +398,7 @@ async def test_no_reviewer_opens_a_recovery_card(ledger: SqliteLedger, tmp_path:
     ledger.tasks.submit(Task(id="code", intent="build the widget", status=TaskStatus.TODO))
     assign_task(ledger, "code", "dev")
     from chorus.outcomes import Verifier
+
     ledger.dod.create("code", Verifier.reviewed_build(artifact_class="pr"))
     org = _Org(ledger, decide=lambda _tid: True, root=tmp_path)
     sched = _sched(ledger, org, tmp_path)
@@ -297,14 +410,17 @@ async def test_no_reviewer_opens_a_recovery_card(ledger: SqliteLedger, tmp_path:
     assert ledger.recovery_actions.active_for_source("code") is not None  # a human must verify it
 
 
-async def test_standalone_block_self_repairs_then_opens_recovery(ledger: SqliteLedger, tmp_path: Path) -> None:
+async def test_standalone_block_self_repairs_then_opens_recovery(
+    ledger: SqliteLedger, tmp_path: Path
+) -> None:
     # Spec 16: an ``agent_review`` block is the in-beat evaluator's needs-changes verdict. A standalone
     # deliverable climbs the bounded self-repair ladder (re-wake the author), then opens a recovery card.
     ledger.employees.create(Employee(id="pen", name="Pen", role="pm"))
     ledger.tasks.submit(Task(id="spec", intent="write the spec", status=TaskStatus.TODO))
     assign_task(ledger, "spec", "pen")
-    org = _Org(ledger, decide=lambda _tid: True, root=tmp_path,
-               worker_decide=lambda _tid: False)  # the in-beat evaluator always blocks
+    org = _Org(
+        ledger, decide=lambda _tid: True, root=tmp_path, worker_decide=lambda _tid: False
+    )  # the in-beat evaluator always blocks
     sched = _sched(ledger, org, tmp_path)
 
     for _ in range(6):  # produce → block → self-repair (≤cap) → … → recovery card past the cap
@@ -331,7 +447,9 @@ async def test_a_reviewer_that_renders_no_verdict_opens_a_recovery_card(
 
     assert ledger.tasks.get("code").status is TaskStatus.BLOCKED  # type: ignore[union-attr]
     assert ledger.recovery_actions.active_for_source("code") is not None
-    assert not [a for a in ledger.artifacts.list_for_task("code") if a.type.value == "verdict"]  # no empty verdict
+    assert not [
+        a for a in ledger.artifacts.list_for_task("code") if a.type.value == "verdict"
+    ]  # no empty verdict
 
 
 def _reviewed_build_task(ledger: SqliteLedger) -> None:
@@ -359,7 +477,9 @@ async def test_reviewed_build_approve_and_passing_command_lands_done(
     assert dod is not None and dod.verdict is not None and dod.verdict["build_passed"] is True
 
 
-async def test_reviewed_build_failing_command_does_not_land(ledger: SqliteLedger, tmp_path: Path) -> None:
+async def test_reviewed_build_failing_command_does_not_land(
+    ledger: SqliteLedger, tmp_path: Path
+) -> None:
     # The reviewer liked the diff, but the kernel-run command fails → the build is NOT done (the floor
     # is un-rationalizable). Standalone → bounded self-repair, never a silent pass.
     _reviewed_build_task(ledger)
@@ -376,7 +496,9 @@ async def test_reviewed_build_failing_command_does_not_land(ledger: SqliteLedger
     assert ledger.recovery_actions.active_for_source("code") is not None  # bounded → human
 
 
-async def test_reviewed_build_quality_block_skips_the_command(ledger: SqliteLedger, tmp_path: Path) -> None:
+async def test_reviewed_build_quality_block_skips_the_command(
+    ledger: SqliteLedger, tmp_path: Path
+) -> None:
     _reviewed_build_task(ledger)
     # the reviewer blocks on quality; the command never runs (no build_passed recorded)
     org = _Org(ledger, decide=lambda _tid: False, root=tmp_path, verify_command="true")
@@ -391,7 +513,9 @@ async def test_reviewed_build_quality_block_skips_the_command(ledger: SqliteLedg
     assert dod is not None and dod.verdict is not None and "build_passed" not in dod.verdict
 
 
-async def test_manager_parented_block_escalates_and_manager_reacts(ledger: SqliteLedger, tmp_path: Path) -> None:
+async def test_manager_parented_block_escalates_and_manager_reacts(
+    ledger: SqliteLedger, tmp_path: Path
+) -> None:
     # The headline: an in-beat block on a manager's child becomes a child outcome the Slice-2 manager
     # reacts to. draft is blocked → REJECTED → manager integrate sees `react` → submits redraft →
     # redraft is approved → subtree completes → manager accepts → goal done. Spec 16: the child's
@@ -419,7 +543,9 @@ async def test_manager_parented_block_escalates_and_manager_reacts(ledger: Sqlit
     assert ledger.tasks.get("M").status is TaskStatus.DONE  # type: ignore[union-attr]  # integrated
 
 
-def test_worktree_file_manifest_lists_the_files_a_listless_reviewer_cannot_see(tmp_path: Path) -> None:
+def test_worktree_file_manifest_lists_the_files_a_listless_reviewer_cannot_see(
+    tmp_path: Path,
+) -> None:
     # The reviewer's toolset is (read_file, submit_verdict) — no directory listing. The kernel must hand
     # it the actual file manifest, or it guesses standard manifest names, never finds app.py/test_app.py,
     # and wrongly declares the worktree empty (the live-reviewer-blocks-clean-code bug).

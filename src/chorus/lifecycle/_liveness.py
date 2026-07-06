@@ -73,9 +73,7 @@ def classify(task: Task, ledger: SqliteLedger, *, now: datetime) -> Liveness:
     return _classify(task, ledger, now=now, seen=set())
 
 
-def _classify(
-    task: Task, ledger: SqliteLedger, *, now: datetime, seen: set[str]
-) -> Liveness:
+def _classify(task: Task, ledger: SqliteLedger, *, now: datetime, seen: set[str]) -> Liveness:
     # Universal short circuits (spec 02 §3): terminal, human-owned, parked.
     if task.status in (TaskStatus.DONE, TaskStatus.CANCELLED, TaskStatus.REJECTED):
         return Liveness(Health.HEALTHY, "terminal")

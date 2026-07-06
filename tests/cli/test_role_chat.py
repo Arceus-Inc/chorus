@@ -29,9 +29,7 @@ def _stub_build_harness(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(_factory_mod.dream, "build_harness", lambda **kw: object())
 
 
-def _service(
-    ledger: SqliteLedger, *, employee_id: str = "ada", **kwargs: Any
-) -> ChatBeatService:
+def _service(ledger: SqliteLedger, *, employee_id: str = "ada", **kwargs: Any) -> ChatBeatService:
     return _role_chat.build_role_chat_service(
         ledger,
         employee_id=employee_id,
@@ -103,11 +101,24 @@ def test_seed_makes_the_employee_branch_off_real_code(
     _stub_build_harness(monkeypatch)
     source = tmp_path / "source"
     source.mkdir()
-    subprocess.run(["git", "-C", str(source), "init", "-b", "trunk"], check=True, capture_output=True)
+    subprocess.run(
+        ["git", "-C", str(source), "init", "-b", "trunk"], check=True, capture_output=True
+    )
     (source / "app.py").write_text("print('real')\n", encoding="utf-8")
     subprocess.run(["git", "-C", str(source), "add", "-A"], check=True, capture_output=True)
     subprocess.run(
-        ["git", "-C", str(source), "-c", "user.name=u", "-c", "user.email=u@x", "commit", "-m", "i"],
+        [
+            "git",
+            "-C",
+            str(source),
+            "-c",
+            "user.name=u",
+            "-c",
+            "user.email=u@x",
+            "commit",
+            "-m",
+            "i",
+        ],
         check=True,
         capture_output=True,
     )
@@ -117,6 +128,8 @@ def test_seed_makes_the_employee_branch_off_real_code(
         ledger.employees.create(Employee(id="ada", name="Ada", role="engineer"))
         service = _service(ledger, work_root=tmp_path / "ws", seed=source)
         # the engineer's worktree starts from the seeded codebase, not a blank tree
-        assert (Path(service.working_dir) / "app.py").read_text(encoding="utf-8") == "print('real')\n"
+        assert (Path(service.working_dir) / "app.py").read_text(
+            encoding="utf-8"
+        ) == "print('real')\n"
     finally:
         ledger.close()

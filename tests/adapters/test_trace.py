@@ -24,8 +24,12 @@ def _complete(name: str, *, turns: int, calls: int, ok: bool = True) -> dict[str
     return {
         "event_type": "subagent.complete",
         "attributes": {
-            "subagent_name": name, "success": ok, "turns_used": turns,
-            "tool_calls": calls, "tool_errors": 0, "elapsed_seconds": 12.5,
+            "subagent_name": name,
+            "success": ok,
+            "turns_used": turns,
+            "tool_calls": calls,
+            "tool_errors": 0,
+            "elapsed_seconds": 12.5,
         },
     }
 
@@ -33,10 +37,13 @@ def _complete(name: str, *, turns: int, calls: int, ok: bool = True) -> dict[str
 class TestReadSubagentStats:
     def test_parses_completes_in_order(self, tmp_path: Path) -> None:
         trace = _write_trace(
-            tmp_path, "s1",
-            [{"event_type": "task.started", "attributes": {}},
-             _complete("brand_critic", turns=2, calls=2),
-             _complete("brand_critic", turns=3, calls=1)],
+            tmp_path,
+            "s1",
+            [
+                {"event_type": "task.started", "attributes": {}},
+                _complete("brand_critic", turns=2, calls=2),
+                _complete("brand_critic", turns=3, calls=1),
+            ],
         )
         stats = read_subagent_stats(trace)
         assert [s.turns_used for s in stats] == [2, 3]

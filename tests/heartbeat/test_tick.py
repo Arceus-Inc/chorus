@@ -31,7 +31,14 @@ class _FakeBeat:
         self.calls: list[str] = []
 
     async def run_task(
-        self, *, task_id: str, intent: str, verification: object = (), rubric: object = "", observer: object = None, run_id: str | None = None
+        self,
+        *,
+        task_id: str,
+        intent: str,
+        verification: object = (),
+        rubric: object = "",
+        observer: object = None,
+        run_id: str | None = None,
     ) -> BeatOutcome:
         self.calls.append(task_id)
         return BeatOutcome(passed=self._passed, outcome={}, summary="done")
@@ -65,9 +72,7 @@ def _employee(ledger: SqliteLedger, eid: str) -> Employee:
     return ledger.employees.create(Employee(id=eid, name=eid, role="engineer"))
 
 
-def _assigned(
-    ledger: SqliteLedger, *, tid: str, eid: str, wid: str
-) -> None:
+def _assigned(ledger: SqliteLedger, *, tid: str, eid: str, wid: str) -> None:
     """An assigned, dispatch-ready task + its queued ``task_assigned`` wake (NOT yet checked out)."""
     ledger.tasks.submit(Task(id=tid, intent=f"do {tid}", assignee_employee_id=eid))
     ledger.tasks.set_status(tid, TaskStatus.TODO)

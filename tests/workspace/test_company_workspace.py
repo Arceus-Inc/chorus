@@ -74,7 +74,18 @@ def _seed_git_repo(path: Path) -> Path:
     (path / "app.py").write_text("print('upstream')\n", encoding="utf-8")
     _git(path, "add", "-A")
     subprocess.run(
-        ["git", "-C", str(path), "-c", "user.name=u", "-c", "user.email=u@x", "commit", "-m", "init"],
+        [
+            "git",
+            "-C",
+            str(path),
+            "-c",
+            "user.name=u",
+            "-c",
+            "user.email=u@x",
+            "commit",
+            "-m",
+            "init",
+        ],
         check=True,
         capture_output=True,
     )

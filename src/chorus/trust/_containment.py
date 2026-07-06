@@ -17,7 +17,15 @@ from chorus.trust._resolver import ResolvedTrust, TrustDenied
 
 _REF_PREFIX = "ref:"
 # An env key whose name implies a secret — its value must be an approved ref, never a raw value.
-_SECRET_MARKERS: tuple[str, ...] = ("TOKEN", "SECRET", "PASSWORD", "PASSWD", "KEY", "CREDENTIAL", "API")
+_SECRET_MARKERS: tuple[str, ...] = (
+    "TOKEN",
+    "SECRET",
+    "PASSWORD",
+    "PASSWD",
+    "KEY",
+    "CREDENTIAL",
+    "API",
+)
 
 
 def assert_no_inline_secrets(env: Mapping[str, str] | None) -> None:
@@ -30,7 +38,9 @@ def assert_no_inline_secrets(env: Mapping[str, str] | None) -> None:
     """
     for key, value in (env or {}).items():
         if _looks_secret(key) and not value.startswith(_REF_PREFIX):
-            raise InvalidIntake(f"inline secret in {key!r} — env must bind a ref: handle, not a value")
+            raise InvalidIntake(
+                f"inline secret in {key!r} — env must bind a ref: handle, not a value"
+            )
 
 
 def assert_contained(

@@ -22,10 +22,7 @@ from chorus_employee.marketer._brief import MARKETER_CONTENT_DOC
 # Deterministic floor: the content doc exists, is non-empty, and is substantive (>= 300 words). The
 # Brand-Critic (in-beat) owns brand quality; the DoD owns "a real draft landed". Run by the kernel's
 # verification oracle in the worktree — not by Mira's toolset (she has no run_command).
-_DOD_COMMAND = (
-    f"test -s {MARKETER_CONTENT_DOC} "
-    f'&& test "$(wc -w < {MARKETER_CONTENT_DOC})" -ge 300'
-)
+_DOD_COMMAND = f'test -s {MARKETER_CONTENT_DOC} && test "$(wc -w < {MARKETER_CONTENT_DOC})" -ge 300'
 
 
 def marketer_dod(intent: str) -> Verifier:
