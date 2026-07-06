@@ -41,33 +41,42 @@ from chorus.workforce import Employee, LedgerWorkforce
 from chorus_cli._beats import default_pricing_from_env
 from chorus_employee import default_landers
 from chorus_harness import EmployeeHarnessFactory
+from chorus_tools import is_noop_quality_command
 
 # --------------------------------------------------------------------------- the task
 
-# Hard task #12 `shortlink` (standup-app/HARD_TASKS.md) — the BACKEND part only. Hard because the code
-# generator must stay collision-safe under concurrency and the time-bucketed aggregation must match a
-# known fixture exactly — both easy to fake past a happy-path test.
+# THREE-DOMAIN commerce API — deliberately too big for one 600s beat, to prove the checkpoint half of
+# resumption: when the budget is exhausted mid-build, todo_write must have left a durable TODO.md in the
+# worktree (the resume point), even though the beat is killed abruptly.
 _INTENT = (
-    "Build the BACKEND of a URL shortener with analytics — `shortlink` — as an HTTP service in app.py "
-    "(Python standard library ONLY — http.server + sqlite3 + json + secrets, no pip installs, no "
-    "frontend). It starts with `python app.py` on the PORT env var (default 8000) and DB_PATH env var "
-    "(default shortlink.db), and applies a SQL schema via a small MIGRATIONS mechanism on startup "
-    "(an ordered list of migration statements recorded in a schema_migrations table so re-runs are "
-    "idempotent). Use ThreadingHTTPServer with a per-request connection (concurrency-safe). Endpoints:\n"
-    "  - GET  /health              -> 200 'ok'\n"
-    '  - POST /links               -> body {"url": "<http(s) url>"}; validates the URL (else 400 JSON '
-    "error); mints a COLLISION-SAFE short code (base62, generated with the `secrets` module, retried on "
-    'the unique constraint) and returns 201 {"code", "short_url", "url"}\n'
-    "  - GET  /{code}              -> 301 redirect to the original URL (Location header), AND records a "
-    "click event (timestamp, referrer from the Referer header, user-agent from the User-Agent header); "
-    "unknown code -> 404\n"
-    "  - GET  /api/links/{code}/stats -> 200 JSON with total_clicks, top_referrers (referrer -> count, "
-    "descending), and clicks_by_day (an ISO date -> count map, time-bucketed by UTC day)\n"
-    "Put the base62 codec + the data-access/migrations logic in a separate module and the HTTP layer in "
-    "app.py. Data MUST survive a process restart. Author the tests independently: unit tests for the "
-    "base62 codec + code-uniqueness under concurrency + the day-bucketed aggregation against a known "
-    "event fixture, and prove the running service end-to-end (mint -> redirect -> stats, and that a "
-    "minted code still redirects after a restart)."
+    "Build the BACKEND of a small commerce API as an HTTP service (Python standard library ONLY — "
+    "http.server + sqlite3 + json + secrets + hashlib, no pip installs, no frontend). It starts with "
+    "`python main.py` on the PORT env var (default 8000) and DB_PATH env var (default commerce.db), and "
+    "applies a SQL schema via a small MIGRATIONS mechanism on startup (an ordered list recorded in a "
+    "schema_migrations table so re-runs are idempotent). Use ThreadingHTTPServer with a per-request "
+    "connection. There are THREE DOMAINS, each its own bounded context — organise the code as ONE "
+    "PACKAGE PER DOMAIN (`auth/`, `orders/`, `payments/`), NOT by file-type folders, and point "
+    "dependencies inward (transport/HTTP -> service -> data-access -> domain):\n"
+    "  - GET  /health -> 200 'ok'\n"
+    "  auth:\n"
+    '    - POST /auth/register  {"email","password"} -> 201; store a SALTED password HASH, never the '
+    "plaintext (hashlib); duplicate email -> 409.\n"
+    '    - POST /auth/login     {"email","password"} -> 200 {"token"} (an opaque bearer token minted '
+    "with `secrets`); wrong credentials -> 401. Protected routes require `Authorization: Bearer <token>` "
+    "(else 401).\n"
+    "  orders (auth required):\n"
+    '    - POST /orders         {"items":[{"sku","qty"}]} -> 201 {"order_id","total","status":"pending"} '
+    "(total = sum of qty * a fixed per-sku price table you define).\n"
+    "    - GET  /orders/{id}    -> 200 the order, but OWNER-ONLY: a user may read only their OWN order; "
+    "another user's order -> 403 (object-level authorization — do not infer access from the id alone).\n"
+    "  payments (auth required):\n"
+    '    - POST /payments       {"order_id","amount"} -> 201 {"payment_id","status":"paid"} and flip the '
+    "order's status to 'paid'. IDEMPOTENT on an `Idempotency-Key` header: the same key replays the same "
+    "payment and must NOT double-charge or create a second payment row.\n"
+    "Data MUST survive a process restart. Author the tests INDEPENDENTLY: unit for the password "
+    "hash+verify and the idempotency-key dedup; integration for the owner-only 403 and the "
+    "pay-flips-order-status flow; and prove the RUNNING service end-to-end (register -> login -> create "
+    "order -> pay -> the order reads back 'paid', still 'paid' after a restart)."
 )
 
 
@@ -86,6 +95,7 @@ _TOOL_META: dict[str, tuple[str, str]] = {
     "glob": ("#6b7280", "glob"),
     "lsp": ("#6b7280", "lsp"),
     "skill": ("#db2777", "skill"),
+    "todo_write": ("#0891b2", "todo_write"),
 }
 
 
@@ -407,6 +417,10 @@ def render_flow(d: ReportData) -> str:
             f'<div class="phase-body">{body}</div></section>'
         )
     eval_cls = "ok" if d.ok else "warn"
+    # The badge must agree with the outcome: a passing run (DoD green + landed) is "passed", not the raw
+    # last dream sprint disposition (which can read "needs-changes" from an intermediate review the beat
+    # then resolved past). An observation surface that contradicts its own score/bar is a reporting bug.
+    eval_label = "passed" if d.ok else (d.evaluated or "did not land")
     pct = 100 if d.ok else 40
     eval_note = (
         "HTTP service built to the contract in the stack Bex discovered, a green test_evidence bundle, "
@@ -439,7 +453,7 @@ def render_flow(d: ReportData) -> str:
 <div class="chips">{chips}</div><div class="subchips">{subchips}</div>
 <h2 class="sec">The flow, phase by phase</h2>{legend}{phases}
 <h2 class="sec">Sprint evaluation</h2>
-<div class="eval"><div class="eval-top"><span class="badge {eval_cls}">sprint 1: {html.escape(d.evaluated)}</span>
+<div class="eval"><div class="eval-top"><span class="badge {eval_cls}">sprint 1: {html.escape(eval_label)}</span>
 <span class="score">score {"1.00" if d.ok else "0.40"}</span></div>
 <div class="bar"><span style="width:{pct}%"></span></div><p class="notes">{html.escape(eval_note)}</p></div>
 <h2 class="sec">Artifacts produced</h2>{arts}
@@ -630,9 +644,15 @@ def _reverify(repo: Path) -> tuple[bool, list[GateRow]]:
     if quality.exists():
         checks = json.loads(quality.read_text(encoding="utf-8")).get("checks", [])
         failed: list[str] = []
+        gamed: list[str] = []
         for check in checks:
             cmd = str(check.get("command", ""))
             if not cmd:
+                continue
+            # Independently detect a gamed gate: a byte-compiler / no-op re-runs green but proves
+            # nothing. The harness's own hands must not be fooled by a command that always passes.
+            if is_noop_quality_command(cmd):
+                gamed.append(str(check.get("name", "?")))
                 continue
             rerun = subprocess.run(["bash", "-c", cmd], cwd=repo, capture_output=True, text=True)
             if rerun.returncode != 0:
@@ -644,11 +664,12 @@ def _reverify(repo: Path) -> tuple[bool, list[GateRow]]:
         gate(
             "Code quality (fmt/lint/types)",
             "re-run recorded checks",
-            not failed and not missing,
+            not failed and not missing and not gamed,
             f"re-ran {names or 'none'}"
             + (f"; RED: {', '.join(failed)}" if failed else "")
+            + (f"; GAMED (no-op cmd): {', '.join(gamed)}" if gamed else "")
             + (f"; MISSING kind(s): {', '.join(sorted(missing))}" if missing else "")
-            + ("" if (failed or missing) else " — all three kinds clean"),
+            + ("" if (failed or missing or gamed) else " — all three kinds clean"),
         )
     return ok, rows
 
@@ -740,7 +761,7 @@ def main() -> int:
             event_bus=bus,
             max_concurrent_runs=1,
         )
-        for _ in range(1, 5):
+        for _ in range(1, 9):
             task = ledger.tasks.get("t1")
             if task is None or task.status in (TaskStatus.DONE, TaskStatus.BLOCKED):
                 break
@@ -766,6 +787,20 @@ def main() -> int:
         landed = bool(ledger.artifacts.list_for_task("t1"))
         reverify_ok, reverify_rows = _reverify(repo) if repo.exists() else (False, [])
         ok = landed and reverify_ok
+
+        # The badge must name the TRUE final outcome, not the last intermediate review disposition. A
+        # timeout is "incomplete — budget exhausted" (resume it), NOT "needs-changes" (which means a
+        # reviewer looked and wants edits). Derive from the run's actual status + fault, not RUN_EVALUATED.
+        final_runs = ledger.runs.for_task("t1")
+        final_run = final_runs[-1] if final_runs else None
+        if ok:
+            disposition = "passed"
+        elif final_run is not None and "Timeout" in str(final_run.outcome):
+            disposition = "incomplete — beat budget exhausted (timed out); resume to continue"
+        elif final_run is not None and final_run.status is RunStatus.FAILED:
+            disposition = bus.cap.evaluated or "failed"
+        else:
+            disposition = bus.cap.evaluated or "did not land"
 
         cap = bus.cap
         total_calls = sum(
@@ -803,6 +838,8 @@ def main() -> int:
         for p in sources[:8]:
             artifacts.append((str(p.relative_to(repo)), _read(p)))
         for name in (
+            "TODO.md",  # the durable cross-beat checklist (resume point) — surfaced so a timed-out
+            # beat's progress is visible, not just implied.
             "test_plan.json",
             "test_evidence/manifest.json",
             "security_scan/report.json",
@@ -814,7 +851,7 @@ def main() -> int:
         data = ReportData(
             intent=_INTENT,
             ok=ok,
-            evaluated=cap.evaluated,
+            evaluated=disposition,
             reverify_rows=tuple(reverify_rows),
             gate_rows=tuple(reverify_rows),
             stack=_detect_stack(repo) if repo.exists() else (),
