@@ -41,7 +41,9 @@ def default_landers(company_root: Path, *, ledger: SqliteLedger | None = None) -
     """
     landers: list[OutcomeLander] = [
         engineer_lander(company_root),
-        pm_lander(company_root),
+        pm_lander(
+            company_root, ledger
+        ),  # ledger (when present) also renders the §10 decision packet
         analyst_lander(company_root),
         marketer_lander(company_root),
         designer_lander(company_root),

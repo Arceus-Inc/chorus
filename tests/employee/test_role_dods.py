@@ -1,7 +1,7 @@
 """Each role's DoD generator returns the archetype its outcome needs (spec 04 §1).
 
 Covers the full archetype surface across the default workforce: ReviewedBuild (engineer),
-HumanApproval (reviewer), AgentReview (pm / manager / analyst). The objective Command archetype is
+HumanApproval (reviewer), AgentReview (manager / analyst). The objective Command archetype is
 exercised live (examples/analyst_live_command_dod.py) and at the verifier/enforcement level
 (tests/outcomes/test_verifier.py, tests/heartbeat/test_dod_enforcement.py).
 """
@@ -14,7 +14,6 @@ from chorus.outcomes import DoDKind, Verifier
 from chorus_employee.analyst import analyst_plugin
 from chorus_employee.engineer import engineer_plugin
 from chorus_employee.manager import manager_plugin
-from chorus_employee.pm import pm_plugin
 from chorus_employee.reviewer import reviewer_plugin
 
 pytestmark = pytest.mark.unit
@@ -26,7 +25,6 @@ def test_each_role_dod_returns_the_expected_archetype() -> None:
     cases = {
         "engineer": (engineer_plugin, DoDKind.REVIEWED_BUILD),
         "reviewer": (reviewer_plugin, DoDKind.HUMAN_APPROVAL),
-        "pm": (pm_plugin, DoDKind.AGENT_REVIEW),
         "manager": (manager_plugin, DoDKind.AGENT_REVIEW),
         "analyst": (analyst_plugin, DoDKind.AGENT_REVIEW),
     }

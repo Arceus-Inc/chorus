@@ -37,6 +37,7 @@ from chorus.trust import TrustPolicy
 from chorus.workforce import Employee
 from chorus.workspace import CompanyWorkspace, default_work_root
 from chorus_employee import default_landers
+from chorus_harness._skills import materialize_skills
 from chorus_harness._trust import apply_trust
 from chorus_tools import (
     AssignTaskTool,
@@ -45,6 +46,7 @@ from chorus_tools import (
     DesignExemplarTool,
     DesignLintTool,
     GoLiveTool,
+    RecordDecisionTool,
     SubmitTaskTool,
     SubmitVerdictTool,
     analysis_tool,
@@ -121,6 +123,10 @@ _CHORUS_TO_DREAM_TOOL: dict[str, str] = {
     # stage_go_live gate is APPROVED (fail-closed + idempotent). Registered in materialize (needs
     # ledger for the gate check + the worktree for the draft/delivery indexes).
     "execute_go_live": "execute_go_live",
+    # record_decision — the §10 Decision OS write: the PM records an immutable, cited decision as
+    # ledger rows (via _capability_tool, needs the ledger). Identity-mapped so dream_tool_names keeps
+    # it and the subagent projection can intersect it; _role_registry skips it (no built-in).
+    "record_decision": "record_decision",
 }
 
 _READ_ONLY_DREAM_SURFACE_TOOLS = frozenset(
@@ -141,7 +147,9 @@ _READ_ONLY_DREAM_SURFACE_TOOLS = frozenset(
 
 def dream_tool_names(chorus_tools: tuple[str, ...]) -> tuple[str, ...]:
     """Map a role's chorus tool allow-list to dream built-in names, dropping chorus-only tools."""
-    return tuple(_CHORUS_TO_DREAM_TOOL[name] for name in chorus_tools if name in _CHORUS_TO_DREAM_TOOL)
+    return tuple(
+        _CHORUS_TO_DREAM_TOOL[name] for name in chorus_tools if name in _CHORUS_TO_DREAM_TOOL
+    )
 
 
 def _project_spec(spec: SubagentSpec, parent_tools: frozenset[str]) -> Subagent:
@@ -207,7 +215,11 @@ def _capability_tool(name: str, ledger: SqliteLedger | None) -> BaseTool | None:
     if name == "stage_go_live":
         return GoLiveTool(ledger)
     if name == "brand_lint":
-        return BrandLintTool()  # pure file reader — the ledger arg is unused (kept for a uniform seam)
+        return (
+            BrandLintTool()
+        )  # pure file reader — the ledger arg is unused (kept for a uniform seam)
+    if name == "record_decision":
+        return RecordDecisionTool(ledger)
     if name == "design_lint":
         return DesignLintTool()  # pure file reader — same uniform seam as brand_lint
     if name == "design_exemplar":
@@ -241,13 +253,16 @@ def _team_roster(ledger: SqliteLedger, *, exclude: str) -> str:
     lines = [f"- {emp.id} ({emp.role})" for emp in reports]
     body = "\n".join(lines) if lines else "(no other employees are currently hired)"
     roster = (
-        "\n\n## Your reports (assign each subtask's `assignee` to one of these employee ids)\n" + body
+        "\n\n## Your reports (assign each subtask's `assignee` to one of these employee ids)\n"
+        + body
     )
     manager_reports = [emp for emp in reports if emp.role == "manager"]
     if manager_reports:
         ids = ", ".join(emp.id for emp in manager_reports)
         roster += (
-            "\n\n## You are a director — delegate whole AREAS to your manager reports (" + ids + ")\n"
+            "\n\n## You are a director — delegate whole AREAS to your manager reports ("
+            + ids
+            + ")\n"
             "Some of your reports are themselves managers who run their own teams. Delegate a COMPLETE, "
             "self-contained AREA (a multi-file sub-goal) to each manager — NOT a single file — and let "
             "each manager sub-decompose its area into their own engineers. Do NOT break the goal down "
@@ -425,7 +440,11 @@ class EmployeeHarnessFactory:
         ).runner
 
     def materialize(
-        self, employee: Employee, *, task_id: str | None = None, review_worktree_of: str | None = None
+        self,
+        employee: Employee,
+        *,
+        task_id: str | None = None,
+        review_worktree_of: str | None = None,
     ) -> EmployeeHarness:
         """Resolve ``employee``'s role into a configured dream harness in its isolated worktree.
 
@@ -496,7 +515,9 @@ class EmployeeHarnessFactory:
             root = self._company_root / employee.id
         root.mkdir(parents=True, exist_ok=True)
         write_role_overlays(root, config)  # the employee's identity overlays the whole harness
-        write_sandbox_config(root, config.sandbox)  # the role's trust posture → .harness/sandbox.toml
+        write_sandbox_config(
+            root, config.sandbox
+        )  # the role's trust posture → .harness/sandbox.toml
 
         registry = _role_registry(dream_tool_names(config.tools))
         # Bind the role's chorus capability tools. The ledger-free ones (pure file readers:
@@ -545,9 +566,13 @@ class EmployeeHarnessFactory:
 
         # Every build_harness knob comes from the role config — this is where the employee *becomes*
         # its harness. config.model overrides the deployment when set; an empty role env means None.
+        # Skills: materialize the role's bundle *into* the worktree (read-only, git-excluded) so the
+        # model can reach the bundled reference files with its worktree-confined read_file — then point
+        # dream's registry at that in-worktree copy, so SKILL.md load and reference reads share a path.
         skill_registry = None
         if config.skills_root:
-            skill_registry, _shadows = load_skill_registry(project_dirs=[Path(config.skills_root)])
+            skills_dir = materialize_skills(root, config.skills_root)
+            skill_registry, _shadows = load_skill_registry(project_dirs=[skills_dir])
         harness = dream.build_harness(
             model=config.model or self._deployment,
             api_key=self._api_key,
@@ -571,7 +596,9 @@ class EmployeeHarnessFactory:
                 pricing=self._pricing,
                 max_sprints=config.max_sprints,  # the role's per-beat sprint budget (spec 05)
                 # A research-heavy role widens its beat wall-clock past the org default (spec 06).
-                timeout_s=config.beat_timeout_s if config.beat_timeout_s is not None else self._timeout_s,
+                timeout_s=config.beat_timeout_s
+                if config.beat_timeout_s is not None
+                else self._timeout_s,
                 working_dir=root,
                 employee_id=employee.id,  # stamped into each beat's context for capability tools
             ),
