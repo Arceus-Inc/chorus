@@ -7,6 +7,8 @@ role as a per-role overlay (see :func:`chorus_harness.write_role_overlays`).
 
 from __future__ import annotations
 
+from chorus_employee._resume import RESUME_DIRECTIVE
+
 # The conventional file a PM writes its plan to, in its worktree. The lander snapshots this file as the
 # ``doc`` artifact, so the brief and the lander must name the same path.
 PM_PLAN_DOC = "plan.md"
@@ -75,5 +77,7 @@ PM_BRIEF = (
     f"write a one-line summary and end your turn. Do NOT keep editing `{PM_PLAN_DOC}` or record again: "
     "one red-teamed, recorded decision plus its plan file IS the finished deliverable."
 )
+
+PM_BRIEF = PM_BRIEF + "\n\n" + RESUME_DIRECTIVE
 
 __all__ = ["PM_BRIEF", "PM_PLAN_DOC"]

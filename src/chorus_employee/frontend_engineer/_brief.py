@@ -24,6 +24,8 @@ standard, stack-independent *verification* entry points, not a mandate about how
 
 from __future__ import annotations
 
+from chorus_employee._resume import RESUME_DIRECTIVE
+
 # --- the evidence contract (the ONE fixed, framework-agnostic layout brief/DoD/test_evidence share) ---
 #
 # Deliberately says NOTHING about the app's entry file, language, directory layout, or stack — those are
@@ -185,6 +187,8 @@ FRONTEND_ENGINEER_BRIEF = (
     "works; run everything you write and capture the real output; make it accessible by construction; "
     "never fabricate a result or skip a failing test to go green; never force-push."
 )
+
+FRONTEND_ENGINEER_BRIEF = FRONTEND_ENGINEER_BRIEF + "\n\n" + RESUME_DIRECTIVE
 
 __all__ = [
     "E2E_TEST_LOG",

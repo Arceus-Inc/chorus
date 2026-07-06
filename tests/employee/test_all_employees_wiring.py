@@ -35,6 +35,15 @@ def test_every_employee_gets_todo_write(registry: RoleRegistry, role: str) -> No
     assert "todo_write" in plugin.manifest.tools, f"{role} is missing todo_write"
 
 
+@pytest.mark.parametrize("role", EMPLOYEES)
+def test_every_employee_brief_directs_todo_write_usage(registry: RoleRegistry, role: str) -> None:
+    # Granting the tool is not enough — without a brief directive the model never keeps a checklist
+    # (proven: the 5 non-backend employees had the tool but wrote no TODO.md). The brief must instruct it.
+    brief = registry.get(role).manifest.system_prompt
+    assert "todo_write" in brief, f"{role} brief never mentions the todo_write tool"
+    assert "TODO.md" in brief, f"{role} brief never mentions the durable TODO.md checklist"
+
+
 def test_todo_write_maps_to_a_real_dream_builtin() -> None:
     # The chorus->dream map must keep todo_write (it was silently dropped once) so the harness enables it.
     assert dream_tool_names(("todo_write",)) == ("todo_write",)

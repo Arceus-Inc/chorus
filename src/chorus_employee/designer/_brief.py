@@ -15,6 +15,8 @@ ships UI to a user's screen without a gate.
 
 from __future__ import annotations
 
+from chorus_employee._resume import RESUME_DIRECTIVE
+
 # The system doc (READ) — the machine-readable design system the Designer grounds every choice in.
 # Google's open DESIGN.md format: YAML tokens up top, prose rationale + guardrails below (designer §10).
 DESIGN_SYSTEM_DOC = "DESIGN.md"
@@ -161,5 +163,7 @@ DESIGNER_BRIEF = (
     "House rules: read the system first; design to the tokens; reach for the real component; specify "
     "every state; make it accessible by construction; cite every choice; escalate drift, never invent."
 )
+
+DESIGNER_BRIEF = DESIGNER_BRIEF + "\n\n" + RESUME_DIRECTIVE
 
 __all__ = ["DESIGNER_BRIEF", "DESIGN_SPEC_DOC", "DESIGN_SYSTEM_DOC"]
