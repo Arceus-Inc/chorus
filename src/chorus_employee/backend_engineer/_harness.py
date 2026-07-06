@@ -86,7 +86,7 @@ def backend_engineer_manifest() -> RoleManifest:
         # (durability proof), and runs the full test sandwich (test_author + api_verifier + test_evidence),
         # each spending real wall-clock (installs, server polls, sleeps, subprocesses) on top of many
         # model turns. The 90s default is far too tight; a real multi-file service lands around 10-15 min.
-        beat_timeout_s=600.0,
+        beat_timeout_s=900.0,
         # — run-lease TTL — must OUTLIVE the beat's own wall-clock budget so the stale-run reaper never
         # claims a beat that is still legitimately running.
         lease_ttl_s=1200.0,
