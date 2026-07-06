@@ -1,0 +1,177 @@
+intent: Build a single-page bill-splitting helper. Someone enters the bill amount, chooses or types a tip percentage, and sets how many people are sharing the bill; the page immediately shows the tip in money, the grand total including tip, and the amount each person pays. It should behave sensibly when the inputs are still empty or not yet valid rather than showing broken or nonsensical numbers.
+
+  [tool ->] git  {'args': ['status', '--porcelain']}
+  [tool <-] git
+  [tool ->] bash  {'command': 'dir', 'timeout_seconds': 120}
+  [tool <-] bash
+  [tool ->] bash  {'command': 'if exist DESIGN.md (type DESIGN.md) else (echo NO_DESIGN_MD)', 'timeout_seconds': 120}
+  [tool <-] bash
+  [tool ->] write_file  {'path': 'index.html', 'content': '<!doctype html>\n<html lang="en">\n  <head>\n    <meta charset="utf-8" />\n    <meta name="viewport" content="width=device-width, initial-scale=1" />\n    <title>Tip + Bill Splitter</title>\n    <style>\n      :root {\n        --bg: #0b1220;\n        --panel: #111a2e;\n        --text: #eef2ff;\n        --muted: #c7d2fe;\n        --border: #2a3a62;\n        --focus: #fbbf24;\n        --danger: #fecaca;\n      }\n\n      * { box-sizing: border-box; }\n\n      bod...
+  [tool <-] write_file
+  [tool ->] write_file  {'path': 'src/calc.js', 'content': "/**\n * Pure calculation + parsing helpers for the tip splitter.\n */\n\nexport function clampNumber(n, { min = -Infinity, max = Infinity } = {}) {\n  if (!Number.isFinite(n)) return null;\n  if (n < min) return min;\n  if (n > max) return max;\n  return n;\n}\n\n/**\n * Parse a numeric input from a string or number.\n * Returns: { value: number|null, kind: 'empty'|'invalid'|'ok' }\n */\nexport function parseNumberLike(value) {\n  if (value === null || value =...
+  [tool <-] write_file
+  [tool ->] write_file  {'path': 'src/app.js', 'content': 'import { computeSplit, formatUSD, sanitizeInputs } from \'./calc.js\';\n\nconst els = {\n  bill: document.querySelector(\'#billAmount\'),\n  tipSelect: document.querySelector(\'#tipPercent\'),\n  customTipField: document.querySelector(\'#customTipField\'),\n  customTip: document.querySelector(\'#customTip\'),\n  people: document.querySelector(\'#peopleCount\'),\n  tipAmount: document.querySelector(\'#tipAmount\'),\n  totalAmount: document.querySelector(\'#total...
+  [tool <-] write_file
+  [tool ->] write_file  {'path': 'tests/calc.test.js', 'content': "import test from 'node:test';\nimport assert from 'node:assert/strict';\n\nimport {\n  computeSplit,\n  formatUSD,\n  parseNumberLike,\n  sanitizeInputs,\n  canCompute,\n} from '../src/calc.js';\n\ntest('parseNumberLike: empty vs invalid vs ok', () => {\n  assert.deepEqual(parseNumberLike(''), { value: null, kind: 'empty' });\n  assert.deepEqual(parseNumberLike('   '), { value: null, kind: 'empty' });\n  assert.deepEqual(parseNumberLike(null), { value: ...
+  [tool <-] write_file
+  [tool ->] write_file  {'path': 'package.json', 'content': '{\n  "name": "run-tip-bill-splitter-app",\n  "private": true,\n  "type": "module",\n  "scripts": {\n    "test": "node --test",\n    "e2e": "playwright test"\n  },\n  "devDependencies": {\n    "@playwright/test": "^1.55.0"\n  }\n}\n'}
+  [tool <-] write_file
+  [tool ->] write_file  {'path': 'playwright.config.js', 'content': "import { defineConfig } from '@playwright/test';\n\nexport default defineConfig({\n  testDir: './e2e',\n  timeout: 30_000,\n  use: {\n    baseURL: 'http://127.0.0.1:4173',\n    headless: true,\n  },\n  webServer: {\n    command: 'python -m http.server 4173',\n    url: 'http://127.0.0.1:4173',\n    reuseExistingServer: true,\n  },\n});\n"}
+  [tool <-] write_file
+  [tool ->] write_file  {'path': 'e2e/tip-splitter.spec.js', 'content': "import { test, expect } from '@playwright/test';\n\ntest('splits a bill with a preset tip', async ({ page }) => {\n  await page.goto('/');\n\n  await page.getByLabel('Bill amount ($)').fill('100');\n  await page.getByLabel('Tip percentage (%)').selectOption('15');\n  await page.getByLabel('People sharing').fill('4');\n\n  await expect(page.getByText('Tip amount').locator('..').getByText('$15.00')).toBeVisible();\n  await expect(page.getByText('Tot...
+  [tool <-] write_file
+  [tool ->] bash  {'command': 'if not exist node_modules (npm install)', 'timeout_seconds': 600}
+  [tool <-] bash
+  [tool ->] bash  {'command': 'if not exist test_evidence (mkdir test_evidence)', 'timeout_seconds': 120}
+  [tool <-] bash
+  [tool ->] bash  {'command': 'npm test > test_evidence\\unit.txt 2>&1', 'timeout_seconds': 600}
+  [tool <-] bash
+  [tool ->] bash  {'command': 'npx playwright test > test_evidence\\e2e.txt 2>&1', 'timeout_seconds': 600}
+  [tool <-] bash (ERROR)
+  [tool ->] bash  {'command': 'type test_evidence\\unit.txt && echo. && type test_evidence\\e2e.txt', 'timeout_seconds': 120}
+  [tool <-] bash
+  [tool ->] write_file  {'path': 'test_evidence/summary.md', 'content': '# Sprint 1 — Tip + bill splitter (run-tip)\n\n## What I built\nA single-page, dependency-light tip + bill splitting helper (served as static files) with live-updating results.\n\n- **Entry point:** `index.html`\n- **UI wiring:** `src/app.js`\n- **Pure logic (unit-testable):** `src/calc.js`\n\n### User-visible behavior (definition of working)\nOn one page, the user can enter:\n1) **Bill amount** (dollars),\n2) **Tip percentage** (preset select or c...
+  [tool <-] write_file
+  [tool ->] spawn_subagent  {'name': 'code_reviewer', 'prompt': 'Review the tip + bill splitter app implementation for correctness vs acceptance criteria, accessibility by construction (labels, keyboard, focus), stability (no NaN/Infinity), module structure, and whether unit/e2e tests genuinely prove behavior. Return PASS/FAIL with blocker/major/minor issues.'}
+  [tool ->] test_evidence  {}
+  [tool <-] test_evidence
+  [tool ->] read_file  {'path': 'test_evidence/e2e.txt', 'limit': 200}
+  [tool <-] read_file
+  [tool ->] read_file  {'path': 'index.html', 'limit': 260}
+  [tool <-] read_file
+  [tool ->] git  {'args': ['status', '--porcelain']}
+  [tool <-] git (ERROR)
+  [tool ->] read_file  {'path': 'index.html', 'offset': 0, 'limit': 260}
+  [tool <-] read_file
+  [tool ->] read_file  {'path': 'src/app.js', 'limit': 220}
+  [tool <-] read_file
+  [tool ->] read_file  {'path': 'src/calc.js', 'limit': 220}
+  [tool <-] read_file
+  [tool ->] read_file  {'path': 'e2e/tip-splitter.spec.js', 'limit': 200}
+  [tool <-] read_file
+  [tool ->] read_file  {'path': 'tests/calc.test.js', 'limit': 220}
+  [tool <-] read_file
+  [tool ->] read_file  {'path': 'index.html', 'offset': 260, 'limit': 260}
+  [tool <-] read_file
+  [tool ->] read_file  {'path': 'index.html', 'offset': 120, 'limit': 180}
+  [tool <-] read_file
+  [tool ->] read_file  {'path': 'index.html', 'offset': 0, 'limit': 140}
+  [tool <-] read_file
+  [tool ->] read_file  {'path': 'index.html', 'offset': 140, 'limit': 140}
+  [tool <-] read_file
+  [tool ->] read_file  {'path': 'index.html', 'offset': 160, 'limit': 120}
+  [tool <-] read_file
+  [tool ->] read_file  {'path': 'index.html', 'offset': 180, 'limit': 120}
+  [tool <-] read_file
+  [tool ->] read_file  {'path': 'index.html', 'offset': 195, 'limit': 120}
+  [tool <-] read_file
+  [tool <-] spawn_subagent
+  [tool ->] spawn_subagent  {'name': 'ui_tester', 'prompt': 'Audit the proof: do the Playwright tests really drive the UI and assert user-visible outcomes? Are logs captured and green-looking? Any flakiness risks? Return PASS/FAIL with blocker/major/minor issues.'}
+  [tool ->] test_evidence  {}
+  [tool <-] test_evidence
+  [tool ->] read_file  {'path': 'test_evidence/e2e.txt', 'limit': 2000}
+  [tool <-] read_file
+  [tool ->] read_file  {'path': 'e2e', 'limit': 50}
+  [tool <-] read_file (ERROR)
+  [tool ->] bash  {'command': 'dir /s /b e2e', 'timeout_seconds': 120}
+  [tool <-] bash (ERROR)
+  [tool ->] read_file  {'path': 'index.html', 'limit': 2000}
+  [tool <-] read_file
+  [tool ->] read_file  {'path': 'e2e/tip-splitter.spec.js', 'limit': 2000}
+  [tool <-] read_file
+  [tool <-] spawn_subagent
+  [tool ->] bash  {'command': 'powershell -NoProfile -Command "Select-String -Path test_evidence\\e2e.txt -Pattern \'failed|passed|strict mode\' -Context 0,2"', 'timeout_seconds': 120}
+  [tool <-] bash
+  [tool ->] write_file  {'path': 'index.html', 'content': '<!doctype html>\n<html lang="en">\n  <head>\n    <meta charset="utf-8" />\n    <meta name="viewport" content="width=device-width, initial-scale=1" />\n    <title>Tip + Bill Splitter</title>\n    <style>\n      :root {\n        --bg: #0b1220;\n        --panel: #111a2e;\n        --text: #eef2ff;\n        --muted: #c7d2fe;\n        --border: #2a3a62;\n        --focus: #fbbf24;\n        --danger: #fecaca;\n      }\n\n      * { box-sizing: border-box; }\n\n      bod...
+  [tool <-] write_file
+  [tool ->] write_file  {'path': 'e2e/tip-splitter.spec.js', 'content': "import { test, expect } from '@playwright/test';\n\ntest('splits a bill with a preset tip', async ({ page }) => {\n  await page.goto('/');\n\n  await page.getByLabel('Bill amount ($)').fill('100');\n  await page.getByLabel('Tip preset (%)').selectOption('15');\n  await page.getByLabel('People sharing').fill('4');\n\n  await expect(page.locator('#tipAmount')).toHaveText('$15.00');\n  await expect(page.locator('#totalAmount')).toHaveText('$115.00');...
+  [tool <-] write_file
+  [tool ->] bash  {'command': 'npm test > test_evidence\\unit.txt 2>&1', 'timeout_seconds': 600}
+  [tool <-] bash
+  [tool ->] bash  {'command': 'npx playwright test > test_evidence\\e2e.txt 2>&1', 'timeout_seconds': 600}
+  [tool <-] bash
+  [tool ->] bash  {'command': 'powershell -NoProfile -Command "Select-String -Path test_evidence\\\\e2e.txt -Pattern \'passed|failed\' -Context 0,2"', 'timeout_seconds': 120}
+  [tool <-] bash
+  [tool ->] write_file  {'path': 'test_evidence/summary.md', 'content': '# Sprint 1 — Tip + bill splitter (run-tip)\n\n## What I built\nA single-page, dependency-light tip + bill splitting helper (served as static files) with live-updating results.\n\n- **Entry point:** `index.html`\n- **UI wiring:** `src/app.js`\n- **Pure logic (unit-testable):** `src/calc.js`\n\n### User-visible behavior (definition of working)\nOn one page, the user can enter:\n1) **Bill amount** (dollars),\n2) **Tip preset** (select a common percen...
+  [tool <-] write_file
+  [tool ->] spawn_subagent  {'name': 'code_reviewer', 'prompt': 'Re-review after fixes: confirm single <main> landmark, labels are unique, e2e tests robust, and acceptance criteria met. PASS/FAIL with issues.'}
+  [tool ->] test_evidence  {}
+  [tool <-] test_evidence
+  [tool ->] read_file  {'path': 'index.html'}
+  [tool <-] read_file
+  [tool ->] bash  {'command': 'dir'}
+  [tool <-] bash (ERROR)
+  [tool ->] read_file  {'path': 'test_evidence/summary.md'}
+  [tool <-] read_file
+  [tool ->] read_file  {'path': 'test_evidence/unit.txt'}
+  [tool <-] read_file
+  [tool ->] read_file  {'path': 'test_evidence/e2e.txt'}
+  [tool <-] read_file
+  [tool ->] read_file  {'path': 'src/app.js'}
+  [tool <-] read_file
+  [tool ->] read_file  {'path': 'src/calc.js'}
+  [tool <-] read_file
+  [tool ->] read_file  {'path': 'e2e/tip-splitter.spec.js'}
+  [tool <-] read_file
+  [tool ->] read_file  {'path': 'tests/calc.test.js'}
+  [tool <-] read_file
+  [tool ->] read_file  {'path': '20260705-105521-read_file-b1c17e1e73b4.txt', 'offset': 0, 'limit': 220}
+  [tool <-] read_file (ERROR)
+  [tool ->] read_file  {'path': 'index.html', 'offset': 0, 'limit': 260}
+  [tool <-] read_file
+  [tool ->] read_file  {'path': '20260705-105531-read_file-b9b10f18a376.txt', 'offset': 240, 'limit': 220}
+  [tool <-] read_file (ERROR)
+  [tool ->] read_file  {'path': 'index.html', 'offset': 260, 'limit': 260}
+  [tool <-] read_file
+  [tool ->] read_file  {'path': 'index.html', 'offset': 160, 'limit': 140}
+  [tool <-] read_file
+  [tool ->] read_file  {'path': 'index.html', 'offset': 180, 'limit': 120}
+  [tool <-] read_file
+  [tool ->] read_file  {'path': 'index.html', 'offset': 196, 'limit': 120}
+  [tool <-] read_file
+  [tool <-] spawn_subagent
+  [tool ->] spawn_subagent  {'name': 'ui_tester', 'prompt': 'Re-audit Playwright flow + logs after rerun. Confirm e2e is green and asserts user-visible currency outputs. PASS/FAIL with issues.'}
+  [tool ->] test_evidence  {}
+  [tool <-] test_evidence
+  [tool ->] read_file  {'path': 'test_evidence/e2e.txt'}
+  [tool <-] read_file
+  [tool ->] read_file  {'path': 'e2e/currency-converter.spec.js'}
+  [tool <-] read_file (ERROR)
+  [tool ->] read_file  {'path': 'e2e/smoke.spec.js'}
+  [tool <-] read_file (ERROR)
+  [tool ->] read_file  {'path': 'index.html'}
+  [tool <-] read_file
+  [tool ->] read_file  {'path': 'e2e/tip-splitter.spec.js'}
+  [tool <-] read_file
+  [tool <-] spawn_subagent
+  [tool ->] test_evidence  {}
+  [tool <-] test_evidence
+  [tool ->] bash  {'command': 'Q:\\projects\\inspired-arc\\chorus\\.venv\\Scripts\\python.exe -c "import base64;exec(base64.b64decode(\'aW1wb3J0IG9zLCByZSwgc3lzCgpDSEVDS1MgPSBbeydraW5kJzogJ2V4aXN0cycsICdwYXRoJzogJ2luZGV4Lmh0bWwnfSwgeydraW5kJzogJ2dsb2JfbWluJywgJ3BhdHRlcm4nOiAndGVzdHMvKiovKi50ZXN0LionLCAnY291bnQnOiAxfSwgeydraW5kJzogJ2dsb2JfbWluJywgJ3BhdHRlcm4nOiAnZTJlLyoqLyouc3BlYy4qJywgJ2NvdW50JzogMX0sIHsna2luZCc6ICdleGlzdHMnLCAncGF0aCc6ICd0ZXN0X2V2aWRlbmNlL3VuaXQudHh0J30sIHsna2luZCc6ICdhbnlfcmVnZXgnLCAncGF0aCc6IC...
+  [tool <-] bash
+  [tool ->] read_file  {'path': 'index.html'}
+  [tool <-] read_file
+  [tool ->] read_file  {'path': 'test_evidence/summary.md'}
+  [tool <-] read_file
+  [tool ->] read_file  {'path': 'test_evidence/unit.txt', 'limit': 120}
+  [tool <-] read_file
+  [tool ->] read_file  {'path': 'test_evidence/e2e.txt', 'limit': 120}
+  [tool <-] read_file
+  [tool ->] git  {'args': ['diff', '--name-only']}
+  [tool <-] git
+  [tool ->] read_file  {'path': 'src/calc.js'}
+  [tool <-] read_file
+  [tool ->] read_file  {'path': 'src/app.js'}
+  [tool <-] read_file
+  [tool ->] read_file  {'path': 'tests/calc.test.js'}
+  [tool <-] read_file
+  [tool ->] read_file  {'path': 'e2e/tip-splitter.spec.js'}
+  [tool <-] read_file
+  [tool ->] read_file  {'path': 'playwright.config.js'}
+  [tool <-] read_file
+  [EVALUATED] {'sprint_number': 1, 'outcome': 'pass', 'score': 1.0, 'notes': 'All required inputs/outputs are present on index.html, calculations live-update safely (no NaN/Infinity/negatives), money is formatted to 2 decimals, accessibility labeling/keyboard use is supported, and both unit + Playwright e2e suites have real passing logs captured in test_evidence/.'}
+== beat done ==
+
+[verdict] dod_floor=pass
+[verdict] unit_reverify_exit=0
+[verdict] e2e_reverify_exit=0
+[verdict] truly_passed=True

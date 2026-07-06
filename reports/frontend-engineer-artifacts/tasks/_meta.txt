@@ -1,0 +1,8 @@
+key=tasks
+beat_passed=True
+reverify_unit_exit=0
+reverify_e2e_exit=0
+truly_passed=True
+intent=Build a to-do list page. A person can add a task, mark a task as done, and remove a task, and can switch the visible list between all tasks, only the ones still to do, and only the finished ones. Somewhere on screen there is always an accurate count of how many tasks are still unfinished, and it stays correct as tasks are added, completed, and removed.
+working_dir=q:\projects\inspired-arc\chorus\.chorus\work\frontend-eng-hard-tasks\worktrees\finn
+summary=plan complete: 1/1 steps done

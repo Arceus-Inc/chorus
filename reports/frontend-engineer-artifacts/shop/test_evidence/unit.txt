@@ -1,0 +1,14 @@
+
+> shop@0.0.0 test
+> vitest run src
+
+
+[1m[46m RUN [49m[22m [36mv3.2.4 [39m[90mq:/projects/inspired-arc/chorus/.chorus/work/frontend-eng-hard-shop/worktrees/finn[39m
+
+ [32m✓[39m src/cart/cart.test.ts [2m([22m[2m9 tests[22m[2m)[22m[32m 28[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m1 passed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[32m9 passed[39m[22m[90m (9)[39m
+[2m   Start at [22m 12:48:19
+[2m   Duration [22m 2.46s[2m (transform 92ms, setup 203ms, collect 49ms, tests 28ms, environment 1.55s, prepare 249ms)[22m
+

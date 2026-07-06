@@ -1,0 +1,8 @@
+key=rsvp
+beat_passed=True
+reverify_unit_exit=0
+reverify_e2e_exit=0
+truly_passed=True
+intent=Build an event RSVP page. The guest gives their name, an email address, how many people they are bringing, and whether they need a vegetarian meal. The page checks the answers, keeps the confirm/submit action unavailable until everything given is acceptable, tells the guest clearly what is wrong with any individual field in a way that someone using a screen reader would also hear, and on a good submission replaces the form with a confirmation that repeats back what they chose.
+working_dir=q:\projects\inspired-arc\chorus\.chorus\work\frontend-eng-hard-rsvp\worktrees\finn
+summary=plan complete: 1/1 steps done

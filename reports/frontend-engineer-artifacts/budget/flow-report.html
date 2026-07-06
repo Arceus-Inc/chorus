@@ -1,0 +1,1232 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Frontend Engineer — Run Flow Report (budget)</title>
+<style>
+  :root {
+    --bg:#f6f8fa; --card:#ffffff; --ink:#1f2328; --muted:#57606a; --line:#d0d7de;
+    --accent:#0d9488; --accent-soft:#ecfeff;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink);
+    font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; }
+  .wrap { max-width:960px; margin:0 auto; padding:32px 20px 80px; }
+  header.top { background:linear-gradient(135deg,#ecfeff,#f6f8fa); border:1px solid var(--line);
+    border-radius:16px; padding:28px 28px 22px; margin-bottom:22px; }
+  header.top .eyebrow { color:var(--accent); font-weight:700; letter-spacing:.06em;
+    text-transform:uppercase; font-size:12px; }
+  header.top h1 { margin:.2em 0 .3em; font-size:26px; }
+  header.top .intent { color:var(--muted); margin:0; }
+  header.top .intent b { color:var(--ink); }
+  .badge { font-size:12px; font-weight:700; padding:3px 10px; border-radius:999px; }
+  .badge.ok { background:#dcfce7; color:#166534; }
+  .badge.warn { background:#fef9c3; color:#854d0e; }
+  .badge.info { background:var(--accent-soft); color:#0e7490; }
+  .reverify { background:var(--card); border:1px solid var(--line); border-radius:14px;
+    padding:6px 20px 18px; margin:22px 0; }
+  .reverify h2 { font-size:13px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted);
+    margin:16px 0 6px; }
+  .vrow { display:flex; align-items:center; gap:12px; padding:8px 0; border-bottom:1px dashed var(--line); }
+  .vrow:last-of-type { border-bottom:none; }
+  .vlabel { min-width:230px; font-weight:600; font-size:14px; }
+  .vrow .muted { color:var(--muted); font-size:12.5px; }
+  .overall { display:flex; align-items:center; gap:14px; margin-top:14px; padding:14px 16px;
+    border-radius:12px; }
+  .overall.ok { background:#f0fdf4; border:1px solid #bbf7d0; }
+  .overall.warn { background:#fffbeb; border:1px solid #fde68a; }
+  .overall .big { font-size:18px; font-weight:800; letter-spacing:.02em; }
+  .overall.ok .big { color:#166534; }
+  .overall.warn .big { color:#854d0e; }
+  .overall p { margin:0; color:var(--muted); font-size:13px; }
+  .chips { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; margin:22px 0; }
+  .chip { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:14px 16px;
+    color:var(--muted); font-size:12.5px; }
+  .chip span { display:block; font-size:24px; font-weight:750; color:var(--ink); line-height:1.1; }
+  .subchips { display:flex; flex-wrap:wrap; gap:8px; margin:-6px 0 22px; }
+  .subchip { background:#f3e8ff; color:#6b21a8; border:1px solid #e9d5ff; border-radius:999px;
+    padding:4px 12px; font-size:13px; }
+  h2.sec { font-size:15px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted);
+    margin:34px 0 12px; }
+  .legend { display:flex; flex-wrap:wrap; gap:14px; margin-bottom:14px; font-size:12.5px; color:var(--muted); }
+  .leg { display:inline-flex; align-items:center; gap:6px; }
+  .dot { width:9px; height:9px; border-radius:50%; display:inline-block; flex:0 0 auto; }
+  .phase { background:var(--card); border:1px solid var(--line); border-radius:14px;
+    margin-bottom:16px; overflow:hidden; }
+  .phase-head { display:flex; gap:14px; align-items:flex-start; padding:18px 20px 14px;
+    border-bottom:1px solid var(--line); background:#fbfcfe; }
+  .pnum { flex:0 0 auto; width:30px; height:30px; border-radius:50%; background:var(--accent);
+    color:#fff; font-weight:750; display:grid; place-items:center; }
+  .phase-head h3 { margin:2px 0 3px; font-size:17px; }
+  .phase-head p { margin:0; color:var(--muted); font-size:13.5px; }
+  .phase-body { padding:12px 16px 16px; display:flex; flex-direction:column; gap:5px; }
+  .step { display:flex; align-items:center; gap:9px; padding:5px 8px; border-radius:8px; font-size:13.5px; }
+  .step:hover { background:#f6f8fa; }
+  .step .tool { font-weight:650; }
+  .step .arg { color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+    font:12.5px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; }
+  .err { font-size:10.5px; font-weight:700; color:#b91c1c; background:#fee2e2; border-radius:5px;
+    padding:1px 6px; }
+  details.sub { border:1px solid #e9d5ff; border-radius:10px; background:#faf5ff; margin:3px 0; }
+  details.sub > summary { cursor:pointer; list-style:none; padding:8px 12px; display:flex;
+    align-items:center; gap:9px; font-size:13.5px; }
+  details.sub > summary::-webkit-details-marker { display:none; }
+  details.sub > summary::before { content:"▶"; font-size:9px; color:#a855f7; transition:transform .15s; }
+  details.sub[open] > summary::before { transform:rotate(90deg); }
+  details.sub .agent { font-weight:750; color:#6b21a8; }
+  details.sub .count { margin-left:auto; color:var(--muted); font-size:12px; }
+  .subbody { padding:2px 12px 12px 26px; display:flex; flex-direction:column; gap:3px;
+    border-top:1px dashed #e9d5ff; }
+  .empty { color:var(--muted); font-size:13px; padding:6px; }
+  .eval { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px 18px;
+    margin-bottom:12px; }
+  .eval-top { display:flex; align-items:center; gap:12px; }
+  .eval-top .score { margin-left:auto; color:var(--muted); font-size:13px; }
+  .bar { height:8px; background:#eaeef2; border-radius:999px; margin:10px 0 8px; overflow:hidden; }
+  .bar span { display:block; height:100%; background:linear-gradient(90deg,#14b8a6,#0d9488); }
+  .notes { margin:0; color:var(--muted); font-size:13px; }
+  details.art { background:var(--card); border:1px solid var(--line); border-radius:12px;
+    margin-bottom:12px; }
+  details.art > summary { cursor:pointer; padding:14px 18px; font-weight:650; }
+  details.art pre { margin:0; padding:0 18px 18px; white-space:pre-wrap; word-wrap:break-word;
+    font:12.5px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; color:#24292f; }
+  .note { background:#fffbeb; border:1px solid #fde68a; border-radius:12px; padding:14px 18px;
+    color:#854d0e; font-size:13.5px; margin-top:8px; }
+  footer { color:var(--muted); font-size:12px; text-align:center; margin-top:40px; }
+</style></head>
+<body><div class="wrap">
+
+<header class="top">
+  <div class="eyebrow">Chorus · Frontend Engineer (Finn) · task &ldquo;budget&rdquo;</div>
+  <h1>Run Flow Report</h1>
+  <p class="intent"><b>Intent:</b> Build a personal budget tracker that works as a real multi-screen app. A person sees a dashboard summarizing their spending — the total spent this month and a breakdown by category — and can open a full transactions view to browse every transaction, search them by text, and filter by category. They can add a transaction through a form that validates its inputs (a description, a positive amount, a category, and a date) and keeps submit unavailable until everything is valid, telling them clearly what is wrong with each field in a way a screen-reader user also hears. They can open any transaction to see and edit its details, or delete it. Everything they enter survives a page refresh and a browser restart. The whole app must work well from a narrow phone (a single column, no sideways scrolling) up to a wide desktop (a denser, multi-column layout), and moving between the dashboard, the list, a transaction&#x27;s detail, and the add form must use real URLs so the browser&#x27;s back and forward buttons and a shared link all land on the right screen with the right data.</p>
+</header>
+
+<div class="reverify">
+  <h2>Independent verification — did the shipped code actually work?</h2>
+  <div class="vrow"><span class="vlabel">DoD floor (after-beat gate)</span><span class="badge ok">pass</span></div><div class="vrow"><span class="vlabel">Independent unit re-run</span><span class="badge ok">exit 0</span> <span class="muted">npm test, clean process, shipped worktree</span></div><div class="vrow"><span class="vlabel">Independent e2e re-run</span><span class="badge ok">exit 0</span> <span class="muted">npx playwright test, real browser</span></div>
+  <div class="overall ok"><span class="big">TRULY PASSED</span><p>the shipped code passed the DoD floor AND both suites went green again under the harness's own hands</p></div>
+</div>
+
+<div class="chips"><div class="chip"><span>225</span>Total tool calls</div><div class="chip"><span>5</span>Subagents spawned</div><div class="chip"><span>35</span>run_command calls</div><div class="chip"><span>3</span>skills loaded</div><div class="chip"><span>1</span>Sprints</div></div>
+<div class="subchips"><span class="subchip">ui_tester <b>&times;3</b></span><span class="subchip">code_reviewer <b>&times;2</b></span></div>
+
+<h2 class="sec">The flow, phase by phase</h2>
+<div class="legend"><span class="leg"><span class="dot" style="background:#7c3aed"></span>subagent</span><span class="leg"><span class="dot" style="background:#0d9488"></span>run</span><span class="leg"><span class="dot" style="background:#d97706"></span>git</span><span class="leg"><span class="dot" style="background:#2563eb"></span>evidence</span><span class="leg"><span class="dot" style="background:#16a34a"></span>write</span><span class="leg"><span class="dot" style="background:#6b7280"></span>read</span><span class="leg"><span class="dot" style="background:#db2777"></span>skill</span></div>
+<section class="phase"><div class="phase-head"><span class="pnum">0</span><div><h3>Understand &amp; size</h3><p>Read the intent and any existing code, load the craft <b>skill</b> that fits, <b>choose the stack</b> that suits the job, and pick the smallest slice that <em>actually works</em>.</p></div></div><div class="phase-body"><div class="step"><span class="dot" style="background:#db2777"></span><span class="tool">skill</span><span class="arg">spec-to-working-app</span></div><div class="step"><span class="dot" style="background:#db2777"></span><span class="tool">skill</span><span class="arg">choosing-a-frontend-stack</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">cd /d q:\\projects\\inspired-arc\\chorus\\.chorus\\work\\frontend-eng-hard-budget\\workt…</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">glob</span><span class="arg"></span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">glob</span><span class="arg"></span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">glob</span><span class="arg"></span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">docs/exec-plans/active/run-budget.md</span></div><div class="step"><span class="dot" style="background:#db2777"></span><span class="tool">skill</span><span class="arg">scaffolding-with-vite</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">cd /d q:\\projects\\inspired-arc\\chorus\\.chorus\\work\\frontend-eng-hard-budget\\workt…</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">cd /d q:\\projects\\inspired-arc\\chorus\\.chorus\\work\\frontend-eng-hard-budget\\workt…</span></div><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">vite.config.js</span></div></div></section><section class="phase"><div class="phase-head"><span class="pnum">1</span><div><h3>Build the slice</h3><p>Write the running app in the stack it chose — accessible by construction and wired end to end so the behaviour happens in the browser.</p></div></div><div class="phase-body"><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">index.html</span></div><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">src/main.jsx</span></div><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">src/ui/styles.css</span></div><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">src/test/setupTests.js</span></div><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">src/domain/categories.js</span></div><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">src/domain/ids.js</span></div><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">src/domain/transactions.js</span></div><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">src/domain/storage.js</span></div><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">src/domain/state.js</span></div><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">src/ui/BudgetStore.jsx</span></div><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">src/ui/App.jsx</span></div><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">src/ui/pages/NotFoundPage.jsx</span></div><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">src/ui/components/CategoryBreakdown.jsx</span></div><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">src/ui/pages/DashboardPage.jsx</span></div><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">src/ui/pages/TransactionsPage.jsx</span></div><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">src/ui/components/TransactionForm.jsx</span></div><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">src/ui/pages/AddTransactionPage.jsx</span></div><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">src/ui/pages/TransactionDetailPage.jsx</span></div></div></section><section class="phase"><div class="phase-head"><span class="pnum">2</span><div><h3>Author the tests</h3><p>Write <b>unit</b> tests for the logic (in whatever runner the stack uses) and a real-browser <b>Playwright</b> e2e that drives the app the way a user does.</p></div></div><div class="phase-body"><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">package.json</span></div><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">src/domain/transactions.test.js</span></div><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">playwright.config.js</span></div><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">tests/budget-tracker.spec.js</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">cd /d q:\\projects\\inspired-arc\\chorus\\.chorus\\work\\frontend-eng-hard-budget\\workt…</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">cd /d q:\\projects\\inspired-arc\\chorus\\.chorus\\work\\frontend-eng-hard-budget\\workt…</span> <span class="err" title="benign — usually a retry reading an offloaded scratch file or a Windows-only DoD floor probe">err</span></div><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">vitest.config.js</span></div><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">vite.config.js</span></div><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">tests/budget-tracker.spec.js</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">cd /d q:\\projects\\inspired-arc\\chorus\\.chorus\\work\\frontend-eng-hard-budget\\workt…</span> <span class="err" title="benign — usually a retry reading an offloaded scratch file or a Windows-only DoD floor probe">err</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">cd /d q:\\projects\\inspired-arc\\chorus\\.chorus\\work\\frontend-eng-hard-budget\\workt…</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">cd /d q:\\projects\\inspired-arc\\chorus\\.chorus\\work\\frontend-eng-hard-budget\\workt…</span> <span class="err" title="benign — usually a retry reading an offloaded scratch file or a Windows-only DoD floor probe">err</span></div><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">vitest.config.js</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">cd /d q:\\projects\\inspired-arc\\chorus\\.chorus\\work\\frontend-eng-hard-budget\\workt…</span> <span class="err" title="benign — usually a retry reading an offloaded scratch file or a Windows-only DoD floor probe">err</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/domain/transactions.test.js</span></div><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">src/domain/transactions.test.js</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">cd /d q:\\projects\\inspired-arc\\chorus\\.chorus\\work\\frontend-eng-hard-budget\\workt…</span> <span class="err" title="benign — usually a retry reading an offloaded scratch file or a Windows-only DoD floor probe">err</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">cd /d q:\\projects\\inspired-arc\\chorus\\.chorus\\work\\frontend-eng-hard-budget\\workt…</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">cd /d q:\\projects\\inspired-arc\\chorus\\.chorus\\work\\frontend-eng-hard-budget\\workt…</span> <span class="err" title="benign — usually a retry reading an offloaded scratch file or a Windows-only DoD floor probe">err</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">cd /d q:\\projects\\inspired-arc\\chorus\\.chorus\\work\\frontend-eng-hard-budget\\workt…</span> <span class="err" title="benign — usually a retry reading an offloaded scratch file or a Windows-only DoD floor probe">err</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">cd /d q:\\projects\\inspired-arc\\chorus\\.chorus\\work\\frontend-eng-hard-budget\\workt…</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">cd /d q:\\projects\\inspired-arc\\chorus\\.chorus\\work\\frontend-eng-hard-budget\\workt…</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">cd /d q:\\projects\\inspired-arc\\chorus\\.chorus\\work\\frontend-eng-hard-budget\\workt…</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">cd /d q:\\projects\\inspired-arc\\chorus\\.chorus\\work\\frontend-eng-hard-budget\\workt…</span> <span class="err" title="benign — usually a retry reading an offloaded scratch file or a Windows-only DoD floor probe">err</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">cd /d q:\\projects\\inspired-arc\\chorus\\.chorus\\work\\frontend-eng-hard-budget\\workt…</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">cd /d q:\\projects\\inspired-arc\\chorus\\.chorus\\work\\frontend-eng-hard-budget\\workt…</span> <span class="err" title="benign — usually a retry reading an offloaded scratch file or a Windows-only DoD floor probe">err</span></div><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">tests/budget-tracker.spec.js</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">cd /d q:\\projects\\inspired-arc\\chorus\\.chorus\\work\\frontend-eng-hard-budget\\workt…</span> <span class="err" title="benign — usually a retry reading an offloaded scratch file or a Windows-only DoD floor probe">err</span></div><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">tests/budget-tracker.spec.js</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">cd /d q:\\projects\\inspired-arc\\chorus\\.chorus\\work\\frontend-eng-hard-budget\\workt…</span> <span class="err" title="benign — usually a retry reading an offloaded scratch file or a Windows-only DoD floor probe">err</span></div><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">tests/budget-tracker.spec.js</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">cd /d q:\\projects\\inspired-arc\\chorus\\.chorus\\work\\frontend-eng-hard-budget\\workt…</span> <span class="err" title="benign — usually a retry reading an offloaded scratch file or a Windows-only DoD floor probe">err</span></div><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">src/ui/pages/DashboardPage.jsx</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">cd /d q:\\projects\\inspired-arc\\chorus\\.chorus\\work\\frontend-eng-hard-budget\\workt…</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">cd /d q:\\projects\\inspired-arc\\chorus\\.chorus\\work\\frontend-eng-hard-budget\\workt…</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">cd /d q:\\projects\\inspired-arc\\chorus\\.chorus\\work\\frontend-eng-hard-budget\\workt…</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">cd /d q:\\projects\\inspired-arc\\chorus\\.chorus\\work\\frontend-eng-hard-budget\\workt…</span></div></div></section><section class="phase"><div class="phase-head"><span class="pnum">3</span><div><h3>Run &amp; capture the proof</h3><p>Install deps, run both suites, and tee the <em>real</em> output into the durable <code>test_evidence/</code> bundle.</p></div></div><div class="phase-body"><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">test_evidence/summary.md</span></div></div></section><section class="phase"><div class="phase-head"><span class="pnum">4</span><div><h3>Review under pressure</h3><p>Spawn the read-only <b>code_reviewer</b> and <b>ui_tester</b>, self-check with <b>test_evidence</b>, address every blocker/major, and re-run until green.</p></div></div><div class="phase-body"><details class="sub"><summary><span class="dot" style="background:#7c3aed"></span><b>spawn_subagent</b> <span class="agent">code_reviewer</span><span class="count">27 inner calls · 1 benign err</span></summary><div class="subbody"><div class="step"><span class="dot" style="background:#2563eb"></span><span class="tool">test_evidence</span><span class="arg">(scan the worktree)</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">package.json</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">glob</span><span class="arg"></span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">glob</span><span class="arg"></span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">glob</span><span class="arg"></span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">glob</span><span class="arg"></span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">playwright.config.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/domain/transactions.test.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">test_evidence/unit.txt</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">test_evidence/summary.md</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">glob</span><span class="arg"></span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">glob</span><span class="arg"></span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/main.jsx</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/App.jsx</span> <span class="err" title="benign — usually a retry reading an offloaded scratch file or a Windows-only DoD floor probe">err</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/domain/transactions.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/ui/App.jsx</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/ui/BudgetStore.jsx</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/ui/pages/DashboardPage.jsx</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/ui/pages/TransactionsPage.jsx</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/ui/pages/TransactionDetailPage.jsx</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">tests/budget-tracker.spec.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/ui/pages/TransactionsPage.jsx</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/ui/pages/AddTransactionPage.jsx</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/ui/components/TransactionForm.jsx</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/domain/state.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/domain/storage.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/ui/styles.css</span></div></div></details><details class="sub"><summary><span class="dot" style="background:#7c3aed"></span><b>spawn_subagent</b> <span class="agent">ui_tester</span><span class="count">18 inner calls · 2 benign err</span></summary><div class="subbody"><div class="step"><span class="dot" style="background:#2563eb"></span><span class="tool">test_evidence</span><span class="arg">(scan the worktree)</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">glob</span><span class="arg"></span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">glob</span><span class="arg"></span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">glob</span><span class="arg"></span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">package.json</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">playwright.config.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">tests/budget-tracker.spec.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">test_evidence/summary.md</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">test_evidence/unit.txt</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">20260705-211309-read_file-445bf8f63f2c.txt</span> <span class="err" title="benign — usually a retry reading an offloaded scratch file or a Windows-only DoD floor probe">err</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">test_evidence/summary.md</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">20260705-211314-read_file-0d67761d1d7e.txt</span> <span class="err" title="benign — usually a retry reading an offloaded scratch file or a Windows-only DoD floor probe">err</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">glob</span><span class="arg"></span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/ui/App.jsx</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/ui/pages/TransactionDetailPage.jsx</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/ui/pages/TransactionsPage.jsx</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/ui/components/TransactionForm.jsx</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">grep</span><span class="arg"></span></div></div></details><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">cd /d q:\\projects\\inspired-arc\\chorus\\.chorus\\work\\frontend-eng-hard-budget\\workt…</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">cd /d q:\\projects\\inspired-arc\\chorus\\.chorus\\work\\frontend-eng-hard-budget\\workt…</span></div><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">tests/budget-tracker-delete.spec.js</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">cd /d q:\\projects\\inspired-arc\\chorus\\.chorus\\work\\frontend-eng-hard-budget\\workt…</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">cd /d q:\\projects\\inspired-arc\\chorus\\.chorus\\work\\frontend-eng-hard-budget\\workt…</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">cd /d q:\\projects\\inspired-arc\\chorus\\.chorus\\work\\frontend-eng-hard-budget\\workt…</span></div><details class="sub"><summary><span class="dot" style="background:#7c3aed"></span><b>spawn_subagent</b> <span class="agent">ui_tester</span><span class="count">10 inner calls</span></summary><div class="subbody"><div class="step"><span class="dot" style="background:#2563eb"></span><span class="tool">test_evidence</span><span class="arg">(scan the worktree)</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">test_evidence/e2e.txt</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">glob</span><span class="arg"></span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">glob</span><span class="arg"></span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">glob</span><span class="arg"></span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">package.json</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">glob</span><span class="arg"></span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">playwright.config.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">tests/budget-tracker.spec.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">tests/budget-tracker-delete.spec.js</span></div></div></details><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">tests/budget-tracker.spec.js</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">cd /d q:\\projects\\inspired-arc\\chorus\\.chorus\\work\\frontend-eng-hard-budget\\workt…</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">cd /d q:\\projects\\inspired-arc\\chorus\\.chorus\\work\\frontend-eng-hard-budget\\workt…</span></div><details class="sub"><summary><span class="dot" style="background:#7c3aed"></span><b>spawn_subagent</b> <span class="agent">ui_tester</span><span class="count">19 inner calls · 4 benign err</span></summary><div class="subbody"><div class="step"><span class="dot" style="background:#2563eb"></span><span class="tool">test_evidence</span><span class="arg">(scan the worktree)</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">test_evidence/e2e.txt</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">playwright.config.ts</span> <span class="err" title="benign — usually a retry reading an offloaded scratch file or a Windows-only DoD floor probe">err</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">glob</span><span class="arg"></span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">glob</span><span class="arg"></span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">package.json</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">glob</span><span class="arg"></span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">tests/budget-tracker.spec.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">tests/budget-tracker-delete.spec.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">20260705-211515-read_file-18e0fab2859c.txt</span> <span class="err" title="benign — usually a retry reading an offloaded scratch file or a Windows-only DoD floor probe">err</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">tests/budget-tracker.spec.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">20260705-211520-read_file-6748e129ab5a.txt</span> <span class="err" title="benign — usually a retry reading an offloaded scratch file or a Windows-only DoD floor probe">err</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">tests/budget-tracker.spec.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">tests/budget-tracker.spec.js</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">type tests\\budget-tracker.spec.js</span> <span class="err" title="benign — usually a retry reading an offloaded scratch file or a Windows-only DoD floor probe">err</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">tests/budget-tracker.spec.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">tests/budget-tracker.spec.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">tests/budget-tracker.spec.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">playwright.config.js</span></div></div></details><details class="sub"><summary><span class="dot" style="background:#7c3aed"></span><b>spawn_subagent</b> <span class="agent">code_reviewer</span><span class="count">35 inner calls · 1 benign err</span></summary><div class="subbody"><div class="step"><span class="dot" style="background:#2563eb"></span><span class="tool">test_evidence</span><span class="arg">(scan the worktree)</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">package.json</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">playwright.config.ts</span> <span class="err" title="benign — usually a retry reading an offloaded scratch file or a Windows-only DoD floor probe">err</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">glob</span><span class="arg"></span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">glob</span><span class="arg"></span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">test_evidence/summary.md</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">test_evidence/e2e.txt</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">test_evidence/unit.txt</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">glob</span><span class="arg"></span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">tests/budget-tracker.spec.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">tests/budget-tracker-delete.spec.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/main.jsx</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/ui/App.jsx</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/ui/BudgetStore.jsx</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/domain/transactions.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/domain/storage.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/domain/transactions.test.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/ui/styles.css</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">playwright.config.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">tests/budget-tracker.spec.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">tests/budget-tracker.spec.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">tests/budget-tracker.spec.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">tests/budget-tracker.spec.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/ui/pages/TransactionsPage.jsx</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/ui/pages/AddTransactionPage.jsx</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/ui/pages/TransactionDetailPage.jsx</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/ui/components/TransactionForm.jsx</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/ui/pages/DashboardPage.jsx</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/domain/state.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/domain/ids.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/ui/components/CategoryBreakdown.jsx</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/ui/components/TransactionForm.jsx</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/ui/components/TransactionForm.jsx</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/ui/components/TransactionForm.jsx</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/ui/components/TransactionForm.jsx</span></div></div></details><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">cd /d q:\\projects\\inspired-arc\\chorus\\.chorus\\work\\frontend-eng-hard-budget\\workt…</span></div><div class="step"><span class="dot" style="background:#2563eb"></span><span class="tool">test_evidence</span><span class="arg">(scan the worktree)</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">glob</span><span class="arg"></span></div><div class="step"><span class="dot" style="background:#d97706"></span><span class="tool">git</span><span class="arg">git status --porcelain=v1</span></div><div class="step"><span class="dot" style="background:#2563eb"></span><span class="tool">test_evidence</span><span class="arg">(scan the worktree)</span> <span class="err" title="benign — usually a retry reading an offloaded scratch file or a Windows-only DoD floor probe">err</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">package.json</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">playwright.config.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">test_evidence/summary.md</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">test_evidence/unit.txt</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">test_evidence/e2e.txt</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">index.html</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">vite.config.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/main.jsx</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/App.jsx</span> <span class="err" title="benign — usually a retry reading an offloaded scratch file or a Windows-only DoD floor probe">err</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/domain/transactions.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">glob</span><span class="arg"></span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/ui/App.jsx</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/ui/storage.js</span> <span class="err" title="benign — usually a retry reading an offloaded scratch file or a Windows-only DoD floor probe">err</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/ui/styles.css</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/ui/routes.jsx</span> <span class="err" title="benign — usually a retry reading an offloaded scratch file or a Windows-only DoD floor probe">err</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/ui/BudgetStore.jsx</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/ui/pages/DashboardPage.jsx</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/ui/pages/TransactionsPage.jsx</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/ui/pages/AddTransactionPage.jsx</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/ui/pages/TransactionDetailPage.jsx</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/ui/components/TransactionForm.jsx</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/domain/state.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/domain/categories.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/domain/transactions.test.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">tests/budget-tracker.spec.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">tests/budget-tracker-delete.spec.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">grep</span><span class="arg"></span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">grep</span><span class="arg"></span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/domain/storage.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">grep</span><span class="arg"></span></div></div></section>
+
+<h2 class="sec">Sprint evaluations</h2>
+<div class="eval"><div class="eval-top"><span class="badge ok">sprint 1: pass</span><span class="score">score 1.00</span></div><div class="bar"><span style="width:100%"></span></div><p class="notes">All acceptance criteria are implemented: routed SPA with deep links + back/forward, localStorage persistence, dashboard totals/breakdown, searchable/filterable list, add/edit/delete with accessible validation + disabled submit, responsive layouts, and green unit + Playwright e2e evidence.</p></div>
+
+<h2 class="sec">Artifacts produced</h2>
+<details class="art"><summary>package.json — the chosen stack + wired scripts · 67 words</summary><pre>{
+  &quot;name&quot;: &quot;budget-tracker&quot;,
+  &quot;private&quot;: true,
+  &quot;version&quot;: &quot;0.0.0&quot;,
+  &quot;type&quot;: &quot;module&quot;,
+  &quot;scripts&quot;: {
+    &quot;dev&quot;: &quot;vite&quot;,
+    &quot;build&quot;: &quot;vite build&quot;,
+    &quot;preview&quot;: &quot;vite preview --host 127.0.0.1 --port 4173 --strictPort&quot;,
+    &quot;test&quot;: &quot;vitest run&quot;,
+    &quot;test:unit&quot;: &quot;vitest run&quot;,
+    &quot;test:e2e&quot;: &quot;playwright test&quot;
+  },
+  &quot;dependencies&quot;: {
+    &quot;react&quot;: &quot;^19.1.1&quot;,
+    &quot;react-dom&quot;: &quot;^19.1.1&quot;,
+    &quot;react-router-dom&quot;: &quot;^7.9.1&quot;
+  },
+  &quot;devDependencies&quot;: {
+    &quot;@playwright/test&quot;: &quot;^1.61.1&quot;,
+    &quot;@testing-library/jest-dom&quot;: &quot;^6.8.0&quot;,
+    &quot;@testing-library/react&quot;: &quot;^16.3.0&quot;,
+    &quot;@testing-library/user-event&quot;: &quot;^14.6.1&quot;,
+    &quot;@vitejs/plugin-react&quot;: &quot;^5.0.2&quot;,
+    &quot;@vitest/coverage-v8&quot;: &quot;^3.2.4&quot;,
+    &quot;jsdom&quot;: &quot;^26.1.0&quot;,
+    &quot;playwright&quot;: &quot;^1.55.0&quot;,
+    &quot;vite&quot;: &quot;^7.1.3&quot;,
+    &quot;vitest&quot;: &quot;^3.2.4&quot;
+  }
+}
+</pre></details><details class="art"><summary>index.html — the app entry · 13 lines</summary><pre>&lt;!doctype html&gt;
+&lt;html lang=&quot;en&quot;&gt;
+  &lt;head&gt;
+    &lt;meta charset=&quot;UTF-8&quot; /&gt;
+    &lt;meta name=&quot;viewport&quot; content=&quot;width=device-width, initial-scale=1.0&quot; /&gt;
+    &lt;title&gt;Budget Tracker&lt;/title&gt;
+  &lt;/head&gt;
+  &lt;body&gt;
+    &lt;div id=&quot;root&quot;&gt;&lt;/div&gt;
+    &lt;script type=&quot;module&quot; src=&quot;/src/main.jsx&quot;&gt;&lt;/script&gt;
+  &lt;/body&gt;
+&lt;/html&gt;
+</pre></details><details class="art"><summary>src/domain/categories.js — source · 11 lines</summary><pre>export const CATEGORIES = [
+  &#x27;Groceries&#x27;,
+  &#x27;Rent&#x27;,
+  &#x27;Utilities&#x27;,
+  &#x27;Dining&#x27;,
+  &#x27;Transport&#x27;,
+  &#x27;Entertainment&#x27;,
+  &#x27;Health&#x27;,
+  &#x27;Other&#x27;,
+];
+</pre></details><details class="art"><summary>src/domain/ids.js — source · 5 lines</summary><pre>export function makeId() {
+  // good-enough unique id for local app; deterministic tests can stub if needed
+  return `tx_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+}
+</pre></details><details class="art"><summary>src/domain/state.js — source · 38 lines</summary><pre>import { loadTransactions, saveTransactions } from &#x27;./storage.js&#x27;;
+import { makeId } from &#x27;./ids.js&#x27;;
+
+export function createInitialState(storage) {
+  const transactions = typeof window === &#x27;undefined&#x27; ? [] : loadTransactions(storage);
+  return { transactions };
+}
+
+export function budgetReducer(state, action) {
+  switch (action.type) {
+    case &#x27;transaction/add&#x27;: {
+      const tx = { ...action.transaction };
+      if (!tx.id) tx.id = makeId();
+      return { ...state, transactions: [...state.transactions, tx] };
+    }
+    case &#x27;transaction/update&#x27;: {
+      const { id, patch } = action;
+      return {
+        ...state,
+        transactions: state.transactions.map((t) =&gt; (t.id === id ? { ...t, ...patch, id } : t)),
+      };
+    }
+    case &#x27;transaction/delete&#x27;: {
+      return { ...state, transactions: state.transactions.filter((t) =&gt; t.id !== action.id) };
+    }
+    case &#x27;transactions/replace&#x27;: {
+      return { ...state, transactions: [...action.transactions] };
+    }
+    default:
+      return state;
+  }
+}
+
+export function persistState(state, storage) {
+  if (typeof window === &#x27;undefined&#x27;) return;
+  saveTransactions(state.transactions, storage);
+}
+</pre></details><details class="art"><summary>src/domain/storage.js — source · 31 lines</summary><pre>const STORAGE_KEY = &#x27;budgetTracker.transactions.v1&#x27;;
+
+export function loadTransactions(storage = window.localStorage) {
+  const raw = storage.getItem(STORAGE_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    // minimal shape validation
+    return parsed
+      .filter((t) =&gt; t &amp;&amp; typeof t.id === &#x27;string&#x27;)
+      .map((t) =&gt; ({
+        id: String(t.id),
+        description: String(t.description ?? &#x27;&#x27;),
+        amount: Number(t.amount ?? 0),
+        category: String(t.category ?? &#x27;&#x27;),
+        date: String(t.date ?? &#x27;&#x27;),
+      }));
+  } catch {
+    return [];
+  }
+}
+
+export function saveTransactions(transactions, storage = window.localStorage) {
+  storage.setItem(STORAGE_KEY, JSON.stringify(transactions));
+}
+
+export function clearTransactions(storage = window.localStorage) {
+  storage.removeItem(STORAGE_KEY);
+}
+</pre></details><details class="art"><summary>src/domain/transactions.js — source · 93 lines</summary><pre>import { CATEGORIES } from &#x27;./categories.js&#x27;;
+
+export function normalizeText(s) {
+  return String(s ?? &#x27;&#x27;).trim();
+}
+
+export function parseAmount(value) {
+  if (value === &#x27;&#x27; || value == null) return NaN;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : NaN;
+}
+
+export function isValidISODate(value) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(value))) return false;
+  const d = new Date(`${value}T00:00:00.000Z`);
+  return !Number.isNaN(d.getTime()) &amp;&amp; d.toISOString().slice(0, 10) === value;
+}
+
+export function validateTransactionDraft(draft) {
+  const errors = {};
+
+  const description = normalizeText(draft.description);
+  if (!description) errors.description = &#x27;Description is required.&#x27;;
+
+  const amount = parseAmount(draft.amount);
+  if (!Number.isFinite(amount) || amount &lt;= 0) errors.amount = &#x27;Amount must be a positive number.&#x27;;
+
+  const category = normalizeText(draft.category);
+  if (!category) errors.category = &#x27;Category is required.&#x27;;
+  else if (!CATEGORIES.includes(category)) errors.category = &#x27;Category is not recognized.&#x27;;
+
+  const date = normalizeText(draft.date);
+  if (!date) errors.date = &#x27;Date is required.&#x27;;
+  else if (!isValidISODate(date)) errors.date = &#x27;Date must be a valid YYYY-MM-DD.&#x27;;
+
+  return { ok: Object.keys(errors).length === 0, errors };
+}
+
+export function isSameMonth(isoDate, year, monthIndex) {
+  const d = new Date(`${isoDate}T00:00:00.000Z`);
+  return d.getUTCFullYear() === year &amp;&amp; d.getUTCMonth() === monthIndex;
+}
+
+export function getCurrentMonthYear(now = new Date()) {
+  return { year: now.getFullYear(), monthIndex: now.getMonth() };
+}
+
+export function sumSpentForMonth(transactions, now = new Date()) {
+  const { year, monthIndex } = getCurrentMonthYear(now);
+  return transactions
+    .filter((t) =&gt; isSameMonth(t.date, year, monthIndex))
+    .reduce((acc, t) =&gt; acc + t.amount, 0);
+}
+
+export function breakdownByCategoryForMonth(transactions, now = new Date()) {
+  const { year, monthIndex } = getCurrentMonthYear(now);
+  const map = new Map();
+  for (const t of transactions) {
+    if (!isSameMonth(t.date, year, monthIndex)) continue;
+    map.set(t.category, (map.get(t.category) ?? 0) + t.amount);
+  }
+  return Array.from(map.entries())
+    .map(([category, total]) =&gt; ({ category, total }))
+    .sort((a, b) =&gt; b.total - a.total);
+}
+
+export function matchesQuery(transaction, query) {
+  const q = normalizeText(query).toLowerCase();
+  if (!q) return true;
+  return (
+    transaction.description.toLowerCase().includes(q) ||
+    transaction.category.toLowerCase().includes(q)
+  );
+}
+
+export function filterTransactions(transactions, { query = &#x27;&#x27;, category = &#x27;&#x27; } = {}) {
+  const cat = normalizeText(category);
+  return transactions.filter((t) =&gt; {
+    if (cat &amp;&amp; t.category !== cat) return false;
+    return matchesQuery(t, query);
+  });
+}
+
+export function formatMoney(amount) {
+  const n = Number(amount);
+  if (!Number.isFinite(n)) return &#x27;$0.00&#x27;;
+  return n.toLocaleString(undefined, { style: &#x27;currency&#x27;, currency: &#x27;USD&#x27; });
+}
+
+export function sortTransactionsNewestFirst(transactions) {
+  return [...transactions].sort((a, b) =&gt; (a.date &lt; b.date ? 1 : a.date &gt; b.date ? -1 : 0));
+}
+</pre></details><details class="art"><summary>src/main.jsx — source · 14 lines</summary><pre>import React from &#x27;react&#x27;;
+import { createRoot } from &#x27;react-dom/client&#x27;;
+import { BrowserRouter } from &#x27;react-router-dom&#x27;;
+import App from &#x27;./ui/App.jsx&#x27;;
+import &#x27;./ui/styles.css&#x27;;
+
+createRoot(document.getElementById(&#x27;root&#x27;)).render(
+  &lt;React.StrictMode&gt;
+    &lt;BrowserRouter&gt;
+      &lt;App /&gt;
+    &lt;/BrowserRouter&gt;
+  &lt;/React.StrictMode&gt;
+);
+</pre></details><details class="art"><summary>src/test/setupTests.js — source · 2 lines</summary><pre>import &#x27;@testing-library/jest-dom/vitest&#x27;;
+</pre></details><details class="art"><summary>src/ui/App.jsx — source · 42 lines</summary><pre>import React from &#x27;react&#x27;;
+import { NavLink, Route, Routes } from &#x27;react-router-dom&#x27;;
+import DashboardPage from &#x27;./pages/DashboardPage.jsx&#x27;;
+import TransactionsPage from &#x27;./pages/TransactionsPage.jsx&#x27;;
+import AddTransactionPage from &#x27;./pages/AddTransactionPage.jsx&#x27;;
+import TransactionDetailPage from &#x27;./pages/TransactionDetailPage.jsx&#x27;;
+import NotFoundPage from &#x27;./pages/NotFoundPage.jsx&#x27;;
+import { BudgetProvider } from &#x27;./BudgetStore.jsx&#x27;;
+
+export default function App() {
+  return (
+    &lt;BudgetProvider&gt;
+      &lt;a className=&quot;skip-link&quot; href=&quot;#main&quot;&gt;Skip to content&lt;/a&gt;
+      &lt;div className=&quot;app&quot;&gt;
+        &lt;header className=&quot;header&quot; role=&quot;banner&quot;&gt;
+          &lt;div className=&quot;brand&quot;&gt;
+            &lt;strong&gt;Budget Tracker&lt;/strong&gt;
+            &lt;span&gt;Track spending with searchable transactions and monthly totals.&lt;/span&gt;
+          &lt;/div&gt;
+          &lt;nav className=&quot;nav&quot; aria-label=&quot;Primary&quot;&gt;
+            &lt;NavLink to=&quot;/&quot; end&gt;
+              Dashboard
+            &lt;/NavLink&gt;
+            &lt;NavLink to=&quot;/transactions&quot;&gt;Transactions&lt;/NavLink&gt;
+            &lt;NavLink to=&quot;/add&quot;&gt;Add&lt;/NavLink&gt;
+          &lt;/nav&gt;
+        &lt;/header&gt;
+
+        &lt;main id=&quot;main&quot; tabIndex={-1}&gt;
+          &lt;Routes&gt;
+            &lt;Route path=&quot;/&quot; element={&lt;DashboardPage /&gt;} /&gt;
+            &lt;Route path=&quot;/transactions&quot; element={&lt;TransactionsPage /&gt;} /&gt;
+            &lt;Route path=&quot;/add&quot; element={&lt;AddTransactionPage /&gt;} /&gt;
+            &lt;Route path=&quot;/transactions/:id&quot; element={&lt;TransactionDetailPage /&gt;} /&gt;
+            &lt;Route path=&quot;*&quot; element={&lt;NotFoundPage /&gt;} /&gt;
+          &lt;/Routes&gt;
+        &lt;/main&gt;
+      &lt;/div&gt;
+    &lt;/BudgetProvider&gt;
+  );
+}
+</pre></details><details class="art"><summary>src/ui/BudgetStore.jsx — source · 22 lines</summary><pre>import React from &#x27;react&#x27;;
+import { budgetReducer, createInitialState, persistState } from &#x27;../domain/state.js&#x27;;
+
+const BudgetContext = React.createContext(null);
+
+export function BudgetProvider({ children, storage = window.localStorage }) {
+  const [state, dispatch] = React.useReducer(budgetReducer, undefined, () =&gt; createInitialState(storage));
+
+  React.useEffect(() =&gt; {
+    persistState(state, storage);
+  }, [state, storage]);
+
+  const value = React.useMemo(() =&gt; ({ state, dispatch }), [state]);
+  return &lt;BudgetContext.Provider value={value}&gt;{children}&lt;/BudgetContext.Provider&gt;;
+}
+
+export function useBudget() {
+  const ctx = React.useContext(BudgetContext);
+  if (!ctx) throw new Error(&#x27;useBudget must be used within &lt;BudgetProvider&gt;&#x27;);
+  return ctx;
+}
+</pre></details><details class="art"><summary>src/ui/components/CategoryBreakdown.jsx — source · 27 lines</summary><pre>import React from &#x27;react&#x27;;
+import { formatMoney } from &#x27;../../domain/transactions.js&#x27;;
+
+export default function CategoryBreakdown({ items }) {
+  if (!items.length) {
+    return &lt;p className=&quot;help&quot;&gt;No spending recorded for the current month yet.&lt;/p&gt;;
+  }
+
+  return (
+    &lt;div className=&quot;stack&quot; role=&quot;list&quot; aria-label=&quot;Spending by category&quot;&gt;
+      {items.map((i) =&gt; (
+        &lt;div
+          key={i.category}
+          role=&quot;listitem&quot;
+          className=&quot;kpi&quot;
+          style={{ display: &#x27;flex&#x27;, justifyContent: &#x27;space-between&#x27;, gap: &#x27;.75rem&#x27; }}
+        &gt;
+          &lt;div&gt;
+            &lt;div className=&quot;label&quot;&gt;{i.category}&lt;/div&gt;
+          &lt;/div&gt;
+          &lt;div className=&quot;value no-wrap&quot; aria-label={`${i.category} total`}&gt;{formatMoney(i.total)}&lt;/div&gt;
+        &lt;/div&gt;
+      ))}
+    &lt;/div&gt;
+  );
+}
+</pre></details><details class="art"><summary>src/ui/components/TransactionForm.jsx — source · 150 lines</summary><pre>import React from &#x27;react&#x27;;
+import { CATEGORIES } from &#x27;../../domain/categories.js&#x27;;
+import { validateTransactionDraft } from &#x27;../../domain/transactions.js&#x27;;
+
+function fieldDescribedBy(errorId, helpId, hasError) {
+  const ids = [];
+  if (hasError) ids.push(errorId);
+  ids.push(helpId);
+  return ids.join(&#x27; &#x27;);
+}
+
+export default function TransactionForm({
+  initial,
+  submitLabel,
+  onSubmit,
+  busy = false,
+}) {
+  const [draft, setDraft] = React.useState(() =&gt; ({
+    description: initial.description ?? &#x27;&#x27;,
+    amount: initial.amount ?? &#x27;&#x27;,
+    category: initial.category ?? &#x27;&#x27;,
+    date: initial.date ?? &#x27;&#x27;,
+  }));
+
+  const validation = React.useMemo(() =&gt; validateTransactionDraft(draft), [draft]);
+  const canSubmit = validation.ok &amp;&amp; !busy;
+
+  const [submitted, setSubmitted] = React.useState(false);
+  const showError = (name) =&gt; submitted &amp;&amp; Boolean(validation.errors[name]);
+
+  function submit(e) {
+    e.preventDefault();
+    setSubmitted(true);
+    const v = validateTransactionDraft(draft);
+    if (!v.ok) return;
+    onSubmit({
+      description: String(draft.description).trim(),
+      amount: Number(draft.amount),
+      category: draft.category,
+      date: draft.date,
+    });
+  }
+
+  return (
+    &lt;form className=&quot;stack&quot; onSubmit={submit} noValidate&gt;
+      &lt;div className=&quot;field&quot;&gt;
+        &lt;label htmlFor=&quot;description&quot;&gt;Description&lt;/label&gt;
+        &lt;input
+          id=&quot;description&quot;
+          name=&quot;description&quot;
+          type=&quot;text&quot;
+          value={draft.description}
+          onChange={(e) =&gt; setDraft((d) =&gt; ({ ...d, description: e.target.value }))}
+          aria-invalid={showError(&#x27;description&#x27;) ? &#x27;true&#x27; : &#x27;false&#x27;}
+          aria-describedby={fieldDescribedBy(
+            &#x27;description-error&#x27;,
+            &#x27;description-help&#x27;,
+            showError(&#x27;description&#x27;)
+          )}
+          autoComplete=&quot;off&quot;
+          required
+        /&gt;
+        &lt;div id=&quot;description-help&quot; className=&quot;help&quot;&gt;What did you spend money on?&lt;/div&gt;
+        {showError(&#x27;description&#x27;) &amp;&amp; (
+          &lt;div id=&quot;description-error&quot; className=&quot;error&quot; role=&quot;alert&quot;&gt;
+            {validation.errors.description}
+          &lt;/div&gt;
+        )}
+      &lt;/div&gt;
+
+      &lt;div className=&quot;field&quot;&gt;
+        &lt;label htmlFor=&quot;amount&quot;&gt;Amount&lt;/label&gt;
+        &lt;input
+          id=&quot;amount&quot;
+          name=&quot;amount&quot;
+          type=&quot;number&quot;
+          inputMode=&quot;decimal&quot;
+          min=&quot;0&quot;
+          step=&quot;0.01&quot;
+          value={draft.amount}
+          onChange={(e) =&gt; setDraft((d) =&gt; ({ ...d, amount: e.target.value }))}
+          aria-invalid={showError(&#x27;amount&#x27;) ? &#x27;true&#x27; : &#x27;false&#x27;}
+          aria-describedby={fieldDescribedBy(&#x27;amount-error&#x27;, &#x27;amount-help&#x27;, showError(&#x27;amount&#x27;))}
+          required
+        /&gt;
+        &lt;div id=&quot;amount-help&quot; className=&quot;help&quot;&gt;Enter a positive number (e.g., 12.34).&lt;/div&gt;
+        {showError(&#x27;amount&#x27;) &amp;&amp; (
+          &lt;div id=&quot;amount-error&quot; className=&quot;error&quot; role=&quot;alert&quot;&gt;
+            {validation.errors.amount}
+          &lt;/div&gt;
+        )}
+      &lt;/div&gt;
+
+      &lt;div className=&quot;field&quot;&gt;
+        &lt;label htmlFor=&quot;category&quot;&gt;Category&lt;/label&gt;
+        &lt;select
+          id=&quot;category&quot;
+          name=&quot;category&quot;
+          value={draft.category}
+          onChange={(e) =&gt; setDraft((d) =&gt; ({ ...d, category: e.target.value }))}
+          aria-invalid={showError(&#x27;category&#x27;) ? &#x27;true&#x27; : &#x27;false&#x27;}
+          aria-describedby={fieldDescribedBy(
+            &#x27;category-error&#x27;,
+            &#x27;category-help&#x27;,
+            showError(&#x27;category&#x27;)
+          )}
+          required
+        &gt;
+          &lt;option value=&quot;&quot;&gt;Choose a category&lt;/option&gt;
+          {CATEGORIES.map((c) =&gt; (
+            &lt;option key={c} value={c}&gt;{c}&lt;/option&gt;
+          ))}
+        &lt;/select&gt;
+        &lt;div id=&quot;category-help&quot; className=&quot;help&quot;&gt;Used for your dashboard breakdown.&lt;/div&gt;
+        {showError(&#x27;category&#x27;) &amp;&amp; (
+          &lt;div id=&quot;category-error&quot; className=&quot;error&quot; role=&quot;alert&quot;&gt;
+            {validation.errors.category}
+          &lt;/div&gt;
+        )}
+      &lt;/div&gt;
+
+      &lt;div className=&quot;field&quot;&gt;
+        &lt;label htmlFor=&quot;date&quot;&gt;Date&lt;/label&gt;
+        &lt;input
+          id=&quot;date&quot;
+          name=&quot;date&quot;
+          type=&quot;date&quot;
+          value={draft.date}
+          onChange={(e) =&gt; setDraft((d) =&gt; ({ ...d, date: e.target.value }))}
+          aria-invalid={showError(&#x27;date&#x27;) ? &#x27;true&#x27; : &#x27;false&#x27;}
+          aria-describedby={fieldDescribedBy(&#x27;date-error&#x27;, &#x27;date-help&#x27;, showError(&#x27;date&#x27;))}
+          required
+        /&gt;
+        &lt;div id=&quot;date-help&quot; className=&quot;help&quot;&gt;Used for current-month totals.&lt;/div&gt;
+        {showError(&#x27;date&#x27;) &amp;&amp; (
+          &lt;div id=&quot;date-error&quot; className=&quot;error&quot; role=&quot;alert&quot;&gt;
+            {validation.errors.date}
+          &lt;/div&gt;
+        )}
+      &lt;/div&gt;
+
+      &lt;div className=&quot;row-actions&quot;&gt;
+        &lt;button className=&quot;btn primary&quot; type=&quot;submit&quot; disabled={!canSubmit}&gt;
+          {busy ? &#x27;Saving…&#x27; : submitLabel}
+        &lt;/button&gt;
+      &lt;/div&gt;
+    &lt;/form&gt;
+  );
+}
+</pre></details><details class="art"><summary>src/ui/pages/AddTransactionPage.jsx — source · 36 lines</summary><pre>import React from &#x27;react&#x27;;
+import { useNavigate } from &#x27;react-router-dom&#x27;;
+import { useBudget } from &#x27;../BudgetStore.jsx&#x27;;
+import TransactionForm from &#x27;../components/TransactionForm.jsx&#x27;;
+
+function todayISO() {
+  const d = new Date();
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, &#x27;0&#x27;);
+  const dd = String(d.getDate()).padStart(2, &#x27;0&#x27;);
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+export default function AddTransactionPage() {
+  const { dispatch } = useBudget();
+  const navigate = useNavigate();
+
+  return (
+    &lt;section className=&quot;panel&quot; aria-labelledby=&quot;add-title&quot;&gt;
+      &lt;div className=&quot;panel-hd&quot;&gt;
+        &lt;h1 id=&quot;add-title&quot; style={{ margin: 0 }}&gt;Add transaction&lt;/h1&gt;
+      &lt;/div&gt;
+      &lt;div className=&quot;panel-bd&quot;&gt;
+        &lt;TransactionForm
+          initial={{ description: &#x27;&#x27;, amount: &#x27;&#x27;, category: &#x27;&#x27;, date: todayISO() }}
+          submitLabel=&quot;Add transaction&quot;
+          onSubmit={(tx) =&gt; {
+            dispatch({ type: &#x27;transaction/add&#x27;, transaction: tx });
+            navigate(&#x27;/transactions&#x27;);
+          }}
+        /&gt;
+      &lt;/div&gt;
+    &lt;/section&gt;
+  );
+}
+</pre></details><details class="art"><summary>src/ui/pages/DashboardPage.jsx — source · 51 lines</summary><pre>import React from &#x27;react&#x27;;
+import { Link } from &#x27;react-router-dom&#x27;;
+import { useBudget } from &#x27;../BudgetStore.jsx&#x27;;
+import {
+  breakdownByCategoryForMonth,
+  formatMoney,
+  sumSpentForMonth,
+} from &#x27;../../domain/transactions.js&#x27;;
+import CategoryBreakdown from &#x27;../components/CategoryBreakdown.jsx&#x27;;
+
+export default function DashboardPage() {
+  const { state } = useBudget();
+  const total = sumSpentForMonth(state.transactions);
+  const breakdown = breakdownByCategoryForMonth(state.transactions);
+
+  return (
+    &lt;div className=&quot;grid cols-2&quot;&gt;
+      &lt;section className=&quot;panel&quot; aria-labelledby=&quot;dash-title&quot;&gt;
+        &lt;div className=&quot;panel-hd&quot;&gt;
+          &lt;h1 id=&quot;dash-title&quot; style={{ margin: 0 }}&gt;Dashboard&lt;/h1&gt;
+        &lt;/div&gt;
+        &lt;div className=&quot;panel-bd stack&quot;&gt;
+          &lt;div className=&quot;kpis&quot;&gt;
+            &lt;div className=&quot;kpi&quot; role=&quot;region&quot; aria-label=&quot;Total spent this month&quot;&gt;
+              &lt;div className=&quot;label&quot;&gt;Total spent (current month)&lt;/div&gt;
+              &lt;div className=&quot;value&quot;&gt;{formatMoney(total)}&lt;/div&gt;
+            &lt;/div&gt;
+            &lt;div className=&quot;kpi&quot; role=&quot;region&quot; aria-label=&quot;Transaction count&quot;&gt;
+              &lt;div className=&quot;label&quot;&gt;Transactions stored&lt;/div&gt;
+              &lt;div className=&quot;value&quot;&gt;{state.transactions.length}&lt;/div&gt;
+            &lt;/div&gt;
+          &lt;/div&gt;
+          &lt;div className=&quot;row-actions&quot;&gt;
+            &lt;Link className=&quot;btn primary&quot; to=&quot;/add&quot;&gt;Add a transaction&lt;/Link&gt;
+            &lt;Link className=&quot;btn&quot; to=&quot;/transactions&quot;&gt;View transactions&lt;/Link&gt;
+          &lt;/div&gt;
+        &lt;/div&gt;
+      &lt;/section&gt;
+
+      &lt;section className=&quot;panel&quot; aria-labelledby=&quot;breakdown-title&quot;&gt;
+        &lt;div className=&quot;panel-hd&quot;&gt;
+          &lt;h2 id=&quot;breakdown-title&quot; style={{ margin: 0, fontSize: &#x27;1.1rem&#x27; }}&gt;Spending by category&lt;/h2&gt;
+        &lt;/div&gt;
+        &lt;div className=&quot;panel-bd&quot;&gt;
+          &lt;CategoryBreakdown items={breakdown} /&gt;
+        &lt;/div&gt;
+      &lt;/section&gt;
+    &lt;/div&gt;
+  );
+}
+</pre></details><details class="art"><summary>src/ui/pages/NotFoundPage.jsx — source · 17 lines</summary><pre>import React from &#x27;react&#x27;;
+import { Link } from &#x27;react-router-dom&#x27;;
+
+export default function NotFoundPage() {
+  return (
+    &lt;section className=&quot;panel&quot; aria-labelledby=&quot;nf-title&quot;&gt;
+      &lt;div className=&quot;panel-hd&quot;&gt;
+        &lt;h1 id=&quot;nf-title&quot; style={{ margin: 0 }}&gt;Not found&lt;/h1&gt;
+      &lt;/div&gt;
+      &lt;div className=&quot;panel-bd stack&quot;&gt;
+        &lt;p&gt;The page you’re looking for doesn’t exist.&lt;/p&gt;
+        &lt;Link className=&quot;btn&quot; to=&quot;/&quot;&gt;Go to dashboard&lt;/Link&gt;
+      &lt;/div&gt;
+    &lt;/section&gt;
+  );
+}
+</pre></details><details class="art"><summary>src/ui/pages/TransactionDetailPage.jsx — source · 63 lines</summary><pre>import React from &#x27;react&#x27;;
+import { Link, useNavigate, useParams } from &#x27;react-router-dom&#x27;;
+import { useBudget } from &#x27;../BudgetStore.jsx&#x27;;
+import TransactionForm from &#x27;../components/TransactionForm.jsx&#x27;;
+
+export default function TransactionDetailPage() {
+  const { id } = useParams();
+  const { state, dispatch } = useBudget();
+  const navigate = useNavigate();
+
+  const tx = state.transactions.find((t) =&gt; t.id === id);
+
+  if (!tx) {
+    return (
+      &lt;section className=&quot;panel&quot; aria-labelledby=&quot;missing-title&quot;&gt;
+        &lt;div className=&quot;panel-hd&quot;&gt;
+          &lt;h1 id=&quot;missing-title&quot; style={{ margin: 0 }}&gt;Transaction not found&lt;/h1&gt;
+        &lt;/div&gt;
+        &lt;div className=&quot;panel-bd stack&quot;&gt;
+          &lt;p className=&quot;help&quot; role=&quot;status&quot;&gt;We couldn’t find that transaction (it may have been deleted).&lt;/p&gt;
+          &lt;Link className=&quot;btn&quot; to=&quot;/transactions&quot;&gt;Back to transactions&lt;/Link&gt;
+        &lt;/div&gt;
+      &lt;/section&gt;
+    );
+  }
+
+  return (
+    &lt;section className=&quot;panel&quot; aria-labelledby=&quot;detail-title&quot;&gt;
+      &lt;div className=&quot;panel-hd&quot; style={{ display: &#x27;flex&#x27;, alignItems: &#x27;baseline&#x27;, justifyContent: &#x27;space-between&#x27;, flexWrap: &#x27;wrap&#x27;, gap: &#x27;.75rem&#x27; }}&gt;
+        &lt;h1 id=&quot;detail-title&quot; style={{ margin: 0 }}&gt;Edit transaction&lt;/h1&gt;
+        &lt;Link className=&quot;btn&quot; to=&quot;/transactions&quot;&gt;Back&lt;/Link&gt;
+      &lt;/div&gt;
+      &lt;div className=&quot;panel-bd stack&quot;&gt;
+        &lt;TransactionForm
+          initial={tx}
+          submitLabel=&quot;Save changes&quot;
+          onSubmit={(patch) =&gt; {
+            dispatch({ type: &#x27;transaction/update&#x27;, id: tx.id, patch });
+            navigate(&#x27;/transactions&#x27;);
+          }}
+        /&gt;
+
+        &lt;hr style={{ border: 0, borderTop: &#x27;1px solid rgba(42,53,98,.9)&#x27;, width: &#x27;100%&#x27; }} /&gt;
+
+        &lt;div className=&quot;row-actions&quot;&gt;
+          &lt;button
+            type=&quot;button&quot;
+            className=&quot;btn danger&quot;
+            onClick={() =&gt; {
+              const ok = window.confirm(&#x27;Delete this transaction? This cannot be undone.&#x27;);
+              if (!ok) return;
+              dispatch({ type: &#x27;transaction/delete&#x27;, id: tx.id });
+              navigate(&#x27;/transactions&#x27;);
+            }}
+          &gt;
+            Delete transaction
+          &lt;/button&gt;
+        &lt;/div&gt;
+      &lt;/div&gt;
+    &lt;/section&gt;
+  );
+}
+</pre></details><details class="art"><summary>src/ui/pages/TransactionsPage.jsx — source · 119 lines</summary><pre>import React from &#x27;react&#x27;;
+import { Link, useSearchParams } from &#x27;react-router-dom&#x27;;
+import { useBudget } from &#x27;../BudgetStore.jsx&#x27;;
+import { CATEGORIES } from &#x27;../../domain/categories.js&#x27;;
+import {
+  filterTransactions,
+  formatMoney,
+  sortTransactionsNewestFirst,
+} from &#x27;../../domain/transactions.js&#x27;;
+
+export default function TransactionsPage() {
+  const { state } = useBudget();
+  const [params, setParams] = useSearchParams();
+
+  const query = params.get(&#x27;q&#x27;) ?? &#x27;&#x27;;
+  const category = params.get(&#x27;cat&#x27;) ?? &#x27;&#x27;;
+
+  const filtered = React.useMemo(() =&gt; {
+    return sortTransactionsNewestFirst(
+      filterTransactions(state.transactions, { query, category })
+    );
+  }, [state.transactions, query, category]);
+
+  return (
+    &lt;section className=&quot;panel&quot; aria-labelledby=&quot;tx-title&quot;&gt;
+      &lt;div className=&quot;panel-hd&quot; style={{ display: &#x27;flex&#x27;, alignItems: &#x27;baseline&#x27;, justifyContent: &#x27;space-between&#x27;, gap: &#x27;.75rem&#x27;, flexWrap: &#x27;wrap&#x27; }}&gt;
+        &lt;h1 id=&quot;tx-title&quot; style={{ margin: 0 }}&gt;Transactions&lt;/h1&gt;
+        &lt;Link className=&quot;btn primary&quot; to=&quot;/add&quot;&gt;Add&lt;/Link&gt;
+      &lt;/div&gt;
+
+      &lt;div className=&quot;panel-bd stack&quot;&gt;
+        &lt;form className=&quot;controls&quot; aria-label=&quot;Search and filter&quot;&gt;
+          &lt;div className=&quot;field&quot;&gt;
+            &lt;label htmlFor=&quot;search&quot;&gt;Search&lt;/label&gt;
+            &lt;input
+              id=&quot;search&quot;
+              name=&quot;search&quot;
+              type=&quot;search&quot;
+              value={query}
+              onChange={(e) =&gt; {
+                const next = new URLSearchParams(params);
+                const v = e.target.value;
+                if (v) next.set(&#x27;q&#x27;, v);
+                else next.delete(&#x27;q&#x27;);
+                setParams(next, { replace: true });
+              }}
+              placeholder=&quot;Search description or category&quot;
+            /&gt;
+          &lt;/div&gt;
+
+          &lt;div className=&quot;field&quot;&gt;
+            &lt;label htmlFor=&quot;category&quot;&gt;Category&lt;/label&gt;
+            &lt;select
+              id=&quot;category&quot;
+              name=&quot;category&quot;
+              value={category}
+              onChange={(e) =&gt; {
+                const next = new URLSearchParams(params);
+                const v = e.target.value;
+                if (v) next.set(&#x27;cat&#x27;, v);
+                else next.delete(&#x27;cat&#x27;);
+                setParams(next, { replace: true });
+              }}
+            &gt;
+              &lt;option value=&quot;&quot;&gt;All categories&lt;/option&gt;
+              {CATEGORIES.map((c) =&gt; (
+                &lt;option key={c} value={c}&gt;{c}&lt;/option&gt;
+              ))}
+            &lt;/select&gt;
+          &lt;/div&gt;
+
+          &lt;div className=&quot;row-actions&quot;&gt;
+            &lt;button
+              type=&quot;button&quot;
+              className=&quot;btn&quot;
+              onClick={() =&gt; setParams(new URLSearchParams(), { replace: true })}
+            &gt;
+              Clear
+            &lt;/button&gt;
+          &lt;/div&gt;
+        &lt;/form&gt;
+
+        {filtered.length === 0 ? (
+          &lt;p className=&quot;help&quot; role=&quot;status&quot;&gt;No transactions match your search/filter.&lt;/p&gt;
+        ) : (
+          &lt;div style={{ overflowX: &#x27;auto&#x27; }}&gt;
+            &lt;table className=&quot;table&quot; aria-label=&quot;Transactions table&quot;&gt;
+              &lt;thead&gt;
+                &lt;tr&gt;
+                  &lt;th scope=&quot;col&quot;&gt;Date&lt;/th&gt;
+                  &lt;th scope=&quot;col&quot;&gt;Description&lt;/th&gt;
+                  &lt;th scope=&quot;col&quot;&gt;Category&lt;/th&gt;
+                  &lt;th scope=&quot;col&quot; className=&quot;no-wrap&quot;&gt;Amount&lt;/th&gt;
+                  &lt;th scope=&quot;col&quot;&gt;Actions&lt;/th&gt;
+                &lt;/tr&gt;
+              &lt;/thead&gt;
+              &lt;tbody&gt;
+                {filtered.map((t) =&gt; (
+                  &lt;tr key={t.id}&gt;
+                    &lt;td className=&quot;no-wrap&quot;&gt;{t.date}&lt;/td&gt;
+                    &lt;td&gt;{t.description}&lt;/td&gt;
+                    &lt;td&gt;&lt;span className=&quot;badge&quot;&gt;{t.category}&lt;/span&gt;&lt;/td&gt;
+                    &lt;td className=&quot;no-wrap&quot;&gt;{formatMoney(t.amount)}&lt;/td&gt;
+                    &lt;td&gt;
+                      &lt;div className=&quot;row-actions&quot;&gt;
+                        &lt;Link className=&quot;btn&quot; to={`/transactions/${t.id}`}&gt;View / edit&lt;/Link&gt;
+                      &lt;/div&gt;
+                    &lt;/td&gt;
+                  &lt;/tr&gt;
+                ))}
+              &lt;/tbody&gt;
+            &lt;/table&gt;
+          &lt;/div&gt;
+        )}
+      &lt;/div&gt;
+    &lt;/section&gt;
+  );
+}
+</pre></details><details class="art"><summary>src/domain/transactions.test.js — unit test · 85 lines</summary><pre>import { describe, expect, test } from &#x27;vitest&#x27;;
+import {
+  breakdownByCategoryForMonth,
+  filterTransactions,
+  isValidISODate,
+  sumSpentForMonth,
+  validateTransactionDraft,
+} from &#x27;./transactions.js&#x27;;
+
+describe(&#x27;validation&#x27;, () =&gt; {
+  test(&#x27;requires description, positive amount, known category, valid date&#x27;, () =&gt; {
+    const v = validateTransactionDraft({
+      description: &#x27;&#x27;,
+      amount: &#x27;-1&#x27;,
+      category: &#x27;NotAReal&#x27;,
+      date: &#x27;2025-13-40&#x27;,
+    });
+    expect(v.ok).toBe(false);
+    expect(v.errors.description).toMatch(/required/i);
+    expect(v.errors.amount).toMatch(/positive/i);
+    expect(v.errors.category).toMatch(/recognized/i);
+    expect(v.errors.date).toMatch(/valid/i);
+  });
+
+  test(&#x27;accepts valid input&#x27;, () =&gt; {
+    const v = validateTransactionDraft({
+      description: &#x27;Coffee&#x27;,
+      amount: &#x27;3.5&#x27;,
+      category: &#x27;Dining&#x27;,
+      date: &#x27;2026-06-15&#x27;,
+    });
+    expect(v.ok).toBe(true);
+    expect(v.errors).toEqual({});
+  });
+
+  test(&#x27;isValidISODate checks actual calendar&#x27;, () =&gt; {
+    expect(isValidISODate(&#x27;2026-02-29&#x27;)).toBe(false);
+    expect(isValidISODate(&#x27;2024-02-29&#x27;)).toBe(true);
+  });
+});
+
+describe(&#x27;aggregation&#x27;, () =&gt; {
+  const txs = [
+    { id: &#x27;a&#x27;, description: &#x27;Rent&#x27;, amount: 1000, category: &#x27;Rent&#x27;, date: &#x27;2026-06-02&#x27; },
+    { id: &#x27;b&#x27;, description: &#x27;Groceries&#x27;, amount: 50, category: &#x27;Groceries&#x27;, date: &#x27;2026-06-03&#x27; },
+    { id: &#x27;c&#x27;, description: &#x27;Dinner&#x27;, amount: 25, category: &#x27;Dining&#x27;, date: &#x27;2026-05-15&#x27; },
+    { id: &#x27;d&#x27;, description: &#x27;More groceries&#x27;, amount: 10, category: &#x27;Groceries&#x27;, date: &#x27;2026-06-10&#x27; },
+  ];
+
+  test(&#x27;sumSpentForMonth sums current month only&#x27;, () =&gt; {
+    const now = new Date(&#x27;2026-06-20T12:00:00.000Z&#x27;);
+    expect(sumSpentForMonth(txs, now)).toBe(1060);
+  });
+
+  test(&#x27;breakdownByCategoryForMonth groups and sorts&#x27;, () =&gt; {
+    const now = new Date(&#x27;2026-06-20T12:00:00.000Z&#x27;);
+    const b = breakdownByCategoryForMonth(txs, now);
+    expect(b).toEqual([
+      { category: &#x27;Rent&#x27;, total: 1000 },
+      { category: &#x27;Groceries&#x27;, total: 60 },
+    ]);
+  });
+});
+
+describe(&#x27;search and filter&#x27;, () =&gt; {
+  const txs = [
+    { id: &#x27;a&#x27;, description: &#x27;Coffee&#x27;, amount: 3.5, category: &#x27;Dining&#x27;, date: &#x27;2026-06-02&#x27; },
+    { id: &#x27;b&#x27;, description: &#x27;Bus pass&#x27;, amount: 25, category: &#x27;Transport&#x27;, date: &#x27;2026-06-03&#x27; },
+    { id: &#x27;c&#x27;, description: &#x27;Grocery run&#x27;, amount: 12, category: &#x27;Groceries&#x27;, date: &#x27;2026-06-04&#x27; },
+  ];
+
+  test(&#x27;search matches description or category (case-insensitive)&#x27;, () =&gt; {
+    expect(filterTransactions(txs, { query: &#x27;cof&#x27; }).map((t) =&gt; t.id)).toEqual([&#x27;a&#x27;]);
+    expect(filterTransactions(txs, { query: &#x27;transport&#x27; }).map((t) =&gt; t.id)).toEqual([&#x27;b&#x27;]);
+  });
+
+  test(&#x27;category filter narrows results&#x27;, () =&gt; {
+    expect(filterTransactions(txs, { category: &#x27;Groceries&#x27; }).map((t) =&gt; t.id)).toEqual([&#x27;c&#x27;]);
+  });
+
+  test(&#x27;category filter and search combine&#x27;, () =&gt; {
+    expect(filterTransactions(txs, { category: &#x27;Dining&#x27;, query: &#x27;bus&#x27; }).length).toBe(0);
+  });
+});
+</pre></details><details class="art"><summary>tests/budget-tracker-delete.spec.js — e2e spec · 28 lines</summary><pre>import { test, expect } from &#x27;@playwright/test&#x27;;
+
+test(&#x27;delete removes transaction from list and persists after reload&#x27;, async ({ page }) =&gt; {
+  await page.goto(&#x27;/&#x27;);
+  await page.evaluate(() =&gt; localStorage.clear());
+  await page.reload();
+
+  await page.getByRole(&#x27;navigation&#x27;, { name: &#x27;Primary&#x27; }).getByRole(&#x27;link&#x27;, { name: &#x27;Add&#x27; }).click();
+  await page.getByLabel(&#x27;Description&#x27;).fill(&#x27;Delete me&#x27;);
+  await page.getByLabel(&#x27;Amount&#x27;).fill(&#x27;5&#x27;);
+  await page.getByLabel(&#x27;Category&#x27;).selectOption(&#x27;Other&#x27;);
+  await page.getByRole(&#x27;button&#x27;, { name: &#x27;Add transaction&#x27; }).click();
+
+  await expect(page.getByRole(&#x27;cell&#x27;, { name: &#x27;Delete me&#x27; })).toBeVisible();
+
+  const href = await page.getByRole(&#x27;link&#x27;, { name: &#x27;View / edit&#x27; }).getAttribute(&#x27;href&#x27;);
+  await page.goto(href);
+
+  page.once(&#x27;dialog&#x27;, (d) =&gt; d.accept());
+  await page.getByRole(&#x27;button&#x27;, { name: &#x27;Delete transaction&#x27; }).click();
+
+  await expect(page.getByRole(&#x27;heading&#x27;, { name: &#x27;Transactions&#x27; })).toBeVisible();
+  await expect(page.getByRole(&#x27;cell&#x27;, { name: &#x27;Delete me&#x27; })).toHaveCount(0);
+
+  await page.reload();
+  await expect(page.getByRole(&#x27;cell&#x27;, { name: &#x27;Delete me&#x27; })).toHaveCount(0);
+});
+</pre></details><details class="art"><summary>tests/budget-tracker.spec.js — e2e spec · 97 lines</summary><pre>import { test, expect } from &#x27;@playwright/test&#x27;;
+
+test.beforeEach(async ({ page }) =&gt; {
+  await page.goto(&#x27;/&#x27;);
+  await page.evaluate(() =&gt; localStorage.clear());
+  await page.reload();
+});
+
+test(&#x27;routing + add validation + persistence across reload + edit flow&#x27;, async ({ page }) =&gt; {
+  await expect(page.getByRole(&#x27;heading&#x27;, { name: &#x27;Dashboard&#x27; })).toBeVisible();
+
+  await page.getByRole(&#x27;navigation&#x27;, { name: &#x27;Primary&#x27; }).getByRole(&#x27;link&#x27;, { name: &#x27;Add&#x27; }).click();
+  await expect(page.getByRole(&#x27;heading&#x27;, { name: &#x27;Add transaction&#x27; })).toBeVisible();
+
+  const addBtn = page.getByRole(&#x27;button&#x27;, { name: &#x27;Add transaction&#x27; });
+  await expect(addBtn).toBeDisabled();
+
+  await page.getByLabel(&#x27;Description&#x27;).fill(&#x27;Test lunch&#x27;);
+  await expect(addBtn).toBeDisabled();
+
+  await page.getByLabel(&#x27;Amount&#x27;).fill(&#x27;12.50&#x27;);
+  await expect(addBtn).toBeDisabled();
+
+  await page.getByLabel(&#x27;Category&#x27;).selectOption(&#x27;Dining&#x27;);
+  await expect(addBtn).toBeEnabled();
+
+  await addBtn.click();
+
+  await expect(page.getByRole(&#x27;heading&#x27;, { name: &#x27;Transactions&#x27; })).toBeVisible();
+  await expect(page.getByRole(&#x27;cell&#x27;, { name: &#x27;Test lunch&#x27; })).toBeVisible();
+
+  await page.getByRole(&#x27;navigation&#x27;, { name: &#x27;Primary&#x27; }).getByRole(&#x27;link&#x27;, { name: &#x27;Dashboard&#x27; }).click();
+  await expect(page.getByRole(&#x27;heading&#x27;, { name: &#x27;Dashboard&#x27; })).toBeVisible();
+  await expect(page.getByRole(&#x27;region&#x27;, { name: &#x27;Total spent this month&#x27; })).toContainText(&#x27;$12.50&#x27;);
+
+  await page.reload();
+  await page.getByRole(&#x27;navigation&#x27;, { name: &#x27;Primary&#x27; }).getByRole(&#x27;link&#x27;, { name: &#x27;Transactions&#x27; }).click();
+  await expect(page.getByRole(&#x27;cell&#x27;, { name: &#x27;Test lunch&#x27; })).toBeVisible();
+
+  const href = await page.getByRole(&#x27;link&#x27;, { name: &#x27;View / edit&#x27; }).getAttribute(&#x27;href&#x27;);
+  await page.goto(href);
+  await expect(page.getByRole(&#x27;heading&#x27;, { name: &#x27;Edit transaction&#x27; })).toBeVisible();
+
+  await page.getByLabel(&#x27;Description&#x27;).fill(&#x27;Test lunch updated&#x27;);
+  await page.getByRole(&#x27;button&#x27;, { name: &#x27;Save changes&#x27; }).click();
+
+  await expect(page.getByRole(&#x27;heading&#x27;, { name: &#x27;Transactions&#x27; })).toBeVisible();
+  await expect(page.getByRole(&#x27;cell&#x27;, { name: &#x27;Test lunch updated&#x27; })).toBeVisible();
+
+  await page.goBack();
+  await expect(page.getByRole(&#x27;heading&#x27;, { name: &#x27;Edit transaction&#x27; })).toBeVisible();
+  await page.goForward();
+  await expect(page.getByRole(&#x27;heading&#x27;, { name: &#x27;Transactions&#x27; })).toBeVisible();
+});
+
+test(&#x27;responsive: no horizontal scroll on core routes at phone width&#x27;, async ({ page }) =&gt; {
+  await page.setViewportSize({ width: 360, height: 800 });
+
+  await page.goto(&#x27;/&#x27;);
+  await expect(page.getByRole(&#x27;heading&#x27;, { name: &#x27;Dashboard&#x27; })).toBeVisible();
+  let hasHScroll = await page.evaluate(
+    () =&gt; document.documentElement.scrollWidth &gt; document.documentElement.clientWidth
+  );
+  expect(hasHScroll).toBe(false);
+
+  await page.getByRole(&#x27;navigation&#x27;, { name: &#x27;Primary&#x27; }).getByRole(&#x27;link&#x27;, { name: &#x27;Transactions&#x27; }).click();
+  await expect(page.getByRole(&#x27;heading&#x27;, { name: &#x27;Transactions&#x27; })).toBeVisible();
+  hasHScroll = await page.evaluate(
+    () =&gt; document.documentElement.scrollWidth &gt; document.documentElement.clientWidth
+  );
+  expect(hasHScroll).toBe(false);
+
+  await page.getByRole(&#x27;navigation&#x27;, { name: &#x27;Primary&#x27; }).getByRole(&#x27;link&#x27;, { name: &#x27;Add&#x27; }).click();
+  await expect(page.getByRole(&#x27;heading&#x27;, { name: &#x27;Add transaction&#x27; })).toBeVisible();
+  hasHScroll = await page.evaluate(
+    () =&gt; document.documentElement.scrollWidth &gt; document.documentElement.clientWidth
+  );
+  expect(hasHScroll).toBe(false);
+});
+
+test(&#x27;responsive: dashboard uses denser multi-column layout at desktop&#x27;, async ({ page }) =&gt; {
+  await page.setViewportSize({ width: 1024, height: 800 });
+  await page.goto(&#x27;/&#x27;);
+
+  const dashboardPanel = page.getByRole(&#x27;heading&#x27;, { name: &#x27;Dashboard&#x27; }).locator(&#x27;..&#x27;).locator(&#x27;..&#x27;);
+  const breakdownPanel = page.getByRole(&#x27;heading&#x27;, { name: &#x27;Spending by category&#x27; }).locator(&#x27;..&#x27;).locator(&#x27;..&#x27;);
+
+  const dashBox = await dashboardPanel.boundingBox();
+  const breakBox = await breakdownPanel.boundingBox();
+
+  expect(dashBox).not.toBeNull();
+  expect(breakBox).not.toBeNull();
+
+  // side-by-side: the left edge of the breakdown panel should be to the right of the dashboard panel
+  expect(breakBox.x).toBeGreaterThan(dashBox.x + dashBox.width * 0.6);
+});
+</pre></details><details class="art"><summary>vite.config.js — config · 17 lines</summary><pre>import { defineConfig } from &#x27;vite&#x27;;
+import react from &#x27;@vitejs/plugin-react&#x27;;
+
+export default defineConfig({
+  plugins: [react()],
+  server: {
+    host: &#x27;127.0.0.1&#x27;,
+    port: 5173,
+    strictPort: true,
+  },
+  preview: {
+    host: &#x27;127.0.0.1&#x27;,
+    port: 4173,
+    strictPort: true,
+  },
+});
+</pre></details><details class="art"><summary>playwright.config.js — config · 24 lines</summary><pre>import { defineConfig, devices } from &#x27;@playwright/test&#x27;;
+
+export default defineConfig({
+  testDir: &#x27;./tests&#x27;,
+  timeout: 30_000,
+  expect: { timeout: 5_000 },
+  use: {
+    baseURL: &#x27;http://127.0.0.1:4173&#x27;,
+    trace: &#x27;on-first-retry&#x27;,
+  },
+  webServer: {
+    command: &#x27;npm run preview&#x27;,
+    url: &#x27;http://127.0.0.1:4173&#x27;,
+    reuseExistingServer: true,
+    timeout: 60_000,
+  },
+  projects: [
+    {
+      name: &#x27;chromium&#x27;,
+      use: { ...devices[&#x27;Desktop Chrome&#x27;] },
+    },
+  ],
+});
+</pre></details><details class="art"><summary>test_evidence/summary.md — the written proof (incl. the stack decision) · 553 words</summary><pre># Budget tracker — sprint 1 summary
+
+## Stack choice + rationale
+
+**Chosen stack:** React + React Router + Vite (SPA), unit tests with **Vitest**, end-to-end tests with **Playwright**.
+
+**Why this stack:** The acceptance criteria require **multiple routed screens with real URLs**, deep-linking directly to a specific transaction detail route, and reliable back/forward navigation while keeping shared in-memory state (the transaction list) consistent across pages. React Router cleanly owns the routing/history behavior, and React makes shared state + immediate UI updates after add/edit/delete straightforward without hand-rolled DOM/routing code. Vite keeps the build/test loop fast and predictable.
+
+Trade-off: this is heavier than a no-framework vanilla approach, but the app’s requirements (routing + shared CRUD state + accessible forms + tests) justify a component framework and router.
+
+## What was built
+
+A multi-screen budget tracker SPA with these routes:
+
+- `/` — **Dashboard**: shows total spent for the current month and a breakdown by category.
+- `/transactions` — **Transactions list**: shows all stored transactions, with search-by-text and category filter (stored in the URL query params for share/back/forward).
+- `/add` — **Add transaction**: description, positive amount, category, date.
+- `/transactions/:id` — **Transaction detail/edit**: edit any field and save, or delete.
+
+### Persistence
+
+Transactions are persisted to `localStorage` under the key `budgetTracker.transactions.v1`.
+
+- On app start, the provider loads transactions from storage.
+- Any add/update/delete dispatch updates React state; a `useEffect` persists the updated list back to storage.
+- This supports refresh/browser restart persistence and direct linking to a detail route.
+
+### Domain logic seam
+
+Pure logic lives in `src/domain/*` (validation, filtering/search, monthly totals, category rollups, storage adapter). UI reads/writes through the reducer and uses the domain functions to derive dashboard metrics and list filtering.
+
+## Accessibility decisions
+
+- Semantic landmarks: `header` (banner), `nav` with `aria-label=&quot;Primary&quot;`, `main`.
+- Keyboard operability: native links/buttons/inputs, standard tab order; visible focus ring via CSS `outline`.
+- Forms:
+  - Proper `&lt;label htmlFor&gt;` for every input.
+  - Field-level validation errors shown as text and wired via `aria-describedby` + `aria-invalid`.
+  - Submit button is **disabled until the form is valid**, and a submit attempt reveals per-field errors (screen readers will announce via `role=&quot;alert&quot;`).
+
+## Responsive behavior
+
+Mobile-first single-column layout, with a denser multi-column dashboard at wider widths:
+
+- On narrow viewports, dashboard stacks into one column with no horizontal scrolling.
+- At `min-width: 860px`, the dashboard uses a two-column grid and the controls/table spacing is denser.
+
+## Tests
+
+### Unit tests (npm test)
+
+Vitest unit tests cover:
+
+- Validation rules: required fields, positive amount, allowed categories, valid ISO date.
+- Aggregation: current-month total spent and category breakdown.
+- Search/filter behavior (query + category filter combination).
+
+Result: see `test_evidence/unit.txt` (8 tests passed).
+
+### E2E tests (npx playwright test)
+
+Playwright covers:
+
+- Routing across screens (Dashboard → Add → Transactions).
+- Add form validation + submit disabled until valid.
+- Persistence across reload (transaction remains after refresh).
+- Deep-link to a specific transaction detail route and **edit** flow.
+- Back/forward navigation behavior.
+- Responsive assertions: no horizontal scroll at phone width; multi-column grid at desktop width.
+
+Result: see `test_evidence/e2e.txt` (2 tests passed).
+
+## Known gaps / trade-offs
+
+- Delete flow is implemented (with a native confirm) but the main e2e focuses on the edit path rather than delete; delete can be added as a follow-up scenario if needed.
+- Currency is formatted as USD for simplicity.
+</pre></details><details class="art"><summary>reverify_unit.txt — the harness&#x27;s OWN unit re-run · 18 lines</summary><pre>$ npm test
+[exit 0]
+
+
+&gt; budget-tracker@0.0.0 test
+&gt; vitest run
+
+
+[1m[46m RUN [49m[22m [36mv3.2.4 [39m[90mq:/projects/inspired-arc/chorus/.chorus/work/frontend-eng-hard-budget/worktrees/finn[39m
+
+ [32m✓[39m src/domain/transactions.test.js [2m([22m[2m8 tests[22m[2m)[22m[32m 9[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m1 passed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[32m8 passed[39m[22m[90m (8)[39m
+[2m   Start at [22m 21:17:17
+[2m   Duration [22m 1.85s[2m (transform 59ms, setup 200ms, collect 43ms, tests 9ms, environment 928ms, prepare 284ms)[22m
+
+</pre></details><details class="art"><summary>reverify_e2e.txt — the harness&#x27;s OWN e2e re-run · 8 lines</summary><pre>$ npx playwright test
+[exit 0]
+
+
+Running 4 tests using 2 workers
+····
+  4 passed (4.9s)
+</pre></details>
+
+<div class="note"><b>Reading the errors:</b> most <span class="err">err</span> markers are benign — the
+model retrying a <code>read_file</code> against an offloaded scratch path, a reviewer probing a file
+that doesn't exist, or the DoD oracle's Windows-only floor probe. The engineering flow itself completed:
+size → build → unit + e2e tests → run &amp; capture → review under pressure. The verdict box at the top
+is the honest answer: it re-runs the shipped suites in a clean process.</div>
+
+<footer>Generated from reports/frontend-engineer-artifacts/budget/flow.log — Frontend Engineer beat, model gpt-5.2 (Azure). Press E to expand all, C to collapse subagents.</footer>
+</div>
+
+<script>
+  document.addEventListener('keydown', e => {
+    if (e.key === 'e' || e.key === 'E') document.querySelectorAll('details').forEach(d => d.open = true);
+    if (e.key === 'c' || e.key === 'C') document.querySelectorAll('details.sub').forEach(d => d.open = false);
+  });
+</script>
+</body></html>

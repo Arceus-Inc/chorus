@@ -1,0 +1,1050 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Frontend Engineer — Run Flow Report (rsvp)</title>
+<style>
+  :root {
+    --bg:#f6f8fa; --card:#ffffff; --ink:#1f2328; --muted:#57606a; --line:#d0d7de;
+    --accent:#0d9488; --accent-soft:#ecfeff;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink);
+    font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; }
+  .wrap { max-width:960px; margin:0 auto; padding:32px 20px 80px; }
+  header.top { background:linear-gradient(135deg,#ecfeff,#f6f8fa); border:1px solid var(--line);
+    border-radius:16px; padding:28px 28px 22px; margin-bottom:22px; }
+  header.top .eyebrow { color:var(--accent); font-weight:700; letter-spacing:.06em;
+    text-transform:uppercase; font-size:12px; }
+  header.top h1 { margin:.2em 0 .3em; font-size:26px; }
+  header.top .intent { color:var(--muted); margin:0; }
+  header.top .intent b { color:var(--ink); }
+  .badge { font-size:12px; font-weight:700; padding:3px 10px; border-radius:999px; }
+  .badge.ok { background:#dcfce7; color:#166534; }
+  .badge.warn { background:#fef9c3; color:#854d0e; }
+  .badge.info { background:var(--accent-soft); color:#0e7490; }
+  .reverify { background:var(--card); border:1px solid var(--line); border-radius:14px;
+    padding:6px 20px 18px; margin:22px 0; }
+  .reverify h2 { font-size:13px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted);
+    margin:16px 0 6px; }
+  .vrow { display:flex; align-items:center; gap:12px; padding:8px 0; border-bottom:1px dashed var(--line); }
+  .vrow:last-of-type { border-bottom:none; }
+  .vlabel { min-width:230px; font-weight:600; font-size:14px; }
+  .vrow .muted { color:var(--muted); font-size:12.5px; }
+  .overall { display:flex; align-items:center; gap:14px; margin-top:14px; padding:14px 16px;
+    border-radius:12px; }
+  .overall.ok { background:#f0fdf4; border:1px solid #bbf7d0; }
+  .overall.warn { background:#fffbeb; border:1px solid #fde68a; }
+  .overall .big { font-size:18px; font-weight:800; letter-spacing:.02em; }
+  .overall.ok .big { color:#166534; }
+  .overall.warn .big { color:#854d0e; }
+  .overall p { margin:0; color:var(--muted); font-size:13px; }
+  .chips { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; margin:22px 0; }
+  .chip { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:14px 16px;
+    color:var(--muted); font-size:12.5px; }
+  .chip span { display:block; font-size:24px; font-weight:750; color:var(--ink); line-height:1.1; }
+  .subchips { display:flex; flex-wrap:wrap; gap:8px; margin:-6px 0 22px; }
+  .subchip { background:#f3e8ff; color:#6b21a8; border:1px solid #e9d5ff; border-radius:999px;
+    padding:4px 12px; font-size:13px; }
+  h2.sec { font-size:15px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted);
+    margin:34px 0 12px; }
+  .legend { display:flex; flex-wrap:wrap; gap:14px; margin-bottom:14px; font-size:12.5px; color:var(--muted); }
+  .leg { display:inline-flex; align-items:center; gap:6px; }
+  .dot { width:9px; height:9px; border-radius:50%; display:inline-block; flex:0 0 auto; }
+  .phase { background:var(--card); border:1px solid var(--line); border-radius:14px;
+    margin-bottom:16px; overflow:hidden; }
+  .phase-head { display:flex; gap:14px; align-items:flex-start; padding:18px 20px 14px;
+    border-bottom:1px solid var(--line); background:#fbfcfe; }
+  .pnum { flex:0 0 auto; width:30px; height:30px; border-radius:50%; background:var(--accent);
+    color:#fff; font-weight:750; display:grid; place-items:center; }
+  .phase-head h3 { margin:2px 0 3px; font-size:17px; }
+  .phase-head p { margin:0; color:var(--muted); font-size:13.5px; }
+  .phase-body { padding:12px 16px 16px; display:flex; flex-direction:column; gap:5px; }
+  .step { display:flex; align-items:center; gap:9px; padding:5px 8px; border-radius:8px; font-size:13.5px; }
+  .step:hover { background:#f6f8fa; }
+  .step .tool { font-weight:650; }
+  .step .arg { color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+    font:12.5px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; }
+  .err { font-size:10.5px; font-weight:700; color:#b91c1c; background:#fee2e2; border-radius:5px;
+    padding:1px 6px; }
+  details.sub { border:1px solid #e9d5ff; border-radius:10px; background:#faf5ff; margin:3px 0; }
+  details.sub > summary { cursor:pointer; list-style:none; padding:8px 12px; display:flex;
+    align-items:center; gap:9px; font-size:13.5px; }
+  details.sub > summary::-webkit-details-marker { display:none; }
+  details.sub > summary::before { content:"▶"; font-size:9px; color:#a855f7; transition:transform .15s; }
+  details.sub[open] > summary::before { transform:rotate(90deg); }
+  details.sub .agent { font-weight:750; color:#6b21a8; }
+  details.sub .count { margin-left:auto; color:var(--muted); font-size:12px; }
+  .subbody { padding:2px 12px 12px 26px; display:flex; flex-direction:column; gap:3px;
+    border-top:1px dashed #e9d5ff; }
+  .empty { color:var(--muted); font-size:13px; padding:6px; }
+  .eval { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px 18px;
+    margin-bottom:12px; }
+  .eval-top { display:flex; align-items:center; gap:12px; }
+  .eval-top .score { margin-left:auto; color:var(--muted); font-size:13px; }
+  .bar { height:8px; background:#eaeef2; border-radius:999px; margin:10px 0 8px; overflow:hidden; }
+  .bar span { display:block; height:100%; background:linear-gradient(90deg,#14b8a6,#0d9488); }
+  .notes { margin:0; color:var(--muted); font-size:13px; }
+  details.art { background:var(--card); border:1px solid var(--line); border-radius:12px;
+    margin-bottom:12px; }
+  details.art > summary { cursor:pointer; padding:14px 18px; font-weight:650; }
+  details.art pre { margin:0; padding:0 18px 18px; white-space:pre-wrap; word-wrap:break-word;
+    font:12.5px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; color:#24292f; }
+  .note { background:#fffbeb; border:1px solid #fde68a; border-radius:12px; padding:14px 18px;
+    color:#854d0e; font-size:13.5px; margin-top:8px; }
+  footer { color:var(--muted); font-size:12px; text-align:center; margin-top:40px; }
+</style></head>
+<body><div class="wrap">
+
+<header class="top">
+  <div class="eyebrow">Chorus · Frontend Engineer (Finn) · task &ldquo;rsvp&rdquo;</div>
+  <h1>Run Flow Report</h1>
+  <p class="intent"><b>Intent:</b> Build an event RSVP page. The guest gives their name, an email address, how many people they are bringing, and whether they need a vegetarian meal. The page checks the answers, keeps the confirm/submit action unavailable until everything given is acceptable, tells the guest clearly what is wrong with any individual field in a way that someone using a screen reader would also hear, and on a good submission replaces the form with a confirmation that repeats back what they chose.</p>
+</header>
+
+<div class="reverify">
+  <h2>Independent verification — did the shipped code actually work?</h2>
+  <div class="vrow"><span class="vlabel">DoD floor (after-beat gate)</span><span class="badge ok">pass</span></div><div class="vrow"><span class="vlabel">Independent unit re-run</span><span class="badge ok">exit 0</span> <span class="muted">node --test, clean process, shipped worktree</span></div><div class="vrow"><span class="vlabel">Independent e2e re-run</span><span class="badge ok">exit 0</span> <span class="muted">npx playwright test, real browser</span></div>
+  <div class="overall ok"><span class="big">TRULY PASSED</span><p>the shipped code passed the DoD floor AND both suites went green again under the harness's own hands</p></div>
+</div>
+
+<div class="chips"><div class="chip"><span>181</span>Total tool calls</div><div class="chip"><span>8</span>Subagents spawned</div><div class="chip"><span>22</span>run_command calls</div><div class="chip"><span>5</span>skills loaded</div><div class="chip"><span>1</span>Sprints</div></div>
+<div class="subchips"><span class="subchip">code_reviewer <b>&times;4</b></span><span class="subchip">ui_tester <b>&times;4</b></span></div>
+
+<h2 class="sec">The flow, phase by phase</h2>
+<div class="legend"><span class="leg"><span class="dot" style="background:#7c3aed"></span>subagent</span><span class="leg"><span class="dot" style="background:#0d9488"></span>run</span><span class="leg"><span class="dot" style="background:#d97706"></span>git</span><span class="leg"><span class="dot" style="background:#2563eb"></span>evidence</span><span class="leg"><span class="dot" style="background:#16a34a"></span>write</span><span class="leg"><span class="dot" style="background:#6b7280"></span>read</span><span class="leg"><span class="dot" style="background:#db2777"></span>skill</span></div>
+<section class="phase"><div class="phase-head"><span class="pnum">0</span><div><h3>Understand &amp; size</h3><p>Read the intent and any existing code, load the craft <b>skill</b> that fits, and pick the smallest slice that <em>actually works</em>.</p></div></div><div class="phase-body"><div class="step"><span class="dot" style="background:#d97706"></span><span class="tool">git</span><span class="arg">git status --porcelain=v1</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">dir</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">if exist DESIGN.md (type DESIGN.md) else (echo NO_DESIGN_MD)</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">dir docs</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">dir docs\\exec-plans</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">dir docs\\exec-plans\\active</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">docs/exec-plans/active/run-rsvp.md</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">docs/exec-plans/active/run-rsvp.json</span></div><div class="step"><span class="dot" style="background:#db2777"></span><span class="tool">skill</span><span class="arg">spec-to-working-app</span></div><div class="step"><span class="dot" style="background:#db2777"></span><span class="tool">skill</span><span class="arg">forms-and-validation</span></div><div class="step"><span class="dot" style="background:#db2777"></span><span class="tool">skill</span><span class="arg">unit-testing-with-node-test</span></div><div class="step"><span class="dot" style="background:#db2777"></span><span class="tool">skill</span><span class="arg">playwright-e2e-authoring</span></div><div class="step"><span class="dot" style="background:#db2777"></span><span class="tool">skill</span><span class="arg">web-first-assertions</span></div></div></section><section class="phase"><div class="phase-head"><span class="pnum">1</span><div><h3>Build the slice</h3><p>Write the running app — <code>index.html</code> + ES modules + CSS — accessible by construction and wired end to end so the behaviour happens in the browser.</p></div></div><div class="phase-body"><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">index.html</span></div><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">src/validation.js</span></div><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">src/app.js</span></div></div></section><section class="phase"><div class="phase-head"><span class="pnum">2</span><div><h3>Author the tests</h3><p>Write Node <b>unit</b> specs for the logic and a real-browser <b>Playwright</b> e2e that drives the app the way a user does.</p></div></div><div class="phase-body"><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">tests/validation.test.js</span></div><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">playwright.config.js</span></div><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">e2e/rsvp.spec.js</span></div><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">package.json</span></div></div></section><section class="phase"><div class="phase-head"><span class="pnum">3</span><div><h3>Run &amp; capture the proof</h3><p>Install deps, run both suites, and tee the <em>real</em> output into the durable <code>test_evidence/</code> bundle.</p></div></div><div class="phase-body"><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">npm install</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">mkdir test_evidence 2&gt;nul</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">npm test &gt; test_evidence\\unit.txt 2&gt;&amp;1</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">npx playwright test &gt; test_evidence\\e2e.txt 2&gt;&amp;1</span></div><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">test_evidence/summary.md</span></div></div></section><section class="phase"><div class="phase-head"><span class="pnum">4</span><div><h3>Review under pressure</h3><p>Spawn the read-only <b>code_reviewer</b> and <b>ui_tester</b>, self-check with <b>test_evidence</b>, address every blocker/major, and re-run until green.</p></div></div><div class="phase-body"><details class="sub"><summary><span class="dot" style="background:#7c3aed"></span><b>spawn_subagent</b> <span class="agent">code_reviewer</span><span class="count">34 inner calls · 3 benign err</span></summary><div class="subbody"><div class="step"><span class="dot" style="background:#2563eb"></span><span class="tool">test_evidence</span><span class="arg">(scan the worktree)</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">index.html</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">app.js</span> <span class="err" title="benign — usually a retry reading an offloaded scratch file or a Windows-only DoD floor probe">err</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">tests/rsvp.test.js</span> <span class="err" title="benign — usually a retry reading an offloaded scratch file or a Windows-only DoD floor probe">err</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">e2e/rsvp.spec.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">test_evidence/summary.md</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">test_evidence/unit.txt</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">test_evidence/e2e.txt</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/app.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/validation.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">tests/validation.test.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/app.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">20260705-110525-read_file-a70cfb2b654b.txt</span> <span class="err" title="benign — usually a retry reading an offloaded scratch file or a Windows-only DoD floor probe">err</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/app.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/app.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/app.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/app.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/app.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/app.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/app.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/app.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/app.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/app.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/app.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/app.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/app.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/app.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/app.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/app.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/app.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">index.html</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">index.html</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">index.html</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">index.html</span></div></div></details><details class="sub"><summary><span class="dot" style="background:#7c3aed"></span><b>spawn_subagent</b> <span class="agent">ui_tester</span><span class="count">9 inner calls · 3 benign err</span></summary><div class="subbody"><div class="step"><span class="dot" style="background:#2563eb"></span><span class="tool">test_evidence</span><span class="arg">(scan the worktree)</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">e2e/rsvp.spec.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">test_evidence/e2e.txt</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">index.html</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">test_evidence/summary.md</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">20260705-110626-read_file-5a790f62fb9d.txt</span> <span class="err" title="benign — usually a retry reading an offloaded scratch file or a Windows-only DoD floor probe">err</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">dir /b</span> <span class="err" title="benign — usually a retry reading an offloaded scratch file or a Windows-only DoD floor probe">err</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">index.html</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">20260705-110632-read_file-751c089488fe.txt</span> <span class="err" title="benign — usually a retry reading an offloaded scratch file or a Windows-only DoD floor probe">err</span></div></div></details><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">src/app.js</span></div><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">e2e/rsvp.spec.js</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">npm test &gt; test_evidence\\unit.txt 2&gt;&amp;1</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">npx playwright test &gt; test_evidence\\e2e.txt 2&gt;&amp;1</span> <span class="err" title="benign — usually a retry reading an offloaded scratch file or a Windows-only DoD floor probe">err</span></div><details class="sub"><summary><span class="dot" style="background:#7c3aed"></span><b>spawn_subagent</b> <span class="agent">code_reviewer</span><span class="count">14 inner calls · 2 benign err</span></summary><div class="subbody"><div class="step"><span class="dot" style="background:#2563eb"></span><span class="tool">test_evidence</span><span class="arg">(scan the worktree)</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">index.html</span></div><div class="step"><span class="dot" style="background:#d97706"></span><span class="tool">git</span><span class="arg">git diff --name-only</span> <span class="err" title="benign — usually a retry reading an offloaded scratch file or a Windows-only DoD floor probe">err</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">e2e/rsvp.spec.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">tests/**/*.test.*</span> <span class="err" title="benign — usually a retry reading an offloaded scratch file or a Windows-only DoD floor probe">err</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">test_evidence/e2e.txt</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/app.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/validation.js</span></div><div class="step"><span class="dot" style="background:#2563eb"></span><span class="tool">test_evidence</span><span class="arg">(scan the worktree)</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/app.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/app.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/app.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/app.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/app.js</span></div></div></details><details class="sub"><summary><span class="dot" style="background:#7c3aed"></span><b>spawn_subagent</b> <span class="agent">ui_tester</span><span class="count">5 inner calls · 1 benign err</span></summary><div class="subbody"><div class="step"><span class="dot" style="background:#2563eb"></span><span class="tool">test_evidence</span><span class="arg">(scan the worktree)</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">test_evidence/e2e.txt</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">e2e</span> <span class="err" title="benign — usually a retry reading an offloaded scratch file or a Windows-only DoD floor probe">err</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">index.html</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">e2e/rsvp.spec.js</span></div></div></details><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">src/app.js</span></div><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">e2e/rsvp.spec.js</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">npm test &gt; test_evidence\\unit.txt 2&gt;&amp;1</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">npx playwright test &gt; test_evidence\\e2e.txt 2&gt;&amp;1</span> <span class="err" title="benign — usually a retry reading an offloaded scratch file or a Windows-only DoD floor probe">err</span></div><details class="sub"><summary><span class="dot" style="background:#7c3aed"></span><b>spawn_subagent</b> <span class="agent">ui_tester</span><span class="count">5 inner calls · 2 benign err</span></summary><div class="subbody"><div class="step"><span class="dot" style="background:#2563eb"></span><span class="tool">test_evidence</span><span class="arg">(scan the worktree)</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">test_evidence/e2e.txt</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">e2e</span> <span class="err" title="benign — usually a retry reading an offloaded scratch file or a Windows-only DoD floor probe">err</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">dir e2e</span> <span class="err" title="benign — usually a retry reading an offloaded scratch file or a Windows-only DoD floor probe">err</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">e2e/rsvp.spec.js</span></div></div></details><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">type test_evidence\\e2e.txt</span></div><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">e2e/rsvp.spec.js</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">npx playwright test &gt; test_evidence\\e2e.txt 2&gt;&amp;1</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">type test_evidence\\e2e.txt</span></div><details class="sub"><summary><span class="dot" style="background:#7c3aed"></span><b>spawn_subagent</b> <span class="agent">code_reviewer</span><span class="count">18 inner calls · 1 benign err</span></summary><div class="subbody"><div class="step"><span class="dot" style="background:#2563eb"></span><span class="tool">test_evidence</span><span class="arg">(scan the worktree)</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">index.html</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">e2e/rsvp.spec.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">tests/validation.test.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/main.js</span> <span class="err" title="benign — usually a retry reading an offloaded scratch file or a Windows-only DoD floor probe">err</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/validation.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/app.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/app.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/app.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/app.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/app.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/app.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/app.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/app.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/app.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/app.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/app.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">index.html</span></div></div></details><details class="sub"><summary><span class="dot" style="background:#7c3aed"></span><b>spawn_subagent</b> <span class="agent">ui_tester</span><span class="count">5 inner calls</span></summary><div class="subbody"><div class="step"><span class="dot" style="background:#2563eb"></span><span class="tool">test_evidence</span><span class="arg">(scan the worktree)</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">e2e/rsvp.spec.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">test_evidence/e2e.txt</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">index.html</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">test_evidence/summary.md</span></div></div></details><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">src/app.js</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">npm test &gt; test_evidence\\unit.txt 2&gt;&amp;1</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">npx playwright test &gt; test_evidence\\e2e.txt 2&gt;&amp;1</span></div><details class="sub"><summary><span class="dot" style="background:#7c3aed"></span><b>spawn_subagent</b> <span class="agent">code_reviewer</span><span class="count">11 inner calls · 1 benign err</span></summary><div class="subbody"><div class="step"><span class="dot" style="background:#2563eb"></span><span class="tool">test_evidence</span><span class="arg">(scan the worktree)</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">index.html</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">e2e/rsvp.spec.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">tests/validation.test.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/validation.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">20260705-111049-read_file-b9a52c809210.txt</span> <span class="err" title="benign — usually a retry reading an offloaded scratch file or a Windows-only DoD floor probe">err</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">index.html</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/app.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/app.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/app.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/app.js</span></div></div></details><div class="step"><span class="dot" style="background:#2563eb"></span><span class="tool">test_evidence</span><span class="arg">(scan the worktree)</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg"></span></div><div class="step"><span class="dot" style="background:#d97706"></span><span class="tool">git</span><span class="arg">git status --porcelain=v1</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">index.html</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">test_evidence/summary.md</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">dir /s /b tests e2e src 2&gt;nul &amp; dir /s /b test_evidence</span> <span class="err" title="benign — usually a retry reading an offloaded scratch file or a Windows-only DoD floor probe">err</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/app.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/validation.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">tests/validation.test.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">e2e/rsvp.spec.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">playwright.config.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">test_evidence/unit.txt</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">test_evidence/e2e.txt</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">index.html</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">index.html</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">20260705-111130-read_file-e4c184bcba17.txt</span> <span class="err" title="benign — usually a retry reading an offloaded scratch file or a Windows-only DoD floor probe">err</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">index.html</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">20260705-111142-read_file-090ee894763a.txt</span> <span class="err" title="benign — usually a retry reading an offloaded scratch file or a Windows-only DoD floor probe">err</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/app.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/app.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/app.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/app.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/app.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/app.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/app.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/app.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/app.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/app.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/app.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/app.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/app.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/app.js</span></div></div></section>
+
+<h2 class="sec">Sprint evaluations</h2>
+<div class="eval"><div class="eval-top"><span class="badge ok">sprint 1: pass</span><span class="score">score 1.00</span></div><div class="bar"><span style="width:100%"></span></div><p class="notes">RSVP form + accessible inline validation + disabled-until-valid submit + focus-first-invalid + confirmation view are implemented; unit + Playwright e2e tests exist and captured evidence shows both suites passing.</p></div>
+
+<h2 class="sec">Artifacts produced</h2>
+<details class="art"><summary>index.html — the running app entry · 189 lines</summary><pre>&lt;!doctype html&gt;
+&lt;html lang=&quot;en&quot;&gt;
+  &lt;head&gt;
+    &lt;meta charset=&quot;utf-8&quot; /&gt;
+    &lt;meta name=&quot;viewport&quot; content=&quot;width=device-width, initial-scale=1&quot; /&gt;
+    &lt;title&gt;Event RSVP&lt;/title&gt;
+    &lt;style&gt;
+      :root {
+        --bg: #0b1020;
+        --surface: #121a33;
+        --text: #f2f5ff;
+        --muted: #c6cbe0;
+        --border: #2a3563;
+        --danger: #ff5c7a;
+        --focus: #9cd3ff;
+        --primary: #7aa2ff;
+        --primaryText: #0b1020;
+      }
+
+      * { box-sizing: border-box; }
+
+      body {
+        margin: 0;
+        font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+        background: radial-gradient(1000px 500px at 20% 0%, #18224a 0%, var(--bg) 55%);
+        color: var(--text);
+        line-height: 1.4;
+      }
+
+      a { color: inherit; }
+
+      .wrap {
+        max-width: 720px;
+        padding: 32px 16px;
+        margin: 0 auto;
+      }
+
+      header h1 {
+        margin: 0 0 8px;
+        font-size: 1.75rem;
+      }
+
+      header p {
+        margin: 0;
+        color: var(--muted);
+      }
+
+      main {
+        margin-top: 24px;
+        background: color-mix(in srgb, var(--surface) 92%, #000 8%);
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        padding: 20px;
+      }
+
+      form {
+        display: grid;
+        gap: 16px;
+      }
+
+      .field {
+        display: grid;
+        gap: 6px;
+      }
+
+      label, legend {
+        font-weight: 650;
+      }
+
+      input[type=&quot;text&quot;],
+      input[type=&quot;email&quot;],
+      input[type=&quot;number&quot;] {
+        width: 100%;
+        padding: 10px 12px;
+        border-radius: 10px;
+        border: 1px solid var(--border);
+        background: #0b1228;
+        color: var(--text);
+      }
+
+      fieldset {
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 12px;
+      }
+
+      .radios {
+        display: grid;
+        gap: 8px;
+        margin-top: 8px;
+      }
+
+      .radioLine {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .hint {
+        margin: 0;
+        color: var(--muted);
+        font-size: 0.95rem;
+      }
+
+      .error {
+        margin: 0;
+        color: var(--danger);
+        font-weight: 600;
+      }
+
+      .actions {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-top: 4px;
+      }
+
+      button {
+        padding: 10px 14px;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        background: transparent;
+        color: var(--text);
+        font-weight: 700;
+        cursor: pointer;
+      }
+
+      button.primary {
+        background: var(--primary);
+        color: var(--primaryText);
+        border-color: color-mix(in srgb, var(--primary) 60%, #000 40%);
+      }
+
+      button[disabled] {
+        opacity: 0.6;
+        cursor: not-allowed;
+      }
+
+      :focus-visible {
+        outline: 3px solid var(--focus);
+        outline-offset: 3px;
+      }
+
+      input[aria-invalid=&quot;true&quot;],
+      fieldset[aria-invalid=&quot;true&quot;] {
+        border-color: color-mix(in srgb, var(--danger) 70%, var(--border));
+      }
+
+      .confirmation {
+        display: grid;
+        gap: 12px;
+      }
+
+      .card {
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        padding: 14px;
+        background: #0b1228;
+      }
+
+      dl {
+        display: grid;
+        grid-template-columns: 180px 1fr;
+        gap: 8px 12px;
+        margin: 0;
+      }
+
+      dt { color: var(--muted); }
+      dd { margin: 0; font-weight: 650; }
+
+      @media (max-width: 520px) {
+        dl { grid-template-columns: 1fr; }
+      }
+    &lt;/style&gt;
+  &lt;/head&gt;
+  &lt;body&gt;
+    &lt;div class=&quot;wrap&quot;&gt;
+      &lt;header&gt;
+        &lt;h1&gt;RSVP&lt;/h1&gt;
+        &lt;p&gt;Please confirm your details for the event.&lt;/p&gt;
+      &lt;/header&gt;
+
+      &lt;main id=&quot;app&quot; aria-live=&quot;polite&quot;&gt;&lt;/main&gt;
+    &lt;/div&gt;
+
+    &lt;script type=&quot;module&quot; src=&quot;./src/app.js&quot;&gt;&lt;/script&gt;
+  &lt;/body&gt;
+&lt;/html&gt;
+</pre></details><details class="art"><summary>src/app.js — ES module · 400 lines</summary><pre>import { validateAll, normalizeSubmission, MAX_ATTENDEES } from &#x27;./validation.js&#x27;;
+
+const appEl = document.getElementById(&#x27;app&#x27;);
+
+const initialState = {
+  status: &#x27;editing&#x27;, // editing | confirmed
+  values: {
+    name: &#x27;&#x27;,
+    email: &#x27;&#x27;,
+    attendees: &#x27;&#x27;,
+    vegetarian: &#x27;&#x27;,
+  },
+  touched: {
+    name: false,
+    email: false,
+    attendees: false,
+    vegetarian: false,
+  },
+  submitted: null,
+};
+
+let state = structuredClone(initialState);
+
+function setState(patch) {
+  state = { ...state, ...patch };
+  render();
+}
+
+function setValue(field, value) {
+  const values = { ...state.values, [field]: value };
+  setState({ values });
+}
+
+function markTouched(field) {
+  const touched = { ...state.touched, [field]: true };
+  setState({ touched });
+}
+
+function markAllTouched() {
+  setState({
+    touched: {
+      name: true,
+      email: true,
+      attendees: true,
+      vegetarian: true,
+    },
+  });
+}
+
+function fieldIds(field) {
+  return {
+    inputId: `rsvp-${field}`,
+    errorId: `rsvp-${field}-error`,
+  };
+}
+
+function render() {
+  appEl.replaceChildren(state.status === &#x27;confirmed&#x27; ? renderConfirmation() : renderForm());
+}
+
+function attemptSubmit() {
+  markAllTouched();
+  const next = validateAll(state.values);
+  if (!next.isValid) {
+    focusFirstInvalid(next.errors);
+    return;
+  }
+
+  const submitted = normalizeSubmission(state.values);
+  setState({ status: &#x27;confirmed&#x27;, submitted });
+}
+
+function renderForm() {
+  const { errors, isValid } = validateAll(state.values);
+
+  const form = document.createElement(&#x27;form&#x27;);
+  form.noValidate = true;
+  form.ariaLabel = &#x27;RSVP form&#x27;;
+
+  form.append(
+    renderTextField({
+      field: &#x27;name&#x27;,
+      label: &#x27;Guest name&#x27;,
+      autocomplete: &#x27;name&#x27;,
+      value: state.values.name,
+      error: state.touched.name ? errors.name : null,
+      onInput: (v) =&gt; setValue(&#x27;name&#x27;, v),
+      onBlur: () =&gt; markTouched(&#x27;name&#x27;),
+    }),
+    renderEmailField({
+      field: &#x27;email&#x27;,
+      label: &#x27;Email address&#x27;,
+      autocomplete: &#x27;email&#x27;,
+      value: state.values.email,
+      error: state.touched.email ? errors.email : null,
+      onInput: (v) =&gt; setValue(&#x27;email&#x27;, v),
+      onBlur: () =&gt; markTouched(&#x27;email&#x27;),
+    }),
+    renderNumberField({
+      field: &#x27;attendees&#x27;,
+      label: &#x27;Number of attendees&#x27;,
+      hint: `Enter a whole number from 1 to ${MAX_ATTENDEES}.`,
+      value: state.values.attendees,
+      error: state.touched.attendees ? errors.attendees : null,
+      onInput: (v) =&gt; setValue(&#x27;attendees&#x27;, v),
+      onBlur: () =&gt; markTouched(&#x27;attendees&#x27;),
+    }),
+    renderVegetarianField({
+      field: &#x27;vegetarian&#x27;,
+      label: &#x27;Vegetarian meal needed?&#x27;,
+      value: state.values.vegetarian,
+      error: state.touched.vegetarian ? errors.vegetarian : null,
+      onChange: (v) =&gt; setValue(&#x27;vegetarian&#x27;, v),
+      onBlur: () =&gt; markTouched(&#x27;vegetarian&#x27;),
+    }),
+    renderActions({ isValid })
+  );
+
+  form.addEventListener(&#x27;submit&#x27;, (e) =&gt; {
+    e.preventDefault();
+    attemptSubmit();
+  });
+
+  // Allow keyboard users to trigger validation even while the submit button is disabled
+  // (e.g. pressing Enter inside a field).
+  form.addEventListener(&#x27;keydown&#x27;, (e) =&gt; {
+    if (e.key !== &#x27;Enter&#x27;) return;
+
+    const active = document.activeElement;
+    const isTextLike =
+      active instanceof HTMLInputElement &amp;&amp;
+      (active.type === &#x27;text&#x27; || active.type === &#x27;email&#x27; || active.type === &#x27;number&#x27;);
+
+    if (!isTextLike) return;
+
+    e.preventDefault();
+    attemptSubmit();
+  });
+
+  return form;
+}
+
+function focusFirstInvalid(errors) {
+  const order = [&#x27;name&#x27;, &#x27;email&#x27;, &#x27;attendees&#x27;, &#x27;vegetarian&#x27;];
+  const first = order.find((f) =&gt; errors[f]);
+  if (!first) return;
+
+  if (first === &#x27;vegetarian&#x27;) {
+    const { inputId } = fieldIds(&#x27;vegetarian&#x27;);
+    const checked = document.querySelector(`input[name=&quot;vegetarian&quot;]:checked`);
+    const target = checked ?? document.getElementById(`${inputId}-yes`) ?? document.getElementById(`${inputId}-no`);
+    target?.focus();
+    return;
+  }
+
+  const { inputId } = fieldIds(first);
+  document.getElementById(inputId)?.focus();
+}
+
+function renderFieldShell({ field, labelText, controlEl, errorText, hintText }) {
+  const shell = document.createElement(&#x27;div&#x27;);
+  shell.className = &#x27;field&#x27;;
+
+  const label = document.createElement(&#x27;label&#x27;);
+  const { inputId, errorId } = fieldIds(field);
+  label.htmlFor = inputId;
+  label.textContent = labelText;
+
+  const describedBy = [];
+
+  if (hintText) {
+    const hint = document.createElement(&#x27;p&#x27;);
+    hint.className = &#x27;hint&#x27;;
+    hint.id = `${inputId}-hint`;
+    hint.textContent = hintText;
+    describedBy.push(hint.id);
+    shell.append(label, hint);
+  } else {
+    shell.append(label);
+  }
+
+  if (errorText) {
+    const err = document.createElement(&#x27;p&#x27;);
+    err.className = &#x27;error&#x27;;
+    err.id = errorId;
+    err.textContent = errorText;
+    describedBy.push(errorId);
+    shell.append(controlEl, err);
+  } else {
+    shell.append(controlEl);
+  }
+
+  if (describedBy.length) {
+    controlEl.setAttribute(&#x27;aria-describedby&#x27;, describedBy.join(&#x27; &#x27;));
+  } else {
+    controlEl.removeAttribute(&#x27;aria-describedby&#x27;);
+  }
+
+  controlEl.setAttribute(&#x27;aria-invalid&#x27;, errorText ? &#x27;true&#x27; : &#x27;false&#x27;);
+
+  return shell;
+}
+
+function renderTextField({ field, label, autocomplete, value, error, onInput, onBlur }) {
+  const input = document.createElement(&#x27;input&#x27;);
+  const { inputId } = fieldIds(field);
+  input.type = &#x27;text&#x27;;
+  input.id = inputId;
+  input.name = field;
+  input.autocomplete = autocomplete;
+  input.required = true;
+  input.value = value;
+  input.addEventListener(&#x27;input&#x27;, (e) =&gt; onInput(e.currentTarget.value));
+  input.addEventListener(&#x27;blur&#x27;, () =&gt; onBlur());
+
+  return renderFieldShell({ field, labelText: label, controlEl: input, errorText: error });
+}
+
+function renderEmailField({ field, label, autocomplete, value, error, onInput, onBlur }) {
+  const input = document.createElement(&#x27;input&#x27;);
+  const { inputId } = fieldIds(field);
+  input.type = &#x27;email&#x27;;
+  input.id = inputId;
+  input.name = field;
+  input.autocomplete = autocomplete;
+  input.required = true;
+  input.value = value;
+  input.addEventListener(&#x27;input&#x27;, (e) =&gt; onInput(e.currentTarget.value));
+  input.addEventListener(&#x27;blur&#x27;, () =&gt; onBlur());
+
+  return renderFieldShell({ field, labelText: label, controlEl: input, errorText: error });
+}
+
+function renderNumberField({ field, label, hint, value, error, onInput, onBlur }) {
+  const input = document.createElement(&#x27;input&#x27;);
+  const { inputId } = fieldIds(field);
+  input.type = &#x27;number&#x27;;
+  input.id = inputId;
+  input.name = field;
+  input.inputMode = &#x27;numeric&#x27;;
+  input.min = &#x27;1&#x27;;
+  input.max = String(MAX_ATTENDEES);
+  input.step = &#x27;1&#x27;;
+  input.required = true;
+  input.value = value;
+  input.addEventListener(&#x27;input&#x27;, (e) =&gt; onInput(e.currentTarget.value));
+  input.addEventListener(&#x27;blur&#x27;, () =&gt; onBlur());
+
+  return renderFieldShell({ field, labelText: label, controlEl: input, errorText: error, hintText: hint });
+}
+
+function renderVegetarianField({ field, label, value, error, onChange, onBlur }) {
+  const { inputId, errorId } = fieldIds(field);
+
+  const fieldset = document.createElement(&#x27;fieldset&#x27;);
+  fieldset.id = inputId;
+  fieldset.dataset.fieldset = &#x27;true&#x27;;
+
+  const legend = document.createElement(&#x27;legend&#x27;);
+  legend.textContent = label;
+
+  const radios = document.createElement(&#x27;div&#x27;);
+  radios.className = &#x27;radios&#x27;;
+
+  const yesId = `${inputId}-yes`;
+  const noId = `${inputId}-no`;
+
+  const yes = document.createElement(&#x27;input&#x27;);
+  yes.type = &#x27;radio&#x27;;
+  yes.name = field;
+  yes.id = yesId;
+  yes.value = &#x27;yes&#x27;;
+  yes.required = true;
+  yes.checked = value === &#x27;yes&#x27;;
+
+  const yesLabel = document.createElement(&#x27;label&#x27;);
+  yesLabel.htmlFor = yesId;
+  yesLabel.textContent = &#x27;Yes&#x27;;
+
+  const no = document.createElement(&#x27;input&#x27;);
+  no.type = &#x27;radio&#x27;;
+  no.name = field;
+  no.id = noId;
+  no.value = &#x27;no&#x27;;
+  no.required = true;
+  no.checked = value === &#x27;no&#x27;;
+
+  const noLabel = document.createElement(&#x27;label&#x27;);
+  noLabel.htmlFor = noId;
+  noLabel.textContent = &#x27;No&#x27;;
+
+  const yesLine = document.createElement(&#x27;div&#x27;);
+  yesLine.className = &#x27;radioLine&#x27;;
+  yesLine.append(yes, yesLabel);
+
+  const noLine = document.createElement(&#x27;div&#x27;);
+  noLine.className = &#x27;radioLine&#x27;;
+  noLine.append(no, noLabel);
+
+  radios.append(yesLine, noLine);
+
+  if (error) {
+    yes.setAttribute(&#x27;aria-describedby&#x27;, errorId);
+    no.setAttribute(&#x27;aria-describedby&#x27;, errorId);
+    fieldset.setAttribute(&#x27;aria-describedby&#x27;, errorId);
+  } else {
+    yes.removeAttribute(&#x27;aria-describedby&#x27;);
+    no.removeAttribute(&#x27;aria-describedby&#x27;);
+    fieldset.removeAttribute(&#x27;aria-describedby&#x27;);
+  }
+
+  yes.setAttribute(&#x27;aria-invalid&#x27;, error ? &#x27;true&#x27; : &#x27;false&#x27;);
+  no.setAttribute(&#x27;aria-invalid&#x27;, error ? &#x27;true&#x27; : &#x27;false&#x27;);
+  fieldset.setAttribute(&#x27;aria-invalid&#x27;, error ? &#x27;true&#x27; : &#x27;false&#x27;);
+
+  yes.addEventListener(&#x27;change&#x27;, (e) =&gt; {
+    if (e.currentTarget.checked) onChange(&#x27;yes&#x27;);
+  });
+  no.addEventListener(&#x27;change&#x27;, (e) =&gt; {
+    if (e.currentTarget.checked) onChange(&#x27;no&#x27;);
+  });
+
+  yes.addEventListener(&#x27;blur&#x27;, () =&gt; onBlur());
+  no.addEventListener(&#x27;blur&#x27;, () =&gt; onBlur());
+
+  fieldset.append(legend, radios);
+
+  if (error) {
+    const err = document.createElement(&#x27;p&#x27;);
+    err.className = &#x27;error&#x27;;
+    err.id = errorId;
+    err.textContent = error;
+    fieldset.append(err);
+  }
+
+  return fieldset;
+}
+
+function renderActions({ isValid }) {
+  const actions = document.createElement(&#x27;div&#x27;);
+  actions.className = &#x27;actions&#x27;;
+
+  const submit = document.createElement(&#x27;button&#x27;);
+  submit.type = &#x27;submit&#x27;;
+  submit.className = &#x27;primary&#x27;;
+  submit.textContent = &#x27;Confirm RSVP&#x27;;
+  submit.disabled = !isValid;
+
+  const note = document.createElement(&#x27;p&#x27;);
+  note.className = &#x27;hint&#x27;;
+  note.textContent = &#x27;All fields are required.&#x27;;
+
+  actions.append(submit, note);
+  return actions;
+}
+
+function renderConfirmation() {
+  const wrap = document.createElement(&#x27;div&#x27;);
+  wrap.className = &#x27;confirmation&#x27;;
+
+  const h2 = document.createElement(&#x27;h2&#x27;);
+  h2.textContent = &#x27;RSVP confirmed&#x27;;
+
+  const p = document.createElement(&#x27;p&#x27;);
+  p.className = &#x27;hint&#x27;;
+  p.textContent = &#x27;Thanks! Here is what we received:&#x27;;
+
+  const card = document.createElement(&#x27;div&#x27;);
+  card.className = &#x27;card&#x27;;
+
+  const dl = document.createElement(&#x27;dl&#x27;);
+
+  const submitted = state.submitted;
+  const vegText = submitted.vegetarian ? &#x27;Yes&#x27; : &#x27;No&#x27;;
+
+  dl.append(
+    dtdd(&#x27;Guest name&#x27;, submitted.name),
+    dtdd(&#x27;Email address&#x27;, submitted.email),
+    dtdd(&#x27;Number of attendees&#x27;, String(submitted.attendees)),
+    dtdd(&#x27;Vegetarian meal needed?&#x27;, vegText)
+  );
+
+  card.append(dl);
+  wrap.append(h2, p, card);
+
+  return wrap;
+}
+
+function dtdd(dtText, ddText) {
+  const dt = document.createElement(&#x27;dt&#x27;);
+  dt.textContent = dtText;
+  const dd = document.createElement(&#x27;dd&#x27;);
+  dd.textContent = ddText;
+  const frag = document.createDocumentFragment();
+  frag.append(dt, dd);
+  return frag;
+}
+
+render();
+</pre></details><details class="art"><summary>src/validation.js — ES module · 59 lines</summary><pre>const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/i;
+
+export const MAX_ATTENDEES = 10;
+
+export function validateName(raw) {
+  const value = String(raw ?? &#x27;&#x27;).trim();
+  if (!value) return &#x27;Please enter your name.&#x27;;
+  if (value.length &lt; 2) return &#x27;Name must be at least 2 characters.&#x27;;
+  return null;
+}
+
+export function validateEmail(raw) {
+  const value = String(raw ?? &#x27;&#x27;).trim();
+  if (!value) return &#x27;Please enter your email address.&#x27;;
+  if (!EMAIL_RE.test(value)) return &#x27;Please enter a valid email address.&#x27;;
+  return null;
+}
+
+export function validateAttendees(raw) {
+  const value = String(raw ?? &#x27;&#x27;).trim();
+  if (!value) return &#x27;Please enter how many people are attending.&#x27;;
+
+  const n = Number(value);
+  if (!Number.isInteger(n)) return &#x27;Attendee count must be a whole number.&#x27;;
+  if (n &lt; 1 || n &gt; MAX_ATTENDEES) {
+    return `Attendee count must be between 1 and ${MAX_ATTENDEES}.`;
+  }
+  return null;
+}
+
+export function validateVegetarian(raw) {
+  const value = String(raw ?? &#x27;&#x27;).trim();
+  if (value !== &#x27;yes&#x27; &amp;&amp; value !== &#x27;no&#x27;) {
+    return &#x27;Please choose whether you need a vegetarian meal.&#x27;;
+  }
+  return null;
+}
+
+export function validateAll(values) {
+  const errors = {
+    name: validateName(values.name),
+    email: validateEmail(values.email),
+    attendees: validateAttendees(values.attendees),
+    vegetarian: validateVegetarian(values.vegetarian),
+  };
+
+  const isValid = Object.values(errors).every((e) =&gt; e === null);
+  return { errors, isValid };
+}
+
+export function normalizeSubmission(values) {
+  return {
+    name: String(values.name ?? &#x27;&#x27;).trim(),
+    email: String(values.email ?? &#x27;&#x27;).trim(),
+    attendees: Number(String(values.attendees ?? &#x27;&#x27;).trim()),
+    vegetarian: String(values.vegetarian ?? &#x27;&#x27;).trim() === &#x27;yes&#x27;,
+  };
+}
+</pre></details><details class="art"><summary>tests/validation.test.js — unit suite · 73 lines</summary><pre>import { test } from &#x27;node:test&#x27;;
+import assert from &#x27;node:assert/strict&#x27;;
+import {
+  MAX_ATTENDEES,
+  validateName,
+  validateEmail,
+  validateAttendees,
+  validateVegetarian,
+  validateAll,
+  normalizeSubmission,
+} from &#x27;../src/validation.js&#x27;;
+
+test(&#x27;validateName requires at least 2 non-whitespace characters&#x27;, () =&gt; {
+  assert.equal(validateName(&#x27;&#x27;), &#x27;Please enter your name.&#x27;);
+  assert.equal(validateName(&#x27;  &#x27;), &#x27;Please enter your name.&#x27;);
+  assert.equal(validateName(&#x27;A&#x27;), &#x27;Name must be at least 2 characters.&#x27;);
+  assert.equal(validateName(&#x27;  Al &#x27;), null);
+});
+
+test(&#x27;validateEmail requires an @ and a plausible domain&#x27;, () =&gt; {
+  assert.equal(validateEmail(&#x27;&#x27;), &#x27;Please enter your email address.&#x27;);
+  assert.equal(validateEmail(&#x27;not-an-email&#x27;), &#x27;Please enter a valid email address.&#x27;);
+  assert.equal(validateEmail(&#x27;a@b&#x27;), &#x27;Please enter a valid email address.&#x27;);
+  assert.equal(validateEmail(&#x27; a@example.com &#x27;), null);
+});
+
+test(&#x27;validateAttendees requires a whole number between 1 and MAX_ATTENDEES&#x27;, () =&gt; {
+  assert.equal(validateAttendees(&#x27;&#x27;), &#x27;Please enter how many people are attending.&#x27;);
+  assert.equal(validateAttendees(&#x27;2.5&#x27;), &#x27;Attendee count must be a whole number.&#x27;);
+  assert.equal(
+    validateAttendees(String(MAX_ATTENDEES + 1)),
+    `Attendee count must be between 1 and ${MAX_ATTENDEES}.`
+  );
+  assert.equal(validateAttendees(&#x27;1&#x27;), null);
+  assert.equal(validateAttendees(String(MAX_ATTENDEES)), null);
+});
+
+test(&#x27;validateVegetarian requires a yes/no choice&#x27;, () =&gt; {
+  assert.equal(validateVegetarian(&#x27;&#x27;), &#x27;Please choose whether you need a vegetarian meal.&#x27;);
+  assert.equal(validateVegetarian(&#x27;maybe&#x27;), &#x27;Please choose whether you need a vegetarian meal.&#x27;);
+  assert.equal(validateVegetarian(&#x27;yes&#x27;), null);
+  assert.equal(validateVegetarian(&#x27;no&#x27;), null);
+});
+
+test(&#x27;validateAll reports field-specific errors and isValid when no errors&#x27;, () =&gt; {
+  const bad = validateAll({ name: &#x27;&#x27;, email: &#x27;x&#x27;, attendees: &#x27;0&#x27;, vegetarian: &#x27;&#x27; });
+  assert.equal(bad.isValid, false);
+  assert.equal(typeof bad.errors.name, &#x27;string&#x27;);
+  assert.equal(typeof bad.errors.email, &#x27;string&#x27;);
+  assert.equal(typeof bad.errors.attendees, &#x27;string&#x27;);
+  assert.equal(typeof bad.errors.vegetarian, &#x27;string&#x27;);
+
+  const good = validateAll({ name: &#x27;Ada&#x27;, email: &#x27;ada@example.com&#x27;, attendees: &#x27;2&#x27;, vegetarian: &#x27;no&#x27; });
+  assert.deepEqual(good.errors, { name: null, email: null, attendees: null, vegetarian: null });
+  assert.equal(good.isValid, true);
+});
+
+test(&#x27;normalizeSubmission trims strings and converts attendees/vegetarian types&#x27;, () =&gt; {
+  const norm = normalizeSubmission({
+    name: &#x27;  Ada Lovelace &#x27;,
+    email: &#x27; ada@example.com &#x27;,
+    attendees: &#x27;3&#x27;,
+    vegetarian: &#x27;yes&#x27;,
+  });
+
+  assert.deepEqual(norm, {
+    name: &#x27;Ada Lovelace&#x27;,
+    email: &#x27;ada@example.com&#x27;,
+    attendees: 3,
+    vegetarian: true,
+  });
+});
+</pre></details><details class="art"><summary>e2e/rsvp.spec.js — e2e suite · 53 lines</summary><pre>import { test, expect } from &#x27;@playwright/test&#x27;;
+
+test(&#x27;RSVP form enables submit when valid and shows a confirmation view&#x27;, async ({ page }) =&gt; {
+  await page.goto(&#x27;/&#x27;);
+
+  const submit = page.getByRole(&#x27;button&#x27;, { name: &#x27;Confirm RSVP&#x27; });
+  await expect(submit).toBeDisabled();
+
+  await page.getByLabel(&#x27;Guest name&#x27;).fill(&#x27;Ada Lovelace&#x27;);
+  await expect(submit).toBeDisabled();
+
+  await page.getByLabel(&#x27;Email address&#x27;).fill(&#x27;ada@example.com&#x27;);
+  await expect(submit).toBeDisabled();
+
+  await page.getByLabel(&#x27;Number of attendees&#x27;).fill(&#x27;2&#x27;);
+  await expect(submit).toBeDisabled();
+
+  await page.getByLabel(&#x27;Yes&#x27;).check();
+  await expect(submit).toBeEnabled();
+
+  await submit.click();
+
+  await expect(page.getByRole(&#x27;heading&#x27;, { name: &#x27;RSVP confirmed&#x27; })).toBeVisible();
+  await expect(submit).toHaveCount(0);
+
+  await expect(page.getByText(&#x27;Ada Lovelace&#x27;, { exact: true })).toBeVisible();
+  await expect(page.getByText(&#x27;ada@example.com&#x27;, { exact: true })).toBeVisible();
+  await expect(page.getByText(&#x27;2&#x27;, { exact: true })).toBeVisible();
+  await expect(page.getByText(&#x27;Yes&#x27;, { exact: true })).toBeVisible();
+});
+
+test(&#x27;attempting to submit an invalid form focuses the first invalid field&#x27;, async ({ page }) =&gt; {
+  await page.goto(&#x27;/&#x27;);
+
+  // Start with everything invalid.
+  await page.getByLabel(&#x27;Guest name&#x27;).focus();
+  await page.keyboard.press(&#x27;Enter&#x27;);
+  await expect(page.getByLabel(&#x27;Guest name&#x27;)).toBeFocused();
+
+  // Make name valid; next invalid should be email.
+  await page.getByLabel(&#x27;Guest name&#x27;).fill(&#x27;Ada&#x27;);
+  await page.getByLabel(&#x27;Guest name&#x27;).focus();
+  await page.keyboard.press(&#x27;Enter&#x27;);
+  await expect(page.getByLabel(&#x27;Email address&#x27;)).toBeFocused();
+
+  // Make email + attendees valid; vegetarian is still missing and should focus a radio.
+  await page.getByLabel(&#x27;Email address&#x27;).fill(&#x27;ada@example.com&#x27;);
+  await page.getByLabel(&#x27;Number of attendees&#x27;).fill(&#x27;2&#x27;);
+  await page.getByLabel(&#x27;Number of attendees&#x27;).focus();
+  await page.keyboard.press(&#x27;Enter&#x27;);
+  await expect(page.getByLabel(&#x27;Yes&#x27;)).toBeFocused();
+});
+</pre></details><details class="art"><summary>playwright.config.js · 14 lines</summary><pre>import { defineConfig } from &#x27;@playwright/test&#x27;;
+
+export default defineConfig({
+  testDir: &#x27;./e2e&#x27;,
+  use: {
+    baseURL: &#x27;http://127.0.0.1:4173&#x27;,
+  },
+  webServer: {
+    command: &#x27;python -m http.server 4173&#x27;,
+    url: &#x27;http://127.0.0.1:4173&#x27;,
+    reuseExistingServer: true,
+  },
+});
+</pre></details><details class="art"><summary>test_evidence/summary.md — the written proof · 418 words</summary><pre># Sprint 1 — RSVP page (buildless)
+
+## What I built
+
+A dependency-light, buildless RSVP page served as static files (`index.html` + ES modules under `src/`).
+
+The page renders an RSVP form that collects:
+- Guest name
+- Email address
+- Number of attendees (1–10)
+- Vegetarian meal needed? (Yes/No radio group)
+
+As the user fills the form, the **Confirm RSVP** button stays disabled until every field is valid. On a valid submit, the form is replaced with a confirmation view that repeats back the submitted values.
+
+## How it works (wiring)
+
+- `src/validation.js` contains pure validation + normalization functions:
+  - `validateName`, `validateEmail`, `validateAttendees`, `validateVegetarian`
+  - `validateAll(values)` returns `{ errors, isValid }`
+  - `normalizeSubmission(values)` trims strings and converts types (attendees number; vegetarian boolean)
+- `src/app.js` owns DOM wiring and rendering.
+  - State is kept in a single object with `status` (`editing` / `confirmed`), current `values`, `touched`, and `submitted`.
+  - Rendering is derived from state; on each update we re-render the form/confirmation.
+  - Submit is guarded: on submit attempt we mark all fields touched, validate, and if invalid we **focus the first invalid field**.
+
+## Accessibility decisions
+
+- Semantic HTML controls are used: `&lt;form&gt;`, `&lt;label for&gt;`, `&lt;input&gt;`, and a `&lt;fieldset&gt;/&lt;legend&gt;` for the vegetarian radio group.
+- Inline, field-specific errors are exposed to assistive tech:
+  - When a field has an error, its control gets `aria-invalid=&quot;true&quot;`.
+  - Error text is programmatically associated via `aria-describedby` pointing at the error element id.
+  - For the radio group, both radios and the fieldset receive invalid state, and the error text id is used as `aria-describedby` for the radios.
+- Full keyboard operation is supported because controls are native form controls; the submit button is reachable and can be activated via Enter/Space.
+- A visible focus indicator is provided via `:focus-visible` outline styling.
+- Colors were chosen to keep high contrast for text and error messages on the dark background.
+
+## Tests
+
+### Unit tests
+
+- `tests/validation.test.js` uses Node’s built-in runner (`node --test`) to cover:
+  - required/boundary behavior for each validator
+  - `validateAll` returning field-specific errors and correct `isValid`
+  - `normalizeSubmission` trimming and type conversions
+
+### E2E test (Playwright)
+
+- `e2e/rsvp.spec.js` drives the core happy path in a real browser:
+  1) visits the page
+  2) confirms the submit button is disabled until all fields are completed
+  3) fills name, email, attendee count, selects vegetarian = Yes
+  4) submits and asserts the confirmation view is visible and repeats back the values
+
+## Results
+
+- Unit suite: PASS (see `test_evidence/unit.txt`)
+- E2E suite: PASS (see `test_evidence/e2e.txt`)
+</pre></details><details class="art"><summary>reverify_unit.txt — the harness&#x27;s OWN unit re-run · 50 lines</summary><pre>$ node --test
+[exit 0]
+
+TAP version 13
+# Subtest: validateName requires at least 2 non-whitespace characters
+ok 1 - validateName requires at least 2 non-whitespace characters
+  ---
+  duration_ms: 1.236
+  type: &#x27;test&#x27;
+  ...
+# Subtest: validateEmail requires an @ and a plausible domain
+ok 2 - validateEmail requires an @ and a plausible domain
+  ---
+  duration_ms: 1.0259
+  type: &#x27;test&#x27;
+  ...
+# Subtest: validateAttendees requires a whole number between 1 and MAX_ATTENDEES
+ok 3 - validateAttendees requires a whole number between 1 and MAX_ATTENDEES
+  ---
+  duration_ms: 0.2927
+  type: &#x27;test&#x27;
+  ...
+# Subtest: validateVegetarian requires a yes/no choice
+ok 4 - validateVegetarian requires a yes/no choice
+  ---
+  duration_ms: 0.3106
+  type: &#x27;test&#x27;
+  ...
+# Subtest: validateAll reports field-specific errors and isValid when no errors
+ok 5 - validateAll reports field-specific errors and isValid when no errors
+  ---
+  duration_ms: 1.1022
+  type: &#x27;test&#x27;
+  ...
+# Subtest: normalizeSubmission trims strings and converts attendees/vegetarian types
+ok 6 - normalizeSubmission trims strings and converts attendees/vegetarian types
+  ---
+  duration_ms: 0.2726
+  type: &#x27;test&#x27;
+  ...
+1..6
+# tests 6
+# suites 0
+# pass 6
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 155.9599
+</pre></details><details class="art"><summary>reverify_e2e.txt — the harness&#x27;s OWN e2e re-run · 25 lines</summary><pre>$ npx playwright test
+[exit 0]
+
+[WebServer] ::ffff:127.0.0.1 - - [05/Jul/2026 11:12:25] &quot;GET / HTTP/1.1&quot; 200 -
+
+
+Running 2 tests using 1 worker
+
+[WebServer] ::ffff:127.0.0.1 - - [05/Jul/2026 11:12:26] &quot;GET / HTTP/1.1&quot; 200 -
+
+[WebServer] ::ffff:127.0.0.1 - - [05/Jul/2026 11:12:26] &quot;GET /src/app.js HTTP/1.1&quot; 200 -
+
+[WebServer] ::ffff:127.0.0.1 - - [05/Jul/2026 11:12:26] &quot;GET /src/validation.js HTTP/1.1&quot; 200 -
+
+  ✓  1 e2e\rsvp.spec.js:3:1 › RSVP form enables submit when valid and shows a confirmation view (502ms)
+[WebServer] ::ffff:127.0.0.1 - - [05/Jul/2026 11:12:27] &quot;GET / HTTP/1.1&quot; 200 -
+
+[WebServer] ::ffff:127.0.0.1 - - [05/Jul/2026 11:12:27] &quot;GET /src/app.js HTTP/1.1&quot; 200 -
+
+[WebServer] ::ffff:127.0.0.1 - - [05/Jul/2026 11:12:27] &quot;GET /src/validation.js HTTP/1.1&quot; 200 -
+
+  ✓  2 e2e\rsvp.spec.js:32:1 › attempting to submit an invalid form focuses the first invalid field (260ms)
+
+  2 passed (2.8s)
+</pre></details>
+
+<div class="note"><b>Reading the errors:</b> most <span class="err">err</span> markers are benign — the
+model retrying a <code>read_file</code> against an offloaded scratch path, a reviewer probing a file
+that doesn't exist, or the DoD oracle's Windows-only floor probe. The engineering flow itself completed:
+size → build → unit + e2e tests → run &amp; capture → review under pressure. The verdict box at the top
+is the honest answer: it re-runs the shipped suites in a clean process.</div>
+
+<footer>Generated from reports/frontend-engineer-artifacts/rsvp/flow.log — Frontend Engineer beat, model gpt-5.2 (Azure). Press E to expand all, C to collapse subagents.</footer>
+</div>
+
+<script>
+  document.addEventListener('keydown', e => {
+    if (e.key === 'e' || e.key === 'E') document.querySelectorAll('details').forEach(d => d.open = true);
+    if (e.key === 'c' || e.key === 'C') document.querySelectorAll('details.sub').forEach(d => d.open = false);
+  });
+</script>
+</body></html>

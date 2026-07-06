@@ -1,0 +1,14 @@
+
+> test:e2e
+> playwright test
+
+[WebServer] ::ffff:127.0.0.1 - - [05/Jul/2026 11:02:38] "GET / HTTP/1.1" 200 -
+
+Running 1 test using 1 worker
+
+[WebServer] ::ffff:127.0.0.1 - - [05/Jul/2026 11:02:39] "GET / HTTP/1.1" 200 -
+[WebServer] ::ffff:127.0.0.1 - - [05/Jul/2026 11:02:39] "GET /src/app.js HTTP/1.1" 200 -
+[WebServer] ::ffff:127.0.0.1 - - [05/Jul/2026 11:02:39] "GET /src/todoState.js HTTP/1.1" 200 -
+  ✓  1 e2e\todo.spec.js:3:1 › to-do flow: add, toggle, filter, remove, remaining count (556ms)
+
+  1 passed (2.4s)

@@ -1,0 +1,917 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Frontend Engineer — Run Flow Report (tasks)</title>
+<style>
+  :root {
+    --bg:#f6f8fa; --card:#ffffff; --ink:#1f2328; --muted:#57606a; --line:#d0d7de;
+    --accent:#0d9488; --accent-soft:#ecfeff;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink);
+    font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; }
+  .wrap { max-width:960px; margin:0 auto; padding:32px 20px 80px; }
+  header.top { background:linear-gradient(135deg,#ecfeff,#f6f8fa); border:1px solid var(--line);
+    border-radius:16px; padding:28px 28px 22px; margin-bottom:22px; }
+  header.top .eyebrow { color:var(--accent); font-weight:700; letter-spacing:.06em;
+    text-transform:uppercase; font-size:12px; }
+  header.top h1 { margin:.2em 0 .3em; font-size:26px; }
+  header.top .intent { color:var(--muted); margin:0; }
+  header.top .intent b { color:var(--ink); }
+  .badge { font-size:12px; font-weight:700; padding:3px 10px; border-radius:999px; }
+  .badge.ok { background:#dcfce7; color:#166534; }
+  .badge.warn { background:#fef9c3; color:#854d0e; }
+  .badge.info { background:var(--accent-soft); color:#0e7490; }
+  .reverify { background:var(--card); border:1px solid var(--line); border-radius:14px;
+    padding:6px 20px 18px; margin:22px 0; }
+  .reverify h2 { font-size:13px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted);
+    margin:16px 0 6px; }
+  .vrow { display:flex; align-items:center; gap:12px; padding:8px 0; border-bottom:1px dashed var(--line); }
+  .vrow:last-of-type { border-bottom:none; }
+  .vlabel { min-width:230px; font-weight:600; font-size:14px; }
+  .vrow .muted { color:var(--muted); font-size:12.5px; }
+  .overall { display:flex; align-items:center; gap:14px; margin-top:14px; padding:14px 16px;
+    border-radius:12px; }
+  .overall.ok { background:#f0fdf4; border:1px solid #bbf7d0; }
+  .overall.warn { background:#fffbeb; border:1px solid #fde68a; }
+  .overall .big { font-size:18px; font-weight:800; letter-spacing:.02em; }
+  .overall.ok .big { color:#166534; }
+  .overall.warn .big { color:#854d0e; }
+  .overall p { margin:0; color:var(--muted); font-size:13px; }
+  .chips { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; margin:22px 0; }
+  .chip { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:14px 16px;
+    color:var(--muted); font-size:12.5px; }
+  .chip span { display:block; font-size:24px; font-weight:750; color:var(--ink); line-height:1.1; }
+  .subchips { display:flex; flex-wrap:wrap; gap:8px; margin:-6px 0 22px; }
+  .subchip { background:#f3e8ff; color:#6b21a8; border:1px solid #e9d5ff; border-radius:999px;
+    padding:4px 12px; font-size:13px; }
+  h2.sec { font-size:15px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted);
+    margin:34px 0 12px; }
+  .legend { display:flex; flex-wrap:wrap; gap:14px; margin-bottom:14px; font-size:12.5px; color:var(--muted); }
+  .leg { display:inline-flex; align-items:center; gap:6px; }
+  .dot { width:9px; height:9px; border-radius:50%; display:inline-block; flex:0 0 auto; }
+  .phase { background:var(--card); border:1px solid var(--line); border-radius:14px;
+    margin-bottom:16px; overflow:hidden; }
+  .phase-head { display:flex; gap:14px; align-items:flex-start; padding:18px 20px 14px;
+    border-bottom:1px solid var(--line); background:#fbfcfe; }
+  .pnum { flex:0 0 auto; width:30px; height:30px; border-radius:50%; background:var(--accent);
+    color:#fff; font-weight:750; display:grid; place-items:center; }
+  .phase-head h3 { margin:2px 0 3px; font-size:17px; }
+  .phase-head p { margin:0; color:var(--muted); font-size:13.5px; }
+  .phase-body { padding:12px 16px 16px; display:flex; flex-direction:column; gap:5px; }
+  .step { display:flex; align-items:center; gap:9px; padding:5px 8px; border-radius:8px; font-size:13.5px; }
+  .step:hover { background:#f6f8fa; }
+  .step .tool { font-weight:650; }
+  .step .arg { color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+    font:12.5px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; }
+  .err { font-size:10.5px; font-weight:700; color:#b91c1c; background:#fee2e2; border-radius:5px;
+    padding:1px 6px; }
+  details.sub { border:1px solid #e9d5ff; border-radius:10px; background:#faf5ff; margin:3px 0; }
+  details.sub > summary { cursor:pointer; list-style:none; padding:8px 12px; display:flex;
+    align-items:center; gap:9px; font-size:13.5px; }
+  details.sub > summary::-webkit-details-marker { display:none; }
+  details.sub > summary::before { content:"▶"; font-size:9px; color:#a855f7; transition:transform .15s; }
+  details.sub[open] > summary::before { transform:rotate(90deg); }
+  details.sub .agent { font-weight:750; color:#6b21a8; }
+  details.sub .count { margin-left:auto; color:var(--muted); font-size:12px; }
+  .subbody { padding:2px 12px 12px 26px; display:flex; flex-direction:column; gap:3px;
+    border-top:1px dashed #e9d5ff; }
+  .empty { color:var(--muted); font-size:13px; padding:6px; }
+  .eval { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px 18px;
+    margin-bottom:12px; }
+  .eval-top { display:flex; align-items:center; gap:12px; }
+  .eval-top .score { margin-left:auto; color:var(--muted); font-size:13px; }
+  .bar { height:8px; background:#eaeef2; border-radius:999px; margin:10px 0 8px; overflow:hidden; }
+  .bar span { display:block; height:100%; background:linear-gradient(90deg,#14b8a6,#0d9488); }
+  .notes { margin:0; color:var(--muted); font-size:13px; }
+  details.art { background:var(--card); border:1px solid var(--line); border-radius:12px;
+    margin-bottom:12px; }
+  details.art > summary { cursor:pointer; padding:14px 18px; font-weight:650; }
+  details.art pre { margin:0; padding:0 18px 18px; white-space:pre-wrap; word-wrap:break-word;
+    font:12.5px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; color:#24292f; }
+  .note { background:#fffbeb; border:1px solid #fde68a; border-radius:12px; padding:14px 18px;
+    color:#854d0e; font-size:13.5px; margin-top:8px; }
+  footer { color:var(--muted); font-size:12px; text-align:center; margin-top:40px; }
+</style></head>
+<body><div class="wrap">
+
+<header class="top">
+  <div class="eyebrow">Chorus · Frontend Engineer (Finn) · task &ldquo;tasks&rdquo;</div>
+  <h1>Run Flow Report</h1>
+  <p class="intent"><b>Intent:</b> Build a to-do list page. A person can add a task, mark a task as done, and remove a task, and can switch the visible list between all tasks, only the ones still to do, and only the finished ones. Somewhere on screen there is always an accurate count of how many tasks are still unfinished, and it stays correct as tasks are added, completed, and removed.</p>
+</header>
+
+<div class="reverify">
+  <h2>Independent verification — did the shipped code actually work?</h2>
+  <div class="vrow"><span class="vlabel">DoD floor (after-beat gate)</span><span class="badge ok">pass</span></div><div class="vrow"><span class="vlabel">Independent unit re-run</span><span class="badge ok">exit 0</span> <span class="muted">node --test, clean process, shipped worktree</span></div><div class="vrow"><span class="vlabel">Independent e2e re-run</span><span class="badge ok">exit 0</span> <span class="muted">npx playwright test, real browser</span></div>
+  <div class="overall ok"><span class="big">TRULY PASSED</span><p>the shipped code passed the DoD floor AND both suites went green again under the harness's own hands</p></div>
+</div>
+
+<div class="chips"><div class="chip"><span>75</span>Total tool calls</div><div class="chip"><span>2</span>Subagents spawned</div><div class="chip"><span>14</span>run_command calls</div><div class="chip"><span>2</span>skills loaded</div><div class="chip"><span>1</span>Sprints</div></div>
+<div class="subchips"><span class="subchip">code_reviewer <b>&times;1</b></span><span class="subchip">ui_tester <b>&times;1</b></span></div>
+
+<h2 class="sec">The flow, phase by phase</h2>
+<div class="legend"><span class="leg"><span class="dot" style="background:#7c3aed"></span>subagent</span><span class="leg"><span class="dot" style="background:#0d9488"></span>run</span><span class="leg"><span class="dot" style="background:#d97706"></span>git</span><span class="leg"><span class="dot" style="background:#2563eb"></span>evidence</span><span class="leg"><span class="dot" style="background:#16a34a"></span>write</span><span class="leg"><span class="dot" style="background:#6b7280"></span>read</span><span class="leg"><span class="dot" style="background:#db2777"></span>skill</span></div>
+<section class="phase"><div class="phase-head"><span class="pnum">0</span><div><h3>Understand &amp; size</h3><p>Read the intent and any existing code, load the craft <b>skill</b> that fits, and pick the smallest slice that <em>actually works</em>.</p></div></div><div class="phase-body"><div class="step"><span class="dot" style="background:#db2777"></span><span class="tool">skill</span><span class="arg">spec-to-working-app</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">cd /d q:\\projects\\inspired-arc\\chorus\\.chorus\\work\\frontend-eng-hard-tasks\\worktr…</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">cd /d q:\\projects\\inspired-arc\\chorus\\.chorus\\work\\frontend-eng-hard-tasks\\worktr…</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">docs/exec-plans/run-tasks.md</span> <span class="err" title="benign — usually a retry reading an offloaded scratch file or a Windows-only DoD floor probe">err</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">cd /d q:\\projects\\inspired-arc\\chorus\\.chorus\\work\\frontend-eng-hard-tasks\\worktr…</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">cd /d q:\\projects\\inspired-arc\\chorus\\.chorus\\work\\frontend-eng-hard-tasks\\worktr…</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">cd /d q:\\projects\\inspired-arc\\chorus\\.chorus\\work\\frontend-eng-hard-tasks\\worktr…</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">docs/exec-plans/active/run-tasks.md</span></div><div class="step"><span class="dot" style="background:#db2777"></span><span class="tool">skill</span><span class="arg">state-driven-ui</span></div></div></section><section class="phase"><div class="phase-head"><span class="pnum">1</span><div><h3>Build the slice</h3><p>Write the running app — <code>index.html</code> + ES modules + CSS — accessible by construction and wired end to end so the behaviour happens in the browser.</p></div></div><div class="phase-body"><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">index.html</span></div><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">src/todoState.js</span></div><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">src/app.js</span></div></div></section><section class="phase"><div class="phase-head"><span class="pnum">2</span><div><h3>Author the tests</h3><p>Write Node <b>unit</b> specs for the logic and a real-browser <b>Playwright</b> e2e that drives the app the way a user does.</p></div></div><div class="phase-body"><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">tests/todoState.test.js</span></div><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">package.json</span></div><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">playwright.config.js</span></div><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">e2e/todo.spec.js</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">cd /d q:\\projects\\inspired-arc\\chorus\\.chorus\\work\\frontend-eng-hard-tasks\\worktr…</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">cd /d q:\\projects\\inspired-arc\\chorus\\.chorus\\work\\frontend-eng-hard-tasks\\worktr…</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">cd /d q:\\projects\\inspired-arc\\chorus\\.chorus\\work\\frontend-eng-hard-tasks\\worktr…</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">test_evidence/unit.txt</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">test_evidence/e2e.txt</span></div></div></section><section class="phase"><div class="phase-head"><span class="pnum">3</span><div><h3>Run &amp; capture the proof</h3><p>Install deps, run both suites, and tee the <em>real</em> output into the durable <code>test_evidence/</code> bundle.</p></div></div><div class="phase-body"><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">test_evidence/summary.md</span></div></div></section><section class="phase"><div class="phase-head"><span class="pnum">4</span><div><h3>Review under pressure</h3><p>Spawn the read-only <b>code_reviewer</b> and <b>ui_tester</b>, self-check with <b>test_evidence</b>, address every blocker/major, and re-run until green.</p></div></div><div class="phase-body"><details class="sub"><summary><span class="dot" style="background:#7c3aed"></span><b>spawn_subagent</b> <span class="agent">code_reviewer</span><span class="count">18 inner calls · 3 benign err</span></summary><div class="subbody"><div class="step"><span class="dot" style="background:#2563eb"></span><span class="tool">test_evidence</span><span class="arg">(scan the worktree)</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">index.html</span></div><div class="step"><span class="dot" style="background:#d97706"></span><span class="tool">git</span><span class="arg">git status --porcelain</span> <span class="err" title="benign — usually a retry reading an offloaded scratch file or a Windows-only DoD floor probe">err</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">20260705-110039-read_file-c9ad9eb0a765.txt</span> <span class="err" title="benign — usually a retry reading an offloaded scratch file or a Windows-only DoD floor probe">err</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">test_evidence/summary.md</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">test_evidence/unit.txt</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">test_evidence/e2e.txt</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/app.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/todoState.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">tests/todoState.test.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">e2e/todo.spec.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">20260705-110044-read_file-261c87106d75.txt</span> <span class="err" title="benign — usually a retry reading an offloaded scratch file or a Windows-only DoD floor probe">err</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/app.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/app.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/app.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">index.html</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">index.html</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">index.html</span></div></div></details><details class="sub"><summary><span class="dot" style="background:#7c3aed"></span><b>spawn_subagent</b> <span class="agent">ui_tester</span><span class="count">9 inner calls · 3 benign err</span></summary><div class="subbody"><div class="step"><span class="dot" style="background:#2563eb"></span><span class="tool">test_evidence</span><span class="arg">(scan the worktree)</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">e2e/todo.spec.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">test_evidence/e2e.txt</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">index.html</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">playwright.config.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">20260705-110112-read_file-fd1e5a2a2ee4.txt</span> <span class="err" title="benign — usually a retry reading an offloaded scratch file or a Windows-only DoD floor probe">err</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">index.html</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">20260705-110116-read_file-3b5ee2cb6307.txt</span> <span class="err" title="benign — usually a retry reading an offloaded scratch file or a Windows-only DoD floor probe">err</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">dir /b</span> <span class="err" title="benign — usually a retry reading an offloaded scratch file or a Windows-only DoD floor probe">err</span></div></div></details><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">src/app.js</span></div><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">tests/todoState.test.js</span></div><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">e2e/todo.spec.js</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">cd /d q:\\projects\\inspired-arc\\chorus\\.chorus\\work\\frontend-eng-hard-tasks\\worktr…</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">cd /d q:\\projects\\inspired-arc\\chorus\\.chorus\\work\\frontend-eng-hard-tasks\\worktr…</span> <span class="err" title="benign — usually a retry reading an offloaded scratch file or a Windows-only DoD floor probe">err</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">test_evidence/unit.txt</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">test_evidence/e2e.txt</span></div><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">e2e/todo.spec.js</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">cd /d q:\\projects\\inspired-arc\\chorus\\.chorus\\work\\frontend-eng-hard-tasks\\worktr…</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">test_evidence/e2e.txt</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg"></span></div><div class="step"><span class="dot" style="background:#2563eb"></span><span class="tool">test_evidence</span><span class="arg">(scan the worktree)</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">index.html</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">test_evidence/summary.md</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">test_evidence/unit.txt</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">test_evidence/e2e.txt</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">dir</span> <span class="err" title="benign — usually a retry reading an offloaded scratch file or a Windows-only DoD floor probe">err</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/todoState.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/app.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">tests/todoState.test.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">e2e/todo.spec.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">playwright.config.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">20260705-110305-read_file-025715099340.txt</span> <span class="err" title="benign — usually a retry reading an offloaded scratch file or a Windows-only DoD floor probe">err</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">20260705-110308-read_file-b9c5ab1d8352.txt</span> <span class="err" title="benign — usually a retry reading an offloaded scratch file or a Windows-only DoD floor probe">err</span></div></div></section>
+
+<h2 class="sec">Sprint evaluations</h2>
+<div class="eval"><div class="eval-top"><span class="badge ok">sprint 1: pass</span><span class="score">score 1.00</span></div><div class="bar"><span style="width:100%"></span></div><p class="notes">All required to-do behaviors are implemented and covered by unit + Playwright e2e tests with captured passing evidence logs and a substantive summary.</p></div>
+
+<h2 class="sec">Artifacts produced</h2>
+<details class="art"><summary>index.html — the running app entry · 254 lines</summary><pre>&lt;!doctype html&gt;
+&lt;html lang=&quot;en&quot;&gt;
+  &lt;head&gt;
+    &lt;meta charset=&quot;utf-8&quot; /&gt;
+    &lt;meta name=&quot;viewport&quot; content=&quot;width=device-width, initial-scale=1&quot; /&gt;
+    &lt;title&gt;To-do list&lt;/title&gt;
+    &lt;style&gt;
+      :root {
+        color-scheme: light;
+        --bg: #ffffff;
+        --text: #111827;
+        --muted: #4b5563;
+        --border: #d1d5db;
+        --focus: #1d4ed8;
+        --danger: #b91c1c;
+        --surface: #f9fafb;
+      }
+
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+        color: var(--text);
+        background: var(--bg);
+        line-height: 1.4;
+      }
+
+      .container {
+        max-width: 760px;
+        margin: 0 auto;
+        padding: 24px 16px 48px;
+      }
+
+      header {
+        margin-bottom: 18px;
+      }
+
+      h1 {
+        font-size: 1.5rem;
+        margin: 0 0 6px;
+      }
+
+      .subhead { color: var(--muted); margin: 0; }
+
+      .panel {
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        background: var(--surface);
+        padding: 16px;
+      }
+
+      .row {
+        display: flex;
+        gap: 10px;
+        align-items: flex-end;
+        flex-wrap: wrap;
+      }
+
+      label {
+        display: block;
+        font-weight: 600;
+        margin-bottom: 6px;
+      }
+
+      input[type=&quot;text&quot;] {
+        width: min(520px, 100%);
+        padding: 10px 12px;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        font: inherit;
+        background: #fff;
+        color: var(--text);
+      }
+
+      button {
+        font: inherit;
+        border: 1px solid var(--border);
+        background: #fff;
+        color: var(--text);
+        padding: 10px 12px;
+        border-radius: 10px;
+        cursor: pointer;
+      }
+
+      button.primary {
+        border-color: #1d4ed8;
+        background: #1d4ed8;
+        color: #fff;
+      }
+
+      button.danger {
+        border-color: var(--danger);
+        color: var(--danger);
+        background: #fff;
+      }
+
+      button[disabled] {
+        opacity: 0.6;
+        cursor: not-allowed;
+      }
+
+      :focus-visible {
+        outline: 3px solid var(--focus);
+        outline-offset: 2px;
+      }
+
+      .help {
+        margin-top: 8px;
+        color: var(--muted);
+        font-size: 0.95rem;
+      }
+
+      .error {
+        margin-top: 8px;
+        color: var(--danger);
+        font-size: 0.95rem;
+      }
+
+      .toolbar {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+        margin-top: 16px;
+        flex-wrap: wrap;
+      }
+
+      fieldset {
+        border: 0;
+        margin: 0;
+        padding: 0;
+      }
+
+      legend {
+        font-weight: 600;
+        margin-bottom: 6px;
+      }
+
+      .filters {
+        display: inline-flex;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+
+      .filter {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 8px 10px;
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        background: #fff;
+      }
+
+      .count {
+        font-weight: 600;
+      }
+
+      ul {
+        list-style: none;
+        padding: 0;
+        margin: 16px 0 0;
+      }
+
+      li {
+        display: grid;
+        grid-template-columns: auto 1fr auto;
+        gap: 10px;
+        align-items: center;
+        padding: 10px 8px;
+        border-top: 1px solid var(--border);
+      }
+
+      li:first-child { border-top: 0; }
+
+      .task-title {
+        display: inline-block;
+      }
+
+      .task-title.done {
+        text-decoration: line-through;
+        color: var(--muted);
+      }
+
+      .empty {
+        margin-top: 16px;
+        padding: 12px;
+        border: 1px dashed var(--border);
+        border-radius: 12px;
+        background: #fff;
+        color: var(--muted);
+      }
+
+      .sr-only {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        margin: -1px;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        white-space: nowrap;
+        border: 0;
+      }
+    &lt;/style&gt;
+  &lt;/head&gt;
+  &lt;body&gt;
+    &lt;div class=&quot;container&quot;&gt;
+      &lt;header&gt;
+        &lt;h1&gt;To-do list&lt;/h1&gt;
+        &lt;p class=&quot;subhead&quot;&gt;Add tasks, mark them done, filter, and keep track of what’s left.&lt;/p&gt;
+      &lt;/header&gt;
+
+      &lt;main class=&quot;panel&quot; aria-labelledby=&quot;app-title&quot;&gt;
+        &lt;h2 id=&quot;app-title&quot; class=&quot;sr-only&quot;&gt;Task manager&lt;/h2&gt;
+
+        &lt;form id=&quot;add-form&quot; novalidate&gt;
+          &lt;div class=&quot;row&quot;&gt;
+            &lt;div&gt;
+              &lt;label for=&quot;task-title&quot;&gt;New task&lt;/label&gt;
+              &lt;input id=&quot;task-title&quot; name=&quot;title&quot; type=&quot;text&quot; autocomplete=&quot;off&quot; /&gt;
+            &lt;/div&gt;
+            &lt;div&gt;
+              &lt;button id=&quot;add-btn&quot; class=&quot;primary&quot; type=&quot;submit&quot;&gt;Add&lt;/button&gt;
+            &lt;/div&gt;
+          &lt;/div&gt;
+          &lt;p id=&quot;title-help&quot; class=&quot;help&quot;&gt;Tip: press Enter to add.&lt;/p&gt;
+          &lt;p id=&quot;title-error&quot; class=&quot;error&quot; role=&quot;alert&quot; hidden&gt;&lt;/p&gt;
+        &lt;/form&gt;
+
+        &lt;div class=&quot;toolbar&quot; aria-live=&quot;polite&quot;&gt;
+          &lt;fieldset aria-label=&quot;Filter tasks&quot;&gt;
+            &lt;legend class=&quot;sr-only&quot;&gt;Filters&lt;/legend&gt;
+            &lt;div class=&quot;filters&quot;&gt;
+              &lt;label class=&quot;filter&quot;&gt;&lt;input type=&quot;radio&quot; name=&quot;filter&quot; value=&quot;all&quot; checked /&gt; All&lt;/label&gt;
+              &lt;label class=&quot;filter&quot;&gt;&lt;input type=&quot;radio&quot; name=&quot;filter&quot; value=&quot;todo&quot; /&gt; To do&lt;/label&gt;
+              &lt;label class=&quot;filter&quot;&gt;&lt;input type=&quot;radio&quot; name=&quot;filter&quot; value=&quot;done&quot; /&gt; Done&lt;/label&gt;
+            &lt;/div&gt;
+          &lt;/fieldset&gt;
+
+          &lt;div class=&quot;count&quot; id=&quot;remaining&quot; aria-label=&quot;Unfinished tasks count&quot;&gt;&lt;/div&gt;
+        &lt;/div&gt;
+
+        &lt;section aria-label=&quot;Tasks&quot;&gt;
+          &lt;ul id=&quot;task-list&quot;&gt;&lt;/ul&gt;
+          &lt;div id=&quot;empty&quot; class=&quot;empty&quot; hidden&gt;&lt;/div&gt;
+        &lt;/section&gt;
+      &lt;/main&gt;
+    &lt;/div&gt;
+
+    &lt;script type=&quot;module&quot; src=&quot;./src/app.js&quot;&gt;&lt;/script&gt;
+  &lt;/body&gt;
+&lt;/html&gt;
+</pre></details><details class="art"><summary>src/app.js — ES module · 143 lines</summary><pre>import {
+  addTask,
+  createInitialState,
+  FILTERS,
+  removeTask,
+  remainingLabel,
+  selectRemainingCount,
+  selectVisibleTasks,
+  setFilter,
+  toggleTask,
+} from &#x27;./todoState.js&#x27;;
+
+/** @type {import(&#x27;./todoState.js&#x27;).TodoState} */
+let state = createInitialState();
+
+const els = {
+  form: /** @type {HTMLFormElement} */ (document.getElementById(&#x27;add-form&#x27;)),
+  title: /** @type {HTMLInputElement} */ (document.getElementById(&#x27;task-title&#x27;)),
+  error: /** @type {HTMLParagraphElement} */ (document.getElementById(&#x27;title-error&#x27;)),
+  filterRadios: /** @type {NodeListOf&lt;HTMLInputElement&gt;} */ (
+    document.querySelectorAll(&#x27;input[name=&quot;filter&quot;]&#x27;)
+  ),
+  list: /** @type {HTMLUListElement} */ (document.getElementById(&#x27;task-list&#x27;)),
+  empty: /** @type {HTMLDivElement} */ (document.getElementById(&#x27;empty&#x27;)),
+  remaining: /** @type {HTMLDivElement} */ (document.getElementById(&#x27;remaining&#x27;)),
+};
+
+function setState(next) {
+  state = next;
+  render();
+}
+
+function showError(message) {
+  if (!message) {
+    els.error.hidden = true;
+    els.error.textContent = &#x27;&#x27;;
+    els.title.removeAttribute(&#x27;aria-invalid&#x27;);
+    els.title.setAttribute(&#x27;aria-describedby&#x27;, &#x27;title-help&#x27;);
+    return;
+  }
+
+  els.error.textContent = message;
+  els.error.hidden = false;
+  els.title.setAttribute(&#x27;aria-invalid&#x27;, &#x27;true&#x27;);
+  els.title.setAttribute(&#x27;aria-describedby&#x27;, &#x27;title-help title-error&#x27;);
+}
+
+function render() {
+  // remaining count
+  const remaining = selectRemainingCount(state);
+  els.remaining.textContent = remainingLabel(remaining);
+
+  // task list
+  const visible = selectVisibleTasks(state);
+  els.list.replaceChildren(...visible.map(renderTask));
+
+  const emptyMessage =
+    state.tasks.length === 0
+      ? &#x27;No tasks yet. Add your first one above.&#x27;
+      : visible.length === 0
+        ? &#x27;No tasks match this filter.&#x27;
+        : &#x27;&#x27;;
+
+  if (emptyMessage) {
+    els.empty.hidden = false;
+    els.empty.textContent = emptyMessage;
+  } else {
+    els.empty.hidden = true;
+    els.empty.textContent = &#x27;&#x27;;
+  }
+}
+
+/** @param {import(&#x27;./todoState.js&#x27;).Task} task */
+function renderTask(task) {
+  const li = document.createElement(&#x27;li&#x27;);
+  li.dataset.taskId = task.id;
+
+  const toggleWrap = document.createElement(&#x27;div&#x27;);
+
+  const checkbox = document.createElement(&#x27;input&#x27;);
+  checkbox.type = &#x27;checkbox&#x27;;
+  checkbox.checked = task.done;
+  const toggleLabel = task.done
+    ? `Mark ${task.title} as not done`
+    : `Mark ${task.title} as done`;
+  checkbox.setAttribute(&#x27;aria-label&#x27;, toggleLabel);
+  checkbox.addEventListener(&#x27;change&#x27;, () =&gt; {
+    setState(toggleTask(state, task.id));
+  });
+
+  toggleWrap.appendChild(checkbox);
+
+  const title = document.createElement(&#x27;span&#x27;);
+  title.className = `task-title${task.done ? &#x27; done&#x27; : &#x27;&#x27;}`;
+  title.textContent = task.title;
+
+  const remove = document.createElement(&#x27;button&#x27;);
+  remove.type = &#x27;button&#x27;;
+  remove.className = &#x27;danger&#x27;;
+  remove.textContent = &#x27;Remove&#x27;;
+  remove.setAttribute(&#x27;aria-label&#x27;, `Remove ${task.title}`);
+  remove.addEventListener(&#x27;click&#x27;, () =&gt; {
+    setState(removeTask(state, task.id));
+  });
+
+  li.append(toggleWrap, title, remove);
+  return li;
+}
+
+// events
+els.form.addEventListener(&#x27;submit&#x27;, (e) =&gt; {
+  e.preventDefault();
+  const before = state;
+  const next = addTask(state, els.title.value);
+  if (next === before) {
+    showError(&#x27;Please enter a task title.&#x27;);
+    els.title.focus();
+    return;
+  }
+
+  showError(&#x27;&#x27;);
+  setState(next);
+  els.form.reset();
+  els.title.focus();
+});
+
+els.title.addEventListener(&#x27;input&#x27;, () =&gt; {
+  if (!els.error.hidden) showError(&#x27;&#x27;);
+});
+
+els.filterRadios.forEach((r) =&gt; {
+  r.addEventListener(&#x27;change&#x27;, () =&gt; {
+    if (!r.checked) return;
+    const value = /** @type {keyof typeof FILTERS} */ (r.value);
+    setState(setFilter(state, value));
+  });
+});
+
+// initial a11y wiring
+els.title.setAttribute(&#x27;aria-describedby&#x27;, &#x27;title-help&#x27;);
+
+render();
+</pre></details><details class="art"><summary>src/todoState.js — ES module · 104 lines</summary><pre>const FILTERS = /** @type {const} */ ({
+  all: &#x27;all&#x27;,
+  todo: &#x27;todo&#x27;,
+  done: &#x27;done&#x27;,
+});
+
+/**
+ * @typedef {{ id: string, title: string, done: boolean }} Task
+ * @typedef {{ tasks: Task[], filter: keyof typeof FILTERS }} TodoState
+ */
+
+export function createInitialState() {
+  /** @type {TodoState} */
+  return { tasks: [], filter: FILTERS.all };
+}
+
+function makeId() {
+  // Small, collision-resistant enough for this slice.
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+/** @param {string} title */
+export function normalizeTitle(title) {
+  return String(title ?? &#x27;&#x27;).trim().replace(/\s+/g, &#x27; &#x27;);
+}
+
+/**
+ * @param {TodoState} state
+ * @param {string} title
+ * @returns {TodoState}
+ */
+export function addTask(state, title) {
+  const normalized = normalizeTitle(title);
+  if (!normalized) return state;
+
+  const task = { id: makeId(), title: normalized, done: false };
+  return { ...state, tasks: [task, ...state.tasks] };
+}
+
+/**
+ * @param {TodoState} state
+ * @param {string} id
+ * @returns {TodoState}
+ */
+export function toggleTask(state, id) {
+  let changed = false;
+  const tasks = state.tasks.map((t) =&gt; {
+    if (t.id !== id) return t;
+    changed = true;
+    return { ...t, done: !t.done };
+  });
+  return changed ? { ...state, tasks } : state;
+}
+
+/**
+ * @param {TodoState} state
+ * @param {string} id
+ * @returns {TodoState}
+ */
+export function removeTask(state, id) {
+  const next = state.tasks.filter((t) =&gt; t.id !== id);
+  return next.length === state.tasks.length ? state : { ...state, tasks: next };
+}
+
+/**
+ * @param {TodoState} state
+ * @param {keyof typeof FILTERS} filter
+ * @returns {TodoState}
+ */
+export function setFilter(state, filter) {
+  if (!Object.values(FILTERS).includes(filter)) return state;
+  return state.filter === filter ? state : { ...state, filter };
+}
+
+/**
+ * @param {TodoState} state
+ * @returns {Task[]}
+ */
+export function selectVisibleTasks(state) {
+  switch (state.filter) {
+    case FILTERS.todo:
+      return state.tasks.filter((t) =&gt; !t.done);
+    case FILTERS.done:
+      return state.tasks.filter((t) =&gt; t.done);
+    case FILTERS.all:
+    default:
+      return state.tasks;
+  }
+}
+
+/**
+ * @param {TodoState} state
+ * @returns {number}
+ */
+export function selectRemainingCount(state) {
+  return state.tasks.reduce((acc, t) =&gt; acc + (t.done ? 0 : 1), 0);
+}
+
+export function remainingLabel(count) {
+  return `${count} task${count === 1 ? &#x27;&#x27; : &#x27;s&#x27;} remaining`;
+}
+
+export { FILTERS };
+</pre></details><details class="art"><summary>tests/todoState.test.js — unit suite · 91 lines</summary><pre>import test from &#x27;node:test&#x27;;
+import assert from &#x27;node:assert/strict&#x27;;
+import {
+  addTask,
+  createInitialState,
+  removeTask,
+  selectRemainingCount,
+  selectVisibleTasks,
+  setFilter,
+  toggleTask,
+} from &#x27;../src/todoState.js&#x27;;
+
+test(&#x27;addTask: adds a trimmed task (prepends) and increments remaining count&#x27;, () =&gt; {
+  let state = createInitialState();
+  state = addTask(state, &#x27;  buy   milk  &#x27;);
+
+  assert.equal(state.tasks.length, 1);
+  assert.equal(state.tasks[0].title, &#x27;buy milk&#x27;);
+  assert.equal(state.tasks[0].done, false);
+  assert.equal(selectRemainingCount(state), 1);
+});
+
+test(&#x27;addTask: rejects empty/whitespace-only titles&#x27;, () =&gt; {
+  const state = createInitialState();
+  const next = addTask(state, &#x27;   &#x27;);
+  assert.equal(next, state);
+  assert.equal(next.tasks.length, 0);
+  assert.equal(selectRemainingCount(next), 0);
+});
+
+test(&#x27;toggleTask: flips done/undone and updates remaining count&#x27;, () =&gt; {
+  let state = createInitialState();
+  state = addTask(state, &#x27;one&#x27;);
+  state = addTask(state, &#x27;two&#x27;);
+
+  const id = state.tasks[0].id; // &quot;two&quot; due to prepend
+
+  assert.equal(selectRemainingCount(state), 2);
+  state = toggleTask(state, id);
+  assert.equal(state.tasks[0].done, true);
+  assert.equal(selectRemainingCount(state), 1);
+
+  state = toggleTask(state, id);
+  assert.equal(state.tasks[0].done, false);
+  assert.equal(selectRemainingCount(state), 2);
+});
+
+test(&#x27;removeTask: removes a task and updates remaining count&#x27;, () =&gt; {
+  let state = createInitialState();
+  state = addTask(state, &#x27;a&#x27;);
+  state = addTask(state, &#x27;b&#x27;);
+
+  const removeId = state.tasks[1].id; // &quot;a&quot;
+  state = toggleTask(state, state.tasks[0].id); // mark &quot;b&quot; done
+
+  assert.equal(selectRemainingCount(state), 1);
+  state = removeTask(state, removeId);
+
+  assert.equal(state.tasks.length, 1);
+  assert.equal(state.tasks[0].title, &#x27;b&#x27;);
+  assert.equal(selectRemainingCount(state), 0);
+});
+
+test(&#x27;filter selector: returns visible tasks for all/todo/done&#x27;, () =&gt; {
+  let state = createInitialState();
+  state = addTask(state, &#x27;x&#x27;);
+  state = addTask(state, &#x27;y&#x27;);
+  state = toggleTask(state, state.tasks[0].id); // mark y done
+
+  assert.equal(selectVisibleTasks(state).length, 2);
+
+  state = setFilter(state, &#x27;todo&#x27;);
+  assert.deepEqual(
+    selectVisibleTasks(state).map((t) =&gt; t.title),
+    [&#x27;x&#x27;]
+  );
+
+  state = setFilter(state, &#x27;done&#x27;);
+  assert.deepEqual(
+    selectVisibleTasks(state).map((t) =&gt; t.title),
+    [&#x27;y&#x27;]
+  );
+});
+
+test(&#x27;setFilter: ignores invalid filter values&#x27;, () =&gt; {
+  const state = createInitialState();
+  // @ts-expect-error - deliberately invalid
+  const next = setFilter(state, &#x27;nope&#x27;);
+  assert.equal(next, state);
+});
+</pre></details><details class="art"><summary>e2e/todo.spec.js — e2e suite · 46 lines</summary><pre>import { test, expect } from &#x27;@playwright/test&#x27;;
+
+test(&#x27;to-do flow: add, toggle, filter, remove, remaining count&#x27;, async ({ page }) =&gt; {
+  await page.goto(&#x27;/&#x27;);
+
+  const title = page.getByLabel(&#x27;New task&#x27;);
+  const add = page.getByRole(&#x27;button&#x27;, { name: &#x27;Add&#x27; });
+  const remaining = page.getByLabel(&#x27;Unfinished tasks count&#x27;);
+  const list = page.getByRole(&#x27;list&#x27;);
+
+  // Add two tasks
+  await title.fill(&#x27;Buy milk&#x27;);
+  await add.click();
+  await expect(list.getByText(&#x27;Buy milk&#x27;)).toBeVisible();
+  await expect(remaining).toHaveText(&#x27;1 task remaining&#x27;);
+
+  await title.fill(&#x27;Walk dog&#x27;);
+  await add.click();
+  await expect(list.getByText(&#x27;Walk dog&#x27;)).toBeVisible();
+  await expect(remaining).toHaveText(&#x27;2 tasks remaining&#x27;);
+
+  // Mark &quot;Walk dog&quot; done
+  await page.getByRole(&#x27;checkbox&#x27;, { name: &#x27;Mark Walk dog as done&#x27; }).click();
+  await expect(remaining).toHaveText(&#x27;1 task remaining&#x27;);
+
+  // Filter to To do -&gt; only Buy milk visible
+  await page.getByRole(&#x27;radio&#x27;, { name: &#x27;To do&#x27; }).check();
+  await expect(list.getByText(&#x27;Buy milk&#x27;)).toBeVisible();
+  await expect(list.getByText(&#x27;Walk dog&#x27;)).toHaveCount(0);
+  await expect(remaining).toHaveText(&#x27;1 task remaining&#x27;);
+
+  // Filter to Done -&gt; only Walk dog visible
+  await page.getByRole(&#x27;radio&#x27;, { name: &#x27;Done&#x27; }).check();
+  await expect(list.getByText(&#x27;Walk dog&#x27;)).toBeVisible();
+  await expect(list.getByText(&#x27;Buy milk&#x27;)).toHaveCount(0);
+
+  // Remove the done task
+  await page.getByRole(&#x27;button&#x27;, { name: &#x27;Remove Walk dog&#x27; }).click();
+  await expect(list.getByText(&#x27;Walk dog&#x27;)).toHaveCount(0);
+  await expect(remaining).toHaveText(&#x27;1 task remaining&#x27;);
+
+  // All -&gt; only Buy milk
+  await page.getByRole(&#x27;radio&#x27;, { name: &#x27;All&#x27; }).check();
+  await expect(list.getByText(&#x27;Buy milk&#x27;)).toBeVisible();
+});
+</pre></details><details class="art"><summary>playwright.config.js · 18 lines</summary><pre>// @ts-check
+import { defineConfig } from &#x27;@playwright/test&#x27;;
+
+export default defineConfig({
+  testDir: &#x27;./e2e&#x27;,
+  timeout: 30_000,
+  expect: { timeout: 5_000 },
+  use: {
+    baseURL: &#x27;http://127.0.0.1:4173&#x27;,
+    trace: &#x27;on-first-retry&#x27;,
+  },
+  webServer: {
+    command: &#x27;python -m http.server 4173&#x27;,
+    url: &#x27;http://127.0.0.1:4173&#x27;,
+    reuseExistingServer: !process.env.CI,
+  },
+});
+</pre></details><details class="art"><summary>test_evidence/summary.md — the written proof · 450 words</summary><pre># Sprint 1 — Buildless to-do app slice (with tests + evidence)
+
+## What I built
+A dependency-light, buildless to-do list app that runs directly from `index.html` (served via `python -m http.server`). The UI supports:
+
+- Adding tasks via a labelled text input (“New task”) and an **Add** submit button.
+- Rendering each task row with:
+  - a checkbox toggle to mark done/undone,
+  - a visible text label (the task title),
+  - a **Remove** button.
+- Filtering tasks with a radio-group control: **All**, **To do**, **Done**.
+- An always-visible unfinished count (e.g. “2 tasks remaining”) that stays accurate after add/toggle/remove and when switching filters.
+
+## Architecture / wiring
+- **State-driven UI**: the app maintains a single `state` object `{ tasks, filter }` and a `render()` function that re-renders the visible list and remaining count from that state. Event handlers only compute the next state and call `setState(next)`.
+- **Pure logic module**: `src/todoState.js` contains the pure state transitions and selectors:
+  - `addTask(state, title)` (trims/collapses whitespace; rejects empty)
+  - `toggleTask(state, id)`
+  - `removeTask(state, id)`
+  - `setFilter(state, filter)`
+  - `selectVisibleTasks(state)`
+  - `selectRemainingCount(state)`
+
+The DOM glue lives in `src/app.js`.
+
+## Resilience / empty states
+- If there are no tasks at all, the app shows: “No tasks yet. Add your first one above.”
+- If tasks exist but none match the current filter, it shows: “No tasks match this filter.”
+- Empty/whitespace-only submissions are rejected and show an inline error message; the app never crashes or white-screens.
+
+## Accessibility decisions
+- Semantic structure: `main`, headings, `form`, `fieldset`.
+- The add input has a proper `&lt;label for=&quot;task-title&quot;&gt;`.
+- Filters use native **radio inputs** (keyboard-friendly, correct semantics).
+- Task completion uses a native **checkbox**; done state is visible both via checkbox state and strikethrough styling (not color alone).
+- Remove uses a real `&lt;button&gt;` with an accessible name including the task title (e.g. “Remove Walk dog”).
+- Visible focus indicator via `:focus-visible { outline: 3px solid ... }` and high-contrast colors.
+
+## Unit tests (Node test runner)
+Location: `tests/todoState.test.js`
+
+Coverage:
+- `addTask` adds a trimmed task and rejects empty/whitespace-only titles.
+- `toggleTask` flips done/undone and `selectRemainingCount` updates accordingly.
+- `removeTask` removes tasks and keeps the remaining count accurate.
+- `selectVisibleTasks` returns the correct subset for `all` / `todo` / `done`.
+
+Result (from `test_evidence/unit.txt`): **5 passed, 0 failed**.
+
+## E2E tests (Playwright)
+Location: `e2e/todo.spec.js`
+
+Flow exercised:
+- Add two tasks.
+- Toggle one task to done.
+- Switch filters to **To do** and **Done** and assert which tasks are visible.
+- Remove a task and assert the remaining count and visible tasks update.
+
+Result (from `test_evidence/e2e.txt`): **1 passed**.
+
+## Commands run
+- Unit: `npm run test:unit` (captured to `test_evidence/unit.txt`)
+- E2E: `npm run test:e2e` (captured to `test_evidence/e2e.txt`)
+</pre></details><details class="art"><summary>reverify_unit.txt — the harness&#x27;s OWN unit re-run · 50 lines</summary><pre>$ node --test
+[exit 0]
+
+TAP version 13
+# Subtest: addTask: adds a trimmed task (prepends) and increments remaining count
+ok 1 - addTask: adds a trimmed task (prepends) and increments remaining count
+  ---
+  duration_ms: 1.4036
+  type: &#x27;test&#x27;
+  ...
+# Subtest: addTask: rejects empty/whitespace-only titles
+ok 2 - addTask: rejects empty/whitespace-only titles
+  ---
+  duration_ms: 0.877
+  type: &#x27;test&#x27;
+  ...
+# Subtest: toggleTask: flips done/undone and updates remaining count
+ok 3 - toggleTask: flips done/undone and updates remaining count
+  ---
+  duration_ms: 0.3067
+  type: &#x27;test&#x27;
+  ...
+# Subtest: removeTask: removes a task and updates remaining count
+ok 4 - removeTask: removes a task and updates remaining count
+  ---
+  duration_ms: 0.3659
+  type: &#x27;test&#x27;
+  ...
+# Subtest: filter selector: returns visible tasks for all/todo/done
+ok 5 - filter selector: returns visible tasks for all/todo/done
+  ---
+  duration_ms: 1.1145
+  type: &#x27;test&#x27;
+  ...
+# Subtest: setFilter: ignores invalid filter values
+ok 6 - setFilter: ignores invalid filter values
+  ---
+  duration_ms: 0.1579
+  type: &#x27;test&#x27;
+  ...
+1..6
+# tests 6
+# suites 0
+# pass 6
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 156.2964
+</pre></details><details class="art"><summary>reverify_e2e.txt — the harness&#x27;s OWN e2e re-run · 18 lines</summary><pre>$ npx playwright test
+[exit 0]
+
+[WebServer] ::ffff:127.0.0.1 - - [05/Jul/2026 11:03:18] &quot;GET / HTTP/1.1&quot; 200 -
+
+
+Running 1 test using 1 worker
+
+[WebServer] ::ffff:127.0.0.1 - - [05/Jul/2026 11:03:20] &quot;GET / HTTP/1.1&quot; 200 -
+
+[WebServer] ::ffff:127.0.0.1 - - [05/Jul/2026 11:03:20] &quot;GET /src/app.js HTTP/1.1&quot; 200 -
+
+[WebServer] ::ffff:127.0.0.1 - - [05/Jul/2026 11:03:20] &quot;GET /src/todoState.js HTTP/1.1&quot; 200 -
+
+  ✓  1 e2e\todo.spec.js:3:1 › to-do flow: add, toggle, filter, remove, remaining count (565ms)
+
+  1 passed (2.5s)
+</pre></details>
+
+<div class="note"><b>Reading the errors:</b> most <span class="err">err</span> markers are benign — the
+model retrying a <code>read_file</code> against an offloaded scratch path, a reviewer probing a file
+that doesn't exist, or the DoD oracle's Windows-only floor probe. The engineering flow itself completed:
+size → build → unit + e2e tests → run &amp; capture → review under pressure. The verdict box at the top
+is the honest answer: it re-runs the shipped suites in a clean process.</div>
+
+<footer>Generated from reports/frontend-engineer-artifacts/tasks/flow.log — Frontend Engineer beat, model gpt-5.2 (Azure). Press E to expand all, C to collapse subagents.</footer>
+</div>
+
+<script>
+  document.addEventListener('keydown', e => {
+    if (e.key === 'e' || e.key === 'E') document.querySelectorAll('details').forEach(d => d.open = true);
+    if (e.key === 'c' || e.key === 'C') document.querySelectorAll('details.sub').forEach(d => d.open = false);
+  });
+</script>
+</body></html>

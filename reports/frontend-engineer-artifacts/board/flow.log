@@ -1,0 +1,203 @@
+intent: Build a small task board with three lanes: to do, in progress, and done. A person can add a card to the first lane, move any card forward or backward between adjacent lanes, and remove a card. Every one of those actions must be fully doable using only the keyboard, and the board must show the same cards in the same lanes after the browser is refreshed as it did before.
+
+  [tool ->] skill  {'name': 'spec-to-working-app'}
+  [tool <-] skill
+  [tool ->] skill  {'name': 'state-driven-ui'}
+  [tool <-] skill
+  [tool ->] skill  {'name': 'semantic-html-and-aria'}
+  [tool <-] skill
+  [tool ->] skill  {'name': 'keyboard-and-focus'}
+  [tool <-] skill
+  [tool ->] skill  {'name': 'unit-testing-with-node-test'}
+  [tool <-] skill
+  [tool ->] skill  {'name': 'playwright-e2e-authoring'}
+  [tool <-] skill
+  [tool ->] skill  {'name': 'web-first-assertions'}
+  [tool <-] skill
+  [tool ->] bash  {'command': 'cd /d q:\\projects\\inspired-arc\\chorus\\.chorus\\work\\frontend-eng-hard-board\\worktrees\\finn && dir', 'timeout_seconds': 120}
+  [tool <-] bash
+  [tool ->] bash  {'command': 'cd /d q:\\projects\\inspired-arc\\chorus\\.chorus\\work\\frontend-eng-hard-board\\worktrees\\finn && dir /a', 'timeout_seconds': 120}
+  [tool <-] bash
+  [tool ->] read_file  {'path': 'docs/DESIGN.md', 'limit': 2000}
+  [tool <-] read_file (ERROR)
+  [tool ->] bash  {'command': 'cd /d q:\\projects\\inspired-arc\\chorus\\.chorus\\work\\frontend-eng-hard-board\\worktrees\\finn && dir docs', 'timeout_seconds': 120}
+  [tool <-] bash
+  [tool ->] bash  {'command': 'cd /d q:\\projects\\inspired-arc\\chorus\\.chorus\\work\\frontend-eng-hard-board\\worktrees\\finn && dir docs\\exec-plans', 'timeout_seconds': 120}
+  [tool <-] bash
+  [tool ->] bash  {'command': 'cd /d q:\\projects\\inspired-arc\\chorus\\.chorus\\work\\frontend-eng-hard-board\\worktrees\\finn && dir docs\\exec-plans\\active', 'timeout_seconds': 120}
+  [tool <-] bash
+  [tool ->] read_file  {'path': 'docs/exec-plans/active/run-board.md', 'limit': 2000}
+  [tool <-] read_file
+  [tool ->] write_file  {'path': 'index.html', 'content': '<!doctype html>\n<html lang="en">\n  <head>\n    <meta charset="utf-8" />\n    <meta name="viewport" content="width=device-width, initial-scale=1" />\n    <title>Run Board</title>\n    <style>\n      :root {\n        --bg: #0b1020;\n        --panel: #121a33;\n        --panel-2: #0f1730;\n        --text: #f3f6ff;\n        --muted: #b9c2e5;\n        --border: #2a355f;\n        --focus: #7dd3fc;\n        --danger: #fecaca;\n        --danger-bg: #7f1d1d;\n        -...
+  [tool <-] write_file
+  [tool ->] write_file  {'path': 'src/boardState.js', 'content': "const LANES = /** @type {const} */ (['todo', 'inprogress', 'done']);\n\nexport const laneLabels = /** @type {const} */ ({\n  todo: 'To do',\n  inprogress: 'In progress',\n  done: 'Done',\n});\n\nexport const storageKey = 'run-board:v1';\n\n/**\n * @typedef {typeof LANES[number]} Lane\n * @typedef {{ id: string, title: string, lane: Lane }} Card\n * @typedef {{ cards: Card[] }} BoardState\n */\n\nexport function createEmptyState() {\n  /** @type {BoardSta...
+  [tool <-] write_file
+  [tool ->] write_file  {'path': 'src/app.js', 'content': 'import {\n  addCard,\n  createEmptyState,\n  laneLabels,\n  loadFromStorage,\n  moveCard,\n  removeCard,\n  saveToStorage,\n} from \'./boardState.js\';\n\nconst els = {\n  form: /** @type {HTMLFormElement} */ (document.getElementById(\'add-form\')),\n  input: /** @type {HTMLInputElement} */ (document.getElementById(\'task-title\')),\n  error: /** @type {HTMLDivElement} */ (document.getElementById(\'task-error\')),\n  storageError: /** @type {HTMLDivElement} */ ...
+  [tool <-] write_file
+  [tool ->] write_file  {'path': 'tests/boardState.test.js', 'content': 'import { test } from \'node:test\';\nimport assert from \'node:assert/strict\';\n\nimport {\n  addCard,\n  createEmptyState,\n  decodeState,\n  encodeState,\n  moveCard,\n  removeCard,\n  storageKey,\n} from \'../src/boardState.js\';\n\ntest(\'addCard adds a trimmed title into the To do lane\', () => {\n  const idFactory = () => \'c1\';\n  const next = addCard(createEmptyState(), \'  Write tests  \', idFactory);\n  assert.equal(next.cards.length, ...
+  [tool <-] write_file
+  [tool ->] write_file  {'path': 'package.json', 'content': '{\n  "name": "run-board",\n  "private": true,\n  "type": "module",\n  "scripts": {\n    "test": "node --test",\n    "e2e": "playwright test"\n  },\n  "devDependencies": {\n    "@playwright/test": "^1.55.0"\n  }\n}\n'}
+  [tool <-] write_file
+  [tool ->] write_file  {'path': 'playwright.config.js', 'content': "import { defineConfig } from '@playwright/test';\n\nexport default defineConfig({\n  testDir: './e2e',\n  use: {\n    baseURL: 'http://127.0.0.1:4173',\n  },\n  webServer: {\n    command: 'python -m http.server 4173',\n    url: 'http://127.0.0.1:4173',\n    reuseExistingServer: true,\n  },\n});\n"}
+  [tool <-] write_file
+  [tool ->] write_file  {'path': 'e2e/board.spec.js', 'content': "import { test, expect } from '@playwright/test';\n\ntest.beforeEach(async ({ page }) => {\n  await page.goto('/');\n  await page.addInitScript(() => {\n    window.localStorage.clear();\n  });\n  await page.reload();\n});\n\ntest('add a card, move across lanes, refresh, and it stays in Done', async ({ page }) => {\n  await page.getByLabel('Task title').fill('Ship sprint 1');\n  await page.getByRole('button', { name: 'Add' }).click();\n\n  const todoLane =...
+  [tool <-] write_file
+  [tool ->] bash  {'command': 'cd /d q:\\projects\\inspired-arc\\chorus\\.chorus\\work\\frontend-eng-hard-board\\worktrees\\finn && npm install', 'timeout_seconds': 600}
+  [tool <-] bash
+  [tool ->] bash  {'command': 'cd /d q:\\projects\\inspired-arc\\chorus\\.chorus\\work\\frontend-eng-hard-board\\worktrees\\finn && node --test', 'timeout_seconds': 600}
+  [tool <-] bash
+  [tool ->] bash  {'command': 'cd /d q:\\projects\\inspired-arc\\chorus\\.chorus\\work\\frontend-eng-hard-board\\worktrees\\finn && if not exist test_evidence mkdir test_evidence && node --test > test_evidence\\unit.txt 2>&1', 'timeout_seconds': 600}
+  [tool <-] bash
+  [tool ->] bash  {'command': 'cd /d q:\\projects\\inspired-arc\\chorus\\.chorus\\work\\frontend-eng-hard-board\\worktrees\\finn && npx playwright test', 'timeout_seconds': 600}
+  [tool <-] bash (ERROR)
+  [tool ->] write_file  {'path': 'e2e/board.spec.js', 'content': "import { test, expect } from '@playwright/test';\n\ntest.beforeEach(async ({ page }) => {\n  await page.goto('/');\n  await page.addInitScript(() => {\n    window.localStorage.clear();\n  });\n  await page.reload();\n});\n\ntest('add a card, move across lanes, refresh, and it stays in Done', async ({ page }) => {\n  await page.getByLabel('Task title').fill('Ship sprint 1');\n  await page.getByRole('button', { name: 'Add' }).click();\n\n  const todoLane =...
+  [tool <-] write_file
+  [tool ->] bash  {'command': 'cd /d q:\\projects\\inspired-arc\\chorus\\.chorus\\work\\frontend-eng-hard-board\\worktrees\\finn && npx playwright test', 'timeout_seconds': 600}
+  [tool <-] bash (ERROR)
+  [tool ->] write_file  {'path': 'src/boardState.js', 'content': "const LANES = /** @type {const} */ (['todo', 'inprogress', 'done']);\n\nexport const laneLabels = /** @type {const} */ ({\n  todo: 'To do',\n  inprogress: 'In progress',\n  done: 'Done',\n});\n\nexport const storageKey = 'run-board:v1';\n\n/**\n * @typedef {typeof LANES[number]} Lane\n * @typedef {{ id: string, title: string, lane: Lane }} Card\n * @typedef {{ cards: Card[] }} BoardState\n */\n\nexport function createEmptyState() {\n  /** @type {BoardSta...
+  [tool <-] write_file
+  [tool ->] bash  {'command': 'cd /d q:\\projects\\inspired-arc\\chorus\\.chorus\\work\\frontend-eng-hard-board\\worktrees\\finn && node --test', 'timeout_seconds': 600}
+  [tool <-] bash
+  [tool ->] bash  {'command': 'cd /d q:\\projects\\inspired-arc\\chorus\\.chorus\\work\\frontend-eng-hard-board\\worktrees\\finn && npx playwright test', 'timeout_seconds': 600}
+  [tool <-] bash (ERROR)
+  [tool ->] write_file  {'path': 'e2e/board.spec.js', 'content': "import { test, expect } from '@playwright/test';\n\ntest.beforeEach(async ({ page }) => {\n  await page.addInitScript(() => {\n    window.localStorage.clear();\n  });\n  await page.goto('/');\n});\n\ntest('add a card, move across lanes, refresh, and it stays in Done', async ({ page }) => {\n  await page.getByLabel('Task title').fill('Ship sprint 1');\n  await page.getByRole('button', { name: 'Add' }).click();\n\n  const todoLane = page.getByRole('heading...
+  [tool <-] write_file
+  [tool ->] bash  {'command': 'cd /d q:\\projects\\inspired-arc\\chorus\\.chorus\\work\\frontend-eng-hard-board\\worktrees\\finn && npx playwright test', 'timeout_seconds': 600}
+  [tool <-] bash (ERROR)
+  [tool ->] bash  {'command': 'cd /d q:\\projects\\inspired-arc\\chorus\\.chorus\\work\\frontend-eng-hard-board\\worktrees\\finn && npx playwright test e2e\\board.spec.js -g "refresh" --reporter=line', 'timeout_seconds': 600}
+  [tool <-] bash (ERROR)
+  [tool ->] write_file  {'path': 'e2e/board.spec.js', 'content': 'import { test, expect } from \'@playwright/test\';\n\ntest.beforeEach(async ({ page }) => {\n  await page.addInitScript(() => {\n    window.localStorage.clear();\n  });\n  await page.goto(\'/\');\n});\n\ntest(\'add a card, move across lanes, refresh, and it stays in Done\', async ({ page }) => {\n  await page.getByLabel(\'Task title\').fill(\'Ship sprint 1\');\n  await page.getByRole(\'button\', { name: \'Add\' }).click();\n\n  const todoLane = page.getB...
+  [tool <-] write_file
+  [tool ->] bash  {'command': 'cd /d q:\\projects\\inspired-arc\\chorus\\.chorus\\work\\frontend-eng-hard-board\\worktrees\\finn && npx playwright test', 'timeout_seconds': 600}
+  [tool <-] bash (ERROR)
+  [tool ->] write_file  {'path': 'src/app.js', 'content': 'import {\n  addCard,\n  createEmptyState,\n  laneLabels,\n  loadFromStorage,\n  moveCard,\n  removeCard,\n  saveToStorage,\n} from \'./boardState.js\';\n\nconst els = {\n  form: /** @type {HTMLFormElement} */ (document.getElementById(\'add-form\')),\n  input: /** @type {HTMLInputElement} */ (document.getElementById(\'task-title\')),\n  error: /** @type {HTMLDivElement} */ (document.getElementById(\'task-error\')),\n  storageError: /** @type {HTMLDivElement} */ ...
+  [tool <-] write_file
+  [tool ->] bash  {'command': 'cd /d q:\\projects\\inspired-arc\\chorus\\.chorus\\work\\frontend-eng-hard-board\\worktrees\\finn && npx playwright test', 'timeout_seconds': 600}
+  [tool <-] bash (ERROR)
+  [tool ->] write_file  {'path': 'e2e/board.spec.js', 'content': 'import { test, expect } from \'@playwright/test\';\n\ntest.beforeEach(async ({ page }) => {\n  await page.addInitScript(() => {\n    window.localStorage.clear();\n  });\n  await page.goto(\'/\');\n});\n\ntest(\'add a card, move across lanes, refresh, and it stays in Done\', async ({ page }) => {\n  await page.getByLabel(\'Task title\').fill(\'Ship sprint 1\');\n  await page.getByRole(\'button\', { name: \'Add\' }).click();\n\n  const todoLane = page.getB...
+  [tool <-] write_file
+  [tool ->] bash  {'command': 'cd /d q:\\projects\\inspired-arc\\chorus\\.chorus\\work\\frontend-eng-hard-board\\worktrees\\finn && npx playwright test', 'timeout_seconds': 600}
+  [tool <-] bash (ERROR)
+  [tool ->] write_file  {'path': 'e2e/board.spec.js', 'content': 'import { test, expect } from \'@playwright/test\';\n\ntest.beforeEach(async ({ page }) => {\n  await page.addInitScript(() => {\n    window.localStorage.clear();\n  });\n  await page.goto(\'/\');\n});\n\ntest(\'add a card, move across lanes, refresh, and it stays in Done\', async ({ page }) => {\n  await page.getByLabel(\'Task title\').fill(\'Ship sprint 1\');\n  await page.getByRole(\'button\', { name: \'Add\' }).click();\n\n  const todoLane = page.getB...
+  [tool <-] write_file
+  [tool ->] bash  {'command': 'cd /d q:\\projects\\inspired-arc\\chorus\\.chorus\\work\\frontend-eng-hard-board\\worktrees\\finn && npx playwright test', 'timeout_seconds': 600}
+  [tool <-] bash (ERROR)
+  [tool ->] write_file  {'path': 'playwright.config.js', 'content': "import { defineConfig } from '@playwright/test';\n\nexport default defineConfig({\n  testDir: './e2e',\n  use: {\n    baseURL: 'http://127.0.0.1:4173',\n  },\n  // Force all e2e tests to share the same storage state (same origin)\n  // so localStorage persists across page reloads within a test.\n  contextOptions: {\n    storageState: undefined,\n  },\n  webServer: {\n    command: 'python -m http.server 4173',\n    url: 'http://127.0.0.1:4173',\n    re...
+  [tool <-] write_file
+  [tool ->] write_file  {'path': 'e2e/board.spec.js', 'content': "import { test, expect } from '@playwright/test';\n\ntest.beforeEach(async ({ page }) => {\n  await page.addInitScript(() => {\n    window.localStorage.clear();\n  });\n  await page.goto('/');\n});\n\ntest('add a card, move across lanes, refresh, and it stays in Done', async ({ page }) => {\n  await page.getByLabel('Task title').fill('Ship sprint 1');\n  await page.getByRole('button', { name: 'Add' }).click();\n\n  const todoLane = page.getByRole('region'...
+  [tool <-] write_file
+  [tool ->] bash  {'command': 'cd /d q:\\projects\\inspired-arc\\chorus\\.chorus\\work\\frontend-eng-hard-board\\worktrees\\finn && npx playwright test', 'timeout_seconds': 600}
+  [tool <-] bash (ERROR)
+  [tool ->] write_file  {'path': 'e2e/board.spec.js', 'content': "import { test, expect } from '@playwright/test';\n\ntest.beforeEach(async ({ page }) => {\n  await page.goto('/');\n  await page.evaluate(() => window.localStorage.clear());\n});\n\ntest('add a card, move across lanes, refresh, and it stays in Done', async ({ page }) => {\n  await page.getByLabel('Task title').fill('Ship sprint 1');\n  await page.getByRole('button', { name: 'Add' }).click();\n\n  const todoLane = page.getByRole('region', { name: 'To do' ...
+  [tool <-] write_file
+  [tool ->] bash  {'command': 'cd /d q:\\projects\\inspired-arc\\chorus\\.chorus\\work\\frontend-eng-hard-board\\worktrees\\finn && npx playwright test', 'timeout_seconds': 600}
+  [tool <-] bash
+  [tool ->] bash  {'command': 'cd /d q:\\projects\\inspired-arc\\chorus\\.chorus\\work\\frontend-eng-hard-board\\worktrees\\finn && npx playwright test > test_evidence\\e2e.txt 2>&1', 'timeout_seconds': 600}
+  [tool <-] bash
+  [tool ->] write_file  {'path': 'test_evidence/summary.md', 'content': '# Sprint 1 — run-board\n\n## What shipped\n\nA dependency-light, static three-lane task board you can open via `python -m http.server` and load `index.html`.\n\nUser-visible behavior:\n- The board always renders **exactly three lanes**: **To do**, **In progress**, and **Done**.\n- You can add a new task using the **“Task title”** text input and the **“Add”** button. New tasks always start in **To do**.\n- Each card has explicit controls to:\n  - *...
+  [tool <-] write_file
+  [tool ->] spawn_subagent  {'name': 'code_reviewer', 'prompt': 'Review the run-board implementation for: meeting all acceptance criteria, accessibility by construction (semantic roles/names), keyboard operability, and whether tests genuinely prove behavior (not hollow). Provide PASS/FAIL with blocker/major/minor issues.'}
+  [tool ->] test_evidence  {}
+  [tool <-] test_evidence
+  [tool ->] read_file  {'path': 'index.html'}
+  [tool <-] read_file
+  [tool ->] read_file  {'path': 'tests/runboard.test.js'}
+  [tool <-] read_file (ERROR)
+  [tool ->] read_file  {'path': 'e2e/runboard.spec.js'}
+  [tool <-] read_file (ERROR)
+  [tool ->] git  {'args': ['diff', '--name-only']}
+  [tool <-] git (ERROR)
+  [tool ->] bash  {'command': 'dir /s /b tests e2e 2>nul & dir /b test_evidence 2>nul & dir /b'}
+  [tool <-] bash (ERROR)
+  [tool ->] read_file  {'path': '20260705-111805-read_file-b5bf380f42a2.txt', 'limit': 120}
+  [tool <-] read_file (ERROR)
+  [tool ->] read_file  {'path': 'test_evidence/unit.txt', 'limit': 200}
+  [tool <-] read_file
+  [tool ->] read_file  {'path': 'test_evidence/e2e.txt', 'limit': 200}
+  [tool <-] read_file
+  [tool ->] read_file  {'path': 'e2e/board.spec.js', 'limit': 240}
+  [tool <-] read_file
+  [tool ->] read_file  {'path': 'tests/boardState.test.js', 'limit': 260}
+  [tool <-] read_file
+  [tool ->] read_file  {'path': 'src/app.js', 'limit': 260}
+  [tool <-] read_file
+  [tool ->] read_file  {'path': 'src/boardState.js', 'limit': 260}
+  [tool <-] read_file
+  [tool ->] read_file  {'path': 'test_evidence/summary.md', 'limit': 220}
+  [tool <-] read_file
+  [tool ->] read_file  {'path': 'index.html', 'offset': 1, 'limit': 260}
+  [tool <-] read_file
+  [tool ->] read_file  {'path': '20260705-111820-read_file-f15134ec05af.txt', 'limit': 260}
+  [tool <-] read_file (ERROR)
+  [tool ->] read_file  {'path': 'index.html', 'limit': 420}
+  [tool <-] read_file
+  [tool ->] read_file  {'path': 'index.html', 'offset': 420, 'limit': 260}
+  [tool <-] read_file
+  [tool ->] read_file  {'path': 'index.html', 'offset': 140, 'limit': 260}
+  [tool <-] read_file
+  [tool ->] read_file  {'path': 'src/app.js', 'limit': 340}
+  [tool <-] read_file
+  [tool ->] read_file  {'path': 'src/app.js', 'offset': 0, 'limit': 220}
+  [tool <-] read_file
+  [tool ->] read_file  {'path': 'src/app.js', 'offset': 220, 'limit': 220}
+  [tool <-] read_file
+  [tool ->] read_file  {'path': 'src/app.js', 'offset': 40, 'limit': 260}
+  [tool <-] read_file
+  [tool ->] read_file  {'path': 'src/app.js', 'offset': 40, 'limit': 220}
+  [tool <-] read_file
+  [tool ->] read_file  {'path': 'src/app.js', 'offset': 58, 'limit': 220}
+  [tool <-] read_file
+  [tool ->] read_file  {'path': 'src/app.js', 'offset': 74, 'limit': 220}
+  [tool <-] read_file
+  [tool ->] read_file  {'path': 'src/app.js', 'offset': 84, 'limit': 220}
+  [tool <-] read_file
+  [tool <-] spawn_subagent
+  [tool ->] spawn_subagent  {'name': 'ui_tester', 'prompt': 'Audit the Playwright e2e proof: do tests drive the real UI, verify visible outcomes, include refresh persistence, and a keyboard-only move/remove flow? Check evidence logs expectation. Provide PASS/FAIL with blocker/major/minor issues.'}
+  [tool ->] test_evidence  {}
+  [tool <-] test_evidence
+  [tool ->] read_file  {'path': 'e2e/board.spec.js'}
+  [tool <-] read_file
+  [tool ->] read_file  {'path': 'test_evidence/e2e.txt'}
+  [tool <-] read_file
+  [tool ->] read_file  {'path': 'index.html'}
+  [tool <-] read_file
+  [tool ->] read_file  {'path': 'test_evidence/summary.md'}
+  [tool <-] read_file
+  [tool ->] read_file  {'path': '20260705-111855-read_file-d6b6f0d979a4.txt', 'offset': 0, 'limit': 220}
+  [tool <-] read_file (ERROR)
+  [tool <-] spawn_subagent
+  [tool ->] test_evidence  {}
+  [tool <-] test_evidence
+  [tool ->] bash  {'command': 'cd /d q:\\projects\\inspired-arc\\chorus\\.chorus\\work\\frontend-eng-hard-board\\worktrees\\finn && Q:\\projects\\inspired-arc\\chorus\\.venv\\Scripts\\python.exe -c "import base64;exec(base64.b64decode(\'aW1wb3J0IG9zLCByZSwgc3lzCgpDSEVDS1MgPSBbeydraW5kJzogJ2V4aXN0cycsICdwYXRoJzogJ2luZGV4Lmh0bWwnfSwgeydraW5kJzogJ2dsb2JfbWluJywgJ3BhdHRlcm4nOiAndGVzdHMvKiovKi50ZXN0LionLCAnY291bnQnOiAxfSwgeydraW5kJzogJ2dsb2JfbWluJywgJ3BhdHRlcm4nOiAnZTJlLyoqLyouc3BlYy4qJywgJ2NvdW50JzogMX0sIHsna2luZCc6I...
+  [tool <-] bash
+  [tool ->] read_file  {'path': 'index.html'}
+  [tool <-] read_file
+  [tool ->] read_file  {'path': 'test_evidence/summary.md'}
+  [tool <-] read_file
+  [tool ->] read_file  {'path': 'test_evidence/unit.txt', 'limit': 200}
+  [tool <-] read_file
+  [tool ->] read_file  {'path': 'test_evidence/e2e.txt', 'limit': 200}
+  [tool <-] read_file
+  [tool ->] git  {'args': ['status', '--porcelain']}
+  [tool <-] git
+  [tool ->] read_file  {'path': 'src/boardState.js'}
+  [tool <-] read_file
+  [tool ->] read_file  {'path': 'src/app.js'}
+  [tool <-] read_file
+  [tool ->] read_file  {'path': 'e2e/board.spec.js'}
+  [tool <-] read_file
+  [tool ->] read_file  {'path': 'tests/boardState.test.js'}
+  [tool <-] read_file
+  [tool ->] read_file  {'path': '20260705-111927-read_file-d1f83dddda7b.txt', 'limit': 240}
+  [tool <-] read_file (ERROR)
+  [tool ->] read_file  {'path': 'index.html', 'offset': 1, 'limit': 220}
+  [tool <-] read_file
+  [tool ->] read_file  {'path': 'index.html', 'offset': 220, 'limit': 260}
+  [tool <-] read_file
+  [EVALUATED] {'sprint_number': 1, 'outcome': 'pass', 'score': 1.0, 'notes': 'All acceptance criteria satisfied: 3-lane board, add/move/remove with localStorage persistence, keyboard operability, accessible semantics/names, unit + Playwright e2e tests with passing captured evidence.'}
+== beat done ==
+
+[verdict] dod_floor=pass
+[verdict] unit_reverify_exit=0
+[verdict] e2e_reverify_exit=0
+[verdict] truly_passed=True

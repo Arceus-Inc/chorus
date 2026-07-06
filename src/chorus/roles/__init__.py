@@ -11,6 +11,7 @@ from chorus.roles._beat_config import RoleBeatConfig, role_beat_config
 from chorus.roles._defaults import default_roles
 from chorus.roles._manifest import (
     Isolation,
+    McpServerSpec,
     MemoryScope,
     PermissionMode,
     RoleManifest,
@@ -27,6 +28,7 @@ __all__ = [
     "DoDGenerator",
     "Isolation",
     "ManifestOverlay",
+    "McpServerSpec",
     "MemoryScope",
     "PermissionMode",
     "Role",

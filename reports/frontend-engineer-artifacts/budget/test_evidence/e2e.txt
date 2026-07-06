@@ -1,0 +1,9 @@
+
+Running 4 tests using 2 workers
+
+  ✓  1 [chromium] › tests\budget-tracker-delete.spec.js:3:1 › delete removes transaction from list and persists after reload (727ms)
+  ✓  2 [chromium] › tests\budget-tracker.spec.js:9:1 › routing + add validation + persistence across reload + edit flow (975ms)
+  ✓  3 [chromium] › tests\budget-tracker.spec.js:56:1 › responsive: no horizontal scroll on core routes at phone width (422ms)
+  ✓  4 [chromium] › tests\budget-tracker.spec.js:81:1 › responsive: dashboard uses denser multi-column layout at desktop (275ms)
+
+  4 passed (5.1s)

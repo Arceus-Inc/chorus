@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Frontend Engineer (Finn) — Test Report</title>
+<style>
+  :root {
+    --bg:#f6f8fa; --card:#ffffff; --ink:#1f2328; --muted:#57606a; --line:#d0d7de;
+    --accent:#0d9488; --accent-soft:#ecfeff;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink);
+    font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; }
+  .wrap { max-width:980px; margin:0 auto; padding:32px 20px 80px; }
+  header.top { background:linear-gradient(135deg,#ecfeff,#f6f8fa); border:1px solid var(--line);
+    border-radius:16px; padding:28px 28px 22px; margin-bottom:22px; }
+  header.top .eyebrow { color:var(--accent); font-weight:700; letter-spacing:.06em;
+    text-transform:uppercase; font-size:12px; }
+  header.top h1 { margin:.2em 0 .3em; font-size:26px; }
+  header.top .sub { color:var(--muted); margin:0; }
+  header.top .sub b { color:var(--ink); }
+  .badge { font-size:12px; font-weight:700; padding:3px 10px; border-radius:999px; white-space:nowrap; }
+  .badge.ok { background:#dcfce7; color:#166534; }
+  .badge.warn { background:#fef9c3; color:#854d0e; }
+  .badge.info { background:var(--accent-soft); color:#0e7490; }
+  .badge.mono { font:12px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; }
+  .overall { display:flex; align-items:center; gap:14px; margin:22px 0; padding:16px 18px;
+    border-radius:12px; }
+  .overall.ok { background:#f0fdf4; border:1px solid #bbf7d0; }
+  .overall .big { font-size:19px; font-weight:800; letter-spacing:.02em; color:#166534; }
+  .overall p { margin:0; color:var(--muted); font-size:13.5px; }
+  .chips { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; margin:22px 0; }
+  .chip { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:14px 16px;
+    color:var(--muted); font-size:12.5px; }
+  .chip span { display:block; font-size:24px; font-weight:750; color:var(--ink); line-height:1.1; }
+  .chip.green span { color:#166534; }
+  h2.sec { font-size:15px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted);
+    margin:36px 0 12px; padding-top:8px; border-top:1px solid var(--line); }
+  h2.sec:first-of-type { border-top:none; }
+  .lead { color:var(--muted); margin:-4px 0 16px; font-size:14px; }
+  table { width:100%; border-collapse:collapse; background:var(--card); border:1px solid var(--line);
+    border-radius:12px; overflow:hidden; margin-bottom:14px; }
+  th, td { text-align:left; padding:11px 14px; border-bottom:1px solid var(--line); font-size:13.5px;
+    vertical-align:top; }
+  th { background:#fbfcfe; color:var(--muted); text-transform:uppercase; letter-spacing:.04em;
+    font-size:11.5px; font-weight:700; }
+  tr:last-child td { border-bottom:none; }
+  td.mono, .mono-inline { font:12.5px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; }
+  td .cmd { color:#0e7490; }
+  .stack { display:flex; flex-wrap:wrap; gap:8px; margin:6px 0 18px; }
+  .pill { background:#f3e8ff; color:#6b21a8; border:1px solid #e9d5ff; border-radius:999px;
+    padding:4px 12px; font-size:13px; font-weight:600; }
+  .pill.neutral { background:#eef2ff; color:#3730a3; border-color:#c7d2fe; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:14px;
+    padding:6px 18px 14px; margin-bottom:14px; }
+  .file { border-bottom:1px dashed var(--line); padding:13px 0; }
+  .file:last-child { border-bottom:none; }
+  .file h4 { margin:0 0 5px; font:13.5px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    color:var(--ink); display:flex; align-items:center; gap:9px; flex-wrap:wrap; }
+  .file p { margin:0; color:var(--muted); font-size:13px; }
+  .note { background:#fffbeb; border:1px solid #fde68a; border-radius:12px; padding:13px 18px;
+    color:#854d0e; font-size:13px; margin:14px 0; }
+  .note b { color:#713f12; }
+  .kbd { font:12px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; background:#eef1f4;
+    border:1px solid var(--line); border-radius:5px; padding:1px 6px; color:#24292f; }
+  footer { color:var(--muted); font-size:12px; text-align:center; margin-top:44px;
+    border-top:1px solid var(--line); padding-top:18px; }
+  .legend-cell { display:flex; align-items:center; gap:8px; }
+</style></head>
+<body><div class="wrap">
+
+<header class="top">
+  <div class="eyebrow">Chorus · Frontend Engineer (Finn) · Quality Assurance</div>
+  <h1>Test Report</h1>
+  <p class="sub">Independent verification that Finn — the framework-agnostic Frontend Engineer employee — <b>actually ships working software</b>. This report covers (1) the harness unit-test suite, (2) an independent re-run of the hardest generated task, and (3) a line-by-line manual code review that goes <b>beyond the Definition-of-Done floor</b>.</p>
+</header>
+
+<div class="overall ok">
+  <span class="big">ALL GREEN</span>
+  <p>303 harness tests pass · the hardest task (<span class="mono-inline">shop</span>) truly passed under an independent re-run (production build + unit + real-browser e2e) · manual code review found no defects</p>
+</div>
+
+<div class="chips">
+  <div class="chip green"><span>303</span>Harness tests passed<br>(employee · roles · evidence tool)</div>
+  <div class="chip green"><span>69</span>Frontend-engineer<br>tests passed</div>
+  <div class="chip green"><span>9 / 9</span>shop unit tests<br>(vitest run)</div>
+  <div class="chip green"><span>2 / 2</span>shop e2e tests<br>(real Chromium)</div>
+  <div class="chip green"><span>exit 0</span>shop production build<br>(tsc -b &amp;&amp; vite build)</div>
+</div>
+
+<h2 class="sec">1 · Independent re-verification of the hardest task</h2>
+<p class="lead">The <span class="mono-inline">shop</span> task asks for a three-view storefront (list / detail / cart) with a live cart summary, back-forward navigation, deep links, and cart persistence — the hardest of the five generated tasks. Below, every gate was re-run <b>by hand</b> in Finn's shipped worktree, in a fresh process, with <span class="kbd">CI=1</span>. Nothing here relies on Finn's own self-reported evidence.</p>
+
+<table>
+  <thead><tr><th>Gate</th><th>Command</th><th>Result</th><th>Detail</th></tr></thead>
+  <tbody>
+    <tr>
+      <td>DoD floor (after-beat gate)</td>
+      <td class="mono"><span class="cmd">test_evidence</span> scan</td>
+      <td><span class="badge ok">pass</span></td>
+      <td>package.json + <span class="mono-inline">"test"</span> script + <span class="mono-inline">playwright.config.*</span> + unit log + e2e log + ≥150-word stack-decision summary all present</td>
+    </tr>
+    <tr>
+      <td>Production build <span class="badge info">beyond DoD</span></td>
+      <td class="mono"><span class="cmd">npm run build</span></td>
+      <td><span class="badge ok">exit 0</span></td>
+      <td>TypeScript project build (<span class="mono-inline">tsc -b</span>, strict) + <span class="mono-inline">vite build</span>; 30 modules transformed → 239.97 kB JS (76.48 kB gzip) in 212 ms</td>
+    </tr>
+    <tr>
+      <td>Unit suite (fresh re-run)</td>
+      <td class="mono"><span class="cmd">npm test</span> → vitest run src</td>
+      <td><span class="badge ok">9 / 9</span></td>
+      <td>1 file, 9 tests passed in 2.57 s; exit 0</td>
+    </tr>
+    <tr>
+      <td>End-to-end (fresh re-run)</td>
+      <td class="mono"><span class="cmd">npx playwright test</span></td>
+      <td><span class="badge ok">2 / 2</span></td>
+      <td>Real Chromium; webServer runs <span class="mono-inline">npm run build &amp;&amp; vite preview</span> then drives the built app; passed in 7.4 s; exit 0</td>
+    </tr>
+  </tbody>
+</table>
+<div class="note"><b>Why this is a strong signal.</b> Playwright's <span class="mono-inline">webServer</span> builds the app for production and serves it through <span class="mono-inline">vite preview</span> before the tests run — so the e2e pass <em>also</em> proves the production bundle works with SPA history routing (deep links to <span class="mono-inline">/product/p2</span> and <span class="mono-inline">/cart</span> resolve), not just the dev server.</div>
+
+<h2 class="sec">2 · The stack Finn chose — on its own</h2>
+<p class="lead">No framework name appears anywhere in the Python employee code or the brief prompt. Finn read the intent, loaded the <span class="mono-inline">choosing-a-frontend-stack</span> skill, and selected this stack entirely by itself. That the app then passed every gate is the proof the framework-agnostic design works.</p>
+<div class="stack">
+  <span class="pill">React 19</span>
+  <span class="pill">TypeScript (strict)</span>
+  <span class="pill">react-router-dom 7</span>
+  <span class="pill">Vite 8</span>
+  <span class="pill">Vitest 3</span>
+  <span class="pill">Testing Library</span>
+  <span class="pill">Playwright</span>
+  <span class="pill neutral">oxlint</span>
+</div>
+<p class="lead" style="margin-top:2px">Right-sized: three runtime dependencies, no state-management library (a <span class="mono-inline">useReducer</span> + context was the correct call for this size), CI-safe scripts (<span class="mono-inline">vitest run</span>, not watch mode).</p>
+
+<h2 class="sec">3 · Harness test suite (pytest)</h2>
+<p class="lead">The employee, role, and evidence-tool suites that guard Finn's own machinery. Run with <span class="kbd">uv run --directory chorus python -m pytest …</span>.</p>
+<table>
+  <thead><tr><th>Suite</th><th>Scope</th><th>Result</th></tr></thead>
+  <tbody>
+    <tr><td class="mono">tests/employee · tests/roles · test_test_evidence.py</td><td>Full harness subset relevant to Finn</td><td><span class="badge ok">303 passed / 18.18 s</span></td></tr>
+    <tr><td class="mono">test_frontend_engineer.py + _subagents.py + test_test_evidence.py</td><td>Frontend-engineer-specific behaviour</td><td><span class="badge ok">69 passed / 3.75 s</span></td></tr>
+    <tr><td class="mono">test_test_evidence.py</td><td>Read-only worktree evidence scanner</td><td><span class="badge ok">21 passed / 0.72 s</span></td></tr>
+  </tbody>
+</table>
+<div class="note"><b>Out of scope (pre-existing, environment-only).</b> Six failures exist in unrelated suites — 4 in <span class="mono-inline">tests/tools/cms/test_markdown_backend.py</span> and 2 in <span class="mono-inline">tests/tools/test_analysis_tools.py</span> — all caused by <span class="mono-inline">matplotlib</span>/<span class="mono-inline">pandas</span> not being installed in this environment. They are untouched by the Frontend Engineer work and are excluded from the counts above.</div>
+
+<h2 class="sec">4 · Manual code review — beyond the DoD floor</h2>
+<p class="lead">Every source and test file Finn shipped for <span class="mono-inline">shop</span> was read line by line. The goal was to confirm the code is <b>genuinely correct and honest</b> — not merely enough to satisfy an automated gate. Findings below; no defects were found.</p>
+
+<div class="card">
+  <div class="file">
+    <h4>src/cart/cart.ts <span class="badge ok">correct</span></h4>
+    <p>Pure reducer + selectors, no React import. <span class="mono-inline">add</span> merges and clamps quantity 1–999; <span class="mono-inline">remove</span> filters; <span class="mono-inline">setQuantity</span> clamps 0–999 and removes at 0; <span class="mono-inline">clear</span> resets. <span class="mono-inline">getCartItemCount</span> sums quantities; <span class="mono-inline">getCartTotalCents</span> uses a price map and safely ignores unknown ids; <span class="mono-inline">formatMoneyFromCents</span> uses <span class="mono-inline">toLocaleString</span> USD. <span class="mono-inline">parseLines</span> defensively validates untrusted localStorage (type checks, clamps, de-dupes by id keeping last). Clean pure/view seam — the reason the logic is unit-testable.</p>
+  </div>
+  <div class="file">
+    <h4>src/cart/CartProvider.tsx <span class="badge ok">correct</span></h4>
+    <p><span class="mono-inline">useReducer</span> with a lazy initializer that loads from localStorage (SSR-guarded via <span class="mono-inline">typeof window === 'undefined'</span>); a <span class="mono-inline">useEffect</span> persists on every state change; the context value is <span class="mono-inline">useMemo</span>-ed; <span class="mono-inline">useCart</span> throws when used outside the provider. Matches the <span class="mono-inline">react-doctor</span> guidance on effects and stable context.</p>
+  </div>
+  <div class="file">
+    <h4>src/App.tsx &amp; src/main.tsx <span class="badge ok">correct</span></h4>
+    <p><span class="mono-inline">CartProvider</span> wraps the whole app (one shared cart). <span class="mono-inline">CartSummary</span> reads the cart and sits in the header <em>outside</em> <span class="mono-inline">&lt;Routes&gt;</span> — so the live count + total are visible on every view. Routes cover <span class="mono-inline">/</span>, <span class="mono-inline">/product/:id</span>, <span class="mono-inline">/cart</span>, and a <span class="mono-inline">*</span> not-found. <span class="mono-inline">main.tsx</span> uses <span class="mono-inline">BrowserRouter</span> (HTML5 history → real back/forward + deep links) inside <span class="mono-inline">StrictMode</span>. Accessible: <span class="mono-inline">aria-label</span>s on the cart summary, count, total, and primary nav.</p>
+  </div>
+  <div class="file">
+    <h4>src/routes/{ProductList, ProductDetail, CartView}.tsx <span class="badge ok">correct</span></h4>
+    <p>List maps products to accessible "View details" links. Detail looks up by <span class="mono-inline">useParams</span> id and handles not-found (deep-link safe) with an add-to-cart and a live "Cart now: N items" line. Cart view has an empty state, keyed line items, a labelled quantity input (min 0 / max 999, 0 removes), Remove and Clear-cart buttons — proper <span class="mono-inline">&lt;label htmlFor&gt;</span> wiring throughout.</p>
+  </div>
+  <div class="file">
+    <h4>src/cart/cart.test.ts <span class="badge ok">9 genuine tests</span></h4>
+    <p>Behaviour-focused unit tests: add-new + increment, remove, setQuantity set + remove-at-0, item count, total (verifying unknown ids are ignored), money formatting, and storage round-trip incl. invalid/empty payloads. They test observable behaviour, not implementation detail.</p>
+  </div>
+  <div class="file">
+    <h4>tests/storefront.spec.ts <span class="badge ok">2 real e2e tests</span></h4>
+    <p>Test 1 walks the full journey: deep-link <span class="mono-inline">/product/p2</span> → add → assert count <span class="mono-inline">1</span> / <span class="mono-inline">$24.99</span> → cart → set qty 2 → <span class="mono-inline">$49.98</span> → remove → <span class="mono-inline">$0.00</span> → products → open Arc Mug → add → <span class="mono-inline">$15.99</span> → <span class="mono-inline">goBack</span> (cart persists) → <span class="mono-inline">goForward</span> (cart persists) → deep-link <span class="mono-inline">/cart</span> (cart persists). Test 2 seeds localStorage before scripts run and cold-starts at <span class="mono-inline">/cart</span>, asserting the seeded cart loads (<span class="mono-inline">2</span> / <span class="mono-inline">$49.98</span>). Uses web-first role/label queries and asserts <em>exact</em> totals — so it catches real arithmetic and routing regressions.</p>
+  </div>
+  <div class="file">
+    <h4>playwright.config.ts &amp; package.json <span class="badge ok">correct</span></h4>
+    <p>Playwright serves the <em>built</em> app (<span class="mono-inline">npm run build &amp;&amp; vite preview</span>) on a fixed port, chromium project, <span class="mono-inline">reuseExistingServer: !CI</span>. package.json scripts are honest and CI-safe (<span class="mono-inline">test</span> = <span class="mono-inline">vitest run src</span>), dependencies are minimal and appropriate.</p>
+  </div>
+</div>
+
+<h2 class="sec">Verdict</h2>
+<div class="overall ok">
+  <span class="big">TRUSTWORTHY</span>
+  <p>Finn's machinery is fully covered by 303 passing harness tests, and the software it produced for the hardest task is independently reproducible (build + unit + e2e all green in a clean re-run) and, on manual inspection, genuinely well-architected, defensive, and accessible. The framework-agnostic design is validated: Finn chose its own stack and still cleared every gate.</p>
+</div>
+
+<footer>Chorus · Frontend Engineer (Finn) — Test Report · generated from an independent re-run and manual code review of the <span class="mono-inline">shop</span> worktree and the pytest harness suite.</footer>
+
+</div></body></html>

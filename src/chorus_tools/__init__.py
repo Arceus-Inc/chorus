@@ -33,6 +33,14 @@ from chorus_tools._manager_actions import (
 from chorus_tools._record_decision import RecordDecisionInput, RecordDecisionTool
 from chorus_tools._registry import chorus_tool_registry
 from chorus_tools._submit_verdict import SubmitVerdictInput, SubmitVerdictTool
+from chorus_tools._test_evidence import (
+    EvidenceFinding,
+    EvidenceReport,
+    EvidenceSpec,
+    LogAssessment,
+    TestEvidenceInput,
+    TestEvidenceTool,
+)
 
 __all__ = [
     "AssignTaskInput",
@@ -49,9 +57,13 @@ __all__ = [
     "DesignLintInput",
     "DesignLintTool",
     "DesignTokens",
+    "EvidenceFinding",
+    "EvidenceReport",
+    "EvidenceSpec",
     "GoLiveAction",
     "GoLiveInput",
     "GoLiveTool",
+    "LogAssessment",
     "NotebookRunTool",
     "RecordDecisionInput",
     "RecordDecisionTool",
@@ -60,6 +72,8 @@ __all__ = [
     "SubmitTaskTool",
     "SubmitVerdictInput",
     "SubmitVerdictTool",
+    "TestEvidenceInput",
+    "TestEvidenceTool",
     "WarehouseQueryTool",
     "analysis_tool",
     "available_exemplars",
