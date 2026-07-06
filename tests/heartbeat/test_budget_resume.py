@@ -57,9 +57,13 @@ class _FakeWorkforce:
         return self._by_id[employee_id]
 
 
-def _dispatch(ledger: SqliteLedger, beat: _TimeoutBeat, *, max_resume_attempts: int = 2) -> Scheduler:
+def _dispatch(
+    ledger: SqliteLedger, beat: _TimeoutBeat, *, max_resume_attempts: int = 2
+) -> Scheduler:
     employee = ledger.employees.create(Employee(id="e1", name="e1", role="engineer"))
-    ledger.tasks.submit(Task(id="t1", intent="x", status=TaskStatus.TODO, assignee_employee_id="e1"))
+    ledger.tasks.submit(
+        Task(id="t1", intent="x", status=TaskStatus.TODO, assignee_employee_id="e1")
+    )
     ledger.wakes.enqueue(
         Wake(id="w1", employee_id="e1", reason=WakeReason.MANUAL, payload={"task_id": "t1"})
     )

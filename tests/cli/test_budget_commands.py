@@ -31,8 +31,14 @@ def _run(line: str, session: CliSession) -> tuple[LoopSignal, str]:
 
 def _spend(ledger: SqliteLedger, employee_id: str, cents: int) -> None:
     ledger.cost_events.record(
-        CostEvent(id=f"ce_{cents}", employee_id=employee_id, provider="dream", model="m",
-                  cost_cents=cents, occurred_at=_NOW)
+        CostEvent(
+            id=f"ce_{cents}",
+            employee_id=employee_id,
+            provider="dream",
+            model="m",
+            cost_cents=cents,
+            occurred_at=_NOW,
+        )
     )
 
 
@@ -162,7 +168,8 @@ def _pause(ledger: SqliteLedger, session: CliSession) -> str:
     from chorus.budgets import BudgetEnforcer
 
     BudgetEnforcer(ledger, company_id="acme").on_cost_event(
-        ledger.cost_events.get("ce_120"), now=_NOW  # type: ignore[arg-type]
+        ledger.cost_events.get("ce_120"),
+        now=_NOW,  # type: ignore[arg-type]
     )
     return "bp1"
 

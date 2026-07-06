@@ -83,7 +83,13 @@ def _run(
 
 def _child(ledger: SqliteLedger, task_id: str, status: TaskStatus) -> Task:
     return ledger.tasks.submit(
-        Task(id=task_id, intent=task_id, status=status, assignee_employee_id="emp_1", parent_id="goal")
+        Task(
+            id=task_id,
+            intent=task_id,
+            status=status,
+            assignee_employee_id="emp_1",
+            parent_id="goal",
+        )
     )
 
 
@@ -110,10 +116,17 @@ def test_cascade_cancels_a_task_blocked_by_a_failed_prerequisite(ledger: SqliteL
 
 
 def _open_recovery(ledger: SqliteLedger, task_id: str, owner: str = "emp_1") -> None:
-    ledger.recovery_actions.open(RecoveryAction(
-        id=f"rec_{task_id}", source_task_id=task_id, kind=RecoveryKind.STALE_RUN_WATCHDOG,
-        owner_employee_id=owner, cause="run_task_error", fingerprint="x", next_action="fix",
-    ))
+    ledger.recovery_actions.open(
+        RecoveryAction(
+            id=f"rec_{task_id}",
+            source_task_id=task_id,
+            kind=RecoveryKind.STALE_RUN_WATCHDOG,
+            owner_employee_id=owner,
+            cause="run_task_error",
+            fingerprint="x",
+            next_action="fix",
+        )
+    )
 
 
 def test_stranded_child_terminalizes_so_the_parent_can_integrate(ledger: SqliteLedger) -> None:
@@ -157,7 +170,9 @@ def test_cascade_leaves_a_task_with_a_still_pending_blocker_alone(ledger: Sqlite
 
     reconcile(ledger, now=NOW)
 
-    assert ledger.tasks.get("C").status is TaskStatus.TODO  # untouched — its blocker may still succeed
+    assert (
+        ledger.tasks.get("C").status is TaskStatus.TODO
+    )  # untouched — its blocker may still succeed
 
 
 # -- §7 step 1: reap orphaned running runs (lease passed) ----------------------

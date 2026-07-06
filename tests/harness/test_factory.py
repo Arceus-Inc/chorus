@@ -6,6 +6,7 @@ worktree side-effects run on real git in a temp dir.
 
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -54,16 +55,26 @@ def test_engineer_materializes_a_writable_harness_in_its_worktree(
 def test_engineer_role_overlays_admit_read_memory_for_read_only_heads(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    # The evaluator is the read-only head that keeps tools, so it admits the safe read-memory surfaces
+    # (memory_search/memory_get/working_memory_read) to verify with. The planner is deliberately
+    # TOOLLESS (`tools = []`) — given tools + tool_choice="auto", weaker models emit a tool call with
+    # zero text and `run_task` fails with "planner reply missing <spec>" (see write_role_overlays). The
+    # generator runs tools=null (no `tools =` line), so it sees the full role toolset.
     factory, _ = _factory(monkeypatch, tmp_path)
     mat = factory.materialize(Employee(id="ada", name="Ada", role="engineer"))
 
     planner = (mat.working_dir / ".harness" / "roles" / "planner.toml").read_text(encoding="utf-8")
-    evaluator = (mat.working_dir / ".harness" / "roles" / "evaluator.toml").read_text(encoding="utf-8")
-    generator = (mat.working_dir / ".harness" / "roles" / "generator.toml").read_text(encoding="utf-8")
+    evaluator = (mat.working_dir / ".harness" / "roles" / "evaluator.toml").read_text(
+        encoding="utf-8"
+    )
+    generator = (mat.working_dir / ".harness" / "roles" / "generator.toml").read_text(
+        encoding="utf-8"
+    )
 
-    assert '"memory_search"' in planner
+    assert "tools = []" in planner  # toolless on purpose
+    assert '"memory_search"' in evaluator
     assert '"memory_get"' in evaluator
-    assert '"working_memory_read"' in planner
+    assert '"working_memory_read"' in evaluator
     assert "tools =" not in generator
 
 
@@ -78,6 +89,46 @@ def test_engineer_gets_an_unrestricted_sandbox_so_it_can_run_commands(
     assert 'tier = "unrestricted"' in sandbox
     assert "confirm_unrestricted = true" in sandbox  # dream double-gates it; the choice is explicit
     assert mat.config.sandbox == "unrestricted"
+
+
+def test_pm_materializes_its_skill_bundle_into_the_worktree(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # A role with skills (the PM) gets its bundle copied INTO the worktree, so the model can reach the
+    # bundled reference files with its worktree-confined read_file — and dream's registry is pointed at
+    # that in-worktree copy (skills enabled + a registry supplied).
+    factory, captured = _factory(monkeypatch, tmp_path)
+    mat = factory.materialize(Employee(id="pat", name="Pat", role="pm"))
+
+    canvas = mat.working_dir / ".harness" / "skills" / "recommendation-canvas"
+    assert (canvas / "SKILL.md").exists()
+    # the bundled reference files the SKILL.md points at come across too — the whole reason for Option C
+    assert (canvas / "template.md").exists()
+    assert (canvas / "references" / "sample.md").exists()
+    assert captured["skill_registry"] is not None
+    assert captured["skills"] is True
+
+
+def test_materialized_skill_bundle_is_git_excluded_from_the_worktree(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The whole point of homing the bundle under .harness/: it is already excluded from every worktree
+    # branch (chorus.workspace info/exclude), so a skill's files never get committed or merged as a
+    # deliverable. git must not see .harness/skills as an untracked path.
+    factory, _ = _factory(monkeypatch, tmp_path)
+    mat = factory.materialize(Employee(id="pat", name="Pat", role="pm"))
+
+    status = subprocess.run(
+        ["git", "-C", str(mat.working_dir), "status", "--porcelain", "--ignored"],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    # excluded paths surface under `!!` (ignored), never as untracked `??`
+    assert "?? .harness/skills" not in status
+    assert not any(
+        line.startswith("?? ") and ".harness/skills" in line for line in status.splitlines()
+    )
 
 
 def test_reviewer_materializes_a_read_only_harness(
@@ -148,7 +199,9 @@ def test_marketer_harness_registers_the_stage_go_live_tool(
         factory.materialize(Employee(id="mira", name="Mira", role="marketer"))
         names = {t.name for t in captured["registry"].list_tools()}
         assert "stage_go_live" in names  # her one gated live surface is wired
-        assert "decompose" not in names  # she is not a delegator; go-live is her only capability tool
+        assert (
+            "decompose" not in names
+        )  # she is not a delegator; go-live is her only capability tool
     finally:
         ledger.close()
 
@@ -170,10 +223,17 @@ def test_integrate_beat_harness_drops_the_decompose_tool(
         )
         ledger.employees.create(Employee(id="moe", name="Moe", role="manager"))
         ledger.tasks.submit(Task(id="goal", intent="ship it", status=TaskStatus.TODO))
-        ledger.tasks.submit(Task(id="kid", intent="a part", status=TaskStatus.TODO, parent_id="goal"))
+        ledger.tasks.submit(
+            Task(id="kid", intent="a part", status=TaskStatus.TODO, parent_id="goal")
+        )
         factory = _factory_mod.EmployeeHarnessFactory(
-            api_key="k", base_url="https://x/openai/v1", deployment="gpt-x", company_id="acme",
-            roles=RoleRegistry.from_plugins(default_roles()), work_root=tmp_path, ledger=ledger,
+            api_key="k",
+            base_url="https://x/openai/v1",
+            deployment="gpt-x",
+            company_id="acme",
+            roles=RoleRegistry.from_plugins(default_roles()),
+            work_root=tmp_path,
+            ledger=ledger,
         )
         factory.materialize(Employee(id="moe", name="Moe", role="manager"), task_id="goal")
         names = {t.name for t in captured["registry"].list_tools()}
@@ -202,17 +262,26 @@ def test_integrate_beat_over_a_complete_subtree_drops_all_mutating_tools(
         )
         ledger.employees.create(Employee(id="moe", name="Moe", role="manager"))
         ledger.tasks.submit(Task(id="goal", intent="ship it", status=TaskStatus.BLOCKED))
-        ledger.tasks.submit(Task(id="kid", intent="a part", status=TaskStatus.DONE, parent_id="goal"))
+        ledger.tasks.submit(
+            Task(id="kid", intent="a part", status=TaskStatus.DONE, parent_id="goal")
+        )
         dod = ledger.dod.create("kid", Verifier.command("pytest", artifact_class="file"))
         ledger.dod.record_verdict(dod.id, DodStatus.PASSED, verdict={}, run_id=None)
         factory = _factory_mod.EmployeeHarnessFactory(
-            api_key="k", base_url="https://x/openai/v1", deployment="gpt-x", company_id="acme",
-            roles=RoleRegistry.from_plugins(default_roles()), work_root=tmp_path, ledger=ledger,
+            api_key="k",
+            base_url="https://x/openai/v1",
+            deployment="gpt-x",
+            company_id="acme",
+            roles=RoleRegistry.from_plugins(default_roles()),
+            work_root=tmp_path,
+            ledger=ledger,
         )
         factory.materialize(Employee(id="moe", name="Moe", role="manager"), task_id="goal")
         names = {t.name for t in captured["registry"].list_tools()}
         assert "decompose" not in names
-        assert "submit_task" not in names and "assign_task" not in names  # cannot over-submit a done subtree
+        assert (
+            "submit_task" not in names and "assign_task" not in names
+        )  # cannot over-submit a done subtree
         assert names == {"read_file"}  # only read remains — the manager reviews, then accepts
     finally:
         ledger.close()
@@ -231,12 +300,20 @@ def test_reviewer_harness_registers_the_submit_verdict_capability_tool(
         )
         ledger.employees.create(Employee(id="rob", name="Rob", role="reviewer"))
         factory = _factory_mod.EmployeeHarnessFactory(
-            api_key="k", base_url="https://x/openai/v1", deployment="gpt-x", company_id="acme",
-            roles=RoleRegistry.from_plugins(default_roles()), work_root=tmp_path, ledger=ledger,
+            api_key="k",
+            base_url="https://x/openai/v1",
+            deployment="gpt-x",
+            company_id="acme",
+            roles=RoleRegistry.from_plugins(default_roles()),
+            work_root=tmp_path,
+            ledger=ledger,
         )
         factory.materialize(Employee(id="rob", name="Rob", role="reviewer"))
         names = {t.name for t in captured["registry"].list_tools()}
-        assert names == {"read_file", "submit_verdict"}  # read-only inspection + the verdict capability
+        assert names == {
+            "read_file",
+            "submit_verdict",
+        }  # read-only inspection + the verdict capability
     finally:
         ledger.close()
 
@@ -250,7 +327,9 @@ def test_reviewer_can_be_materialized_at_the_worker_s_worktree(
     review = factory.materialize(
         Employee(id="rob", name="Rob", role="reviewer"), review_worktree_of="ada"
     )
-    assert review.working_dir == tmp_path / "acme" / "worktrees" / "ada"  # ada's worktree, not rob's
+    assert (
+        review.working_dir == tmp_path / "acme" / "worktrees" / "ada"
+    )  # ada's worktree, not rob's
     sandbox = (review.working_dir / ".harness" / "sandbox.toml").read_text(encoding="utf-8")
     assert 'tier = "read-only"' in sandbox
 
@@ -273,8 +352,13 @@ def test_manager_brief_is_rehydrated_with_its_team(
             _factory_mod.dream, "build_harness", lambda **kw: captured.update(kw) or object()
         )
         factory = _factory_mod.EmployeeHarnessFactory(
-            api_key="k", base_url="https://x/openai/v1", deployment="gpt-x", company_id="acme",
-            roles=RoleRegistry.from_plugins(default_roles()), work_root=tmp_path, ledger=ledger,
+            api_key="k",
+            base_url="https://x/openai/v1",
+            deployment="gpt-x",
+            company_id="acme",
+            roles=RoleRegistry.from_plugins(default_roles()),
+            work_root=tmp_path,
+            ledger=ledger,
         )
         mat = factory.materialize(ledger.employees.get("moe"))  # type: ignore[arg-type]
         generator = (mat.working_dir / ".harness" / "roles" / "generator.toml").read_text("utf-8")

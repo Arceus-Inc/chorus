@@ -43,13 +43,18 @@ def _seed(
     )
     rev1 = ledger.routine_revisions.append(
         RoutineRevision(
-            id="rrev1", routine_id="r1", revision_no=1,
-            intent_template=intent, concurrency_policy=concurrency,  # rev1 mirrors the routine
+            id="rrev1",
+            routine_id="r1",
+            revision_no=1,
+            intent_template=intent,
+            concurrency_policy=concurrency,  # rev1 mirrors the routine
         )
     )
     ledger.routines.set_head("r1", rev1)
     return ledger.routine_triggers.create(
-        RoutineTrigger(id="t1", routine_id="r1", cron_expression="0 * * * *", next_run_at=next_run_at)
+        RoutineTrigger(
+            id="t1", routine_id="r1", cron_expression="0 * * * *", next_run_at=next_run_at
+        )
     )
 
 

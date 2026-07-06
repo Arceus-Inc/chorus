@@ -33,9 +33,7 @@ class HireEmployeeAction:
     def on_open(self, approval: Approval) -> None:
         employee = self._ledger.employees.get(approval.subject_id)
         if employee is None or employee.status is not EmployeeStatus.PENDING:
-            raise HireError(
-                f"hire gate subject {approval.subject_id!r} is not a pending employee"
-            )
+            raise HireError(f"hire gate subject {approval.subject_id!r} is not a pending employee")
 
     def on_approve(self, approval: Approval) -> ActionOutcome:
         self._ledger.employees.set_status(approval.subject_id, EmployeeStatus.ACTIVE)

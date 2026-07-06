@@ -65,9 +65,7 @@ def test_add_for_an_unknown_employee_reports_an_error(ledger: SqliteLedger) -> N
 
 def test_add_with_a_bad_concurrency_is_reported(ledger: SqliteLedger) -> None:
     _with_moe(ledger)
-    _, out = _run(
-        'routine add moe x --schedule "0 * * * *" --concurrency turbo', _session(ledger)
-    )
+    _, out = _run('routine add moe x --schedule "0 * * * *" --concurrency turbo', _session(ledger))
     assert "concurrency" in out.lower()
     assert ledger.routines.list() == []
 

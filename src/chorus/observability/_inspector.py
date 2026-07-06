@@ -86,8 +86,9 @@ class LedgerInspector:
         now = self._clock()
         tasks = self._ledger.tasks.all()
         employees = tuple(
-            EmployeeView(id=employee.id, name=employee.name, role=employee.role,
-                         status=employee.status.value)
+            EmployeeView(
+                id=employee.id, name=employee.name, role=employee.role, status=employee.status.value
+            )
             for employee in self._ledger.employees.list()
         )
         running = sum(
@@ -159,15 +160,24 @@ class LedgerInspector:
     def _open_incidents(self) -> tuple[IncidentView, ...]:
         """The decisions a human owes: open budget incidents + open recovery actions (spec 08 §3)."""
         incidents = [
-            IncidentView(id=incident.id, kind="budget", subject_id=incident.policy_id,
-                         cause=incident.threshold_type.value,
-                         next_action="raise the budget to resume")
+            IncidentView(
+                id=incident.id,
+                kind="budget",
+                subject_id=incident.policy_id,
+                cause=incident.threshold_type.value,
+                next_action="raise the budget to resume",
+            )
             for policy in self._ledger.budget_policies.all()
             for incident in self._ledger.budget_incidents.open_for_policy(policy.id)
         ]
         incidents.extend(
-            IncidentView(id=action.id, kind="recovery", subject_id=action.source_task_id,
-                         cause=action.kind.value, owner=action.owner_employee_id)
+            IncidentView(
+                id=action.id,
+                kind="recovery",
+                subject_id=action.source_task_id,
+                cause=action.kind.value,
+                owner=action.owner_employee_id,
+            )
             for action in self._ledger.recovery_actions.all_open()
         )
         return tuple(incidents)
@@ -224,11 +234,15 @@ class LedgerInspector:
 
     def org_report(self) -> OrgObservabilityReport:
         employees = self._ledger.employees.list()
-        manager_ids = {employee.reports_to for employee in employees if employee.reports_to is not None}
+        manager_ids = {
+            employee.reports_to for employee in employees if employee.reports_to is not None
+        }
         tasks = self._ledger.tasks.all()
         activities = self._ledger.activity.all()
         assignment_activities = [a for a in activities if a.verb is ActivityVerb.ASSIGNED]
-        packets = tuple(self.scrum_packet(task.id) for task in tasks if self._ledger.tasks.has_children(task.id))
+        packets = tuple(
+            self.scrum_packet(task.id) for task in tasks if self._ledger.tasks.has_children(task.id)
+        )
         runs = [run for task in tasks for run in self._ledger.runs.for_task(task.id)]
         done = sum(1 for task in tasks if task.status is TaskStatus.DONE)
         return OrgObservabilityReport(
@@ -243,8 +257,12 @@ class LedgerInspector:
             completion_rate=_rate(done, len(tasks)),
             decomposition_count=sum(1 for a in activities if a.verb is ActivityVerb.DECOMPOSED),
             assignment_count=len(assignment_activities),
-            reassignment_count=sum(1 for a in assignment_activities if a.payload.get("reassigned") is True),
-            dependency_edges=sum(len(self._ledger.dependencies.blockers(task.id)) for task in tasks),
+            reassignment_count=sum(
+                1 for a in assignment_activities if a.payload.get("reassigned") is True
+            ),
+            dependency_edges=sum(
+                len(self._ledger.dependencies.blockers(task.id)) for task in tasks
+            ),
             manager_packets=packets,
         )
 

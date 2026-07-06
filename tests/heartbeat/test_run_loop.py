@@ -31,7 +31,14 @@ class _FakeBeat:
         self.calls: list[str] = []
 
     async def run_task(
-        self, *, task_id: str, intent: str, verification: object = (), rubric: object = "", observer: object = None, run_id: str | None = None
+        self,
+        *,
+        task_id: str,
+        intent: str,
+        verification: object = (),
+        rubric: object = "",
+        observer: object = None,
+        run_id: str | None = None,
     ) -> BeatOutcome:
         self.calls.append(task_id)
         return BeatOutcome(passed=True, outcome={}, summary="ok")
@@ -68,8 +75,12 @@ async def test_run_ticks_until_stopped(ledger: SqliteLedger) -> None:
     box: list[Scheduler] = []
     clock, sleep = _stop_after(pulses, 3, box)
     sched = Scheduler(
-        ledger=ledger, workforce=_FakeWorkforce(), beat_runner=_FakeBeat(),
-        clock=clock, sleep=sleep, tick_interval_s=1.0,
+        ledger=ledger,
+        workforce=_FakeWorkforce(),
+        beat_runner=_FakeBeat(),
+        clock=clock,
+        sleep=sleep,
+        tick_interval_s=1.0,
     )
     box.append(sched)
 
@@ -107,8 +118,11 @@ async def test_stop_before_run_does_no_pulses(ledger: SqliteLedger) -> None:
     box: list[Scheduler] = []
     clock, sleep = _stop_after(pulses, 99, box)
     sched = Scheduler(
-        ledger=ledger, workforce=_FakeWorkforce(), beat_runner=_FakeBeat(),
-        clock=clock, sleep=sleep,
+        ledger=ledger,
+        workforce=_FakeWorkforce(),
+        beat_runner=_FakeBeat(),
+        clock=clock,
+        sleep=sleep,
     )
     box.append(sched)
     sched.stop()  # stopped before it ever runs
@@ -120,7 +134,9 @@ async def test_stop_before_run_does_no_pulses(ledger: SqliteLedger) -> None:
 
 async def test_tick_once_uses_the_injected_clock(ledger: SqliteLedger) -> None:
     sched = Scheduler(
-        ledger=ledger, workforce=_FakeWorkforce(), beat_runner=_FakeBeat(),
+        ledger=ledger,
+        workforce=_FakeWorkforce(),
+        beat_runner=_FakeBeat(),
         clock=lambda: _START,
     )
     report = await sched.tick_once()

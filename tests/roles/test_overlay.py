@@ -73,7 +73,9 @@ def test_disallow_wins_over_allow() -> None:
 def test_permission_mode_only_tightens() -> None:
     # PLAN is stricter than ACCEPT_EDITS -> applies.
     assert (
-        resolve_manifest(_base(), ManifestOverlay(permission_mode=PermissionMode.PLAN)).permission_mode
+        resolve_manifest(
+            _base(), ManifestOverlay(permission_mode=PermissionMode.PLAN)
+        ).permission_mode
         is PermissionMode.PLAN
     )
 

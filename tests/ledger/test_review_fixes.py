@@ -87,7 +87,9 @@ def test_open_initializes_child_ids_empty(ledger: SqliteLedger) -> None:
     rev = _plan(ledger)
     opened = ledger.decomposition_claims.open(
         DecompositionClaim(
-            id="dc1", source_task_id="t1", accepted_plan_revision_id=rev,
+            id="dc1",
+            source_task_id="t1",
+            accepted_plan_revision_id=rev,
             child_task_ids=["phantom"],  # caller-provided children must be ignored
         )
     )
@@ -174,8 +176,12 @@ def _policy(ledger: SqliteLedger) -> None:
 def _hard_incident(ledger: SqliteLedger, iid: str = "bi1") -> None:
     ledger.budget_incidents.open(
         BudgetIncident(
-            id=iid, policy_id="bp1", threshold_type=BudgetThreshold.HARD,
-            amount_limit=100, amount_observed=120, window_start=_now(),
+            id=iid,
+            policy_id="bp1",
+            threshold_type=BudgetThreshold.HARD,
+            amount_limit=100,
+            amount_observed=120,
+            window_start=_now(),
         )
     )
 
@@ -184,8 +190,12 @@ def test_attach_approval_rejects_soft_incident(ledger: SqliteLedger) -> None:
     _policy(ledger)
     ledger.budget_incidents.open(
         BudgetIncident(
-            id="bi1", policy_id="bp1", threshold_type=BudgetThreshold.SOFT,
-            amount_limit=80, amount_observed=85, window_start=_now(),
+            id="bi1",
+            policy_id="bp1",
+            threshold_type=BudgetThreshold.SOFT,
+            amount_limit=80,
+            amount_observed=85,
+            window_start=_now(),
         )
     )
     with pytest.raises(ValueError, match="hard incidents"):
@@ -211,8 +221,12 @@ def test_dismiss_only_affects_open(ledger: SqliteLedger) -> None:
     _policy(ledger)
     ledger.budget_incidents.open(
         BudgetIncident(
-            id="bi1", policy_id="bp1", threshold_type=BudgetThreshold.SOFT,
-            amount_limit=80, amount_observed=85, window_start=_now(),
+            id="bi1",
+            policy_id="bp1",
+            threshold_type=BudgetThreshold.SOFT,
+            amount_limit=80,
+            amount_observed=85,
+            window_start=_now(),
         )
     )
     ledger.budget_incidents.resolve("bi1")
@@ -228,8 +242,12 @@ def test_hard_incident_resolve_needs_approved_approval(ledger: SqliteLedger) -> 
     with pytest.raises(ValueError, match="approved approval"):
         ledger.budget_incidents.resolve("bi1")
     ledger.approvals.request(
-        Approval(id="ap1", subject_kind=ApprovalSubjectKind.BUDGET_INCIDENT,
-                 subject_id="bi1", reason="cap")
+        Approval(
+            id="ap1",
+            subject_kind=ApprovalSubjectKind.BUDGET_INCIDENT,
+            subject_id="bi1",
+            reason="cap",
+        )
     )
     ledger.approvals.approve("ap1", decided_by_user_id="u1")
     ledger.budget_incidents.attach_approval("bi1", "ap1")
@@ -279,8 +297,13 @@ def test_recent_rejects_nonpositive_limit(ledger: SqliteLedger) -> None:
 def test_pending_excludes_expired(ledger: SqliteLedger) -> None:
     past = _now() - timedelta(days=1)
     ledger.approvals.request(
-        Approval(id="ap_old", subject_kind=ApprovalSubjectKind.TASK, subject_id="t1",
-                 reason="x", expires_at=past)
+        Approval(
+            id="ap_old",
+            subject_kind=ApprovalSubjectKind.TASK,
+            subject_id="t1",
+            reason="x",
+            expires_at=past,
+        )
     )
     ledger.approvals.request(
         Approval(id="ap_live", subject_kind=ApprovalSubjectKind.TASK, subject_id="t2", reason="y")

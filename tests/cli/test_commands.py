@@ -23,7 +23,9 @@ pytestmark = pytest.mark.integration
 
 def _run(line: str, session: CliSession) -> tuple[LoopSignal, str]:
     buffer = io.StringIO()
-    signal = dispatch(line, session=session, console=Console(out=buffer, colour=False), registry=REGISTRY)
+    signal = dispatch(
+        line, session=session, console=Console(out=buffer, colour=False), registry=REGISTRY
+    )
     return signal, buffer.getvalue()
 
 
@@ -152,9 +154,7 @@ def test_task_shows_its_dod_when_present(session: CliSession, ledger: SqliteLedg
     assert "dod:" in out and "command" in out
 
 
-def test_assign_moves_backlog_to_todo_and_wakes(
-    session: CliSession, ledger: SqliteLedger
-) -> None:
+def test_assign_moves_backlog_to_todo_and_wakes(session: CliSession, ledger: SqliteLedger) -> None:
     ledger.employees.create(Employee(id="alice", name="Alice", role="engineer"))
     ledger.tasks.submit(Task(id="t1", intent="ship"))
     _, out = _run("assign t1 alice", session)
@@ -169,18 +169,14 @@ def test_assign_unknown_task_errors(session: CliSession, ledger: SqliteLedger) -
     assert "error:" in out and "ghost" in out
 
 
-def test_assign_unknown_employee_errors_cleanly(
-    session: CliSession, ledger: SqliteLedger
-) -> None:
+def test_assign_unknown_employee_errors_cleanly(session: CliSession, ledger: SqliteLedger) -> None:
     ledger.tasks.submit(Task(id="t1", intent="ship"))
     _, out = _run("assign t1 ghost", session)
     assert "error:" in out and "ghost" in out
     assert ledger.tasks.get("t1").status is TaskStatus.BACKLOG  # not left half-assigned
 
 
-def test_eligible_lists_assigned_unblocked_tasks(
-    session: CliSession, ledger: SqliteLedger
-) -> None:
+def test_eligible_lists_assigned_unblocked_tasks(session: CliSession, ledger: SqliteLedger) -> None:
     ledger.employees.create(Employee(id="alice", name="Alice", role="engineer"))
     ledger.tasks.submit(Task(id="t1", intent="ship the thing"))
     _run("assign t1 alice", session)
@@ -287,8 +283,9 @@ def test_tick_without_a_beat_service_explains_how_to_enable_it(session: CliSessi
 
 
 def test_tick_runs_the_kernel_and_reports(ledger: SqliteLedger) -> None:
-    report = TickReport(at=datetime.fromisoformat("2026-06-16T12:00:00+00:00"), wakes_dispatched=1,
-                        beats_started=1)
+    report = TickReport(
+        at=datetime.fromisoformat("2026-06-16T12:00:00+00:00"), wakes_dispatched=1, beats_started=1
+    )
     beats = _FakeBeatService(report)
     session = CliSession(ledger=ledger, beats=beats)
     signal, out = _run("tick", session)

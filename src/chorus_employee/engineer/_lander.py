@@ -43,7 +43,9 @@ class EngineerLander:
         if employee_id is None:
             raise ValueError(f"task {task.id!r} has no assignee — cannot land a PR")
         workspace = CompanyWorkspace(self._company_root)
-        commit = workspace.snapshot(employee_id)  # commit the work on chorus/{employee} — the PR tip
+        commit = workspace.snapshot(
+            employee_id
+        )  # commit the work on chorus/{employee} — the PR tip
         merge = workspace.merge(employee_id)  # PR → integrate into the company main (conflict-safe)
         return Artifact(
             task_id=task.id,

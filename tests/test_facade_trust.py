@@ -33,7 +33,8 @@ def test_set_task_trust_round_trips() -> None:
     try:
         ledger.tasks.submit(Task(id="t1", intent="review an external PR"))
         _chorus(ledger).trust.set_task(
-            "t1", preset=TrustPreset.LOW_TRUST_REVIEW,
+            "t1",
+            preset=TrustPreset.LOW_TRUST_REVIEW,
             boundary={"secret_ref_allowlist": ["ref:github_token"]},
         )
         stored = ledger.tasks.get("t1")

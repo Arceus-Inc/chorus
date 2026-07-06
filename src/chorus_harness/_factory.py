@@ -30,20 +30,26 @@ from dream.tools.builtin import default_registry
 
 from chorus.adapters import DreamBeatRunner, TokenPricing
 from chorus.heartbeat import BeatRunner, IntegrateContextPacket
-from chorus.outcomes import LanderRegistry
+from chorus.outcomes import LanderRegistry, runtime_brief_block
 from chorus.roles import RoleBeatConfig, RoleRegistry, role_beat_config
+from chorus.roles._manifest import McpServerSpec
 from chorus.roles._subagent import SubagentSpec
 from chorus.trust import TrustPolicy
 from chorus.workforce import Employee
 from chorus.workspace import CompanyWorkspace, default_work_root
 from chorus_employee import default_landers
+from chorus_harness._skills import materialize_skills
 from chorus_harness._trust import apply_trust
 from chorus_tools import (
     AssignTaskTool,
     BrandLintTool,
     CodeQualityTool,
     DecomposeTool,
+    DesignExemplarTool,
+    DesignLintTool,
+    EvidenceScanTool,
     GoLiveTool,
+    RecordDecisionTool,
     SecretScanTool,
     SubmitTaskTool,
     SubmitVerdictTool,
@@ -96,6 +102,14 @@ _CHORUS_TO_DREAM_TOOL: dict[str, str] = {
     # (tier-0, scratch-confined) is how a role pulls that full payload back. Without it a role loops on
     # read_file (worktree-relative) and never reads the evidence it just fetched.
     "read_offloaded": "read_offloaded",
+    # Code navigation (read-only, tier 0): glob = find files by name/path shape, grep = find text by
+    # regex, lsp = Python symbol intelligence (def/refs/hover — Python-only by design). Identity-mapped
+    # dream built-ins (in default_registry), so dream_tool_names keeps them + _role_registry picks them
+    # up. Offered platform-wide; a role admits only the ones that fit its worktree (a JS/TS frontend
+    # role takes grep+glob but not lsp; a Python-writing role can take all three).
+    "grep": "grep",
+    "glob": "glob",
+    "lsp": "lsp",
     # Analyst analysis tools (chorus-defined dream BaseTools; identity-mapped so dream_tool_names keeps
     # them and the subagent projection can intersect them — they are registered from ``analysis_tool``).
     "warehouse_query": "warehouse_query",
@@ -109,6 +123,20 @@ _CHORUS_TO_DREAM_TOOL: dict[str, str] = {
     # parent's role-allowlist ceiling too. The MARKETER BRIEF must NOT instruct the parent to call it —
     # it is the critic's primitive; over-instructing the parent makes it mis-spawn brand_lint.
     "brand_lint": "brand_lint",
+    # design_lint — the Designer's deterministic pre-gen scan (§08 tool / §10 sandwich): a chorus
+    # capability tool (registered via _capability_tool, NOT a dream built-in), IDENTITY-mapped so the
+    # subagent projection keeps it for the Design-Critic. The exact structural analog of brand_lint.
+    "design_lint": "design_lint",
+    # design_exemplar — the Designer's read-only exemplar fetcher (§08 tool): returns a vendored
+    # real-world DESIGN.md from the design-md-exemplars library, which lives in the chorus package
+    # (NOT the worktree), so a worktree-confined read_file can't reach it. A chorus capability tool
+    # registered via _capability_tool; identity-mapped so dream_tool_names/projection keep it.
+    "design_exemplar": "design_exemplar",
+    # evidence_scan — the Frontend Engineer's deterministic pre-done scan of its own test_evidence/
+    # bundle: a chorus capability tool (registered via _capability_tool, NOT a dream built-in),
+    # IDENTITY-mapped so the subagent projection keeps it. The structural analog of design_lint (pure
+    # reader). Distinct from the Backend Engineer's test_evidence gate-runner, which WRITES the bundle.
+    "evidence_scan": "evidence_scan",
     # cms_draft — a chorus capability tool (reversible CMS write, §08 Channel). Identity-mapped for the
     # same reason as brand_lint: so the projection keeps it; it is registered in the materialize flow
     # (it needs the worktree for the Markdown backend, which _capability_tool has no access to).
@@ -124,6 +152,10 @@ _CHORUS_TO_DREAM_TOOL: dict[str, str] = {
     # stage_go_live gate is APPROVED (fail-closed + idempotent). Registered in materialize (needs
     # ledger for the gate check + the worktree for the draft/delivery indexes).
     "execute_go_live": "execute_go_live",
+    # record_decision — the §10 Decision OS write: the PM records an immutable, cited decision as
+    # ledger rows (via _capability_tool, needs the ledger). Identity-mapped so dream_tool_names keeps
+    # it and the subagent projection can intersect it; _role_registry skips it (no built-in).
+    "record_decision": "record_decision",
 }
 
 _READ_ONLY_DREAM_SURFACE_TOOLS = frozenset(
@@ -137,7 +169,11 @@ _READ_ONLY_DREAM_SURFACE_TOOLS = frozenset(
         # read_offloaded it cannot see the overflow and wrongly fails with "content is truncated /
         # cannot verify". read_offloaded is safe (tier-0, scratch-confined, read-only), so a verifier
         # head may hold it to read the full artifact it is judging.
-        "read_offloaded",
+        "read_offloaded",  # Code navigation is read-only (tier 0), so a read-only planner/evaluator head or reviewer may
+        # hold it to locate + inspect code under review without mutating anything.
+        "grep",
+        "glob",
+        "lsp",
     }
 )
 
@@ -195,24 +231,50 @@ def _role_registry(dream_names: tuple[str, ...]) -> ToolRegistry:
     return registry
 
 
-def _capability_tool(name: str, ledger: SqliteLedger) -> BaseTool | None:
-    """Build the chorus capability tool for ``name`` (ledger-bound), or ``None`` if it isn't one."""
-    if name == "decompose":
-        return DecomposeTool(ledger)
-    if name == "submit_task":
-        return SubmitTaskTool(ledger)
-    if name == "assign_task":
-        return AssignTaskTool(ledger)
-    if name == "submit_verdict":
-        return SubmitVerdictTool(ledger)
-    if name == "stage_go_live":
-        return GoLiveTool(ledger)
+def _capability_tool(name: str, ledger: SqliteLedger | None) -> BaseTool | None:
+    """Build the chorus capability tool for ``name``, or ``None`` if it isn't one.
+
+    The ledger-bound tools require a live ``ledger``; the ledger-free ones (``brand_lint`` /
+    ``design_lint`` / ``design_exemplar``) ignore it, so ``ledger`` may be ``None`` for those.
+    """
+    # Ledger-bound tools only build when a live ledger is present (the caller guarantees this via the
+    # _LEDGER_FREE_CAPABILITY_TOOLS guard); the `is not None` check also narrows the type for mypy.
+    if ledger is not None:
+        if name == "decompose":
+            return DecomposeTool(ledger)
+        if name == "submit_task":
+            return SubmitTaskTool(ledger)
+        if name == "assign_task":
+            return AssignTaskTool(ledger)
+        if name == "submit_verdict":
+            return SubmitVerdictTool(ledger)
+        if name == "stage_go_live":
+            return GoLiveTool(ledger)
+        if name == "record_decision":
+            return RecordDecisionTool(ledger)
     if name == "brand_lint":
         return (
             BrandLintTool()
         )  # pure file reader — the ledger arg is unused (kept for a uniform seam)
+    if name == "design_lint":
+        return DesignLintTool()  # pure file reader — same uniform seam as brand_lint
+    if name == "design_exemplar":
+        return DesignExemplarTool()  # pure file reader over the vendored exemplar library
+    if name == "evidence_scan":
+        return (
+            EvidenceScanTool()
+        )  # Frontend Engineer's pure worktree scanner of the test_evidence/ bundle
     return None
 
+
+# Chorus capability tools that are pure file readers — they take no ledger (the arg is a uniform seam
+# they ignore). They MUST register even in a ledger-free materialization (e.g. a standalone example
+# runner or any path that builds the factory without a live ledger); otherwise a role silently loses
+# them and the model, seeing them named in its brief but absent from its toolset, mis-routes (e.g.
+# ``spawn_subagent(name="design_lint")`` or a worktree ``read_file`` of the exemplar path) and errors.
+_LEDGER_FREE_CAPABILITY_TOOLS = frozenset(
+    {"brand_lint", "design_lint", "design_exemplar", "evidence_scan"}
+)
 
 # Capability tools that route work to *other* employees — a role holding one needs to know its reports.
 _DELEGATING_TOOLS = frozenset({"decompose", "submit_task", "assign_task"})
@@ -338,6 +400,35 @@ def write_sandbox_config(harness_dir: Path, sandbox: str) -> None:
     if sandbox == "unrestricted":
         lines.append("confirm_unrestricted = true")
     (harness / "sandbox.toml").write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def write_mcp_allowlist(harness_dir: Path, servers: tuple[McpServerSpec, ...]) -> None:
+    """Write dream's ``.harness/mcp-allowlist.toml`` — the MCP admission authority (spec 06).
+
+    Only the servers the role declares are admitted; dream reads this file lazily on the first session
+    and connects each ``[[mcp]]`` entry, registering its tools. A failed connect is non-fatal (recorded,
+    not raised), so a missing runtime never aborts the beat. (Excluded from the branch by the
+    workspace's ``info/exclude``.) No-op when the role declares no servers.
+    """
+    if not servers:
+        return
+    harness = harness_dir / ".harness"
+    harness.mkdir(parents=True, exist_ok=True)
+    blocks: list[str] = []
+    for server in servers:
+        lines = [
+            "[[mcp]]",
+            f'name = "{_toml_escape(server.name)}"',
+            f'endpoint = "{_toml_escape(server.endpoint)}"',
+            f'transport = "{_toml_escape(server.transport)}"',
+        ]
+        if server.tier_required:
+            lines.append(f'tier_required = "{_toml_escape(server.tier_required)}"')
+        if server.tools:
+            items = ", ".join(f'"{_toml_escape(tool)}"' for tool in server.tools)
+            lines.append(f"tools = [{items}]")
+        blocks.append("\n".join(lines))
+    (harness / "mcp-allowlist.toml").write_text("\n\n".join(blocks) + "\n", encoding="utf-8")
 
 
 @dataclass(frozen=True)
@@ -477,6 +568,16 @@ class EmployeeHarnessFactory:
             roster = _team_roster(self._ledger, exclude=employee.id)
             config = replace(config, system_prompt=config.system_prompt + roster)
 
+        # Operating environment: a role that RUNS commands (a build engineer) gets a factual runtime
+        # block appended to its brief — the OS, the shell run_command lands on, and which build runtimes
+        # (Node/npm/Playwright) are on PATH — so it writes portable commands and its DoD is known to be
+        # platform-agnostic instead of guessed. dream advertises OS/shell/Python to every role already;
+        # this adds the toolchain facts only a command-running role needs (doc/review roles run nothing).
+        if "run_command" in config.tools:
+            config = replace(
+                config, system_prompt=config.system_prompt + "\n\n" + runtime_brief_block()
+            )
+
         # ``working_dir`` IS the worktree, because dream confines its tools to it — that is what
         # isolates one employee's edits from another's. A non-worktree posture falls back to a flat
         # per-employee dir under the org root.
@@ -498,13 +599,23 @@ class EmployeeHarnessFactory:
         write_sandbox_config(
             root, config.sandbox
         )  # the role's trust posture → .harness/sandbox.toml
+        # The role's admitted MCP servers → .harness/mcp-allowlist.toml (only when the role opts in via
+        # ``mcp`` AND declares servers; dream connects them lazily on the first session).
+        if config.mcp and config.mcp_servers:
+            write_mcp_allowlist(root, config.mcp_servers)
 
         registry = _role_registry(dream_tool_names(config.tools))
-        if self._ledger is not None:  # bind the role's chorus capability tools to the live ledger
-            for name in config.tools:
-                capability = _capability_tool(name, self._ledger)
-                if capability is not None:
-                    registry.register(capability, source=ToolSource.DEFAULT)
+        # Bind the role's chorus capability tools. The ledger-free ones (pure file readers:
+        # design_lint / design_exemplar / brand_lint) register regardless — they need no ledger, and
+        # withholding them when the factory has none is the bug that makes a role's own primitives
+        # vanish from its toolset. The ledger-bound ones (decompose / submit_task / …) need the live
+        # ledger and fail closed — dropped — when it is absent.
+        for name in config.tools:
+            if self._ledger is None and name not in _LEDGER_FREE_CAPABILITY_TOOLS:
+                continue
+            capability = _capability_tool(name, self._ledger)
+            if capability is not None:
+                registry.register(capability, source=ToolSource.DEFAULT)
         # cms_draft is registered here (not in _capability_tool): its Markdown fallback backend needs the
         # worktree, and the backend (Strapi when its env is set, else Markdown) is config-selected. No
         # ledger needed — a reversible CMS write, below the go-live gate.
@@ -553,9 +664,13 @@ class EmployeeHarnessFactory:
 
         # Every build_harness knob comes from the role config — this is where the employee *becomes*
         # its harness. config.model overrides the deployment when set; an empty role env means None.
+        # Skills: materialize the role's bundle *into* the worktree (read-only, git-excluded) so the
+        # model can reach the bundled reference files with its worktree-confined read_file — then point
+        # dream's registry at that in-worktree copy, so SKILL.md load and reference reads share a path.
         skill_registry = None
         if config.skills_root:
-            skill_registry, _shadows = load_skill_registry(project_dirs=[Path(config.skills_root)])
+            skills_dir = materialize_skills(root, config.skills_root)
+            skill_registry, _shadows = load_skill_registry(project_dirs=[skills_dir])
         harness = dream.build_harness(
             model=config.model or self._deployment,
             api_key=self._api_key,

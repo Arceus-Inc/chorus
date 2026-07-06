@@ -1,0 +1,994 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Frontend Engineer — Run Flow Report (tip)</title>
+<style>
+  :root {
+    --bg:#f6f8fa; --card:#ffffff; --ink:#1f2328; --muted:#57606a; --line:#d0d7de;
+    --accent:#0d9488; --accent-soft:#ecfeff;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink);
+    font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; }
+  .wrap { max-width:960px; margin:0 auto; padding:32px 20px 80px; }
+  header.top { background:linear-gradient(135deg,#ecfeff,#f6f8fa); border:1px solid var(--line);
+    border-radius:16px; padding:28px 28px 22px; margin-bottom:22px; }
+  header.top .eyebrow { color:var(--accent); font-weight:700; letter-spacing:.06em;
+    text-transform:uppercase; font-size:12px; }
+  header.top h1 { margin:.2em 0 .3em; font-size:26px; }
+  header.top .intent { color:var(--muted); margin:0; }
+  header.top .intent b { color:var(--ink); }
+  .badge { font-size:12px; font-weight:700; padding:3px 10px; border-radius:999px; }
+  .badge.ok { background:#dcfce7; color:#166534; }
+  .badge.warn { background:#fef9c3; color:#854d0e; }
+  .badge.info { background:var(--accent-soft); color:#0e7490; }
+  .reverify { background:var(--card); border:1px solid var(--line); border-radius:14px;
+    padding:6px 20px 18px; margin:22px 0; }
+  .reverify h2 { font-size:13px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted);
+    margin:16px 0 6px; }
+  .vrow { display:flex; align-items:center; gap:12px; padding:8px 0; border-bottom:1px dashed var(--line); }
+  .vrow:last-of-type { border-bottom:none; }
+  .vlabel { min-width:230px; font-weight:600; font-size:14px; }
+  .vrow .muted { color:var(--muted); font-size:12.5px; }
+  .overall { display:flex; align-items:center; gap:14px; margin-top:14px; padding:14px 16px;
+    border-radius:12px; }
+  .overall.ok { background:#f0fdf4; border:1px solid #bbf7d0; }
+  .overall.warn { background:#fffbeb; border:1px solid #fde68a; }
+  .overall .big { font-size:18px; font-weight:800; letter-spacing:.02em; }
+  .overall.ok .big { color:#166534; }
+  .overall.warn .big { color:#854d0e; }
+  .overall p { margin:0; color:var(--muted); font-size:13px; }
+  .chips { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; margin:22px 0; }
+  .chip { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:14px 16px;
+    color:var(--muted); font-size:12.5px; }
+  .chip span { display:block; font-size:24px; font-weight:750; color:var(--ink); line-height:1.1; }
+  .subchips { display:flex; flex-wrap:wrap; gap:8px; margin:-6px 0 22px; }
+  .subchip { background:#f3e8ff; color:#6b21a8; border:1px solid #e9d5ff; border-radius:999px;
+    padding:4px 12px; font-size:13px; }
+  h2.sec { font-size:15px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted);
+    margin:34px 0 12px; }
+  .legend { display:flex; flex-wrap:wrap; gap:14px; margin-bottom:14px; font-size:12.5px; color:var(--muted); }
+  .leg { display:inline-flex; align-items:center; gap:6px; }
+  .dot { width:9px; height:9px; border-radius:50%; display:inline-block; flex:0 0 auto; }
+  .phase { background:var(--card); border:1px solid var(--line); border-radius:14px;
+    margin-bottom:16px; overflow:hidden; }
+  .phase-head { display:flex; gap:14px; align-items:flex-start; padding:18px 20px 14px;
+    border-bottom:1px solid var(--line); background:#fbfcfe; }
+  .pnum { flex:0 0 auto; width:30px; height:30px; border-radius:50%; background:var(--accent);
+    color:#fff; font-weight:750; display:grid; place-items:center; }
+  .phase-head h3 { margin:2px 0 3px; font-size:17px; }
+  .phase-head p { margin:0; color:var(--muted); font-size:13.5px; }
+  .phase-body { padding:12px 16px 16px; display:flex; flex-direction:column; gap:5px; }
+  .step { display:flex; align-items:center; gap:9px; padding:5px 8px; border-radius:8px; font-size:13.5px; }
+  .step:hover { background:#f6f8fa; }
+  .step .tool { font-weight:650; }
+  .step .arg { color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+    font:12.5px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; }
+  .err { font-size:10.5px; font-weight:700; color:#b91c1c; background:#fee2e2; border-radius:5px;
+    padding:1px 6px; }
+  details.sub { border:1px solid #e9d5ff; border-radius:10px; background:#faf5ff; margin:3px 0; }
+  details.sub > summary { cursor:pointer; list-style:none; padding:8px 12px; display:flex;
+    align-items:center; gap:9px; font-size:13.5px; }
+  details.sub > summary::-webkit-details-marker { display:none; }
+  details.sub > summary::before { content:"▶"; font-size:9px; color:#a855f7; transition:transform .15s; }
+  details.sub[open] > summary::before { transform:rotate(90deg); }
+  details.sub .agent { font-weight:750; color:#6b21a8; }
+  details.sub .count { margin-left:auto; color:var(--muted); font-size:12px; }
+  .subbody { padding:2px 12px 12px 26px; display:flex; flex-direction:column; gap:3px;
+    border-top:1px dashed #e9d5ff; }
+  .empty { color:var(--muted); font-size:13px; padding:6px; }
+  .eval { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px 18px;
+    margin-bottom:12px; }
+  .eval-top { display:flex; align-items:center; gap:12px; }
+  .eval-top .score { margin-left:auto; color:var(--muted); font-size:13px; }
+  .bar { height:8px; background:#eaeef2; border-radius:999px; margin:10px 0 8px; overflow:hidden; }
+  .bar span { display:block; height:100%; background:linear-gradient(90deg,#14b8a6,#0d9488); }
+  .notes { margin:0; color:var(--muted); font-size:13px; }
+  details.art { background:var(--card); border:1px solid var(--line); border-radius:12px;
+    margin-bottom:12px; }
+  details.art > summary { cursor:pointer; padding:14px 18px; font-weight:650; }
+  details.art pre { margin:0; padding:0 18px 18px; white-space:pre-wrap; word-wrap:break-word;
+    font:12.5px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; color:#24292f; }
+  .note { background:#fffbeb; border:1px solid #fde68a; border-radius:12px; padding:14px 18px;
+    color:#854d0e; font-size:13.5px; margin-top:8px; }
+  footer { color:var(--muted); font-size:12px; text-align:center; margin-top:40px; }
+</style></head>
+<body><div class="wrap">
+
+<header class="top">
+  <div class="eyebrow">Chorus · Frontend Engineer (Finn) · task &ldquo;tip&rdquo;</div>
+  <h1>Run Flow Report</h1>
+  <p class="intent"><b>Intent:</b> Build a single-page bill-splitting helper. Someone enters the bill amount, chooses or types a tip percentage, and sets how many people are sharing the bill; the page immediately shows the tip in money, the grand total including tip, and the amount each person pays. It should behave sensibly when the inputs are still empty or not yet valid rather than showing broken or nonsensical numbers.</p>
+</header>
+
+<div class="reverify">
+  <h2>Independent verification — did the shipped code actually work?</h2>
+  <div class="vrow"><span class="vlabel">DoD floor (after-beat gate)</span><span class="badge ok">pass</span></div><div class="vrow"><span class="vlabel">Independent unit re-run</span><span class="badge ok">exit 0</span> <span class="muted">node --test, clean process, shipped worktree</span></div><div class="vrow"><span class="vlabel">Independent e2e re-run</span><span class="badge ok">exit 0</span> <span class="muted">npx playwright test, real browser</span></div>
+  <div class="overall ok"><span class="big">TRULY PASSED</span><p>the shipped code passed the DoD floor AND both suites went green again under the harness's own hands</p></div>
+</div>
+
+<div class="chips"><div class="chip"><span>84</span>Total tool calls</div><div class="chip"><span>4</span>Subagents spawned</div><div class="chip"><span>14</span>run_command calls</div><div class="chip"><span>0</span>skills loaded</div><div class="chip"><span>1</span>Sprints</div></div>
+<div class="subchips"><span class="subchip">code_reviewer <b>&times;2</b></span><span class="subchip">ui_tester <b>&times;2</b></span></div>
+
+<h2 class="sec">The flow, phase by phase</h2>
+<div class="legend"><span class="leg"><span class="dot" style="background:#7c3aed"></span>subagent</span><span class="leg"><span class="dot" style="background:#0d9488"></span>run</span><span class="leg"><span class="dot" style="background:#d97706"></span>git</span><span class="leg"><span class="dot" style="background:#2563eb"></span>evidence</span><span class="leg"><span class="dot" style="background:#16a34a"></span>write</span><span class="leg"><span class="dot" style="background:#6b7280"></span>read</span><span class="leg"><span class="dot" style="background:#db2777"></span>skill</span></div>
+<section class="phase"><div class="phase-head"><span class="pnum">0</span><div><h3>Understand &amp; size</h3><p>Read the intent and any existing code, load the craft <b>skill</b> that fits, and pick the smallest slice that <em>actually works</em>.</p></div></div><div class="phase-body"><div class="step"><span class="dot" style="background:#d97706"></span><span class="tool">git</span><span class="arg">git status --porcelain</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">dir</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">if exist DESIGN.md (type DESIGN.md) else (echo NO_DESIGN_MD)</span></div></div></section><section class="phase"><div class="phase-head"><span class="pnum">1</span><div><h3>Build the slice</h3><p>Write the running app — <code>index.html</code> + ES modules + CSS — accessible by construction and wired end to end so the behaviour happens in the browser.</p></div></div><div class="phase-body"><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">index.html</span></div><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">src/calc.js</span></div><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">src/app.js</span></div></div></section><section class="phase"><div class="phase-head"><span class="pnum">2</span><div><h3>Author the tests</h3><p>Write Node <b>unit</b> specs for the logic and a real-browser <b>Playwright</b> e2e that drives the app the way a user does.</p></div></div><div class="phase-body"><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">tests/calc.test.js</span></div><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">package.json</span></div><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">playwright.config.js</span></div><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">e2e/tip-splitter.spec.js</span></div></div></section><section class="phase"><div class="phase-head"><span class="pnum">3</span><div><h3>Run &amp; capture the proof</h3><p>Install deps, run both suites, and tee the <em>real</em> output into the durable <code>test_evidence/</code> bundle.</p></div></div><div class="phase-body"><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">if not exist node_modules (npm install)</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">if not exist test_evidence (mkdir test_evidence)</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">npm test &gt; test_evidence\\unit.txt 2&gt;&amp;1</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">npx playwright test &gt; test_evidence\\e2e.txt 2&gt;&amp;1</span> <span class="err" title="benign — usually a retry reading an offloaded scratch file or a Windows-only DoD floor probe">err</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">type test_evidence\\unit.txt &amp;&amp; echo. &amp;&amp; type test_evidence\\e2e.txt</span></div><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">test_evidence/summary.md</span></div></div></section><section class="phase"><div class="phase-head"><span class="pnum">4</span><div><h3>Review under pressure</h3><p>Spawn the read-only <b>code_reviewer</b> and <b>ui_tester</b>, self-check with <b>test_evidence</b>, address every blocker/major, and re-run until green.</p></div></div><div class="phase-body"><details class="sub"><summary><span class="dot" style="background:#7c3aed"></span><b>spawn_subagent</b> <span class="agent">code_reviewer</span><span class="count">16 inner calls · 1 benign err</span></summary><div class="subbody"><div class="step"><span class="dot" style="background:#2563eb"></span><span class="tool">test_evidence</span><span class="arg">(scan the worktree)</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">test_evidence/e2e.txt</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">index.html</span></div><div class="step"><span class="dot" style="background:#d97706"></span><span class="tool">git</span><span class="arg">git status --porcelain</span> <span class="err" title="benign — usually a retry reading an offloaded scratch file or a Windows-only DoD floor probe">err</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">index.html</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/app.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/calc.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">e2e/tip-splitter.spec.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">tests/calc.test.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">index.html</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">index.html</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">index.html</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">index.html</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">index.html</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">index.html</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">index.html</span></div></div></details><details class="sub"><summary><span class="dot" style="background:#7c3aed"></span><b>spawn_subagent</b> <span class="agent">ui_tester</span><span class="count">6 inner calls · 2 benign err</span></summary><div class="subbody"><div class="step"><span class="dot" style="background:#2563eb"></span><span class="tool">test_evidence</span><span class="arg">(scan the worktree)</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">test_evidence/e2e.txt</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">e2e</span> <span class="err" title="benign — usually a retry reading an offloaded scratch file or a Windows-only DoD floor probe">err</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">dir /s /b e2e</span> <span class="err" title="benign — usually a retry reading an offloaded scratch file or a Windows-only DoD floor probe">err</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">index.html</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">e2e/tip-splitter.spec.js</span></div></div></details><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">powershell -NoProfile -Command &quot;Select-String -Path test_evidence\\e2e.txt -Pattern \&#x27;fa…</span></div><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">index.html</span></div><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">e2e/tip-splitter.spec.js</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">npm test &gt; test_evidence\\unit.txt 2&gt;&amp;1</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">npx playwright test &gt; test_evidence\\e2e.txt 2&gt;&amp;1</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">powershell -NoProfile -Command &quot;Select-String -Path test_evidence\\\\e2e.txt -Pattern \&#x27;…</span></div><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">test_evidence/summary.md</span></div><details class="sub"><summary><span class="dot" style="background:#7c3aed"></span><b>spawn_subagent</b> <span class="agent">code_reviewer</span><span class="count">17 inner calls · 3 benign err</span></summary><div class="subbody"><div class="step"><span class="dot" style="background:#2563eb"></span><span class="tool">test_evidence</span><span class="arg">(scan the worktree)</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">index.html</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">dir</span> <span class="err" title="benign — usually a retry reading an offloaded scratch file or a Windows-only DoD floor probe">err</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">test_evidence/summary.md</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">test_evidence/unit.txt</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">test_evidence/e2e.txt</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/app.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/calc.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">e2e/tip-splitter.spec.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">tests/calc.test.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">20260705-105521-read_file-b1c17e1e73b4.txt</span> <span class="err" title="benign — usually a retry reading an offloaded scratch file or a Windows-only DoD floor probe">err</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">index.html</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">20260705-105531-read_file-b9b10f18a376.txt</span> <span class="err" title="benign — usually a retry reading an offloaded scratch file or a Windows-only DoD floor probe">err</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">index.html</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">index.html</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">index.html</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">index.html</span></div></div></details><details class="sub"><summary><span class="dot" style="background:#7c3aed"></span><b>spawn_subagent</b> <span class="agent">ui_tester</span><span class="count">6 inner calls · 2 benign err</span></summary><div class="subbody"><div class="step"><span class="dot" style="background:#2563eb"></span><span class="tool">test_evidence</span><span class="arg">(scan the worktree)</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">test_evidence/e2e.txt</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">e2e/currency-converter.spec.js</span> <span class="err" title="benign — usually a retry reading an offloaded scratch file or a Windows-only DoD floor probe">err</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">e2e/smoke.spec.js</span> <span class="err" title="benign — usually a retry reading an offloaded scratch file or a Windows-only DoD floor probe">err</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">index.html</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">e2e/tip-splitter.spec.js</span></div></div></details><div class="step"><span class="dot" style="background:#2563eb"></span><span class="tool">test_evidence</span><span class="arg">(scan the worktree)</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg"></span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">index.html</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">test_evidence/summary.md</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">test_evidence/unit.txt</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">test_evidence/e2e.txt</span></div><div class="step"><span class="dot" style="background:#d97706"></span><span class="tool">git</span><span class="arg">git diff --name-only</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/calc.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/app.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">tests/calc.test.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">e2e/tip-splitter.spec.js</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">playwright.config.js</span></div></div></section>
+
+<h2 class="sec">Sprint evaluations</h2>
+<div class="eval"><div class="eval-top"><span class="badge ok">sprint 1: pass</span><span class="score">score 1.00</span></div><div class="bar"><span style="width:100%"></span></div><p class="notes">All required inputs/outputs are present on index.html, calculations live-update safely (no NaN/Infinity/negatives), money is formatted to 2 decimals, accessibility labeling/keyboard use is supported, and both unit + Playwright e2e suites have real passing logs captured in test_evidence/.</p></div>
+
+<h2 class="sec">Artifacts produced</h2>
+<details class="art"><summary>index.html — the running app entry · 278 lines</summary><pre>&lt;!doctype html&gt;
+&lt;html lang=&quot;en&quot;&gt;
+  &lt;head&gt;
+    &lt;meta charset=&quot;utf-8&quot; /&gt;
+    &lt;meta name=&quot;viewport&quot; content=&quot;width=device-width, initial-scale=1&quot; /&gt;
+    &lt;title&gt;Tip + Bill Splitter&lt;/title&gt;
+    &lt;style&gt;
+      :root {
+        --bg: #0b1220;
+        --panel: #111a2e;
+        --text: #eef2ff;
+        --muted: #c7d2fe;
+        --border: #2a3a62;
+        --focus: #fbbf24;
+        --danger: #fecaca;
+      }
+
+      * { box-sizing: border-box; }
+
+      body {
+        margin: 0;
+        font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+        background: radial-gradient(1200px 600px at 20% 0%, #172554 0%, var(--bg) 55%);
+        color: var(--text);
+        line-height: 1.4;
+      }
+
+      header {
+        padding: 24px 16px 12px;
+      }
+
+      header .wrap {
+        max-width: 720px;
+        margin: 0 auto;
+      }
+
+      header h1 {
+        font-size: 1.3rem;
+        margin: 0 0 6px;
+      }
+
+      header p {
+        margin: 0;
+        color: var(--muted);
+        max-width: 60ch;
+      }
+
+      main {
+        padding: 0 16px 32px;
+        max-width: 720px;
+        margin: 0 auto;
+      }
+
+      .grid {
+        display: grid;
+        gap: 16px;
+      }
+
+      @media (min-width: 640px) {
+        .grid {
+          grid-template-columns: 1fr 1fr;
+          align-items: start;
+        }
+      }
+
+      .card {
+        background: color-mix(in oklab, var(--panel) 92%, black);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 16px;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+      }
+
+      fieldset {
+        border: 0;
+        margin: 0;
+        padding: 0;
+      }
+
+      .field {
+        display: grid;
+        gap: 6px;
+        margin-bottom: 14px;
+      }
+
+      label {
+        font-weight: 650;
+      }
+
+      input[type=&quot;number&quot;],
+      select {
+        width: 100%;
+        padding: 10px 12px;
+        border-radius: 10px;
+        border: 1px solid var(--border);
+        background: #0a1020;
+        color: var(--text);
+      }
+
+      input[type=&quot;number&quot;]::-webkit-outer-spin-button,
+      input[type=&quot;number&quot;]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+
+      .hint {
+        color: var(--muted);
+        font-size: 0.92rem;
+      }
+
+      .error {
+        color: var(--danger);
+        font-size: 0.92rem;
+      }
+
+      :focus-visible {
+        outline: 3px solid var(--focus);
+        outline-offset: 2px;
+      }
+
+      .results {
+        display: grid;
+        gap: 12px;
+      }
+
+      .resultRow {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        gap: 10px;
+        padding: 12px;
+        border-radius: 10px;
+        background: rgba(255, 255, 255, 0.04);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+      }
+
+      .resultRow dt {
+        font-weight: 650;
+      }
+
+      .resultRow dd {
+        margin: 0;
+        font-variant-numeric: tabular-nums;
+        font-size: 1.1rem;
+      }
+
+      footer {
+        padding: 16px;
+        color: var(--muted);
+        font-size: 0.9rem;
+        max-width: 720px;
+        margin: 0 auto;
+      }
+
+      .srOnly {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        margin: -1px;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        white-space: nowrap;
+        border-width: 0;
+      }
+    &lt;/style&gt;
+  &lt;/head&gt;
+  &lt;body&gt;
+    &lt;header&gt;
+      &lt;div class=&quot;wrap&quot;&gt;
+        &lt;h1&gt;Tip + bill splitter&lt;/h1&gt;
+        &lt;p&gt;
+          Enter a bill, tip percent, and number of people. Results update instantly.
+        &lt;/p&gt;
+      &lt;/div&gt;
+    &lt;/header&gt;
+
+    &lt;main&gt;
+      &lt;div class=&quot;grid&quot;&gt;
+        &lt;section class=&quot;card&quot; aria-labelledby=&quot;inputsTitle&quot;&gt;
+          &lt;h2 id=&quot;inputsTitle&quot; style=&quot;margin: 0 0 10px; font-size: 1.05rem&quot;&gt;Inputs&lt;/h2&gt;
+
+          &lt;form id=&quot;tipForm&quot; novalidate&gt;
+            &lt;fieldset&gt;
+              &lt;div class=&quot;field&quot;&gt;
+                &lt;label for=&quot;billAmount&quot;&gt;Bill amount ($)&lt;/label&gt;
+                &lt;input
+                  id=&quot;billAmount&quot;
+                  name=&quot;billAmount&quot;
+                  type=&quot;number&quot;
+                  inputmode=&quot;decimal&quot;
+                  min=&quot;0&quot;
+                  step=&quot;0.01&quot;
+                  placeholder=&quot;0.00&quot;
+                  autocomplete=&quot;off&quot;
+                /&gt;
+                &lt;div id=&quot;billError&quot; class=&quot;error&quot; role=&quot;status&quot; aria-live=&quot;polite&quot;&gt;&lt;/div&gt;
+              &lt;/div&gt;
+
+              &lt;div class=&quot;field&quot;&gt;
+                &lt;label for=&quot;tipPercent&quot;&gt;Tip preset (%)&lt;/label&gt;
+                &lt;select id=&quot;tipPercent&quot; name=&quot;tipPercent&quot;&gt;
+                  &lt;option value=&quot;0&quot;&gt;0%&lt;/option&gt;
+                  &lt;option value=&quot;10&quot;&gt;10%&lt;/option&gt;
+                  &lt;option value=&quot;15&quot; selected&gt;15%&lt;/option&gt;
+                  &lt;option value=&quot;18&quot;&gt;18%&lt;/option&gt;
+                  &lt;option value=&quot;20&quot;&gt;20%&lt;/option&gt;
+                  &lt;option value=&quot;25&quot;&gt;25%&lt;/option&gt;
+                  &lt;option value=&quot;custom&quot;&gt;Custom…&lt;/option&gt;
+                &lt;/select&gt;
+                &lt;div class=&quot;hint&quot; id=&quot;tipHint&quot;&gt;Choose a preset, or select “Custom…”&lt;/div&gt;
+              &lt;/div&gt;
+
+              &lt;div class=&quot;field&quot; id=&quot;customTipField&quot; hidden&gt;
+                &lt;label for=&quot;customTip&quot;&gt;Custom tip percentage (%)&lt;/label&gt;
+                &lt;input
+                  id=&quot;customTip&quot;
+                  name=&quot;customTip&quot;
+                  type=&quot;number&quot;
+                  inputmode=&quot;decimal&quot;
+                  min=&quot;0&quot;
+                  step=&quot;0.1&quot;
+                  placeholder=&quot;e.g. 17.5&quot;
+                  autocomplete=&quot;off&quot;
+                /&gt;
+                &lt;div id=&quot;tipError&quot; class=&quot;error&quot; role=&quot;status&quot; aria-live=&quot;polite&quot;&gt;&lt;/div&gt;
+              &lt;/div&gt;
+
+              &lt;div class=&quot;field&quot;&gt;
+                &lt;label for=&quot;peopleCount&quot;&gt;People sharing&lt;/label&gt;
+                &lt;input
+                  id=&quot;peopleCount&quot;
+                  name=&quot;peopleCount&quot;
+                  type=&quot;number&quot;
+                  inputmode=&quot;numeric&quot;
+                  min=&quot;1&quot;
+                  step=&quot;1&quot;
+                  placeholder=&quot;1&quot;
+                  autocomplete=&quot;off&quot;
+                /&gt;
+                &lt;div id=&quot;peopleError&quot; class=&quot;error&quot; role=&quot;status&quot; aria-live=&quot;polite&quot;&gt;&lt;/div&gt;
+              &lt;/div&gt;
+            &lt;/fieldset&gt;
+          &lt;/form&gt;
+        &lt;/section&gt;
+
+        &lt;section class=&quot;card&quot; aria-labelledby=&quot;resultsTitle&quot;&gt;
+          &lt;h2 id=&quot;resultsTitle&quot; style=&quot;margin: 0 0 10px; font-size: 1.05rem&quot;&gt;Results&lt;/h2&gt;
+
+          &lt;p class=&quot;hint&quot; id=&quot;resultsHint&quot;&gt;
+            Values show as $0.00 until the bill is greater than $0 and at least 1 person is entered.
+          &lt;/p&gt;
+
+          &lt;dl class=&quot;results&quot; aria-live=&quot;polite&quot; aria-atomic=&quot;true&quot;&gt;
+            &lt;div class=&quot;resultRow&quot;&gt;
+              &lt;dt&gt;Tip amount&lt;/dt&gt;
+              &lt;dd id=&quot;tipAmount&quot;&gt;$0.00&lt;/dd&gt;
+            &lt;/div&gt;
+            &lt;div class=&quot;resultRow&quot;&gt;
+              &lt;dt&gt;Total (with tip)&lt;/dt&gt;
+              &lt;dd id=&quot;totalAmount&quot;&gt;$0.00&lt;/dd&gt;
+            &lt;/div&gt;
+            &lt;div class=&quot;resultRow&quot;&gt;
+              &lt;dt&gt;Per person&lt;/dt&gt;
+              &lt;dd id=&quot;perPersonAmount&quot;&gt;$0.00&lt;/dd&gt;
+            &lt;/div&gt;
+          &lt;/dl&gt;
+
+          &lt;div class=&quot;srOnly&quot; id=&quot;announce&quot; aria-live=&quot;polite&quot; aria-atomic=&quot;true&quot;&gt;&lt;/div&gt;
+        &lt;/section&gt;
+      &lt;/div&gt;
+    &lt;/main&gt;
+
+    &lt;footer&gt;
+      &lt;span&gt;All amounts shown in USD.&lt;/span&gt;
+    &lt;/footer&gt;
+
+    &lt;script type=&quot;module&quot; src=&quot;./src/app.js&quot;&gt;&lt;/script&gt;
+  &lt;/body&gt;
+&lt;/html&gt;
+</pre></details><details class="art"><summary>src/app.js — ES module · 97 lines</summary><pre>import { computeSplit, formatUSD, sanitizeInputs } from &#x27;./calc.js&#x27;;
+
+const els = {
+  bill: document.querySelector(&#x27;#billAmount&#x27;),
+  tipSelect: document.querySelector(&#x27;#tipPercent&#x27;),
+  customTipField: document.querySelector(&#x27;#customTipField&#x27;),
+  customTip: document.querySelector(&#x27;#customTip&#x27;),
+  people: document.querySelector(&#x27;#peopleCount&#x27;),
+  tipAmount: document.querySelector(&#x27;#tipAmount&#x27;),
+  totalAmount: document.querySelector(&#x27;#totalAmount&#x27;),
+  perPersonAmount: document.querySelector(&#x27;#perPersonAmount&#x27;),
+  announce: document.querySelector(&#x27;#announce&#x27;),
+  billError: document.querySelector(&#x27;#billError&#x27;),
+  tipError: document.querySelector(&#x27;#tipError&#x27;),
+  peopleError: document.querySelector(&#x27;#peopleError&#x27;),
+};
+
+function getTipPercentValue() {
+  const v = els.tipSelect.value;
+  if (v === &#x27;custom&#x27;) return els.customTip.value;
+  return v;
+}
+
+function setError(el, message) {
+  el.textContent = message || &#x27;&#x27;;
+}
+
+function render() {
+  const { bill, people, tipPercent, meta } = sanitizeInputs({
+    billInput: els.bill.value,
+    peopleInput: els.people.value,
+    tipPercentInput: getTipPercentValue(),
+  });
+
+  // Inline guidance (non-blocking). We avoid making the UI &quot;invalid&quot; in a way
+  // that traps the user; we just show a gentle message and keep stable output.
+  setError(
+    els.billError,
+    meta.billKind === &#x27;invalid&#x27; || (bill !== null &amp;&amp; bill &lt; 0)
+      ? &#x27;Enter a valid bill amount (0 or more).&#x27;
+      : &#x27;&#x27;
+  );
+
+  setError(
+    els.peopleError,
+    meta.peopleKind === &#x27;invalid&#x27;
+      ? &#x27;Enter a whole number of people (1 or more).&#x27;
+      : &#x27;&#x27;
+  );
+
+  setError(
+    els.tipError,
+    meta.tipKind === &#x27;invalid&#x27; ? &#x27;Enter a valid tip percentage (0 or more).&#x27; : &#x27;&#x27;
+  );
+
+  const values = computeSplit({
+    bill: bill ?? 0,
+    people: people ?? 0,
+    tipPercent: tipPercent ?? 0,
+  });
+
+  els.tipAmount.textContent = formatUSD(values.tip);
+  els.totalAmount.textContent = formatUSD(values.total);
+  els.perPersonAmount.textContent = formatUSD(values.perPerson);
+
+  // Optional screen reader announcement that updates but doesn&#x27;t spam too much.
+  els.announce.textContent = `Tip ${els.tipAmount.textContent}, total ${
+    els.totalAmount.textContent
+  }, per person ${els.perPersonAmount.textContent}.`;
+}
+
+function syncCustomTipVisibility() {
+  const isCustom = els.tipSelect.value === &#x27;custom&#x27;;
+  els.customTipField.hidden = !isCustom;
+  if (!isCustom) {
+    els.customTip.value = &#x27;&#x27;;
+    setError(els.tipError, &#x27;&#x27;);
+  }
+}
+
+function onAnyInput() {
+  syncCustomTipVisibility();
+  render();
+}
+
+// Live update
+[&#x27;input&#x27;, &#x27;change&#x27;].forEach((evt) =&gt; {
+  els.bill.addEventListener(evt, onAnyInput);
+  els.people.addEventListener(evt, onAnyInput);
+  els.tipSelect.addEventListener(evt, onAnyInput);
+  els.customTip.addEventListener(evt, onAnyInput);
+});
+
+// Initial paint
+syncCustomTipVisibility();
+render();
+</pre></details><details class="art"><summary>src/calc.js — ES module · 80 lines</summary><pre>/**
+ * Pure calculation + parsing helpers for the tip splitter.
+ */
+
+export function clampNumber(n, { min = -Infinity, max = Infinity } = {}) {
+  if (!Number.isFinite(n)) return null;
+  if (n &lt; min) return min;
+  if (n &gt; max) return max;
+  return n;
+}
+
+/**
+ * Parse a numeric input from a string or number.
+ * Returns: { value: number|null, kind: &#x27;empty&#x27;|&#x27;invalid&#x27;|&#x27;ok&#x27; }
+ */
+export function parseNumberLike(value) {
+  if (value === null || value === undefined) return { value: null, kind: &#x27;empty&#x27; };
+  const s = String(value).trim();
+  if (s === &#x27;&#x27;) return { value: null, kind: &#x27;empty&#x27; };
+  const n = Number(s);
+  if (!Number.isFinite(n)) return { value: null, kind: &#x27;invalid&#x27; };
+  return { value: n, kind: &#x27;ok&#x27; };
+}
+
+export function formatUSD(amount) {
+  const safe = Number.isFinite(amount) &amp;&amp; amount &gt; 0 ? amount : 0;
+  return `$${safe.toFixed(2)}`;
+}
+
+export function canCompute({ bill, people, tipPercent }) {
+  return bill &gt; 0 &amp;&amp; people &gt;= 1 &amp;&amp; tipPercent &gt;= 0;
+}
+
+export function computeSplit({ bill, people, tipPercent }) {
+  if (!canCompute({ bill, people, tipPercent })) {
+    return { tip: 0, total: 0, perPerson: 0 };
+  }
+
+  const tip = bill * (tipPercent / 100);
+  const total = bill + tip;
+  const perPerson = total / people;
+
+  // Extra guardrails: never leak NaN/Infinity/negatives.
+  const safe = (n) =&gt; (Number.isFinite(n) &amp;&amp; n &gt;= 0 ? n : 0);
+  return {
+    tip: safe(tip),
+    total: safe(total),
+    perPerson: safe(perPerson),
+  };
+}
+
+export function sanitizeInputs({ billInput, peopleInput, tipPercentInput }) {
+  const billParsed = parseNumberLike(billInput);
+  const peopleParsed = parseNumberLike(peopleInput);
+  const tipParsed = parseNumberLike(tipPercentInput);
+
+  const bill =
+    billParsed.kind === &#x27;ok&#x27; ? clampNumber(billParsed.value, { min: 0 }) : null;
+
+  // Keep people null when empty/invalid so UI can show 0.00 but allow correction.
+  const people =
+    peopleParsed.kind === &#x27;ok&#x27;
+      ? clampNumber(Math.floor(peopleParsed.value), { min: 1 })
+      : null;
+
+  const tipPercent =
+    tipParsed.kind === &#x27;ok&#x27; ? clampNumber(tipParsed.value, { min: 0 }) : null;
+
+  return {
+    bill,
+    people,
+    tipPercent,
+    meta: {
+      billKind: billParsed.kind,
+      peopleKind: peopleParsed.kind,
+      tipKind: tipParsed.kind,
+    },
+  };
+}
+</pre></details><details class="art"><summary>src/logic.js — ES module · 74 lines</summary><pre>const CURRENCY_FORMATTER = new Intl.NumberFormat(undefined, {
+  style: &#x27;currency&#x27;,
+  currency: &#x27;USD&#x27;,
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+});
+
+export function formatMoney(amount) {
+  if (!Number.isFinite(amount)) return &#x27;—&#x27;;
+  return CURRENCY_FORMATTER.format(amount);
+}
+
+function parseLooseNumber(raw) {
+  const s = String(raw ?? &#x27;&#x27;).trim();
+  if (!s) return { ok: false, value: null, reason: &#x27;empty&#x27; };
+  // allow commas in human input
+  const normalized = s.replace(/,/g, &#x27;&#x27;);
+  const num = Number(normalized);
+  if (!Number.isFinite(num)) return { ok: false, value: null, reason: &#x27;nan&#x27; };
+  return { ok: true, value: num, reason: null };
+}
+
+export function validateBill(rawBill) {
+  const parsed = parseLooseNumber(rawBill);
+  if (!parsed.ok) return { ok: false, value: null, message: &#x27;Enter a bill amount.&#x27; };
+  if (parsed.value &lt; 0) return { ok: false, value: null, message: &#x27;Bill cannot be negative.&#x27; };
+  return { ok: true, value: parsed.value, message: &#x27;&#x27; };
+}
+
+export function validatePeople(rawPeople) {
+  const parsed = parseLooseNumber(rawPeople);
+  if (!parsed.ok) return { ok: false, value: null, message: &#x27;Enter number of people.&#x27; };
+  // People should be integer-like.
+  if (!Number.isInteger(parsed.value))
+    return { ok: false, value: null, message: &#x27;People must be a whole number.&#x27; };
+  if (parsed.value &lt; 1) return { ok: false, value: null, message: &#x27;People must be at least 1.&#x27; };
+  return { ok: true, value: parsed.value, message: &#x27;&#x27; };
+}
+
+export function validateTipPercent(rawTip, { allowEmpty = true } = {}) {
+  const parsed = parseLooseNumber(rawTip);
+  if (!parsed.ok) {
+    if (allowEmpty &amp;&amp; String(rawTip ?? &#x27;&#x27;).trim() === &#x27;&#x27;) {
+      return { ok: true, value: null, message: &#x27;&#x27; };
+    }
+    return { ok: false, value: null, message: &#x27;Tip must be a number.&#x27; };
+  }
+  if (parsed.value &lt; 0) return { ok: false, value: null, message: &#x27;Tip cannot be negative.&#x27; };
+  return { ok: true, value: parsed.value, message: &#x27;&#x27; };
+}
+
+function roundCurrency(amount) {
+  // Guard against float drift.
+  return Math.round((amount + Number.EPSILON) * 100) / 100;
+}
+
+export function calculateSplit({ bill, tipPercent, people }) {
+  if (!Number.isFinite(bill) || bill &lt; 0) {
+    return { ok: false, tip: null, total: null, perPerson: null, reason: &#x27;invalid-bill&#x27; };
+  }
+  if (!Number.isFinite(people) || people &lt; 1) {
+    return { ok: false, tip: null, total: null, perPerson: null, reason: &#x27;invalid-people&#x27; };
+  }
+  if (!Number.isFinite(tipPercent) || tipPercent &lt; 0) {
+    return { ok: false, tip: null, total: null, perPerson: null, reason: &#x27;invalid-tip&#x27; };
+  }
+
+  const tip = roundCurrency(bill * (tipPercent / 100));
+  const total = roundCurrency(bill + tip);
+  const perPerson = roundCurrency(total / people);
+
+  return { ok: true, tip, total, perPerson, reason: null };
+}
+</pre></details><details class="art"><summary>tests/calc.test.js — unit suite · 62 lines</summary><pre>import test from &#x27;node:test&#x27;;
+import assert from &#x27;node:assert/strict&#x27;;
+
+import {
+  computeSplit,
+  formatUSD,
+  parseNumberLike,
+  sanitizeInputs,
+  canCompute,
+} from &#x27;../src/calc.js&#x27;;
+
+test(&#x27;parseNumberLike: empty vs invalid vs ok&#x27;, () =&gt; {
+  assert.deepEqual(parseNumberLike(&#x27;&#x27;), { value: null, kind: &#x27;empty&#x27; });
+  assert.deepEqual(parseNumberLike(&#x27;   &#x27;), { value: null, kind: &#x27;empty&#x27; });
+  assert.deepEqual(parseNumberLike(null), { value: null, kind: &#x27;empty&#x27; });
+  assert.deepEqual(parseNumberLike(&#x27;nope&#x27;), { value: null, kind: &#x27;invalid&#x27; });
+  assert.deepEqual(parseNumberLike(&#x27;12.5&#x27;), { value: 12.5, kind: &#x27;ok&#x27; });
+});
+
+test(&#x27;sanitizeInputs clamps negatives and floors people&#x27;, () =&gt; {
+  const r = sanitizeInputs({ billInput: &#x27;-10&#x27;, peopleInput: &#x27;2.9&#x27;, tipPercentInput: &#x27;-5&#x27; });
+  assert.equal(r.bill, 0);
+  assert.equal(r.people, 2);
+  assert.equal(r.tipPercent, 0);
+});
+
+test(&#x27;computeSplit: returns zeros when cannot compute&#x27;, () =&gt; {
+  assert.deepEqual(computeSplit({ bill: 0, people: 1, tipPercent: 10 }), {
+    tip: 0,
+    total: 0,
+    perPerson: 0,
+  });
+  assert.deepEqual(computeSplit({ bill: 10, people: 0, tipPercent: 10 }), {
+    tip: 0,
+    total: 0,
+    perPerson: 0,
+  });
+});
+
+test(&#x27;computeSplit: valid calculation&#x27;, () =&gt; {
+  const { tip, total, perPerson } = computeSplit({ bill: 100, people: 4, tipPercent: 15 });
+  assert.equal(tip, 15);
+  assert.equal(total, 115);
+  assert.equal(perPerson, 28.75);
+});
+
+test(&#x27;canCompute: requires bill&gt;0, people&gt;=1, tip&gt;=0&#x27;, () =&gt; {
+  assert.equal(canCompute({ bill: 0, people: 1, tipPercent: 0 }), false);
+  assert.equal(canCompute({ bill: 1, people: 1, tipPercent: 0 }), true);
+  assert.equal(canCompute({ bill: 1, people: 0, tipPercent: 0 }), false);
+  assert.equal(canCompute({ bill: 1, people: 1, tipPercent: -1 }), false);
+});
+
+test(&#x27;formatUSD: never returns negative, NaN, or Infinity; always two decimals&#x27;, () =&gt; {
+  assert.equal(formatUSD(1), &#x27;$1.00&#x27;);
+  assert.equal(formatUSD(1.2), &#x27;$1.20&#x27;);
+  assert.equal(formatUSD(0), &#x27;$0.00&#x27;);
+  assert.equal(formatUSD(-5), &#x27;$0.00&#x27;);
+  assert.equal(formatUSD(Number.NaN), &#x27;$0.00&#x27;);
+  assert.equal(formatUSD(Number.POSITIVE_INFINITY), &#x27;$0.00&#x27;);
+});
+</pre></details><details class="art"><summary>tests/logic.test.js — unit suite · 62 lines</summary><pre>import test from &#x27;node:test&#x27;;
+import assert from &#x27;node:assert/strict&#x27;;
+
+import {
+  calculateSplit,
+  formatMoney,
+  validateBill,
+  validatePeople,
+  validateTipPercent,
+} from &#x27;../src/logic.js&#x27;;
+
+test(&#x27;validateBill: empty is invalid, negative is invalid, normal number is valid&#x27;, () =&gt; {
+  assert.equal(validateBill(&#x27;&#x27;).ok, false);
+  assert.equal(validateBill(&#x27;  &#x27;).ok, false);
+  assert.equal(validateBill(&#x27;-1&#x27;).ok, false);
+
+  const v = validateBill(&#x27;42.50&#x27;);
+  assert.equal(v.ok, true);
+  assert.equal(v.value, 42.5);
+});
+
+test(&#x27;validatePeople: requires integer &gt;= 1&#x27;, () =&gt; {
+  assert.equal(validatePeople(&#x27;&#x27;).ok, false);
+  assert.equal(validatePeople(&#x27;0&#x27;).ok, false);
+  assert.equal(validatePeople(&#x27;-2&#x27;).ok, false);
+  assert.equal(validatePeople(&#x27;2.5&#x27;).ok, false);
+
+  const v = validatePeople(&#x27;3&#x27;);
+  assert.equal(v.ok, true);
+  assert.equal(v.value, 3);
+});
+
+test(&#x27;validateTipPercent: empty allowed (null), negative invalid, numeric valid&#x27;, () =&gt; {
+  const empty = validateTipPercent(&#x27;&#x27;, { allowEmpty: true });
+  assert.equal(empty.ok, true);
+  assert.equal(empty.value, null);
+
+  assert.equal(validateTipPercent(&#x27;-5&#x27;, { allowEmpty: true }).ok, false);
+
+  const v = validateTipPercent(&#x27;18&#x27;, { allowEmpty: true });
+  assert.equal(v.ok, true);
+  assert.equal(v.value, 18);
+});
+
+test(&#x27;calculateSplit: computes rounded tip/total/per-person and formats money&#x27;, () =&gt; {
+  const res = calculateSplit({ bill: 42.5, tipPercent: 20, people: 3 });
+  assert.equal(res.ok, true);
+  assert.equal(res.tip, 8.5);
+  assert.equal(res.total, 51);
+  assert.equal(res.perPerson, 17);
+
+  assert.equal(formatMoney(res.tip), &#x27;$8.50&#x27;);
+  assert.equal(formatMoney(res.total), &#x27;$51.00&#x27;);
+  assert.equal(formatMoney(res.perPerson), &#x27;$17.00&#x27;);
+});
+
+test(&#x27;calculateSplit: rejects invalid inputs instead of NaN/Infinity&#x27;, () =&gt; {
+  assert.equal(calculateSplit({ bill: -1, tipPercent: 10, people: 2 }).ok, false);
+  assert.equal(calculateSplit({ bill: 10, tipPercent: -1, people: 2 }).ok, false);
+  assert.equal(calculateSplit({ bill: 10, tipPercent: 10, people: 0 }).ok, false);
+});
+</pre></details><details class="art"><summary>e2e/tip-calculator.spec.js — e2e suite · 21 lines</summary><pre>import { test, expect } from &#x27;@playwright/test&#x27;;
+
+test(&#x27;calculates tip, grand total, and per-person as inputs change&#x27;, async ({ page }) =&gt; {
+  await page.goto(&#x27;/index.html&#x27;);
+
+  await page.getByLabel(&#x27;Bill amount&#x27;).fill(&#x27;42.50&#x27;);
+  await page.getByLabel(&#x27;Number of people&#x27;).fill(&#x27;3&#x27;);
+
+  // Default preset is 15%
+  await expect(page.getByTestId(&#x27;tipAmount&#x27;)).toHaveText(&#x27;$6.38&#x27;);
+  await expect(page.getByTestId(&#x27;grandTotal&#x27;)).toHaveText(&#x27;$48.88&#x27;);
+  await expect(page.getByTestId(&#x27;perPerson&#x27;)).toHaveText(&#x27;$16.29&#x27;);
+
+  // Change tip via custom value
+  await page.getByLabel(&#x27;Custom %&#x27;).fill(&#x27;20&#x27;);
+
+  await expect(page.getByTestId(&#x27;tipAmount&#x27;)).toHaveText(&#x27;$8.50&#x27;);
+  await expect(page.getByTestId(&#x27;grandTotal&#x27;)).toHaveText(&#x27;$51.00&#x27;);
+  await expect(page.getByTestId(&#x27;perPerson&#x27;)).toHaveText(&#x27;$17.00&#x27;);
+});
+</pre></details><details class="art"><summary>e2e/tip-splitter.spec.js — e2e suite · 30 lines</summary><pre>import { test, expect } from &#x27;@playwright/test&#x27;;
+
+test(&#x27;splits a bill with a preset tip&#x27;, async ({ page }) =&gt; {
+  await page.goto(&#x27;/&#x27;);
+
+  await page.getByLabel(&#x27;Bill amount ($)&#x27;).fill(&#x27;100&#x27;);
+  await page.getByLabel(&#x27;Tip preset (%)&#x27;).selectOption(&#x27;15&#x27;);
+  await page.getByLabel(&#x27;People sharing&#x27;).fill(&#x27;4&#x27;);
+
+  await expect(page.locator(&#x27;#tipAmount&#x27;)).toHaveText(&#x27;$15.00&#x27;);
+  await expect(page.locator(&#x27;#totalAmount&#x27;)).toHaveText(&#x27;$115.00&#x27;);
+  await expect(page.locator(&#x27;#perPersonAmount&#x27;)).toHaveText(&#x27;$28.75&#x27;);
+});
+
+test(&#x27;custom tip updates the outputs and never shows NaN/Infinity&#x27;, async ({ page }) =&gt; {
+  await page.goto(&#x27;/&#x27;);
+
+  await page.getByLabel(&#x27;Bill amount ($)&#x27;).fill(&#x27;50&#x27;);
+  await page.getByLabel(&#x27;Tip preset (%)&#x27;).selectOption(&#x27;custom&#x27;);
+  await page.getByLabel(&#x27;Custom tip percentage (%)&#x27;).fill(&#x27;20&#x27;);
+  await page.getByLabel(&#x27;People sharing&#x27;).fill(&#x27;2&#x27;);
+
+  await expect(page.locator(&#x27;#tipAmount&#x27;)).toHaveText(&#x27;$10.00&#x27;);
+  await expect(page.locator(&#x27;#totalAmount&#x27;)).toHaveText(&#x27;$60.00&#x27;);
+  await expect(page.locator(&#x27;#perPersonAmount&#x27;)).toHaveText(&#x27;$30.00&#x27;);
+
+  const resultsText = await page.locator(&#x27;main&#x27;).innerText();
+  expect(resultsText).not.toMatch(/NaN|Infinity/);
+});
+</pre></details><details class="art"><summary>playwright.config.js · 16 lines</summary><pre>import { defineConfig } from &#x27;@playwright/test&#x27;;
+
+export default defineConfig({
+  testDir: &#x27;./e2e&#x27;,
+  timeout: 30_000,
+  use: {
+    baseURL: &#x27;http://127.0.0.1:4173&#x27;,
+    headless: true,
+  },
+  webServer: {
+    command: &#x27;python -m http.server 4173&#x27;,
+    url: &#x27;http://127.0.0.1:4173&#x27;,
+    reuseExistingServer: true,
+  },
+});
+</pre></details><details class="art"><summary>test_evidence/summary.md — the written proof · 487 words</summary><pre># Sprint 1 — Tip + bill splitter (run-tip)
+
+## What I built
+A single-page, dependency-light tip + bill splitting helper (served as static files) with live-updating results.
+
+- **Entry point:** `index.html`
+- **UI wiring:** `src/app.js`
+- **Pure logic (unit-testable):** `src/calc.js`
+
+### User-visible behavior (definition of working)
+On one page, the user can enter:
+1) **Bill amount** (dollars),
+2) **Tip preset** (select a common percent or choose **Custom…**), and
+3) **People sharing**.
+
+As any input changes, the page immediately updates three outputs:
+- **Tip amount** (USD, 2 decimals)
+- **Total (with tip)** (USD, 2 decimals)
+- **Per person** (USD, 2 decimals)
+
+The computation matches the spec:
+- `tip = bill * tipPercent/100`
+- `total = bill + tip`
+- `perPerson = total / people`
+
+## State handling / stability
+The UI is designed to never show **NaN**, **Infinity**, or negative currency values.
+
+- When inputs are **empty or invalid**, results remain a sensible non-error state: **$0.00** for all outputs.
+- Values are only computed when **bill &gt; 0**, **people &gt;= 1**, and **tipPercent &gt;= 0**.
+- Invalid values are handled in a user-correctable way (no “white screen” states):
+  - Bill is clamped to **min 0**.
+  - People is floored to an integer and clamped to **min 1**.
+  - Tip percent is clamped to **min 0**.
+- Money formatting is always `$D.CC` via `formatUSD()`.
+
+## Accessibility decisions
+Built accessibly from the start:
+- **Landmarks:** exactly one `&lt;main&gt;` landmark (header uses a normal `&lt;div&gt;` wrapper).
+- **Native controls** only (`input`, `select`) so keyboard operation is automatic.
+- Every input has a **visible label** using `label` + `for`:
+  - “Bill amount ($)”, “Tip preset (%)”, optional “Custom tip percentage (%)”, “People sharing”.
+- Results are a semantic **description list** (`dl`/`dt`/`dd`) and are announced with `aria-live=&quot;polite&quot;`.
+- A strong visible **focus ring** is provided with `:focus-visible`.
+- Text/background contrast was chosen to be comfortably readable (light text on dark panels).
+
+## Unit tests (Node built-in runner)
+- Location: `tests/calc.test.js`
+- What they cover:
+  - Parsing behavior for **empty**, **invalid**, and **valid** numeric inputs.
+  - Sanitization rules (clamping negatives, flooring people).
+  - Calculation outputs for valid inputs.
+  - Guard behavior when the app **cannot compute** yet (returns zeros).
+  - Formatting guarantees: always **two decimals** and never negative/NaN/Infinity.
+
+**Unit result:** PASS (6 tests)
+
+## End-to-end tests (Playwright)
+- Location: `e2e/tip-splitter.spec.js`
+- What they exercise:
+  - Fill bill + people, choose a **preset tip** and assert visible `$` outputs.
+  - Choose **Custom…**, enter a custom tip percent, assert outputs, and verify the page does not contain “NaN”/“Infinity”.
+
+**E2E result:** PASS (2 tests)
+
+## Captured run logs
+- `test_evidence/unit.txt` contains the real `node --test` output.
+- `test_evidence/e2e.txt` contains the real `playwright test` output.
+
+## Tradeoffs / known gaps
+- The app intentionally stays minimal and does not attempt to enforce currency locale beyond USD `$` + 2 decimals.
+- Inline error messaging is lightweight and non-blocking; results remain stable at $0.00 until inputs are valid.
+</pre></details><details class="art"><summary>reverify_unit.txt — the harness&#x27;s OWN unit re-run · 50 lines</summary><pre>$ node --test
+[exit 0]
+
+TAP version 13
+# Subtest: parseNumberLike: empty vs invalid vs ok
+ok 1 - parseNumberLike: empty vs invalid vs ok
+  ---
+  duration_ms: 2.0095
+  type: &#x27;test&#x27;
+  ...
+# Subtest: sanitizeInputs clamps negatives and floors people
+ok 2 - sanitizeInputs clamps negatives and floors people
+  ---
+  duration_ms: 1.2981
+  type: &#x27;test&#x27;
+  ...
+# Subtest: computeSplit: returns zeros when cannot compute
+ok 3 - computeSplit: returns zeros when cannot compute
+  ---
+  duration_ms: 0.3775
+  type: &#x27;test&#x27;
+  ...
+# Subtest: computeSplit: valid calculation
+ok 4 - computeSplit: valid calculation
+  ---
+  duration_ms: 0.2068
+  type: &#x27;test&#x27;
+  ...
+# Subtest: canCompute: requires bill&gt;0, people&gt;=1, tip&gt;=0
+ok 5 - canCompute: requires bill&gt;0, people&gt;=1, tip&gt;=0
+  ---
+  duration_ms: 0.32
+  type: &#x27;test&#x27;
+  ...
+# Subtest: formatUSD: never returns negative, NaN, or Infinity; always two decimals
+ok 6 - formatUSD: never returns negative, NaN, or Infinity; always two decimals
+  ---
+  duration_ms: 0.1947
+  type: &#x27;test&#x27;
+  ...
+1..6
+# tests 6
+# suites 0
+# pass 6
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 151.0453
+</pre></details><details class="art"><summary>reverify_e2e.txt — the harness&#x27;s OWN e2e re-run · 25 lines</summary><pre>$ npx playwright test
+[exit 0]
+
+[WebServer] ::ffff:127.0.0.1 - - [05/Jul/2026 10:56:32] &quot;GET / HTTP/1.1&quot; 200 -
+
+
+Running 2 tests using 1 worker
+
+[WebServer] ::ffff:127.0.0.1 - - [05/Jul/2026 10:56:34] &quot;GET / HTTP/1.1&quot; 200 -
+
+[WebServer] ::ffff:127.0.0.1 - - [05/Jul/2026 10:56:34] &quot;GET /src/app.js HTTP/1.1&quot; 200 -
+
+[WebServer] ::ffff:127.0.0.1 - - [05/Jul/2026 10:56:34] &quot;GET /src/calc.js HTTP/1.1&quot; 200 -
+
+  ✓  1 e2e\tip-splitter.spec.js:3:1 › splits a bill with a preset tip (284ms)
+[WebServer] ::ffff:127.0.0.1 - - [05/Jul/2026 10:56:34] &quot;GET / HTTP/1.1&quot; 200 -
+
+[WebServer] ::ffff:127.0.0.1 - - [05/Jul/2026 10:56:34] &quot;GET /src/app.js HTTP/1.1&quot; 200 -
+
+[WebServer] ::ffff:127.0.0.1 - - [05/Jul/2026 10:56:34] &quot;GET /src/calc.js HTTP/1.1&quot; 200 -
+
+  ✓  2 e2e\tip-splitter.spec.js:15:1 › custom tip updates the outputs and never shows NaN/Infinity (198ms)
+
+  2 passed (2.4s)
+</pre></details>
+
+<div class="note"><b>Reading the errors:</b> most <span class="err">err</span> markers are benign — the
+model retrying a <code>read_file</code> against an offloaded scratch path, a reviewer probing a file
+that doesn't exist, or the DoD oracle's Windows-only floor probe. The engineering flow itself completed:
+size → build → unit + e2e tests → run &amp; capture → review under pressure. The verdict box at the top
+is the honest answer: it re-runs the shipped suites in a clean process.</div>
+
+<footer>Generated from reports/frontend-engineer-artifacts/tip/flow.log — Frontend Engineer beat, model gpt-5.2 (Azure). Press E to expand all, C to collapse subagents.</footer>
+</div>
+
+<script>
+  document.addEventListener('keydown', e => {
+    if (e.key === 'e' || e.key === 'E') document.querySelectorAll('details').forEach(d => d.open = true);
+    if (e.key === 'c' || e.key === 'C') document.querySelectorAll('details.sub').forEach(d => d.open = false);
+  });
+</script>
+</body></html>

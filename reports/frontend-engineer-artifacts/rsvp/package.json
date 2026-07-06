@@ -1,0 +1,12 @@
+{
+  "name": "run-rsvp",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test",
+    "e2e": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.55.0"
+  }
+}

@@ -15,11 +15,15 @@ from chorus_employee.reviewer import reviewer_lander
 pytestmark = pytest.mark.integration
 
 
-def test_reviewer_lander_records_the_verdict_artifact(ledger: SqliteLedger, tmp_path: object) -> None:
+def test_reviewer_lander_records_the_verdict_artifact(
+    ledger: SqliteLedger, tmp_path: object
+) -> None:
     ledger.tasks.submit(Task(id="spec", intent="write the spec", status=TaskStatus.IN_PROGRESS))
     dod = ledger.dod.create("spec", Verifier.agent_review(artifact_class="spec"))
     ledger.dod.record_verdict(
-        dod.id, DodStatus.FAILED, verdict={"approve": False, "feedback": "needs section 3", "reviewer": "rob"}
+        dod.id,
+        DodStatus.FAILED,
+        verdict={"approve": False, "feedback": "needs section 3", "reviewer": "rob"},
     )
     task = ledger.tasks.get("spec")
     assert task is not None
@@ -28,11 +32,16 @@ def test_reviewer_lander_records_the_verdict_artifact(ledger: SqliteLedger, tmp_
 
     assert artifact.type is ArtifactType.VERDICT and artifact.is_primary is True
     assert artifact.resource_ref == {
-        "kind": "verdict", "approve": False, "feedback": "needs section 3", "reviewer": "rob"
+        "kind": "verdict",
+        "approve": False,
+        "feedback": "needs section 3",
+        "reviewer": "rob",
     }
 
 
-def test_default_landers_registers_the_verdict_lander(ledger: SqliteLedger, tmp_path: object) -> None:
+def test_default_landers_registers_the_verdict_lander(
+    ledger: SqliteLedger, tmp_path: object
+) -> None:
     from pathlib import Path
 
     registry = default_landers(Path(str(tmp_path)), ledger=ledger)

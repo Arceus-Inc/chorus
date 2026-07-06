@@ -65,9 +65,7 @@ def test_revise_then_restore_through_the_facade() -> None:
     ledger = SqliteLedger.open(":memory:")
     try:
         chorus = _org(ledger)
-        view = chorus.routines.add(
-            employee="Ada", intent_template="v1", schedule="0 9 * * 1"
-        )
+        view = chorus.routines.add(employee="Ada", intent_template="v1", schedule="0 9 * * 1")
 
         revised = chorus.routines.revise(view.id, by="Ada", intent_template="v2")
         assert revised.latest_revision_no == 2

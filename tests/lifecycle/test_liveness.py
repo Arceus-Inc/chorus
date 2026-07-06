@@ -96,7 +96,9 @@ def test_backlog_is_parked_healthy(ledger: SqliteLedger, emp: Employee) -> None:
 def test_todo_with_queued_wake_is_healthy(ledger: SqliteLedger, emp: Employee) -> None:
     task = _task(ledger, TaskStatus.TODO)
     ledger.wakes.enqueue(
-        Wake(id="w1", employee_id="emp_1", reason=WakeReason.TASK_ASSIGNED, payload={"task_id": "t1"})
+        Wake(
+            id="w1", employee_id="emp_1", reason=WakeReason.TASK_ASSIGNED, payload={"task_id": "t1"}
+        )
     )
     result = classify(task, ledger, now=NOW)
     assert result.healthy
@@ -136,7 +138,9 @@ def test_stranded_todo_with_open_recovery_is_healthy(ledger: SqliteLedger, emp: 
     from chorus.ledger._models import RecoveryAction, RecoveryKind
 
     task = _task(ledger, TaskStatus.TODO)
-    ledger.runs.create(Run(id="run_bad", employee_id="emp_1", task_id="t1", status=RunStatus.FAILED))
+    ledger.runs.create(
+        Run(id="run_bad", employee_id="emp_1", task_id="t1", status=RunStatus.FAILED)
+    )
     ledger.recovery_actions.open(
         RecoveryAction(id="rec_1", source_task_id="t1", kind=RecoveryKind.STRANDED, max_attempts=3)
     )
@@ -171,7 +175,9 @@ def test_in_progress_with_queued_continuation_is_healthy(
     task = _task(ledger, TaskStatus.IN_PROGRESS)
     _running_run(ledger, "t1", lease=PAST)  # dead run...
     ledger.wakes.enqueue(  # ...but a continuation is queued
-        Wake(id="w1", employee_id="emp_1", reason=WakeReason.DEPS_RESOLVED, payload={"task_id": "t1"})
+        Wake(
+            id="w1", employee_id="emp_1", reason=WakeReason.DEPS_RESOLVED, payload={"task_id": "t1"}
+        )
     )
     result = classify(task, ledger, now=NOW)
     assert result.healthy
@@ -180,9 +186,7 @@ def test_in_progress_with_queued_continuation_is_healthy(
 
 def test_in_progress_with_active_monitor_is_healthy(ledger: SqliteLedger, emp: Employee) -> None:
     task = _task(ledger, TaskStatus.IN_PROGRESS)
-    ledger.monitors.arm(
-        Monitor(id="m1", task_id="t1", employee_id="emp_1", next_check_at=FUTURE)
-    )
+    ledger.monitors.arm(Monitor(id="m1", task_id="t1", employee_id="emp_1", next_check_at=FUTURE))
     result = classify(task, ledger, now=NOW)
     assert result.healthy
     assert result.reason == "active_monitor"
@@ -194,7 +198,9 @@ def test_in_progress_with_active_monitor_is_healthy(ledger: SqliteLedger, emp: E
 def test_in_review_with_pending_approval_is_healthy(ledger: SqliteLedger, emp: Employee) -> None:
     task = _task(ledger, TaskStatus.IN_REVIEW)
     ledger.approvals.request(
-        Approval(id="ap1", subject_kind=ApprovalSubjectKind.TASK, subject_id="t1", reason="sign off")
+        Approval(
+            id="ap1", subject_kind=ApprovalSubjectKind.TASK, subject_id="t1", reason="sign off"
+        )
     )
     result = classify(task, ledger, now=NOW)
     assert result.healthy
@@ -234,7 +240,9 @@ def test_blocked_on_stalled_leaf_surfaces_it(ledger: SqliteLedger, emp: Employee
     parent = _task(ledger, TaskStatus.BLOCKED, task_id="t1")
     # blocker is a stranded todo (interrupted dispatch, nothing queued)
     _task(ledger, TaskStatus.TODO, task_id="t2")
-    ledger.runs.create(Run(id="run_bad", employee_id="emp_1", task_id="t2", status=RunStatus.FAILED))
+    ledger.runs.create(
+        Run(id="run_bad", employee_id="emp_1", task_id="t2", status=RunStatus.FAILED)
+    )
     ledger.dependencies.add("t1", "t2")
     result = classify(parent, ledger, now=NOW)
     assert result.stalled
@@ -246,7 +254,9 @@ def test_blocked_with_open_recovery_is_healthy(ledger: SqliteLedger, emp: Employ
 
     task = _task(ledger, TaskStatus.BLOCKED)
     ledger.recovery_actions.open(
-        RecoveryAction(id="rec_1", source_task_id="t1", kind=RecoveryKind.GRAPH_LIVENESS, max_attempts=3)
+        RecoveryAction(
+            id="rec_1", source_task_id="t1", kind=RecoveryKind.GRAPH_LIVENESS, max_attempts=3
+        )
     )
     assert classify(task, ledger, now=NOW).healthy
 
@@ -265,7 +275,9 @@ def test_blocked_with_a_live_wake_is_healthy(ledger: SqliteLedger, emp: Employee
     # not a stalled leaf. (Without this, the recovery sweep strands the parent before it integrates.)
     task = _task(ledger, TaskStatus.BLOCKED)
     ledger.wakes.enqueue(
-        Wake(id="w1", employee_id="emp_1", reason=WakeReason.CHILDREN_DONE, payload={"task_id": "t1"})
+        Wake(
+            id="w1", employee_id="emp_1", reason=WakeReason.CHILDREN_DONE, payload={"task_id": "t1"}
+        )
     )
     result = classify(task, ledger, now=NOW)
     assert result.healthy

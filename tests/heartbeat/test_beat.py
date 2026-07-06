@@ -33,7 +33,14 @@ class _FakeBeat:
         self.calls: list[dict[str, object]] = []
 
     async def run_task(
-        self, *, task_id: str, intent: str, verification: object = (), rubric: object = "", observer: object = None, run_id: str | None = None
+        self,
+        *,
+        task_id: str,
+        intent: str,
+        verification: object = (),
+        rubric: object = "",
+        observer: object = None,
+        run_id: str | None = None,
     ) -> BeatOutcome:
         self.calls.append({"task_id": task_id, "intent": intent, "observer": observer})
         return BeatOutcome(passed=self._passed, outcome=self._outcome, summary="done")
@@ -46,7 +53,14 @@ class _CannedBeat:
         self._outcome = outcome
 
     async def run_task(
-        self, *, task_id: str, intent: str, verification: object = (), rubric: object = "", observer: object = None, run_id: str | None = None
+        self,
+        *,
+        task_id: str,
+        intent: str,
+        verification: object = (),
+        rubric: object = "",
+        observer: object = None,
+        run_id: str | None = None,
     ) -> BeatOutcome:
         return self._outcome
 
@@ -61,9 +75,7 @@ class _FakeWorkforce:
         return self._by_id[employee_id]
 
 
-def _wired(
-    ledger: SqliteLedger, beat: BeatRunner, *, eid: str = "e1"
-) -> Scheduler:
+def _wired(ledger: SqliteLedger, beat: BeatRunner, *, eid: str = "e1") -> Scheduler:
     return Scheduler(
         ledger=ledger,
         workforce=_FakeWorkforce(Employee(id=eid, name=eid, role="engineer")),
@@ -234,7 +246,9 @@ async def test_errored_beat_records_no_dod_verdict(ledger: SqliteLedger) -> None
         Wake(id="w1", employee_id=eid, reason=WakeReason.TASK_ASSIGNED, payload={"task_id": tid})
     )
     (wake,) = ledger.wakes.claim(limit=1)
-    outcome = BeatOutcome(passed=False, disposition=BeatDisposition.ERRORED, outcome={"phase": "plan"})
+    outcome = BeatOutcome(
+        passed=False, disposition=BeatDisposition.ERRORED, outcome={"phase": "plan"}
+    )
     await _wired(ledger, _CannedBeat(outcome)).run_beat(wake, run_id="r1", now=_NOW)
     dod = ledger.dod.get_for_task(tid)
     assert dod is not None
@@ -243,7 +257,9 @@ async def test_errored_beat_records_no_dod_verdict(ledger: SqliteLedger) -> None
 
 async def test_errored_beat_releases_locks(ledger: SqliteLedger) -> None:
     wake = _setup_task(ledger)
-    outcome = BeatOutcome(passed=False, disposition=BeatDisposition.ERRORED, outcome={"phase": "plan"})
+    outcome = BeatOutcome(
+        passed=False, disposition=BeatDisposition.ERRORED, outcome={"phase": "plan"}
+    )
     await _wired(ledger, _CannedBeat(outcome)).run_beat(wake, run_id="r1", now=_NOW)
     task = ledger.tasks.get("t1")
     assert task is not None

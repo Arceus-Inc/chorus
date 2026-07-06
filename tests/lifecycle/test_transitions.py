@@ -49,9 +49,7 @@ _LEGAL: dict[TaskStatus, set[TaskStatus]] = {
 
 _ALL = list(TaskStatus)
 _LEGAL_PAIRS = [(s, t) for s, ts in _LEGAL.items() for t in ts]
-_ILLEGAL_PAIRS = [
-    (s, t) for s in _ALL for t in _ALL if t not in _LEGAL[s]
-]
+_ILLEGAL_PAIRS = [(s, t) for s in _ALL for t in _ALL if t not in _LEGAL[s]]
 
 
 # -- the pure machine ---------------------------------------------------------

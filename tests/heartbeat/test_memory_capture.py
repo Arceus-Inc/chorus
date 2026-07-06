@@ -30,7 +30,9 @@ class _RecordingWriter:
     async def apply(self, delta: MemoryDelta) -> MemoryRecord:
         self.applied.append(delta)
         return MemoryRecord(
-            id=delta.target_id, scope=delta.scope, type=MemoryType.PROJECT,
+            id=delta.target_id,
+            scope=delta.scope,
+            type=MemoryType.PROJECT,
             content=delta.new_content or "",
         )
 
@@ -45,11 +47,19 @@ class _Beat:
         self._disposition = disposition
 
     async def run_task(
-        self, *, task_id: str, intent: str, verification: object = (), rubric: object = "", observer: object = None, run_id: str | None = None
+        self,
+        *,
+        task_id: str,
+        intent: str,
+        verification: object = (),
+        rubric: object = "",
+        observer: object = None,
+        run_id: str | None = None,
     ) -> BeatOutcome:
         passed = self._disposition is BeatDisposition.PASSED
         return BeatOutcome(
-            passed=passed, disposition=self._disposition,
+            passed=passed,
+            disposition=self._disposition,
             outcome={"score": 0.91} if passed else {"error": "boom"},
             summary="added subtract(); tests pass",
         )
@@ -57,12 +67,21 @@ class _Beat:
 
 def _dispatch(ledger: SqliteLedger, beat: _Beat, writer: _RecordingWriter | None) -> Scheduler:
     ledger.employees.create(Employee(id="ada", name="Ada", role="engineer"))
-    ledger.tasks.submit(Task(id="t1", intent="add subtract", status=TaskStatus.TODO, assignee_employee_id="ada"))
-    ledger.dod.create("t1", Verifier.command("true"))  # objective DoD: land directly, not via review
-    ledger.wakes.enqueue(Wake(id="w1", employee_id="ada", reason=WakeReason.MANUAL, payload={"task_id": "t1"}))
+    ledger.tasks.submit(
+        Task(id="t1", intent="add subtract", status=TaskStatus.TODO, assignee_employee_id="ada")
+    )
+    ledger.dod.create(
+        "t1", Verifier.command("true")
+    )  # objective DoD: land directly, not via review
+    ledger.wakes.enqueue(
+        Wake(id="w1", employee_id="ada", reason=WakeReason.MANUAL, payload={"task_id": "t1"})
+    )
     return Scheduler(
-        ledger=ledger, workforce=LedgerWorkforce(ledger.employees), beat_runner=beat,
-        roles=RoleRegistry.from_plugins(default_roles()), memory_writer=writer,
+        ledger=ledger,
+        workforce=LedgerWorkforce(ledger.employees),
+        beat_runner=beat,
+        roles=RoleRegistry.from_plugins(default_roles()),
+        memory_writer=writer,
         max_concurrent_runs=1,
     )
 

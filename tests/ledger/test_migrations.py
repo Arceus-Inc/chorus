@@ -98,9 +98,7 @@ def test_failed_migration_rolls_back_atomically(conn: sqlite3.Connection) -> Non
         "SELECT COUNT(*) FROM schema_migrations WHERE id = '0001_bad'"
     ).fetchone()[0]
     assert recorded == 0
-    tables = {
-        r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
-    }
+    tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
     assert "ok" not in tables
 
 

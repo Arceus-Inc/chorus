@@ -31,8 +31,12 @@ class TestVerdictNormalization:
     def test_tool_result_exposes_stable_content_key(self) -> None:
         sink: list[Event] = []
         _bridge(sink).on_event(
-            {"kind": "role.tool.result", "tool": "write_file", "is_error": False,
-             "content_preview": "PASS — on brand"}
+            {
+                "kind": "role.tool.result",
+                "tool": "write_file",
+                "is_error": False,
+                "content_preview": "PASS — on brand",
+            }
         )
         result = next(e for e in sink if e.kind is EventKind.RUN_TOOL_RESULT)
         assert result.payload["content"] == "PASS — on brand"
@@ -50,8 +54,11 @@ class TestSubagentLifecycle:
     def test_spawn_subagent_start_emits_subagent_spawned(self) -> None:
         sink: list[Event] = []
         _bridge(sink).on_event(
-            {"kind": "role.tool.start", "tool": "spawn_subagent",
-             "input": {"name": "brand_critic", "prompt": "Review content_draft.md"}}
+            {
+                "kind": "role.tool.start",
+                "tool": "spawn_subagent",
+                "input": {"name": "brand_critic", "prompt": "Review content_draft.md"},
+            }
         )
         assert EventKind.SUBAGENT_SPAWNED in _kinds(sink)
         spawned = next(e for e in sink if e.kind is EventKind.SUBAGENT_SPAWNED)
@@ -61,12 +68,19 @@ class TestSubagentLifecycle:
         sink: list[Event] = []
         bridge = _bridge(sink)
         bridge.on_event(
-            {"kind": "role.tool.start", "tool": "spawn_subagent",
-             "input": {"name": "brand_critic", "prompt": "Review"}}
+            {
+                "kind": "role.tool.start",
+                "tool": "spawn_subagent",
+                "input": {"name": "brand_critic", "prompt": "Review"},
+            }
         )
         bridge.on_event(
-            {"kind": "role.tool.result", "tool": "spawn_subagent", "is_error": False,
-             "content_preview": "FAIL: line 3 'best-in-class' is an unsubstantiated superlative"}
+            {
+                "kind": "role.tool.result",
+                "tool": "spawn_subagent",
+                "is_error": False,
+                "content_preview": "FAIL: line 3 'best-in-class' is an unsubstantiated superlative",
+            }
         )
         completed = next(e for e in sink if e.kind is EventKind.SUBAGENT_COMPLETED)
         assert completed.payload["subagent_name"] == "brand_critic"
@@ -78,8 +92,12 @@ class TestSubagentLifecycle:
         bridge = _bridge(sink)
         bridge.on_event({"kind": "role.tool.start", "tool": "write_file", "input": {"path": "x"}})
         bridge.on_event(
-            {"kind": "role.tool.result", "tool": "write_file", "is_error": False,
-             "content_preview": "ok"}
+            {
+                "kind": "role.tool.result",
+                "tool": "write_file",
+                "is_error": False,
+                "content_preview": "ok",
+            }
         )
         assert EventKind.SUBAGENT_SPAWNED not in _kinds(sink)
         assert EventKind.SUBAGENT_COMPLETED not in _kinds(sink)

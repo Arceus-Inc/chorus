@@ -26,7 +26,9 @@ if TYPE_CHECKING:
 _ALLOWLIST_KEY = "secret_ref_allowlist"
 
 
-def apply_trust(config: RoleBeatConfig, *, task: Task | None, policy: TrustPolicy) -> RoleBeatConfig:
+def apply_trust(
+    config: RoleBeatConfig, *, task: Task | None, policy: TrustPolicy
+) -> RoleBeatConfig:
     """Narrow ``config`` to the task's effective trust — or raise ``TrustDenied`` (spec 04 §4)."""
     if task is None:
         return config  # no task context → the role's standing posture stands

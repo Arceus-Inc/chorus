@@ -1,0 +1,478 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Relay — First-run onboarding (design_spec preview)</title>
+<!--
+  Faithful build of design_spec.md against DESIGN.md.
+  - Only screens/states/components the docs direct are implemented (nothing extra).
+  - CSS custom properties are named exactly after DESIGN.md semantic tokens.
+    DESIGN.md states: "Implementation may map them to a primitive palette;
+    specs reference only these semantic names." The concrete values below are
+    that mapping, chosen for the stated house style (Linear + Vercel: precise,
+    calm, technical) and to satisfy the contrast rules in DESIGN.md.
+-->
+<style>
+  :root {
+    /* color.bg.* */
+    --color-bg-app: #0b0d10;
+    --color-bg-surface: #111418;
+    --color-bg-raised: #171b21;
+    --color-bg-code: #0e1116;
+    /* color.text.* */
+    --color-text-primary: #e6e9ee;
+    --color-text-secondary: #aab2bd;
+    --color-text-muted: #7d8794;
+    --color-text-inverse: #0b0d10;
+    /* color.border.* */
+    --color-border-subtle: #232830;
+    --color-border-strong: #3a424d;
+    /* color.accent.* */
+    --color-accent-bg: #3b82f6;
+    --color-accent-hover: #2f6fe0;
+    --color-accent-fg: #9ec3ff;
+    --color-focus-ring: #6ea8fe;
+    /* status */
+    --color-success-fg: #4ade80;
+    --color-success-bg: #0f2a1f;
+    --color-danger-fg: #f87171;
+    --color-danger-bg: #341616;
+    --color-warning-fg: #fbbf24;
+    --color-warning-bg: #322709;
+    --color-info-fg: #93c5fd;
+    --color-info-bg: #12233c;
+
+    /* type.* */
+    --type-family-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Inter, sans-serif;
+    --type-family-mono: ui-monospace, "SF Mono", "JetBrains Mono", "Cascadia Code", Consolas, monospace;
+    --type-size-12: 12px; --type-line-16: 16px;
+    --type-size-14: 14px; --type-line-20: 20px;
+    --type-size-16: 16px; --type-line-24: 24px;
+    --type-size-18: 18px; --type-line-28: 28px;
+    --type-size-20: 20px;
+    --type-size-24: 24px; --type-line-32: 32px;
+    --type-weight-regular: 400;
+    --type-weight-medium: 500;
+    --type-weight-semibold: 600;
+
+    /* space.* (4px base) */
+    --space-0: 0; --space-1: 4px; --space-2: 8px; --space-3: 12px;
+    --space-4: 16px; --space-5: 20px; --space-6: 24px; --space-8: 32px;
+    --space-10: 40px; --space-12: 48px; --space-16: 64px;
+
+    /* radius.* */
+    --radius-1: 4px; --radius-2: 8px; --radius-3: 12px; --radius-round: 999px;
+
+    /* elevation.* */
+    --elevation-0: none;
+    --elevation-1: 0 1px 2px rgba(0,0,0,.4), 0 1px 1px rgba(0,0,0,.3);
+    --elevation-2: 0 4px 12px rgba(0,0,0,.45);
+    --elevation-3: 0 16px 48px rgba(0,0,0,.55);
+
+    /* size.* */
+    --size-control-sm: 32px; --size-control-md: 40px; --size-control-lg: 48px;
+    --size-icon-sm: 16px; --size-icon-md: 20px;
+
+    /* motion.* */
+    --motion-duration-fast: 120ms;
+    --motion-duration-normal: 180ms;
+    --motion-duration-slow: 240ms;
+    --motion-easing-standard: cubic-bezier(.2,.0,.0,1);
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    background: var(--color-bg-app);
+    color: var(--color-text-primary);
+    font-family: var(--type-family-sans);
+    font-size: var(--type-size-14);
+    line-height: var(--type-line-20);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .page {
+    max-width: 960px;
+    margin: 0 auto;
+    background: var(--color-bg-surface);
+    min-height: 100vh;
+    padding: var(--space-6);
+  }
+  @media (max-width: 640px) { .page { padding: var(--space-4); } }
+
+  h1.page-title {
+    font-size: var(--type-size-20);
+    line-height: var(--type-line-28);
+    font-weight: var(--type-weight-semibold);
+    color: var(--color-text-primary);
+    margin: 0 0 var(--space-6);
+  }
+
+  /* ---- Stepper (Tabs ARIA pattern) ---- */
+  .stepper {
+    display: flex; gap: var(--space-2);
+    list-style: none; padding: 0; margin: 0 0 var(--space-8);
+    border-bottom: 1px solid var(--color-border-subtle);
+  }
+  @media (max-width: 640px) { .stepper { flex-direction: column; border-bottom: none; gap: var(--space-1); } }
+  .step {
+    appearance: none; background: transparent; text-align: left;
+    border: 1px solid transparent; border-bottom: 2px solid transparent;
+    color: var(--color-text-secondary);
+    font: inherit; padding: var(--space-3) var(--space-4);
+    border-radius: var(--radius-2) var(--radius-2) 0 0;
+    cursor: pointer; display: flex; gap: var(--space-2); align-items: center;
+    transition: color var(--motion-duration-normal) var(--motion-easing-standard);
+  }
+  .step .num {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: var(--size-icon-md); height: var(--size-icon-md);
+    border-radius: var(--radius-round); font-size: var(--type-size-12);
+    border: 1px solid var(--color-border-strong); color: var(--color-text-secondary);
+  }
+  .step[aria-selected="true"] {
+    color: var(--color-text-primary);
+    border-bottom-color: var(--color-accent-bg);
+  }
+  .step[aria-selected="true"] .num {
+    background: var(--color-accent-bg); color: var(--color-text-inverse);
+    border-color: var(--color-accent-bg);
+  }
+  .step.complete .num { background: var(--color-success-bg); color: var(--color-success-fg); border-color: var(--color-success-fg); }
+  .step[disabled], .step[aria-disabled="true"] { color: var(--color-text-muted); cursor: not-allowed; opacity: .8; }
+  .step .status { font-size: var(--type-size-12); line-height: var(--type-line-16); color: var(--color-text-muted); }
+
+  /* ---- Panel ---- */
+  .panel {
+    background: var(--color-bg-raised);
+    border: 1px solid var(--color-border-subtle);
+    border-radius: var(--radius-2);
+    box-shadow: var(--elevation-1);
+    padding: var(--space-6);
+  }
+  @media (max-width: 640px) { .panel { padding: var(--space-4); } }
+  .panel h2 {
+    font-size: var(--type-size-18); line-height: var(--type-line-28);
+    font-weight: var(--type-weight-semibold); margin: 0 0 var(--space-2);
+    outline: none;
+  }
+  .panel .desc { color: var(--color-text-secondary); margin: 0 0 var(--space-6); }
+
+  .field { margin-bottom: var(--space-4); }
+  label.field-label { display: block; margin-bottom: var(--space-2); font-weight: var(--type-weight-medium); }
+  .req { color: var(--color-danger-fg); }
+  input[type=text], select {
+    width: 100%; height: var(--size-control-md);
+    background: var(--color-bg-surface); color: var(--color-text-primary);
+    border: 1px solid var(--color-border-strong); border-radius: var(--radius-2);
+    padding: 0 var(--space-3); font: inherit;
+  }
+  .help { color: var(--color-text-muted); font-size: var(--type-size-12); line-height: var(--type-line-16); margin-top: var(--space-1); }
+  .error-text { color: var(--color-danger-fg); font-size: var(--type-size-12); margin-top: var(--space-1); }
+
+  fieldset { border: none; padding: 0; margin: 0; }
+  fieldset legend { font-weight: var(--type-weight-medium); padding: 0; margin-bottom: var(--space-2); }
+  .radio { display: flex; gap: var(--space-2); align-items: center; margin-bottom: var(--space-2); }
+
+  /* ---- Buttons ---- */
+  .btn {
+    height: var(--size-control-md); min-width: var(--size-control-lg);
+    padding: 0 var(--space-4); font: inherit; font-weight: var(--type-weight-medium);
+    border-radius: var(--radius-2); cursor: pointer; border: 1px solid transparent;
+    display: inline-flex; align-items: center; gap: var(--space-2);
+    transition: background var(--motion-duration-fast) var(--motion-easing-standard);
+  }
+  .btn.primary { background: var(--color-accent-bg); color: var(--color-text-inverse); }
+  .btn.primary:hover { background: var(--color-accent-hover); }
+  .btn.secondary { background: var(--color-bg-surface); color: var(--color-text-primary); border-color: var(--color-border-strong); }
+  .btn.ghost { background: transparent; color: var(--color-text-secondary); }
+  .btn[disabled] { opacity: .5; cursor: not-allowed; }
+  .btn .spinner { width: 14px; height: 14px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: spin .7s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .footer { display: flex; justify-content: space-between; gap: var(--space-3); margin-top: var(--space-6); }
+  @media (max-width: 640px) { .footer { flex-direction: column-reverse; } .footer .btn { width: 100%; justify-content: center; } }
+
+  /* ---- Alert ---- */
+  .alert { border-radius: var(--radius-2); padding: var(--space-3) var(--space-4); margin-bottom: var(--space-4); border: 1px solid transparent; }
+  .alert .title { font-weight: var(--type-weight-semibold); display: flex; gap: var(--space-2); align-items: center; }
+  .alert .body { color: var(--color-text-secondary); margin-top: var(--space-1); white-space: pre-line; }
+  .alert.info { background: var(--color-info-bg); border-color: var(--color-info-fg); }
+  .alert.info .title { color: var(--color-info-fg); }
+  .alert.success { background: var(--color-success-bg); border-color: var(--color-success-fg); }
+  .alert.success .title { color: var(--color-success-fg); }
+  .alert.danger { background: var(--color-danger-bg); border-color: var(--color-danger-fg); }
+  .alert.danger .title { color: var(--color-danger-fg); }
+
+  /* ---- CodeBlock ---- */
+  .codeblock { background: var(--color-bg-code); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-2); margin-bottom: var(--space-4); }
+  .codeblock .cb-head { display: flex; justify-content: space-between; align-items: center; padding: var(--space-2) var(--space-3); border-bottom: 1px solid var(--color-border-subtle); }
+  .codeblock .cb-lang { font-size: var(--type-size-12); color: var(--color-text-muted); font-family: var(--type-family-mono); }
+  .codeblock pre { margin: 0; padding: var(--space-3); overflow-x: auto; font-family: var(--type-family-mono); font-size: var(--type-size-12); line-height: var(--type-line-20); color: var(--color-text-primary); }
+
+  /* ---- States helper ---- */
+  [hidden] { display: none !important; }
+  [aria-busy="true"] { position: relative; }
+
+  /* ---- Focus visible (DESIGN.md a11y) ---- */
+  :focus-visible {
+    outline: 2px solid var(--color-focus-ring);
+    outline-offset: 2px;
+    border-radius: var(--radius-1);
+  }
+
+  .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { animation: none !important; transition: none !important; }
+  }
+</style>
+</head>
+<body>
+  <main class="page" role="main">
+    <h1 class="page-title">Get started</h1>
+
+    <!-- Stepper: WAI-ARIA Tabs pattern, roving tabindex, locked steps removed from sequence -->
+    <div class="stepper" role="tablist" aria-label="Onboarding steps" id="stepper">
+      <button class="step complete" role="tab" id="tab-1" aria-controls="panel-1"
+              aria-selected="false" tabindex="-1" data-step="1">
+        <span class="num" aria-hidden="true">1</span>
+        <span>Connect a source</span>
+        <span class="status">complete</span>
+      </button>
+      <button class="step" role="tab" id="tab-2" aria-controls="panel-2"
+              aria-selected="true" tabindex="0" data-step="2">
+        <span class="num" aria-hidden="true">2</span>
+        <span>Send a test event</span>
+        <span class="status">current</span>
+      </button>
+      <button class="step" role="tab" id="tab-3" aria-controls="panel-3"
+              aria-selected="false" aria-disabled="true" tabindex="-1" data-step="3">
+        <span class="num" aria-hidden="true">3</span>
+        <span>See it arrive</span>
+        <span class="status">locked</span>
+      </button>
+    </div>
+
+    <!-- ============ STEP 1 ============ -->
+    <section class="panel" role="tabpanel" id="panel-1" aria-labelledby="tab-1" tabindex="0" hidden>
+      <h2 tabindex="-1">Connect your source</h2>
+      <p class="desc">Choose how you’ll send events to Relay. You can change this later.</p>
+
+      <div class="field">
+        <label class="field-label" for="sourceType">Source type <span class="req" aria-hidden="true">*</span></label>
+        <select id="sourceType" required aria-required="true">
+          <option value="" disabled selected>Select a source type</option>
+          <option>HTTP webhook</option>
+          <option>GitHub</option>
+          <option>Stripe</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label class="field-label" for="sourceName">Source name <span class="req" aria-hidden="true">*</span></label>
+        <input id="sourceName" type="text" placeholder="e.g., Payments webhook" required aria-required="true"
+               aria-describedby="sourceName-err" />
+        <p class="error-text" id="sourceName-err" hidden>Enter a source name to continue.</p>
+      </div>
+
+      <fieldset class="field">
+        <legend>Authentication</legend>
+        <label class="radio"><input type="radio" name="authMethod" checked /> No auth</label>
+        <label class="radio"><input type="radio" name="authMethod" /> Shared secret</label>
+      </fieldset>
+
+      <div class="alert info" role="status">
+        <div class="title">To continue</div>
+        <div class="body">• Select a source type
+• Enter a source name</div>
+      </div>
+
+      <div class="footer">
+        <button class="btn ghost">Skip for now</button>
+        <button class="btn primary" data-goto="2">Continue</button>
+      </div>
+    </section>
+
+    <!-- ============ STEP 2 (current) ============ -->
+    <section class="panel" role="tabpanel" id="panel-2" aria-labelledby="tab-2" tabindex="0">
+      <h2 tabindex="-1">Send a test event</h2>
+      <p class="desc">Copy the sample payload and send it to your Relay endpoint.</p>
+
+      <div class="codeblock">
+        <div class="cb-head"><span class="cb-lang">endpoint</span>
+          <button class="btn ghost cb-copy" data-copy="https://relay.local/ingest/src_9f2a">Copy endpoint</button></div>
+        <pre>https://relay.local/ingest/src_9f2a</pre>
+      </div>
+
+      <div class="codeblock">
+        <div class="cb-head"><span class="cb-lang">json</span>
+          <button class="btn ghost cb-copy" data-copy='{ "type": "test.event", "id": "evt_001", "data": { "ok": true } }'>Copy payload</button></div>
+        <pre>{
+  "type": "test.event",
+  "id": "evt_001",
+  "data": { "ok": true }
+}</pre>
+      </div>
+
+      <fieldset class="field">
+        <legend>Send using</legend>
+        <label class="radio"><input type="radio" name="sendMethod" checked /> curl</label>
+        <label class="radio"><input type="radio" name="sendMethod" /> Your code</label>
+      </fieldset>
+
+      <div class="codeblock">
+        <div class="cb-head"><span class="cb-lang">bash</span>
+          <button class="btn ghost cb-copy" data-copy="curl -X POST https://relay.local/ingest/src_9f2a -d '{&quot;type&quot;:&quot;test.event&quot;}'">Copy curl command</button></div>
+        <pre>curl -X POST https://relay.local/ingest/src_9f2a \
+  -H "Content-Type: application/json" \
+  -d '{"type":"test.event","id":"evt_001","data":{"ok":true}}'</pre>
+      </div>
+
+      <!-- Empty (initial) state -->
+      <div class="alert info" id="s2-empty" role="status">
+        <div class="title">Waiting for your test event</div>
+        <div class="body">Send the event, then click “I sent the event”.</div>
+      </div>
+      <!-- Success state (hidden until received) -->
+      <div class="alert success" id="s2-success" role="status" hidden>
+        <div class="title">Test event received</div>
+        <div class="body">Nice — Relay is receiving events from this source.</div>
+      </div>
+      <!-- Error state (polling timeout) -->
+      <div class="alert danger" id="s2-error" role="alert" hidden>
+        <div class="title">No event received yet</div>
+        <div class="body">We didn’t see an event. Check the endpoint URL and try again.</div>
+      </div>
+
+      <div class="footer">
+        <button class="btn secondary">Regenerate payload</button>
+        <button class="btn primary" id="s2-primary">I sent the event</button>
+      </div>
+    </section>
+
+    <!-- ============ STEP 3 (locked) ============ -->
+    <section class="panel" role="tabpanel" id="panel-3" aria-labelledby="tab-3" tabindex="0" hidden>
+      <h2 tabindex="-1">See it arrive</h2>
+      <p class="desc">Verify the event shows up and inspect the payload.</p>
+
+      <!-- Empty state -->
+      <div class="alert info" id="s3-empty" role="status">
+        <div class="title">No event to show</div>
+        <div class="body">Send a test event to see it appear here.</div>
+      </div>
+
+      <div id="s3-event" hidden>
+        <p style="display:flex;gap:var(--space-2);align-items:center;color:var(--color-success-fg);font-weight:var(--type-weight-medium)">✓ Event received</p>
+        <div class="codeblock">
+          <div class="cb-head"><span class="cb-lang">json</span>
+            <button class="btn ghost cb-copy" data-copy='{"id":"evt_001"}'>Copy event JSON</button></div>
+          <pre>{
+  "id": "evt_001",
+  "type": "test.event",
+  "received_at": "2026-07-04T17:10:00Z",
+  "data": { "ok": true }
+}</pre>
+        </div>
+        <div class="alert success" role="status">
+          <div class="title">You’re all set</div>
+          <div class="body">Relay is receiving events and you can inspect them anytime.</div>
+        </div>
+      </div>
+
+      <div class="footer">
+        <button class="btn secondary">Send another test event</button>
+        <button class="btn primary">Finish setup</button>
+      </div>
+    </section>
+
+    <!-- Live region for copy announcements (role=status) -->
+    <div class="visually-hidden" role="status" aria-live="polite" id="live"></div>
+  </main>
+
+<script>
+  // Stepper: Tabs pattern with roving tabindex over ENABLED tabs only.
+  const tablist = document.getElementById('stepper');
+  const tabs = Array.from(tablist.querySelectorAll('[role="tab"]'));
+  const panels = { 1: 'panel-1', 2: 'panel-2', 3: 'panel-3' };
+  const live = document.getElementById('live');
+
+  function enabledTabs() { return tabs.filter(t => t.getAttribute('aria-disabled') !== 'true' && !t.disabled); }
+
+  function activate(step, { focusPanel = true } = {}) {
+    tabs.forEach(t => {
+      const sel = Number(t.dataset.step) === step;
+      t.setAttribute('aria-selected', sel ? 'true' : 'false');
+      // roving tabindex: only selected enabled tab is in tab order
+      const disabled = t.getAttribute('aria-disabled') === 'true';
+      t.tabIndex = (sel && !disabled) ? 0 : -1;
+    });
+    Object.entries(panels).forEach(([n, id]) => {
+      document.getElementById(id).hidden = Number(n) !== step;
+    });
+    if (focusPanel) {
+      const h2 = document.querySelector('#' + panels[step] + ' h2');
+      if (h2) h2.focus(); // focus moves to destination step title (DESIGN.md focus mgmt)
+    }
+  }
+
+  tablist.addEventListener('keydown', (e) => {
+    const list = enabledTabs();
+    const current = document.activeElement;
+    let idx = list.indexOf(current);
+    if (idx === -1) return;
+    if (e.key === 'ArrowRight' || e.key === 'ArrowDown') { e.preventDefault(); idx = (idx + 1) % list.length; }
+    else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') { e.preventDefault(); idx = (idx - 1 + list.length) % list.length; }
+    else if (e.key === 'Home') { e.preventDefault(); idx = 0; }
+    else if (e.key === 'End') { e.preventDefault(); idx = list.length - 1; }
+    else return;
+    list[idx].focus();
+  });
+
+  tabs.forEach(t => t.addEventListener('click', () => {
+    if (t.getAttribute('aria-disabled') === 'true' || t.disabled) return;
+    activate(Number(t.dataset.step));
+  }));
+
+  // Continue on step 1 -> step 2
+  document.querySelectorAll('[data-goto]').forEach(b =>
+    b.addEventListener('click', () => activate(Number(b.dataset.goto))));
+
+  // Step 2: "I sent the event" -> loading -> success, unlock step 3
+  const s2primary = document.getElementById('s2-primary');
+  s2primary.addEventListener('click', () => {
+    s2primary.disabled = true;
+    s2primary.setAttribute('aria-busy', 'true');
+    s2primary.innerHTML = '<span class="spinner" aria-hidden="true"></span> Checking…';
+    setTimeout(() => {
+      s2primary.removeAttribute('aria-busy');
+      s2primary.innerHTML = 'I sent the event';
+      s2primary.disabled = false;
+      document.getElementById('s2-empty').hidden = true;
+      document.getElementById('s2-success').hidden = false;
+      // mark step 2 complete, unlock step 3
+      const t2 = document.getElementById('tab-2');
+      t2.classList.add('complete'); t2.querySelector('.status').textContent = 'complete';
+      const t3 = document.getElementById('tab-3');
+      t3.removeAttribute('aria-disabled'); t3.querySelector('.status').textContent = 'current';
+      // reveal event on step 3
+      document.getElementById('s3-empty').hidden = true;
+      document.getElementById('s3-event').hidden = false;
+    }, 900);
+  });
+
+  // CodeBlock copy buttons -> announce via role=status
+  document.querySelectorAll('.cb-copy').forEach(b =>
+    b.addEventListener('click', async () => {
+      try { await navigator.clipboard.writeText(b.dataset.copy); } catch (_) {}
+      live.textContent = 'Copied to clipboard';
+      const prev = b.textContent; b.textContent = 'Copied';
+      setTimeout(() => { b.textContent = prev; live.textContent = ''; }, 1500);
+    }));
+
+  // start on current step (2) without stealing focus on load
+  activate(2, { focusPanel: false });
+</script>
+</body>
+</html>

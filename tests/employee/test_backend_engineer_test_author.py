@@ -58,7 +58,11 @@ class TestTestPlanVerdictSchema:
     def test_authored_requires_named_coverage(self) -> None:
         with pytest.raises(ValidationError):
             TestPlanVerdict(
-                authored=True, files=["t.py"], covers=[], red_evidence="saw it fail", evidence="green"
+                authored=True,
+                files=["t.py"],
+                covers=[],
+                red_evidence="saw it fail",
+                evidence="green",
             )
 
     def test_evidence_is_required_non_empty(self) -> None:

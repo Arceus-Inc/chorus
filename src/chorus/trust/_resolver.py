@@ -51,9 +51,7 @@ def resolve_trust(
     task_profile = _profile(task_preset)
     run_profile = _profile(run_preset)
 
-    sandbox = _narrowest_sandbox(
-        [role_sandbox, task_profile.max_sandbox, run_profile.max_sandbox]
-    )
+    sandbox = _narrowest_sandbox([role_sandbox, task_profile.max_sandbox, run_profile.max_sandbox])
     mode = _most_restrictive_mode(
         [role_permission_mode, task_profile.permission_mode, run_profile.permission_mode]
     )
@@ -62,8 +60,9 @@ def resolve_trust(
 
     if profile_for(preset).requires_boundary and boundary is None:
         raise TrustDenied(f"{preset.value} requires a concrete boundary — none supplied")
-    return ResolvedTrust(sandbox=sandbox, permission_mode=mode, net_allowed=net,
-                         preset=preset, boundary=boundary)
+    return ResolvedTrust(
+        sandbox=sandbox, permission_mode=mode, net_allowed=net, preset=preset, boundary=boundary
+    )
 
 
 def _profile(preset: TrustPreset) -> TrustProfile:

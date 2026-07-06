@@ -32,7 +32,9 @@ from chorus.ledger.repos import (
     ArtifactRevisionRepo,
     BudgetIncidentRepo,
     BudgetPolicyRepo,
+    ClaimRepo,
     CostEventRepo,
+    DecisionRepo,
     DecompositionClaimRepo,
     DependencyRepo,
     DodRepo,
@@ -88,6 +90,8 @@ class Ledger(Protocol):
     wakes: WakeRepo
     messages: MessageRepo
     approvals: ApprovalRepo
+    decisions: DecisionRepo
+    claims: ClaimRepo
     activity: ActivityRepo
     monitors: MonitorRepo
     recovery_actions: RecoveryActionRepo
@@ -144,6 +148,8 @@ class SqliteLedger:
         self.wakes = WakeRepo(conn)
         self.messages = MessageRepo(conn)
         self.approvals = ApprovalRepo(conn)
+        self.decisions = DecisionRepo(conn)
+        self.claims = ClaimRepo(conn)
         self.activity = ActivityRepo(conn)
         self.monitors = MonitorRepo(conn)
         self.recovery_actions = RecoveryActionRepo(conn)

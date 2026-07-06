@@ -44,7 +44,11 @@ _OUTPUT_CAP = 12_000
 
 
 def _cap(text: str, limit: int = _OUTPUT_CAP) -> str:
-    return text if len(text) <= limit else text[:limit] + f"\n... [truncated {len(text) - limit} chars]"
+    return (
+        text
+        if len(text) <= limit
+        else text[:limit] + f"\n... [truncated {len(text) - limit} chars]"
+    )
 
 
 # --------------------------------------------------------------------------- warehouse_query
@@ -53,7 +57,9 @@ def _cap(text: str, limit: int = _OUTPUT_CAP) -> str:
 class WarehouseQueryInput(BaseModel):
     """Arguments for ``warehouse_query`` — a read-only SQL query over the local warehouse."""
 
-    sql: str = Field(description="A single read-only SQL statement (SELECT / WITH / PRAGMA / EXPLAIN).")
+    sql: str = Field(
+        description="A single read-only SQL statement (SELECT / WITH / PRAGMA / EXPLAIN)."
+    )
     database: str = Field(
         default="warehouse.db",
         description="SQLite database file in the working directory (default 'warehouse.db').",
@@ -90,12 +96,18 @@ class WarehouseQueryTool(BaseTool):
                     f"{_READ_ONLY_SQL_HEADS}, got {head!r}"
                 ),
                 is_error=True,
-                metadata={"root_cause": "non-read-only-sql", "stop_condition": "rewrite as a SELECT"},
+                metadata={
+                    "root_cause": "non-read-only-sql",
+                    "stop_condition": "rewrite as a SELECT",
+                },
             )
         try:
             db_path = resolve_within(ctx.working_dir, args.database)
         except PathEscapesRoot:
-            return ToolResult(content=f"refused: database path escapes the worktree: {args.database}", is_error=True)
+            return ToolResult(
+                content=f"refused: database path escapes the worktree: {args.database}",
+                is_error=True,
+            )
         if not db_path.is_file():
             return ToolResult(
                 content=f"no warehouse found at {args.database!r} in the working directory",
@@ -122,7 +134,11 @@ class WarehouseQueryTool(BaseTool):
         if not cols:
             return ToolResult(content="(statement ran; no result columns)", metadata={"rows": 0})
         body = _render_table(cols, rows)
-        more = "" if len(rows) < args.max_rows else f"\n(row cap {args.max_rows} reached; refine the query)"
+        more = (
+            ""
+            if len(rows) < args.max_rows
+            else f"\n(row cap {args.max_rows} reached; refine the query)"
+        )
         return ToolResult(content=_cap(body + more), metadata={"rows": len(rows), "columns": cols})
 
 
@@ -148,8 +164,12 @@ class RepoSearchInput(BaseModel):
     """Arguments for ``repo_search`` — a worktree-confined text/regex search."""
 
     query: str = Field(description="A regular expression to search for across files.")
-    glob: str = Field(default="**/*", description="Glob of files to search, relative to the worktree.")
-    max_results: int = Field(default=50, ge=1, le=500, description="Cap on the number of matches returned.")
+    glob: str = Field(
+        default="**/*", description="Glob of files to search, relative to the worktree."
+    )
+    max_results: int = Field(
+        default=50, ge=1, le=500, description="Cap on the number of matches returned."
+    )
 
 
 _SKIP_DIRS = {".git", ".dream", ".analysis", ".harness", "node_modules", "__pycache__", ".venv"}
@@ -180,7 +200,9 @@ class RepoSearchTool(BaseTool):
         root = ctx.working_dir
         matches: list[str] = []
         for path in sorted(root.glob(args.glob)):
-            if not path.is_file() or any(part in _SKIP_DIRS for part in path.relative_to(root).parts):
+            if not path.is_file() or any(
+                part in _SKIP_DIRS for part in path.relative_to(root).parts
+            ):
                 continue
             try:
                 if path.stat().st_size > _MAX_FILE_BYTES:
@@ -206,7 +228,9 @@ class RepoSearchTool(BaseTool):
 class NotebookRunInput(BaseModel):
     """Arguments for ``notebook_run`` — execute a Python cell in the persistent analysis notebook."""
 
-    code: str = Field(description="Python source for this cell. State persists across cells in the beat.")
+    code: str = Field(
+        description="Python source for this cell. State persists across cells in the beat."
+    )
     reset: bool = Field(default=False, description="Clear all prior cells before running this one.")
 
 
@@ -237,21 +261,28 @@ class NotebookRunTool(BaseTool):
         nb_dir = ctx.working_dir / _NOTEBOOK_DIR
         nb_dir.mkdir(parents=True, exist_ok=True)
         cells_path = nb_dir / _NOTEBOOK_CELLS
-        prior = "" if args.reset or not cells_path.is_file() else cells_path.read_text(encoding="utf-8")
+        prior = (
+            "" if args.reset or not cells_path.is_file() else cells_path.read_text(encoding="utf-8")
+        )
         cell_header = f"\n\n# ---- cell {prior.count('# ---- cell') + 1} ----\n"
         notebook_src = (prior + cell_header + args.code).lstrip("\n")
         cells_path.write_text(notebook_src, encoding="utf-8")
         runner = nb_dir / _NOTEBOOK_RUNNER
         runner.write_text(notebook_src, encoding="utf-8")
         result = await ctx.run_subprocess(
-            [sys.executable, str(runner)], cwd=ctx.working_dir, timeout=self.declaration.timeout_seconds
+            [sys.executable, str(runner)],
+            cwd=ctx.working_dir,
+            timeout=self.declaration.timeout_seconds,
         )
         rc = result.metadata.get("returncode")
         if rc not in (0, None):
             return ToolResult(
                 content=_cap(f"notebook cell failed (exit {rc}):\n{result.content}"),
                 is_error=True,
-                metadata={"root_cause": "notebook-cell-error", "safe_retry": "fix the cell and re-run"},
+                metadata={
+                    "root_cause": "notebook-cell-error",
+                    "safe_retry": "fix the cell and re-run",
+                },
             )
         out = result.content.strip() or "(cell ran; no output — remember to print() what you need)"
         return ToolResult(content=_cap(out), metadata={"cells": notebook_src.count("# ---- cell")})
@@ -266,9 +297,13 @@ class ChartRenderInput(BaseModel):
     data: str = Field(description="CSV file in the working directory to plot.")
     kind: str = Field(default="line", description="Chart kind: line | bar | scatter | hist.")
     x: str = Field(default="", description="Column for the x axis (omit for hist).")
-    y: str = Field(default="", description="Column(s) for the y axis, comma-separated (omit for hist).")
+    y: str = Field(
+        default="", description="Column(s) for the y axis, comma-separated (omit for hist)."
+    )
     title: str = Field(default="", description="Chart title.")
-    output: str = Field(default="chart.png", description="Output PNG path in the working directory.")
+    output: str = Field(
+        default="chart.png", description="Output PNG path in the working directory."
+    )
 
 
 _CHART_KINDS = {"line", "bar", "scatter", "hist"}
@@ -292,20 +327,29 @@ class ChartRenderTool(BaseTool):
     async def execute(self, input: dict[str, Any], ctx: ToolExecutionContext) -> ToolResult:
         args = ChartRenderInput.model_validate(input)
         if args.kind not in _CHART_KINDS:
-            return ToolResult(content=f"unknown chart kind {args.kind!r}; use one of {sorted(_CHART_KINDS)}", is_error=True)
+            return ToolResult(
+                content=f"unknown chart kind {args.kind!r}; use one of {sorted(_CHART_KINDS)}",
+                is_error=True,
+            )
         try:
             resolve_within(ctx.working_dir, args.data)
             resolve_within(ctx.working_dir, args.output)
         except PathEscapesRoot:
-            return ToolResult(content="refused: data/output path escapes the worktree", is_error=True)
+            return ToolResult(
+                content="refused: data/output path escapes the worktree", is_error=True
+            )
         ys = [c.strip() for c in args.y.split(",") if c.strip()]
-        script = _chart_script(data=args.data, kind=args.kind, x=args.x, ys=ys, title=args.title, output=args.output)
+        script = _chart_script(
+            data=args.data, kind=args.kind, x=args.x, ys=ys, title=args.title, output=args.output
+        )
         nb_dir = ctx.working_dir / _NOTEBOOK_DIR
         nb_dir.mkdir(parents=True, exist_ok=True)
         script_path = nb_dir / "_chart.py"
         script_path.write_text(script, encoding="utf-8")
         result = await ctx.run_subprocess(
-            [sys.executable, str(script_path)], cwd=ctx.working_dir, timeout=self.declaration.timeout_seconds
+            [sys.executable, str(script_path)],
+            cwd=ctx.working_dir,
+            timeout=self.declaration.timeout_seconds,
         )
         rc = result.metadata.get("returncode")
         if rc not in (0, None):
@@ -316,8 +360,13 @@ class ChartRenderTool(BaseTool):
             )
         out_path = ctx.working_dir / args.output
         if not out_path.is_file():
-            return ToolResult(content=f"chart script ran but {args.output} was not created:\n{result.content}", is_error=True)
-        return ToolResult(content=f"chart written to {args.output}", metadata={"output": args.output})
+            return ToolResult(
+                content=f"chart script ran but {args.output} was not created:\n{result.content}",
+                is_error=True,
+            )
+        return ToolResult(
+            content=f"chart written to {args.output}", metadata={"output": args.output}
+        )
 
 
 def _chart_script(*, data: str, kind: str, x: str, ys: list[str], title: str, output: str) -> str:

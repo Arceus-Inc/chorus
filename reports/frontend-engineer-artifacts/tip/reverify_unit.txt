@@ -1,0 +1,49 @@
+$ node --test
+[exit 0]
+
+TAP version 13
+# Subtest: parseNumberLike: empty vs invalid vs ok
+ok 1 - parseNumberLike: empty vs invalid vs ok
+  ---
+  duration_ms: 2.0095
+  type: 'test'
+  ...
+# Subtest: sanitizeInputs clamps negatives and floors people
+ok 2 - sanitizeInputs clamps negatives and floors people
+  ---
+  duration_ms: 1.2981
+  type: 'test'
+  ...
+# Subtest: computeSplit: returns zeros when cannot compute
+ok 3 - computeSplit: returns zeros when cannot compute
+  ---
+  duration_ms: 0.3775
+  type: 'test'
+  ...
+# Subtest: computeSplit: valid calculation
+ok 4 - computeSplit: valid calculation
+  ---
+  duration_ms: 0.2068
+  type: 'test'
+  ...
+# Subtest: canCompute: requires bill>0, people>=1, tip>=0
+ok 5 - canCompute: requires bill>0, people>=1, tip>=0
+  ---
+  duration_ms: 0.32
+  type: 'test'
+  ...
+# Subtest: formatUSD: never returns negative, NaN, or Infinity; always two decimals
+ok 6 - formatUSD: never returns negative, NaN, or Infinity; always two decimals
+  ---
+  duration_ms: 0.1947
+  type: 'test'
+  ...
+1..6
+# tests 6
+# suites 0
+# pass 6
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 151.0453

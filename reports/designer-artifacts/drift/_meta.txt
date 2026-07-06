@@ -1,0 +1,5 @@
+key=drift
+passed=True
+summary=plan complete: 1/1 steps done
+intent=The file LoginForm.tsx in your working directory has drifted off our design system (see DESIGN.md). Audit it, list every place it violates the system or accessibility, give the exact on-system fix for each, and write the corrected, buildable spec for the login form.
+working_dir=Q:\projects\inspired-arc\chorus\.chorus\work\designer-hard-drift\worktrees\dara

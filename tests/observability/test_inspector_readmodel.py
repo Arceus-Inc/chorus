@@ -40,16 +40,33 @@ def _seed(ledger: SqliteLedger) -> None:
     ledger.employees.create(Employee(id="ada", name="Ada", role="engineer", reports_to="mgr"))
     ledger.employees.create(Employee(id="bob", name="Bob", role="engineer", reports_to="mgr"))
     # active: in-progress with a live lease → healthy, and a running beat to count
-    ledger.tasks.submit(Task(id="active", intent="ship it", status=TaskStatus.IN_PROGRESS,
-                             assignee_employee_id="ada"))
-    ledger.runs.create(Run(id="r_active", employee_id="ada", task_id="active",
-                           status=RunStatus.RUNNING, lease_expires_at=_NOW + timedelta(hours=1)))
+    ledger.tasks.submit(
+        Task(
+            id="active", intent="ship it", status=TaskStatus.IN_PROGRESS, assignee_employee_id="ada"
+        )
+    )
+    ledger.runs.create(
+        Run(
+            id="r_active",
+            employee_id="ada",
+            task_id="active",
+            status=RunStatus.RUNNING,
+            lease_expires_at=_NOW + timedelta(hours=1),
+        )
+    )
     # stuck: in-progress with no run/wake/monitor/recovery → stranded_in_progress (STALLED)
-    ledger.tasks.submit(Task(id="stuck", intent="orphaned work", status=TaskStatus.IN_PROGRESS,
-                             assignee_employee_id="bob"))
+    ledger.tasks.submit(
+        Task(
+            id="stuck",
+            intent="orphaned work",
+            status=TaskStatus.IN_PROGRESS,
+            assignee_employee_id="bob",
+        )
+    )
     # done: terminal, excluded from open/blocked
-    ledger.tasks.submit(Task(id="done", intent="shipped", status=TaskStatus.DONE,
-                             assignee_employee_id="ada"))
+    ledger.tasks.submit(
+        Task(id="done", intent="shipped", status=TaskStatus.DONE, assignee_employee_id="ada")
+    )
 
 
 def test_status_projects_the_company(ledger: SqliteLedger) -> None:
@@ -70,10 +87,12 @@ def test_stuck_lists_only_stalled_non_terminal_tasks(ledger: SqliteLedger) -> No
 
 def test_task_resolves_name_liveness_and_unresolved_blockers(ledger: SqliteLedger) -> None:
     ledger.employees.create(Employee(id="ada", name="Ada", role="engineer"))
-    ledger.tasks.submit(Task(id="blk", intent="prereq", status=TaskStatus.TODO,
-                             assignee_employee_id="ada"))
-    ledger.tasks.submit(Task(id="t", intent="the work", status=TaskStatus.IN_PROGRESS,
-                             assignee_employee_id="ada"))
+    ledger.tasks.submit(
+        Task(id="blk", intent="prereq", status=TaskStatus.TODO, assignee_employee_id="ada")
+    )
+    ledger.tasks.submit(
+        Task(id="t", intent="the work", status=TaskStatus.IN_PROGRESS, assignee_employee_id="ada")
+    )
     ledger.dependencies.add("t", "blk")
     view = _inspector(ledger).task("t")
     assert view.id == "t"

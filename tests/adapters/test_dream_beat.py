@@ -226,8 +226,6 @@ async def test_run_task_writes_the_beat_context_for_capability_tools(tmp_path: P
     assert harness.harness_dir == tmp_path / ".harness"
 
 
-
-
 # -- to_beat_outcome: the verdict rule -------------------------------------------------------------
 
 
@@ -376,7 +374,9 @@ async def test_run_task_forwards_dream_events_to_the_observer() -> None:
         ),
     )
     seen: list[Event] = []
-    outcome = await DreamBeatRunner(harness).run_task(task_id="t1", intent="x", observer=seen.append)
+    outcome = await DreamBeatRunner(harness).run_task(
+        task_id="t1", intent="x", observer=seen.append
+    )
     assert outcome.passed is True
     assert [e.kind for e in seen] == [
         EventKind.RUN_STARTED,

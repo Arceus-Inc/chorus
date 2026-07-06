@@ -24,8 +24,13 @@ def _service(ledger: SqliteLedger, *, request_depth: int = 0) -> CapabilityServi
     ledger.employees.create(Employee(id="ada", name="Ada", role="engineer", reports_to="mgr"))
     ledger.employees.create(Employee(id="bob", name="Bob", role="engineer", reports_to="mgr"))
     ledger.tasks.submit(
-        Task(id="M", intent="ship the feature", status=TaskStatus.TODO,
-             assignee_employee_id="mgr", request_depth=request_depth)
+        Task(
+            id="M",
+            intent="ship the feature",
+            status=TaskStatus.TODO,
+            assignee_employee_id="mgr",
+            request_depth=request_depth,
+        )
     )
     ledger.runs.create(Run(id=REV, employee_id="mgr", task_id="M", status=RunStatus.RUNNING))
     return CapabilityService(ledger)
@@ -33,10 +38,14 @@ def _service(ledger: SqliteLedger, *, request_depth: int = 0) -> CapabilityServi
 
 def test_decompose_creates_assigned_children_gated_to_parent(ledger: SqliteLedger) -> None:
     svc = _service(ledger)
-    res = svc.decompose(parent_id="M", revision=REV, children=[
-        ChildPlan(label="api", intent="build the api", assignee="ada"),
-        ChildPlan(label="ui", intent="build the ui", assignee="bob"),
-    ])
+    res = svc.decompose(
+        parent_id="M",
+        revision=REV,
+        children=[
+            ChildPlan(label="api", intent="build the api", assignee="ada"),
+            ChildPlan(label="ui", intent="build the ui", assignee="bob"),
+        ],
+    )
     api, ui = res.child_ids["api"], res.child_ids["ui"]
     # children created under the parent, assigned to the named reports
     assert ledger.tasks.get(api).parent_id == "M"  # type: ignore[union-attr]
@@ -56,10 +65,16 @@ def test_decompose_rejects_a_deliverable_assigned_to_a_reviewer(ledger: SqliteLe
     manager reassigns the work to an engineer — nothing is created on the rejected path."""
     svc = _service(ledger)
     ledger.employees.create(Employee(id="rev", name="Rev", role="reviewer", reports_to="mgr"))
-    res = svc.decompose(parent_id="M", revision=REV, children=[
-        ChildPlan(label="impl", intent="build it", assignee="ada"),
-        ChildPlan(label="qa", intent="run pytest + ruff", assignee="rev"),  # deliverable → a reviewer
-    ])
+    res = svc.decompose(
+        parent_id="M",
+        revision=REV,
+        children=[
+            ChildPlan(label="impl", intent="build it", assignee="ada"),
+            ChildPlan(
+                label="qa", intent="run pytest + ruff", assignee="rev"
+            ),  # deliverable → a reviewer
+        ],
+    )
     assert res.reviewer_assignees == ("rev",)
     assert res.child_ids == {}  # fail-closed: nothing created
     assert ledger.tasks.children("M") == []
@@ -68,7 +83,9 @@ def test_decompose_rejects_a_deliverable_assigned_to_a_reviewer(ledger: SqliteLe
 def test_submit_one_rejects_a_deliverable_assigned_to_a_reviewer(ledger: SqliteLedger) -> None:
     svc = _service(ledger)
     ledger.employees.create(Employee(id="rev", name="Rev", role="reviewer", reports_to="mgr"))
-    res = svc.submit_one(parent_id="M", revision=REV, child=ChildPlan(label="qa", intent="checks", assignee="rev"))
+    res = svc.submit_one(
+        parent_id="M", revision=REV, child=ChildPlan(label="qa", intent="checks", assignee="rev")
+    )
     assert res.reviewer_assignees == ("rev",)
     assert res.child_id is None
 
@@ -79,15 +96,21 @@ def test_idempotent_within_a_revision(ledger: SqliteLedger) -> None:
     r1 = svc.decompose(parent_id="M", revision=REV, children=plan)
     r2 = svc.decompose(parent_id="M", revision=REV, children=plan)  # the generator re-fired
     assert r1.child_ids == r2.child_ids  # same deterministic ids
-    assert len(ledger.dependencies.unresolved_blockers("M")) == 1  # exactly one child, never duplicated
+    assert (
+        len(ledger.dependencies.unresolved_blockers("M")) == 1
+    )  # exactly one child, never duplicated
 
 
 def test_inter_child_dependency_is_wired(ledger: SqliteLedger) -> None:
     svc = _service(ledger)
-    res = svc.decompose(parent_id="M", revision=REV, children=[
-        ChildPlan(label="api", intent="api", assignee="ada"),
-        ChildPlan(label="tests", intent="tests", assignee="bob", depends_on=("api",)),
-    ])
+    res = svc.decompose(
+        parent_id="M",
+        revision=REV,
+        children=[
+            ChildPlan(label="api", intent="api", assignee="ada"),
+            ChildPlan(label="tests", intent="tests", assignee="bob", depends_on=("api",)),
+        ],
+    )
     # tests waits on api (a sibling edge), resolved by label
     assert ledger.dependencies.unresolved_blockers(res.child_ids["tests"]) == [res.child_ids["api"]]
 
@@ -96,10 +119,14 @@ def test_unknown_assignee_fails_closed_without_mutating(ledger: SqliteLedger) ->
     # A model may invent a report id; decompose must reject it cleanly *before* any mutation — never
     # leave an orphan child or a half-applied fan-out (proper tool envelope, validate at the boundary).
     svc = _service(ledger)
-    res = svc.decompose(parent_id="M", revision=REV, children=[
-        ChildPlan(label="api", intent="api", assignee="ada"),
-        ChildPlan(label="ghost", intent="x", assignee="nobody"),  # not an employee
-    ])
+    res = svc.decompose(
+        parent_id="M",
+        revision=REV,
+        children=[
+            ChildPlan(label="api", intent="api", assignee="ada"),
+            ChildPlan(label="ghost", intent="x", assignee="nobody"),  # not an employee
+        ],
+    )
     assert res.unknown_assignees == ("nobody",)
     assert res.child_ids == {}
     assert ledger.dependencies.unresolved_blockers("M") == []  # nothing fanned out
@@ -195,12 +222,17 @@ def test_reassign_routes_existing_child_to_direct_report(ledger: SqliteLedger) -
 
     assert result.assigned is True
     assert ledger.tasks.get(child_id).assignee_employee_id == "bob"  # type: ignore[union-attr]
-    assert any(w.employee_id == "bob" and w.payload.get("task_id") == child_id for w in ledger.wakes.queued())
+    assert any(
+        w.employee_id == "bob" and w.payload.get("task_id") == child_id
+        for w in ledger.wakes.queued()
+    )
 
 
 def test_reassign_rejects_work_outside_parent_subtree(ledger: SqliteLedger) -> None:
     svc = _service(ledger)
-    ledger.tasks.submit(Task(id="outside", intent="elsewhere", status=TaskStatus.TODO, assignee_employee_id="ada"))
+    ledger.tasks.submit(
+        Task(id="outside", intent="elsewhere", status=TaskStatus.TODO, assignee_employee_id="ada")
+    )
 
     result = svc.reassign(parent_id="M", task_id="outside", assignee="bob", assigned_by="mgr")
 
@@ -227,8 +259,12 @@ def test_reassign_rejects_non_report_assignee(ledger: SqliteLedger) -> None:
 
 
 def test_depth_cap_fails_closed(ledger: SqliteLedger) -> None:
-    svc = _service(ledger, request_depth=DEFAULT_REQUEST_DEPTH_CAP)  # one more level exceeds the cap
-    res = svc.decompose(parent_id="M", revision=REV, children=[ChildPlan(label="x", intent="x", assignee="ada")])
+    svc = _service(
+        ledger, request_depth=DEFAULT_REQUEST_DEPTH_CAP
+    )  # one more level exceeds the cap
+    res = svc.decompose(
+        parent_id="M", revision=REV, children=[ChildPlan(label="x", intent="x", assignee="ada")]
+    )
     assert res.depth_capped is True
     assert res.child_ids == {}
     assert ledger.tasks.get("M").status is TaskStatus.BLOCKED  # type: ignore[union-attr]  # failed closed

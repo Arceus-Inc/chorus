@@ -32,7 +32,14 @@ def test_none_and_empty_are_allowed() -> None:
 
 @pytest.mark.parametrize(
     "key",
-    ["GITHUB_TOKEN", "api_key", "DB_PASSWORD", "client_secret", "SOME_CREDENTIAL", "OPENAI_API_KEY"],
+    [
+        "GITHUB_TOKEN",
+        "api_key",
+        "DB_PASSWORD",
+        "client_secret",
+        "SOME_CREDENTIAL",
+        "OPENAI_API_KEY",
+    ],
 )
 def test_inline_value_under_a_secret_key_is_rejected(key: str) -> None:
     with pytest.raises(InvalidIntake, match="inline secret"):

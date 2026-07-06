@@ -46,7 +46,9 @@ def test_engineer_can_run_commands(tmp_path) -> None:
 
 def test_analyst_brings_tools_skills_and_subagents(tmp_path) -> None:
     mat = _factory(tmp_path).materialize(Employee(id="a", name="A", role="analyst"))
-    assert {"warehouse_query", "notebook_run", "chart_render", "repo_search"} <= set(mat.config.tools)
+    assert {"warehouse_query", "notebook_run", "chart_render", "repo_search"} <= set(
+        mat.config.tools
+    )
     assert mat.config.skills_root is not None
     assert {sa.name for sa in mat.config.subagents} >= {"data", "critic"}
 

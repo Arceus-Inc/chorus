@@ -29,7 +29,9 @@ class ManagerLander:
 
     async def land(self, task: Task, result: Any) -> Artifact:
         """Record the completed subtree: every child id, its assignee, and its terminal status."""
-        del result  # the deliverable is the subtree state, read from the ledger — not the beat output
+        del (
+            result
+        )  # the deliverable is the subtree state, read from the ledger — not the beat output
         children = self._ledger.tasks.children(task.id)
         return Artifact(
             task_id=task.id,

@@ -27,7 +27,14 @@ class _FakeBeat:
         self.calls: list[str] = []
 
     async def run_task(
-        self, *, task_id: str, intent: str, verification: object = (), rubric: object = "", observer: object = None, run_id: str | None = None
+        self,
+        *,
+        task_id: str,
+        intent: str,
+        verification: object = (),
+        rubric: object = "",
+        observer: object = None,
+        run_id: str | None = None,
     ) -> BeatOutcome:
         self.calls.append(task_id)
         return BeatOutcome(passed=self._passed, outcome={"note": "fake"}, summary="fake beat")
@@ -37,8 +44,12 @@ def _seed_assigned_wake(ledger: SqliteLedger, *, task_id: str, employee_id: str)
     ledger.employees.create(Employee(id=employee_id, name=employee_id, role="engineer"))
     ledger.tasks.submit(Task(id=task_id, intent="ship", status=TaskStatus.TODO))
     ledger.wakes.enqueue(
-        Wake(id="w1", employee_id=employee_id, reason=WakeReason.TASK_ASSIGNED,
-             payload={"task_id": task_id})
+        Wake(
+            id="w1",
+            employee_id=employee_id,
+            reason=WakeReason.TASK_ASSIGNED,
+            payload={"task_id": task_id},
+        )
     )
 
 

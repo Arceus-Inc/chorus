@@ -20,8 +20,14 @@ pytestmark = pytest.mark.integration
 
 class _FakeBeat:
     async def run_task(
-        self, *, task_id: str, intent: str, verification: object = (), rubric: object = "",
-        observer: object = None, run_id: str | None = None,
+        self,
+        *,
+        task_id: str,
+        intent: str,
+        verification: object = (),
+        rubric: object = "",
+        observer: object = None,
+        run_id: str | None = None,
     ) -> BeatOutcome:
         return BeatOutcome(passed=True, outcome={}, summary="")
 
@@ -45,7 +51,7 @@ def _scheduler(ledger: SqliteLedger) -> Scheduler:
 def test_marketer_lease_uses_its_role_override(ledger: SqliteLedger) -> None:
     sched = _scheduler(ledger)
     ttl = sched._lease_seconds_for(Employee(id="mira", name="Mira", role="marketer"))
-    assert ttl == 900.0  # the marketer's widened, research-heavy lease
+    assert ttl == 1200.0  # the marketer's widened, depth-2-research lease (marketer/_harness.py)
 
 
 def test_role_without_override_falls_back_to_default(ledger: SqliteLedger) -> None:

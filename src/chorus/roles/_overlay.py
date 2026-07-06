@@ -122,6 +122,7 @@ def resolve_manifest(base: RoleManifest, *overlays: ManifestOverlay) -> RoleMani
         wake_model=base.wake_model,
         mcp=base.mcp,
         plugins=base.plugins,
+        mcp_servers=base.mcp_servers,
         env=base.env,
     )
 

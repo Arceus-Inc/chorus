@@ -93,7 +93,9 @@ def test_pricing_defaults_when_env_unset(monkeypatch: pytest.MonkeyPatch) -> Non
     monkeypatch.delenv("CHORUS_PRICE_INPUT_CENTS_PER_MTOK", raising=False)
     monkeypatch.delenv("CHORUS_PRICE_OUTPUT_CENTS_PER_MTOK", raising=False)
     rate = default_pricing_from_env().rate_for("any-model")
-    assert rate is not None and rate.input_cents_per_mtok == 125 and rate.output_cents_per_mtok == 1000
+    assert (
+        rate is not None and rate.input_cents_per_mtok == 125 and rate.output_cents_per_mtok == 1000
+    )
 
 
 def test_pricing_reads_env_and_ignores_malformed(monkeypatch: pytest.MonkeyPatch) -> None:

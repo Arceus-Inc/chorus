@@ -43,9 +43,7 @@ def dispatch(
         console.error(f"unknown command: {verb!r} (try 'help')")
         return LoopSignal.CONTINUE
     try:
-        return command.handler(
-            CommandContext(args=tuple(args), session=session, out=console)
-        )
+        return command.handler(CommandContext(args=tuple(args), session=session, out=console))
     except Exception as exc:  # a failing command must never crash the console (cf. dream's repl)
         console.error(f"{type(exc).__name__}: {exc}")
         return LoopSignal.CONTINUE

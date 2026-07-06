@@ -17,8 +17,12 @@ pytestmark = pytest.mark.unit
 
 
 def _config(**over: object) -> RoleBeatConfig:
-    base = {"system_prompt": "you are an engineer", "sandbox": "unrestricted",
-            "permission_mode": "default", "isolation": "worktree"}
+    base = {
+        "system_prompt": "you are an engineer",
+        "sandbox": "unrestricted",
+        "permission_mode": "default",
+        "isolation": "worktree",
+    }
     base.update(over)
     return RoleBeatConfig(**base)  # type: ignore[arg-type]
 
