@@ -44,6 +44,7 @@ def designer_manifest() -> RoleManifest:
         tools=(
             "read_file",
             "write_file",
+            "todo_write",  # durable cross-beat checklist (TODO.md) — resume, don't restart
             "memory_search",
             "memory_get",
             "working_memory_read",

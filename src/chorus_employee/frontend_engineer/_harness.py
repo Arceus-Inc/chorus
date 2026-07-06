@@ -57,6 +57,7 @@ def frontend_engineer_manifest() -> RoleManifest:
             "grep",
             "glob",
             "write_file",
+            "todo_write",  # durable cross-beat checklist (TODO.md) — resume, don't restart
             "run_command",
             "git",
             # deterministic read-only self-check of the test-evidence bundle before declaring done.

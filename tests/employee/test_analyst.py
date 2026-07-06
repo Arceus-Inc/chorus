@@ -23,6 +23,7 @@ def test_analyst_declares_its_analysis_toolset() -> None:
     assert manifest.tools == (
         "read_file",
         "write_file",
+        "todo_write",
         "run_command",
         "repo_search",
         "warehouse_query",

@@ -41,6 +41,7 @@ def analyst_manifest() -> RoleManifest:
         tools=(
             "read_file",
             "write_file",
+            "todo_write",  # durable cross-beat checklist (TODO.md) — resume, don't restart
             "run_command",
             "repo_search",
             "warehouse_query",
