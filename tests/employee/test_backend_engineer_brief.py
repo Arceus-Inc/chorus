@@ -109,4 +109,39 @@ def test_brief_has_the_resume_reconcile_directive() -> None:
     assert "todo_write" in brief
     assert "TODO.md" in brief
     assert "resume" in brief.lower()
-    assert "reconcile" in brief.lower()
+
+
+def test_brief_mandates_test_first_tdd_via_the_test_author() -> None:
+    # TDD is not optional: the test_author writes the FAILING test FIRST (RED), before the engineer
+    # implements — delegation is mandatory, not "for non-trivial behaviour".
+    brief = BACKEND_ENGINEER_BRIEF
+    assert "test_author" in brief
+    assert "RED" in brief  # sees the test fail first
+    lower = brief.lower()
+    assert "test-first" in lower or "before you implement" in lower or "before implementing" in lower
+    # the old optional phrasing is gone — delegation is required
+    assert "for non-trivial behaviour, delegate" not in lower
+
+
+def test_brief_gates_done_on_the_subagent_artifacts() -> None:
+    # The compel: done requires the durable proofs the independent subagents write, not the model's
+    # word — test_plan.json (tests authored + seen RED) and api_verdict.json (the service booted).
+    brief = BACKEND_ENGINEER_BRIEF
+    assert "test_plan.json" in brief
+    assert "api_verdict.json" in brief
+
+
+def test_dod_rubric_makes_the_reviewer_gate_on_the_tdd_artifacts() -> None:
+    # reviewed_build's only deterministic floor is the reviewer-discovered verify_command the kernel
+    # runs. The rubric compels the reviewer to fold the artifact checks into that command, so "done"
+    # mechanically requires the RED-first test_plan.json + (for a service) api_verdict.json.
+    from chorus.outcomes import DoDKind
+    from chorus_employee.backend_engineer import backend_engineer_dod
+
+    dod = backend_engineer_dod("build a small commerce API")
+    assert dod.kind is DoDKind.REVIEWED_BUILD
+    rubric = dod.rubric()
+    assert "test_plan.json" in rubric
+    assert "api_verdict.json" in rubric
+    assert "verify_command" in rubric  # instruct the reviewer to assert them in the run command
+    assert "red_evidence" in rubric.lower() or "red" in rubric.lower()

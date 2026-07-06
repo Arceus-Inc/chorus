@@ -12,9 +12,14 @@ from __future__ import annotations
 from chorus.outcomes import Verifier
 
 _RUBRIC = (
-    "the diff implements the task to its contract, in its own file(s), with a test for new behaviour; "
-    "the project builds and its tests pass; inputs are validated with no hardcoded secret; and any "
-    "schema change stays backward-compatible"
+    "the diff implements the task to its contract, in its own file(s), built TEST-FIRST; the project "
+    "builds and its tests pass; inputs are validated with no hardcoded secret; and any schema change "
+    "stays backward-compatible. REJECT unless the durable TDD proofs are present in the worktree: "
+    "`test_plan.json` shows the tests were authored independently and seen failing FIRST "
+    "(`red_evidence`), and — for a running service — `api_verdict.json` shows it booted and answered. "
+    "Fold those checks into the `verify_command` you discover so the kernel runs them mechanically, "
+    "e.g. append `&& test -f test_plan.json && grep -q red_evidence test_plan.json` (and the "
+    "api_verdict check for a service) to the project's real build/test command"
 )
 
 

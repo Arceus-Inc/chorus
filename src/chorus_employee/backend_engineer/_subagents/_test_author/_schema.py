@@ -36,16 +36,31 @@ class TestPlanVerdict(BaseModel):
     covers: list[str] = Field(
         description="the behaviours the new tests now cover; empty only if not authored"
     )
+    red_evidence: str = Field(
+        default="",
+        description=(
+            "TDD's RED proof: the command run BEFORE the implementation existed and its FAILING "
+            "output — the tests were seen to fail for the right reason first. Required when authored"
+        ),
+    )
     evidence: str = Field(
-        min_length=1, description="how the tests were run — the command and its result"
+        min_length=1, description="how the tests were run to GREEN — the command and its result"
     )
 
     @model_validator(mode="after")
     def _authored_shows_its_work(self) -> TestPlanVerdict:
-        """An ``authored`` verdict must name at least one test file and one covered behaviour."""
+        """An ``authored`` verdict names a test file, a covered behaviour, and its RED proof.
+
+        Test-first (TDD) is the point: a claim of authored tests with no evidence they were seen
+        failing first is a claim you could not have written test-first — a contradiction.
+        """
         if self.authored and (not self.files or not self.covers):
             raise ValueError(
                 "authored=True requires at least one test file and one covered behaviour"
+            )
+        if self.authored and not self.red_evidence:
+            raise ValueError(
+                "authored=True requires red_evidence — the failing run seen BEFORE implementing (TDD)"
             )
         return self
 
