@@ -22,6 +22,7 @@ from chorus_tools._code_quality import (
     QualityCheck,
     QualityCheckSpec,
     QualityReport,
+    is_noop_quality_command,
 )
 from chorus_tools._code_quality import write_report as write_quality_report
 from chorus_tools._decompose import DecomposeInput, DecomposeTool
@@ -86,6 +87,7 @@ __all__ = [
     "WarehouseQueryTool",
     "analysis_tool",
     "chorus_tool_registry",
+    "is_noop_quality_command",
     "scan_text",
     "write_bundle",
     "write_quality_report",

@@ -8,20 +8,43 @@ contract and the harness wiring; the live boot→probe loop is proven by the key
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
+from dream.skills import load_skill_registry
 from pydantic import ValidationError
 
 from chorus.roles import role_beat_config
 from chorus_employee.backend_engineer import (
     API_VERIFIER_SUBAGENT,
+    TEST_AUTHOR_SUBAGENT,
     ApiCheck,
     ApiTestVerdict,
     api_test_verdict_output_schema,
     backend_engineer_plugin,
 )
-from chorus_harness._factory import _subagent_set
+from chorus_harness._factory import _subagent_set, dream_tool_names
+from chorus_harness._factory import default_registry as _dream_default_registry
 
 pytestmark = pytest.mark.integration
+
+
+class TestTodoWriteResumption:
+    """Bex carries the durable-checklist tool so a build survives across beats (resumption Slice A).
+
+    ``todo_write`` is a dream builtin that atomically writes ``TODO.md`` to the worktree — durable, not
+    in-context. Granting it + a read-first/reconcile brief lets a re-dispatched beat resume where the
+    last left off instead of restarting. These pin the wiring; the brief carries the protocol.
+    """
+
+    def test_manifest_grants_todo_write(self) -> None:
+        assert "todo_write" in backend_engineer_plugin().manifest.tools
+
+    def test_todo_write_maps_to_a_real_dream_builtin(self) -> None:
+        # The factory must KEEP todo_write in the chorus->dream map (it was silently dropped before),
+        # and it must resolve to an actual dream builtin so the harness enables it.
+        assert dream_tool_names(("todo_write",)) == ("todo_write",)
+        assert _dream_default_registry().get("todo_write") is not None
 
 
 # --- the typed return contract ---
@@ -171,3 +194,39 @@ class TestApiVerifierWiring:
         # The projection maps chorus tool names to dream's — run_command -> bash — and intersects with
         # the parent's live toolset, so the child carries the dream name here.
         assert "bash" in child.tools
+
+
+class TestSubagentsCanLoadSkills:
+    """The §06 subagents read the engineer's authored playbooks via the `skill` tool.
+
+    The harness loads ONE ``skill_registry`` from Bex's ``skills_root`` and shares it with the inline
+    child session, so a subagent that carries ``skill`` reaches the same playbooks as the parent —
+    no per-subagent skills dir. These pin the grant + the projection + the shared source dir.
+    """
+
+    def test_both_subagents_carry_the_skill_tool(self) -> None:
+        assert "skill" in TEST_AUTHOR_SUBAGENT.tools
+        assert "skill" in API_VERIFIER_SUBAGENT.tools
+
+    def test_skill_survives_projection_to_both_children(self) -> None:
+        # `skill` is identity-mapped chorus->dream and Bex has it, so the narrower-wins intersection
+        # keeps it on each projected child.
+        config = role_beat_config(backend_engineer_plugin().manifest)
+        result = _subagent_set(config)
+        assert result is not None
+        for name in ("test_author", "api_verifier"):
+            child = result.get(name)
+            assert child is not None
+            assert "skill" in child.tools, f"{name} lost the skill tool in projection"
+
+    def test_skill_registry_loads_from_the_employee_skills_dir(self) -> None:
+        # The registry the child reads is built from the ENGINEER's skills/ dir — the same authored
+        # playbooks Bex uses, not a separate subagent library.
+        manifest = backend_engineer_plugin().manifest
+        assert manifest.skills_root is not None
+        registry, _shadows = load_skill_registry(project_dirs=[Path(manifest.skills_root)])
+        available = {meta.name for meta in registry.list_meta()}
+        assert {"structuring-any-service", "verifying-any-stack"} <= available
+
+    def test_test_author_prompt_points_at_a_testing_playbook(self) -> None:
+        assert "skill" in TEST_AUTHOR_SUBAGENT.description.lower()

@@ -51,6 +51,10 @@ def backend_engineer_manifest() -> RoleManifest:
             # engineer discovers via the verifying-any-stack skill → durable code_quality/ report.
             "code_quality",
             "skill",  # load the backend-craft playbooks on demand (verifying-any-stack, …)
+            # durable cross-beat checklist (§04 progress+task list): todo_write atomically writes a
+            # TODO.md into the worktree, so a beat that times out mid-build leaves a resume point the
+            # next beat reads instead of restarting. The reconcile protocol lives in the brief.
+            "todo_write",
             "memory_search",
             "memory_get",
             "working_memory_read",
@@ -65,7 +69,7 @@ def backend_engineer_manifest() -> RoleManifest:
         # — build_harness(skills=…) / (skill_registry=…) — authored craft playbooks, loaded on demand
         # via the `skill` tool; discovered from this package's skills/ dir. The first is the
         # framework-agnostic quality-gate know-how behind the code_quality tool.
-        skills=("verifying-any-stack",),
+        skills=("structuring-any-service", "verifying-any-stack"),
         skills_root=_SKILLS_ROOT,
         # — build_harness(memory=…) + working_memory —
         memory_scope=MemoryScope.PROJECT,
@@ -78,13 +82,14 @@ def backend_engineer_manifest() -> RoleManifest:
         # — per-beat sprint budget (spec 05): a build cools to green over a few passes in one beat —
         max_sprints=6,
         # — wall-clock per beat (DreamBeatRunner) — the heaviest beat of any role: it BUILDS a running
-        # service, BOOTS it, RESTARTS it (durability proof), and runs the full test sandwich (test_author
-        # + api_verifier + test_evidence), each of which spends real wall-clock (server polls, sleeps,
-        # subprocesses) on top of many model turns. The 90s default is far too tight; size it to the work.
+        # service, INSTALLS its real quality tools (ruff/mypy — no gaming), BOOTS it, RESTARTS it
+        # (durability proof), and runs the full test sandwich (test_author + api_verifier + test_evidence),
+        # each spending real wall-clock (installs, server polls, sleeps, subprocesses) on top of many
+        # model turns. The 90s default is far too tight; a real multi-file service lands around 10-15 min.
         beat_timeout_s=600.0,
         # — run-lease TTL — must OUTLIVE the beat's own wall-clock budget so the stale-run reaper never
         # claims a beat that is still legitimately running.
-        lease_ttl_s=900.0,
+        lease_ttl_s=1200.0,
         # — opt-in surfaces off by default (the Playwright/DB MCP + net-allowlist are later slices) —
         mcp=False,
         plugins=False,

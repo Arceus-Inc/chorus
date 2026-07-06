@@ -32,7 +32,9 @@ TEST_AUTHOR_SUBAGENT = SubagentSpec(
         "real behaviour against real dependencies (a real DB/file, the real function boundary), a thin "
         "layer of end-to-end / contract tests, and unit tests only for logic that isn't visible at the "
         "boundary. Cover the happy path AND the error/edge cases the criteria imply (invalid input, "
-        "the zero/empty case, the raised exception).\n"
+        "the zero/empty case, the raised exception). Consult the relevant authored testing playbook "
+        "first via the `skill` tool (e.g. `testing-honeycomb-strategy`, `testcontainers-integration`) "
+        "to shape the suite — fork the proven method, don't invent one.\n"
         "3. RUN the tests with `run_command` until they pass — a test you did not run is not a test. If "
         "a test reveals a real bug in the production code, REPORT it (authored=false with the gap in "
         "`evidence`); do NOT edit the production code to make your own test pass.\n"
@@ -51,7 +53,9 @@ TEST_AUTHOR_SUBAGENT = SubagentSpec(
     # A narrowing subset of the engineer's toolset: read the code + criteria, write the test files +
     # test_plan.json, run the tests. No production-code edits are possible beyond write_file, which the
     # brief forbids using on non-test files.
-    tools=("read_file", "write_file", "run_command"),
+    # + `skill` so it reads the same authored testing playbooks from the engineer's skills/ dir (the
+    # harness loads ONE skill_registry from Bex's skills_root and shares it with the child session).
+    tools=("read_file", "write_file", "run_command", "skill"),
     # read + write the honeycomb tests + run them (+ maybe fix a flaky test) + write the plan.
     max_turns=10,
     # Runtime-enforced return contract: the typed TestPlanVerdict (authored + files + covers + evidence).

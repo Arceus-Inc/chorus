@@ -49,6 +49,28 @@ class TestQualityGateWiring:
         assert '"kind"' in brief  # each check is tagged with its gate kind
 
 
+class TestStructureSkillWiring:
+    def test_manifest_carries_the_structuring_skill(self) -> None:
+        manifest = backend_engineer_plugin().manifest
+        assert "structuring-any-service" in manifest.skills
+        assert manifest.skills_root is not None
+
+    def test_the_structuring_skill_file_exists(self) -> None:
+        manifest = backend_engineer_plugin().manifest
+        assert manifest.skills_root is not None
+        skill = Path(manifest.skills_root) / "structuring-any-service" / "SKILL.md"
+        assert skill.is_file()
+        body = skill.read_text(encoding="utf-8").lower()
+        assert "by domain" in body  # the #1 rule
+        assert "inward" in body  # dependency direction
+
+    def test_brief_routes_structure_through_the_skill_and_demands_by_domain(self) -> None:
+        brief = BACKEND_ENGINEER_BRIEF
+        assert "structuring-any-service" in brief
+        assert "DOMAIN" in brief
+        assert "INWARD" in brief
+
+
 def test_brief_demands_a_package_layout_not_a_flat_dump() -> None:
     brief = BACKEND_ENGINEER_BRIEF.lower()
     assert "package" in brief
@@ -57,7 +79,7 @@ def test_brief_demands_a_package_layout_not_a_flat_dump() -> None:
 
 def test_brief_demands_layered_separation_of_concerns() -> None:
     brief = BACKEND_ENGINEER_BRIEF.lower()
-    assert "separate the transport" in brief or "data-access layer" in brief
+    assert "transport/http → service → data-access → domain" in brief
     assert "one reason to change" in brief
 
 
@@ -78,3 +100,13 @@ def test_brief_requires_a_mechanical_lint_or_type_gate() -> None:
 
 def test_brief_keeps_the_landed_diff_clean_of_scratch_files() -> None:
     assert "no scratch" in BACKEND_ENGINEER_BRIEF.lower()
+
+
+def test_brief_has_the_resume_reconcile_directive() -> None:
+    # The cross-beat resumption protocol: keep a durable TODO.md via todo_write, read it FIRST and
+    # reconcile intent (the checklist) against reality (git + tests), resume rather than restart.
+    brief = BACKEND_ENGINEER_BRIEF
+    assert "todo_write" in brief
+    assert "TODO.md" in brief
+    assert "resume" in brief.lower()
+    assert "reconcile" in brief.lower()

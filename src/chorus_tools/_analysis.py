@@ -17,7 +17,6 @@ from __future__ import annotations
 import re
 import sqlite3
 import sys
-from pathlib import Path
 from typing import Any
 
 from dream.contracts.tool import ToolResult

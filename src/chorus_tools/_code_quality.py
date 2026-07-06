@@ -38,6 +38,22 @@ _REPORT = "report.json"
 QualityKind = Literal["format", "lint", "types"]
 _REQUIRED_KINDS: frozenset[str] = frozenset(get_args(QualityKind))
 
+# Commands that ALWAYS pass without checking anything real — a byte-compiler catches syntax, never
+# style or types; `true`/`:`/`echo` are shell no-ops. Feeding one of these as a format/lint/type gate
+# is gaming the check, not passing it (the exact reward-hack the §09/§11 anti-gaming rules forbid). The
+# set is stack-AGNOSTIC — these are no-ops in every ecosystem — so it stays out of the discover-not-
+# assume territory the verifying-any-stack skill owns. NOT a linter allowlist (that would be the
+# per-stack hardcoding we avoid); just a denial of commands that verify nothing.
+_NOOP_FIRST_TOKENS: frozenset[str] = frozenset({"true", ":", "echo"})
+_NOOP_SUBSTRINGS: tuple[str, ...] = ("compileall", "py_compile")
+
+
+def is_noop_quality_command(command: str) -> bool:
+    """True when ``command`` verifies nothing (a byte-compiler or shell no-op), so it cannot be a gate."""
+    stripped = command.strip()
+    first = stripped.split()[0] if stripped.split() else ""
+    return first in _NOOP_FIRST_TOKENS or any(marker in stripped for marker in _NOOP_SUBSTRINGS)
+
 
 @dataclass(frozen=True)
 class QualityCheck:
@@ -132,6 +148,21 @@ class CodeQualityInput(BaseModel):
             )
         return self
 
+    @model_validator(mode="after")
+    def _forbid_noop_commands(self) -> CodeQualityInput:
+        """Reject a gate that verifies nothing — a byte-compiler / no-op passes trivially, proving nothing."""
+        faked = [(c.kind, c.command) for c in self.checks if is_noop_quality_command(c.command)]
+        if faked:
+            offenders = "; ".join(f"{kind}: {cmd!r}" for kind, cmd in faked)
+            raise ValueError(
+                f"these are not real quality checks — they pass without verifying anything ({offenders}). "
+                "A byte-compiler (python -m compileall / py_compile) catches only syntax, and true/:/echo "
+                "are no-ops — none is a formatter, linter, or type-checker. The sandbox is unrestricted: "
+                "INSTALL the stack's real tools if missing (e.g. `pip install ruff mypy`) and run THOSE "
+                "(see the verifying-any-stack skill). Never substitute a no-op to make the gate green."
+            )
+        return self
+
 
 class CodeQualityTool(BaseTool):
     """Run the stack's discovered format/lint/type checks and write the durable code_quality/ report."""
@@ -211,5 +242,6 @@ __all__ = [
     "QualityCheckSpec",
     "QualityKind",
     "QualityReport",
+    "is_noop_quality_command",
     "write_report",
 ]

@@ -44,6 +44,13 @@ For a cold-start or a repo with no quality config, use the ecosystem's conventio
 tiny `[tool.ruff]` + `[tool.mypy]` in `pyproject.toml`) so the gate is real, repeatable, and re-runnable
 by anyone — then run it. A service with no quality gate is not done.
 
+**Install the tool if it is missing — never fake the gate.** The worktree may not ship ruff/mypy/tsc
+preinstalled. The sandbox is UNRESTRICTED, so install them (`pip install ruff mypy`, `npm i -D`, …) and
+run the real thing. A command that always passes without checking anything — a byte-compiler
+(`python -m compileall`, `py_compile`), `true`, `:`, or a bare `echo` — is NOT a formatter, linter, or
+type-checker; it proves nothing and `code_quality` rejects it. Passing a gate you declawed is worse
+than a red gate: it is a false "clean" on disk.
+
 ## 3. Run all three through `code_quality`, and treat red as a blocker
 
 Hand the discovered commands to the tool, tagging each with its **`kind`** — `format`, `lint`, or

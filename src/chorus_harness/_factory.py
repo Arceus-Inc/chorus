@@ -83,6 +83,10 @@ _CHORUS_TO_DREAM_TOOL: dict[str, str] = {
     "working_memory_append": "working_memory_append",
     "memory_propose": "memory_propose",
     "spawn_subagent": "spawn_subagent",
+    # Durable cross-beat checklist: dream's todo_write builtin atomically writes TODO.md to the worktree
+    # (not in-context), so a re-dispatched beat resumes from it. Identity-mapped so dream_tool_names keeps
+    # it and _role_registry enables it from default_registry.
+    "todo_write": "todo_write",
     # Web research: reuse dream's native Tavily built-ins (in default_registry) — identity-mapped so
     # dream_tool_names keeps them and _role_registry picks them up; the subagent projection carries them.
     "web_search": "web_search",

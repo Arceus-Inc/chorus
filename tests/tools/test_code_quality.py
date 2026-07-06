@@ -24,6 +24,7 @@ from chorus_tools._code_quality import (
     QualityCheckSpec,
     QualityKind,
     QualityReport,
+    is_noop_quality_command,
     write_report,
 )
 
@@ -34,7 +35,7 @@ def _check(name: str, ok: bool, kind: QualityKind = "lint") -> QualityCheck:
     return QualityCheck(name=name, kind=kind, command=f"run-{name}", ok=ok, detail="")
 
 
-def _all_three(command: str = "true") -> list[dict[str, str]]:
+def _all_three(command: str = "printf ok") -> list[dict[str, str]]:
     """The minimum breadth every real call must carry: one check per gate kind."""
     return [
         {"name": "format", "kind": "format", "command": command},
@@ -121,6 +122,49 @@ def test_input_rejects_an_unknown_kind() -> None:
         QualityCheckSpec(name="x", kind="security", command="true")  # type: ignore[arg-type]
 
 
+# --------------------------------------------------------------------- anti-gaming: no no-op commands
+
+
+def test_is_noop_quality_command_flags_byte_compilers_and_shell_noops() -> None:
+    assert is_noop_quality_command("python -m compileall -q .") is True
+    assert is_noop_quality_command("python -m py_compile app.py") is True
+    assert is_noop_quality_command("true") is True
+    assert is_noop_quality_command(":") is True
+    assert is_noop_quality_command("echo ok") is True
+    # real tools verify something → not no-ops
+    assert is_noop_quality_command("ruff check .") is False
+    assert is_noop_quality_command("mypy .") is False
+    assert is_noop_quality_command("go vet ./...") is False
+    assert is_noop_quality_command("make check") is False
+
+
+def test_input_rejects_a_byte_compiler_masquerading_as_a_quality_gate() -> None:
+    # The exact gaming observed in the wild: python -m compileall fed as format/lint/types — it
+    # byte-compiles (syntax only), verifying no style and no types. The gate must refuse it.
+    with pytest.raises(ValidationError) as exc:
+        CodeQualityInput(
+            checks=[
+                QualityCheckSpec(name="format", kind="format", command="python -m compileall -q ."),
+                QualityCheckSpec(name="lint", kind="lint", command="python -m compileall -q ."),
+                QualityCheckSpec(name="types", kind="types", command="python -m compileall -q ."),
+            ]
+        )
+    message = str(exc.value)
+    assert "compileall" in message
+    assert "install" in message.lower()  # the recovery: install the real tool
+
+
+def test_input_rejects_a_true_noop_gate() -> None:
+    with pytest.raises(ValidationError):
+        CodeQualityInput(
+            checks=[
+                QualityCheckSpec(name="format", kind="format", command="ruff format --check ."),
+                QualityCheckSpec(name="lint", kind="lint", command="ruff check ."),
+                QualityCheckSpec(name="types", kind="types", command="true"),  # gamed types gate
+            ]
+        )
+
+
 # --------------------------------------------------------------------- the report writer
 
 
@@ -151,7 +195,7 @@ def _run(tool: CodeQualityTool, payload: dict[str, object], ctx: object) -> Tool
 
 
 def test_tool_writes_a_clean_report_when_every_check_passes(tmp_path: Path) -> None:
-    result = _run(CodeQualityTool(), {"checks": _all_three("true")}, _ctx(tmp_path))
+    result = _run(CodeQualityTool(), {"checks": _all_three("printf ok")}, _ctx(tmp_path))
     assert result.is_error is False
     parsed = json.loads((tmp_path / "code_quality" / "report.json").read_text(encoding="utf-8"))
     assert parsed["clean"] is True
@@ -159,7 +203,7 @@ def test_tool_writes_a_clean_report_when_every_check_passes(tmp_path: Path) -> N
 
 
 def test_tool_flags_error_with_a_recovery_contract_on_a_failing_check(tmp_path: Path) -> None:
-    checks = _all_three("true")
+    checks = _all_three("printf ok")
     checks[2]["command"] = "false"  # the types gate fails
     result = _run(CodeQualityTool(), {"checks": checks}, _ctx(tmp_path))
     assert result.is_error is True  # a red quality check is a real, retryable error
@@ -174,11 +218,11 @@ def test_tool_flags_error_with_a_recovery_contract_on_a_failing_check(tmp_path: 
 
 def test_tool_hardcodes_no_stack_commands(tmp_path: Path) -> None:
     # It runs exactly what it was handed — the command flows through to the recorded report.
-    checks = _all_three("true")
-    checks[1]["command"] = "echo custom"
+    checks = _all_three("printf ok")
+    checks[1]["command"] = "grep -q ok /dev/null || printf lint"
     _run(CodeQualityTool(), {"checks": checks}, _ctx(tmp_path))
     parsed = json.loads((tmp_path / "code_quality" / "report.json").read_text(encoding="utf-8"))
-    assert parsed["checks"][1]["command"] == "echo custom"
+    assert parsed["checks"][1]["command"] == "grep -q ok /dev/null || printf lint"
 
 
 def test_tool_rejects_a_report_missing_a_gate_kind(tmp_path: Path) -> None:

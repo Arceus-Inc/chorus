@@ -40,7 +40,10 @@ API_VERIFIER_SUBAGENT = SubagentSpec(
         "`finally` block, even on error. Then run it with a single `run_command` (e.g. `python "
         "verify_api.py`) that returns on its own.\n"
         "3. Compare each live response to the expectation — the running service answering over a real "
-        "socket is the proof, not the code read from disk. One mismatch means the check is not `ok`.\n"
+        "socket is the proof, not the code read from disk. One mismatch means the check is not `ok`. For "
+        "richer verification, consult the relevant authored playbook via the `skill` tool (e.g. "
+        "`property-testing-schemathesis`, `contract-testing-pact`, `load-testing-slo-gates`) and drive "
+        "the running service that way.\n"
         "4. If the service is STATEFUL (it stores data), prove DURABILITY, not just liveness — this is "
         "what catches a mock a passing unit suite would hide. In the same probe script: write a record "
         "(e.g. POST an item), then RESTART the service (terminate the child process and start a fresh "
@@ -61,7 +64,9 @@ API_VERIFIER_SUBAGENT = SubagentSpec(
     ),
     # A narrowing subset of the engineer's toolset: read the repo to find the run command, run_command
     # to boot + curl the live server, write_file to record the durable api_verdict.json.
-    tools=("read_file", "write_file", "run_command"),
+    # + `skill` so it reads the same authored verification playbooks from the engineer's skills/ dir
+    # (the harness loads ONE skill_registry from Bex's skills_root and shares it with the child session).
+    tools=("read_file", "write_file", "run_command", "skill"),
     # read repo + write the probe script + run it (+ maybe fix a script bug) + write the verdict.
     max_turns=10,
     # Runtime-enforced return contract: the typed ApiTestVerdict (passed + checks + evidence).
