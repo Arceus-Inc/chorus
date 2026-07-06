@@ -14,11 +14,13 @@ from chorus.outcomes import Verifier
 _RUBRIC = (
     "the diff implements the task to its contract, in its own file(s), built TEST-FIRST; the project "
     "builds and its tests pass; inputs are validated with no hardcoded secret; and any schema change "
-    "stays backward-compatible. REJECT unless the durable TDD proofs are present in the worktree: "
+    "stays backward-compatible. REJECT unless the durable proofs are present in the worktree: "
     "`test_plan.json` shows the tests were authored independently and seen failing FIRST "
-    "(`red_evidence`), and — for a running service — `api_verdict.json` shows it booted and answered. "
-    "Fold those checks into the `verify_command` you discover so the kernel runs them mechanically, "
-    "e.g. append `&& test -f test_plan.json && grep -q red_evidence test_plan.json` (and the "
+    "(`red_evidence`); `review_verdict.json` shows an independent red-team `cleared` the diff (no "
+    "high-severity risk — missing authz, N+1, injection, …); and — for a running service — "
+    "`api_verdict.json` shows it booted and answered. Fold those checks into the `verify_command` you "
+    "discover so the kernel runs them mechanically, e.g. append `&& test -f test_plan.json && grep -q "
+    "red_evidence test_plan.json && grep -q '\\\"cleared\\\": true' review_verdict.json` (and the "
     "api_verdict check for a service) to the project's real build/test command"
 )
 

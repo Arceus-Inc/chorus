@@ -22,6 +22,7 @@ from chorus.roles._manifest import (
 from chorus_employee.backend_engineer._brief import BACKEND_ENGINEER_BRIEF
 from chorus_employee.backend_engineer._subagents import (
     API_VERIFIER_SUBAGENT,
+    CODE_REVIEWER_SUBAGENT,
     TEST_AUTHOR_SUBAGENT,
 )
 
@@ -102,11 +103,12 @@ def backend_engineer_manifest() -> RoleManifest:
         # dream's credential guard, command-deny list, and worktree confinement still apply.
         sandbox=SandboxTier.UNRESTRICTED,
         # — subagents (Tier-1, role-owned) —
-        # The validation sandwich (spec §06): the Test-Author writes the tests for the change
-        # independently of the code (the 'pre' layer), and the API-Verifier boots the built service and
-        # probes it over real HTTP (the 'live' layer, proving it RUNS). Each is capability-minimised to
-        # a subset of Bex's tools and returns a typed, runtime-validated verdict.
-        subagents=(TEST_AUTHOR_SUBAGENT, API_VERIFIER_SUBAGENT),
+        # The §06 verification swarm: the Test-Author writes the FAILING tests first, independent of
+        # the code (TDD 'pre'); the API-Verifier boots the built service and probes it over real HTTP
+        # ('live', proving it RUNS); the Code-Reviewer red-teams the diff for the prod-failure classes
+        # tests miss (missing authz, N+1, injection, …). Each is capability-minimised to a subset of
+        # Bex's tools and returns a typed, runtime-validated verdict.
+        subagents=(TEST_AUTHOR_SUBAGENT, API_VERIFIER_SUBAGENT, CODE_REVIEWER_SUBAGENT),
     )
 
 
