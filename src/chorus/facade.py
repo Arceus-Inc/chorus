@@ -43,6 +43,7 @@ from chorus.heartbeat import (
 from chorus.ids import mint_id
 from chorus.ledger import (
     Message,
+    OriginKind,
     SqliteLedger,
     Task,
     TaskPriority,
@@ -204,6 +205,9 @@ class Chorus:
         dod: Verifier | None = None,
         depends_on: Sequence[str] = (),
         priority: TaskPriority = TaskPriority.MEDIUM,
+        goal_id: str | None = None,
+        origin_kind: OriginKind = OriginKind.MANUAL,
+        origin_fingerprint: str = "default",
         trust_preset: TrustPreset | None = None,
         trust_boundary: dict[str, object] | None = None,
     ) -> Task:
@@ -213,7 +217,9 @@ class Chorus:
         sets its DoD + dependencies if given, and hands it to its owner (``backlog`` → ``todo`` + a
         wake). ``assignee`` is resolved by slug and fail-closed (an unknown employee raises
         ``UnknownEmployee`` before anything is written). The reserved intake seam: when horizon ships
-        it drives this same path — chorus never grows a second intake door.
+        it drives this same path — chorus never grows a second intake door. ``goal_id`` links the task to
+        its OKR node (the alignment tree horizon authors); ``origin_kind`` / ``origin_fingerprint`` stamp
+        provenance so horizon's idempotent intake (``horizon_intake`` + a fingerprint) can dedup.
         """
         employee_id = self._workforce.get(slugify(assignee)).id if assignee is not None else None
         task = self._ledger.tasks.submit(
@@ -221,6 +227,9 @@ class Chorus:
                 id=mint_id("task"),
                 intent=intent,
                 priority=priority,
+                goal_id=goal_id,
+                origin_kind=origin_kind,
+                origin_fingerprint=origin_fingerprint,
                 trust_preset=trust_preset.value if trust_preset is not None else None,
                 trust_boundary=trust_boundary,
             )

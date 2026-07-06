@@ -84,6 +84,19 @@ class TaskRepo:
         rows = self._conn.execute("SELECT * FROM task ORDER BY created_at, id").fetchall()
         return [_row_to_task(row) for row in rows]
 
+    def find_by_origin(self, origin_kind: OriginKind, origin_fingerprint: str) -> Task | None:
+        """The newest task with this origin + fingerprint — horizon's idempotent-intake dedup check.
+
+        A ``horizon_intake`` submitter checks this before opening a task so re-deriving the same
+        opportunity is a no-op (the fingerprint policy is horizon's; this is the read it needs).
+        """
+        row = self._conn.execute(
+            "SELECT * FROM task WHERE origin_kind = ? AND origin_fingerprint = ? "
+            "ORDER BY created_at DESC, id DESC LIMIT 1",
+            (origin_kind.value, origin_fingerprint),
+        ).fetchone()
+        return _row_to_task(row) if row is not None else None
+
     def checkout(self, task_id: str, *, employee_id: str, run_id: str) -> bool:
         """Atomically claim a task. Returns ``False`` (a 409) if a live owner already holds it."""
         now = utcnow_iso()

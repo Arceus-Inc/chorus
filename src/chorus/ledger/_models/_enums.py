@@ -36,6 +36,7 @@ class OriginKind(StrEnum):
     STRANDED_RECOVERY = "stranded_recovery"
     STALE_RUN_EVAL = "stale_run_eval"
     PRODUCTIVITY_REVIEW = "productivity_review"
+    HORIZON_INTAKE = "horizon_intake"  # opened by the horizon strategy layer (spec 00 §5a / 10 §5)
 
 
 class RunStatus(StrEnum):
@@ -50,12 +51,24 @@ class RunStatus(StrEnum):
 
 
 class GoalLevel(StrEnum):
-    """The alignment tree levels (spec 01 Cluster D ``goal``)."""
+    """The alignment tree levels (spec 01 Cluster D ``goal``).
+
+    The original coarse levels (company/team/employee/task) plus the finer OKR-tree levels the
+    horizon strategy layer authors (product/objective/key_result/initiative/task_intent). Additive:
+    chorus does not act on ``level`` (it schedules by deps + caps + priority), so widening the
+    vocabulary is safe; horizon owns the tree's shape.
+    """
 
     COMPANY = "company"
     TEAM = "team"
     EMPLOYEE = "employee"
     TASK = "task"
+    # horizon OKR-tree levels (spec: company -> product -> objective -> key_result -> initiative -> task_intent)
+    PRODUCT = "product"
+    OBJECTIVE = "objective"
+    KEY_RESULT = "key_result"
+    INITIATIVE = "initiative"
+    TASK_INTENT = "task_intent"
 
 
 class DodStatus(StrEnum):
