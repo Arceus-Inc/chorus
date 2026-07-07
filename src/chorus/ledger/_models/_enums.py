@@ -53,22 +53,17 @@ class RunStatus(StrEnum):
 class GoalLevel(StrEnum):
     """The alignment tree levels (spec 01 Cluster D ``goal``).
 
-    The original coarse levels (company/team/employee/task) plus the finer OKR-tree levels the
-    horizon strategy layer authors (product/objective/key_result/initiative/task_intent). Additive:
-    chorus does not act on ``level`` (it schedules by deps + caps + priority), so widening the
-    vocabulary is safe; horizon owns the tree's shape.
+    The coarse org levels (company/team/employee/task) plus ``goal`` — the level the horizon strategy
+    layer writes for the Decision -> Goal -> Task spine. Decisions themselves are horizon-native and
+    never become goal rows (chorus only ever sees goals + tasks). Additive: chorus does not act on
+    ``level`` (it schedules by deps + caps + priority), so the vocabulary is horizon's to shape.
     """
 
     COMPANY = "company"
     TEAM = "team"
     EMPLOYEE = "employee"
     TASK = "task"
-    # horizon OKR-tree levels (spec: company -> product -> objective -> key_result -> initiative -> task_intent)
-    PRODUCT = "product"
-    OBJECTIVE = "objective"
-    KEY_RESULT = "key_result"
-    INITIATIVE = "initiative"
-    TASK_INTENT = "task_intent"
+    GOAL = "goal"  # the node horizon authors under a (horizon-only) Decision
 
 
 class DodStatus(StrEnum):
