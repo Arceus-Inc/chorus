@@ -43,6 +43,8 @@ class SprintDelta:
     outcome: str
     score: float
     created_at: datetime
+    role: str = ""
+    recorded_at: datetime | None = None
     kind: str = "sprint_delta"
     artifacts: tuple[str, ...] = ()
     files_touched: tuple[str, ...] = ()
@@ -60,6 +62,7 @@ class SprintDelta:
             "run_id": self.run_id,
             "task_id": self.task_id,
             "employee_id": self.employee_id,
+            "role": self.role,
             "scope": self.scope,
             "intent": self.intent,
             "outcome": self.outcome,
@@ -67,6 +70,7 @@ class SprintDelta:
             "artifacts": list(self.artifacts),
             "files_touched": list(self.files_touched),
             "created_at": self.created_at.isoformat(),
+            "recorded_at": (self.recorded_at or self.created_at).isoformat(),
         }
         return MemoryDelta(
             target_id=self.run_id,
@@ -81,21 +85,23 @@ class SprintDelta:
 class AppendOnlyMemoryWriter:
     """The chorus ``MemoryWriter`` — write a new ``*.md``, never merge (spec 07 §3).
 
-    One file per record named by ``run_id`` (``{scope}/{run_id}.md``): because each run id is unique,
-    two concurrent beats never target the same path, so appends are conflict-free by construction. An
-    existing file is **never** rewritten — a re-apply (a crash retry) is an idempotent no-op.
-    ``lattice``'s consolidating writer is the only thing that ever rewrites existing files (the §4 seam).
+    One file per record named by ``run_id``, partitioned per agent (``{employee_id}/{run_id}.md``):
+    episodic memory is one agent's own history, so its stream is its own subtree. Because each run id
+    is unique, two concurrent beats never target the same path, so appends are conflict-free by
+    construction. An existing file is **never** rewritten — a re-apply (a crash retry) is an idempotent
+    no-op. ``lattice``'s consolidating writer is the only thing that ever rewrites files (the §4 seam).
     """
 
     def __init__(self, memory_repo: str | Path) -> None:
         self._root = Path(memory_repo)
 
     async def apply(self, delta: MemoryDelta) -> MemoryRecord:
-        """Write a new scoped ``*.md`` and return its record; never compress/forget (spec 07 §3)."""
-        scope_dir = self._root / delta.scope.value
-        path = scope_dir / f"{delta.target_id}.md"
+        """Write a new per-agent ``*.md`` and return its record; never compress/forget (spec 07 §3)."""
+        partition = str(delta.metadata.get("employee_id") or delta.scope.value)
+        agent_dir = self._root / partition
+        path = agent_dir / f"{delta.target_id}.md"
         if not path.exists():  # append-only: the first write for a run id wins, forever
-            scope_dir.mkdir(parents=True, exist_ok=True)
+            agent_dir.mkdir(parents=True, exist_ok=True)
             path.write_text(_render(delta), encoding="utf-8")
         return _record_from(path, delta)
 
