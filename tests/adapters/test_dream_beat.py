@@ -57,20 +57,17 @@ class _Result:
     final_ledger: _Ledger
     sprints: tuple[_Sprint, ...] = field(default_factory=tuple)
     usage_by_model: dict[str, _Usage] = field(default_factory=dict)
-    events: tuple[dict[str, Any], ...] = field(default_factory=tuple)
 
 
 def _result(
     *statuses: str,
     sprints: tuple[str | None, ...] = (),
     usage_by_model: dict[str, _Usage] | None = None,
-    events: tuple[dict[str, Any], ...] = (),
 ) -> _Result:
     return _Result(
         final_ledger=_Ledger(steps=tuple(_Step(s) for s in statuses)),
         sprints=tuple(_Sprint(o) for o in sprints),
         usage_by_model=usage_by_model or {},
-        events=events,
     )
 
 
@@ -240,22 +237,31 @@ def test_passed_when_every_step_done() -> None:
     assert outcome.outcome["sprint_outcomes"] == ["pass", "pass"]
 
 
-def test_raw_record_is_the_events_stream_as_jsonl() -> None:
-    outcome = to_beat_outcome(
-        _result(
-            "done",
-            events=(
-                {"kind": "assistant", "text": "bumped pool size"},
-                {"kind": "tool", "name": "run"},
-            ),
-        )
+async def test_run_task_records_reasoning_and_actions_into_raw_record() -> None:
+    harness = _FakeHarness(
+        result=_result("done"),
+        events=(
+            {"kind": "role.text", "text": "I chose a salted hashlib password hash"},
+            {"kind": "role.tool.start", "tool": "write_file", "input": {"path": "auth/service.py"}},
+            {"kind": "role.tool.result", "tool": "write_file", "content_preview": "wrote 42 lines"},
+            {"kind": "planner.run.completed"},  # lifecycle noise — must NOT be recorded
+        ),
     )
-    assert '"kind": "assistant"' in outcome.raw_record
-    assert outcome.raw_record.count("\n") == 1  # two events → two JSONL lines
+    outcome = await DreamBeatRunner(harness).run_task(task_id="t", intent="build auth", run_id="r1")
+    assert "salted hashlib password hash" in outcome.raw_record  # the reasoning
+    assert "auth/service.py" in outcome.raw_record  # the action + its args
+    assert "wrote 42 lines" in outcome.raw_record  # the tool result
+    assert "planner.run.completed" not in outcome.raw_record  # lifecycle excluded
 
 
-def test_raw_record_empty_without_events() -> None:
-    assert to_beat_outcome(_result("done")).raw_record == ""
+async def test_run_task_records_reasoning_even_on_failure() -> None:
+    harness = _FakeHarness(
+        error=_FakeRunTaskError("boom", phase="plan"),
+        events=({"kind": "role.text", "text": "tried the pool bump, it regressed"},),
+    )
+    outcome = await DreamBeatRunner(harness).run_task(task_id="t", intent="x", run_id="r1")
+    assert outcome.passed is False
+    assert "tried the pool bump" in outcome.raw_record  # a failed beat still keeps its account
 
 
 def test_not_passed_when_a_step_is_unfinished() -> None:
@@ -427,10 +433,14 @@ async def test_run_task_drops_dream_events_without_a_chorus_equivalent() -> None
     assert [e.kind for e in seen] == [EventKind.RUN_TEXT]
 
 
-async def test_run_task_runs_dream_silent_without_an_observer() -> None:
-    harness = _FakeHarness(result=_result("done"), events=({"kind": "role.text", "text": "x"},))
-    await DreamBeatRunner(harness).run_task(task_id="t1", intent="x")
-    assert harness.observer is None  # no observer in -> no bridge handed to dream
+async def test_run_task_records_the_account_even_without_a_chorus_observer() -> None:
+    # No chorus observer -> no liveness bridge, but the reasoning recorder is always handed to dream so
+    # the episodic account is captured regardless of whether anyone is witnessing the run.
+    harness = _FakeHarness(
+        result=_result("done"), events=({"kind": "role.text", "text": "picked X"},)
+    )
+    outcome = await DreamBeatRunner(harness).run_task(task_id="t1", intent="x")
+    assert "picked X" in outcome.raw_record  # captured with no chorus observer wired
 
 
 # -- the failure contract: a raise -> a typed disposition (spec 05 §5) -----------------------------
