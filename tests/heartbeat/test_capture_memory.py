@@ -97,3 +97,46 @@ def test_baseline_sha_reads_head_and_is_best_effort(tmp_path: Path) -> None:
     assert _baseline_sha(worktree) is not None
     assert _baseline_sha(None) is None
     assert _baseline_sha(tmp_path / "nope") is None
+
+
+@pytest.mark.integration
+async def test_capture_memory_writes_keyed_per_agent_record(tmp_path, ledger) -> None:
+    from dream.memory._scan import scan_memory_dir
+
+    from chorus.heartbeat import Scheduler
+    from chorus.memory import AppendOnlyMemoryWriter
+
+    worktree = tmp_path / "wt"
+    worktree.mkdir()
+    _git(worktree, "init", "-q")
+    _git(worktree, "config", "user.email", "t@t")
+    _git(worktree, "config", "user.name", "t")
+    (worktree / "seed.py").write_text("x = 1\n", encoding="utf-8")
+    _git(worktree, "add", "-A")
+    _git(worktree, "commit", "-qm", "seed")
+    base_sha = _baseline_sha(worktree)
+    (worktree / "feature.py").write_text("y = 2\n", encoding="utf-8")  # this beat's work
+
+    ledger.tasks.submit(_task())
+    ledger.artifacts.create(_artifact(task_id="t_1", external_id="pr:org/repo#7", is_primary=True))
+
+    writer = AppendOnlyMemoryWriter(tmp_path / "memory")
+    scheduler = Scheduler(ledger=ledger, memory_writer=writer)
+    await scheduler._capture_memory(
+        ledger,
+        run_id="r_1",
+        employee=_employee(),
+        task=_task(),
+        result=_outcome(),
+        now=_NOW,
+        working_dir=worktree,
+        base_sha=base_sha,
+    )
+
+    record = scan_memory_dir(tmp_path / "memory" / "ada")[0]  # per-agent partition
+    fm = record.frontmatter
+    assert "feature.py" in fm.get("files_touched", [])  # the fingerprint of this beat
+    assert fm.get("role") == "engineer"
+    assert fm.get("recorded_at")
+    assert fm.get("artifacts") == ["pr:org/repo#7"]
+    assert "bumped the pool size" in record.content  # body = the raw agent record
