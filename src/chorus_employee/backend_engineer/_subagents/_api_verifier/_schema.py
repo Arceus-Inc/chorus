@@ -42,7 +42,12 @@ class ApiTestVerdict(BaseModel):
         min_length=1, description="one entry per real request issued; at least one is required"
     )
     evidence: str = Field(
-        min_length=1, description="how the service was booted + reached (command, port, responses)"
+        min_length=1,
+        description=(
+            "how the service was booted + reached (command, port, responses); for a stateful check "
+            "against a client-server datastore (Postgres/Mongo/Redis/…), the exact container boot "
+            "command/image used (e.g. `docker run -d postgres:16 ...`) — not just 'connected to db'"
+        ),
     )
 
     @model_validator(mode="after")

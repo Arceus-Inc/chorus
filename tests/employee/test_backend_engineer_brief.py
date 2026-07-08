@@ -179,3 +179,14 @@ def test_dod_rubric_makes_the_reviewer_gate_on_the_tdd_artifacts() -> None:
     assert "api_verdict.json" in rubric
     assert "verify_command" in rubric  # instruct the reviewer to assert them in the run command
     assert "red_evidence" in rubric.lower() or "red" in rubric.lower()
+
+
+def test_dod_rubric_mechanically_requires_the_durable_evidence_floor() -> None:
+    # spec §10: "it was tested" must be a file on disk, not a claim. The reviewer-discovered
+    # verify_command must include a green test_evidence/manifest.json check — the durable evidence
+    # floor the kernel greps, not something only the brief's prose asks for.
+    from chorus_employee.backend_engineer import backend_engineer_dod
+
+    rubric = backend_engineer_dod("build a service").rubric()
+    assert "test_evidence/manifest.json" in rubric
+    assert '"verdict": "pass"' in rubric
