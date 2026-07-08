@@ -12,6 +12,7 @@ dream's ``RunTaskResult`` (the protocols below), so the SDK import stays at the 
 from __future__ import annotations
 
 import asyncio
+import json
 from collections.abc import Callable, Mapping, Sequence
 from contextlib import suppress
 from dataclasses import asdict, replace
@@ -78,6 +79,11 @@ class RunResult(Protocol):
         """Per-model token usage dream metered for the run (empty on older dream pins → cost 0)."""
         ...
 
+    @property
+    def events(self) -> Sequence[Mapping[str, Any]]:
+        """The run's raw event stream — the entire agent record (empty on older dream pins)."""
+        ...
+
 
 class _DreamObserver(Protocol):
     """dream's ``RunTaskObserver`` shape — a sink for the engine's dict event stream (spec 05 §4)."""
@@ -130,10 +136,14 @@ def to_beat_outcome(result: RunResult, *, pricing: TokenPricing | None = None) -
         if passed
         else f"plan incomplete: {done}/{len(steps)} done, {blocked} blocked"
     )
+    raw_record = "\n".join(
+        json.dumps(event, default=str, ensure_ascii=False) for event in result.events
+    )
     return BeatOutcome(
         passed=passed,
         outcome=outcome,
         summary=summary,
+        raw_record=raw_record,
         cost_cents=cost_cents,
         model=model,
         input_tokens=input_tokens,

@@ -57,17 +57,20 @@ class _Result:
     final_ledger: _Ledger
     sprints: tuple[_Sprint, ...] = field(default_factory=tuple)
     usage_by_model: dict[str, _Usage] = field(default_factory=dict)
+    events: tuple[dict[str, Any], ...] = field(default_factory=tuple)
 
 
 def _result(
     *statuses: str,
     sprints: tuple[str | None, ...] = (),
     usage_by_model: dict[str, _Usage] | None = None,
+    events: tuple[dict[str, Any], ...] = (),
 ) -> _Result:
     return _Result(
         final_ledger=_Ledger(steps=tuple(_Step(s) for s in statuses)),
         sprints=tuple(_Sprint(o) for o in sprints),
         usage_by_model=usage_by_model or {},
+        events=events,
     )
 
 
@@ -235,6 +238,24 @@ def test_passed_when_every_step_done() -> None:
     assert outcome.outcome["steps_total"] == 2
     assert outcome.outcome["steps_done"] == 2
     assert outcome.outcome["sprint_outcomes"] == ["pass", "pass"]
+
+
+def test_raw_record_is_the_events_stream_as_jsonl() -> None:
+    outcome = to_beat_outcome(
+        _result(
+            "done",
+            events=(
+                {"kind": "assistant", "text": "bumped pool size"},
+                {"kind": "tool", "name": "run"},
+            ),
+        )
+    )
+    assert '"kind": "assistant"' in outcome.raw_record
+    assert outcome.raw_record.count("\n") == 1  # two events → two JSONL lines
+
+
+def test_raw_record_empty_without_events() -> None:
+    assert to_beat_outcome(_result("done")).raw_record == ""
 
 
 def test_not_passed_when_a_step_is_unfinished() -> None:

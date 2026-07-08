@@ -40,6 +40,9 @@ class BeatOutcome:
     passed: bool
     outcome: dict[str, object] = field(default_factory=dict)
     summary: str = ""
+    # The entire raw agent record of the run — dream's event stream as JSON lines. Becomes the
+    # episodic record's prose body (spec 07 §3): kept whole, mined later, trusted never.
+    raw_record: str = ""
     # The beat's spend + the usage it was priced from — recorded as a cost_event (spec 04 §3).
     # ``model`` is the model(s) the beat used (``"a+b"`` when more than one); tokens are run totals.
     cost_cents: int = 0
