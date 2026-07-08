@@ -16,6 +16,7 @@ assignment, ``fire_downstream_wakes``, and the outcome/DoD seam.
 from __future__ import annotations
 
 import asyncio
+import json
 import subprocess
 import uuid
 from collections.abc import Awaitable, Callable
@@ -50,7 +51,7 @@ from chorus.ledger._models import (
     WakeReason,
 )
 from chorus.lifecycle import TERMINAL, record_activity
-from chorus.memory import SprintDelta
+from chorus.memory import SprintDelta, beat_fingerprint
 from chorus.outcomes import AgentReview, DoDKind, ReviewedBuild, Verifier
 from chorus.recovery import reconcile
 from chorus.workforce._models import EmployeeStatus
@@ -201,8 +202,52 @@ _OUTCOME_BY_DISPOSITION: dict[BeatDisposition, str] = {
 }
 
 
+def _artifact_ref(artifact: Artifact) -> str:
+    """A stable string reference for the episodic record — the artifact's id-like fields, not its dict.
+
+    Prefers the string identifiers (``external_id``/``url``); falls back to a canonical JSON dump of the
+    structured ``resource_ref`` (e.g. an engineer PR's branch+commit) so the record stays ``str``-typed.
+    """
+    if artifact.external_id:
+        return artifact.external_id
+    if artifact.url:
+        return artifact.url
+    if artifact.resource_ref:
+        return json.dumps(artifact.resource_ref, sort_keys=True, default=str)
+    return ""
+
+
+def _baseline_sha(working_dir: Path | None) -> str | None:
+    """The worktree HEAD at beat-start — the fingerprint baseline. ``None`` when unavailable.
+
+    Captured at dispatch (before the lander commits) so the fingerprint diff at beat-end spans exactly
+    this beat's work. Best-effort: a runner with no worktree, or a dir that is not a git repo, yields
+    no baseline rather than raising.
+    """
+    if working_dir is None:
+        return None
+    try:
+        head = subprocess.run(
+            ["git", "-C", str(working_dir), "rev-parse", "HEAD"],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+    except (subprocess.CalledProcessError, OSError):
+        return None
+    return head or None
+
+
 def _sprint_delta(
-    *, run_id: str, employee: Employee, task: Task, result: BeatOutcome, scope: str, now: datetime
+    *,
+    run_id: str,
+    employee: Employee,
+    task: Task,
+    result: BeatOutcome,
+    scope: str,
+    now: datetime,
+    files_touched: tuple[str, ...] = (),
+    artifacts: tuple[str, ...] = (),
 ) -> SprintDelta:
     """Build the beat's raw episodic record — honest fields derived from the run (spec 07 §3)."""
     verdict = result.outcome or {}
@@ -221,7 +266,11 @@ def _sprint_delta(
         ),
         score=score,
         created_at=now,
-        body=result.summary or "",
+        role=employee.role,
+        recorded_at=now,
+        files_touched=files_touched,
+        artifacts=artifacts,
+        body=result.raw_record or result.summary or "",
     )
 
 
@@ -607,10 +656,19 @@ class Scheduler:
         observer = self._event_bus.emit if self._event_bus is not None else None
         verifier = None
         beat_runner: BeatRunner | None = None
+        # The fingerprint baseline: HEAD *before* the beat runs, so the beat-end diff spans exactly this
+        # beat's work (the lander commits between here and _capture_memory). None for a runner with no
+        # worktree — a read-only beat leaves no fingerprint.
+        working_dir: Path | None = None
+        base_sha: str | None = None
         try:
             # Resolve the runner for *this* employee's role + beat phase (an integrate beat — the task
             # already has children — is materialized without ``decompose``, spec 06 §2 / M3 §5).
             beat_runner = beat_runner_for.runner_for(employee, task_id=task_id)
+            working_dir = (
+                beat_runner.working_dir if isinstance(beat_runner, _RunnerWithWorkingDir) else None
+            )
+            base_sha = _baseline_sha(working_dir)
             if ledger.tasks.has_children(task_id) and ledger.tasks.all_children_terminal(task_id):
                 self._write_integrate_packet(ledger, beat_runner=beat_runner, task_id=task_id)
             # Intake DoD (spec 04 §1 / 06 §2): a task with no explicit DoD inherits its assignee role's, so
@@ -722,22 +780,45 @@ class Scheduler:
                 self._climb_repair_ladder(task_id, employee_id=employee.id, verifier=verifier)
 
         await self._capture_memory(
-            run_id=run_id, employee=employee, task=task, result=result, now=now
+            ledger,
+            run_id=run_id,
+            employee=employee,
+            task=task,
+            result=result,
+            now=now,
+            working_dir=working_dir,
+            base_sha=base_sha,
         )
         ledger.tasks.release_locks(task_id, run_id=run_id)
         ledger.wakes.mark_done(wake.id)
         self._record_cost(employee.id, task_id=task_id, run_id=run_id, result=result, now=now)
 
     async def _capture_memory(
-        self, *, run_id: str, employee: Employee, task: Task, result: BeatOutcome, now: datetime
+        self,
+        ledger: SqliteLedger,
+        *,
+        run_id: str,
+        employee: Employee,
+        task: Task,
+        result: BeatOutcome,
+        now: datetime,
+        working_dir: Path | None,
+        base_sha: str | None,
     ) -> None:
         """Write one raw episodic sprint delta for this beat (spec 07 §3) — the kernel stays writer-agnostic.
 
         A cancelled beat (nothing happened) records nothing; every other disposition leaves an honest
-        trace whose fields are derived from the run, never authored by the worker.
+        trace whose fields — the structural fingerprint (``files_touched``) and the landed
+        ``artifacts`` — are derived from the run, never authored by the worker.
         """
         if self._memory_writer is None or result.disposition is BeatDisposition.CANCELLED:
             return
+        files_touched = beat_fingerprint(working_dir, base_sha)
+        artifacts = tuple(
+            ref
+            for artifact in ledger.artifacts.list_for_task(task.id)
+            if (ref := _artifact_ref(artifact))
+        )
         delta = _sprint_delta(
             run_id=run_id,
             employee=employee,
@@ -745,6 +826,8 @@ class Scheduler:
             result=result,
             scope=self._memory_scope(employee),
             now=now,
+            files_touched=files_touched,
+            artifacts=artifacts,
         )
         await self._memory_writer.apply(delta.to_memory_delta())
 
