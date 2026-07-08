@@ -170,6 +170,9 @@ _READ_ONLY_DREAM_SURFACE_TOOLS = frozenset(
         "memory_search",
         "memory_get",
         "working_memory_read",
+        # recall is safe/read-only (chorus's own episodic counterpart to memory_search's durable
+        # facts), so an evaluator verifying past-beat context needs it just as much as the generator.
+        "recall",
         # A read-only reviewer that reads a large artifact (a long findings.md) gets its read_file
         # output offloaded to scratch with a "Full output saved to: <file>" pointer; without
         # read_offloaded it cannot see the overflow and wrongly fails with "content is truncated /
