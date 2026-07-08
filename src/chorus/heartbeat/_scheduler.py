@@ -51,14 +51,12 @@ from chorus.ledger._models import (
     WakeReason,
 )
 from chorus.lifecycle import TERMINAL, record_activity
-from chorus.memory import SprintDelta, beat_fingerprint
+from chorus.memory import EpisodicStore, SprintDelta, beat_fingerprint
 from chorus.outcomes import AgentReview, DoDKind, ReviewedBuild, Verifier
 from chorus.recovery import reconcile
 from chorus.workforce._models import EmployeeStatus
 
 if TYPE_CHECKING:
-    from dream.contracts import MemoryWriter
-
     from chorus.budgets import BudgetEnforcer
     from chorus.events import Event
     from chorus.heartbeat._beat import BeatRunner
@@ -316,7 +314,7 @@ class Scheduler:
         transient_retries: int = 2,
         max_integrate_iterations: int = 3,
         max_review_rounds: int = 2,
-        memory_writer: MemoryWriter | None = None,
+        memory_writer: EpisodicStore | None = None,
         ledger: SqliteLedger | None = None,
         workforce: Workforce | None = None,
         beat_runner: BeatRunner | None = None,
@@ -829,7 +827,7 @@ class Scheduler:
             files_touched=files_touched,
             artifacts=artifacts,
         )
-        await self._memory_writer.apply(delta.to_memory_delta())
+        self._memory_writer.append(delta)
 
     def _write_integrate_packet(
         self, ledger: SqliteLedger, *, beat_runner: BeatRunner, task_id: str

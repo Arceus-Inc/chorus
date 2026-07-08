@@ -1,12 +1,12 @@
-"""Memory — append-only sprint capture, lattice owns consolidation (spec 07)."""
+"""Memory — SQLite-native append-only episodic capture; lattice owns consolidation (spec 07)."""
 
 from __future__ import annotations
 
 from chorus.memory._fingerprint import beat_fingerprint
-from chorus.memory._writer import AppendOnlyMemoryWriter, SprintDelta
+from chorus.memory._store import EpisodicStore, SprintDelta
 
 __all__ = [
-    "AppendOnlyMemoryWriter",
+    "EpisodicStore",
     "SprintDelta",
     "beat_fingerprint",
 ]

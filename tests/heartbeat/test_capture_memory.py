@@ -101,10 +101,8 @@ def test_baseline_sha_reads_head_and_is_best_effort(tmp_path: Path) -> None:
 
 @pytest.mark.integration
 async def test_capture_memory_writes_keyed_per_agent_record(tmp_path, ledger) -> None:
-    from dream.memory._scan import scan_memory_dir
-
     from chorus.heartbeat import Scheduler
-    from chorus.memory import AppendOnlyMemoryWriter
+    from chorus.memory import EpisodicStore
 
     worktree = tmp_path / "wt"
     worktree.mkdir()
@@ -120,8 +118,8 @@ async def test_capture_memory_writes_keyed_per_agent_record(tmp_path, ledger) ->
     ledger.tasks.submit(_task())
     ledger.artifacts.create(_artifact(task_id="t_1", external_id="pr:org/repo#7", is_primary=True))
 
-    writer = AppendOnlyMemoryWriter(tmp_path / "memory")
-    scheduler = Scheduler(ledger=ledger, memory_writer=writer)
+    store = EpisodicStore(tmp_path / "memory")
+    scheduler = Scheduler(ledger=ledger, memory_writer=store)
     await scheduler._capture_memory(
         ledger,
         run_id="r_1",
@@ -133,10 +131,11 @@ async def test_capture_memory_writes_keyed_per_agent_record(tmp_path, ledger) ->
         base_sha=base_sha,
     )
 
-    record = scan_memory_dir(tmp_path / "memory" / "ada")[0]  # per-agent partition
-    fm = record.frontmatter
-    assert "feature.py" in fm.get("files_touched", [])  # the fingerprint of this beat
-    assert fm.get("role") == "engineer"
-    assert fm.get("recorded_at")
-    assert fm.get("artifacts") == ["pr:org/repo#7"]
-    assert "bumped the pool size" in record.content  # body = the raw agent record
+    record = store.get("r_1")
+    assert record is not None
+    assert record.employee_id == "ada"  # per-agent attribution
+    assert "feature.py" in record.files_touched  # the fingerprint of this beat
+    assert record.role == "engineer"
+    assert record.recorded_at is not None
+    assert record.artifacts == ("pr:org/repo#7",)
+    assert "bumped the pool size" in record.body  # body = the raw agent record

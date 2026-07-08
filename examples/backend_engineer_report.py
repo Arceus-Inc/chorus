@@ -34,7 +34,7 @@ from chorus.events import Event, EventKind
 from chorus.heartbeat import Scheduler
 from chorus.ledger import RunStatus, SqliteLedger, Task, TaskStatus
 from chorus.lifecycle import assign_task
-from chorus.memory import AppendOnlyMemoryWriter
+from chorus.memory import EpisodicStore
 from chorus.observability import EventBus
 from chorus.outcomes import Verifier
 from chorus.roles import RoleRegistry, default_roles
@@ -759,7 +759,7 @@ def main() -> int:
             budget_enforcer=BudgetEnforcer(ledger, company_id="acme"),
             roles=registry,
             landers=default_landers(factory.company_root),
-            memory_writer=AppendOnlyMemoryWriter(factory.company_root / "memory"),
+            memory_writer=EpisodicStore(factory.company_root / "memory"),
             event_bus=bus,
             max_concurrent_runs=1,
         )

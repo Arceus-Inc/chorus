@@ -1,7 +1,7 @@
 """M2 memory capture, keyed end-to-end: a real engineer beat lands one episodic sprint delta.
 
 Proves spec 07 §3 with a **real** dream beat: run one Engineer beat through the kernel with an
-``AppendOnlyMemoryWriter`` injected, then verify that exactly one provenance-stamped ``sprint_delta``
+``EpisodicStore`` injected, then verify that exactly one provenance-stamped ``sprint_delta``
 record landed under the project scope — and that **dream's own scanner** reads it back (the
 ``MemoryWriter`` / ``MemoryStore`` contract holds). Emits an HTML verification report.
 
@@ -25,7 +25,7 @@ from chorus.budgets import BudgetEnforcer
 from chorus.heartbeat import Scheduler
 from chorus.ledger import SqliteLedger, Task, TaskStatus
 from chorus.lifecycle import assign_task
-from chorus.memory import AppendOnlyMemoryWriter
+from chorus.memory import EpisodicStore
 from chorus.roles import RoleRegistry, default_roles
 from chorus.workforce import Employee, LedgerWorkforce
 from chorus_cli._beats import default_pricing_from_env
@@ -83,7 +83,7 @@ pre{{background:#0f172a;color:#dbeafe;padding:12px;border-radius:10px;overflow-x
 read back by dream's own scanner.</p>
 <p><strong class="{"ok" if verdict.startswith("ALL") else "bad"}">{verdict}</strong></p></div>
 <div class="card"><h2>Scenario</h2><p>Run one real Engineer beat (add <code>subtract</code> + a test)
-through the kernel with an <code>AppendOnlyMemoryWriter</code> injected; verify the captured memory record.</p></div>
+through the kernel with an <code>EpisodicStore</code> injected; verify the captured memory record.</p></div>
 <div class="card"><h2>Checks</h2><table><tr><th>Check</th><th>Result</th><th>Detail</th></tr>
 {rows}</table></div>
 <div class="card"><h2>The captured record</h2><pre>{html.escape(record_text)}</pre></div>
@@ -113,7 +113,7 @@ def main() -> int:
             company_id="acme", roles=registry, pricing=default_pricing_from_env(), seed=seed,
         )
         memory_root = factory.company_root / "memory"
-        writer = AppendOnlyMemoryWriter(memory_root)
+        writer = EpisodicStore(memory_root)
         ledger.employees.create(Employee(id="ada", name="Ada", role="engineer"))
         ledger.tasks.submit(Task(id="t1", intent=_TASK))
         assign_task(ledger, "t1", "ada")
