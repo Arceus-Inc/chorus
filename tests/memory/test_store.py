@@ -87,3 +87,36 @@ def test_persists_across_reopen(tmp_path) -> None:
     EpisodicStore(tmp_path).append(_delta())
     reopened = EpisodicStore(tmp_path)  # same dir → same episodic.db
     assert reopened.get("r_1") is not None
+
+
+def test_search_matches_the_indexed_intent_and_body(tmp_path) -> None:
+    store = EpisodicStore(tmp_path)
+    store.append(
+        _delta(run_id="r_a", intent="add retry to the upload client", body="bumped pool size")
+    )
+    store.append(_delta(run_id="r_b", intent="unrelated task", body="unrelated work entirely"))
+    hits = store.search("retry")
+    assert [d.run_id for d in hits] == ["r_a"]
+
+
+def test_search_ranks_the_stronger_match_first(tmp_path) -> None:
+    store = EpisodicStore(tmp_path)
+    store.append(_delta(run_id="r_weak", intent="x", body="mentions retry once"))
+    store.append(
+        _delta(run_id="r_strong", intent="retry retry retry", body="retry retry retry retry")
+    )
+    hits = store.search("retry")
+    assert [d.run_id for d in hits] == ["r_strong", "r_weak"]
+
+
+def test_search_respects_limit(tmp_path) -> None:
+    store = EpisodicStore(tmp_path)
+    for i in range(5):
+        store.append(_delta(run_id=f"r_{i}", intent="retry", body="retry"))
+    assert len(store.search("retry", limit=2)) == 2
+
+
+def test_search_no_match_is_empty(tmp_path) -> None:
+    store = EpisodicStore(tmp_path)
+    store.append(_delta())
+    assert store.search("xyzzy_nonexistent") == []

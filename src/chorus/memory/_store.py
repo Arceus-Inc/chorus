@@ -47,6 +47,10 @@ class EpisodicStore:
         """Records whose fingerprint overlaps any of ``paths`` — the structural pre-filter."""
         return self._records.touching(paths)
 
+    def search(self, query: str, *, limit: int = 5) -> list[SprintDelta]:
+        """Keyword search over intent+body, best match first — the BM25 half of retrieval."""
+        return self._records.search(query, limit=limit)
+
     def count(self) -> int:
         """Total records held."""
         return self._records.count()

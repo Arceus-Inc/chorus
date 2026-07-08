@@ -67,6 +67,25 @@ class EpisodicRepo:
         ).fetchall()
         return [self._to_delta(row) for row in rows]
 
+    def search(self, query: str, *, limit: int = 5) -> list[SprintDelta]:
+        """Keyword search over intent+body, best match first — the BM25 half of retrieval.
+
+        FTS5's ``bm25()`` is more-negative-is-better, so ``ORDER BY bm25(record_fts)`` ascending is
+        best-first. Each term is quoted as an FTS5 string literal (its own internal ``"`` doubled) and
+        OR-joined, so arbitrary free text — including FTS5 operator characters like ``-``/``*``/``:``
+        — can never be mis-parsed as query syntax.
+        """
+        match = _fts_or_query(query)
+        if not match:
+            return []
+        rows = self._conn.execute(
+            "SELECT r.* FROM episodic_record r "
+            "JOIN record_fts f ON f.run_id = r.run_id "
+            "WHERE record_fts MATCH ? ORDER BY bm25(record_fts) LIMIT ?",
+            (match, limit),
+        ).fetchall()
+        return [self._to_delta(row) for row in rows]
+
     def touching(self, paths: tuple[str, ...]) -> list[SprintDelta]:
         """Records whose fingerprint overlaps any of ``paths`` — the structural pre-filter."""
         if not paths:
@@ -106,6 +125,18 @@ class EpisodicRepo:
             files_touched=self._files_for(row["run_id"]),
             body=row["body"],
         )
+
+
+def _fts_or_query(query: str) -> str:
+    """Turn free text into a safe FTS5 ``MATCH`` expression: quoted terms, OR-joined.
+
+    Quoting each term as an FTS5 string literal (doubling any internal ``"``) means operator
+    characters in the raw query (``-``, ``*``, ``:``, …) are always literal text, never query syntax —
+    the search is never a way to inject a broken or unintended FTS5 query.
+    """
+    terms = query.split()
+    quoted = (f'"{term.replace(chr(34), chr(34) * 2)}"' for term in terms)
+    return " OR ".join(quoted)
 
 
 __all__ = ["EpisodicRepo"]
