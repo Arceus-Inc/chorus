@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+from chorus.memory._fingerprint import beat_fingerprint
 from chorus.memory._writer import AppendOnlyMemoryWriter, SprintDelta
 
 __all__ = [
     "AppendOnlyMemoryWriter",
     "SprintDelta",
+    "beat_fingerprint",
 ]
