@@ -30,6 +30,7 @@ from dream.tools.builtin import default_registry
 
 from chorus.adapters import DreamBeatRunner, TokenPricing
 from chorus.heartbeat import BeatRunner, IntegrateContextPacket
+from chorus.memory import EpisodicStore
 from chorus.outcomes import LanderRegistry, runtime_brief_block
 from chorus.roles import RoleBeatConfig, RoleRegistry, role_beat_config
 from chorus.roles._manifest import McpServerSpec
@@ -49,6 +50,7 @@ from chorus_tools import (
     DesignLintTool,
     EvidenceScanTool,
     GoLiveTool,
+    RecallTool,
     RecordDecisionTool,
     SecretScanTool,
     SubmitTaskTool,
@@ -137,6 +139,10 @@ _CHORUS_TO_DREAM_TOOL: dict[str, str] = {
     # IDENTITY-mapped so the subagent projection keeps it. The structural analog of design_lint (pure
     # reader). Distinct from the Backend Engineer's test_evidence gate-runner, which WRITES the bundle.
     "evidence_scan": "evidence_scan",
+    # recall — a chorus capability tool (read-only episodic memory, spec 07 §11). Identity-mapped for
+    # the same reason as evidence_scan: registered in the materialize flow (needs company_root), not
+    # via _capability_tool, so it must stay in this map for the subagent projection to keep it.
+    "recall": "recall",
     # cms_draft — a chorus capability tool (reversible CMS write, §08 Channel). Identity-mapped for the
     # same reason as brand_lint: so the projection keeps it; it is registered in the materialize flow
     # (it needs the worktree for the Markdown backend, which _capability_tool has no access to).
@@ -636,6 +642,13 @@ class EmployeeHarnessFactory:
         # the durable code_quality/ report. No ledger — registers UNCONDITIONALLY, like the above.
         if "code_quality" in config.tools:
             registry.register(CodeQualityTool(), source=ToolSource.DEFAULT)
+        # recall (spec 07 §11): read your OWN past episodic beats — recency/fingerprint/keyword. No
+        # ledger; rooted at the ORG's memory dir (company_root/memory), not the per-employee worktree
+        # — episodic capture is one shared SQLite store for the whole company.
+        if "recall" in config.tools:
+            registry.register(
+                RecallTool(EpisodicStore(self._company_root / "memory")), source=ToolSource.DEFAULT
+            )
         # execute_go_live pairs with cms_draft: it publishes the staged draft once the human approves
         # the stage_go_live gate. Needs BOTH the ledger (fail-closed gate check) and the worktree
         # (standing-draft + delivery indexes), so it registers here rather than in _capability_tool.
