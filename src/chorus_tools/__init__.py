@@ -47,6 +47,7 @@ from chorus_tools._manager_actions import (
     SubmitTaskInput,
     SubmitTaskTool,
 )
+from chorus_tools._recall import RecallInput, RecallTool
 from chorus_tools._record_decision import RecordDecisionInput, RecordDecisionTool
 from chorus_tools._registry import chorus_tool_registry
 from chorus_tools._secret_scan import (
@@ -100,6 +101,8 @@ __all__ = [
     "QualityCheck",
     "QualityCheckSpec",
     "QualityReport",
+    "RecallInput",
+    "RecallTool",
     "RecordDecisionInput",
     "RecordDecisionTool",
     "RepoSearchTool",
