@@ -200,6 +200,20 @@ _OUTCOME_BY_DISPOSITION: dict[BeatDisposition, str] = {
 }
 
 
+def _episodic_outcome(result: BeatOutcome) -> str:
+    """Human label for the episodic record — timeouts are unfinished, not stranded.
+
+    Wall-clock ``TimeoutError`` burns a resume slot and the worktree + TODO.md survive, so stamping
+    those records ``blocked`` misleads ``recall`` into treating mid-build progress as a strand. Map
+    timeout faults to ``incomplete`` so the next beat continues from listed files instead of restarting.
+    """
+    if result.disposition is BeatDisposition.ERRORED:
+        err = str((result.outcome or {}).get("error", ""))
+        if "TimeoutError" in err:
+            return "incomplete"
+    return _OUTCOME_BY_DISPOSITION.get(result.disposition or BeatDisposition.ERRORED, "blocked")
+
+
 def _artifact_ref(artifact: Artifact) -> str:
     """A stable string reference for the episodic record — the artifact's id-like fields, not its dict.
 
@@ -259,9 +273,7 @@ def _sprint_delta(
         employee_id=employee.id,
         scope=scope,
         intent=task.intent,
-        outcome=_OUTCOME_BY_DISPOSITION.get(
-            result.disposition or BeatDisposition.ERRORED, "blocked"
-        ),
+        outcome=_episodic_outcome(result),
         score=score,
         created_at=now,
         role=employee.role,

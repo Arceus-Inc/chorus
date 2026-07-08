@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
-from chorus.memory._fingerprint import beat_fingerprint
+from chorus.memory._fingerprint import beat_fingerprint, is_deliverable_path
+from chorus.memory._narrative import narrative
 from chorus.memory._store import EpisodicStore, SprintDelta
 
 __all__ = [
     "EpisodicStore",
     "SprintDelta",
     "beat_fingerprint",
+    "is_deliverable_path",
+    "narrative",
 ]

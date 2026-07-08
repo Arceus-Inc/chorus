@@ -68,6 +68,9 @@ def pm_manifest() -> RoleManifest:
             # Without this the PM only ever sees the first ~800 chars of a big SKILL.md; with it, it pulls
             # the full playbook (and any bundled file it read) back into context. Tier-0, scratch-confined.
             "read_offloaded",
+            # read your own past episodic beats — recency/keyword, outcome attached
+            # (spec 07 §11).
+            "recall",
         ),
         # — build_harness(subagents=…) — the Tier-1 specialists Piper may dispatch mid-beat (§06).
         # The Researcher gathers cited evidence (depth-2 over the shared web_research orchestrator) and

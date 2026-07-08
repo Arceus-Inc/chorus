@@ -62,7 +62,7 @@ def backend_engineer_manifest() -> RoleManifest:
             "working_memory_write",
             "working_memory_append",
             "memory_propose",
-            # read your own past episodic beats — recency/fingerprint/keyword, outcome attached
+            # read your own past episodic beats — recency/keyword, outcome attached
             # (spec 07 §11). The reasoning-recall counterpart to memory_search's durable facts.
             "recall",
             # dispatch the api_verifier subagent mid-beat (§16 Slice 3) — the grader that boots the

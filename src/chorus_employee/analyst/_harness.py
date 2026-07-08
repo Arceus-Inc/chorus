@@ -56,6 +56,9 @@ def analyst_manifest() -> RoleManifest:
             "working_memory_read",
             "working_memory_write",
             "working_memory_append",
+            # read your own past episodic beats — recency/keyword, outcome attached
+            # (spec 07 §11). The reasoning-recall counterpart to memory_search's durable facts.
+            "recall",
         ),
         # — build_harness(memory=…) + working_memory —
         memory_scope=MemoryScope.PROJECT,

@@ -11,7 +11,8 @@ CREATE TABLE episodic_record (
     body        TEXT NOT NULL DEFAULT '',
     artifacts   TEXT NOT NULL DEFAULT '[]',
     created_at  TEXT NOT NULL,
-    recorded_at TEXT NOT NULL
+    recorded_at TEXT NOT NULL,
+    files_touched TEXT NOT NULL DEFAULT '[]'
 );
 
 CREATE INDEX episodic_record_employee_idx ON episodic_record(employee_id, recorded_at);

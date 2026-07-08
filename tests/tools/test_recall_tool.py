@@ -2,14 +2,15 @@
 
 The tool is the dream envelope around :class:`~chorus.memory.EpisodicStore`: it reads the calling
 employee's identity from the per-beat :class:`~chorus.heartbeat.BeatContext` (never from model input,
-so an employee can't be spoofed into reading another agent's history), then answers one of three
-modes — recency-only (no args: "what did I do lately"), fingerprint (``files``), or keyword
-(``query``) — outcome-first, so a returned past account always travels with its result (spec 06 §08
-honesty: the prose is data, never a directive).
+so an employee can't be spoofed into reading another agent's history), then answers in one of two
+modes — recency-only (no args: "what did I do lately") or keyword (``query``) — outcome-first, so a
+returned past account always travels with its result (spec 06 §08 honesty: the prose is data, never a
+directive).
 """
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -27,6 +28,11 @@ def _ctx(working_dir: Path) -> ToolExecutionContext:
     return ToolExecutionContext(working_dir=working_dir, session_id="sess")
 
 
+def _role_text_body(text: str) -> str:
+    """A one-line raw_record JSONL body whose sole event is ``role.text`` — matches production shape."""
+    return json.dumps({"kind": "role.text", "role": "generator", "text": text})
+
+
 def _delta(**over: object) -> SprintDelta:
     base: dict[str, object] = dict(
         run_id="r_1",
@@ -40,7 +46,7 @@ def _delta(**over: object) -> SprintDelta:
         role="backend_engineer",
         recorded_at=datetime(2026, 6, 18, 12, 0, tzinfo=UTC),
         files_touched=("src/upload/client.py",),
-        body="bumped the pool size, retried on timeout",
+        body=_role_text_body("bumped the pool size, retried on timeout"),
     )
     base.update(over)
     return SprintDelta(**base)  # type: ignore[arg-type]
@@ -74,19 +80,6 @@ async def test_recency_mode_excludes_the_current_run(tmp_path: Path) -> None:
     assert (result.structured or {})["hits"] == []
 
 
-async def test_files_mode_ranks_by_fingerprint_overlap(tmp_path: Path) -> None:
-    store = EpisodicStore(tmp_path / "memory")
-    store.append(_delta(run_id="r_a", files_touched=("a.py", "b.py")))
-    store.append(_delta(run_id="r_b", files_touched=("b.py",)))
-    store.append(_delta(run_id="r_c", employee_id="ada", files_touched=("a.py", "b.py")))
-    _beat(tmp_path)
-
-    result = await RecallTool(store).execute({"files": ["a.py", "b.py"]}, _ctx(tmp_path))
-
-    ids = [hit["run_id"] for hit in (result.structured or {})["hits"]]
-    assert ids == ["r_a", "r_b"]  # stronger overlap first; other agent's record excluded
-
-
 async def test_query_mode_keyword_search(tmp_path: Path) -> None:
     store = EpisodicStore(tmp_path / "memory")
     store.append(_delta(run_id="r_a", intent="fix the retry logic", body="retry retry retry"))
@@ -102,7 +95,11 @@ async def test_query_mode_keyword_search(tmp_path: Path) -> None:
 async def test_hits_carry_the_outcome_and_a_prose_snippet(tmp_path: Path) -> None:
     store = EpisodicStore(tmp_path / "memory")
     store.append(
-        _delta(run_id="r_a", outcome="needs_changes", body="tried the pool bump, regressed")
+        _delta(
+            run_id="r_a",
+            outcome="needs_changes",
+            body=_role_text_body("tried the pool bump, regressed"),
+        )
     )
     _beat(tmp_path)
 
@@ -110,9 +107,53 @@ async def test_hits_carry_the_outcome_and_a_prose_snippet(tmp_path: Path) -> Non
 
     hit = (result.structured or {})["hits"][0]
     assert hit["outcome"] == "needs_changes"
-    assert hit["files_touched"] == ["src/upload/client.py"]
+    assert "retry" in hit["intent"]
     assert "recorded_at" in hit
     assert "tried the pool bump" in hit["prose"]
+    # text content also carries prose — agents often only read content, not structured
+    assert "tried the pool bump" in result.content
+
+
+async def test_render_filters_noise_paths_from_files_touched(tmp_path: Path) -> None:
+    store = EpisodicStore(tmp_path / "memory")
+    store.append(
+        _delta(
+            run_id="r_noisy",
+            files_touched=(
+                "auth/service.py",
+                "TODO.md",
+                "docs/exec-plans/active/run_x.md",
+                "commerce.db",
+                "tests/test_auth.py",
+            ),
+            body=_role_text_body("built salted password verify"),
+        )
+    )
+    _beat(tmp_path)
+
+    result = await RecallTool(store).execute({}, _ctx(tmp_path))
+    hit = (result.structured or {})["hits"][0]
+    assert hit["files_touched"] == ["auth/service.py", "tests/test_auth.py"]
+    assert "docs/exec-plans" not in result.content
+    assert "TODO.md" not in result.content
+    assert "commerce.db" not in result.content
+    assert "auth/service.py" in result.content
+
+
+async def test_incomplete_outcome_is_labelled_for_resume(tmp_path: Path) -> None:
+    store = EpisodicStore(tmp_path / "memory")
+    store.append(
+        _delta(
+            run_id="r_to",
+            outcome="incomplete",
+            body=_role_text_body("mid-scaffold on auth register; tests not green yet"),
+        )
+    )
+    _beat(tmp_path)
+
+    result = await RecallTool(store).execute({}, _ctx(tmp_path))
+    assert "incomplete" in result.content
+    assert "resume" in result.content.lower() or "continue" in result.content.lower()
 
 
 async def test_empty_result_is_not_an_error(tmp_path: Path) -> None:

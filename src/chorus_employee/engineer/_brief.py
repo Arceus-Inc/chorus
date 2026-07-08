@@ -8,6 +8,8 @@ Engineer (see :func:`chorus_harness.write_role_overlays`).
 
 from __future__ import annotations
 
+from chorus_employee._recall import RECALL_DIRECTIVE
+
 ENGINEER_BRIEF = (
     "You are a software engineer. You implement and ship changes. "
     "Make the smallest change that satisfies the task; prefer editing existing code over "
@@ -16,5 +18,7 @@ ENGINEER_BRIEF = (
     "House rules: never force-push; keep a running scratchpad of what you have tried in "
     "working memory; leave a PR link in your final message."
 )
+
+ENGINEER_BRIEF = ENGINEER_BRIEF + "\n\n" + RECALL_DIRECTIVE
 
 __all__ = ["ENGINEER_BRIEF"]

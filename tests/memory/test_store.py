@@ -1,13 +1,13 @@
 """EpisodicStore — the SQLite-native episodic record store (replaces the md writer).
 
 The source of truth is now a per-org SQLite file: an append-only ``episodic_record`` table
-(immutable = the audit trail), a ``record_file`` fan-out of ``files_touched`` (the fingerprint
-pre-filter), and an FTS5 index over intent+body (the BM25 half of retrieval). One record per beat,
-first-write-wins.
+(immutable = the audit trail) with ``files_touched`` stored inline, and an FTS5 index over
+intent+body (BM25 search). One record per beat, first-write-wins.
 """
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
 
 import pytest
@@ -15,6 +15,11 @@ import pytest
 from chorus.memory import EpisodicStore, SprintDelta
 
 pytestmark = pytest.mark.integration  # touches sqlite on disk
+
+
+def _role_text_body(text: str) -> str:
+    """A one-line raw_record JSONL body whose sole event is ``role.text`` — matches production shape."""
+    return json.dumps({"kind": "role.text", "role": "generator", "text": text})
 
 
 def _delta(**over: object) -> SprintDelta:
@@ -31,7 +36,7 @@ def _delta(**over: object) -> SprintDelta:
         recorded_at=datetime(2026, 6, 18, 12, 0, tzinfo=UTC),
         artifacts=("pr:org/repo#214",),
         files_touched=("src/upload/client.py", "tests/test_upload.py"),
-        body='{"kind": "role.text", "text": "bumped the pool size, retried"}',
+        body=_role_text_body("bumped the pool size, retried"),
     )
     base.update(over)
     return SprintDelta(**base)  # type: ignore[arg-type]
@@ -75,14 +80,6 @@ def test_records_partitioned_and_listable_per_agent(tmp_path) -> None:
     assert {d.run_id for d in store.records_for("bex")} == {"r_c"}
 
 
-def test_files_touched_is_fanned_out_for_the_fingerprint_prefilter(tmp_path) -> None:
-    store = EpisodicStore(tmp_path)
-    store.append(_delta(run_id="r_a", files_touched=("a.py", "b.py")))
-    store.append(_delta(run_id="r_b", files_touched=("b.py", "c.py")))
-    assert {d.run_id for d in store.records_touching(("b.py",))} == {"r_a", "r_b"}
-    assert {d.run_id for d in store.records_touching(("a.py",))} == {"r_a"}
-
-
 def test_persists_across_reopen(tmp_path) -> None:
     EpisodicStore(tmp_path).append(_delta())
     reopened = EpisodicStore(tmp_path)  # same dir → same episodic.db
@@ -92,18 +89,30 @@ def test_persists_across_reopen(tmp_path) -> None:
 def test_search_matches_the_indexed_intent_and_body(tmp_path) -> None:
     store = EpisodicStore(tmp_path)
     store.append(
-        _delta(run_id="r_a", intent="add retry to the upload client", body="bumped pool size")
+        _delta(
+            run_id="r_a",
+            intent="add retry to the upload client",
+            body=_role_text_body("bumped pool size"),
+        )
     )
-    store.append(_delta(run_id="r_b", intent="unrelated task", body="unrelated work entirely"))
+    store.append(
+        _delta(
+            run_id="r_b", intent="unrelated task", body=_role_text_body("unrelated work entirely")
+        )
+    )
     hits = store.search("retry")
     assert [d.run_id for d in hits] == ["r_a"]
 
 
 def test_search_ranks_the_stronger_match_first(tmp_path) -> None:
     store = EpisodicStore(tmp_path)
-    store.append(_delta(run_id="r_weak", intent="x", body="mentions retry once"))
+    store.append(_delta(run_id="r_weak", intent="x", body=_role_text_body("mentions retry once")))
     store.append(
-        _delta(run_id="r_strong", intent="retry retry retry", body="retry retry retry retry")
+        _delta(
+            run_id="r_strong",
+            intent="retry retry retry",
+            body=_role_text_body("retry retry retry retry"),
+        )
     )
     hits = store.search("retry")
     assert [d.run_id for d in hits] == ["r_strong", "r_weak"]
@@ -112,7 +121,7 @@ def test_search_ranks_the_stronger_match_first(tmp_path) -> None:
 def test_search_respects_limit(tmp_path) -> None:
     store = EpisodicStore(tmp_path)
     for i in range(5):
-        store.append(_delta(run_id=f"r_{i}", intent="retry", body="retry"))
+        store.append(_delta(run_id=f"r_{i}", intent="retry", body=_role_text_body("retry")))
     assert len(store.search("retry", limit=2)) == 2
 
 

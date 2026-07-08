@@ -1,7 +1,9 @@
-"""``recall`` wiring — the factory registers it and backend_engineer is materialized with it.
+"""``recall`` wiring — the factory registers it and every worker role is materialized with it.
 
 Mirrors ``tests/harness/test_factory.py``'s stub-harness pattern: dream's harness build is stubbed so
-the role → tool-registry translation is tested without a provider.
+the role → tool-registry translation is tested without a provider. ``recall`` is rolled out to every
+worker role (analyst, backend_engineer, designer, engineer, frontend_engineer, marketer, pm) — manager
+and reviewer keep their deliberately minimal, decision-only toolsets and are not included.
 """
 
 from __future__ import annotations
@@ -34,11 +36,23 @@ def _factory(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> tuple[Any, dict
     return factory, captured
 
 
-def test_backend_engineer_materializes_with_recall(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+_RECALL_ROLES = (
+    "analyst",
+    "backend_engineer",
+    "designer",
+    "engineer",
+    "frontend_engineer",
+    "marketer",
+    "pm",
+)
+
+
+@pytest.mark.parametrize("role", _RECALL_ROLES)
+def test_worker_role_materializes_with_recall(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, role: str
 ) -> None:
     factory, captured = _factory(monkeypatch, tmp_path)
-    factory.materialize(Employee(id="bex", name="Bex", role="backend_engineer"))
+    factory.materialize(Employee(id="emp", name="Emp", role=role))
     names = {t.name for t in captured["registry"].list_tools()}
     assert "recall" in names
 

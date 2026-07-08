@@ -4,7 +4,7 @@ Opens (creating + migrating) a per-org SQLite file at ``{memory_dir}/episodic.db
 one repo aggregate (:class:`~chorus.memory.repos.EpisodicRepo`). The append-only ``episodic_record``
 table *is* the audit trail — the md-in-git substrate this replaced bought a git history that never
 existed in practice (the memory dir is git-excluded), so "rows never mutate" carries that guarantee
-instead. ``record_file`` / ``record_fts`` stay disposable indexes lattice or a rebuild may recreate.
+instead. ``record_fts`` stays a disposable index a lattice rebuild may recreate.
 """
 
 from __future__ import annotations
@@ -42,10 +42,6 @@ class EpisodicStore:
     def records_for(self, employee_id: str) -> list[SprintDelta]:
         """Every record for one agent, newest first — the per-agent episodic stream."""
         return self._records.for_employee(employee_id)
-
-    def records_touching(self, paths: tuple[str, ...]) -> list[SprintDelta]:
-        """Records whose fingerprint overlaps any of ``paths`` — the structural pre-filter."""
-        return self._records.touching(paths)
 
     def search(self, query: str, *, limit: int = 5) -> list[SprintDelta]:
         """Keyword search over intent+body, best match first — the BM25 half of retrieval."""

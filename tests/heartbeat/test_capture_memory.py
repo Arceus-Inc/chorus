@@ -139,3 +139,38 @@ async def test_capture_memory_writes_keyed_per_agent_record(tmp_path, ledger) ->
     assert record.recorded_at is not None
     assert record.artifacts == ("pr:org/repo#7",)
     assert "bumped the pool size" in record.body  # body = the raw agent record
+
+
+def test_sprint_delta_timeout_is_incomplete_not_blocked() -> None:
+    result = BeatOutcome(
+        passed=False,
+        disposition=BeatDisposition.ERRORED,
+        outcome={"error": "TimeoutError()", "phase": None},
+    )
+    delta = _sprint_delta(
+        run_id="r_to",
+        employee=_employee(),
+        task=_task(),
+        result=result,
+        scope="project",
+        now=_NOW,
+        files_touched=("auth/service.py",),
+    )
+    assert delta.outcome == "incomplete"
+
+
+def test_sprint_delta_non_timeout_error_is_blocked() -> None:
+    result = BeatOutcome(
+        passed=False,
+        disposition=BeatDisposition.ERRORED,
+        outcome={"error": "RuntimeError('boom')", "phase": None},
+    )
+    delta = _sprint_delta(
+        run_id="r_err",
+        employee=_employee(),
+        task=_task(),
+        result=result,
+        scope="project",
+        now=_NOW,
+    )
+    assert delta.outcome == "blocked"

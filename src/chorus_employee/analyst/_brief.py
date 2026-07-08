@@ -7,6 +7,7 @@ overlay (see :func:`chorus_harness.write_role_overlays`).
 
 from __future__ import annotations
 
+from chorus_employee._recall import RECALL_DIRECTIVE
 from chorus_employee._resume import RESUME_DIRECTIVE
 
 # The conventional file an Analyst writes its findings to, in its worktree. The lander snapshots this
@@ -59,6 +60,6 @@ ANALYST_BRIEF = (
     "anything outside your working directory."
 )
 
-ANALYST_BRIEF = ANALYST_BRIEF + "\n\n" + RESUME_DIRECTIVE
+ANALYST_BRIEF = ANALYST_BRIEF + "\n\n" + RESUME_DIRECTIVE + "\n\n" + RECALL_DIRECTIVE
 
 __all__ = ["ANALYST_BRIEF", "ANALYST_FINDINGS_DOC"]

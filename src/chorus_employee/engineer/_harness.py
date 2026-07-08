@@ -36,6 +36,9 @@ def engineer_manifest() -> RoleManifest:
             "working_memory_write",
             "working_memory_append",
             "memory_propose",
+            # read your own past episodic beats — recency/keyword, outcome attached
+            # (spec 07 §11). The reasoning-recall counterpart to memory_search's durable facts.
+            "recall",
         ),  # the wire toolset, including Dream's durable + task memory surfaces
         disallowed_tools=(),  # nothing additionally denied at the role level
         # — build_harness(skills=…) —

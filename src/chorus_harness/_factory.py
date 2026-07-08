@@ -39,6 +39,7 @@ from chorus.trust import TrustPolicy
 from chorus.workforce import Employee
 from chorus.workspace import CompanyWorkspace, default_work_root
 from chorus_employee import default_landers
+from chorus_employee._recall import PLANNER_TOOLLESS_NOTE
 from chorus_harness._skills import materialize_skills
 from chorus_harness._trust import apply_trust
 from chorus_tools import (
@@ -376,7 +377,16 @@ def write_role_overlays(harness_dir: Path, config: RoleBeatConfig) -> None:
     roles_dir.mkdir(parents=True, exist_ok=True)
     for role in _DREAM_ROLES:
         base = default_role_manifest(role).system_prompt
-        prompt = f"{base}\n\n## Operating brief (your role in the org)\n{config.system_prompt}"
+        if role == "planner":
+            # The brief names tools (recall, todo_write, …) the generator uses later; without an
+            # explicit planner-only guard the model sometimes emits a tool call here and gets
+            # "tool-not-in-role-manifest" noise (planner is toolless on purpose).
+            prompt = (
+                f"{base}\n\n## Operating brief (your role in the org)\n"
+                f"{PLANNER_TOOLLESS_NOTE}\n{config.system_prompt}"
+            )
+        else:
+            prompt = f"{base}\n\n## Operating brief (your role in the org)\n{config.system_prompt}"
         lines = [
             f'system_prompt = "{_toml_escape(prompt)}"',
             f'permission_mode = "{config.permission_mode}"',
@@ -645,7 +655,7 @@ class EmployeeHarnessFactory:
         # the durable code_quality/ report. No ledger — registers UNCONDITIONALLY, like the above.
         if "code_quality" in config.tools:
             registry.register(CodeQualityTool(), source=ToolSource.DEFAULT)
-        # recall (spec 07 §11): read your OWN past episodic beats — recency/fingerprint/keyword. No
+        # recall (spec 07 §11): read your OWN past episodic beats — recency/keyword. No
         # ledger; rooted at the ORG's memory dir (company_root/memory), not the per-employee worktree
         # — episodic capture is one shared SQLite store for the whole company.
         if "recall" in config.tools:

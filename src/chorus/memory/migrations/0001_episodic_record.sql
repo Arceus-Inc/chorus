@@ -1,7 +1,6 @@
--- Migration 0001 — episodic_record + record_file + record_fts (spec 07 §3-§6).
--- The append-only per-beat episodic capture: an immutable source row, its files_touched fan-out
--- (the fingerprint pre-filter), and an FTS5 index over intent+body (the BM25 half of retrieval).
--- Immutable once shipped: never edit; add a new numbered .sql instead.
+-- Migration 0001 — episodic_record + record_fts (spec 07 §3-§6).
+-- Append-only per-beat capture: immutable source row (with inline files_touched metadata)
+-- and an FTS5 index over intent+body (BM25 search). Immutable once shipped: add a new .sql instead.
 
 CREATE TABLE episodic_record (
     run_id      TEXT PRIMARY KEY,
@@ -15,17 +14,10 @@ CREATE TABLE episodic_record (
     body        TEXT NOT NULL DEFAULT '',
     artifacts   TEXT NOT NULL DEFAULT '[]',
     created_at  TEXT NOT NULL,
-    recorded_at TEXT NOT NULL
+    recorded_at TEXT NOT NULL,
+    files_touched TEXT NOT NULL DEFAULT '[]'
 );
 
 CREATE INDEX episodic_record_employee_idx ON episodic_record(employee_id, recorded_at);
-
-CREATE TABLE record_file (
-    run_id TEXT NOT NULL REFERENCES episodic_record(run_id),
-    path   TEXT NOT NULL,
-    PRIMARY KEY (run_id, path)
-);
-
-CREATE INDEX record_file_path_idx ON record_file(path);
 
 CREATE VIRTUAL TABLE record_fts USING fts5(run_id UNINDEXED, intent, body);

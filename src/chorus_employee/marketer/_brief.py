@@ -12,6 +12,7 @@ audience on her own.
 
 from __future__ import annotations
 
+from chorus_employee._recall import RECALL_DIRECTIVE
 from chorus_employee._resume import RESUME_DIRECTIVE
 
 MARKETER_BRIEF = (
@@ -111,6 +112,6 @@ MARKETER_BRIEF = (
 
 MARKETER_CONTENT_DOC = "content_draft.md"
 
-MARKETER_BRIEF = MARKETER_BRIEF + "\n\n" + RESUME_DIRECTIVE
+MARKETER_BRIEF = MARKETER_BRIEF + "\n\n" + RESUME_DIRECTIVE + "\n\n" + RECALL_DIRECTIVE
 
 __all__ = ["MARKETER_BRIEF", "MARKETER_CONTENT_DOC"]
