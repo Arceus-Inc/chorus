@@ -70,7 +70,21 @@ def backend_engineer_manifest() -> RoleManifest:
         # — build_harness(skills=…) / (skill_registry=…) — authored craft playbooks, loaded on demand
         # via the `skill` tool; discovered from this package's skills/ dir. The first is the
         # framework-agnostic quality-gate know-how behind the code_quality tool.
-        skills=("structuring-any-service", "verifying-any-stack"),
+        skills=(
+            "structuring-any-service",
+            "verifying-any-stack",
+            # §16 Slice 3 — the verification library's real-system methods (spec §11): a real datastore
+            # under the integration core, spec-driven API conformance, and cross-service contracts.
+            "testcontainers-integration",
+            "property-testing-schemathesis",
+            "contract-testing-pact",
+            # the tests-are-real gate: inject faults, require the suite to KILL them, so a green
+            # bundle proves the tests would go RED on a regression — not just that they pass now.
+            "mutation-testing",
+            # the safe-exit gate: a schema migration must round-trip (apply → roll back → re-apply)
+            # against the real engine, so a bad deploy has a way out — not a forward-only one-way door.
+            "migration-roundtrip",
+        ),
         skills_root=_SKILLS_ROOT,
         # — build_harness(memory=…) + working_memory —
         memory_scope=MemoryScope.PROJECT,

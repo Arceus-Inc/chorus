@@ -20,6 +20,11 @@ from chorus.roles._plugin import RolePlugin
 from chorus_employee.backend_engineer._brief import BACKEND_ENGINEER_BRIEF
 from chorus_employee.backend_engineer._dod import backend_engineer_dod
 from chorus_employee.backend_engineer._harness import backend_engineer_manifest
+from chorus_employee.backend_engineer._routines import (
+    BACKEND_ENGINEER_DEPENDENCY_SCAN,
+    BACKEND_ENGINEER_ROUTINES,
+    BACKEND_ENGINEER_SLO_WATCH,
+)
 from chorus_employee.backend_engineer._subagents import (
     API_VERIFIER_SUBAGENT,
     CODE_REVIEWER_SUBAGENT,
@@ -42,12 +47,16 @@ def backend_engineer_plugin() -> RolePlugin:
         manifest=backend_engineer_manifest(),
         dod_generator=backend_engineer_dod,
         outcome_kind="pr",
+        declared_routines=BACKEND_ENGINEER_ROUTINES,
     )
 
 
 __all__ = [
     "API_VERIFIER_SUBAGENT",
     "BACKEND_ENGINEER_BRIEF",
+    "BACKEND_ENGINEER_DEPENDENCY_SCAN",
+    "BACKEND_ENGINEER_ROUTINES",
+    "BACKEND_ENGINEER_SLO_WATCH",
     "CODE_REVIEWER_SUBAGENT",
     "TEST_AUTHOR_SUBAGENT",
     "ApiCheck",
