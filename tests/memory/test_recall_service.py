@@ -106,6 +106,71 @@ def test_task_id_filter_scopes_recency(tmp_path) -> None:
     assert [d.run_id for d in result.hits] == ["r_t1"]
 
 
+def test_debug_query_promotes_failure(tmp_path) -> None:
+    store = EpisodicStore(tmp_path)
+    store.append(
+        _delta(
+            run_id="r_ok",
+            outcome="done",
+            intent="slugify works",
+            body=_body("slugify works"),
+            recorded_at=datetime(2026, 7, 8, tzinfo=UTC),
+        )
+    )
+    store.append(
+        _delta(
+            run_id="r_fail",
+            outcome="needs_changes",
+            intent="slugify regression",
+            body=_body("slugify regression failed"),
+            recorded_at=datetime(2026, 7, 6, tzinfo=UTC),
+        )
+    )
+    svc = EpisodicRecallService(store)
+    result = svc.recall(
+        "bex",
+        own_run_id="r_now",
+        query="slugify regression",
+        profile="debug",
+        limit=5,
+        now=datetime(2026, 7, 9, tzinfo=UTC),
+    )
+    assert result.profile == "debug"
+    assert result.mode == "search"
+    assert result.hits[0].run_id == "r_fail"
+
+
+def test_debug_task_thread_promotes_failure(tmp_path) -> None:
+    store = EpisodicStore(tmp_path)
+    store.append(
+        _delta(
+            run_id="r_ok",
+            task_id="t_1",
+            outcome="done",
+            recorded_at=datetime(2026, 7, 8, 12, 0, tzinfo=UTC),
+        )
+    )
+    store.append(
+        _delta(
+            run_id="r_fail",
+            task_id="t_1",
+            outcome="needs_changes",
+            recorded_at=datetime(2026, 7, 8, 10, 0, tzinfo=UTC),
+        )
+    )
+    svc = EpisodicRecallService(store)
+    result = svc.recall(
+        "bex",
+        own_run_id="r_now",
+        profile="debug",
+        filters=EpisodicQueryFilters(task_id="t_1"),
+        limit=5,
+        now=datetime(2026, 7, 9, tzinfo=UTC),
+    )
+    assert result.profile == "debug"
+    assert [d.run_id for d in result.hits] == ["r_fail", "r_ok"]
+
+
 def test_get_run_rejects_cross_employee(tmp_path) -> None:
     store = EpisodicStore(tmp_path)
     store.append(_delta(run_id="r_a", employee_id="ada"))

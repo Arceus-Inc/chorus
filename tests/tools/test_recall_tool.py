@@ -279,3 +279,46 @@ async def test_structured_mode_field(tmp_path: Path) -> None:
     _beat(tmp_path)
     result = await _tool(store).execute({}, _ctx(tmp_path))
     assert (result.structured or {})["mode"] == "recency"
+    assert (result.structured or {})["profile"] == "general"
+
+
+async def test_debug_profile_refused_without_query_or_task_id(tmp_path: Path) -> None:
+    store = EpisodicStore(tmp_path / "memory")
+    _beat(tmp_path)
+    result = await _tool(store).execute({"profile": "debug"}, _ctx(tmp_path))
+    assert result.is_error is True
+    assert "task_id" in result.content.lower()
+
+
+async def test_debug_query_structured_profile_and_rank_note(tmp_path: Path) -> None:
+    store = EpisodicStore(tmp_path / "memory")
+    store.append(
+        _delta(
+            run_id="r_fail",
+            outcome="needs_changes",
+            intent="slugify regression",
+            body=_role_text_body("slugify regression"),
+            recorded_at=datetime(2026, 7, 6, tzinfo=UTC),
+        )
+    )
+    store.append(
+        _delta(
+            run_id="r_ok",
+            outcome="done",
+            intent="slugify works",
+            body=_role_text_body("slugify works"),
+            recorded_at=datetime(2026, 7, 8, tzinfo=UTC),
+        )
+    )
+    _beat(tmp_path)
+    result = await _tool(store).execute(
+        {"query": "slugify", "profile": "debug"},
+        _ctx(tmp_path),
+    )
+    structured = result.structured or {}
+    assert structured["profile"] == "debug"
+    top = structured["hits"][0]
+    assert top["outcome"] == "needs_changes"
+    assert "rank_note" in top
+    assert "debug profile" in str(top["rank_note"])
+    assert any("failed previously" in action for action in structured["next_actions"])
