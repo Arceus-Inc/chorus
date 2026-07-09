@@ -8,6 +8,7 @@ from datetime import datetime
 from chorus.ledger.repos._base import dumps, loads, to_iso
 from chorus.memory._models import SprintDelta
 from chorus.memory._narrative import narrative
+from chorus.memory._recall_filters import EpisodicQueryFilters, filter_clause
 
 _HOT_TIER = "hot"
 
@@ -66,13 +67,15 @@ class EpisodicRepo:
         *,
         limit: int | None = None,
         tier: str = _HOT_TIER,
+        filters: EpisodicQueryFilters | None = None,
     ) -> list[SprintDelta]:
         """Hot-tier records for one agent, newest first — bounded when ``limit`` is set."""
-        sql = (
-            "SELECT * FROM episodic_record WHERE employee_id = ? AND tier = ? "
-            "ORDER BY recorded_at DESC"
-        )
+        sql = "SELECT * FROM episodic_record WHERE employee_id = ? AND tier = ? "
         params: list[object] = [employee_id, tier]
+        extra_sql, extra_params = filter_clause(filters)
+        sql += extra_sql
+        params.extend(extra_params)
+        sql += " ORDER BY recorded_at DESC"
         if limit is not None:
             sql += " LIMIT ?"
             params.append(limit)
@@ -86,6 +89,7 @@ class EpisodicRepo:
         employee_id: str | None = None,
         limit: int = 5,
         tier: str = _HOT_TIER,
+        filters: EpisodicQueryFilters | None = None,
     ) -> list[SprintDelta]:
         """Keyword search over intent+body; optionally scoped to one employee's hot tier."""
         match = _fts_or_query(query)
@@ -100,6 +104,9 @@ class EpisodicRepo:
         if employee_id is not None:
             sql += " AND r.employee_id = ?"
             params.append(employee_id)
+        extra_sql, extra_params = filter_clause(filters, alias="r")
+        sql += extra_sql
+        params.extend(extra_params)
         sql += " ORDER BY bm25(record_fts) LIMIT ?"
         params.append(limit)
         rows = self._conn.execute(sql, params).fetchall()

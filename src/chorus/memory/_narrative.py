@@ -32,4 +32,23 @@ def narrative(raw_record: str) -> str:
     return "\n".join(lines)
 
 
-__all__ = ["narrative"]
+_SUMMARY_MAX = 160
+
+
+def beat_summary(body: str, *, intent: str) -> str:
+    """Deterministic one-liner for slim recall hits — first narrative sentence or intent."""
+    prose = narrative(body).strip()
+    source = prose if prose else intent.strip()
+    if not source:
+        return ""
+    if prose and "." in prose:
+        sentence = prose[: prose.index(".") + 1].strip()
+    else:
+        sentence = source.split(".")[0].strip() if "." in source else source
+    one_line = " ".join(sentence.split())
+    if len(one_line) <= _SUMMARY_MAX:
+        return one_line
+    return one_line[: _SUMMARY_MAX - 1].rstrip() + "…"
+
+
+__all__ = ["beat_summary", "narrative"]

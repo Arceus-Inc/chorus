@@ -19,9 +19,14 @@ from dream.tools._context import ToolExecutionContext
 
 from chorus.heartbeat import BeatContext
 from chorus.memory import EpisodicStore, SprintDelta
+from chorus.memory._recall_service import EpisodicRecallService
 from chorus_tools import RecallTool
 
 pytestmark = pytest.mark.integration
+
+
+def _tool(store: EpisodicStore) -> RecallTool:
+    return RecallTool(EpisodicRecallService(store))
 
 
 def _ctx(working_dir: Path) -> ToolExecutionContext:
@@ -63,7 +68,7 @@ async def test_recency_mode_returns_recent_records_for_this_employee(tmp_path: P
     store.append(_delta(run_id="r_other_agent", employee_id="ada"))
     _beat(tmp_path)
 
-    result = await RecallTool(store).execute({}, _ctx(tmp_path))
+    result = await _tool(store).execute({}, _ctx(tmp_path))
 
     assert result.is_error is False
     ids = [hit["run_id"] for hit in (result.structured or {})["hits"]]
@@ -75,7 +80,7 @@ async def test_recency_mode_excludes_the_current_run(tmp_path: Path) -> None:
     store.append(_delta(run_id="r_now"))
     _beat(tmp_path, run_id="r_now")
 
-    result = await RecallTool(store).execute({}, _ctx(tmp_path))
+    result = await _tool(store).execute({}, _ctx(tmp_path))
 
     assert (result.structured or {})["hits"] == []
 
@@ -86,13 +91,13 @@ async def test_query_mode_keyword_search(tmp_path: Path) -> None:
     store.append(_delta(run_id="r_b", intent="unrelated", body="something else entirely"))
     _beat(tmp_path)
 
-    result = await RecallTool(store).execute({"query": "retry"}, _ctx(tmp_path))
+    result = await _tool(store).execute({"query": "retry"}, _ctx(tmp_path))
 
     ids = [hit["run_id"] for hit in (result.structured or {})["hits"]]
     assert ids == ["r_a"]
 
 
-async def test_hits_carry_the_outcome_and_a_prose_snippet(tmp_path: Path) -> None:
+async def test_hits_carry_summary_not_full_prose(tmp_path: Path) -> None:
     store = EpisodicStore(tmp_path / "memory")
     store.append(
         _delta(
@@ -103,15 +108,17 @@ async def test_hits_carry_the_outcome_and_a_prose_snippet(tmp_path: Path) -> Non
     )
     _beat(tmp_path)
 
-    result = await RecallTool(store).execute({}, _ctx(tmp_path))
+    result = await _tool(store).execute({}, _ctx(tmp_path))
 
     hit = (result.structured or {})["hits"][0]
     assert hit["outcome"] == "needs_changes"
     assert "retry" in hit["intent"]
     assert "recorded_at" in hit
-    assert "tried the pool bump" in hit["prose"]
-    # text content also carries prose — agents often only read content, not structured
-    assert "tried the pool bump" in result.content
+    assert "summary" in hit
+    assert "prose" not in hit
+    assert "drill_down" in hit
+    assert "tried the pool bump" in hit["summary"]
+    assert "get_run" in hit["drill_down"]
 
 
 async def test_render_filters_noise_paths_from_files_touched(tmp_path: Path) -> None:
@@ -131,7 +138,7 @@ async def test_render_filters_noise_paths_from_files_touched(tmp_path: Path) -> 
     )
     _beat(tmp_path)
 
-    result = await RecallTool(store).execute({}, _ctx(tmp_path))
+    result = await _tool(store).execute({}, _ctx(tmp_path))
     hit = (result.structured or {})["hits"][0]
     assert hit["files_touched"] == ["auth/service.py", "tests/test_auth.py"]
     assert "docs/exec-plans" not in result.content
@@ -151,7 +158,7 @@ async def test_incomplete_outcome_is_labelled_for_resume(tmp_path: Path) -> None
     )
     _beat(tmp_path)
 
-    result = await RecallTool(store).execute({}, _ctx(tmp_path))
+    result = await _tool(store).execute({}, _ctx(tmp_path))
     assert "incomplete" in result.content
     assert "resume" in result.content.lower() or "continue" in result.content.lower()
 
@@ -159,7 +166,7 @@ async def test_incomplete_outcome_is_labelled_for_resume(tmp_path: Path) -> None
 async def test_empty_result_is_not_an_error(tmp_path: Path) -> None:
     store = EpisodicStore(tmp_path / "memory")
     _beat(tmp_path)
-    result = await RecallTool(store).execute({}, _ctx(tmp_path))
+    result = await _tool(store).execute({}, _ctx(tmp_path))
     assert result.is_error is False
     assert (result.structured or {})["hits"] == []
 
@@ -170,7 +177,7 @@ async def test_limit_is_honoured(tmp_path: Path) -> None:
         store.append(_delta(run_id=f"r_{i}", recorded_at=datetime(2026, 6, 1 + i, tzinfo=UTC)))
     _beat(tmp_path)
 
-    result = await RecallTool(store).execute({"limit": 2}, _ctx(tmp_path))
+    result = await _tool(store).execute({"limit": 2}, _ctx(tmp_path))
 
     assert len((result.structured or {})["hits"]) == 2
 
@@ -178,7 +185,7 @@ async def test_limit_is_honoured(tmp_path: Path) -> None:
 async def test_malformed_input_is_refused(tmp_path: Path) -> None:
     store = EpisodicStore(tmp_path / "memory")
     _beat(tmp_path)
-    result = await RecallTool(store).execute({"limit": 0}, _ctx(tmp_path))  # ge=1
+    result = await _tool(store).execute({"limit": 0}, _ctx(tmp_path))  # ge=1
     assert result.is_error is True
 
 
@@ -198,7 +205,7 @@ async def test_recency_prefers_yesterday_over_old_failure(tmp_path: Path) -> Non
         )
     )
     _beat(tmp_path)
-    result = await RecallTool(store).execute({}, _ctx(tmp_path))
+    result = await _tool(store).execute({}, _ctx(tmp_path))
     ids = [hit["run_id"] for hit in (result.structured or {})["hits"]]
     assert ids[0] == "r_recent_done"
 
@@ -208,7 +215,7 @@ async def test_keyword_search_is_employee_scoped(tmp_path: Path) -> None:
     store.append(_delta(run_id="r_ada", employee_id="ada", intent="retry timeout"))
     store.append(_delta(run_id="r_bex", employee_id="bex", intent="retry timeout"))
     _beat(tmp_path, employee_id="ada")
-    result = await RecallTool(store).execute({"query": "retry"}, _ctx(tmp_path))
+    result = await _tool(store).execute({"query": "retry"}, _ctx(tmp_path))
     ids = [hit["run_id"] for hit in (result.structured or {})["hits"]]
     assert ids == ["r_ada"]
 
@@ -217,7 +224,58 @@ async def test_recall_bumps_last_recalled_at(tmp_path: Path) -> None:
     store = EpisodicStore(tmp_path / "memory")
     store.append(_delta(run_id="r_a"))
     _beat(tmp_path)
-    await RecallTool(store).execute({}, _ctx(tmp_path))
+    await _tool(store).execute({}, _ctx(tmp_path))
     got = store.get("r_a")
     assert got is not None
     assert got.last_recalled_at is not None
+
+
+async def test_task_id_filter_on_recall(tmp_path: Path) -> None:
+    store = EpisodicStore(tmp_path / "memory")
+    store.append(_delta(run_id="r_t1", task_id="t_1", intent="slugify"))
+    store.append(
+        _delta(
+            run_id="r_t2",
+            task_id="t_2",
+            intent="truncate",
+            recorded_at=datetime(2026, 7, 9, tzinfo=UTC),
+        )
+    )
+    _beat(tmp_path)
+    result = await _tool(store).execute({"task_id": "t_1"}, _ctx(tmp_path))
+    ids = [hit["run_id"] for hit in (result.structured or {})["hits"]]
+    assert ids == ["r_t1"]
+    assert (result.structured or {})["mode"] == "search"
+
+
+async def test_since_filter_on_recall(tmp_path: Path) -> None:
+    store = EpisodicStore(tmp_path / "memory")
+    store.append(
+        _delta(
+            run_id="r_old",
+            task_id="t_1",
+            recorded_at=datetime(2026, 6, 1, tzinfo=UTC),
+        )
+    )
+    store.append(
+        _delta(
+            run_id="r_new",
+            task_id="t_1",
+            recorded_at=datetime(2026, 7, 8, tzinfo=UTC),
+        )
+    )
+    _beat(tmp_path)
+    result = await _tool(store).execute(
+        {"task_id": "t_1", "since": "2026-07-01T00:00:00+00:00"},
+        _ctx(tmp_path),
+    )
+    ids = [hit["run_id"] for hit in (result.structured or {})["hits"]]
+    assert ids == ["r_new"]
+
+
+async def test_structured_mode_field(tmp_path: Path) -> None:
+    store = EpisodicStore(tmp_path / "memory")
+    store.append(_delta(run_id="r_a"))
+    _beat(tmp_path)
+    result = await _tool(store).execute({}, _ctx(tmp_path))
+    assert (result.structured or {})["mode"] == "recency"
