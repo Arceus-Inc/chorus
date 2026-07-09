@@ -1,7 +1,4 @@
-"""EpisodicRepo — append + read the ``episodic_record`` / ``record_fts`` rows.
-
-Data access only (spec 01 Arceus-style per-aggregate repos); mirrors ``chorus.ledger.repos.RunRepo``.
-"""
+"""EpisodicRepo — bounded reads, retention metadata, and FTS search (R0 + R2)."""
 
 from __future__ import annotations
 
@@ -12,9 +9,11 @@ from chorus.ledger.repos._base import dumps, loads, to_iso
 from chorus.memory._models import SprintDelta
 from chorus.memory._narrative import narrative
 
+_HOT_TIER = "hot"
+
 
 class EpisodicRepo:
-    """Append-only access to one beat's episodic record + FTS5 search index."""
+    """Append-only episodic records + FTS5 search; retention columns are mutable metadata only."""
 
     def __init__(self, conn: sqlite3.Connection) -> None:
         self._conn = conn
@@ -25,7 +24,8 @@ class EpisodicRepo:
         cur = self._conn.execute(
             "INSERT OR IGNORE INTO episodic_record "
             "(run_id, task_id, employee_id, scope, role, intent, outcome, score, body, artifacts, "
-            " files_touched, created_at, recorded_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            " files_touched, created_at, recorded_at, pin_count, last_recalled_at, tier) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (
                 delta.run_id,
                 delta.task_id,
@@ -40,9 +40,12 @@ class EpisodicRepo:
                 dumps(list(delta.files_touched)),
                 to_iso(delta.created_at),
                 recorded,
+                delta.pin_count,
+                to_iso(delta.last_recalled_at) if delta.last_recalled_at else None,
+                delta.tier,
             ),
         )
-        if cur.rowcount == 0:  # run_id already present — first write wins, forever
+        if cur.rowcount == 0:
             return
         self._conn.execute(
             "INSERT INTO record_fts (run_id, intent, body) VALUES (?, ?, ?)",
@@ -57,32 +60,73 @@ class EpisodicRepo:
         ).fetchone()
         return self._to_delta(row) if row is not None else None
 
-    def for_employee(self, employee_id: str) -> list[SprintDelta]:
-        """Every record for one agent, newest first — the per-agent episodic stream."""
-        rows = self._conn.execute(
-            "SELECT * FROM episodic_record WHERE employee_id = ? ORDER BY recorded_at DESC",
-            (employee_id,),
-        ).fetchall()
+    def for_employee(
+        self,
+        employee_id: str,
+        *,
+        limit: int | None = None,
+        tier: str = _HOT_TIER,
+    ) -> list[SprintDelta]:
+        """Hot-tier records for one agent, newest first — bounded when ``limit`` is set."""
+        sql = (
+            "SELECT * FROM episodic_record WHERE employee_id = ? AND tier = ? "
+            "ORDER BY recorded_at DESC"
+        )
+        params: list[object] = [employee_id, tier]
+        if limit is not None:
+            sql += " LIMIT ?"
+            params.append(limit)
+        rows = self._conn.execute(sql, params).fetchall()
         return [self._to_delta(row) for row in rows]
 
-    def search(self, query: str, *, limit: int = 5) -> list[SprintDelta]:
-        """Keyword search over intent+body, best match first — the BM25 half of retrieval.
-
-        FTS5's ``bm25()`` is more-negative-is-better, so ``ORDER BY bm25(record_fts)`` ascending is
-        best-first. Each term is quoted as an FTS5 string literal (its own internal ``"`` doubled) and
-        OR-joined, so arbitrary free text — including FTS5 operator characters like ``-``/``*``/``:``
-        — can never be mis-parsed as query syntax.
-        """
+    def search(
+        self,
+        query: str,
+        *,
+        employee_id: str | None = None,
+        limit: int = 5,
+        tier: str = _HOT_TIER,
+    ) -> list[SprintDelta]:
+        """Keyword search over intent+body; optionally scoped to one employee's hot tier."""
         match = _fts_or_query(query)
         if not match:
             return []
-        rows = self._conn.execute(
+        sql = (
             "SELECT r.* FROM episodic_record r "
             "JOIN record_fts f ON f.run_id = r.run_id "
-            "WHERE record_fts MATCH ? ORDER BY bm25(record_fts) LIMIT ?",
-            (match, limit),
-        ).fetchall()
+            "WHERE record_fts MATCH ? AND r.tier = ?"
+        )
+        params: list[object] = [match, tier]
+        if employee_id is not None:
+            sql += " AND r.employee_id = ?"
+            params.append(employee_id)
+        sql += " ORDER BY bm25(record_fts) LIMIT ?"
+        params.append(limit)
+        rows = self._conn.execute(sql, params).fetchall()
         return [self._to_delta(row) for row in rows]
+
+    def touch_recalled(self, run_ids: tuple[str, ...], *, now: datetime) -> None:
+        """Best-effort reinforcement — updates ``last_recalled_at`` for returned hits."""
+        if not run_ids:
+            return
+        placeholders = ", ".join("?" for _ in run_ids)
+        self._conn.execute(
+            f"UPDATE episodic_record SET last_recalled_at = ? WHERE run_id IN ({placeholders})",
+            (to_iso(now), *run_ids),
+        )
+        self._conn.commit()
+
+    def pin_run_ids(self, employee_id: str, run_ids: tuple[str, ...]) -> None:
+        """Increment pin count for cited episodic rows (lattice apply seam)."""
+        if not run_ids:
+            return
+        placeholders = ", ".join("?" for _ in run_ids)
+        self._conn.execute(
+            f"UPDATE episodic_record SET pin_count = pin_count + 1 "
+            f"WHERE employee_id = ? AND run_id IN ({placeholders})",
+            (employee_id, *run_ids),
+        )
+        self._conn.commit()
 
     def count(self) -> int:
         """Total records held."""
@@ -90,6 +134,7 @@ class EpisodicRepo:
 
     def _to_delta(self, row: sqlite3.Row) -> SprintDelta:
         raw_files = loads(row["files_touched"]) if row["files_touched"] else []
+        last_recalled_raw = row["last_recalled_at"]
         return SprintDelta(
             run_id=row["run_id"],
             task_id=row["task_id"],
@@ -104,16 +149,16 @@ class EpisodicRepo:
             artifacts=tuple(loads(row["artifacts"]) or []),
             files_touched=tuple(raw_files or []),
             body=row["body"],
+            pin_count=int(row["pin_count"]),
+            last_recalled_at=(
+                datetime.fromisoformat(last_recalled_raw) if last_recalled_raw else None
+            ),
+            tier=str(row["tier"]),
         )
 
 
 def _fts_or_query(query: str) -> str:
-    """Turn free text into a safe FTS5 ``MATCH`` expression: quoted terms, OR-joined.
-
-    Quoting each term as an FTS5 string literal (doubling any internal ``"``) means operator
-    characters in the raw query (``-``, ``*``, ``:``, …) are always literal text, never query syntax —
-    the search is never a way to inject a broken or unintended FTS5 query.
-    """
+    """Turn free text into a safe FTS5 ``MATCH`` expression: quoted terms, OR-joined."""
     terms = query.split()
     quoted = (f'"{term.replace(chr(34), chr(34) * 2)}"' for term in terms)
     return " OR ".join(quoted)

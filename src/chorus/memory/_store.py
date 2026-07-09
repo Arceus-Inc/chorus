@@ -1,15 +1,9 @@
-"""``EpisodicStore`` — the episodic-memory facade (spec 07). Mirrors ``chorus.ledger.SqliteLedger``.
-
-Opens (creating + migrating) a per-org SQLite file at ``{memory_dir}/episodic.db`` and composes the
-one repo aggregate (:class:`~chorus.memory.repos.EpisodicRepo`). The append-only ``episodic_record``
-table *is* the audit trail — the md-in-git substrate this replaced bought a git history that never
-existed in practice (the memory dir is git-excluded), so "rows never mutate" carries that guarantee
-instead. ``record_fts`` stays a disposable index a lattice rebuild may recreate.
-"""
+"""``EpisodicStore`` — episodic-memory facade with bounded recall reads (R0 + R2)."""
 
 from __future__ import annotations
 
 import sqlite3
+from datetime import datetime
 from pathlib import Path
 
 from chorus.ledger._migrations import MigrationRunner
@@ -21,7 +15,7 @@ _DB_NAME = "episodic.db"
 
 
 class EpisodicStore:
-    """Append-only per-beat episodic capture (spec 07 §3): open, migrate, expose the repo's reads."""
+    """Append-only per-beat episodic capture: open, migrate, expose repo reads + retention metadata."""
 
     def __init__(self, memory_dir: str | Path) -> None:
         root = Path(memory_dir)
@@ -32,20 +26,34 @@ class EpisodicStore:
         self._records = EpisodicRepo(self._conn)
 
     def append(self, delta: SprintDelta) -> None:
-        """Append one raw episodic record; a repeated ``run_id`` is a no-op (append-only)."""
+        """Append one raw episodic record; a repeated ``run_id`` is a no-op."""
         self._records.append(delta)
 
     def get(self, run_id: str) -> SprintDelta | None:
         """The record for ``run_id``, or ``None`` if absent."""
         return self._records.get(run_id)
 
-    def records_for(self, employee_id: str) -> list[SprintDelta]:
-        """Every record for one agent, newest first — the per-agent episodic stream."""
-        return self._records.for_employee(employee_id)
+    def records_for(self, employee_id: str, *, limit: int | None = None) -> list[SprintDelta]:
+        """Hot-tier records for one agent, newest first — bounded when ``limit`` is set."""
+        return self._records.for_employee(employee_id, limit=limit)
 
-    def search(self, query: str, *, limit: int = 5) -> list[SprintDelta]:
-        """Keyword search over intent+body, best match first — the BM25 half of retrieval."""
-        return self._records.search(query, limit=limit)
+    def search(
+        self,
+        query: str,
+        *,
+        employee_id: str | None = None,
+        limit: int = 5,
+    ) -> list[SprintDelta]:
+        """Keyword search over intent+body, optionally scoped to one employee."""
+        return self._records.search(query, employee_id=employee_id, limit=limit)
+
+    def touch_recalled(self, run_ids: tuple[str, ...], *, now: datetime) -> None:
+        """Mark beats as recalled (retrieval reinforcement)."""
+        self._records.touch_recalled(run_ids, now=now)
+
+    def pin_run_ids(self, employee_id: str, run_ids: tuple[str, ...]) -> None:
+        """Pin cited run_ids after lattice apply."""
+        self._records.pin_run_ids(employee_id, run_ids)
 
     def count(self) -> int:
         """Total records held."""

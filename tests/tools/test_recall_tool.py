@@ -180,3 +180,44 @@ async def test_malformed_input_is_refused(tmp_path: Path) -> None:
     _beat(tmp_path)
     result = await RecallTool(store).execute({"limit": 0}, _ctx(tmp_path))  # ge=1
     assert result.is_error is True
+
+
+async def test_recency_prefers_yesterday_over_old_failure(tmp_path: Path) -> None:
+    store = EpisodicStore(tmp_path / "memory")
+    store.append(
+        _delta(
+            run_id="r_old_fail",
+            outcome="needs_changes",
+            recorded_at=datetime(2026, 6, 1, tzinfo=UTC),
+        )
+    )
+    store.append(
+        _delta(
+            run_id="r_recent_done",
+            recorded_at=datetime(2026, 7, 8, tzinfo=UTC),
+        )
+    )
+    _beat(tmp_path)
+    result = await RecallTool(store).execute({}, _ctx(tmp_path))
+    ids = [hit["run_id"] for hit in (result.structured or {})["hits"]]
+    assert ids[0] == "r_recent_done"
+
+
+async def test_keyword_search_is_employee_scoped(tmp_path: Path) -> None:
+    store = EpisodicStore(tmp_path / "memory")
+    store.append(_delta(run_id="r_ada", employee_id="ada", intent="retry timeout"))
+    store.append(_delta(run_id="r_bex", employee_id="bex", intent="retry timeout"))
+    _beat(tmp_path, employee_id="ada")
+    result = await RecallTool(store).execute({"query": "retry"}, _ctx(tmp_path))
+    ids = [hit["run_id"] for hit in (result.structured or {})["hits"]]
+    assert ids == ["r_ada"]
+
+
+async def test_recall_bumps_last_recalled_at(tmp_path: Path) -> None:
+    store = EpisodicStore(tmp_path / "memory")
+    store.append(_delta(run_id="r_a"))
+    _beat(tmp_path)
+    await RecallTool(store).execute({}, _ctx(tmp_path))
+    got = store.get("r_a")
+    assert got is not None
+    assert got.last_recalled_at is not None

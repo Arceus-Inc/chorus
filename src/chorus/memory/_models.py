@@ -29,6 +29,9 @@ class SprintDelta:
     artifacts: tuple[str, ...] = ()
     files_touched: tuple[str, ...] = ()
     body: str = ""
+    pin_count: int = 0
+    last_recalled_at: datetime | None = None
+    tier: str = "hot"
 
 
 __all__ = ["SprintDelta"]
