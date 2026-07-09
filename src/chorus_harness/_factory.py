@@ -39,8 +39,9 @@ from chorus.trust import TrustPolicy
 from chorus.workforce import Employee
 from chorus.workspace import CompanyWorkspace, default_work_root
 from chorus_employee import default_landers
+from chorus_employee._lattice import LATTICE_DIRECTIVES_BLOCK
 from chorus_employee._recall import PLANNER_TOOLLESS_NOTE
-from chorus_harness._skills import materialize_skills
+from chorus_harness._skills import materialize_lattice_skills_into, materialize_skills
 from chorus_harness._trust import apply_trust
 from chorus_tools import (
     AssignTaskTool,
@@ -59,6 +60,8 @@ from chorus_tools import (
     TestEvidenceTool,
     analysis_tool,
 )
+from chorus_tools._lattice import _LATTICE_TOOLS, lattice_tool
+from chorus_tools._lattice_bridge import build_lattice_for_chorus
 from chorus_tools.cms import CmsDraftTool, cms_backend_from_env
 from chorus_tools.delivery import (
     ExecuteGoLiveTool,
@@ -144,6 +147,10 @@ _CHORUS_TO_DREAM_TOOL: dict[str, str] = {
     # the same reason as evidence_scan: registered in the materialize flow (needs company_root), not
     # via _capability_tool, so it must stay in this map for the subagent projection to keep it.
     "recall": "recall",
+    # lattice — semantic pattern consolidation (read-mostly; apply is gated). Identity-mapped like recall.
+    "lattice_context": "lattice_context",
+    "lattice_packet": "lattice_packet",
+    "lattice_apply": "lattice_apply",
     # cms_draft — a chorus capability tool (reversible CMS write, §08 Channel). Identity-mapped for the
     # same reason as brand_lint: so the projection keeps it; it is registered in the materialize flow
     # (it needs the worktree for the Markdown backend, which _capability_tool has no access to).
@@ -174,6 +181,7 @@ _READ_ONLY_DREAM_SURFACE_TOOLS = frozenset(
         # recall is safe/read-only (chorus's own episodic counterpart to memory_search's durable
         # facts), so an evaluator verifying past-beat context needs it just as much as the generator.
         "recall",
+        "lattice_context",
         # A read-only reviewer that reads a large artifact (a long findings.md) gets its read_file
         # output offloaded to scratch with a "Full output saved to: <file>" pointer; without
         # read_offloaded it cannot see the overflow and wrongly fails with "content is truncated /
@@ -597,6 +605,11 @@ class EmployeeHarnessFactory:
                 config, system_prompt=config.system_prompt + "\n\n" + runtime_brief_block()
             )
 
+        if _LATTICE_TOOLS.intersection(config.tools):
+            config = replace(
+                config, system_prompt=config.system_prompt + LATTICE_DIRECTIVES_BLOCK
+            )
+
         # ``working_dir`` IS the worktree, because dream confines its tools to it — that is what
         # isolates one employee's edits from another's. A non-worktree posture falls back to a flat
         # per-employee dir under the org root.
@@ -662,6 +675,12 @@ class EmployeeHarnessFactory:
             registry.register(
                 RecallTool(EpisodicStore(self._company_root / "memory")), source=ToolSource.DEFAULT
             )
+        if _LATTICE_TOOLS.intersection(config.tools):
+            lattice = build_lattice_for_chorus(self._company_root)
+            for name in _LATTICE_TOOLS.intersection(config.tools):
+                tool = lattice_tool(name, lattice)
+                if tool is not None:
+                    registry.register(tool, source=ToolSource.DEFAULT)
         # execute_go_live pairs with cms_draft: it publishes the staged draft once the human approves
         # the stage_go_live gate. Needs BOTH the ledger (fail-closed gate check) and the worktree
         # (standing-draft + delivery indexes), so it registers here rather than in _capability_tool.
@@ -696,6 +715,13 @@ class EmployeeHarnessFactory:
         skill_registry = None
         if config.skills_root:
             skills_dir = materialize_skills(root, config.skills_root)
+            if _LATTICE_TOOLS.intersection(config.tools):
+                materialize_lattice_skills_into(skills_dir)
+            skill_registry, _shadows = load_skill_registry(project_dirs=[skills_dir])
+        elif _LATTICE_TOOLS.intersection(config.tools):
+            skills_dir = root / ".harness" / "skills"
+            skills_dir.mkdir(parents=True, exist_ok=True)
+            materialize_lattice_skills_into(skills_dir)
             skill_registry, _shadows = load_skill_registry(project_dirs=[skills_dir])
         harness = dream.build_harness(
             model=config.model or self._deployment,

@@ -65,6 +65,9 @@ def backend_engineer_manifest() -> RoleManifest:
             # read your own past episodic beats — recency/keyword, outcome attached
             # (spec 07 §11). The reasoning-recall counterpart to memory_search's durable facts.
             "recall",
+            "lattice_context",
+            "lattice_packet",
+            "lattice_apply",
             # dispatch the api_verifier subagent mid-beat (§16 Slice 3) — the grader that boots the
             # built service and probes it over real HTTP; its tools narrow this set at materialize.
             "spawn_subagent",

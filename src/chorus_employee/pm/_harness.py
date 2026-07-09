@@ -71,6 +71,9 @@ def pm_manifest() -> RoleManifest:
             # read your own past episodic beats — recency/keyword, outcome attached
             # (spec 07 §11).
             "recall",
+            "lattice_context",
+            "lattice_packet",
+            "lattice_apply",
         ),
         # — build_harness(subagents=…) — the Tier-1 specialists Piper may dispatch mid-beat (§06).
         # The Researcher gathers cited evidence (depth-2 over the shared web_research orchestrator) and

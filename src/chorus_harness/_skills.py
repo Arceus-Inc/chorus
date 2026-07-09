@@ -58,4 +58,26 @@ def materialize_skills(harness_dir: Path, skills_root: str | Path) -> Path:
     return dest
 
 
-__all__ = ["materialize_skills"]
+def materialize_lattice_skills_into(skills_dir: Path) -> None:
+    """Merge lattice agent skills into an existing materialized skills directory."""
+    from chorus_tools._lattice_bridge import lattice_skills_root
+
+    root = lattice_skills_root()
+    if root is None:
+        return
+    skills_dir.mkdir(parents=True, exist_ok=True)
+    _restore_writable(skills_dir)
+    for skill_dir in sorted(root.iterdir()):
+        if not skill_dir.is_dir():
+            continue
+        if not (skill_dir / "SKILL.md").exists():
+            continue
+        target = skills_dir / skill_dir.name
+        if target.exists():
+            _restore_writable(target)
+            shutil.rmtree(target)
+        shutil.copytree(skill_dir, target)
+    _set_read_only(skills_dir)
+
+
+__all__ = ["materialize_skills", "materialize_lattice_skills_into"]
