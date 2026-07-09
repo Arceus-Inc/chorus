@@ -22,9 +22,9 @@ def deliverable_files(delta: SprintDelta) -> list[str]:
     return [path for path in delta.files_touched if is_deliverable_path(path)][:_MAX_FILES_SHOWN]
 
 
-def slim_hit_dict(delta: SprintDelta) -> dict[str, object]:
+def slim_hit_dict(delta: SprintDelta, *, rank_note: str | None = None) -> dict[str, object]:
     """One recall list hit — summary only; full prose via ``get_run``."""
-    return {
+    hit: dict[str, object] = {
         "run_id": delta.run_id,
         "outcome": delta.outcome,
         "intent": delta.intent[:200],
@@ -34,6 +34,9 @@ def slim_hit_dict(delta: SprintDelta) -> dict[str, object]:
         "hint": _OUTCOME_HINT.get(delta.outcome, "use as past evidence"),
         "drill_down": f"get_run(run_id={delta.run_id!r})",
     }
+    if rank_note:
+        hit["rank_note"] = rank_note
+    return hit
 
 
 def format_slim_hit(hit: dict[str, object]) -> str:
@@ -42,10 +45,12 @@ def format_slim_hit(hit: dict[str, object]) -> str:
     files_s = ", ".join(str(path) for path in files) if files else "(none)"
     summary = str(hit.get("summary") or "").strip()
     summary_line = f"\n  summary: {summary}" if summary else ""
+    rank_note = str(hit.get("rank_note") or "").strip()
+    rank_line = f"\n  rank_note: {rank_note}" if rank_note else ""
     return (
         f"- [{hit['outcome']}] {str(hit['run_id'])[:12]}… — {hit['hint']}\n"
         f"  intent: {hit['intent']!r}\n"
-        f"  files: {files_s}{summary_line}\n"
+        f"  files: {files_s}{summary_line}{rank_line}\n"
         f"  drill_down: {hit['drill_down']}"
     )
 

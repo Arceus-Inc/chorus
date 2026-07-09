@@ -1,4 +1,4 @@
-"""EpisodicRecallService — list/search/get_run kernel (R7 + R8)."""
+"""EpisodicRecallService — list/search/get_run kernel (R7 + R8 + R9)."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from typing import Literal
 
 from chorus.memory._models import SprintDelta
 from chorus.memory._recall_filters import EpisodicQueryFilters
-from chorus.memory._recall_rank import rank_keyword_hits, sort_recency_hits
+from chorus.memory._recall_rank import RecallProfile, rerank_keyword_hits, sort_recency_hits
 from chorus.memory._store import EpisodicStore
 
 _SEARCH_CANDIDATE_POOL = 20
@@ -17,9 +17,10 @@ _FILTER_CANDIDATE_POOL = 40
 
 @dataclass(frozen=True)
 class RecallResult:
-    """Bounded recall hits plus the resolved retrieval mode."""
+    """Bounded recall hits plus the resolved retrieval mode and profile."""
 
     mode: Literal["recency", "search"]
+    profile: RecallProfile
     hits: tuple[SprintDelta, ...]
 
 
@@ -36,6 +37,7 @@ class EpisodicRecallService:
         own_run_id: str,
         query: str | None = None,
         filters: EpisodicQueryFilters | None = None,
+        profile: RecallProfile = "general",
         limit: int = 5,
         now: datetime | None = None,
     ) -> RecallResult:
@@ -46,8 +48,8 @@ class EpisodicRecallService:
         if query is None and active is None:
             pool = self._store.records_for(employee_id, limit=limit + 1)
             hits = _exclude_own(pool, own_run_id=own_run_id)
-            ranked = sort_recency_hits(hits, now=ts, limit=limit)
-            return RecallResult(mode="recency", hits=tuple(ranked))
+            ranked = sort_recency_hits(hits, now=ts, limit=limit, profile=profile)
+            return RecallResult(mode="recency", profile=profile, hits=tuple(ranked))
 
         if query is None:
             pool = self._store.records_for(
@@ -56,8 +58,8 @@ class EpisodicRecallService:
                 filters=active,
             )
             hits = _exclude_own(pool, own_run_id=own_run_id)
-            ranked = sort_recency_hits(hits, now=ts, limit=limit)
-            return RecallResult(mode="search", hits=tuple(ranked))
+            ranked = sort_recency_hits(hits, now=ts, limit=limit, profile=profile)
+            return RecallResult(mode="search", profile=profile, hits=tuple(ranked))
 
         pool_size = _FILTER_CANDIDATE_POOL if active is not None else _SEARCH_CANDIDATE_POOL
         candidates = self._store.search(
@@ -67,8 +69,8 @@ class EpisodicRecallService:
             filters=active,
         )
         hits = _exclude_own(candidates, own_run_id=own_run_id)
-        ranked = rank_keyword_hits(hits, now=ts, limit=limit)
-        return RecallResult(mode="search", hits=tuple(ranked))
+        ranked = rerank_keyword_hits(hits, profile=profile, now=ts, limit=limit)
+        return RecallResult(mode="search", profile=profile, hits=tuple(ranked))
 
     def get_run(self, employee_id: str, run_id: str) -> SprintDelta | None:
         delta = self._store.get(run_id)

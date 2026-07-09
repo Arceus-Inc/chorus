@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
 from chorus.memory import SprintDelta
-from chorus.memory._recall_rank import rank_keyword_hits, sort_recency_hits
+from chorus.memory._recall_rank import (
+    rank_keyword_hits,
+    rerank_keyword_hits,
+    sort_recency_hits,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -111,3 +115,46 @@ def test_pinned_old_still_retrievable_in_keyword_top_k() -> None:
     )
     hits = rank_keyword_hits([recent, old_pinned], now=_NOW, limit=2)
     assert {h.run_id for h in hits} == {"r_new", "r_old"}
+
+
+def test_debug_profile_promotes_failure_over_recent_done() -> None:
+    fail = _delta(
+        "r_fail",
+        outcome="needs_changes",
+        intent="slugify regression",
+        recorded_at=_NOW - timedelta(days=3),
+    )
+    ok = _delta(
+        "r_ok",
+        outcome="done",
+        intent="slugify works",
+        recorded_at=_NOW - timedelta(days=1),
+    )
+    # BM25 pool order: failure row ranked first for the debug query.
+    hits = rerank_keyword_hits([fail, ok], profile="debug", now=_NOW, limit=1)
+    assert hits[0].run_id == "r_fail"
+
+
+def test_general_profile_keeps_recent_done_over_failure() -> None:
+    fail = _delta(
+        "r_fail",
+        outcome="needs_changes",
+        intent="slugify regression",
+        recorded_at=_NOW - timedelta(days=3),
+    )
+    ok = _delta(
+        "r_ok",
+        outcome="done",
+        intent="slugify works",
+        recorded_at=_NOW - timedelta(days=1),
+    )
+    hits = rerank_keyword_hits([ok, fail], profile="general", now=_NOW, limit=1)
+    assert hits[0].run_id == "r_ok"
+
+
+def test_debug_task_thread_sorts_failures_first() -> None:
+    ts = datetime(2026, 7, 9, 10, 0, tzinfo=UTC)
+    done = _delta("r_done", outcome="done", recorded_at=ts.replace(minute=30))
+    failed = _delta("r_fail", outcome="needs_changes", recorded_at=ts.replace(minute=10))
+    hits = sort_recency_hits([done, failed], profile="debug", now=_NOW, limit=2)
+    assert [d.run_id for d in hits] == ["r_fail", "r_done"]
