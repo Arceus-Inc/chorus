@@ -49,8 +49,7 @@ _MEGA_INTENT = (
     "Build the FULL commerce API (stdlib ONLY: http.server, sqlite3, json, secrets, hashlib). "
     "THREE domains auth/, orders/, payments/. GET /health. Auth register+login with salted hashes. "
     "Orders owner-only GET. Payments with Idempotency-Key. SQL migrations on startup. "
-    "Prove restart durability. Full test sandwich + test_evidence pass. "
-    "Every beat: read TODO.md, call recall() for prior beats, then continue."
+    "Prove restart durability. Full test sandwich + test_evidence pass."
 )
 
 # Four domain-sized slices of the commerce API — each too big for one short beat.

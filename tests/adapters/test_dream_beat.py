@@ -21,6 +21,7 @@ import pytest
 from chorus.adapters import DreamBeatRunner, ModelRate, TokenPricing, to_beat_outcome
 from chorus.events import Event, EventKind
 from chorus.heartbeat import BeatDisposition
+from chorus.heartbeat._todo_flush import read_todo_flush_nudge
 from chorus.outcomes import VerificationStep
 
 pytestmark = pytest.mark.unit
@@ -468,6 +469,40 @@ async def test_run_task_propagates_asyncio_cancellation() -> None:
     harness = _FakeHarness(error=asyncio.CancelledError())
     with pytest.raises(asyncio.CancelledError):
         await DreamBeatRunner(harness).run_task(task_id="t1", intent="x")
+
+
+async def test_run_task_arms_todo_flush_nudge_at_ninety_percent_budget(tmp_path: Path) -> None:
+    timeout_s = 0.2
+    runner = DreamBeatRunner(
+        _HangingHarness(),
+        timeout_s=timeout_s,
+        working_dir=tmp_path,
+        employee_id="bex",
+    )
+    run = asyncio.create_task(
+        runner.run_task(task_id="t1", intent="x", run_id="run-1"),
+    )
+    try:
+        await asyncio.sleep(timeout_s * 0.91)
+        nudge = read_todo_flush_nudge(tmp_path)
+        assert nudge is not None
+        assert nudge.timeout_s == timeout_s
+        assert nudge.remaining_s == pytest.approx(timeout_s * 0.10)
+    finally:
+        outcome = await run
+        assert outcome.disposition is BeatDisposition.ERRORED
+        assert read_todo_flush_nudge(tmp_path) is None
+
+
+async def test_run_task_clears_stale_todo_flush_nudge_at_beat_start(tmp_path: Path) -> None:
+    from chorus.heartbeat._todo_flush import write_todo_flush_nudge
+
+    write_todo_flush_nudge(tmp_path, timeout_s=10.0, remaining_s=1.0)
+    harness = _FakeHarness(result=_result("done"))
+    await DreamBeatRunner(harness, working_dir=tmp_path, employee_id="bex").run_task(
+        task_id="t1", intent="x", run_id="run-1"
+    )
+    assert read_todo_flush_nudge(tmp_path) is None
 
 
 def test_beat_outcome_disposition_defaults_from_passed() -> None:

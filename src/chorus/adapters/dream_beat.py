@@ -28,6 +28,11 @@ from chorus.adapters._pricing import TokenPricing, UsageView
 from chorus.adapters._trace import beat_subagent_stats, sidecar_traces
 from chorus.events import Event
 from chorus.heartbeat import BeatContext, BeatOutcome
+from chorus.heartbeat._todo_flush import (
+    TODO_FLUSH_REMAINING_FRACTION,
+    clear_todo_flush_nudge,
+    write_todo_flush_nudge,
+)
 from chorus.outcomes import VerificationStep
 
 
@@ -255,6 +260,11 @@ class DreamBeatRunner:
         # instead of repairing it. Each beat is its own run, so each is an independent planning pass; the
         # worktree carries state across beats. Events still correlate via the bridge's chorus task_id.
         dream_task_id = run_id if run_id is not None else task_id
+        nudge_task: asyncio.Task[None] | None = None
+        if self._working_dir is not None:
+            clear_todo_flush_nudge(self._working_dir)
+        if self._working_dir is not None and self._timeout_s is not None and self._timeout_s > 0:
+            nudge_task = asyncio.create_task(self._arm_todo_flush_nudge())
         try:
             if self._working_dir is None:
                 run = self._harness.run_task(
@@ -298,6 +308,12 @@ class DreamBeatRunner:
         ) as exc:  # typed by failure_outcome — a beat never crashes the dispatch loop
             return _with_record(failure_outcome(exc))
         finally:
+            if nudge_task is not None:
+                nudge_task.cancel()
+                with suppress(asyncio.CancelledError):
+                    await nudge_task
+            if self._working_dir is not None:
+                clear_todo_flush_nudge(self._working_dir)
             await self._close_harness()
         outcome = self._attach_subagent_stats(
             to_beat_outcome(result, pricing=self._pricing), traces_before
@@ -331,6 +347,22 @@ class DreamBeatRunner:
             return outcome
         return replace(
             outcome, outcome={**outcome.outcome, "subagents": [asdict(s) for s in stats]}
+        )
+
+    async def _arm_todo_flush_nudge(self) -> None:
+        """Write the TODO flush nudge when beat budget drops below the remaining threshold."""
+        assert self._working_dir is not None
+        assert self._timeout_s is not None
+        delay = self._timeout_s * (1.0 - TODO_FLUSH_REMAINING_FRACTION)
+        try:
+            await asyncio.sleep(delay)
+        except asyncio.CancelledError:
+            return
+        remaining = self._timeout_s * TODO_FLUSH_REMAINING_FRACTION
+        write_todo_flush_nudge(
+            self._working_dir,
+            timeout_s=self._timeout_s,
+            remaining_s=remaining,
         )
 
     async def _close_harness(self) -> None:

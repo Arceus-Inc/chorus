@@ -54,6 +54,12 @@ def test_same_task_incomplete_surfaces_in_teaser() -> None:
     assert "r_inc"[:12] in teaser
 
 
+def test_teaser_is_lines_only_no_recall_footer() -> None:
+    delta = _delta("r1", intent="add slugify", recorded_at=_NOW - timedelta(hours=1))
+    teaser = build_episodic_teaser((delta,), task_id="mega", now=_NOW)
+    assert "recall(" not in teaser
+
+
 def test_cross_task_fallback_uses_global_recent() -> None:
     other = _delta(
         "r_other",
