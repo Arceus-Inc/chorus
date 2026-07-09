@@ -86,9 +86,10 @@ def test_recall_is_admitted_to_the_read_only_evaluator_head(
     assert '"get_run"' in _tools_line(evaluator)
 
 
-def test_materialize_writes_episodic_beat_start_teaser(
+def test_materialize_does_not_inject_episodic_teaser(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    """Teaser push removed — recall + TODO.md carry resume orientation."""
     factory, _ = _factory(monkeypatch, tmp_path)
     memory_root = tmp_path / "acme" / "memory"
     store = EpisodicStore(memory_root)
@@ -113,10 +114,9 @@ def test_materialize_writes_episodic_beat_start_teaser(
         task_id="t2",
     )
     teaser_path = mat.working_dir / ".harness" / "episodic-beat-start.json"
-    assert teaser_path.is_file()
-    assert "slugify" in teaser_path.read_text(encoding="utf-8")
+    assert not teaser_path.is_file()
     generator = (mat.working_dir / ".harness" / "roles" / "generator.toml").read_text(
         encoding="utf-8"
     )
-    assert "slugify" in generator
-    assert "Episodic orientation (auto)" in generator
+    assert "Episodic orientation (auto)" not in generator
+    assert "recall" in generator
