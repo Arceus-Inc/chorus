@@ -16,6 +16,7 @@ so the factory rebuilds the harness per call without a cache.
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
@@ -31,6 +32,8 @@ from dream.tools.builtin import default_registry
 from chorus.adapters import DreamBeatRunner, TokenPricing
 from chorus.heartbeat import BeatRunner, IntegrateContextPacket
 from chorus.memory import EpisodicStore
+from chorus.memory._recall_service import EpisodicRecallService
+from chorus.memory._recall_teaser import build_episodic_teaser, write_episodic_beat_start
 from chorus.outcomes import LanderRegistry, runtime_brief_block
 from chorus.roles import RoleBeatConfig, RoleRegistry, role_beat_config
 from chorus.roles._manifest import McpServerSpec
@@ -50,6 +53,7 @@ from chorus_tools import (
     DesignExemplarTool,
     DesignLintTool,
     EvidenceScanTool,
+    GetRunTool,
     GoLiveTool,
     RecallTool,
     RecordDecisionTool,
@@ -144,6 +148,7 @@ _CHORUS_TO_DREAM_TOOL: dict[str, str] = {
     # the same reason as evidence_scan: registered in the materialize flow (needs company_root), not
     # via _capability_tool, so it must stay in this map for the subagent projection to keep it.
     "recall": "recall",
+    "get_run": "get_run",
     # cms_draft — a chorus capability tool (reversible CMS write, §08 Channel). Identity-mapped for the
     # same reason as brand_lint: so the projection keeps it; it is registered in the materialize flow
     # (it needs the worktree for the Markdown backend, which _capability_tool has no access to).
@@ -174,6 +179,7 @@ _READ_ONLY_DREAM_SURFACE_TOOLS = frozenset(
         # recall is safe/read-only (chorus's own episodic counterpart to memory_search's durable
         # facts), so an evaluator verifying past-beat context needs it just as much as the generator.
         "recall",
+        "get_run",
         # A read-only reviewer that reads a large artifact (a long findings.md) gets its read_file
         # output offloaded to scratch with a "Full output saved to: <file>" pointer; without
         # read_offloaded it cannot see the overflow and wrongly fails with "content is truncated /
@@ -364,6 +370,21 @@ def _read_only_role_tools(
         if name in _READ_ONLY_DREAM_SURFACE_TOOLS and name not in tools:
             tools.append(name)
     return tuple(tools)
+
+
+def _build_episodic_teaser(
+    company_root: Path,
+    *,
+    employee_id: str,
+    task_id: str | None,
+) -> str:
+    """Recent episodic lines for beat-start push — empty when no prior beats."""
+    store = EpisodicStore(company_root / "memory")
+    try:
+        pool = store.records_for(employee_id, limit=10)
+        return build_episodic_teaser(pool, task_id=task_id, now=datetime.now(tz=UTC))
+    finally:
+        store.close()
 
 
 def write_role_overlays(harness_dir: Path, config: RoleBeatConfig) -> None:
@@ -597,6 +618,9 @@ class EmployeeHarnessFactory:
                 config, system_prompt=config.system_prompt + "\n\n" + runtime_brief_block()
             )
 
+        if "recall" in config.tools and "get_run" not in config.tools:
+            config = replace(config, tools=(*config.tools, "get_run"))
+
         # ``working_dir`` IS the worktree, because dream confines its tools to it — that is what
         # isolates one employee's edits from another's. A non-worktree posture falls back to a flat
         # per-employee dir under the org root.
@@ -614,6 +638,26 @@ class EmployeeHarnessFactory:
         else:
             root = self._company_root / employee.id
         root.mkdir(parents=True, exist_ok=True)
+        if "recall" in config.tools:
+            teaser = _build_episodic_teaser(
+                self._company_root, employee_id=employee.id, task_id=task_id
+            )
+            write_episodic_beat_start(
+                root,
+                employee_id=employee.id,
+                task_id=task_id,
+                teaser=teaser,
+            )
+            if teaser:
+                config = replace(
+                    config,
+                    system_prompt=(
+                        config.system_prompt
+                        + "\n\n## Episodic orientation (auto)\n"
+                        + teaser
+                        + "\n"
+                    ),
+                )
         write_role_overlays(root, config)  # the employee's identity overlays the whole harness
         write_sandbox_config(
             root, config.sandbox
@@ -659,9 +703,9 @@ class EmployeeHarnessFactory:
         # ledger; rooted at the ORG's memory dir (company_root/memory), not the per-employee worktree
         # — episodic capture is one shared SQLite store for the whole company.
         if "recall" in config.tools:
-            registry.register(
-                RecallTool(EpisodicStore(self._company_root / "memory")), source=ToolSource.DEFAULT
-            )
+            episodic = EpisodicRecallService(EpisodicStore(self._company_root / "memory"))
+            registry.register(RecallTool(episodic), source=ToolSource.DEFAULT)
+            registry.register(GetRunTool(episodic), source=ToolSource.DEFAULT)
         # execute_go_live pairs with cms_draft: it publishes the staged draft once the human approves
         # the stage_go_live gate. Needs BOTH the ledger (fail-closed gate check) and the worktree
         # (standing-draft + delivery indexes), so it registers here rather than in _capability_tool.

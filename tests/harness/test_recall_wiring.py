@@ -8,11 +8,13 @@ and reviewer keep their deliberately minimal, decision-only toolsets and are not
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 import pytest
 
+from chorus.memory import EpisodicStore, SprintDelta
 from chorus.roles import RoleRegistry, default_roles
 from chorus.workforce import Employee
 from chorus_harness import _factory as _factory_mod
@@ -54,7 +56,7 @@ def test_worker_role_materializes_with_recall(
     factory, captured = _factory(monkeypatch, tmp_path)
     factory.materialize(Employee(id="emp", name="Emp", role=role))
     names = {t.name for t in captured["registry"].list_tools()}
-    assert "recall" in names
+    assert {"recall", "get_run"}.issubset(names)
 
 
 def test_recall_is_rooted_at_the_company_memory_dir_not_the_worktree(
@@ -81,3 +83,40 @@ def test_recall_is_admitted_to_the_read_only_evaluator_head(
         encoding="utf-8"
     )
     assert '"recall"' in _tools_line(evaluator)
+    assert '"get_run"' in _tools_line(evaluator)
+
+
+def test_materialize_writes_episodic_beat_start_teaser(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    factory, _ = _factory(monkeypatch, tmp_path)
+    memory_root = tmp_path / "acme" / "memory"
+    store = EpisodicStore(memory_root)
+    ts = datetime(2026, 7, 8, 12, 0, tzinfo=UTC)
+    store.append(
+        SprintDelta(
+            run_id="r_slug",
+            task_id="t1",
+            employee_id="bex",
+            scope="project",
+            intent="add slugify to textutil",
+            outcome="done",
+            score=1.0,
+            created_at=ts,
+            recorded_at=ts,
+        )
+    )
+    store.close()
+
+    mat = factory.materialize(
+        Employee(id="bex", name="Bex", role="backend_engineer"),
+        task_id="t2",
+    )
+    teaser_path = mat.working_dir / ".harness" / "episodic-beat-start.json"
+    assert teaser_path.is_file()
+    assert "slugify" in teaser_path.read_text(encoding="utf-8")
+    generator = (mat.working_dir / ".harness" / "roles" / "generator.toml").read_text(
+        encoding="utf-8"
+    )
+    assert "slugify" in generator
+    assert "Episodic orientation (auto)" in generator

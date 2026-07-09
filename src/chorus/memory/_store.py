@@ -8,6 +8,7 @@ from pathlib import Path
 
 from chorus.ledger._migrations import MigrationRunner
 from chorus.memory._models import SprintDelta
+from chorus.memory._recall_filters import EpisodicQueryFilters
 from chorus.memory.migrations import MIGRATIONS
 from chorus.memory.repos import EpisodicRepo
 
@@ -33,9 +34,15 @@ class EpisodicStore:
         """The record for ``run_id``, or ``None`` if absent."""
         return self._records.get(run_id)
 
-    def records_for(self, employee_id: str, *, limit: int | None = None) -> list[SprintDelta]:
+    def records_for(
+        self,
+        employee_id: str,
+        *,
+        limit: int | None = None,
+        filters: EpisodicQueryFilters | None = None,
+    ) -> list[SprintDelta]:
         """Hot-tier records for one agent, newest first — bounded when ``limit`` is set."""
-        return self._records.for_employee(employee_id, limit=limit)
+        return self._records.for_employee(employee_id, limit=limit, filters=filters)
 
     def search(
         self,
@@ -43,9 +50,10 @@ class EpisodicStore:
         *,
         employee_id: str | None = None,
         limit: int = 5,
+        filters: EpisodicQueryFilters | None = None,
     ) -> list[SprintDelta]:
         """Keyword search over intent+body, optionally scoped to one employee."""
-        return self._records.search(query, employee_id=employee_id, limit=limit)
+        return self._records.search(query, employee_id=employee_id, limit=limit, filters=filters)
 
     def touch_recalled(self, run_ids: tuple[str, ...], *, now: datetime) -> None:
         """Mark beats as recalled (retrieval reinforcement)."""

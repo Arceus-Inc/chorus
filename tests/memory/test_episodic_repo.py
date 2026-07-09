@@ -82,3 +82,29 @@ def test_pin_ignores_other_employees(tmp_path) -> None:
     store.pin_run_ids("bex", ("r_a",))
     got = store.get("r_a")
     assert got is not None and got.pin_count == 0
+
+
+def test_for_employee_since_filter(tmp_path) -> None:
+    from datetime import UTC, datetime
+
+    from chorus.memory._recall_filters import EpisodicQueryFilters
+
+    store = EpisodicStore(tmp_path)
+    store.append(_delta(run_id="r_old", recorded_at=datetime(2026, 6, 1, tzinfo=UTC)))
+    store.append(_delta(run_id="r_new", recorded_at=datetime(2026, 7, 8, tzinfo=UTC)))
+    hits = store.records_for(
+        "ada",
+        limit=5,
+        filters=EpisodicQueryFilters(since=datetime(2026, 7, 1, tzinfo=UTC)),
+    )
+    assert [d.run_id for d in hits] == ["r_new"]
+
+
+def test_for_employee_task_id_filter(tmp_path) -> None:
+    from chorus.memory._recall_filters import EpisodicQueryFilters
+
+    store = EpisodicStore(tmp_path)
+    store.append(_delta(run_id="r_1", task_id="t_1"))
+    store.append(_delta(run_id="r_2", task_id="t_2"))
+    hits = store.records_for("ada", limit=5, filters=EpisodicQueryFilters(task_id="t_1"))
+    assert [d.run_id for d in hits] == ["r_1"]
