@@ -36,6 +36,7 @@ class OriginKind(StrEnum):
     STRANDED_RECOVERY = "stranded_recovery"
     STALE_RUN_EVAL = "stale_run_eval"
     PRODUCTIVITY_REVIEW = "productivity_review"
+    HORIZON_INTAKE = "horizon_intake"  # opened by the horizon strategy layer (spec 00 §5a / 10 §5)
 
 
 class RunStatus(StrEnum):
@@ -50,12 +51,19 @@ class RunStatus(StrEnum):
 
 
 class GoalLevel(StrEnum):
-    """The alignment tree levels (spec 01 Cluster D ``goal``)."""
+    """The alignment tree levels (spec 01 Cluster D ``goal``).
+
+    The coarse org levels (company/team/employee/task) plus ``goal`` — the level the horizon strategy
+    layer writes for the Decision -> Goal -> Task spine. Decisions themselves are horizon-native and
+    never become goal rows (chorus only ever sees goals + tasks). Additive: chorus does not act on
+    ``level`` (it schedules by deps + caps + priority), so the vocabulary is horizon's to shape.
+    """
 
     COMPANY = "company"
     TEAM = "team"
     EMPLOYEE = "employee"
     TASK = "task"
+    GOAL = "goal"  # the node horizon authors under a (horizon-only) Decision
 
 
 class DodStatus(StrEnum):
