@@ -436,6 +436,33 @@ def _t7_retrieval_checks(
     ]
 
 
+def _retrieval_domain_checks(
+    *,
+    lattice: object,
+    employee_id: str,
+    has_atoms: bool,
+) -> list[tuple[str, bool, str]]:
+    if not has_atoms:
+        return [("retrieval domain gate skipped", False, "no semantic atoms")]
+
+    context_design = lattice.context(employee_id, "design tokens typography")  # type: ignore[attr-defined]
+    context_retry = lattice.context(employee_id, "retry policy api")  # type: ignore[attr-defined]
+    excludes_retry = "api.retry" not in context_design
+    includes_retry = "api.retry" in context_retry
+    return [
+        (
+            "context(design) excludes api.retry",
+            excludes_retry,
+            context_design[:120].replace("\n", " ") or "(empty)",
+        ),
+        (
+            "context(retry) includes api.retry",
+            includes_retry,
+            context_retry[:120].replace("\n", " ") or "(empty)",
+        ),
+    ]
+
+
 def _programmatic_consolidation_checks(
     *,
     company_root: Path,
@@ -658,6 +685,18 @@ def main() -> int:
         _log(f"  [{'PASS' if ok else 'FAIL'}] {name} — {detail}")
         t7_all_pass = t7_all_pass and ok
 
+    retrieval_checks = _retrieval_domain_checks(
+        lattice=lattice,
+        employee_id=_EMPLOYEE_ID,
+        has_atoms=has_atoms,
+    )
+    _log("\nRETRIEVAL DOMAIN GATE (programmatic)")
+    retrieval_all_pass = True
+    for name, ok, detail in retrieval_checks:
+        _log(f"  [{'PASS' if ok else 'FAIL'}] {name} — {detail}")
+        retrieval_all_pass = retrieval_all_pass and ok
+        all_ok = all_ok and ok
+
     memory_md_path = factory.company_root / "lattice" / _EMPLOYEE_ID / "MEMORY.md"
     memory_md_text = memory_md_path.read_text(encoding="utf-8") if memory_md_path.is_file() else ""
     if memory_md_text:
@@ -679,6 +718,11 @@ def main() -> int:
         "t7_status": t7_status,
         "t7_checks": [{"name": n, "pass": ok, "detail": d} for n, ok, d in t7_checks],
         "t7_all_pass": t7_all_pass,
+        "retrieval_checks": [{"name": n, "pass": ok, "detail": d} for n, ok, d in retrieval_checks],
+        "retrieval_all_pass": retrieval_all_pass,
+        "context_design_excludes_retry": any(
+            c[0] == "context(design) excludes api.retry" and c[1] for c in retrieval_checks
+        ),
         "all_pass": all_ok,
         "memory_md_path": str(memory_md_path),
         "memory_md": memory_md_text,
