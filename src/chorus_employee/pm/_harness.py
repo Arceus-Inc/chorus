@@ -97,6 +97,8 @@ def pm_manifest() -> RoleManifest:
             "options-set-generator",
             "decision-record",
             "recommendation-canvas",
+            "lattice-context",
+            "lattice-consolidate",
             # Discovery & framing — frame the problem and uncover unmet needs before any solution.
             "problem-statement",
             "problem-framing-canvas",

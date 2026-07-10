@@ -61,18 +61,7 @@ def build_lattice_for_chorus(
     return build_default(**kwargs)  # type: ignore[arg-type]
 
 
-def lattice_skills_root() -> Path | None:
-    """Resolve bundled lattice agent skills (editable install: repo ``skills/``)."""
-    try:
-        import lattice
-    except ImportError:
-        return None
-    candidate = Path(lattice.__file__).resolve().parent.parent.parent / "skills"
-    return candidate if candidate.is_dir() else None
-
-
 __all__ = [
     "ChorusEpisodicReader",
     "build_lattice_for_chorus",
-    "lattice_skills_root",
 ]

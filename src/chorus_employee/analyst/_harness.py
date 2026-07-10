@@ -104,6 +104,8 @@ def analyst_manifest() -> RoleManifest:
             "metric-definition-and-benchmarks",
             "technical-tradeoff-analysis",
             "findings-communication",
+            "lattice-context",
+            "lattice-consolidate",
         ),
         skills_root=_SKILLS_ROOT,
     )

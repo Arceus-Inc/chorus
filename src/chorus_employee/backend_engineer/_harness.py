@@ -76,7 +76,7 @@ def backend_engineer_manifest() -> RoleManifest:
         # — build_harness(skills=…) / (skill_registry=…) — authored craft playbooks, loaded on demand
         # via the `skill` tool; discovered from this package's skills/ dir. The first is the
         # framework-agnostic quality-gate know-how behind the code_quality tool.
-        skills=("structuring-any-service", "verifying-any-stack"),
+        skills=("structuring-any-service", "verifying-any-stack", "lattice-context", "lattice-consolidate"),
         skills_root=_SKILLS_ROOT,
         # — build_harness(memory=…) + working_memory —
         memory_scope=MemoryScope.PROJECT,

@@ -90,7 +90,7 @@ def marketer_manifest() -> RoleManifest:
         # - channel-priors: what format + cadence each surface rewards (shapes the Strategist's plan).
         # Experiment/measurement skills (A/B discipline, attribution) wait on the analytics + the
         # Experimenter subagent.
-        skills=("brand-voice", "deliverability", "geo-aeo-seo", "channel-priors"),
+        skills=("brand-voice", "deliverability", "geo-aeo-seo", "channel-priors", "lattice-context", "lattice-consolidate"),
         skills_root=_SKILLS_ROOT,
         # --- build_harness(memory=...) + working_memory ---
         memory_scope=MemoryScope.PROJECT,

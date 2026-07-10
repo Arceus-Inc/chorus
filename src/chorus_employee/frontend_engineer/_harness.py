@@ -107,6 +107,8 @@ def frontend_engineer_manifest() -> RoleManifest:
             "playwright-e2e-authoring",
             "web-first-assertions",
             "test-evidence-discipline",
+            "lattice-context",
+            "lattice-consolidate",
             "debugging-failing-tests",
             "package-and-run-hygiene",
             # adapting the UI across screen sizes (breakpoints, container queries, fluid type, grid).

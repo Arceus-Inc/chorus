@@ -94,6 +94,8 @@ def designer_manifest() -> RoleManifest:
             "microcopy-in-ui",
             "design-critique-method",
             "design-spec-writing",
+            "lattice-context",
+            "lattice-consolidate",
         ),
         skills_root=_SKILLS_ROOT,
         # --- build_harness(memory=...) + working_memory ---

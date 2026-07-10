@@ -41,6 +41,18 @@ def _factory(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> tuple[Any, dict
 
 
 @pytest.mark.parametrize("role", _LATTICE_ROLES)
+def test_worker_role_materializes_lattice_skills(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, role: str
+) -> None:
+    factory, captured = _factory(monkeypatch, tmp_path)
+    mat = factory.materialize(Employee(id="emp", name="Emp", role=role))
+    for skill in ("lattice-context", "lattice-consolidate"):
+        path = mat.working_dir / ".harness" / "skills" / skill / "SKILL.md"
+        assert path.is_file(), f"{role} missing materialized {skill}"
+    assert captured["skills"] is True
+
+
+@pytest.mark.parametrize("role", _LATTICE_ROLES)
 def test_worker_role_materializes_with_lattice_tools(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, role: str
 ) -> None:

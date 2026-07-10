@@ -45,7 +45,7 @@ def engineer_manifest() -> RoleManifest:
         ),  # the wire toolset, including Dream's durable + task memory surfaces
         disallowed_tools=(),  # nothing additionally denied at the role level
         # — build_harness(skills=…) —
-        skills=(),  # no Engineer skill playbooks yet → skills toggle stays off (follow-up)
+        skills=("lattice-context", "lattice-consolidate"),  # no Engineer craft playbooks yet
         # — build_harness(memory=…) + working_memory —
         memory_scope=MemoryScope.PROJECT,  # reads/writes the project memory partition
         working_memory=True,  # keeps an in-task scratchpad across turns

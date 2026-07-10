@@ -34,7 +34,7 @@ class LatticeContextTool(BaseTool):
     name = "lattice_context"
     description = (
         "Distilled semantic patterns for this employee. Each hit lists src: run_ids — "
-        "use recall(query='…') for beat detail."
+        "use get_run(run_id) for full beat prose on src: run_ids."
     )
     declaration = ToolDeclaration(risk="safe", tier_required=0, timeout_seconds=10.0)
     input_model = LatticeContextInput
@@ -99,7 +99,8 @@ class LatticePacketTool(BaseTool):
 class LatticeApplyTool(BaseTool):
     name = "lattice_apply"
     description = (
-        "Apply a patterns-only Proposal JSON. Validate runs inside; gate should be open."
+        "Apply a patterns-only Proposal JSON. Validate runs inside; gate should be open. "
+        "On success, runs the sleep forget pass (discount + weak-hint invalidation)."
     )
     declaration = ToolDeclaration(risk="safe", tier_required=0, timeout_seconds=15.0)
     input_model = LatticeApplyInput
@@ -121,9 +122,19 @@ class LatticeApplyTool(BaseTool):
         if not result.ok:
             errors = "; ".join(result.errors)
             return ToolResult(content=f"apply failed: {errors}", is_error=True)
+        forget_result = self._lattice.forget(beat.employee_id)
         return ToolResult(
-            content=f"ok — patterns_written={result.patterns_written}",
-            structured={"status": "success", "patterns_written": result.patterns_written},
+            content=(
+                f"ok — patterns_written={result.patterns_written}; "
+                f"forget discounted={forget_result.atoms_discounted} "
+                f"invalidated={forget_result.atoms_invalidated}"
+            ),
+            structured={
+                "status": "success",
+                "patterns_written": result.patterns_written,
+                "forget_discounted": forget_result.atoms_discounted,
+                "forget_invalidated": forget_result.atoms_invalidated,
+            },
         )
 
 

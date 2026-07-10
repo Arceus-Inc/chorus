@@ -16,6 +16,7 @@ so the factory rebuilds the harness per call without a cache.
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
@@ -32,6 +33,7 @@ from chorus.adapters import DreamBeatRunner, TokenPricing
 from chorus.heartbeat import BeatRunner, IntegrateContextPacket
 from chorus.memory import EpisodicStore
 from chorus.memory._recall_service import EpisodicRecallService
+from chorus.memory._recall_teaser import build_episodic_teaser, write_episodic_beat_start
 from chorus.outcomes import LanderRegistry, runtime_brief_block
 from chorus.roles import RoleBeatConfig, RoleRegistry, role_beat_config
 from chorus.roles._manifest import McpServerSpec
@@ -40,7 +42,11 @@ from chorus.trust import TrustPolicy
 from chorus.workforce import Employee
 from chorus.workspace import CompanyWorkspace, default_work_root
 from chorus_employee import default_landers
-from chorus_employee._lattice import LATTICE_DIRECTIVES_BLOCK
+from chorus_employee._lattice import (
+    LATTICE_BEAT_START_HEADER,
+    LATTICE_DIRECTIVES_BLOCK,
+    read_lattice_consolidation_push,
+)
 from chorus_employee._recall import PLANNER_TOOLLESS_NOTE
 from chorus_harness._skills import materialize_lattice_skills_into, materialize_skills
 from chorus_harness._trust import apply_trust
@@ -379,6 +385,21 @@ def _read_only_role_tools(
     return tuple(tools)
 
 
+def _build_episodic_teaser(
+    company_root: Path,
+    *,
+    employee_id: str,
+    task_id: str | None,
+) -> str:
+    """Recent episodic lines for beat-start push — empty when no prior beats."""
+    store = EpisodicStore(company_root / "memory")
+    try:
+        pool = store.records_for(employee_id, limit=10)
+        return build_episodic_teaser(pool, task_id=task_id, now=datetime.now(tz=UTC))
+    finally:
+        store.close()
+
+
 def write_role_overlays(harness_dir: Path, config: RoleBeatConfig) -> None:
     """Write planner/generator/evaluator overlays so the whole harness runs as the employee.
 
@@ -634,6 +655,45 @@ class EmployeeHarnessFactory:
         else:
             root = self._company_root / employee.id
         root.mkdir(parents=True, exist_ok=True)
+        if "recall" in config.tools:
+            teaser = _build_episodic_teaser(
+                self._company_root, employee_id=employee.id, task_id=task_id
+            )
+            write_episodic_beat_start(
+                root,
+                employee_id=employee.id,
+                task_id=task_id,
+                teaser=teaser,
+            )
+            if teaser:
+                config = replace(
+                    config,
+                    system_prompt=(
+                        config.system_prompt
+                        + "\n\n## Episodic orientation (auto)\n"
+                        + teaser
+                        + "\n"
+                    ),
+                )
+        if _LATTICE_TOOLS.intersection(config.tools):
+            try:
+                lattice = build_lattice_for_chorus(self._company_root)
+                if lattice.has_fresh_episodes(employee.id):
+                    lattice.adjudicate(employee.id)
+            except Exception:
+                pass
+            lattice_push = read_lattice_consolidation_push(root)
+            if lattice_push:
+                config = replace(
+                    config,
+                    system_prompt=(
+                        config.system_prompt
+                        + "\n\n"
+                        + LATTICE_BEAT_START_HEADER
+                        + lattice_push
+                        + "\n"
+                    ),
+                )
         write_role_overlays(root, config)  # the employee's identity overlays the whole harness
         write_sandbox_config(
             root, config.sandbox
