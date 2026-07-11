@@ -1,7 +1,7 @@
 ---
 name: governance-and-oversight
 description: Audit the org for drift — blocked, stale, mis-ranked, or duplicated work — and hold it accountable with a concrete corrective for each issue. Use when reviewing the whole company's direction and health.
-when_to_use: Use for a governance or audit beat: reviewing the decision/goal tree and outcomes to find what's off-track and decide what to do about each problem.
+when_to_use: Use for a governance or audit beat that reviews the decision/goal tree and outcomes to find what is off-track and decide what to do about each problem.
 ---
 
 # Governance and oversight
