@@ -22,7 +22,7 @@ LATTICE_BEAT_START_HEADER = "## Lattice consolidation (auto — gate was open la
 LATTICE_BEAT_START_FOOTER = (
     "FIRST this beat (before other task work): load skill `lattice-consolidate`, "
     "call `lattice_packet()`, `recall(query)` + `get_run(run_id)` per cited beat, "
-    "then `lattice_apply(proposal)` with ≤10 patterns."
+    "then `lattice_apply` with ≤10 patterns and `skill_manage(evolve|patch)` for procedures."
 )
 
 

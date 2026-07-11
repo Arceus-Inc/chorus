@@ -68,6 +68,7 @@ def backend_engineer_manifest() -> RoleManifest:
             "lattice_context",
             "lattice_packet",
             "lattice_apply",
+            "skill_manage",
             # dispatch the api_verifier subagent mid-beat (§16 Slice 3) — the grader that boots the
             # built service and probes it over real HTTP; its tools narrow this set at materialize.
             "spawn_subagent",

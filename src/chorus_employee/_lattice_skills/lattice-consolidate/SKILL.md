@@ -1,21 +1,33 @@
 ---
 name: lattice-consolidate
-description: Promote recurring beat evidence into lattice patterns (semantic facts). Use ONLY at beat end when the gate is open — never every beat.
-when_to_use: Beat end ONLY, when the beat-end notice says "Lattice gate open". Skip when gate is closed.
+description: Promote recurring beat evidence into lattice patterns (facts) and skill_manage procedures. Use ONLY at beat end when the gate is open — never every beat.
+when_to_use: Beat end ONLY, when the beat-end notice says "Lattice gate open". Do not run on every beat — consolidation is expensive. Skip entirely when the gate is closed.
 ---
 
-# lattice consolidate — patterns only (gate-gated)
+# lattice consolidate — patterns + skill_manage (gate-gated)
 
-Turn **recurring episodic evidence** into **durable patterns** (key/value facts). Expensive — only when gate opens.
+Consolidation turns **recurring episodic evidence** into:
+
+- **Patterns** — declarative facts (`api.retry`) → `lattice_apply` → `lattice_context`
+- **Procedures** — playbooks → **`skill_manage(evolve|patch)`** on an existing role skill (default); `create` only for new class-level umbrellas
 
 ## Gate
 
-1. **≥ N new beats** since last consolidation (default 5)
-2. **Cluster** of ≥ K beats share file prefix or intent (default 2)
+1. **≥ N new beats** since last consolidation (default N = 5)
+2. **A cluster** of ≥ K beats share the same file prefix or intent (default K = 2)
 
-Silent beat-end notice → gate closed → do nothing.
+Silent beat-end notice → gate **closed** → do nothing.
 
-## Workflow
+## Preference order (Hermes-aligned)
+
+1. **`patterns[]` via `lattice_apply`** — sticky-note facts ("client retries 429/503")
+2. **`skill_manage(evolve)`** — patch a section of an existing role skill
+3. **`skill_manage(create)`** — rare; class-level playbook with When to Use / Procedure / Pitfalls / Verification
+4. **Nothing to save** — one-off narratives, diary entries, transient env failures
+
+**Do NOT** put procedures in `lattice_apply` (`habits[]` is rejected). **Do NOT** capture session diaries as skills.
+
+## Workflow (gate open only)
 
 ### 1. Packet
 
@@ -23,18 +35,18 @@ Silent beat-end notice → gate closed → do nothing.
 lattice_packet()
 ```
 
-### 2. Re-read evidence
+Habit hints suggest `suggested_action: evolve` — use `skill_manage`, not a CREATE micro-slug.
 
-Use packet `run_id`s and hints — **slim search first, full prose per cited beat**:
+### 2. Re-read evidence
 
 ```
 recall(query='retry')
 get_run(run_id='run_a57d754d…')
 ```
 
-`recall()` returns **slim hits** (summary, intent snippet, files). `get_run(run_id)` returns **full beat prose** — call it for every `source_run_id` you cite in the proposal.
+Call `get_run` for every `source_run_id` you cite.
 
-### 3. Proposal JSON
+### 3. Facts → lattice_apply
 
 ```json
 {
@@ -42,7 +54,7 @@ get_run(run_id='run_a57d754d…')
   "patterns": [
     {
       "key": "api.retry",
-      "claim": "The HTTP client in src/api/client.py automatically retries failed requests. It tries up to 3 times on 429 or 503 responses, with exponential backoff between attempts (0.2s base, 30s cap).",
+      "claim": "The HTTP client in src/api/client.py retries 429 and 503 responses up to 3 times with exponential backoff from 0.2s to 30s.",
       "source_run_ids": ["r_done_1", "r_done_2"],
       "supersedes": null
     }
@@ -50,38 +62,35 @@ get_run(run_id='run_a57d754d…')
 }
 ```
 
-| field | use |
-|---|---|
-| `key` | hierarchical lowercase `api.retry` |
-| `claim` | 2–3 short sentences in plain English: what we decided, when it applies, where it lives (min ~20 chars) |
-| `source_run_ids` | every cited beat — rendered at retrieval; drill down with `get_run(run_id)` |
-| `supersedes` | set when replacing an active pattern key |
-
-### Claim style — write like clear documentation
-
-Claims land in `MEMORY.md` and `lattice_context`. Write them so a teammate can read them once and understand — not dense shorthand.
-
-| Avoid (hard to read) | Prefer (clear prose) |
-|---|---|
-| `"In src/api/client.py, HttpClient retries failed GET requests up to max_retries (default 3). It retries on transient HTTP responses 429 and 503, sleeping with exponential backoff (base 0.2s) capped at 30s between attempts."` | `"The HTTP client in src/api/client.py automatically retries failed requests. It tries up to 3 times when the server returns 429 (rate limit) or 503 (service unavailable). Between retries it waits with exponential backoff, starting at 0.2 seconds and never longer than 30 seconds."` |
-| `"exponential backoff"` | `"HTTP retries use exponential backoff capped at 30s; see src/api/client.py for the exact policy."` |
-
-Rules:
-- Use normal sentences, not semicolon chains or parenthetical dumps.
-- Spell out status codes on first mention (e.g. "429 Too Many Requests").
-- Name the file path once at the end, not as the opening clause.
-- Keep under ~400 characters — episodic detail stays in chorus via `source_run_ids`.
-
-Patterns stay small; episodic prose stays in chorus. Cite real `source_run_ids` so `lattice_context` can point the agent back to ground truth.
-
-### 4. Apply
-
 ```
-lattice_apply(proposal=<json>)
+lattice_apply(proposal=<patterns only>)
 ```
 
-≤10 patterns per proposal. No verbatim episodic prose.
+### 4. Procedures → skill_manage
 
-## After apply
+```
+skill_manage(
+  action='evolve',
+  name='structuring-any-service',
+  section='Before patching HTTP clients',
+  content='## Before patching HTTP clients\n\n1. …\n\n## Pitfalls\n- …\n\n## Verification\n- …',
+  source_run_ids=['r_done_1', 'r_done_2']
+)
+```
 
-Next beat: `lattice_context(query)` surfaces patterns with `src:` run ids — `get_run(run_id)` for full beat prose (or `recall(query)` to search first).
+Prefer ≤10 patterns; prefer `evolve`/`patch` over `create`.
+
+## When NOT to consolidate
+
+- Gate closed (most beats)
+- Mid-beat
+- One-off / diary content — leave in episodic memory
+- Sticky-note facts as skills — use `patterns[]` instead
+
+## Tools
+
+| Tool | Memory |
+|------|--------|
+| `lattice_apply` | Semantic patterns only |
+| `skill_manage` | Procedural skills (versioned) |
+| `lattice_context` / `skill` | Read facts / load playbooks |

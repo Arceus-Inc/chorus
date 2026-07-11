@@ -1,4 +1,9 @@
-"""Composition root — adapt chorus episodic memory to lattice ports."""
+"""Composition root — adapt chorus episodic memory to lattice ports.
+
+Boundary: chorus owns company paths + episodic store; lattice owns semantic
+consolidation. Procedural skills use Chorus ``SkillStore`` / ``skill_manage`` —
+do not enable lattice overlay patches for the chorus path.
+"""
 
 from __future__ import annotations
 
@@ -46,18 +51,27 @@ def build_lattice_for_chorus(
     *,
     min_new_episodes: int | None = None,
     min_cluster_size: int | None = None,
+    canonical_skills_root: str | Path | None = None,
 ) -> Lattice:
-    """Wire lattice to a chorus company directory (``memory/`` + ``lattice/``)."""
+    """Wire lattice to a chorus company directory (``memory/`` + ``lattice/``).
+
+    Overlay patches stay off — procedural writes go through ``skill_manage``.
+    ``canonical_skills_root`` is still passed so habit *validation* inside
+    SkillManager can discover role skill slugs.
+    """
     root = Path(company_root)
     store = EpisodicStore(root / "memory")
     kwargs: dict[str, object] = {
         "consolidated_root": root / "lattice",
         "episodes": ChorusEpisodicReader(store),
+        "enable_patches": False,
     }
     if min_new_episodes is not None:
         kwargs["min_new_episodes"] = min_new_episodes
     if min_cluster_size is not None:
         kwargs["min_cluster_size"] = min_cluster_size
+    if canonical_skills_root is not None:
+        kwargs["canonical_skills_root"] = Path(canonical_skills_root)
     return build_default(**kwargs)  # type: ignore[arg-type]
 
 

@@ -80,4 +80,99 @@ def materialize_lattice_skills_into(skills_dir: Path) -> None:
     _set_read_only(skills_dir)
 
 
-__all__ = ["materialize_skills", "materialize_lattice_skills_into"]
+def _strip_frontmatter(text: str) -> str:
+    lines = text.splitlines()
+    if not lines or lines[0].strip() != "---":
+        return text
+    for i in range(1, len(lines)):
+        if lines[i].strip() == "---":
+            return "\n".join(lines[i + 1 :]).lstrip("\n")
+    return text
+
+
+def _merge_evolved_into_canonical(canonical: str, evolved: str) -> str:
+    """Keep canonical frontmatter + body; append evolved body sections once."""
+    evolved_body = _strip_frontmatter(evolved).strip()
+    if not evolved_body:
+        return canonical
+    # Idempotent: if the evolved section heading already exists, replace from that heading.
+    heading = ""
+    for line in evolved_body.splitlines():
+        if line.startswith("## "):
+            heading = line.strip()
+            break
+    if heading and heading in canonical:
+        before, _, _rest = canonical.partition(heading)
+        return before.rstrip() + "\n\n" + evolved_body + "\n"
+    return canonical.rstrip() + "\n\n" + evolved_body + "\n"
+
+
+def materialize_versioned_skills_into(
+    skills_dir: Path,
+    *,
+    company_root: Path,
+    employee_id: str,
+) -> None:
+    """Materialize Chorus SkillStore HEAD (or pin) into the worktree skills dir.
+
+    DB is source of truth; this is the Dream/adapter cache. Evolved skills merge
+    into an existing canonical ``SKILL.md`` (preserve Dream frontmatter). Created
+    skills are written as full packages from ``file_inventory``.
+    """
+    from chorus.skills import SkillOrigin, SkillStore
+
+    store = SkillStore(Path(company_root) / "skills")
+    try:
+        active = store.list_active(employee_id)
+        if not active:
+            return
+        skills_dir.mkdir(parents=True, exist_ok=True)
+        _restore_writable(skills_dir)
+        for skill in active:
+            rev = store.resolve_inventory(employee_id, skill.slug)
+            if rev is None:
+                continue
+            inventory = rev.inventory()
+            skill_md = ""
+            for entry in inventory:
+                if entry.get("path") == "SKILL.md":
+                    skill_md = str(entry.get("content") or "")
+                    break
+            if not skill_md and inventory:
+                skill_md = str(inventory[0].get("content") or "")
+            if not skill_md:
+                continue
+            target = skills_dir / skill.slug
+            target_md = target / "SKILL.md"
+            if target_md.exists() and skill.origin is SkillOrigin.EVOLVED:
+                _restore_writable(target)
+                canonical_text = target_md.read_text(encoding="utf-8")
+                target_md.write_text(
+                    _merge_evolved_into_canonical(canonical_text, skill_md),
+                    encoding="utf-8",
+                )
+            else:
+                target.mkdir(parents=True, exist_ok=True)
+                if target_md.exists():
+                    _restore_writable(target)
+                target_md.write_text(skill_md, encoding="utf-8")
+                for entry in inventory:
+                    rel = str(entry.get("path") or "")
+                    if not rel or rel == "SKILL.md":
+                        continue
+                    # path traversal guard
+                    dest = (target / rel).resolve()
+                    if not str(dest).startswith(str(target.resolve())):
+                        continue
+                    dest.parent.mkdir(parents=True, exist_ok=True)
+                    dest.write_text(str(entry.get("content") or ""), encoding="utf-8")
+        _set_read_only(skills_dir)
+    finally:
+        store.close()
+
+
+__all__ = [
+    "materialize_skills",
+    "materialize_lattice_skills_into",
+    "materialize_versioned_skills_into",
+]

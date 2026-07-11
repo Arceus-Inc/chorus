@@ -40,7 +40,7 @@ class _RecordingLattice:
         return MagicMock(atoms_discounted=1, atoms_invalidated=0)
 
     def apply(self, proposal: Any) -> Any:
-        return MagicMock(ok=True, patterns_written=1, errors=())
+        return MagicMock(ok=True, atoms_written=1, patches_written=0, errors=())
 
     def validate(self, proposal: Any) -> Any:
         return MagicMock(ok=True, errors=())

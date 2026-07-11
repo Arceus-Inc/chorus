@@ -48,7 +48,11 @@ from chorus_employee._lattice import (
     read_lattice_consolidation_push,
 )
 from chorus_employee._recall import PLANNER_TOOLLESS_NOTE
-from chorus_harness._skills import materialize_lattice_skills_into, materialize_skills
+from chorus_harness._skills import (
+    materialize_lattice_skills_into,
+    materialize_skills,
+    materialize_versioned_skills_into,
+)
 from chorus_harness._trust import apply_trust
 from chorus_tools import (
     AssignTaskTool,
@@ -70,6 +74,7 @@ from chorus_tools import (
 )
 from chorus_tools._lattice import _LATTICE_TOOLS, lattice_tool
 from chorus_tools._lattice_bridge import build_lattice_for_chorus
+from chorus_tools._skill_manage import SkillManageTool
 from chorus_tools._todo_flush_nudge import registry_with_todo_flush_nudge
 from chorus_tools.cms import CmsDraftTool, cms_backend_from_env
 from chorus_tools.delivery import (
@@ -161,6 +166,7 @@ _CHORUS_TO_DREAM_TOOL: dict[str, str] = {
     "lattice_context": "lattice_context",
     "lattice_packet": "lattice_packet",
     "lattice_apply": "lattice_apply",
+    "skill_manage": "skill_manage",
     # cms_draft — a chorus capability tool (reversible CMS write, §08 Channel). Identity-mapped for the
     # same reason as brand_lint: so the projection keeps it; it is registered in the materialize flow
     # (it needs the worktree for the Markdown backend, which _capability_tool has no access to).
@@ -675,13 +681,17 @@ class EmployeeHarnessFactory:
                         + "\n"
                     ),
                 )
+        lattice = None
         if _LATTICE_TOOLS.intersection(config.tools):
             try:
-                lattice = build_lattice_for_chorus(self._company_root)
+                lattice = build_lattice_for_chorus(
+                    self._company_root,
+                    canonical_skills_root=config.skills_root,
+                )
                 if lattice.has_fresh_episodes(employee.id):
                     lattice.adjudicate(employee.id)
             except Exception:
-                pass
+                lattice = None
             lattice_push = read_lattice_consolidation_push(root)
             if lattice_push:
                 config = replace(
@@ -743,11 +753,23 @@ class EmployeeHarnessFactory:
             registry.register(RecallTool(episodic), source=ToolSource.DEFAULT)
             registry.register(GetRunTool(episodic), source=ToolSource.DEFAULT)
         if _LATTICE_TOOLS.intersection(config.tools):
-            lattice = build_lattice_for_chorus(self._company_root)
+            if lattice is None:
+                lattice = build_lattice_for_chorus(
+                    self._company_root,
+                    canonical_skills_root=config.skills_root,
+                )
             for name in _LATTICE_TOOLS.intersection(config.tools):
                 tool = lattice_tool(name, lattice)
                 if tool is not None:
                     registry.register(tool, source=ToolSource.DEFAULT)
+        if "skill_manage" in config.tools:
+            registry.register(
+                SkillManageTool(
+                    company_root=self._company_root,
+                    canonical_skills_root=config.skills_root,
+                ),
+                source=ToolSource.DEFAULT,
+            )
         # execute_go_live pairs with cms_draft: it publishes the staged draft once the human approves
         # the stage_go_live gate. Needs BOTH the ledger (fail-closed gate check) and the worktree
         # (standing-draft + delivery indexes), so it registers here rather than in _capability_tool.
@@ -785,13 +807,23 @@ class EmployeeHarnessFactory:
         skill_registry = None
         if config.skills_root:
             skills_dir = materialize_skills(root, config.skills_root)
-            if _LATTICE_TOOLS.intersection(config.tools):
+            if _LATTICE_TOOLS.intersection(config.tools) or "skill_manage" in config.tools:
                 materialize_lattice_skills_into(skills_dir)
+                materialize_versioned_skills_into(
+                    skills_dir,
+                    company_root=self._company_root,
+                    employee_id=employee.id,
+                )
             skill_registry, _shadows = load_skill_registry(project_dirs=[skills_dir])
-        elif _LATTICE_TOOLS.intersection(config.tools):
+        elif _LATTICE_TOOLS.intersection(config.tools) or "skill_manage" in config.tools:
             skills_dir = root / ".harness" / "skills"
             skills_dir.mkdir(parents=True, exist_ok=True)
             materialize_lattice_skills_into(skills_dir)
+            materialize_versioned_skills_into(
+                skills_dir,
+                company_root=self._company_root,
+                employee_id=employee.id,
+            )
             skill_registry, _shadows = load_skill_registry(project_dirs=[skills_dir])
         harness = dream.build_harness(
             model=config.model or self._deployment,
