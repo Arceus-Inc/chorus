@@ -62,7 +62,20 @@ _DIRECTIVE_RUBRIC = (
     "belt-and-suspenders evidence. FAIL only for a CONCRETE defect: `directive.md` missing; NO clear "
     "decision (it hedges or only lists options); a load-bearing claim with no basis in the state or any "
     "source; risks ignored entirely; or a self-contradiction (e.g. an impossible or future-dated "
-    "claim). When you fail, name the specific fix so the next attempt can converge."
+    "claim). When you fail, name the specific fix so the next attempt can converge.\n\n"
+    "CRUCIAL — how to read the tree AFTER the CEO has acted: the moment a proposal is approved or "
+    "rejected it LEAVES the open-proposal list, so `governance_read` will show OPEN PROPOSALS as empty "
+    "and the decided ones under RECENTLY DECIDED (an approval also becomes a new DECISION). An empty "
+    "OPEN PROPOSALS list is therefore EXPECTED and CORRECT — it is proof the queue was worked, NOT "
+    "evidence the actions never happened. Verify the proposal ids the directive cites against the "
+    "RECENTLY DECIDED and DECISIONS sections, and NEVER fail a directive on the grounds that "
+    "governance_read shows no open proposals or that a cited proposal is 'no longer present' — that is "
+    "the expected post-adjudication state.\n\n"
+    "GROUND TRUTH for what the CEO actually did: read `governance-ledger.md` in the worktree (use "
+    "read_file). Every approval, rejection, re-prioritisation, and archive the CEO performed this beat is "
+    "recorded there as an append-only line. That ledger + `directive.md` are the COMPLETE evidence — the "
+    "actions ARE auditable from artifacts. Do NOT fail the directive for lack of proof that the tool "
+    "calls happened; the ledger is that proof."
 )
 
 

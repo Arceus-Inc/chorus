@@ -76,6 +76,13 @@ class FakeGovernance:
                     evidence=3,
                 ),
             ),
+            decided=(
+                GovProposal(
+                    proposal_id="p0",
+                    statement="launch the loyalty program",
+                    status="approved",
+                ),
+            ),
         )
 
     def approve_proposal(self, proposal_id: str, *, by: str) -> str:
@@ -103,7 +110,10 @@ def test_governance_read_renders_the_direction(tmp_path: Path) -> None:
     assert "grow the core" in result.content
     assert "lift activation" in result.content
     assert "open a second market" in result.content
-    assert result.structured == {"decisions": 1, "proposals": 1}
+    # the decided proposal is surfaced so the CEO can cite it and a reviewer can confirm the work
+    assert "RECENTLY DECIDED" in result.content
+    assert "launch the loyalty program" in result.content
+    assert result.structured == {"decisions": 1, "proposals": 1, "decided": 1}
 
 
 def test_proposal_approve_reaches_the_port_with_the_ceo_identity(tmp_path: Path) -> None:
@@ -113,6 +123,9 @@ def test_proposal_approve_reaches_the_port_with_the_ceo_identity(tmp_path: Path)
     assert result.is_error is False
     assert port.approved == [("p1", "ceo")]
     assert result.structured == {"proposal_id": "p1", "decision_id": "d2"}
+    # the action is recorded to the worktree audit ledger so a reviewer can verify it from artifacts
+    ledger = (tmp_path / "governance-ledger.md").read_text(encoding="utf-8")
+    assert "APPROVED proposal p1" in ledger and "decision d2" in ledger
 
 
 def test_proposal_reject_carries_the_reason(tmp_path: Path) -> None:
@@ -131,11 +144,48 @@ def test_goal_set_priority_steers_the_goal(tmp_path: Path) -> None:
     port = FakeGovernance()
     result = asyncio.run(
         GoalSetPriorityTool(port).execute(
-            {"goal_id": "g1", "priority": "critical"}, _ctx(tmp_path)
+            {"goal_id": "g1", "priority": "high"}, _ctx(tmp_path)
         )
     )
     assert result.is_error is False
-    assert port.reprioritised == [("g1", "critical")]
+    assert port.reprioritised == [("g1", "high")]
+
+
+def test_goal_set_priority_maps_a_synonym_to_a_band(tmp_path: Path) -> None:
+    port = FakeGovernance()
+    result = asyncio.run(
+        GoalSetPriorityTool(port).execute(
+            {"goal_id": "g1", "priority": "CRITICAL"}, _ctx(tmp_path)
+        )
+    )
+    assert result.is_error is False
+    assert port.reprioritised == [("g1", "high")]  # critical → high, not a raw error
+
+
+def test_goal_set_priority_refuses_an_unknown_band(tmp_path: Path) -> None:
+    port = FakeGovernance()
+    result = asyncio.run(
+        GoalSetPriorityTool(port).execute(
+            {"goal_id": "g1", "priority": "yesterday"}, _ctx(tmp_path)
+        )
+    )
+    assert result.is_error is True
+    assert port.reprioritised == []  # nothing applied
+    assert "low, medium, high" in result.content
+
+
+def test_proposal_approve_wraps_a_port_error_cleanly(tmp_path: Path) -> None:
+    _beat(tmp_path)
+
+    class Boom(FakeGovernance):
+        def approve_proposal(self, proposal_id: str, *, by: str) -> str:
+            raise ValueError("no such proposal")
+
+    result = asyncio.run(
+        ProposalApproveTool(Boom()).execute({"proposal_id": "gone"}, _ctx(tmp_path))
+    )
+    assert result.is_error is True
+    assert "governance_read" in result.content  # guides the CEO to re-read, no raw traceback
 
 
 def test_goal_archive_retires_the_goal(tmp_path: Path) -> None:

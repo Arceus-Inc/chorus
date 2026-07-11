@@ -29,7 +29,6 @@ def test_ceo_declares_its_executive_toolset() -> None:
         "read_file",
         "write_file",
         "run_command",
-        "repo_search",
         "web_search",
         "web_extract",
         "read_offloaded",

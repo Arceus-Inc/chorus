@@ -144,6 +144,18 @@ _CHORUS_TO_DREAM_TOOL: dict[str, str] = {
     # ledger rows (via _capability_tool, needs the ledger). Identity-mapped so dream_tool_names keeps
     # it and the subagent projection can intersect it; _role_registry skips it (no built-in).
     "record_decision": "record_decision",
+    # Governance tools — the CEO's reverse edge onto horizon's direction. Chorus capability tools bound
+    # to a dream ``GovernancePort`` (registered in the materialize flow, NOT dream built-ins). IDENTITY-
+    # mapped here for the same reason as record_decision/cms_draft: so ``dream_tool_names`` keeps them,
+    # the role's per-phase allow-list ceiling admits them (else the planner phase projects ``<none>`` and
+    # rejects governance_read as "not in this role's manifest"), and the subagent projection can carry
+    # them. ``_role_registry`` still skips them (no built-in); the governance block in materialize binds
+    # them to the injected port.
+    "governance_read": "governance_read",
+    "proposal_approve": "proposal_approve",
+    "proposal_reject": "proposal_reject",
+    "goal_set_priority": "goal_set_priority",
+    "goal_archive": "goal_archive",
 }
 
 _READ_ONLY_DREAM_SURFACE_TOOLS = frozenset(
@@ -161,7 +173,14 @@ _READ_ONLY_DREAM_SURFACE_TOOLS = frozenset(
         # hold it to locate + inspect code under review without mutating anything.
         "grep",
         "glob",
-        "lsp",    }
+        "lsp",
+        # governance_read is read-only (risk=safe, tier 0): it only READS the company's direction through
+        # the port. A read-only planner/evaluator head must be able to call it so the CEO can ground its
+        # plan in the live tree before the generator phase acts. The mutating governance tools
+        # (proposal_approve/reject, goal_set_priority/archive) are deliberately NOT here — they belong to
+        # the generator phase only.
+        "governance_read",
+    }
 )
 
 

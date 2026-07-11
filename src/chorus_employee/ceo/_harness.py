@@ -37,15 +37,17 @@ def ceo_manifest() -> RoleManifest:
         # - build_harness(registry=...) -
         # read the state, optionally gather external context, persist the directive, keep working notes.
         # Deliberately NO ``git`` and no data/spend tools — the CEO governs, it does not crunch or pay;
-        # the lander commits the directive, not the model. The governance_* tools are the CEO's authority:
-        # they bind (at the composition root) to horizon's direction via a dream ``GovernancePort`` — the
-        # employee reads the tree and steers it (approve/reject proposals, reprioritise/archive goals),
-        # exactly as the manager's ``submit_task`` binds to the ledger. Dropped fail-closed if no port.
+        # the lander commits the directive, not the model. NO ``repo_search`` either: the CEO's source of
+        # truth about the company is ``governance_read`` (the live direction), not code grep — and in a
+        # governance beat repo_search only dead-ends on the near-empty worktree, burning turns. The
+        # governance_* tools are the CEO's authority: they bind (at the composition root) to horizon's
+        # direction via a dream ``GovernancePort`` — the employee reads the tree and steers it
+        # (approve/reject proposals, reprioritise/archive goals), exactly as the manager's ``submit_task``
+        # binds to the ledger. Dropped fail-closed if no port.
         tools=(
             "read_file",
             "write_file",
             "run_command",
-            "repo_search",
             "web_search",
             "web_extract",
             "read_offloaded",

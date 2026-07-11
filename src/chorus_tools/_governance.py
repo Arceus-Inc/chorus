@@ -18,6 +18,23 @@ from pydantic import BaseModel, Field
 
 from chorus.heartbeat import BeatContext
 
+# The worktree audit trail every governance WRITE appends to. It is the artifact-side proof that the
+# CEO's state-changing actions actually happened: approve/reject/reprioritise/archive mutate horizon's
+# tree (invisible in the worktree), so without this a read-only reviewer re-reading the files cannot
+# confirm the work and wrongly blocks the beat. The directive cites it; the reviewer reads it.
+_LEDGER_FILE = "governance-ledger.md"
+
+
+def _audit(ctx: ToolExecutionContext, line: str) -> None:
+    """Append one line to the worktree's governance ledger (best-effort; never fails a tool)."""
+    try:
+        path = ctx.working_dir / _LEDGER_FILE
+        header = "" if path.exists() else "# Governance ledger — actions taken this beat\n\n"
+        with path.open("a", encoding="utf-8") as fh:
+            fh.write(f"{header}- {line}\n")
+    except Exception:  # an audit-log hiccup must never break the actual governance action
+        pass
+
 
 def _render(view: GovernanceView) -> str:
     """A plain-text digest of the direction — decisions with their goals, then open proposals.
@@ -49,6 +66,14 @@ def _render(view: GovernanceView) -> str:
             )
     else:
         lines.append("OPEN PROPOSALS: none")
+    # The decided proposals — the record of adjudication already done (this beat's approvals/rejections
+    # land here the moment they happen). Shown so a directive can cite them and a reviewer can confirm
+    # the work; an empty OPEN list plus these is proof the queue was worked, not that nothing was there.
+    if view.decided:
+        lines.append("")
+        lines.append("RECENTLY DECIDED PROPOSALS")
+        for p in view.decided:
+            lines.append(f"- [{p.proposal_id}] ({p.status}) {p.statement}")
     return "\n".join(lines)
 
 
@@ -78,6 +103,7 @@ class GovernanceReadTool(BaseTool):
             structured={
                 "decisions": len(view.decisions),
                 "proposals": len(view.proposals),
+                "decided": len(view.decided),
             },
         )
 
@@ -105,7 +131,18 @@ class ProposalApproveTool(BaseTool):
     async def execute(self, input: dict[str, object], ctx: ToolExecutionContext) -> ToolResult:
         args = ProposalApproveInput.model_validate(input)
         beat = BeatContext.read(ctx.working_dir)
-        decision_id = self._port.approve_proposal(args.proposal_id, by=beat.employee_id)
+        try:
+            decision_id = self._port.approve_proposal(args.proposal_id, by=beat.employee_id)
+        except Exception as exc:  # the port (horizon) rejects a stale/unknown/duplicate id
+            return ToolResult(
+                content=(
+                    f"refused: could not approve {args.proposal_id} — {exc}. Call governance_read "
+                    "again for the current open proposal ids; it may already be decided."
+                ),
+                structured={"proposal_id": args.proposal_id, "error": str(exc)},
+                is_error=True,
+            )
+        _audit(ctx, f"APPROVED proposal {args.proposal_id} → decision {decision_id} (by {beat.employee_id})")
         return ToolResult(
             content=f"approved proposal {args.proposal_id} — it is now decision {decision_id}",
             structured={"proposal_id": args.proposal_id, "decision_id": decision_id},
@@ -139,7 +176,18 @@ class ProposalRejectTool(BaseTool):
     async def execute(self, input: dict[str, object], ctx: ToolExecutionContext) -> ToolResult:
         args = ProposalRejectInput.model_validate(input)
         beat = BeatContext.read(ctx.working_dir)
-        self._port.reject_proposal(args.proposal_id, by=beat.employee_id, reason=args.reason)
+        try:
+            self._port.reject_proposal(args.proposal_id, by=beat.employee_id, reason=args.reason)
+        except Exception as exc:  # the port (horizon) rejects a stale/unknown id
+            return ToolResult(
+                content=(
+                    f"refused: could not reject {args.proposal_id} — {exc}. Call governance_read "
+                    "again for the current open proposal ids; it may already be decided."
+                ),
+                structured={"proposal_id": args.proposal_id, "error": str(exc)},
+                is_error=True,
+            )
+        _audit(ctx, f"REJECTED proposal {args.proposal_id} (by {beat.employee_id}) — reason: {args.reason or 'n/a'}")
         return ToolResult(
             content=f"rejected proposal {args.proposal_id}",
             structured={"proposal_id": args.proposal_id, "reason": args.reason},
@@ -150,7 +198,27 @@ class GoalSetPriorityInput(BaseModel):
     """Arguments for ``goal_set_priority`` — reprioritise one goal."""
 
     goal_id: str = Field(description="the id of a goal, as shown by governance_read")
-    priority: str = Field(description="the new priority: one of low, medium, high, critical")
+    priority: str = Field(description="the new priority: one of low, medium, high")
+
+
+# The company's coarse priority vocabulary is low / medium / high. Common CEO synonyms are mapped to
+# the nearest band so a natural word ("critical", "urgent") steers the goal instead of erroring.
+_PRIORITY_ALIASES: dict[str, str] = {
+    "low": "low",
+    "backlog": "low",
+    "none": "low",
+    "medium": "medium",
+    "med": "medium",
+    "normal": "medium",
+    "moderate": "medium",
+    "high": "high",
+    "highest": "high",
+    "critical": "high",
+    "urgent": "high",
+    "top": "high",
+    "p0": "high",
+    "p1": "high",
+}
 
 
 class GoalSetPriorityTool(BaseTool):
@@ -158,8 +226,9 @@ class GoalSetPriorityTool(BaseTool):
 
     name = "goal_set_priority"
     description = (
-        "Set one goal's priority (low / medium / high / critical) by id. This steers where the "
-        "company concentrates effort; the id must be one governance_read listed."
+        "Set one goal's priority by id. The company's bands are low, medium, high (a synonym like "
+        "'critical' or 'urgent' maps to high). This steers where the company concentrates effort; the "
+        "id must be one governance_read listed."
     )
     declaration = ToolDeclaration(risk="mutating", tier_required=1, timeout_seconds=30.0)
     input_model = GoalSetPriorityInput
@@ -169,7 +238,28 @@ class GoalSetPriorityTool(BaseTool):
 
     async def execute(self, input: dict[str, object], ctx: ToolExecutionContext) -> ToolResult:
         args = GoalSetPriorityInput.model_validate(input)
-        applied = self._port.set_priority(args.goal_id, args.priority)
+        band = _PRIORITY_ALIASES.get(args.priority.strip().lower())
+        if band is None:
+            return ToolResult(
+                content=(
+                    f"refused: unknown priority {args.priority!r}. Use one of low, medium, high "
+                    "(a word like 'critical' maps to high)."
+                ),
+                structured={"goal_id": args.goal_id, "priority": args.priority},
+                is_error=True,
+            )
+        try:
+            applied = self._port.set_priority(args.goal_id, band)
+        except Exception as exc:  # the port (horizon) rejects an unknown/stale goal id
+            return ToolResult(
+                content=(
+                    f"refused: could not set priority on {args.goal_id} — {exc}. Call governance_read "
+                    "again for the current goal ids."
+                ),
+                structured={"goal_id": args.goal_id, "error": str(exc)},
+                is_error=True,
+            )
+        _audit(ctx, f"SET PRIORITY goal {args.goal_id} → {applied}")
         return ToolResult(
             content=f"set goal {args.goal_id} priority to {applied}",
             structured={"goal_id": args.goal_id, "priority": applied},
@@ -198,7 +288,18 @@ class GoalArchiveTool(BaseTool):
 
     async def execute(self, input: dict[str, object], ctx: ToolExecutionContext) -> ToolResult:
         args = GoalArchiveInput.model_validate(input)
-        self._port.archive_goal(args.goal_id)
+        try:
+            self._port.archive_goal(args.goal_id)
+        except Exception as exc:  # the port (horizon) rejects an unknown/stale goal id
+            return ToolResult(
+                content=(
+                    f"refused: could not archive {args.goal_id} — {exc}. Call governance_read again "
+                    "for the current goal ids."
+                ),
+                structured={"goal_id": args.goal_id, "error": str(exc)},
+                is_error=True,
+            )
+        _audit(ctx, f"ARCHIVED goal {args.goal_id}")
         return ToolResult(
             content=f"archived goal {args.goal_id}",
             structured={"goal_id": args.goal_id},
