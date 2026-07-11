@@ -1,0 +1,240 @@
+"""The CEO employee's governance tools — the reverse edge of the strategy seam.
+
+Every other employee's tools live here in ``chorus_tools`` and bind to a data backend the composition
+root injects (the manager's ledger, the analyst's warehouse). The CEO is no exception: these tools bind
+to a :class:`dream.contracts.GovernancePort`, and the composition root wires that port to horizon's
+control plane. Chorus never imports horizon — it only ever sees the Port. The employee reads the
+direction and steers it (approve / reject a proposal, reprioritise or archive a goal); horizon decides
+what those verbs actually do to its tree.
+"""
+
+from __future__ import annotations
+
+from dream.contracts import GovernancePort, GovernanceView
+from dream.contracts.tool import ToolResult
+from dream.tools._base import BaseTool, ToolDeclaration
+from dream.tools._context import ToolExecutionContext
+from pydantic import BaseModel, Field
+
+from chorus.heartbeat import BeatContext
+
+
+def _render(view: GovernanceView) -> str:
+    """A plain-text digest of the direction — decisions with their goals, then open proposals.
+
+    Deliberately terse and unadorned: the CEO model is a reasoning model behind a content filter, and
+    a compact factual render (ids, titles, numbers) never trips it the way a florid one can.
+    """
+    lines: list[str] = []
+    if view.decisions:
+        lines.append("DECISIONS")
+        for d in view.decisions:
+            lines.append(f"- [{d.decision_id}] ({d.status}) {d.statement}")
+            for g in d.goals:
+                tail = f" metric={g.metric} target={g.target}" if g.metric else ""
+                lines.append(
+                    f"    - [{g.goal_id}] {g.title} — priority={g.priority} "
+                    f"health={g.health} status={g.status} score={g.score:.2f}{tail}"
+                )
+    else:
+        lines.append("DECISIONS: none")
+    lines.append("")
+    if view.proposals:
+        lines.append("OPEN PROPOSALS")
+        for p in view.proposals:
+            conf = "n/a" if p.confidence is None else f"{p.confidence:.2f}"
+            lines.append(
+                f"- [{p.proposal_id}] ({p.status}) {p.statement} "
+                f"— confidence={conf} evidence={p.evidence}"
+            )
+    else:
+        lines.append("OPEN PROPOSALS: none")
+    return "\n".join(lines)
+
+
+class GovernanceReadInput(BaseModel):
+    """``governance_read`` takes no arguments — it always reads the whole direction."""
+
+
+class GovernanceReadTool(BaseTool):
+    """Read the company's current direction — decisions, their goals, and open proposals."""
+
+    name = "governance_read"
+    description = (
+        "Read the company's current direction: the standing decisions with their goals (priority, "
+        "health, status, score) and every open proposal awaiting a call. Use this first, before "
+        "approving, rejecting, reprioritising, or archiving anything."
+    )
+    declaration = ToolDeclaration(risk="safe", tier_required=0, timeout_seconds=30.0)
+    input_model = GovernanceReadInput
+
+    def __init__(self, port: GovernancePort) -> None:
+        self._port = port
+
+    async def execute(self, input: dict[str, object], ctx: ToolExecutionContext) -> ToolResult:
+        view = self._port.read_direction()
+        return ToolResult(
+            content=_render(view),
+            structured={
+                "decisions": len(view.decisions),
+                "proposals": len(view.proposals),
+            },
+        )
+
+
+class ProposalApproveInput(BaseModel):
+    """Arguments for ``proposal_approve`` — accept one open proposal into the direction."""
+
+    proposal_id: str = Field(description="the id of an open proposal, as shown by governance_read")
+
+
+class ProposalApproveTool(BaseTool):
+    """Approve one open proposal — promote it into the company's standing direction."""
+
+    name = "proposal_approve"
+    description = (
+        "Approve one open proposal by id, promoting it into the company's standing direction. Only "
+        "approve a proposal you have read and judged sound; the id must be one governance_read listed."
+    )
+    declaration = ToolDeclaration(risk="mutating", tier_required=1, timeout_seconds=30.0)
+    input_model = ProposalApproveInput
+
+    def __init__(self, port: GovernancePort) -> None:
+        self._port = port
+
+    async def execute(self, input: dict[str, object], ctx: ToolExecutionContext) -> ToolResult:
+        args = ProposalApproveInput.model_validate(input)
+        beat = BeatContext.read(ctx.working_dir)
+        decision_id = self._port.approve_proposal(args.proposal_id, by=beat.employee_id)
+        return ToolResult(
+            content=f"approved proposal {args.proposal_id} — it is now decision {decision_id}",
+            structured={"proposal_id": args.proposal_id, "decision_id": decision_id},
+        )
+
+
+class ProposalRejectInput(BaseModel):
+    """Arguments for ``proposal_reject`` — decline one open proposal."""
+
+    proposal_id: str = Field(description="the id of an open proposal, as shown by governance_read")
+    reason: str = Field(
+        default="", description="a short reason for the record — why this proposal was declined"
+    )
+
+
+class ProposalRejectTool(BaseTool):
+    """Reject one open proposal — decline it, with a reason for the record."""
+
+    name = "proposal_reject"
+    description = (
+        "Reject one open proposal by id, declining it. Give a short reason for the record. Use this "
+        "for proposals that are weak, off-strategy, or premature; the id must be one governance_read "
+        "listed."
+    )
+    declaration = ToolDeclaration(risk="mutating", tier_required=1, timeout_seconds=30.0)
+    input_model = ProposalRejectInput
+
+    def __init__(self, port: GovernancePort) -> None:
+        self._port = port
+
+    async def execute(self, input: dict[str, object], ctx: ToolExecutionContext) -> ToolResult:
+        args = ProposalRejectInput.model_validate(input)
+        beat = BeatContext.read(ctx.working_dir)
+        self._port.reject_proposal(args.proposal_id, by=beat.employee_id, reason=args.reason)
+        return ToolResult(
+            content=f"rejected proposal {args.proposal_id}",
+            structured={"proposal_id": args.proposal_id, "reason": args.reason},
+        )
+
+
+class GoalSetPriorityInput(BaseModel):
+    """Arguments for ``goal_set_priority`` — reprioritise one goal."""
+
+    goal_id: str = Field(description="the id of a goal, as shown by governance_read")
+    priority: str = Field(description="the new priority: one of low, medium, high, critical")
+
+
+class GoalSetPriorityTool(BaseTool):
+    """Set one goal's priority — steer where the company's effort concentrates."""
+
+    name = "goal_set_priority"
+    description = (
+        "Set one goal's priority (low / medium / high / critical) by id. This steers where the "
+        "company concentrates effort; the id must be one governance_read listed."
+    )
+    declaration = ToolDeclaration(risk="mutating", tier_required=1, timeout_seconds=30.0)
+    input_model = GoalSetPriorityInput
+
+    def __init__(self, port: GovernancePort) -> None:
+        self._port = port
+
+    async def execute(self, input: dict[str, object], ctx: ToolExecutionContext) -> ToolResult:
+        args = GoalSetPriorityInput.model_validate(input)
+        applied = self._port.set_priority(args.goal_id, args.priority)
+        return ToolResult(
+            content=f"set goal {args.goal_id} priority to {applied}",
+            structured={"goal_id": args.goal_id, "priority": applied},
+        )
+
+
+class GoalArchiveInput(BaseModel):
+    """Arguments for ``goal_archive`` — retire one goal from the active direction."""
+
+    goal_id: str = Field(description="the id of a goal, as shown by governance_read")
+
+
+class GoalArchiveTool(BaseTool):
+    """Archive one goal — retire it from the active direction."""
+
+    name = "goal_archive"
+    description = (
+        "Archive one goal by id, retiring it from the active direction. Use this for goals that are "
+        "done, obsolete, or superseded; the id must be one governance_read listed."
+    )
+    declaration = ToolDeclaration(risk="mutating", tier_required=1, timeout_seconds=30.0)
+    input_model = GoalArchiveInput
+
+    def __init__(self, port: GovernancePort) -> None:
+        self._port = port
+
+    async def execute(self, input: dict[str, object], ctx: ToolExecutionContext) -> ToolResult:
+        args = GoalArchiveInput.model_validate(input)
+        self._port.archive_goal(args.goal_id)
+        return ToolResult(
+            content=f"archived goal {args.goal_id}",
+            structured={"goal_id": args.goal_id},
+        )
+
+
+GOVERNANCE_TOOL_NAMES: frozenset[str] = frozenset(
+    {"governance_read", "proposal_approve", "proposal_reject", "goal_set_priority", "goal_archive"}
+)
+
+
+def governance_tool(name: str, port: GovernancePort) -> BaseTool | None:
+    """Map a capability name → its governance ``BaseTool`` bound to ``port`` (else ``None``).
+
+    The composition-root analogue of ``_capability_tool`` for the governance seam: the factory calls
+    this for each of a role's declared tools when a :class:`GovernancePort` is present.
+    """
+    if name == "governance_read":
+        return GovernanceReadTool(port)
+    if name == "proposal_approve":
+        return ProposalApproveTool(port)
+    if name == "proposal_reject":
+        return ProposalRejectTool(port)
+    if name == "goal_set_priority":
+        return GoalSetPriorityTool(port)
+    if name == "goal_archive":
+        return GoalArchiveTool(port)
+    return None
+
+
+__all__ = [
+    "GOVERNANCE_TOOL_NAMES",
+    "GoalArchiveTool",
+    "GoalSetPriorityTool",
+    "GovernanceReadTool",
+    "ProposalApproveTool",
+    "ProposalRejectTool",
+    "governance_tool",
+]

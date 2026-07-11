@@ -24,6 +24,15 @@ from chorus_tools._design_exemplar import (
 )
 from chorus_tools._design_lint import DesignFinding, DesignLintInput, DesignLintTool, DesignTokens
 from chorus_tools._go_live import GoLiveAction, GoLiveInput, GoLiveTool
+from chorus_tools._governance import (
+    GOVERNANCE_TOOL_NAMES,
+    GoalArchiveTool,
+    GoalSetPriorityTool,
+    GovernanceReadTool,
+    ProposalApproveTool,
+    ProposalRejectTool,
+    governance_tool,
+)
 from chorus_tools._manager_actions import (
     AssignTaskInput,
     AssignTaskTool,
@@ -43,6 +52,7 @@ from chorus_tools._test_evidence import (
 )
 
 __all__ = [
+    "GOVERNANCE_TOOL_NAMES",
     "AssignTaskInput",
     "AssignTaskTool",
     "BrandFinding",
@@ -63,8 +73,13 @@ __all__ = [
     "GoLiveAction",
     "GoLiveInput",
     "GoLiveTool",
+    "GoalArchiveTool",
+    "GoalSetPriorityTool",
+    "GovernanceReadTool",
     "LogAssessment",
     "NotebookRunTool",
+    "ProposalApproveTool",
+    "ProposalRejectTool",
     "RecordDecisionInput",
     "RecordDecisionTool",
     "RepoSearchTool",
@@ -78,4 +93,5 @@ __all__ = [
     "analysis_tool",
     "available_exemplars",
     "chorus_tool_registry",
+    "governance_tool",
 ]

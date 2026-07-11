@@ -21,7 +21,10 @@ pytestmark = pytest.mark.unit
 
 def test_ceo_declares_its_executive_toolset() -> None:
     manifest = ceo_plugin().manifest
-    # Read the state, gather external context, write the directive, keep working notes.
+    # Read the state, gather external context, write the directive, keep working notes — then the
+    # governance_* authority: the CEO's reverse edge onto horizon's direction (bound at the
+    # composition root to a dream ``GovernancePort``), exactly as a manager's ``submit_task`` binds
+    # to the ledger. No ``git``, no data/spend tools — the CEO governs, it does not crunch or pay.
     assert manifest.tools == (
         "read_file",
         "write_file",
@@ -36,6 +39,11 @@ def test_ceo_declares_its_executive_toolset() -> None:
         "working_memory_read",
         "working_memory_write",
         "working_memory_append",
+        "governance_read",
+        "proposal_approve",
+        "proposal_reject",
+        "goal_set_priority",
+        "goal_archive",
     )
     assert manifest.permission_mode.value == "acceptEdits"
     assert manifest.memory_scope.value == "project"

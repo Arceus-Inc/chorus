@@ -37,7 +37,10 @@ def ceo_manifest() -> RoleManifest:
         # - build_harness(registry=...) -
         # read the state, optionally gather external context, persist the directive, keep working notes.
         # Deliberately NO ``git`` and no data/spend tools — the CEO governs, it does not crunch or pay;
-        # the lander commits the directive, not the model.
+        # the lander commits the directive, not the model. The governance_* tools are the CEO's authority:
+        # they bind (at the composition root) to horizon's direction via a dream ``GovernancePort`` — the
+        # employee reads the tree and steers it (approve/reject proposals, reprioritise/archive goals),
+        # exactly as the manager's ``submit_task`` binds to the ledger. Dropped fail-closed if no port.
         tools=(
             "read_file",
             "write_file",
@@ -52,6 +55,11 @@ def ceo_manifest() -> RoleManifest:
             "working_memory_read",
             "working_memory_write",
             "working_memory_append",
+            "governance_read",
+            "proposal_approve",
+            "proposal_reject",
+            "goal_set_priority",
+            "goal_archive",
         ),
         # - build_harness(memory=...) + working_memory -
         memory_scope=MemoryScope.PROJECT,

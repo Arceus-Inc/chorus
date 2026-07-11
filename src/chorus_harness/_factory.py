@@ -52,6 +52,7 @@ from chorus_tools import (
     SubmitVerdictTool,
     TestEvidenceTool,
     analysis_tool,
+    governance_tool,
 )
 from chorus_tools.cms import CmsDraftTool, cms_backend_from_env
 from chorus_tools.delivery import (
@@ -61,6 +62,8 @@ from chorus_tools.delivery import (
 )
 
 if TYPE_CHECKING:
+    from dream.contracts import GovernancePort
+
     from chorus.ledger import SqliteLedger
 
 # dream runs these three intra-task roles per task; the employee's identity is overlaid onto each.
@@ -441,6 +444,7 @@ class EmployeeHarnessFactory:
         timeout_s: float | None = 90.0,
         ledger: SqliteLedger | None = None,
         trust_policy: TrustPolicy | None = None,
+        governance: GovernancePort | None = None,
     ) -> None:
         self._api_key = api_key
         self._base_url = base_url
@@ -455,6 +459,10 @@ class EmployeeHarnessFactory:
         # Capability tools (e.g. the manager's ``decompose``) mutate this ledger live during a beat.
         # Absent it, a role asking for one simply gets it dropped (fails closed, never crashes).
         self._ledger = ledger
+        # The governance seam (the CEO's reverse edge onto horizon's direction). The composition root
+        # wires this to horizon's control plane; chorus only ever sees the Port. Absent it, a role
+        # asking for a governance tool simply gets it dropped — same fail-closed rule as the ledger.
+        self._governance = governance
         # The org's workspace root: .chorus/work/{org}/ — shared by chat, tick, and the `company`
         # console command (one identity), via the single dream-free `default_work_root` convention.
         base = work_root if work_root is not None else default_work_root()
@@ -600,6 +608,15 @@ class EmployeeHarnessFactory:
             registry.register(
                 CmsDraftTool(cms_backend_from_env(root / "cms_drafts")), source=ToolSource.DEFAULT
             )
+        # The governance tools (the CEO's reverse edge onto horizon) bind to the injected GovernancePort
+        # rather than the ledger, so they register in their own block — independent of the ledger, gated
+        # only on the port being present. Same fail-closed rule: no port ⇒ a role's governance tools are
+        # simply dropped from its toolset.
+        if self._governance is not None:
+            for name in config.tools:
+                gov_tool = governance_tool(name, self._governance)
+                if gov_tool is not None:
+                    registry.register(gov_tool, source=ToolSource.DEFAULT)
         # execute_go_live pairs with cms_draft: it publishes the staged draft once the human approves
         # the stage_go_live gate. Needs BOTH the ledger (fail-closed gate check) and the worktree
         # (standing-draft + delivery indexes), so it registers here rather than in _capability_tool.
