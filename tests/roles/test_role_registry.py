@@ -43,6 +43,7 @@ def test_default_roles_register_cleanly() -> None:
         "marketer",
         "designer",
         "frontend_engineer",
+        "ceo",
     }
 
 

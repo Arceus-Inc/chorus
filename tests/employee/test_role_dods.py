@@ -12,6 +12,7 @@ import pytest
 
 from chorus.outcomes import DoDKind, Verifier
 from chorus_employee.analyst import analyst_plugin
+from chorus_employee.ceo import ceo_plugin
 from chorus_employee.engineer import engineer_plugin
 from chorus_employee.manager import manager_plugin
 from chorus_employee.reviewer import reviewer_plugin
@@ -27,6 +28,7 @@ def test_each_role_dod_returns_the_expected_archetype() -> None:
         "reviewer": (reviewer_plugin, DoDKind.HUMAN_APPROVAL),
         "manager": (manager_plugin, DoDKind.AGENT_REVIEW),
         "analyst": (analyst_plugin, DoDKind.AGENT_REVIEW),
+        "ceo": (ceo_plugin, DoDKind.AGENT_REVIEW),
     }
     for role, (plugin_fn, kind) in cases.items():
         verifier = plugin_fn().dod_generator(_INTENT)
