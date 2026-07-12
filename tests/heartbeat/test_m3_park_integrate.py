@@ -40,16 +40,26 @@ class _TeamBeat:
         self.working_dir = None
 
     async def run_task(
-        self, *, task_id: str, intent: str, verification: object = (),
-        rubric: object = "", observer: object = None, run_id: str | None = None,
+        self,
+        *,
+        task_id: str,
+        intent: str,
+        verification: object = (),
+        rubric: object = "",
+        observer: object = None,
+        run_id: str | None = None,
     ) -> BeatOutcome:
         self.ran.append(task_id)
         if task_id == self._parent:
             if not self._ledger.tasks.has_children(self._parent):  # the decompose beat
                 CapabilityService(self._ledger).decompose(
-                    parent_id=self._parent, revision=str(run_id), children=[
+                    parent_id=self._parent,
+                    revision=str(run_id),
+                    children=[
                         ChildPlan(label="api", intent="build the api", assignee="ada"),
-                        ChildPlan(label="ui", intent="build the ui", assignee="bob", depends_on=("api",)),
+                        ChildPlan(
+                            label="ui", intent="build the ui", assignee="bob", depends_on=("api",)
+                        ),
                     ],
                 )
                 return BeatOutcome(passed=False, outcome={}, summary="delegated", model="m")
@@ -75,7 +85,8 @@ def _objective_roles() -> RoleRegistry:
     engineer = next(p for p in base if p.name == "engineer")
     others = tuple(p for p in base if p.name != "engineer")
     objective = RolePlugin(
-        name="engineer", manifest=engineer.manifest,
+        name="engineer",
+        manifest=engineer.manifest,
         dod_generator=lambda intent: Verifier.command("true", artifact_class="pr"),
         outcome_kind=engineer.outcome_kind,
     )
@@ -88,10 +99,15 @@ def _sched(ledger: SqliteLedger, beat: _TeamBeat, *, tmp_path: object = None) ->
     root = Path(str(tmp_path)) if tmp_path is not None else Path(".")
     beat.working_dir = root
     return Scheduler(
-        ledger=ledger, workforce=LedgerWorkforce(ledger.employees), beat_runner=beat,
+        ledger=ledger,
+        workforce=LedgerWorkforce(ledger.employees),
+        beat_runner=beat,
         roles=_objective_roles(),
-        landers=default_landers(root, ledger=ledger),  # the manager lands a subtree artifact on integrate
-        clock=lambda: _NOW, max_concurrent_runs=4,
+        landers=default_landers(
+            root, ledger=ledger
+        ),  # the manager lands a subtree artifact on integrate
+        clock=lambda: _NOW,
+        max_concurrent_runs=4,
     )
 
 
@@ -109,7 +125,9 @@ async def test_decompose_beat_parks_the_parent_not_strands_it(ledger: SqliteLedg
     assert parent is not None and parent.status is TaskStatus.BLOCKED  # PARKED, not failed
     assert ledger.recovery_actions.active_for_source("M") is None  # never stranded onto recovery
     # the two children exist, assigned, gating the parent
-    assert set(ledger.dependencies.unresolved_blockers("M")) and not ledger.tasks.all_children_terminal("M")
+    assert set(
+        ledger.dependencies.unresolved_blockers("M")
+    ) and not ledger.tasks.all_children_terminal("M")
 
 
 async def test_full_loop_decompose_then_children_then_integrate_to_done(
@@ -132,7 +150,8 @@ async def test_full_loop_decompose_then_children_then_integrate_to_done(
     assert {child.assignee for child in beat.integrate_packets[0].children} == {"ada", "bob"}
     # the ManagerLander recorded the subtree as the manager's primary deliverable
     subtree = next(
-        a for a in ledger.artifacts.list_for_task("M")
+        a
+        for a in ledger.artifacts.list_for_task("M")
         if a.resource_ref is not None and a.resource_ref.get("kind") == "subtree"
     )
     assert {c["id"] for c in subtree.resource_ref["children"]} == {  # type: ignore[union-attr,index]
@@ -152,25 +171,41 @@ class _AdaptiveBeat:
         self._integrates = 0
 
     async def run_task(
-        self, *, task_id: str, intent: str, verification: object = (),
-        rubric: object = "", observer: object = None, run_id: str | None = None,
+        self,
+        *,
+        task_id: str,
+        intent: str,
+        verification: object = (),
+        rubric: object = "",
+        observer: object = None,
+        run_id: str | None = None,
     ) -> BeatOutcome:
         self.ran.append(task_id)
         svc = CapabilityService(self._ledger)
         if task_id != self._parent:
-            return BeatOutcome(passed=True, outcome={}, summary="ok", model="m")  # an engineer child
+            return BeatOutcome(
+                passed=True, outcome={}, summary="ok", model="m"
+            )  # an engineer child
         if not self._ledger.tasks.has_children(self._parent):  # kickoff beat
-            svc.decompose(parent_id=self._parent, revision=str(run_id), children=[
-                ChildPlan(label="api", intent="api", assignee="ada"),
-                ChildPlan(label="ui", intent="ui", assignee="bob"),
-            ])
+            svc.decompose(
+                parent_id=self._parent,
+                revision=str(run_id),
+                children=[
+                    ChildPlan(label="api", intent="api", assignee="ada"),
+                    ChildPlan(label="ui", intent="ui", assignee="bob"),
+                ],
+            )
             return BeatOutcome(passed=False, outcome={}, summary="delegated", model="m")
         self._integrates += 1
         from pathlib import Path
+
         self.integrate_packets.append(IntegrateContextPacket.read(Path(str(self.working_dir))))
         if self._integrates == 1:  # react: one concrete follow-up
-            svc.submit_one(parent_id=self._parent, revision=str(run_id),
-                           child=ChildPlan(label="polish", intent="polish", assignee="ada"))
+            svc.submit_one(
+                parent_id=self._parent,
+                revision=str(run_id),
+                child=ChildPlan(label="polish", intent="polish", assignee="ada"),
+            )
             return BeatOutcome(passed=False, outcome={}, summary="submitted follow-up", model="m")
         return BeatOutcome(passed=True, outcome={}, summary="accepted", model="m")  # integrate #2
 
@@ -186,20 +221,32 @@ class _AlwaysSubmitBeat:
         self._n = 0
 
     async def run_task(
-        self, *, task_id: str, intent: str, verification: object = (),
-        rubric: object = "", observer: object = None, run_id: str | None = None,
+        self,
+        *,
+        task_id: str,
+        intent: str,
+        verification: object = (),
+        rubric: object = "",
+        observer: object = None,
+        run_id: str | None = None,
     ) -> BeatOutcome:
         self.ran.append(task_id)
         svc = CapabilityService(self._ledger)
         if task_id != self._parent:
             return BeatOutcome(passed=True, outcome={}, summary="ok", model="m")
         if not self._ledger.tasks.has_children(self._parent):
-            svc.decompose(parent_id=self._parent, revision=str(run_id),
-                          children=[ChildPlan(label="c0", intent="c0", assignee="ada")])
+            svc.decompose(
+                parent_id=self._parent,
+                revision=str(run_id),
+                children=[ChildPlan(label="c0", intent="c0", assignee="ada")],
+            )
             return BeatOutcome(passed=False, outcome={}, summary="delegated", model="m")
         self._n += 1
-        svc.submit_one(parent_id=self._parent, revision=str(run_id),
-                       child=ChildPlan(label=f"more{self._n}", intent="more", assignee="ada"))
+        svc.submit_one(
+            parent_id=self._parent,
+            revision=str(run_id),
+            child=ChildPlan(label=f"more{self._n}", intent="more", assignee="ada"),
+        )
         return BeatOutcome(passed=False, outcome={}, summary="never accepts", model="m")
 
 
@@ -208,10 +255,14 @@ def _adaptive_sched(ledger: SqliteLedger, beat: object, root: object, *, cap: in
 
     beat.working_dir = Path(str(root))  # type: ignore[attr-defined]
     return Scheduler(
-        ledger=ledger, workforce=LedgerWorkforce(ledger.employees), beat_runner=beat,  # type: ignore[arg-type]
+        ledger=ledger,
+        workforce=LedgerWorkforce(ledger.employees),
+        beat_runner=beat,  # type: ignore[arg-type]
         roles=_objective_roles(),
         landers=default_landers(Path(str(root)), ledger=ledger),
-        clock=lambda: _NOW, max_concurrent_runs=4, max_integrate_iterations=cap,
+        clock=lambda: _NOW,
+        max_concurrent_runs=4,
+        max_integrate_iterations=cap,
     )
 
 
@@ -224,7 +275,9 @@ async def test_adaptive_integrate_submits_a_follow_up_then_re_integrates_to_done
     beat = _AdaptiveBeat(ledger, parent="M")
     sched = _adaptive_sched(ledger, beat, tmp_path)
 
-    for _ in range(12):  # kickoff → api,ui → integrate#1 (submit polish) → polish → integrate#2 (accept)
+    for _ in range(
+        12
+    ):  # kickoff → api,ui → integrate#1 (submit polish) → polish → integrate#2 (accept)
         await sched.tick_once()
         await sched.drain()
 
@@ -244,7 +297,9 @@ async def test_adaptive_integrate_is_bounded_by_the_iteration_cap(
     ledger.tasks.submit(Task(id="M", intent="ship the feature", status=TaskStatus.TODO))
     assign_task(ledger, "M", "mgr")
     beat = _AlwaysSubmitBeat(ledger, parent="M")
-    sched = _adaptive_sched(ledger, beat, tmp_path, cap=2)  # bound the loop at 2 adaptive integrates
+    sched = _adaptive_sched(
+        ledger, beat, tmp_path, cap=2
+    )  # bound the loop at 2 adaptive integrates
 
     for _ in range(30):  # a manager that never accepts must still terminate
         await sched.tick_once()
@@ -264,8 +319,12 @@ async def test_adaptive_integrate_is_bounded_by_the_iteration_cap(
 # worktree and parks the goal BLOCKED (not ``done``) if it fails, so a half-built decomposition surfaces
 # honestly instead of being laundered into a false ``done``.
 
-_PY_FAIL = 'python -c "import sys; sys.exit(1)"'   # a failing objective floor (a deliverable is missing)
-_PY_PASS = 'python -c "import sys; sys.exit(0)"'   # a passing objective floor (the goal is satisfied)
+_PY_FAIL = (
+    'python -c "import sys; sys.exit(1)"'  # a failing objective floor (a deliverable is missing)
+)
+_PY_PASS = (
+    'python -c "import sys; sys.exit(0)"'  # a passing objective floor (the goal is satisfied)
+)
 
 
 async def test_integrate_blocks_when_the_goals_objective_rollup_floor_fails(
@@ -286,10 +345,14 @@ async def test_integrate_blocks_when_the_goals_objective_rollup_floor_fails(
         await sched.drain()
 
     parent = ledger.tasks.get("M")
-    assert parent is not None and parent.status is TaskStatus.BLOCKED  # NOT done — the floor rejected it
+    assert (
+        parent is not None and parent.status is TaskStatus.BLOCKED
+    )  # NOT done — the floor rejected it
     assert ledger.tasks.all_children_terminal("M")  # the subtree still fully landed
     dod = ledger.dod.get_for_task("M")
-    assert dod is not None and dod.status is DodStatus.FAILED  # the failing rollup verdict is recorded
+    assert (
+        dod is not None and dod.status is DodStatus.FAILED
+    )  # the failing rollup verdict is recorded
 
 
 async def test_integrate_lands_done_when_the_objective_rollup_floor_passes(

@@ -41,6 +41,7 @@ def pm_manifest() -> RoleManifest:
         tools=(
             "read_file",
             "write_file",
+            "todo_write",  # durable cross-beat checklist (TODO.md) — resume, don't restart
             # Tavily-backed web search — an allowlisted-egress read (host: api.tavily.com); needs the
             # net sandbox tier below. This is the PM's read reach onto the live web (§07/§08).
             "web_search",

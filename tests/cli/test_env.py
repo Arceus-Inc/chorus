@@ -30,7 +30,7 @@ def test_skips_blanks_and_comments(tmp_path: Path) -> None:
 
 def test_strips_export_prefix_and_surrounding_quotes(tmp_path: Path) -> None:
     env_file = tmp_path / ".env"
-    env_file.write_text('export A="quoted value"\nB=\'single\'\n', encoding="utf-8")
+    env_file.write_text("export A=\"quoted value\"\nB='single'\n", encoding="utf-8")
     target: dict[str, str] = {}
     load_env_file(env_file, environ=target)
     assert target == {"A": "quoted value", "B": "single"}

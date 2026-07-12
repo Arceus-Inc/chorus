@@ -30,16 +30,16 @@ pytestmark = pytest.mark.unit
 
 def _run(command: str, cwd: Path) -> subprocess.CompletedProcess[str]:
     """Run ``command`` through the OS shell exactly as dream's oracle does (``shell=True``)."""
-    return subprocess.run(
-        command, shell=True, cwd=cwd, capture_output=True, text=True, check=False
-    )
+    return subprocess.run(command, shell=True, cwd=cwd, capture_output=True, text=True, check=False)
 
 
 # --- command shape -------------------------------------------------------------------------------
 
 
 def test_command_is_a_python_c_invocation_with_no_leaked_shell_metacharacters() -> None:
-    command = python_check([file_exists("app.js"), file_matches("app.js", "addEventListener", label="wiring")])
+    command = python_check(
+        [file_exists("app.js"), file_matches("app.js", "addEventListener", label="wiring")]
+    )
     assert " -c " in command
     assert "import base64" in command
     # The check details (paths, regexes) must be encoded in the base64 blob, never in cleartext where a
@@ -97,20 +97,31 @@ def test_min_words_below_threshold_fails(tmp_path: Path) -> None:
 
 def test_regex_absent_fails(tmp_path: Path) -> None:
     (tmp_path / "app.js").write_text("const x = 1;\n" + "word " * 200, encoding="utf-8")
-    result = _run(python_check([file_matches("app.js", r"addEventListener", label="event wiring")]), tmp_path)
+    result = _run(
+        python_check([file_matches("app.js", r"addEventListener", label="event wiring")]), tmp_path
+    )
     assert result.returncode != 0
     assert "event wiring" in result.stderr
 
 
 def test_regex_present_passes(tmp_path: Path) -> None:
     (tmp_path / "app.js").write_text("btn.addEventListener('click', run);\n", encoding="utf-8")
-    assert _run(python_check([file_matches("app.js", r"addEventListener", label="wiring")]), tmp_path).returncode == 0
+    assert (
+        _run(
+            python_check([file_matches("app.js", r"addEventListener", label="wiring")]), tmp_path
+        ).returncode
+        == 0
+    )
 
 
 def test_matches_any_passes_when_one_matches(tmp_path: Path) -> None:
     (tmp_path / "test.js").write_text("import { test } from 'node:test';\n", encoding="utf-8")
     command = python_check(
-        [file_matches_any("test.js", [r"node:test", r"vitest", r"@playwright/test"], label="a test runner")]
+        [
+            file_matches_any(
+                "test.js", [r"node:test", r"vitest", r"@playwright/test"], label="a test runner"
+            )
+        ]
     )
     assert _run(command, tmp_path).returncode == 0
 
@@ -118,7 +129,11 @@ def test_matches_any_passes_when_one_matches(tmp_path: Path) -> None:
 def test_matches_any_fails_when_none_match(tmp_path: Path) -> None:
     (tmp_path / "test.js").write_text("console.log('nothing here');\n", encoding="utf-8")
     command = python_check(
-        [file_matches_any("test.js", [r"node:test", r"vitest", r"@playwright/test"], label="a test runner")]
+        [
+            file_matches_any(
+                "test.js", [r"node:test", r"vitest", r"@playwright/test"], label="a test runner"
+            )
+        ]
     )
     assert _run(command, tmp_path).returncode != 0
 
@@ -135,7 +150,9 @@ def test_regex_with_shell_special_characters_survives_the_shell(tmp_path: Path) 
     # A regex full of characters cmd.exe/sh treat specially (^, &, |, %, <, >, quotes) must still be
     # evaluated by Python, not the shell — the base64 envelope guarantees it.
     (tmp_path / "weird.txt").write_text("start & pipe | pct % lt < gt > done\n", encoding="utf-8")
-    command = python_check([file_matches("weird.txt", r"^start & pipe \| pct % lt < gt > done$", label="tricky")])
+    command = python_check(
+        [file_matches("weird.txt", r"^start & pipe \| pct % lt < gt > done$", label="tricky")]
+    )
     assert _run(command, tmp_path).returncode == 0
 
 

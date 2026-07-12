@@ -3,7 +3,7 @@
 Structural twin of ``test_designer_subagents.py``. The Designer's post-draft Design-Critic maps here to
 a post-BUILD review layer: a Code-Reviewer (correctness / accessibility / test integrity) and a UI-Tester
 (auditor of the PROOF — does the e2e genuinely drive + assert the real UI). Both are read-only and both
-ground their verdict on the deterministic ``test_evidence`` scan (the structural analog of the Designer's
+ground their verdict on the deterministic ``evidence_scan`` scan (the structural analog of the Designer's
 ``design_lint``).
 
 The *declaration*-level tests run everywhere; the *projection*-level tests (``_subagent_set``) exercise
@@ -77,8 +77,8 @@ class TestCodeReviewerDeclaration:
 
     def test_grounds_verdict_on_test_evidence(self) -> None:
         # test_evidence is the deterministic primitive it runs first, then reasons past it.
-        assert "test_evidence" in CODE_REVIEWER_SUBAGENT.tools
-        assert "test_evidence" in CODE_REVIEWER_SUBAGENT.description
+        assert "evidence_scan" in CODE_REVIEWER_SUBAGENT.tools
+        assert "evidence_scan" in CODE_REVIEWER_SUBAGENT.description
 
     def test_carries_the_verdict_output_schema(self) -> None:
         schema = CODE_REVIEWER_SUBAGENT.output_schema
@@ -118,8 +118,8 @@ class TestUiTesterDeclaration:
         assert "read-only" in desc or "read only" in desc
 
     def test_grounds_verdict_on_test_evidence(self) -> None:
-        assert "test_evidence" in UI_TESTER_SUBAGENT.tools
-        assert "test_evidence" in UI_TESTER_SUBAGENT.description
+        assert "evidence_scan" in UI_TESTER_SUBAGENT.tools
+        assert "evidence_scan" in UI_TESTER_SUBAGENT.description
 
     def test_carries_the_verdict_output_schema(self) -> None:
         schema = UI_TESTER_SUBAGENT.output_schema
@@ -148,10 +148,10 @@ class TestFrontendEngineerManifestSubagents:
     def test_reviewers_get_test_evidence_as_a_subagent_primitive(self) -> None:
         manifest = self._manifest()
         # parent superset (needed so the projection's narrower-wins intersection keeps it)
-        assert "test_evidence" in manifest.tools
+        assert "evidence_scan" in manifest.tools
         for name in ("code_reviewer", "ui_tester"):
             sa = next(s for s in manifest.subagents if s.name == name)
-            assert "test_evidence" in sa.tools
+            assert "evidence_scan" in sa.tools
 
     def test_subagent_tools_are_subset_of_parent_tools(self) -> None:
         manifest = self._manifest()
@@ -182,7 +182,7 @@ class TestFrontendEngineerProjection:
         assert child is not None
         assert child.max_turns <= 8
         assert "read_file" in child.tools
-        assert "test_evidence" in child.tools
+        assert "evidence_scan" in child.tools
         assert "write_file" not in child.tools  # read-only survives projection
         assert "run_command" not in child.tools
 
@@ -192,7 +192,7 @@ class TestFrontendEngineerProjection:
         child = result.get("ui_tester")
         assert child is not None
         assert "read_file" in child.tools
-        assert "test_evidence" in child.tools
+        assert "evidence_scan" in child.tools
         assert "write_file" not in child.tools
         assert child.output_schema is not None
 
@@ -214,7 +214,7 @@ class TestFrontendEngineerProjection:
                 if cap is not None:
                     registry.register(cap, source=ToolSource.DEFAULT)
             declarations = {t.name: t.declaration for t in registry.list_tools()}
-            assert "test_evidence" in declarations
+            assert "evidence_scan" in declarations
 
             reviewer = _subagent_set(config).get("code_reviewer")  # type: ignore[union-attr]
             assert reviewer is not None
@@ -223,6 +223,6 @@ class TestFrontendEngineerProjection:
             offered = compute_minimum_toolset(
                 manifest, sandbox_tier=SandboxTier.UNRESTRICTED, declarations=declarations
             )
-            assert "test_evidence" in offered
+            assert "evidence_scan" in offered
         finally:
             ledger.close()

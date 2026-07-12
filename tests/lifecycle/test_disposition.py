@@ -52,8 +52,13 @@ def _task(
 
 def _run(ledger: SqliteLedger, status: RunStatus, *, lease: datetime | None = None) -> Run:
     return ledger.runs.create(
-        Run(id=f"run_{status.value}", employee_id="emp_1", task_id="t1", status=status,
-            lease_expires_at=lease)
+        Run(
+            id=f"run_{status.value}",
+            employee_id="emp_1",
+            task_id="t1",
+            status=status,
+            lease_expires_at=lease,
+        )
     )
 
 
@@ -75,9 +80,7 @@ def test_succeeded_run_left_in_progress_enqueues_one_finish_handoff(
     assert wake.payload.get("task_id") == "t1"
 
 
-def test_finish_handoff_is_idempotent_while_pending(
-    ledger: SqliteLedger, emp: Employee
-) -> None:
+def test_finish_handoff_is_idempotent_while_pending(ledger: SqliteLedger, emp: Employee) -> None:
     task = _task(ledger)
     _run(ledger, RunStatus.SUCCEEDED)
     reconcile_disposition(task, ledger, now=NOW)

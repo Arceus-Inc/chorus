@@ -33,7 +33,14 @@ class _Beat:
         self._cost = cost_cents
 
     async def run_task(
-        self, *, task_id: str, intent: str, verification: object = (), rubric: object = "", observer: object = None, run_id: str | None = None
+        self,
+        *,
+        task_id: str,
+        intent: str,
+        verification: object = (),
+        rubric: object = "",
+        observer: object = None,
+        run_id: str | None = None,
     ) -> BeatOutcome:
         self.ran.append(task_id)
         return BeatOutcome(passed=True, outcome={}, summary="ok", cost_cents=self._cost, model="m")
@@ -44,10 +51,16 @@ def _two_engineers(ledger: SqliteLedger) -> None:
     ledger.employees.create(Employee(id="e2", name="E2", role="engineer"))
 
 
-def _sched(ledger: SqliteLedger, beat: _Beat, *, cap: int = 4, enforcer: BudgetEnforcer | None = None) -> Scheduler:
+def _sched(
+    ledger: SqliteLedger, beat: _Beat, *, cap: int = 4, enforcer: BudgetEnforcer | None = None
+) -> Scheduler:
     return Scheduler(
-        ledger=ledger, workforce=LedgerWorkforce(ledger.employees), beat_runner=beat,
-        budget_enforcer=enforcer, clock=lambda: _NOW, max_concurrent_runs=cap,
+        ledger=ledger,
+        workforce=LedgerWorkforce(ledger.employees),
+        beat_runner=beat,
+        budget_enforcer=enforcer,
+        clock=lambda: _NOW,
+        max_concurrent_runs=cap,
     )
 
 
@@ -109,7 +122,9 @@ async def test_stale_wake_for_a_done_task_is_drained_not_requeued(ledger: Sqlite
     ledger.tasks.submit(Task(id="T", intent="real pending work", status=TaskStatus.TODO))
     # The stale wake for the DONE task sits ahead of the live one in e1's queue.
     ledger.wakes.enqueue(
-        Wake(id="stale", employee_id="e1", reason=WakeReason.CHILDREN_DONE, payload={"task_id": "D"})
+        Wake(
+            id="stale", employee_id="e1", reason=WakeReason.CHILDREN_DONE, payload={"task_id": "D"}
+        )
     )
     assign_task(ledger, "T", "e1")  # the live wake
     beat = _Beat()
@@ -120,7 +135,9 @@ async def test_stale_wake_for_a_done_task_is_drained_not_requeued(ledger: Sqlite
 
     queued = {w.payload.get("task_id") for w in ledger.wakes.queued()}
     assert "D" not in queued  # the stale wake was drained, not re-queued
-    assert "T" in beat.ran  # ...so the live work still dispatched despite the stale wake ahead of it
+    assert (
+        "T" in beat.ran
+    )  # ...so the live work still dispatched despite the stale wake ahead of it
 
 
 async def test_hard_budget_breach_pauses_the_scope(ledger: SqliteLedger) -> None:
@@ -137,4 +154,6 @@ async def test_hard_budget_breach_pauses_the_scope(ledger: SqliteLedger) -> None
     await sched.tick_once()
     await sched.drain()
     assert beat.ran == ["A"]  # the beat ran
-    assert enforcer.invocation_block("e1", now=_NOW) is not None  # ...and tripped the hard stop → scope paused
+    assert (
+        enforcer.invocation_block("e1", now=_NOW) is not None
+    )  # ...and tripped the hard stop → scope paused

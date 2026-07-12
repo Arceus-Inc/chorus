@@ -40,7 +40,9 @@ def test_apply_revision_preserves_recorded_verdict(ledger: SqliteLedger) -> None
     assert after.status is DodStatus.PASSED
 
 
-def test_propose_revision_stages_without_touching_the_in_force_verifier(ledger: SqliteLedger) -> None:
+def test_propose_revision_stages_without_touching_the_in_force_verifier(
+    ledger: SqliteLedger,
+) -> None:
     ledger.tasks.submit(Task(id="t1", intent="ship", status=TaskStatus.TODO))
     ledger.dod.create("t1", Verifier.reviewed_build())
     ledger.dod.propose_revision("t1", Verifier.command("pytest"))  # a loosen, staged

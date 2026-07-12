@@ -76,15 +76,9 @@ def main() -> int:
         print(f"- SOM share of SAM: {som_share:.0%}\n")
         print("| Metric | Formula | Estimate |")
         print("| --- | --- | --- |")
-        print(
-            f"| TAM | {basis} | {format_money(tam, args.currency)} |"
-        )
-        print(
-            f"| SAM | TAM x {sam_share:.0%} | {format_money(sam, args.currency)} |"
-        )
-        print(
-            f"| SOM | SAM x {som_share:.0%} | {format_money(som, args.currency)} |"
-        )
+        print(f"| TAM | {basis} | {format_money(tam, args.currency)} |")
+        print(f"| SAM | TAM x {sam_share:.0%} | {format_money(sam, args.currency)} |")
+        print(f"| SOM | SAM x {som_share:.0%} | {format_money(som, args.currency)} |")
         return 0
     except (ValueError, argparse.ArgumentError) as exc:
         print(f"Error: {exc}", file=sys.stderr)

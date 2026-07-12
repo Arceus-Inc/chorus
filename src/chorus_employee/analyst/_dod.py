@@ -41,8 +41,20 @@ class ActionClass(StrEnum):
 # the human sign-off gate), then a prediction/model beat with an objective held-out floor, else the
 # default reversible deliverable — reviewed findings.
 _RECOMMEND_CUES = (
-    "recommend", "recommendation", "decide", "decision", "should we", "go/no-go", "go no-go",
-    "propose", "proposal", "advise", "pick", "choose", "prioritize", "prioritise",
+    "recommend",
+    "recommendation",
+    "decide",
+    "decision",
+    "should we",
+    "go/no-go",
+    "go no-go",
+    "propose",
+    "proposal",
+    "advise",
+    "pick",
+    "choose",
+    "prioritize",
+    "prioritise",
 )
 # Only an UNAMBIGUOUS predictive vocabulary — words that in ordinary research/analysis prose mean
 # something else are deliberately excluded: "model" (a language-model / data-model / business-model,
@@ -50,8 +62,20 @@ _RECOMMEND_CUES = (
 # word boundary), "fit" (goodness-of-fit), "score" (a credit score / "is this a good score"), and bare
 # "accuracy". A genuine prediction beat still lands here via predict/forecast/classify/train/etc.
 _PREDICT_CUES = (
-    "predict", "prediction", "predictive", "forecast", "classify", "classifier", "train",
-    "regression", "backtest", "back-test", "holdout", "hold-out", "auc", "rmse",
+    "predict",
+    "prediction",
+    "predictive",
+    "forecast",
+    "classify",
+    "classifier",
+    "train",
+    "regression",
+    "backtest",
+    "back-test",
+    "holdout",
+    "hold-out",
+    "auc",
+    "rmse",
 )
 
 

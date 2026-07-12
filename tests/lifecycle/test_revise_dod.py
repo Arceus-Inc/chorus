@@ -34,13 +34,18 @@ def test_manager_tighten_applies_immediately(ledger: SqliteLedger) -> None:
     _task_with_manager(ledger, Verifier.command("pytest"))
 
     outcome = revise_dod(
-        ledger, task_id="t1", new_verifier=Verifier.command("pytest && ruff check"), revised_by="moe"
+        ledger,
+        task_id="t1",
+        new_verifier=Verifier.command("pytest && ruff check"),
+        revised_by="moe",
     )
 
     assert outcome.direction is RevisionDirection.TIGHTEN and outcome.applied is True
     dod = ledger.dod.get_for_task("t1")
     assert dod is not None and dod.revision == 2
-    assert ledger.dod.verifier_for_task("t1").verification_steps()[0].command == "pytest && ruff check"  # type: ignore[union-attr]
+    assert (
+        ledger.dod.verifier_for_task("t1").verification_steps()[0].command == "pytest && ruff check"
+    )  # type: ignore[union-attr]
     verbs = [a.verb for a in ledger.activity.by_subject("task", "t1")]
     assert ActivityVerb.DOD_REVISED in verbs
 
@@ -49,7 +54,9 @@ def test_non_manager_cannot_revise(ledger: SqliteLedger) -> None:
     _task_with_manager(ledger, Verifier.command("pytest"))
     with pytest.raises(RevisionAuthorityError):
         revise_dod(
-            ledger, task_id="t1", new_verifier=Verifier.command("pytest && ruff check"),
+            ledger,
+            task_id="t1",
+            new_verifier=Verifier.command("pytest && ruff check"),
             revised_by="ada",  # the worker cannot tighten its own gate
         )
 
@@ -67,7 +74,10 @@ def test_tighten_does_not_rejudge_a_recorded_verdict(ledger: SqliteLedger) -> No
     ledger.dod.record_verdict(dod.id, DodStatus.PASSED, verdict={"ok": True})
 
     revise_dod(
-        ledger, task_id="t1", new_verifier=Verifier.command("pytest && ruff check"), revised_by="moe"
+        ledger,
+        task_id="t1",
+        new_verifier=Verifier.command("pytest && ruff check"),
+        revised_by="moe",
     )
 
     after = ledger.dod.get_for_task("t1")

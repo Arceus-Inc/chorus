@@ -34,7 +34,10 @@ def test_reviewed_build_is_a_reviewer_gate_with_no_self_run_step() -> None:
     assert verifier.kind is DoDKind.REVIEWED_BUILD
     assert verifier.artifact_class == "pr"
     assert isinstance(verifier.spec, ReviewedBuild)
-    assert verifier.spec.reviewer_role == "reviewer" and verifier.spec.rubric == "meets intent, clean diff"
+    assert (
+        verifier.spec.reviewer_role == "reviewer"
+        and verifier.spec.rubric == "meets intent, clean diff"
+    )
     assert verifier.verification_steps() == ()
 
 

@@ -30,7 +30,14 @@ class _TaggedBeat:
         self.calls: list[str] = []
 
     async def run_task(
-        self, *, task_id: str, intent: str, verification: object = (), rubric: object = "", observer: object = None, run_id: str | None = None
+        self,
+        *,
+        task_id: str,
+        intent: str,
+        verification: object = (),
+        rubric: object = "",
+        observer: object = None,
+        run_id: str | None = None,
     ) -> BeatOutcome:
         self.calls.append(task_id)
         return BeatOutcome(passed=True, outcome={}, summary=self.tag)
@@ -65,8 +72,12 @@ def _seed(ledger: SqliteLedger, employee_id: str, task_id: str) -> Employee:
         Task(id=task_id, intent="ship", status=TaskStatus.TODO, assignee_employee_id=employee_id)
     )
     ledger.wakes.enqueue(
-        Wake(id=f"w_{task_id}", employee_id=employee_id, reason=WakeReason.TASK_ASSIGNED,
-             payload={"task_id": task_id})
+        Wake(
+            id=f"w_{task_id}",
+            employee_id=employee_id,
+            reason=WakeReason.TASK_ASSIGNED,
+            payload={"task_id": task_id},
+        )
     )
     return employee
 

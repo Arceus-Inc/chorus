@@ -24,7 +24,14 @@ ANALYST_SUBAGENTS: tuple[SubagentSpec, ...] = (
             "from the SQL warehouse, and `notebook_run` (pandas) to produce the base tables — typed "
             "columns, derived rates, group-bys, joins. Return the computed numbers, not prose."
         ),
-        tools=("read_file", "repo_search", "warehouse_query", "notebook_run", "run_command", "read_offloaded"),
+        tools=(
+            "read_file",
+            "repo_search",
+            "warehouse_query",
+            "notebook_run",
+            "run_command",
+            "read_offloaded",
+        ),
     ),
     SubagentSpec(
         name="modeling",
@@ -34,7 +41,14 @@ ANALYST_SUBAGENTS: tuple[SubagentSpec, ...] = (
             "with `notebook_run` (pandas/numpy), render a chart with `chart_render` if it helps, and "
             "report the exact numeric results."
         ),
-        tools=("read_file", "warehouse_query", "notebook_run", "chart_render", "run_command", "read_offloaded"),
+        tools=(
+            "read_file",
+            "warehouse_query",
+            "notebook_run",
+            "chart_render",
+            "run_command",
+            "read_offloaded",
+        ),
     ),
     SubagentSpec(
         name="critic",

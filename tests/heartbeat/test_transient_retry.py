@@ -27,7 +27,14 @@ class _FlakyBeat:
         self.calls = 0
 
     async def run_task(
-        self, *, task_id: str, intent: str, verification: object = (), rubric: object = "", observer: object = None, run_id: str | None = None
+        self,
+        *,
+        task_id: str,
+        intent: str,
+        verification: object = (),
+        rubric: object = "",
+        observer: object = None,
+        run_id: str | None = None,
     ) -> BeatOutcome:
         self.calls += 1
         if self.calls <= self._fail_times:
@@ -50,7 +57,9 @@ class _FakeWorkforce:
 
 def _dispatch(ledger: SqliteLedger, beat: _FlakyBeat, *, transient_retries: int = 2) -> Scheduler:
     employee = ledger.employees.create(Employee(id="e1", name="e1", role="engineer"))
-    ledger.tasks.submit(Task(id="t1", intent="x", status=TaskStatus.TODO, assignee_employee_id="e1"))
+    ledger.tasks.submit(
+        Task(id="t1", intent="x", status=TaskStatus.TODO, assignee_employee_id="e1")
+    )
     ledger.wakes.enqueue(
         Wake(id="w1", employee_id="e1", reason=WakeReason.MANUAL, payload={"task_id": "t1"})
     )

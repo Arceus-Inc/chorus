@@ -22,6 +22,7 @@ from chorus.roles._plugin import RolePlugin
 # chorus_employee package root) keep this edge cycle-free.
 from chorus_employee.analyst import analyst_plugin
 from chorus_employee.ceo import ceo_plugin
+from chorus_employee.backend_engineer import backend_engineer_plugin
 from chorus_employee.designer import designer_plugin
 from chorus_employee.engineer import engineer_plugin
 from chorus_employee.frontend_engineer import frontend_engineer_plugin
@@ -39,6 +40,7 @@ def default_roles() -> tuple[RolePlugin, ...]:
     """
     return (
         engineer_plugin(),
+        backend_engineer_plugin(),
         reviewer_plugin(),
         manager_plugin(),
         pm_plugin(),

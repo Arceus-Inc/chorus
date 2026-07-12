@@ -96,7 +96,9 @@ class TestLintDesign:
     def test_off_token_colour_match_is_case_insensitive(self) -> None:
         # #B3261E is on-scale once folded; an off-scale hex in any case still fires.
         assert all(f.kind != "off_token_color" for f in lint_design("uses #B3261E\n", self._TOKENS))
-        (f,) = [f for f in lint_design("uses #ABCDEF\n", self._TOKENS) if f.kind == "off_token_color"]
+        (f,) = [
+            f for f in lint_design("uses #ABCDEF\n", self._TOKENS) if f.kind == "off_token_color"
+        ]
         assert f.kind == "off_token_color"
 
     def test_off_scale_spacing_is_flagged(self) -> None:
@@ -128,7 +130,9 @@ class TestLintDesign:
         assert keys == sorted(keys)
 
     def test_finding_is_an_immutable_dataclass(self) -> None:
-        (f,) = [f for f in lint_design("uses #ABCDEF\n", self._TOKENS) if f.kind == "off_token_color"]
+        (f,) = [
+            f for f in lint_design("uses #ABCDEF\n", self._TOKENS) if f.kind == "off_token_color"
+        ]
         assert isinstance(f, DesignFinding)
         with pytest.raises((AttributeError, Exception)):
             f.kind = "x"  # type: ignore[misc]  # frozen

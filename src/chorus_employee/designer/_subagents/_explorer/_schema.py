@@ -29,7 +29,8 @@ class VariantEntry(BaseModel):
         description="worktree-relative path to the variant file, e.g. variants/variant_01.md",
     )
     approach: str = Field(
-        min_length=1, description="one-line description of this variant's layout/interaction approach"
+        min_length=1,
+        description="one-line description of this variant's layout/interaction approach",
     )
     rationale: str = Field(
         min_length=1,

@@ -103,7 +103,9 @@ class Verifier:
         return cls(DoDKind.AGENT_REVIEW, AgentReview(reviewer_role, rubric), artifact_class)
 
     @classmethod
-    def human_approval(cls, *, approver: str = "board", artifact_class: str = "decision") -> Verifier:
+    def human_approval(
+        cls, *, approver: str = "board", artifact_class: str = "decision"
+    ) -> Verifier:
         return cls(DoDKind.HUMAN_APPROVAL, HumanApproval(approver), artifact_class)
 
     @classmethod

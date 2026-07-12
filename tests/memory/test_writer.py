@@ -67,7 +67,9 @@ async def test_apply_is_append_only_idempotent_on_the_same_run(tmp_path) -> None
     delta = _sprint().to_memory_delta()
     await writer.apply(delta)
     await writer.apply(delta)  # a crash-retry re-applies the same run's delta
-    assert len(list((tmp_path / "project").glob("*.md"))) == 1  # one file per run_id, never duplicated
+    assert (
+        len(list((tmp_path / "project").glob("*.md"))) == 1
+    )  # one file per run_id, never duplicated
 
 
 async def test_never_overwrites_an_existing_record(tmp_path) -> None:

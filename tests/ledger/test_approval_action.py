@@ -52,9 +52,7 @@ def test_set_status_records_revision_requested(ledger: SqliteLedger) -> None:
             action=ApprovalAction.PLAN_APPROVAL,
         )
     )
-    ledger.approvals.set_status(
-        "a1", ApprovalStatus.REVISION_REQUESTED, decided_by_user_id="u1"
-    )
+    ledger.approvals.set_status("a1", ApprovalStatus.REVISION_REQUESTED, decided_by_user_id="u1")
     got = ledger.approvals.get("a1")
     assert got is not None
     assert got.status is ApprovalStatus.REVISION_REQUESTED

@@ -51,7 +51,11 @@ def test_render_bus_renders_tool_use_and_result_on_their_own_lines() -> None:
     bus.emit(_text("t1", "let me check"))  # mid-line prose
     bus.emit(Event(kind=EventKind.RUN_TOOL_USE, at=_NOW, payload={"tool": "read_file"}))
     bus.emit(
-        Event(kind=EventKind.RUN_TOOL_RESULT, at=_NOW, payload={"tool": "read_file", "is_error": False})
+        Event(
+            kind=EventKind.RUN_TOOL_RESULT,
+            at=_NOW,
+            payload={"tool": "read_file", "is_error": False},
+        )
     )
     bus.emit(
         Event(kind=EventKind.RUN_TOOL_RESULT, at=_NOW, payload={"tool": "bash", "is_error": True})
@@ -102,7 +106,9 @@ def test_ensure_task_promotes_a_fresh_task_when_none_is_workable(ledger: SqliteL
 
 def test_ensure_task_attaches_to_a_workable_task(ledger: SqliteLedger) -> None:
     ledger.employees.create(Employee(id="e1", name="a", role="engineer"))
-    ledger.tasks.submit(Task(id="t1", intent="original", status=TaskStatus.TODO, assignee_employee_id="e1"))
+    ledger.tasks.submit(
+        Task(id="t1", intent="original", status=TaskStatus.TODO, assignee_employee_id="e1")
+    )
     task_id, mode = ensure_task(ledger, "e1", "actually, do it this way")
     assert mode == "attach"
     assert task_id == "t1"
@@ -115,7 +121,9 @@ def test_ensure_task_attaches_to_a_workable_task(ledger: SqliteLedger) -> None:
 
 def test_ensure_task_does_not_double_wake_the_same_task(ledger: SqliteLedger) -> None:
     ledger.employees.create(Employee(id="e1", name="a", role="engineer"))
-    ledger.tasks.submit(Task(id="t1", intent="x", status=TaskStatus.TODO, assignee_employee_id="e1"))
+    ledger.tasks.submit(
+        Task(id="t1", intent="x", status=TaskStatus.TODO, assignee_employee_id="e1")
+    )
     ensure_task(ledger, "e1", "first steer")
     ensure_task(ledger, "e1", "second steer")
     # both lines recorded, but only one wake queued for the task
@@ -141,13 +149,28 @@ class _FakeChatBeat:
         intent: str,
         verification: object = (),
         observer: Callable[[Event], None] | None = None,
-        rubric: object = "", run_id: str | None = None,
+        rubric: object = "",
+        run_id: str | None = None,
     ) -> BeatOutcome:
         self.calls.append(intent)
         if observer is not None:
             emit = observer
-            emit(Event(kind=EventKind.RUN_TEXT, at=_NOW, task_id=task_id, payload={"text": f"on it: {intent}"}))
-            emit(Event(kind=EventKind.RUN_TOOL_USE, at=_NOW, task_id=task_id, payload={"tool": "read_file"}))
+            emit(
+                Event(
+                    kind=EventKind.RUN_TEXT,
+                    at=_NOW,
+                    task_id=task_id,
+                    payload={"text": f"on it: {intent}"},
+                )
+            )
+            emit(
+                Event(
+                    kind=EventKind.RUN_TOOL_USE,
+                    at=_NOW,
+                    task_id=task_id,
+                    payload={"tool": "read_file"},
+                )
+            )
             emit(
                 Event(
                     kind=EventKind.RUN_TOOL_RESULT,
@@ -225,7 +248,8 @@ class _ErroredChatBeat:
         intent: str,
         verification: object = (),
         observer: Callable[[Event], None] | None = None,
-        rubric: object = "", run_id: str | None = None,
+        rubric: object = "",
+        run_id: str | None = None,
     ) -> BeatOutcome:
         return BeatOutcome(
             passed=False,
@@ -377,7 +401,9 @@ def test_run_chat_quits_on_eof(ledger: SqliteLedger, make_input) -> None:
     assert beat.calls == []
 
 
-def test_run_chat_slash_quit_leaves_without_running_a_beat(ledger: SqliteLedger, make_input) -> None:
+def test_run_chat_slash_quit_leaves_without_running_a_beat(
+    ledger: SqliteLedger, make_input
+) -> None:
     ledger.employees.create(Employee(id="e1", name="alice", role="engineer"))
     beat = _FakeChatBeat()
     service, render_bus, console, out = _chat_harness(ledger, beat)

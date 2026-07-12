@@ -15,7 +15,7 @@ Frontend Engineer: ``chorus.roles.default_roles`` imports the plugin from here r
 
 The Frontend Engineer is the Designer's structural sibling (spec/build split): the Designer writes a
 ``design_spec.md`` and runs nothing; the Frontend Engineer builds the running app, RUNS its tests, and
-lands a durable ``test_evidence/`` bundle — ``design_lint`` → ``test_evidence``, the Design-Critic →
+lands a durable ``test_evidence/`` bundle — ``design_lint`` → ``evidence_scan``, the Design-Critic →
 the UI-Tester + Code-Reviewer.
 """
 

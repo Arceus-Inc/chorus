@@ -76,22 +76,21 @@ def test_trigger_create_and_due(ledger: SqliteLedger) -> None:
     _routine(ledger)
     ledger.routine_triggers.create(
         RoutineTrigger(
-            id="tg1", routine_id="r1", kind=TriggerKind.CRON,
-            cron_expression="0 9 * * *", next_run_at=_at(10),
+            id="tg1",
+            routine_id="r1",
+            kind=TriggerKind.CRON,
+            cron_expression="0 9 * * *",
+            next_run_at=_at(10),
         )
     )
-    ledger.routine_triggers.create(
-        RoutineTrigger(id="tg2", routine_id="r1", next_run_at=_at(999))
-    )
+    ledger.routine_triggers.create(RoutineTrigger(id="tg2", routine_id="r1", next_run_at=_at(999)))
     due = ledger.routine_triggers.due(now=_at(100))
     assert [t.id for t in due] == ["tg1"]
 
 
 def test_claim_fire_is_the_double_fire_guard(ledger: SqliteLedger) -> None:
     _routine(ledger)
-    ledger.routine_triggers.create(
-        RoutineTrigger(id="tg1", routine_id="r1", next_run_at=_at(10))
-    )
+    ledger.routine_triggers.create(RoutineTrigger(id="tg1", routine_id="r1", next_run_at=_at(10)))
     # the tick that holds the current edge wins and advances next_run_at
     won = ledger.routine_triggers.claim_fire(
         "tg1", expected_next_run_at=_at(10), new_next_run_at=_at(70)

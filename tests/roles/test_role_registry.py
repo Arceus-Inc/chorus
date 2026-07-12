@@ -36,6 +36,7 @@ def test_default_roles_register_cleanly() -> None:
     reg = RoleRegistry.from_plugins(default_roles())
     assert set(reg.names()) == {
         "engineer",
+        "backend_engineer",
         "reviewer",
         "manager",
         "pm",

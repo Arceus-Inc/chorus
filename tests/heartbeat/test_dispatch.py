@@ -158,9 +158,7 @@ def test_claim_handles_wake_without_task(ledger: SqliteLedger) -> None:
     """A task-less wake (e.g. a message) still claims, sorting as low/deps-ready."""
     _emp(ledger)
     _task(ledger, "t_crit", priority=TaskPriority.CRITICAL)
-    ledger.wakes.enqueue(
-        Wake(id="w_msg", employee_id="e1", reason=WakeReason.MESSAGE, payload={})
-    )
+    ledger.wakes.enqueue(Wake(id="w_msg", employee_id="e1", reason=WakeReason.MESSAGE, payload={}))
     _wake(ledger, wid="w_task", task="t_crit")
     claimed = ledger.wakes.claim(limit=2)
     # The critical task outranks the task-less message.

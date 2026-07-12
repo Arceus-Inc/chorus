@@ -36,7 +36,7 @@ known gap. A stub summary fails the bar — write the real thing.
 - Don't delete or skip a failing test to go green — a red suite is honest; a green suite that hid a
   failure is a defect you shipped.
 - Don't assert trivialities to pad the count. One genuine assertion beats ten hollow ones.
-- Before you stop, run the `test_evidence` tool and clear every finding it reports.
+- Before you stop, run the `evidence_scan` tool and clear every finding it reports.
 
 ## Before you finish
 

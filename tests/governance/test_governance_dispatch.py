@@ -50,7 +50,9 @@ def test_registry_is_fail_closed_on_an_unregistered_action(ledger: SqliteLedger)
         )
     )
     with pytest.raises(UnregisteredAction):
-        resolver.resolve("a1", decision=ApprovalDecision.APPROVE, decided_by_user_id=_USER, now=_NOW)
+        resolver.resolve(
+            "a1", decision=ApprovalDecision.APPROVE, decided_by_user_id=_USER, now=_NOW
+        )
 
 
 def test_registry_rejects_a_duplicate_handler(ledger: SqliteLedger) -> None:

@@ -2,7 +2,7 @@
 
 A Tier-1, read-only specialist the Frontend Engineer spawns *after* building and running: the
 "post-build" quality gate. It reads the app and its unit/e2e suites, grounds its verdict on the
-deterministic ``test_evidence`` scan, and returns a decisive :class:`ReviewVerdict`. It reasons past
+deterministic ``evidence_scan`` scan, and returns a decisive :class:`ReviewVerdict`. It reasons past
 what the mechanical scan catches — correctness against the intent, accessibility by construction,
 resilient states, maintainability, and (crucially) whether the tests actually PROVE anything or are
 hollow. It never edits — the Frontend Engineer keeps ownership of the fixes.
@@ -27,7 +27,7 @@ CODE_REVIEWER_SUBAGENT = SubagentSpec(
         "correctness, accessibility, and test integrity without manufacturing problems. Read the "
         "engineer's built app and its tests, then return a decisive PASS/FAIL verdict.\n\n"
         "## Your job\n"
-        "1. Ground yourself first: run `test_evidence` (no args). It tells you deterministically what "
+        "1. Ground yourself first: run `evidence_scan` (no args). It tells you deterministically what "
         "exists and whether the suites ran green — treat its findings as authoritative signal.\n"
         "2. Read the app with `read_file`: start from the project manifest (`package.json`) to learn "
         "the stack, entry point, and scripts, then read the source it points to. Read the unit tests and "
@@ -70,7 +70,7 @@ CODE_REVIEWER_SUBAGENT = SubagentSpec(
     ),
     # Read-only review shelf: read the app + tests, run the deterministic evidence scan, keep context.
     # All ⊆ the Frontend Engineer's toolset, so the projection keeps them (narrower-wins).
-    tools=("read_file", "grep", "glob", "working_memory_read", "test_evidence"),
+    tools=("read_file", "grep", "glob", "working_memory_read", "evidence_scan"),
     # run test_evidence + read the entry, a module or two, the unit spec, the e2e spec + reason — 8 fits.
     max_turns=8,
     # Runtime-enforced return contract: the typed ReviewVerdict shape (verdict + severity-tagged issues).

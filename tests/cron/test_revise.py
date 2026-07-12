@@ -45,8 +45,11 @@ def test_revise_writes_a_new_head_and_mirrors_the_live_definition() -> None:
     try:
         _seed(ledger)
         rev = revise_routine(
-            ledger, routine_id="r1", revised_by="e1",
-            intent_template="v2", change_summary="sharper goal",
+            ledger,
+            routine_id="r1",
+            revised_by="e1",
+            intent_template="v2",
+            change_summary="sharper goal",
         )
         assert rev.revision_no == 2
         assert rev.change_summary == "sharper goal"
@@ -88,7 +91,10 @@ def test_revise_can_set_and_clear_env() -> None:
     try:
         _seed(ledger)
         revise_routine(
-            ledger, routine_id="r1", revised_by="e1", env={"TOKEN": "ref:tok"},
+            ledger,
+            routine_id="r1",
+            revised_by="e1",
+            env={"TOKEN": "ref:tok"},
         )
         assert ledger.routines.get("r1").env == {"TOKEN": "ref:tok"}  # type: ignore[union-attr]
         revise_routine(ledger, routine_id="r1", revised_by="e1", env=None)

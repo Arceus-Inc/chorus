@@ -84,10 +84,14 @@ class _FakeSource:
     def list(self) -> list[Employee]:
         return self._employees
 
-    def get(self, employee_id: str) -> Employee:  # pragma: no cover - unused by copy_org's source path
+    def get(
+        self, employee_id: str
+    ) -> Employee:  # pragma: no cover - unused by copy_org's source path
         raise KeyError(employee_id)
 
-    def hire(self, *, name: str, role: str, reports_to: str | None = None) -> Employee:  # pragma: no cover
+    def hire(
+        self, *, name: str, role: str, reports_to: str | None = None
+    ) -> Employee:  # pragma: no cover
         raise NotImplementedError
 
     def terminate(self, employee_id: str) -> None:  # pragma: no cover

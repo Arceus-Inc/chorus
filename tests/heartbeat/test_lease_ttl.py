@@ -20,8 +20,14 @@ pytestmark = pytest.mark.integration
 
 class _FakeBeat:
     async def run_task(
-        self, *, task_id: str, intent: str, verification: object = (), rubric: object = "",
-        observer: object = None, run_id: str | None = None,
+        self,
+        *,
+        task_id: str,
+        intent: str,
+        verification: object = (),
+        rubric: object = "",
+        observer: object = None,
+        run_id: str | None = None,
     ) -> BeatOutcome:
         return BeatOutcome(passed=True, outcome={}, summary="")
 

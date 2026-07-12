@@ -253,7 +253,9 @@ class DreamBeatRunner:
             return failure_outcome(exc)
         except asyncio.CancelledError:
             raise  # structured cancellation must propagate — never classify it as a beat outcome
-        except Exception as exc:  # typed by failure_outcome — a beat never crashes the dispatch loop
+        except (
+            Exception
+        ) as exc:  # typed by failure_outcome — a beat never crashes the dispatch loop
             return failure_outcome(exc)
         finally:
             await self._close_harness()

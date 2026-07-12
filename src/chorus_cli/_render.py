@@ -54,8 +54,7 @@ class Console:
             return
         cells = [[str(cell) for cell in row] for row in rows]
         widths = [
-            max(len(headers[col]), *(len(row[col]) for row in cells))
-            for col in range(len(headers))
+            max(len(headers[col]), *(len(row[col]) for row in cells)) for col in range(len(headers))
         ]
         header = "  ".join(self._paint(_BOLD, h.ljust(widths[i])) for i, h in enumerate(headers))
         self.line(header.rstrip())

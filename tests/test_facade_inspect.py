@@ -34,8 +34,9 @@ def _chorus(ledger: SqliteLedger) -> Chorus:
 
 def _seed(ledger: SqliteLedger) -> None:
     ledger.employees.create(Employee(id="ada", name="Ada", role="engineer"))
-    ledger.tasks.submit(Task(id="t1", intent="ship it", status=TaskStatus.IN_PROGRESS,
-                             assignee_employee_id="ada"))
+    ledger.tasks.submit(
+        Task(id="t1", intent="ship it", status=TaskStatus.IN_PROGRESS, assignee_employee_id="ada")
+    )
 
 
 def test_status_is_flat_and_projects_the_company() -> None:

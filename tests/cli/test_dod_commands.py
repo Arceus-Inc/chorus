@@ -15,8 +15,12 @@ pytestmark = pytest.mark.integration
 
 def _run(line: str, ledger: SqliteLedger) -> tuple[LoopSignal, str]:
     buffer = io.StringIO()
-    dispatch(line, session=CliSession(ledger=ledger), console=Console(out=buffer, colour=False),
-             registry=REGISTRY)
+    dispatch(
+        line,
+        session=CliSession(ledger=ledger),
+        console=Console(out=buffer, colour=False),
+        registry=REGISTRY,
+    )
     return LoopSignal.CONTINUE, buffer.getvalue()
 
 

@@ -70,7 +70,7 @@ def glob_at_least(pattern: str, count: int) -> Check:
 
 # The checker script. Kept free of ``{`` / ``}`` so a literal ``__CHECKS__`` substitution is enough;
 # the whole script is base64-encoded before it reaches a shell, so quotes/regexes/newlines are all safe.
-_CHECKER_SCRIPT = '''\
+_CHECKER_SCRIPT = """\
 import os, re, sys
 
 CHECKS = __CHECKS__
@@ -119,7 +119,7 @@ for _c in CHECKS:
         _fail("unknown check kind: " + str(_kind))
 
 raise SystemExit(0)
-'''
+"""
 
 
 def python_check(checks: Iterable[Check], *, python: str | None = None) -> str:

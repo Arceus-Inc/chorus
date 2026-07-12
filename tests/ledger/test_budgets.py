@@ -126,15 +126,23 @@ def test_incident_window_is_exact_once(ledger: SqliteLedger) -> None:
     _policy(ledger)
     ledger.budget_incidents.open(
         BudgetIncident(
-            id="bi1", policy_id="bp1", threshold_type=BudgetThreshold.HARD,
-            amount_limit=100, amount_observed=120, window_start=_at(0),
+            id="bi1",
+            policy_id="bp1",
+            threshold_type=BudgetThreshold.HARD,
+            amount_limit=100,
+            amount_observed=120,
+            window_start=_at(0),
         )
     )
     with pytest.raises(sqlite3.IntegrityError):
         ledger.budget_incidents.open(
             BudgetIncident(
-                id="bi2", policy_id="bp1", threshold_type=BudgetThreshold.HARD,
-                amount_limit=100, amount_observed=130, window_start=_at(0),
+                id="bi2",
+                policy_id="bp1",
+                threshold_type=BudgetThreshold.HARD,
+                amount_limit=100,
+                amount_observed=130,
+                window_start=_at(0),
             )
         )
 
@@ -143,16 +151,24 @@ def test_dismiss_frees_the_window(ledger: SqliteLedger) -> None:
     _policy(ledger)
     ledger.budget_incidents.open(
         BudgetIncident(
-            id="bi1", policy_id="bp1", threshold_type=BudgetThreshold.HARD,
-            amount_limit=100, amount_observed=120, window_start=_at(0),
+            id="bi1",
+            policy_id="bp1",
+            threshold_type=BudgetThreshold.HARD,
+            amount_limit=100,
+            amount_observed=120,
+            window_start=_at(0),
         )
     )
     ledger.budget_incidents.dismiss("bi1")
     # window freed: a fresh incident for the same window/threshold is allowed
     again = ledger.budget_incidents.open(
         BudgetIncident(
-            id="bi2", policy_id="bp1", threshold_type=BudgetThreshold.HARD,
-            amount_limit=100, amount_observed=140, window_start=_at(0),
+            id="bi2",
+            policy_id="bp1",
+            threshold_type=BudgetThreshold.HARD,
+            amount_limit=100,
+            amount_observed=140,
+            window_start=_at(0),
         )
     )
     assert again.status is BudgetIncidentStatus.OPEN
@@ -162,14 +178,20 @@ def test_attach_approval_gates_hard_stop(ledger: SqliteLedger) -> None:
     _policy(ledger)
     ledger.approvals.request(
         Approval(
-            id="ap1", subject_kind=ApprovalSubjectKind.BUDGET_INCIDENT,
-            subject_id="bi1", reason="hard cap",
+            id="ap1",
+            subject_kind=ApprovalSubjectKind.BUDGET_INCIDENT,
+            subject_id="bi1",
+            reason="hard cap",
         )
     )
     ledger.budget_incidents.open(
         BudgetIncident(
-            id="bi1", policy_id="bp1", threshold_type=BudgetThreshold.HARD,
-            amount_limit=100, amount_observed=120, window_start=_at(0),
+            id="bi1",
+            policy_id="bp1",
+            threshold_type=BudgetThreshold.HARD,
+            amount_limit=100,
+            amount_observed=120,
+            window_start=_at(0),
         )
     )
     ledger.budget_incidents.attach_approval("bi1", "ap1")
@@ -182,14 +204,22 @@ def test_open_for_policy_lists_open_only(ledger: SqliteLedger) -> None:
     _policy(ledger)
     ledger.budget_incidents.open(
         BudgetIncident(
-            id="bi1", policy_id="bp1", threshold_type=BudgetThreshold.SOFT,
-            amount_limit=80, amount_observed=85, window_start=_at(0),
+            id="bi1",
+            policy_id="bp1",
+            threshold_type=BudgetThreshold.SOFT,
+            amount_limit=80,
+            amount_observed=85,
+            window_start=_at(0),
         )
     )
     ledger.budget_incidents.open(
         BudgetIncident(
-            id="bi2", policy_id="bp1", threshold_type=BudgetThreshold.HARD,
-            amount_limit=100, amount_observed=120, window_start=_at(0),
+            id="bi2",
+            policy_id="bp1",
+            threshold_type=BudgetThreshold.HARD,
+            amount_limit=100,
+            amount_observed=120,
+            window_start=_at(0),
         )
     )
     ledger.budget_incidents.resolve("bi1")
@@ -205,14 +235,27 @@ def test_cost_event_record_and_spent(ledger: SqliteLedger) -> None:
     ledger.runs.create(Run(id="run1", employee_id="e1", task_id="t1"))
     ledger.cost_events.record(
         CostEvent(
-            id="ce1", employee_id="e1", task_id="t1", run_id="run1",
-            provider="anthropic", model="claude", cost_cents=300,
-            input_tokens=100, output_tokens=50, occurred_at=_at(10),
+            id="ce1",
+            employee_id="e1",
+            task_id="t1",
+            run_id="run1",
+            provider="anthropic",
+            model="claude",
+            cost_cents=300,
+            input_tokens=100,
+            output_tokens=50,
+            occurred_at=_at(10),
         )
     )
     ledger.cost_events.record(
-        CostEvent(id="ce2", employee_id="e1", provider="anthropic", model="claude",
-                  cost_cents=200, occurred_at=_at(20))
+        CostEvent(
+            id="ce2",
+            employee_id="e1",
+            provider="anthropic",
+            model="claude",
+            cost_cents=200,
+            occurred_at=_at(20),
+        )
     )
     assert ledger.cost_events.spent_cents("e1") == 500
 
@@ -236,14 +279,28 @@ def test_for_run_returns_a_runs_cost_events_with_usage(ledger: SqliteLedger) -> 
     ledger.runs.create(Run(id="run2", employee_id="e1", task_id="t1"))
     ledger.cost_events.record(
         CostEvent(
-            id="ce1", employee_id="e1", task_id="t1", run_id="run1",
-            provider="dream", model="gpt-5.2", cost_cents=300,
-            input_tokens=1200, output_tokens=340, occurred_at=_at(10),
+            id="ce1",
+            employee_id="e1",
+            task_id="t1",
+            run_id="run1",
+            provider="dream",
+            model="gpt-5.2",
+            cost_cents=300,
+            input_tokens=1200,
+            output_tokens=340,
+            occurred_at=_at(10),
         )
     )
     ledger.cost_events.record(  # a different run — must not be returned
-        CostEvent(id="ce2", employee_id="e1", run_id="run2", provider="dream", model="m",
-                  cost_cents=10, occurred_at=_at(20))
+        CostEvent(
+            id="ce2",
+            employee_id="e1",
+            run_id="run2",
+            provider="dream",
+            model="m",
+            cost_cents=10,
+            occurred_at=_at(20),
+        )
     )
     events = ledger.cost_events.for_run("run1")
     assert [e.id for e in events] == ["ce1"]
@@ -255,12 +312,19 @@ def test_for_run_returns_a_runs_cost_events_with_usage(ledger: SqliteLedger) -> 
 def test_spent_cents_respects_window(ledger: SqliteLedger) -> None:
     _employee(ledger)
     ledger.cost_events.record(
-        CostEvent(id="ce1", employee_id="e1", provider="p", model="m",
-                  cost_cents=100, occurred_at=_at(10))
+        CostEvent(
+            id="ce1", employee_id="e1", provider="p", model="m", cost_cents=100, occurred_at=_at(10)
+        )
     )
     ledger.cost_events.record(
-        CostEvent(id="ce2", employee_id="e1", provider="p", model="m",
-                  cost_cents=400, occurred_at=_at(100))
+        CostEvent(
+            id="ce2",
+            employee_id="e1",
+            provider="p",
+            model="m",
+            cost_cents=400,
+            occurred_at=_at(100),
+        )
     )
     assert ledger.cost_events.spent_cents("e1", since=_at(50)) == 400
 
@@ -269,12 +333,14 @@ def test_spent_cents_is_per_employee(ledger: SqliteLedger) -> None:
     _employee(ledger, "e1")
     _employee(ledger, "e2")
     ledger.cost_events.record(
-        CostEvent(id="ce1", employee_id="e1", provider="p", model="m",
-                  cost_cents=100, occurred_at=_at(10))
+        CostEvent(
+            id="ce1", employee_id="e1", provider="p", model="m", cost_cents=100, occurred_at=_at(10)
+        )
     )
     ledger.cost_events.record(
-        CostEvent(id="ce2", employee_id="e2", provider="p", model="m",
-                  cost_cents=999, occurred_at=_at(10))
+        CostEvent(
+            id="ce2", employee_id="e2", provider="p", model="m", cost_cents=999, occurred_at=_at(10)
+        )
     )
     assert ledger.cost_events.spent_cents("e1") == 100
 
@@ -283,12 +349,19 @@ def test_total_spent_cents_sums_the_whole_workforce(ledger: SqliteLedger) -> Non
     _employee(ledger, "e1")
     _employee(ledger, "e2")
     ledger.cost_events.record(
-        CostEvent(id="ce1", employee_id="e1", provider="p", model="m",
-                  cost_cents=100, occurred_at=_at(10))
+        CostEvent(
+            id="ce1", employee_id="e1", provider="p", model="m", cost_cents=100, occurred_at=_at(10)
+        )
     )
     ledger.cost_events.record(
-        CostEvent(id="ce2", employee_id="e2", provider="p", model="m",
-                  cost_cents=250, occurred_at=_at(100))
+        CostEvent(
+            id="ce2",
+            employee_id="e2",
+            provider="p",
+            model="m",
+            cost_cents=250,
+            occurred_at=_at(100),
+        )
     )
     assert ledger.cost_events.total_spent_cents() == 350  # lifetime (no window)
     assert ledger.cost_events.total_spent_cents(since=_at(50)) == 250  # windowed

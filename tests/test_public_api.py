@@ -9,40 +9,84 @@ from __future__ import annotations
 
 import chorus
 
-EXPECTED_PUBLIC_API: frozenset[str] = frozenset({
-    # facade
-    "Chorus", "Caps",
-    # low-level grouped surfaces (spec 14 §2.2) — reached via org.<group>
-    "BudgetsFacade", "DodFacade", "GovernanceFacade", "InspectFacade",
-    "RoutinesFacade", "TrustFacade", "WorkforceFacade", "HireRequest",
-    # roles
-    "Role", "RoleManifest", "RolePlugin", "RoutineDeclaration", "default_roles",
-    # ledger
-    "Task", "TaskStatus", "TaskPriority", "ExecPlan", "Employee",
-    # heartbeat
-    "Wake", "WakeReason", "TickReport",
-    # cron / routines
-    "Routine", "RoutineConcurrency", "RoutineCatchUp", "RoutineTarget", "RoutineStatus",
-    "parse_cron", "Schedule", "Weekday",
-    # outcomes (DoD)
-    "Verifier", "Command", "AgentReview", "HumanApproval",
-    # governance (spec 14 §5.1)
-    "Approval", "ApprovalDecision", "ApprovalGate",
-    # budgets (spec 14 §5.2)
-    "BudgetScope", "BudgetWindow",
-    # trust (spec 14 §5.3)
-    "TrustPreset",
-    # events
-    "Event", "EventKind",
-    # read model
-    "WorkforceStatus", "TaskView", "EmployeeView", "RunView", "IncidentView", "RoutineView",
-    "ScrumPacketView", "OrgObservabilityReport",
-    # errors
-    "ChorusError", "InvalidIntake", "UnknownEmployee", "OrgInvariantViolation",
-    "RolePluginInvalid", "RolePluginConflict", "BudgetBlocked", "PackageImportError",
-    # metadata
-    "__version__",
-})
+EXPECTED_PUBLIC_API: frozenset[str] = frozenset(
+    {
+        # facade
+        "Chorus",
+        "Caps",
+        # low-level grouped surfaces (spec 14 §2.2) — reached via org.<group>
+        "BudgetsFacade",
+        "DodFacade",
+        "GovernanceFacade",
+        "InspectFacade",
+        "RoutinesFacade",
+        "TrustFacade",
+        "WorkforceFacade",
+        "HireRequest",
+        # roles
+        "Role",
+        "RoleManifest",
+        "RolePlugin",
+        "RoutineDeclaration",
+        "default_roles",
+        # ledger
+        "Task",
+        "TaskStatus",
+        "TaskPriority",
+        "ExecPlan",
+        "Employee",
+        # heartbeat
+        "Wake",
+        "WakeReason",
+        "TickReport",
+        # cron / routines
+        "Routine",
+        "RoutineConcurrency",
+        "RoutineCatchUp",
+        "RoutineTarget",
+        "RoutineStatus",
+        "parse_cron",
+        "Schedule",
+        "Weekday",
+        # outcomes (DoD)
+        "Verifier",
+        "Command",
+        "AgentReview",
+        "HumanApproval",
+        # governance (spec 14 §5.1)
+        "Approval",
+        "ApprovalDecision",
+        "ApprovalGate",
+        # budgets (spec 14 §5.2)
+        "BudgetScope",
+        "BudgetWindow",
+        # trust (spec 14 §5.3)
+        "TrustPreset",
+        # events
+        "Event",
+        "EventKind",
+        # read model
+        "WorkforceStatus",
+        "TaskView",
+        "EmployeeView",
+        "RunView",
+        "IncidentView",
+        "RoutineView",
+        "ScrumPacketView",
+        "OrgObservabilityReport",
+        # errors
+        "ChorusError",
+        "InvalidIntake",
+        "UnknownEmployee",
+        "OrgInvariantViolation",
+        "RolePluginInvalid",
+        "RolePluginConflict",
+        "BudgetBlocked",
+        "PackageImportError",
+        # metadata
+        "__version__",
+    }
+)
 
 
 def test_all_matches_expected() -> None:

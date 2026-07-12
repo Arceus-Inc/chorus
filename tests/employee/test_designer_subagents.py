@@ -11,8 +11,7 @@ from __future__ import annotations
 
 import pytest
 
-from chorus.roles import RoleBeatConfig, role_beat_config
-from chorus.roles._subagent import SubagentSpec
+from chorus.roles import role_beat_config
 from chorus_employee.designer import (
     DESIGN_CRITIC_SUBAGENT,
     EXPLORER_SUBAGENT,

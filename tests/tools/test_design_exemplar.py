@@ -45,7 +45,9 @@ def fake_library(tmp_path: Path) -> Path:
     """A tiny stand-in exemplar library: two companies with a DESIGN.md, one empty dir."""
     root = tmp_path / "awesome-design-md"
     (root / "linear.app").mkdir(parents=True)
-    (root / "linear.app" / "DESIGN.md").write_text("# Linear\nprecise, dark-first.\n", encoding="utf-8")
+    (root / "linear.app" / "DESIGN.md").write_text(
+        "# Linear\nprecise, dark-first.\n", encoding="utf-8"
+    )
     (root / "stripe").mkdir()
     (root / "stripe" / "DESIGN.md").write_text("# Stripe\ntrustworthy, dense.\n", encoding="utf-8")
     (root / "no-design").mkdir()  # a dir WITHOUT a DESIGN.md — must be excluded from the catalog
@@ -98,7 +100,9 @@ class TestFetch:
         assert result.is_error is False
         assert "trustworthy, dense." in result.content
 
-    def test_unknown_slug_errors_with_suggestions_and_list(self, fake_library: Path, tmp_path: Path) -> None:
+    def test_unknown_slug_errors_with_suggestions_and_list(
+        self, fake_library: Path, tmp_path: Path
+    ) -> None:
         result = _run(DesignExemplarTool(fake_library), _ctx(tmp_path), {"company": "linaer"})
         assert result.is_error is True
         assert "linear.app" in result.content  # difflib close-match suggestion

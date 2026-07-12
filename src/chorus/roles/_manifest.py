@@ -108,7 +108,9 @@ class RoleManifest:
     # Engine scalars — the non-capability ``build_harness`` knobs (carried through overlays).
     model: str | None = None  # None → use the deployment model the composition root supplies
     max_turns: int = 8  # dream's per-role turn budget default
-    max_sprints: int = 1  # per-beat sprint budget: 1 = one beat is one sprint (spec 05); a role that
+    max_sprints: int = (
+        1  # per-beat sprint budget: 1 = one beat is one sprint (spec 05); a role that
+    )
     # does multi-sprint work (an engineer build) widens this so a step finishes in a single beat
     working_memory: bool = False  # the in-task scratchpad memory tier
     wake_model: str | None = None  # a cheaper model for heartbeat/wake turns
@@ -124,7 +126,9 @@ class RoleManifest:
     # more than the org defaults, or the beat times out / its run lease is reaped mid-research. ``None``
     # inherits the composition-root default (factory ``timeout_s`` / scheduler ``lease_ttl_s``).
     beat_timeout_s: float | None = None  # DreamBeatRunner wall-clock per beat
-    lease_ttl_s: float | None = None  # scheduler run-lease TTL before the stale-run reaper claims it
+    lease_ttl_s: float | None = (
+        None  # scheduler run-lease TTL before the stale-run reaper claims it
+    )
     # — build_harness(subagents=…) — Tier-1 role-owned subagents the employee may dispatch mid-beat
     # (dream's ``spawn_subagent``). Each subagent's tools are intersected with this role's toolset at
     # materialize, so a subagent can only ever narrow capability, never widen it (spec 06 §minimisation).

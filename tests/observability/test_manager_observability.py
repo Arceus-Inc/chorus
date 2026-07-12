@@ -36,8 +36,12 @@ def _seed_manager_tree(ledger: SqliteLedger) -> None:
     ledger.employees.create(Employee(id="mgr", name="Moe", role="manager"))
     ledger.employees.create(Employee(id="ada", name="Ada", role="engineer", reports_to="mgr"))
     ledger.employees.create(Employee(id="bob", name="Bob", role="engineer", reports_to="mgr"))
-    ledger.tasks.submit(Task(id="M", intent="ship the feature", status=TaskStatus.TODO, assignee_employee_id="mgr"))
-    ledger.runs.create(Run(id="run_mgr_1", employee_id="mgr", task_id="M", status=RunStatus.RUNNING))
+    ledger.tasks.submit(
+        Task(id="M", intent="ship the feature", status=TaskStatus.TODO, assignee_employee_id="mgr")
+    )
+    ledger.runs.create(
+        Run(id="run_mgr_1", employee_id="mgr", task_id="M", status=RunStatus.RUNNING)
+    )
     CapabilityService(ledger).decompose(
         parent_id="M",
         revision="run_mgr_1",
@@ -49,15 +53,37 @@ def _seed_manager_tree(ledger: SqliteLedger) -> None:
     children = {task.origin_fingerprint: task for task in ledger.tasks.children("M")}
     api = children["api"]
     ledger.dod.create(api.id, Verifier.command("pytest -q"))
-    ledger.runs.create(Run(id="run_api_1", employee_id="ada", task_id=api.id, status=RunStatus.SUCCEEDED, outcome={"summary": "api done"}))
-    ledger.dod.record_verdict(ledger.dod.get_for_task(api.id).id, DodStatus.PASSED, run_id="run_api_1")  # type: ignore[union-attr]
+    ledger.runs.create(
+        Run(
+            id="run_api_1",
+            employee_id="ada",
+            task_id=api.id,
+            status=RunStatus.SUCCEEDED,
+            outcome={"summary": "api done"},
+        )
+    )
+    ledger.dod.record_verdict(
+        ledger.dod.get_for_task(api.id).id, DodStatus.PASSED, run_id="run_api_1"
+    )  # type: ignore[union-attr]
     ledger.tasks.set_status(api.id, TaskStatus.DONE)
-    ledger.artifacts.create(Artifact(id="art_api", task_id=api.id, type=ArtifactType.WORKSPACE_FILE, is_primary=True, resource_ref={"path": "api.py"}))
+    ledger.artifacts.create(
+        Artifact(
+            id="art_api",
+            task_id=api.id,
+            type=ArtifactType.WORKSPACE_FILE,
+            is_primary=True,
+            resource_ref={"path": "api.py"},
+        )
+    )
     ui = children["ui"]
-    CapabilityService(ledger).reassign(parent_id="M", task_id=ui.id, assignee="ada", assigned_by="mgr")
+    CapabilityService(ledger).reassign(
+        parent_id="M", task_id=ui.id, assignee="ada", assigned_by="mgr"
+    )
 
 
-def test_scrum_packet_view_counts_dependencies_completion_and_reassignments(ledger: SqliteLedger) -> None:
+def test_scrum_packet_view_counts_dependencies_completion_and_reassignments(
+    ledger: SqliteLedger,
+) -> None:
     _seed_manager_tree(ledger)
 
     view = LedgerInspector(ledger).scrum_packet("M")

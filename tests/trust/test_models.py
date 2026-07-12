@@ -42,7 +42,10 @@ def test_sandbox_rank_orders_by_capability() -> None:
 def test_policy_explicit_preset_overrides_origin() -> None:
     policy = TrustPolicy(low_trust_origins=frozenset({OriginKind.MANUAL}))
     # explicit wins even when the origin would derive otherwise.
-    assert policy.preset_for(origin=OriginKind.MANUAL, explicit=TrustPreset.STANDARD) is TrustPreset.STANDARD
+    assert (
+        policy.preset_for(origin=OriginKind.MANUAL, explicit=TrustPreset.STANDARD)
+        is TrustPreset.STANDARD
+    )
     assert (
         policy.preset_for(origin=OriginKind.DECOMPOSITION, explicit=TrustPreset.LOW_TRUST_REVIEW)
         is TrustPreset.LOW_TRUST_REVIEW
@@ -51,7 +54,10 @@ def test_policy_explicit_preset_overrides_origin() -> None:
 
 def test_policy_derives_low_trust_from_a_flagged_origin() -> None:
     policy = TrustPolicy(low_trust_origins=frozenset({OriginKind.STRANDED_RECOVERY}))
-    assert policy.preset_for(origin=OriginKind.STRANDED_RECOVERY, explicit=None) is TrustPreset.LOW_TRUST_REVIEW
+    assert (
+        policy.preset_for(origin=OriginKind.STRANDED_RECOVERY, explicit=None)
+        is TrustPreset.LOW_TRUST_REVIEW
+    )
     assert policy.preset_for(origin=OriginKind.MANUAL, explicit=None) is TrustPreset.STANDARD
 
 

@@ -27,8 +27,12 @@ def _manager_with_source(ledger: SqliteLedger, *, request_depth: int) -> None:
 
 def _accepted_plan(ledger: SqliteLedger, *, source_id: str, revision_id: str) -> None:
     """Seed the manager's accepted plan revision the decomposition claim references (spec 02 §4)."""
-    ledger.artifacts.create(Artifact(id=f"plan_{source_id}", task_id=source_id, type=ArtifactType.DOC))
-    ledger.artifact_revisions.record(ArtifactRevision(id=revision_id, artifact_id=f"plan_{source_id}"))
+    ledger.artifacts.create(
+        Artifact(id=f"plan_{source_id}", task_id=source_id, type=ArtifactType.DOC)
+    )
+    ledger.artifact_revisions.record(
+        ArtifactRevision(id=revision_id, artifact_id=f"plan_{source_id}")
+    )
 
 
 def test_decompose_under_cap_fans_out(ledger: SqliteLedger) -> None:

@@ -26,7 +26,8 @@ class EvidenceItem(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True)
 
     claim: str = Field(
-        min_length=1, description="a UX/pattern/accessibility fact behind the approach, stated plainly"
+        min_length=1,
+        description="a UX/pattern/accessibility fact behind the approach, stated plainly",
     )
     source: str = Field(
         min_length=1,

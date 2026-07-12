@@ -22,7 +22,9 @@ pytestmark = pytest.mark.integration
 
 def _run(line: str, session: CliSession) -> tuple[LoopSignal, str]:
     buffer = io.StringIO()
-    signal = dispatch(line, session=session, console=Console(out=buffer, colour=False), registry=REGISTRY)
+    signal = dispatch(
+        line, session=session, console=Console(out=buffer, colour=False), registry=REGISTRY
+    )
     return signal, buffer.getvalue()
 
 
@@ -30,7 +32,9 @@ def _session(company_id: str) -> CliSession:
     return CliSession(ledger=SqliteLedger.open(":memory:"), company_id=company_id)
 
 
-def test_company_init_creates_the_workspace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_company_init_creates_the_workspace(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.chdir(tmp_path)
     signal, out = _run("company init", _session("acme"))
     # the same path tick/chat resolve: <cwd>/.chorus/work/{company}/repo on branch main
@@ -49,7 +53,9 @@ def test_company_init_is_idempotent(tmp_path: Path, monkeypatch: pytest.MonkeyPa
     assert "error" not in out.lower()
 
 
-def test_company_init_seeds_from_a_directory(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_company_init_seeds_from_a_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     src = tmp_path / "src"
     src.mkdir()
     (src / "calc.py").write_text("def add(a, b):\n    return a + b\n", encoding="utf-8")
@@ -71,7 +77,9 @@ def test_dispatch_preserves_windows_paths(monkeypatch: pytest.MonkeyPatch) -> No
     assert _split_line(f"export {path}") == ["export", path]
 
 
-def test_company_init_falls_back_to_the_seed_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_company_init_falls_back_to_the_seed_env(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     src = tmp_path / "src"
     src.mkdir()
     (src / "calc.py").write_text("x = 1\n", encoding="utf-8")
