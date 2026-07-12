@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING
 from chorus.outcomes import LanderRegistry, OutcomeLander
 from chorus.roles._plugin import RolePlugin
 from chorus_employee.analyst import analyst_lander
+from chorus_employee.ceo import ceo_lander
 from chorus_employee.designer import designer_lander
 from chorus_employee.engineer import engineer_lander, engineer_plugin
 from chorus_employee.manager import manager_lander
@@ -47,6 +48,7 @@ def default_landers(company_root: Path, *, ledger: SqliteLedger | None = None) -
         analyst_lander(company_root),
         marketer_lander(company_root),
         designer_lander(company_root),
+        ceo_lander(company_root),
     ]
     if ledger is not None:
         landers.append(manager_lander(ledger))

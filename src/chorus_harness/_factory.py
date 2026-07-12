@@ -55,6 +55,7 @@ from chorus_tools import (
     SubmitVerdictTool,
     TestEvidenceTool,
     analysis_tool,
+    governance_tool,
 )
 from chorus_tools.cms import CmsDraftTool, cms_backend_from_env
 from chorus_tools.delivery import (
@@ -64,6 +65,8 @@ from chorus_tools.delivery import (
 )
 
 if TYPE_CHECKING:
+    from dream.contracts import GovernancePort
+
     from chorus.ledger import SqliteLedger
 
 # dream runs these three intra-task roles per task; the employee's identity is overlaid onto each.
@@ -156,6 +159,18 @@ _CHORUS_TO_DREAM_TOOL: dict[str, str] = {
     # ledger rows (via _capability_tool, needs the ledger). Identity-mapped so dream_tool_names keeps
     # it and the subagent projection can intersect it; _role_registry skips it (no built-in).
     "record_decision": "record_decision",
+    # Governance tools — the CEO's reverse edge onto horizon's direction. Chorus capability tools bound
+    # to a dream ``GovernancePort`` (registered in the materialize flow, NOT dream built-ins). IDENTITY-
+    # mapped here for the same reason as record_decision/cms_draft: so ``dream_tool_names`` keeps them,
+    # the role's per-phase allow-list ceiling admits them (else the planner phase projects ``<none>`` and
+    # rejects governance_read as "not in this role's manifest"), and the subagent projection can carry
+    # them. ``_role_registry`` still skips them (no built-in); the governance block in materialize binds
+    # them to the injected port.
+    "governance_read": "governance_read",
+    "proposal_approve": "proposal_approve",
+    "proposal_reject": "proposal_reject",
+    "goal_set_priority": "goal_set_priority",
+    "goal_archive": "goal_archive",
 }
 
 _READ_ONLY_DREAM_SURFACE_TOOLS = frozenset(
@@ -174,6 +189,12 @@ _READ_ONLY_DREAM_SURFACE_TOOLS = frozenset(
         "grep",
         "glob",
         "lsp",
+        # governance_read is read-only (risk=safe, tier 0): it only READS the company's direction through
+        # the port. A read-only planner/evaluator head must be able to call it so the CEO can ground its
+        # plan in the live tree before the generator phase acts. The mutating governance tools
+        # (proposal_approve/reject, goal_set_priority/archive) are deliberately NOT here — they belong to
+        # the generator phase only.
+        "governance_read",
     }
 )
 
@@ -462,6 +483,7 @@ class EmployeeHarnessFactory:
         timeout_s: float | None = 90.0,
         ledger: SqliteLedger | None = None,
         trust_policy: TrustPolicy | None = None,
+        governance: GovernancePort | None = None,
     ) -> None:
         self._api_key = api_key
         self._base_url = base_url
@@ -476,6 +498,10 @@ class EmployeeHarnessFactory:
         # Capability tools (e.g. the manager's ``decompose``) mutate this ledger live during a beat.
         # Absent it, a role asking for one simply gets it dropped (fails closed, never crashes).
         self._ledger = ledger
+        # The governance seam (the CEO's reverse edge onto horizon's direction). The composition root
+        # wires this to horizon's control plane; chorus only ever sees the Port. Absent it, a role
+        # asking for a governance tool simply gets it dropped — same fail-closed rule as the ledger.
+        self._governance = governance
         # The org's workspace root: .chorus/work/{org}/ — shared by chat, tick, and the `company`
         # console command (one identity), via the single dream-free `default_work_root` convention.
         base = work_root if work_root is not None else default_work_root()
@@ -623,6 +649,15 @@ class EmployeeHarnessFactory:
             registry.register(
                 CmsDraftTool(cms_backend_from_env(root / "cms_drafts")), source=ToolSource.DEFAULT
             )
+        # The governance tools (the CEO's reverse edge onto horizon) bind to the injected GovernancePort
+        # rather than the ledger, so they register in their own block — independent of the ledger, gated
+        # only on the port being present. Same fail-closed rule: no port ⇒ a role's governance tools are
+        # simply dropped from its toolset.
+        if self._governance is not None:
+            for name in config.tools:
+                gov_tool = governance_tool(name, self._governance)
+                if gov_tool is not None:
+                    registry.register(gov_tool, source=ToolSource.DEFAULT)
         # test_evidence (Backend Engineer §10): a pure worktree runner — it runs the discovered verify
         # commands via the execution context and writes the test_evidence/ bundle. No ledger, so it
         # registers UNCONDITIONALLY (not behind the `self._ledger is not None` gate) — the design_lint fix.

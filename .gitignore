@@ -53,3 +53,4 @@ events*.jsonl.gz
 uv.lock
 standup-app/hard-task-report/runs/*/tmp/
 standup-app/hard-task-report/runs/*/run.log
+reports/ceo-live-baseline.log
