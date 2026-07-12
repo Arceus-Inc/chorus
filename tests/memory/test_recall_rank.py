@@ -6,8 +6,8 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from chorus.memory import SprintDelta
-from chorus.memory._recall_rank import (
+from chorus.memory import (
+    SprintDelta,
     rank_keyword_hits,
     rerank_keyword_hits,
     sort_recency_hits,

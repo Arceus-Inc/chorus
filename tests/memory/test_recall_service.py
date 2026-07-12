@@ -7,9 +7,7 @@ from datetime import UTC, datetime
 
 import pytest
 
-from chorus.memory import EpisodicStore, SprintDelta
-from chorus.memory._recall_filters import EpisodicQueryFilters
-from chorus.memory._recall_service import EpisodicRecallService
+from chorus.memory import EpisodicQueryFilters, EpisodicRecallService, EpisodicStore, SprintDelta
 
 pytestmark = pytest.mark.integration
 

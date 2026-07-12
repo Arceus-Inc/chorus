@@ -11,14 +11,15 @@ from dream.tools._context import ToolExecutionContext
 from pydantic import BaseModel, Field, ValidationError, field_validator
 
 from chorus.heartbeat import BeatContext
-from chorus.memory._models import SprintDelta
-from chorus.memory._recall_filters import EpisodicQueryFilters
-from chorus.memory._recall_rank import (
-    _DEBUG_RANK_NOTE,
+from chorus.memory import (
+    DEBUG_RANK_NOTE,
+    EpisodicQueryFilters,
+    EpisodicRecallService,
     RecallProfile,
+    RecallResult,
+    SprintDelta,
     is_failure_outcome,
 )
-from chorus.memory._recall_service import EpisodicRecallService, RecallResult
 from chorus_tools._recall_render import format_slim_hit, slim_hit_dict
 
 _DEBUG_RECOVERY_HINT = (
@@ -169,7 +170,7 @@ def _render(result: RecallResult) -> ToolResult:
 
 def _slim_hit_for(delta: SprintDelta, *, profile: RecallProfile) -> dict[str, object]:
     rank_note = (
-        _DEBUG_RANK_NOTE if profile == "debug" and is_failure_outcome(delta.outcome) else None
+        DEBUG_RANK_NOTE if profile == "debug" and is_failure_outcome(delta.outcome) else None
     )
     return slim_hit_dict(delta, rank_note=rank_note)
 

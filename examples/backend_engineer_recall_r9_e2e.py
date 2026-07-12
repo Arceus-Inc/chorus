@@ -27,8 +27,7 @@ from chorus.events import Event, EventKind
 from chorus.heartbeat import BeatContext, Scheduler
 from chorus.ledger import SqliteLedger, Task, TaskStatus
 from chorus.lifecycle import assign_task
-from chorus.memory import EpisodicStore, SprintDelta
-from chorus.memory._recall_service import EpisodicRecallService
+from chorus.memory import EpisodicRecallService, EpisodicStore, SprintDelta
 from chorus.observability import EventBus
 from chorus.outcomes import Verifier
 from chorus.roles import RoleRegistry, default_roles

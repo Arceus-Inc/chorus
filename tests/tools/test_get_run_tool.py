@@ -10,8 +10,7 @@ import pytest
 from dream.tools._context import ToolExecutionContext
 
 from chorus.heartbeat import BeatContext
-from chorus.memory import EpisodicStore, SprintDelta
-from chorus.memory._recall_service import EpisodicRecallService
+from chorus.memory import EpisodicRecallService, EpisodicStore, SprintDelta
 from chorus_tools._get_run import GetRunTool
 
 pytestmark = pytest.mark.integration

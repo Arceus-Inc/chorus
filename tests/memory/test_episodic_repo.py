@@ -87,7 +87,7 @@ def test_pin_ignores_other_employees(tmp_path) -> None:
 def test_for_employee_since_filter(tmp_path) -> None:
     from datetime import UTC, datetime
 
-    from chorus.memory._recall_filters import EpisodicQueryFilters
+    from chorus.memory import EpisodicQueryFilters
 
     store = EpisodicStore(tmp_path)
     store.append(_delta(run_id="r_old", recorded_at=datetime(2026, 6, 1, tzinfo=UTC)))
@@ -101,7 +101,7 @@ def test_for_employee_since_filter(tmp_path) -> None:
 
 
 def test_for_employee_task_id_filter(tmp_path) -> None:
-    from chorus.memory._recall_filters import EpisodicQueryFilters
+    from chorus.memory import EpisodicQueryFilters
 
     store = EpisodicStore(tmp_path)
     store.append(_delta(run_id="r_1", task_id="t_1"))

@@ -6,10 +6,10 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Literal
 
-from chorus.memory._models import SprintDelta
-from chorus.memory._recall_filters import EpisodicQueryFilters
-from chorus.memory._recall_rank import RecallProfile, rerank_keyword_hits, sort_recency_hits
-from chorus.memory._store import EpisodicStore
+from chorus.memory.episodic.models import SprintDelta
+from chorus.memory.episodic.recall_filters import EpisodicQueryFilters
+from chorus.memory.episodic.recall_rank import RecallProfile, rerank_keyword_hits, sort_recency_hits
+from chorus.memory.episodic.store import EpisodicStore
 
 _SEARCH_CANDIDATE_POOL = 20
 _FILTER_CANDIDATE_POOL = 40

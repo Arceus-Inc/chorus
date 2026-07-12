@@ -15,11 +15,12 @@ from __future__ import annotations
 import json
 
 _NARRATIVE_KIND = "role.text"
+_SUMMARY_MAX = 160
 
 
 def narrative(raw_record: str) -> str:
     """The ``role.text`` events in ``raw_record``, joined in order. Malformed lines are skipped."""
-    lines = []
+    lines: list[str] = []
     for line in raw_record.splitlines():
         if not line.strip():
             continue
@@ -32,19 +33,15 @@ def narrative(raw_record: str) -> str:
     return "\n".join(lines)
 
 
-_SUMMARY_MAX = 160
-
-
 def beat_summary(body: str, *, intent: str) -> str:
     """Deterministic one-liner for slim recall hits — first narrative sentence or intent."""
     prose = narrative(body).strip()
-    source = prose if prose else intent.strip()
-    if not source:
-        return ""
-    if prose and "." in prose:
-        sentence = prose[: prose.index(".") + 1].strip()
+    if prose:
+        sentence = prose[: prose.index(".") + 1].strip() if "." in prose else prose
     else:
-        sentence = source.split(".")[0].strip() if "." in source else source
+        sentence = intent.strip().split(".", 1)[0].strip()
+    if not sentence:
+        return ""
     one_line = " ".join(sentence.split())
     if len(one_line) <= _SUMMARY_MAX:
         return one_line

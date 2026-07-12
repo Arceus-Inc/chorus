@@ -6,7 +6,7 @@ import math
 from datetime import UTC, datetime
 from typing import Literal
 
-from chorus.memory._models import SprintDelta
+from chorus.memory.episodic.models import SprintDelta
 
 RECENT_WINDOW_DAYS = 7
 _TAU_DAYS = 14.0
@@ -14,7 +14,7 @@ _FAILURE_BOOST = 0.15
 _FAILURE_OUTCOMES = frozenset({"needs_changes", "blocked", "incomplete"})
 
 RecallProfile = Literal["general", "debug"]
-_DEBUG_RANK_NOTE = "surfaced — debug profile and this beat failed"
+DEBUG_RANK_NOTE = "surfaced — debug profile and this beat failed"
 
 
 def recorded_at(delta: SprintDelta) -> datetime:
@@ -114,8 +114,8 @@ def _failure_rank(outcome: str) -> int:
 
 
 __all__ = [
+    "DEBUG_RANK_NOTE",
     "RECENT_WINDOW_DAYS",
-    "_DEBUG_RANK_NOTE",
     "RecallProfile",
     "is_failure_outcome",
     "rank_keyword_hits",

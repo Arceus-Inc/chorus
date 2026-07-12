@@ -6,9 +6,9 @@ import sqlite3
 from datetime import datetime
 
 from chorus.ledger.repos._base import dumps, loads, to_iso
-from chorus.memory._models import SprintDelta
-from chorus.memory._narrative import narrative
-from chorus.memory._recall_filters import EpisodicQueryFilters, filter_clause
+from chorus.memory.episodic.models import SprintDelta
+from chorus.memory.episodic.narrative import narrative
+from chorus.memory.episodic.recall_filters import EpisodicQueryFilters, filter_clause
 
 _HOT_TIER = "hot"
 

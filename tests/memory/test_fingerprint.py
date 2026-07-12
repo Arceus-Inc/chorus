@@ -13,8 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from chorus.memory import beat_fingerprint
-from chorus.memory._fingerprint import is_deliverable_path
+from chorus.memory import beat_fingerprint, is_deliverable_path
 
 pytestmark = pytest.mark.unit
 

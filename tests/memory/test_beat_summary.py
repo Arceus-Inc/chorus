@@ -6,7 +6,7 @@ import json
 
 import pytest
 
-from chorus.memory._narrative import beat_summary
+from chorus.memory import beat_summary
 
 pytestmark = pytest.mark.unit
 

@@ -7,8 +7,8 @@ from datetime import datetime
 from pathlib import Path
 
 from chorus.ledger._migrations import MigrationRunner
-from chorus.memory._models import SprintDelta
-from chorus.memory._recall_filters import EpisodicQueryFilters
+from chorus.memory.episodic.models import SprintDelta
+from chorus.memory.episodic.recall_filters import EpisodicQueryFilters
 from chorus.memory.migrations import MIGRATIONS
 from chorus.memory.repos import EpisodicRepo
 
@@ -71,4 +71,4 @@ class EpisodicStore:
         self._conn.close()
 
 
-__all__ = ["EpisodicStore", "SprintDelta"]
+__all__ = ["EpisodicStore"]

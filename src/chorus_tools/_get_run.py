@@ -8,7 +8,7 @@ from dream.tools._context import ToolExecutionContext
 from pydantic import BaseModel, Field, ValidationError
 
 from chorus.heartbeat import BeatContext
-from chorus.memory._recall_service import EpisodicRecallService
+from chorus.memory import EpisodicRecallService
 from chorus_tools._recall_render import format_full_run
 
 

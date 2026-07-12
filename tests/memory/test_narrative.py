@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 
-from chorus.memory._narrative import narrative
+from chorus.memory import narrative
 
 
 def _line(kind: str, **fields: object) -> str:

@@ -30,8 +30,7 @@ from dream.tools.builtin import default_registry
 
 from chorus.adapters import DreamBeatRunner, TokenPricing
 from chorus.heartbeat import BeatRunner, IntegrateContextPacket
-from chorus.memory import EpisodicStore
-from chorus.memory._recall_service import EpisodicRecallService
+from chorus.memory import EpisodicRecallService, EpisodicStore
 from chorus.outcomes import LanderRegistry, runtime_brief_block
 from chorus.roles import RoleBeatConfig, RoleRegistry, role_beat_config
 from chorus.roles._manifest import McpServerSpec
