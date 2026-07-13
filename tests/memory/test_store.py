@@ -101,7 +101,7 @@ def test_search_matches_the_indexed_intent_and_body(tmp_path) -> None:
         )
     )
     hits = store.search("retry")
-    assert [d.run_id for d in hits] == ["r_a"]
+    assert [h.record.run_id for h in hits] == ["r_a"]
 
 
 def test_search_ranks_the_stronger_match_first(tmp_path) -> None:
@@ -115,7 +115,7 @@ def test_search_ranks_the_stronger_match_first(tmp_path) -> None:
         )
     )
     hits = store.search("retry")
-    assert [d.run_id for d in hits] == ["r_strong", "r_weak"]
+    assert [h.record.run_id for h in hits] == ["r_strong", "r_weak"]
 
 
 def test_search_respects_limit(tmp_path) -> None:
@@ -149,7 +149,7 @@ def test_search_multi_word_requires_all_terms_and(tmp_path) -> None:
         )
     )
     hits = store.search("retry upload")
-    assert [d.run_id for d in hits] == ["r_both"]
+    assert [h.record.run_id for h in hits] == ["r_both"]
 
 
 def test_search_indexes_normalized_narrative_without_tags(tmp_path) -> None:
@@ -161,5 +161,27 @@ def test_search_indexes_normalized_narrative_without_tags(tmp_path) -> None:
             body=_role_text_body("<spec>implement slugify helper</spec>"),
         )
     )
-    assert [d.run_id for d in store.search("slugify")] == ["r_tagged"]
-    assert [d.run_id for d in store.search("spec")] == []
+    assert [h.record.run_id for h in store.search("slugify")] == ["r_tagged"]
+    assert [h.record.run_id for h in store.search("spec")] == []
+
+
+def test_search_snippet_marks_match_in_body_not_first_sentence(tmp_path) -> None:
+    """Query teaser is FTS5 snippet around the match, not beat opener."""
+    store = EpisodicStore(tmp_path)
+    opener = "Started the register form and sketched the empty layout."
+    filler = " ".join(f"pad{i}" for i in range(40))
+    match = "Much later fixed the retry on timeout in the pool."
+    store.append(
+        _delta(
+            run_id="r_mid",
+            intent="scaffold auth",
+            body=_role_text_body(f"{opener} {filler} {match}"),
+        )
+    )
+    hits = store.search("retry timeout")
+    assert len(hits) == 1
+    assert hits[0].record.run_id == "r_mid"
+    snip = hits[0].snippet.lower()
+    assert "retry" in snip
+    assert ">>>" in hits[0].snippet
+    assert "started the register" not in snip

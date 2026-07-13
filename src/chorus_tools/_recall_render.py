@@ -30,8 +30,13 @@ def deliverable_files(delta: SprintDelta) -> list[str]:
     return [path for path in delta.files_touched if is_deliverable_path(path)][:_MAX_FILES_SHOWN]
 
 
-def slim_hit_dict(delta: SprintDelta, *, rank_note: str | None = None) -> dict[str, object]:
-    """One recall list hit — summary only; full prose via ``get_run``."""
+def slim_hit_dict(
+    delta: SprintDelta,
+    *,
+    rank_note: str | None = None,
+    snippet: str | None = None,
+) -> dict[str, object]:
+    """One recall list hit — summary / FTS snippet; full prose via ``get_run``."""
     hit: dict[str, object] = {
         "run_id": delta.run_id,
         "outcome": delta.outcome,
@@ -42,6 +47,8 @@ def slim_hit_dict(delta: SprintDelta, *, rank_note: str | None = None) -> dict[s
         "hint": outcome_hint(delta.outcome),
         "drill_down": f"get_run(run_id={delta.run_id!r})",
     }
+    if snippet:
+        hit["snippet"] = snippet
     if rank_note:
         hit["rank_note"] = rank_note
     return hit
@@ -51,14 +58,16 @@ def format_slim_hit(hit: dict[str, object]) -> str:
     raw_files = hit["files_touched"]
     files = list(raw_files) if isinstance(raw_files, list) else []
     files_s = ", ".join(str(path) for path in files) if files else "(none)"
-    summary = str(hit.get("summary") or "").strip()
-    summary_line = f"\n  summary: {summary}" if summary else ""
+    # Query mode: FTS snippet is the match window; recency keeps first-sentence summary.
+    teaser = str(hit.get("snippet") or hit.get("summary") or "").strip()
+    teaser_key = "snippet" if hit.get("snippet") else "summary"
+    teaser_line = f"\n  {teaser_key}: {teaser}" if teaser else ""
     rank_note = str(hit.get("rank_note") or "").strip()
     rank_line = f"\n  rank_note: {rank_note}" if rank_note else ""
     return (
         f"- [{hit['outcome']}] {str(hit['run_id'])[:12]}… — {hit['hint']}\n"
         f"  intent: {hit['intent']!r}\n"
-        f"  files: {files_s}{summary_line}{rank_line}\n"
+        f"  files: {files_s}{teaser_line}{rank_line}\n"
         f"  drill_down: {hit['drill_down']}"
     )
 

@@ -10,8 +10,13 @@ from chorus.memory.episodic.fts_query import sanitize_fts5_query
 from chorus.memory.episodic.models import SprintDelta
 from chorus.memory.episodic.narrative import narrative, normalize_for_fts
 from chorus.memory.episodic.recall_filters import EpisodicQueryFilters, filter_clause
+from chorus.memory.episodic.search_hit import EpisodicSearchHit
 
 _HOT_TIER = "hot"
+# record_fts columns: 0=run_id UNINDEXED, 1=intent, 2=body — prefer body prose window.
+_SNIPPET_BODY_COL = 2
+_SNIPPET_INTENT_COL = 1
+_SNIPPET_TOKENS = 40
 
 
 class EpisodicRepo:
@@ -95,13 +100,18 @@ class EpisodicRepo:
         limit: int = 5,
         tier: str = _HOT_TIER,
         filters: EpisodicQueryFilters | None = None,
-    ) -> list[SprintDelta]:
-        """Keyword search over intent+body; optionally scoped to one employee's hot tier."""
+    ) -> list[EpisodicSearchHit]:
+        """Keyword search over intent+body; each hit carries an FTS5 match snippet."""
         match = sanitize_fts5_query(query)
         if not match:
             return []
         sql = (
-            "SELECT r.* FROM episodic_record r "
+            "SELECT r.*, "
+            f"snippet(record_fts, {_SNIPPET_BODY_COL}, '>>>', '<<<', '...', {_SNIPPET_TOKENS}) "
+            "AS body_snip, "
+            f"snippet(record_fts, {_SNIPPET_INTENT_COL}, '>>>', '<<<', '...', {_SNIPPET_TOKENS}) "
+            "AS intent_snip "
+            "FROM episodic_record r "
             "JOIN record_fts f ON f.run_id = r.run_id "
             "WHERE record_fts MATCH ? AND r.tier = ?"
         )
@@ -119,7 +129,13 @@ class EpisodicRepo:
         except sqlite3.OperationalError:
             # Bad FTS5 syntax despite sanitize — empty result, never raise to the agent.
             return []
-        return [self._to_delta(row) for row in rows]
+        return [
+            EpisodicSearchHit(
+                record=self._to_delta(row),
+                snippet=(row["body_snip"] or row["intent_snip"] or "").strip(),
+            )
+            for row in rows
+        ]
 
     def touch_recalled(self, run_ids: tuple[str, ...], *, now: datetime) -> None:
         """Best-effort reinforcement — updates ``last_recalled_at`` for returned hits."""

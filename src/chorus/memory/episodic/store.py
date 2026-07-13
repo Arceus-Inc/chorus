@@ -9,6 +9,7 @@ from pathlib import Path
 from chorus.ledger._migrations import MigrationRunner
 from chorus.memory.episodic.models import SprintDelta
 from chorus.memory.episodic.recall_filters import EpisodicQueryFilters
+from chorus.memory.episodic.search_hit import EpisodicSearchHit
 from chorus.memory.migrations import MIGRATIONS
 from chorus.memory.repos import EpisodicRepo
 
@@ -51,7 +52,7 @@ class EpisodicStore:
         employee_id: str | None = None,
         limit: int = 5,
         filters: EpisodicQueryFilters | None = None,
-    ) -> list[SprintDelta]:
+    ) -> list[EpisodicSearchHit]:
         """Keyword search over intent+body, optionally scoped to one employee."""
         return self._records.search(query, employee_id=employee_id, limit=limit, filters=filters)
 

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Literal
 
@@ -22,6 +22,7 @@ class RecallResult:
     mode: Literal["recency", "search"]
     profile: RecallProfile
     hits: tuple[SprintDelta, ...]
+    snippets: dict[str, str] = field(default_factory=dict)
 
 
 class EpisodicRecallService:
@@ -68,9 +69,20 @@ class EpisodicRecallService:
             limit=pool_size,
             filters=active,
         )
-        hits = _exclude_own(candidates, own_run_id=own_run_id)
-        ranked = rerank_keyword_hits(hits, profile=profile, now=ts, limit=limit)
-        return RecallResult(mode="search", profile=profile, hits=tuple(ranked))
+        kept = [hit for hit in candidates if hit.record.run_id != own_run_id]
+        snippets = {hit.record.run_id: hit.snippet for hit in kept if hit.snippet}
+        ranked = rerank_keyword_hits(
+            [hit.record for hit in kept],
+            profile=profile,
+            now=ts,
+            limit=limit,
+        )
+        return RecallResult(
+            mode="search",
+            profile=profile,
+            hits=tuple(ranked),
+            snippets=snippets,
+        )
 
     def get_run(self, employee_id: str, run_id: str) -> SprintDelta | None:
         delta = self._store.get(run_id)

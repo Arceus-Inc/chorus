@@ -152,7 +152,14 @@ def _filters_from_input(args: RecallInput) -> EpisodicQueryFilters | None:
 
 
 def _render(result: RecallResult) -> ToolResult:
-    rendered = [_slim_hit_for(delta, profile=result.profile) for delta in result.hits]
+    rendered = [
+        _slim_hit_for(
+            delta,
+            profile=result.profile,
+            snippet=result.snippets.get(delta.run_id),
+        )
+        for delta in result.hits
+    ]
     profile: RecallProfile = result.profile
     run_ids = [str(hit["run_id"]) for hit in rendered]
     if not rendered:
@@ -188,11 +195,16 @@ def _render(result: RecallResult) -> ToolResult:
     )
 
 
-def _slim_hit_for(delta: SprintDelta, *, profile: RecallProfile) -> dict[str, object]:
+def _slim_hit_for(
+    delta: SprintDelta,
+    *,
+    profile: RecallProfile,
+    snippet: str | None = None,
+) -> dict[str, object]:
     rank_note = (
         DEBUG_RANK_NOTE if profile == "debug" and is_failure_outcome(delta.outcome) else None
     )
-    return slim_hit_dict(delta, rank_note=rank_note)
+    return slim_hit_dict(delta, rank_note=rank_note, snippet=snippet)
 
 
 def _next_actions(result: RecallResult) -> list[str]:

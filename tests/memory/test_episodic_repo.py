@@ -53,7 +53,7 @@ def test_search_scoped_to_employee(tmp_path) -> None:
     store.append(_delta(run_id="r_ada", employee_id="ada", intent="retry timeout"))
     store.append(_delta(run_id="r_bex", employee_id="bex", intent="retry timeout"))
     ada_hits = store.search("retry", employee_id="ada", limit=5)
-    assert [d.run_id for d in ada_hits] == ["r_ada"]
+    assert [h.record.run_id for h in ada_hits] == ["r_ada"]
 
 
 def test_touch_recalled_sets_timestamp(tmp_path) -> None:

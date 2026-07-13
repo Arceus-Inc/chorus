@@ -86,14 +86,26 @@ async def test_recency_mode_excludes_the_current_run(tmp_path: Path) -> None:
 
 async def test_query_mode_keyword_search(tmp_path: Path) -> None:
     store = EpisodicStore(tmp_path / "memory")
-    store.append(_delta(run_id="r_a", intent="fix the retry logic", body="retry retry retry"))
-    store.append(_delta(run_id="r_b", intent="unrelated", body="something else entirely"))
+    store.append(
+        _delta(
+            run_id="r_a",
+            intent="scaffold",
+            body=_role_text_body(
+                "Opened the form first. Later fixed retry timeout in the connection pool."
+            ),
+        )
+    )
+    store.append(_delta(run_id="r_b", intent="unrelated", body=_role_text_body("something else")))
     _beat(tmp_path)
 
-    result = await _tool(store).execute({"query": "retry"}, _ctx(tmp_path))
+    result = await _tool(store).execute({"query": "retry timeout"}, _ctx(tmp_path))
 
-    ids = [hit["run_id"] for hit in (result.structured or {})["hits"]]
-    assert ids == ["r_a"]
+    hits = (result.structured or {})["hits"]
+    assert [hit["run_id"] for hit in hits] == ["r_a"]
+    snip = str(hits[0].get("snippet") or "")
+    assert "retry" in snip.lower()
+    assert ">>>" in snip
+    assert "snippet:" in result.content
 
 
 async def test_hits_carry_summary_not_full_prose(tmp_path: Path) -> None:

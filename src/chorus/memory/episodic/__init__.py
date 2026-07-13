@@ -17,6 +17,7 @@ from chorus.memory.episodic.recall_rank import (
     sort_recency_hits,
 )
 from chorus.memory.episodic.recall_service import EpisodicRecallService, RecallResult
+from chorus.memory.episodic.search_hit import EpisodicSearchHit
 from chorus.memory.episodic.store import EpisodicStore
 
 __all__ = [
@@ -24,6 +25,7 @@ __all__ = [
     "RECENT_WINDOW_DAYS",
     "EpisodicQueryFilters",
     "EpisodicRecallService",
+    "EpisodicSearchHit",
     "EpisodicStore",
     "RecallProfile",
     "RecallResult",
