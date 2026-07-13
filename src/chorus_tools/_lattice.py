@@ -15,11 +15,11 @@ from typing import Any
 from dream.contracts.tool import ToolResult
 from dream.tools._base import BaseTool, ToolDeclaration
 from dream.tools._context import ToolExecutionContext
+from lattice.domain.proposal import PatternDraft, Proposal
+from lattice.facade import Lattice
 from pydantic import BaseModel, Field, ValidationError
 
 from chorus.heartbeat import BeatContext
-from lattice.domain.proposal import PatternDraft, Proposal
-from lattice.facade import Lattice
 
 _LATTICE_TOOLS = frozenset({"lattice_context", "lattice_packet", "lattice_apply"})
 
@@ -297,12 +297,12 @@ def lattice_tool(name: str, lattice: Lattice) -> BaseTool | None:
 
 
 __all__ = [
+    "_LATTICE_TOOLS",
     "LatticeApplyInput",
     "LatticeApplyTool",
     "LatticeContextInput",
     "LatticeContextTool",
     "LatticePacketInput",
     "LatticePacketTool",
-    "_LATTICE_TOOLS",
     "lattice_tool",
 ]

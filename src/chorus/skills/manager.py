@@ -19,9 +19,12 @@ __all__ = ["SkillManager", "SkillObservation"]
 
 
 class _EpisodeLike(Protocol):
-    run_id: str
-    employee_id: str
-    outcome: str
+    @property
+    def run_id(self) -> str: ...
+    @property
+    def employee_id(self) -> str: ...
+    @property
+    def outcome(self) -> str: ...
 
 
 @dataclass(frozen=True)
@@ -124,7 +127,7 @@ class SkillManager:
                 stop="do not overwrite via create",
                 next_actions=[f"skill_manage(action='view', name={name!r})"],
             )
-        except Exception as exc:  # noqa: BLE001 — harness must always return obs
+        except Exception as exc:
             return SkillObservation.error(
                 summary=f"skill_manage failed: {exc}",
                 root_cause=type(exc).__name__,
@@ -212,8 +215,9 @@ class SkillManager:
                 label=label or f"EVOLVE: {section}",
                 source_run_ids=source_run_ids,
             )
-            skill = self.store.get(existing.id)
-            assert skill is not None
+            refreshed = self.store.get(existing.id)
+            assert refreshed is not None
+            skill = refreshed
 
         return SkillObservation.ok(
             f"evolved {name!r} → revision {rev.revision_no}",
@@ -394,9 +398,7 @@ class SkillManager:
                 retry="list skills",
                 stop="stop",
             )
-        rev = self.store.restore(
-            skill_id=skill.id, from_revision_id=version_id, label=label
-        )
+        rev = self.store.restore(skill_id=skill.id, from_revision_id=version_id, label=label)
         skill = self.store.get(skill.id)
         assert skill is not None
         return SkillObservation.ok(
@@ -559,11 +561,7 @@ class SkillManager:
             filtered = [
                 e
                 for e in result.errors
-                if not (
-                    "unknown skill" in e
-                    and skill is not None
-                    and skill in store_slugs
-                )
+                if not ("unknown skill" in e and skill is not None and skill in store_slugs)
             ]
             # Canonical evolve of role skill with empty store is fine if in canonical
             if filtered:

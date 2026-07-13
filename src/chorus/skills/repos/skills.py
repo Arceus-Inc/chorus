@@ -64,7 +64,9 @@ class SkillRepo:
         ).fetchall()
         return [_row_to_skill(r) for r in rows]
 
-    def set_head(self, skill_id: str, *, revision_id: str, revision_no: int, bump_patch: bool) -> Skill:
+    def set_head(
+        self, skill_id: str, *, revision_id: str, revision_no: int, bump_patch: bool
+    ) -> Skill:
         now = utcnow_iso()
         if bump_patch:
             self._conn.execute(
