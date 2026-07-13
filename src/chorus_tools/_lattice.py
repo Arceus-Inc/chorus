@@ -80,7 +80,14 @@ class LatticeContextTool(BaseTool):
             )
         return ToolResult(
             content=content,
-            structured={"status": "success", "summary": "patterns returned"},
+            structured={
+                "status": "success",
+                "summary": "patterns returned",
+                "next_actions": [
+                    "apply the pattern that matches your current step",
+                    "get_run(run_id=…) on a cited src: id for the full past account",
+                ],
+            },
         )
 
 
