@@ -43,8 +43,7 @@ class SkillRevisionRepo:
 
     def head(self, skill_id: str) -> SkillRevision | None:
         row = self._conn.execute(
-            "SELECT * FROM skill_revision WHERE skill_id = ? "
-            "ORDER BY revision_no DESC LIMIT 1",
+            "SELECT * FROM skill_revision WHERE skill_id = ? ORDER BY revision_no DESC LIMIT 1",
             (skill_id,),
         ).fetchone()
         return _row_to_revision(row) if row is not None else None

@@ -9,10 +9,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from chorus.memory import EpisodicStore, SprintDelta
 from lattice.compose import build_default
-from lattice.contracts.episodic import EpisodicReader, RawEpisode
+from lattice.contracts.episodic import RawEpisode
 from lattice.facade import Lattice
+
+from chorus.memory import EpisodicStore, SprintDelta
 
 
 class ChorusEpisodicReader:

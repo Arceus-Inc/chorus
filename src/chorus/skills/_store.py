@@ -95,9 +95,7 @@ class SkillStore:
                 author_run_id=author_run_id,
             )
         )
-        skill = self._skills.set_head(
-            skill_id, revision_id=rev.id, revision_no=1, bump_patch=False
-        )
+        skill = self._skills.set_head(skill_id, revision_id=rev.id, revision_no=1, bump_patch=False)
         return skill, rev
 
     def append_revision(
@@ -131,9 +129,7 @@ class SkillStore:
             )
         )
         bump = action in {"patch", "edit", "write_file", "remove_file", "restore"}
-        self._skills.set_head(
-            skill_id, revision_id=rev.id, revision_no=next_no, bump_patch=bump
-        )
+        self._skills.set_head(skill_id, revision_id=rev.id, revision_no=next_no, bump_patch=bump)
         return rev
 
     def restore(

@@ -11,7 +11,7 @@ from dream.tools._context import ToolExecutionContext
 from pydantic import BaseModel, Field, ValidationError
 
 from chorus.heartbeat import BeatContext
-from chorus.memory import EpisodicStore
+from chorus.memory import EpisodicStore, SprintDelta
 from chorus.skills import SkillManager, SkillStore
 
 
@@ -76,14 +76,14 @@ class SkillManageTool(BaseTool):
 
         beat = BeatContext.read(ctx.working_dir)
         store = SkillStore(self._company_root / "skills")
-        episodes = ()
+        episodes: tuple[SprintDelta, ...] = ()
         try:
             episodic = EpisodicStore(self._company_root / "memory")
             try:
                 episodes = tuple(episodic.records_for(beat.employee_id, limit=50))
             finally:
                 episodic.close()
-        except Exception:  # noqa: BLE001
+        except Exception:
             episodes = ()
 
         mgr = SkillManager(
