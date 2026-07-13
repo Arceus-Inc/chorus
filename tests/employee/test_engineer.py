@@ -36,6 +36,7 @@ def test_engineer_declares_every_build_harness_component() -> None:
         "lattice_context",
         "lattice_packet",
         "lattice_apply",
+        "skill_manage",
     )
     assert manifest.permission_mode.value == "acceptEdits"  # can write under its own posture
     assert manifest.memory_scope.value == "project"

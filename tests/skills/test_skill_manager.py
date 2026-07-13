@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from chorus.skills import SkillOrigin, SkillStore
+from chorus.skills import SkillStore
 from chorus.skills.manager import SkillManager, SkillObservation
 
 pytestmark = pytest.mark.unit
@@ -177,8 +177,7 @@ def test_create_class_level_skill(tmp_path: Path) -> None:
                 'description: "HTTP retry playbook for service clients"\n'
                 'when_to_use: "when adding retries to an HTTP client"\n'
                 "---\n\n"
-                "# HTTP Retry Playbook\n\n"
-                + _CREATE_BODY
+                "# HTTP Retry Playbook\n\n" + _CREATE_BODY
             ),
             source_run_ids=["r0", "r1"],
         )

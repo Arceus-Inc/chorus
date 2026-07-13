@@ -76,7 +76,37 @@ def build_lattice_for_chorus(
     return build_default(**kwargs)  # type: ignore[arg-type]
 
 
+def write_lattice_error(harness_root: Path, *, site: str, error: Exception) -> None:
+    """Leave a durable breadcrumb when an advisory lattice step fails.
+
+    Lattice is advisory by design — a failure must never block the beat — but an invisible failure
+    means consolidation silently stops forever. This file is the observable middle ground: cheap,
+    best-effort, overwritten per occurrence, and greppable by an operator or a probe.
+    """
+    import json
+    from datetime import UTC, datetime
+
+    try:
+        harness = Path(harness_root) / ".harness"
+        harness.mkdir(parents=True, exist_ok=True)
+        (harness / "lattice-error.json").write_text(
+            json.dumps(
+                {
+                    "site": site,
+                    "error": f"{type(error).__name__}: {error}",
+                    "at": datetime.now(tz=UTC).isoformat(),
+                },
+                indent=2,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+    except OSError:
+        return  # the breadcrumb itself must never raise
+
+
 __all__ = [
     "ChorusEpisodicReader",
     "build_lattice_for_chorus",
+    "write_lattice_error",
 ]

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from dream.contracts.tool import ToolResult
 from dream.tools._base import BaseTool, ToolDeclaration
@@ -16,11 +16,10 @@ from chorus.skills import SkillManager, SkillStore
 
 
 class SkillManageInput(BaseModel):
-    action: str = Field(
-        description=(
-            "view|create|evolve|patch|edit|restore|delete|list_versions. "
-            "Prefer patch/evolve over create. Facts → lattice_apply patterns[] only."
-        )
+    action: Literal[
+        "view", "create", "evolve", "patch", "edit", "restore", "delete", "list_versions"
+    ] = Field(
+        description=("Prefer patch/evolve over create. Facts → lattice_apply patterns[] only.")
     )
     name: str | None = Field(default=None, description="Skill slug")
     content: str | None = Field(default=None, description="Full SKILL.md or section body")

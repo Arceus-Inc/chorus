@@ -48,6 +48,7 @@ def engineer_manifest() -> RoleManifest:
             "lattice_context",
             "lattice_packet",
             "lattice_apply",
+            "skill_manage",
         ),  # the wire toolset, including Dream's durable + task memory surfaces
         disallowed_tools=(),  # nothing additionally denied at the role level
         # — build_harness(skills=…) — shared cross-beat skills merge in via factory —

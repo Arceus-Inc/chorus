@@ -47,13 +47,18 @@ class LatticeContextTool(BaseTool):
     description = (
         "Distilled semantic patterns for this employee. Each hit lists src: run_ids — "
         "use get_run(run_id) for full beat prose on src: run_ids. "
-        "For how-to playbooks use the skill tool / skill_manage(view), not this tool."
+        "For how-to playbooks use the skill tool, not this tool. "
+        "Patterns rarely change mid-beat — do not re-query the same terms."
     )
     declaration = ToolDeclaration(risk="safe", tier_required=0, timeout_seconds=10.0)
     input_model = LatticeContextInput
 
     def __init__(self, lattice: Lattice) -> None:
         self._lattice = lattice
+        # Per-materialize memo: (query, limit) → (call #, last rendered content). A repeat call whose
+        # content is unchanged returns a short note instead of re-rendering the identical block —
+        # the live 5+2 probe showed 5 identical calls in one beat, each re-spending the tokens.
+        self._seen: dict[tuple[str, int], tuple[int, str]] = {}
 
     async def execute(self, input: dict[str, object], ctx: ToolExecutionContext) -> ToolResult:
         try:
@@ -78,6 +83,24 @@ class LatticeContextTool(BaseTool):
                     "next_actions": ["recall(query=…)", "widen lattice_context query"],
                 },
             )
+        key = (args.query, args.limit)
+        seen = self._seen.get(key)
+        if seen is not None and seen[1] == content:
+            call_no = seen[0]
+            return ToolResult(
+                content=(
+                    f"unchanged since your call #{call_no} this beat for the same query — "
+                    "reuse that result; do not re-query."
+                ),
+                structured={
+                    "status": "success",
+                    "summary": f"unchanged from call #{call_no}",
+                    "cached": True,
+                    "next_actions": ["reuse the earlier result", "proceed with the task"],
+                },
+            )
+        call_no = (seen[0] if seen is not None else 0) + 1
+        self._seen[key] = (call_no, content)
         return ToolResult(
             content=content,
             structured={

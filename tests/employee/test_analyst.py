@@ -42,6 +42,7 @@ def test_analyst_declares_its_analysis_toolset() -> None:
         "lattice_context",
         "lattice_packet",
         "lattice_apply",
+        "skill_manage",
     )
     assert (
         manifest.permission_mode.value == "acceptEdits"

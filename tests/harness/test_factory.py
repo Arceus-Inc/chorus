@@ -60,6 +60,7 @@ def test_engineer_materializes_a_writable_harness_in_its_worktree(
         "lattice_context",
         "lattice_packet",
         "lattice_apply",
+        "skill_manage",
     }
     assert mat.config.permission_mode == "acceptEdits"
     assert captured["max_turns"] == 12  # the engine scalars come from the role too

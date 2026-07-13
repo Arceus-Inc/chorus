@@ -8,10 +8,10 @@ from typing import Any
 
 import pytest
 
-from chorus.workforce import Employee
-from chorus_harness import _factory as _factory_mod
 from chorus.roles import RoleRegistry, default_roles
+from chorus.workforce import Employee
 from chorus_employee._lattice import LATTICE_BEAT_START_HEADER, read_lattice_consolidation_push
+from chorus_harness import _factory as _factory_mod
 
 pytestmark = pytest.mark.integration
 

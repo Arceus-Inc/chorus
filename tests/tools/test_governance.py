@@ -143,9 +143,7 @@ def test_proposal_reject_carries_the_reason(tmp_path: Path) -> None:
 def test_goal_set_priority_steers_the_goal(tmp_path: Path) -> None:
     port = FakeGovernance()
     result = asyncio.run(
-        GoalSetPriorityTool(port).execute(
-            {"goal_id": "g1", "priority": "high"}, _ctx(tmp_path)
-        )
+        GoalSetPriorityTool(port).execute({"goal_id": "g1", "priority": "high"}, _ctx(tmp_path))
     )
     assert result.is_error is False
     assert port.reprioritised == [("g1", "high")]
@@ -154,9 +152,7 @@ def test_goal_set_priority_steers_the_goal(tmp_path: Path) -> None:
 def test_goal_set_priority_maps_a_synonym_to_a_band(tmp_path: Path) -> None:
     port = FakeGovernance()
     result = asyncio.run(
-        GoalSetPriorityTool(port).execute(
-            {"goal_id": "g1", "priority": "CRITICAL"}, _ctx(tmp_path)
-        )
+        GoalSetPriorityTool(port).execute({"goal_id": "g1", "priority": "CRITICAL"}, _ctx(tmp_path))
     )
     assert result.is_error is False
     assert port.reprioritised == [("g1", "high")]  # critical → high, not a raw error

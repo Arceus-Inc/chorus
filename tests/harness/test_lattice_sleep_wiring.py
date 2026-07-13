@@ -8,16 +8,15 @@ from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
+from dream.tools._context import ToolExecutionContext
 
+from chorus.heartbeat import BeatContext
+from chorus.memory import EpisodicStore, SprintDelta
 from chorus.roles import RoleRegistry, default_roles
 from chorus.workforce import Employee
 from chorus_harness import _factory as _factory_mod
 from chorus_tools._lattice import LatticeApplyTool
 from chorus_tools._lattice_bridge import build_lattice_for_chorus
-from dream.tools._context import ToolExecutionContext
-
-from chorus.heartbeat import BeatContext
-from chorus.memory import EpisodicStore, SprintDelta
 
 pytestmark = pytest.mark.integration
 

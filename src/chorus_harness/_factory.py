@@ -69,7 +69,7 @@ from chorus_tools import (
     governance_tool,
 )
 from chorus_tools._lattice import _LATTICE_TOOLS, lattice_tool
-from chorus_tools._lattice_bridge import build_lattice_for_chorus
+from chorus_tools._lattice_bridge import build_lattice_for_chorus, write_lattice_error
 from chorus_tools._skill_manage import SkillManageTool
 from chorus_tools._todo_flush_nudge import registry_with_todo_flush_nudge
 from chorus_tools.cms import CmsDraftTool, cms_backend_from_env
@@ -679,8 +679,9 @@ class EmployeeHarnessFactory:
                 )
                 if lattice.has_fresh_episodes(employee.id):
                     lattice.adjudicate(employee.id)
-            except Exception:
+            except Exception as exc:
                 lattice = None
+                write_lattice_error(root, site="materialize.adjudicate", error=exc)
             lattice_push = read_lattice_consolidation_push(root)
             if lattice_push:
                 config = replace(
@@ -751,17 +752,22 @@ class EmployeeHarnessFactory:
             registry.register(RecallTool(episodic), source=ToolSource.DEFAULT)
             registry.register(GetRunTool(episodic), source=ToolSource.DEFAULT)
         # lattice tools: read consolidated patterns (context), build the consolidation packet, apply
-        # adjudicated proposals. Reuses the lattice built (or not) at beat start above.
+        # adjudicated proposals. Reuses the lattice built (or not) at beat start above. Advisory like
+        # the adjudicate step: a broken lattice skips these tools (with a breadcrumb), never the beat.
         if _LATTICE_TOOLS.intersection(config.tools):
             if lattice is None:
-                lattice = build_lattice_for_chorus(
-                    self._company_root,
-                    canonical_skills_root=config.skills_root,
-                )
-            for name in _LATTICE_TOOLS.intersection(config.tools):
-                tool = lattice_tool(name, lattice)
-                if tool is not None:
-                    registry.register(tool, source=ToolSource.DEFAULT)
+                try:
+                    lattice = build_lattice_for_chorus(
+                        self._company_root,
+                        canonical_skills_root=config.skills_root,
+                    )
+                except Exception as exc:
+                    write_lattice_error(root, site="materialize.tool_registration", error=exc)
+            if lattice is not None:
+                for name in _LATTICE_TOOLS.intersection(config.tools):
+                    tool = lattice_tool(name, lattice)
+                    if tool is not None:
+                        registry.register(tool, source=ToolSource.DEFAULT)
         if "skill_manage" in config.tools:
             registry.register(
                 SkillManageTool(

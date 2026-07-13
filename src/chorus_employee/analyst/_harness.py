@@ -62,6 +62,7 @@ def analyst_manifest() -> RoleManifest:
             "lattice_context",
             "lattice_packet",
             "lattice_apply",
+            "skill_manage",
         ),
         # — build_harness(memory=…) + working_memory —
         memory_scope=MemoryScope.PROJECT,

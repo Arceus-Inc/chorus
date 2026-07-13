@@ -55,6 +55,7 @@ def marketer_manifest() -> RoleManifest:
             "lattice_context",
             "lattice_packet",
             "lattice_apply",
+            "skill_manage",
             "spawn_subagent",
             # market/audience research: Tavily-backed web search (§06 Researcher, §07 read reach).
             # An allowlisted-egress read (its declared host is api.tavily.com) — needs the net tier below.

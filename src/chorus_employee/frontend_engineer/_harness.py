@@ -76,6 +76,7 @@ def frontend_engineer_manifest() -> RoleManifest:
             "lattice_context",
             "lattice_packet",
             "lattice_apply",
+            "skill_manage",
             # read-only egress for grounding (MDN/WAI-ARIA/framework docs) — needs the net tier below.
             "web_search",
             "web_extract",

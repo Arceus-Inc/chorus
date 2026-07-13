@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 import pytest
@@ -70,3 +69,53 @@ async def test_lattice_apply_rejects_cross_employee_id(tmp_path: Path) -> None:
     )
     assert result.is_error is True
     assert "cross-employee" in result.content
+
+
+@pytest.mark.asyncio
+async def test_lattice_context_repeat_call_returns_unchanged_note(tmp_path: Path) -> None:
+    """A second identical query whose patterns did not change returns a short cached note.
+
+    The live 5+2 probe showed 5 identical lattice_context calls in one beat, each re-spending the
+    tokens of the full pattern block — the tool memoises per (query, limit) within a materialize.
+    """
+    from chorus_tools._lattice import LatticeContextTool
+
+    company = tmp_path / "acme"
+    store = EpisodicStore(company / "memory")
+    store.append(_delta("r1"))
+    lattice = build_lattice_for_chorus(company, min_new_episodes=1, min_cluster_size=1)
+
+    worktree = tmp_path / "worktree"
+    worktree.mkdir()
+    BeatContext(employee_id="bex", run_id="run_a", task_id="t1").write(worktree)
+
+    apply_result = await LatticeApplyTool(lattice).execute(
+        {
+            "proposal": {
+                "employee_id": "bex",
+                "patterns": [
+                    {
+                        "key": "api.retry",
+                        "claim": "HTTP retries use exponential backoff capped at 30s",
+                        "source_run_ids": ["r1"],
+                    }
+                ],
+            }
+        },
+        _ctx(worktree),
+    )
+    assert apply_result.is_error is not True
+
+    tool = LatticeContextTool(lattice)
+    first = await tool.execute({"query": "retry"}, _ctx(worktree))
+    assert (first.structured or {}).get("status") == "success"
+    assert "exponential backoff" in first.content
+
+    second = await tool.execute({"query": "retry"}, _ctx(worktree))
+    assert (second.structured or {}).get("cached") is True
+    assert "unchanged" in second.content
+    assert "exponential backoff" not in second.content  # the full block is NOT re-rendered
+
+    # A different query is not deduped.
+    other = await tool.execute({"query": "retry", "limit": 3}, _ctx(worktree))
+    assert (other.structured or {}).get("cached") is not True

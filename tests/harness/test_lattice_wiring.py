@@ -5,13 +5,12 @@ from __future__ import annotations
 import json
 from datetime import UTC, datetime
 from pathlib import Path
-from unittest.mock import MagicMock
 
 import pytest
 
 from chorus.heartbeat._beat import BeatDisposition, BeatOutcome
 from chorus.heartbeat._scheduler import Scheduler
-from chorus.ledger import SqliteLedger, Task, TaskPriority, TaskStatus
+from chorus.ledger import Task, TaskPriority, TaskStatus
 from chorus.memory import EpisodicStore, SprintDelta
 from chorus.workforce import Employee
 
@@ -69,7 +68,7 @@ def test_write_lattice_beat_end_when_gate_open(tmp_path: Path) -> None:
     (worktree / ".harness").mkdir()
 
     scheduler = Scheduler(company_root=company)
-    scheduler._write_lattice_beat_end(  # noqa: SLF001
+    scheduler._write_lattice_beat_end(
         employee=_employee(),
         run_id="run_1",
         working_dir=worktree,
@@ -91,7 +90,7 @@ def test_no_teaser_file_when_gate_closed(tmp_path: Path) -> None:
     worktree.mkdir()
 
     scheduler = Scheduler(company_root=company)
-    scheduler._write_lattice_beat_end(  # noqa: SLF001
+    scheduler._write_lattice_beat_end(
         employee=_employee(),
         run_id="run_1",
         working_dir=worktree,
@@ -104,7 +103,7 @@ def test_lattice_teaser_never_raises_on_bad_company_root(tmp_path: Path) -> None
     worktree = tmp_path / "worktree"
     worktree.mkdir()
     scheduler = Scheduler(company_root=tmp_path / "missing" / "structure")
-    scheduler._write_lattice_beat_end(  # noqa: SLF001
+    scheduler._write_lattice_beat_end(
         employee=_employee(),
         run_id="run_1",
         working_dir=worktree,

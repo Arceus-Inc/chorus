@@ -59,4 +59,27 @@ def test_worker_role_materializes_with_lattice_tools(
     factory, captured = _factory(monkeypatch, tmp_path)
     factory.materialize(Employee(id="emp", name="Emp", role=role))
     names = {t.name for t in captured["registry"].list_tools()}
-    assert {"lattice_context", "lattice_packet", "lattice_apply"}.issubset(names)
+    assert {"lattice_context", "lattice_packet", "lattice_apply", "skill_manage"}.issubset(names)
+
+
+def test_lattice_failure_leaves_observable_breadcrumb(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """An advisory lattice failure never blocks the beat — but it must never be invisible either.
+
+    A broken lattice (corrupt DB, refactored dep) previously meant consolidation silently stopped
+    forever; now materialize leaves .harness/lattice-error.json as a greppable breadcrumb.
+    """
+    factory, _ = _factory(monkeypatch, tmp_path)
+    monkeypatch.setattr(
+        _factory_mod,
+        "build_lattice_for_chorus",
+        lambda *a, **kw: (_ for _ in ()).throw(RuntimeError("lattice db corrupt")),
+    )
+    mat = factory.materialize(Employee(id="emp", name="Emp", role="engineer"))
+
+    breadcrumb = mat.working_dir / ".harness" / "lattice-error.json"
+    assert breadcrumb.is_file()
+    payload = breadcrumb.read_text(encoding="utf-8")
+    assert "materialize." in payload  # site recorded (last failing site wins)
+    assert "lattice db corrupt" in payload

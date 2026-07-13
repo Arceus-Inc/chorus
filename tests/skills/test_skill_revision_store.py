@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from chorus.skills import Skill, SkillOrigin, SkillRevision, SkillState, SkillStore
+from chorus.skills import SkillOrigin, SkillState, SkillStore
 
 pytestmark = pytest.mark.unit
 

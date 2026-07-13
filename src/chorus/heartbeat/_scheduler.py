@@ -876,7 +876,10 @@ class Scheduler:
             }
             harness.mkdir(parents=True, exist_ok=True)
             path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
-        except Exception:
+        except Exception as exc:
+            from chorus_tools._lattice_bridge import write_lattice_error
+
+            write_lattice_error(working_dir, site="scheduler.beat_end_gate", error=exc)
             return
 
     def _write_integrate_packet(

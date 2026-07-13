@@ -57,6 +57,7 @@ def designer_manifest() -> RoleManifest:
             "lattice_context",
             "lattice_packet",
             "lattice_apply",
+            "skill_manage",
             "spawn_subagent",
             # pattern/prior-art research: Tavily-backed web search + fetch (designer §06 UX-Researcher,
             # §07 pattern research). Allowlisted-egress reads — need the net tier below.
