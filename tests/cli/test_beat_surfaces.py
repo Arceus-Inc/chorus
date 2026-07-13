@@ -17,7 +17,9 @@ def test_empty_surfaces_env_keeps_engineer_default(monkeypatch: pytest.MonkeyPat
     monkeypatch.delenv("CHORUS_ENGINEER_SURFACES", raising=False)
     engineer = _engineer()
 
-    assert engineer.manifest.skills == ()
+    # The engineer now ships default skills (cross-beat resume/recall) — the env override adds
+    # surfaces on top of that default, it no longer defines it.
+    assert engineer.manifest.skills == ("cross-beat-resume", "cross-beat-recall")
     assert engineer.manifest.mcp is False
     assert engineer.manifest.plugins is False
 
@@ -26,7 +28,9 @@ def test_surfaces_env_enables_requested_capabilities(monkeypatch: pytest.MonkeyP
     monkeypatch.setenv("CHORUS_ENGINEER_SURFACES", " skills, mcp, plugins ")
     engineer = _engineer()
 
-    assert engineer.manifest.skills == ("project",)
+    # skills=True guarantees a NON-EMPTY tuple (discovery on); the ("project",) placeholder only
+    # fills a previously-empty tuple, and the engineer's default tuple is no longer empty.
+    assert engineer.manifest.skills
     assert "skill" in engineer.manifest.tools
     assert engineer.manifest.mcp is True
     assert engineer.manifest.plugins is True
