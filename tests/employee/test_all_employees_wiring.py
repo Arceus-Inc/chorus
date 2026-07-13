@@ -20,7 +20,16 @@ from chorus_harness._factory import dream_tool_names
 pytestmark = pytest.mark.integration
 
 # The six role-playing employees this suite covers (engineer/reviewer/manager are the M3 core).
-EMPLOYEES = ["analyst", "backend_engineer", "frontend_engineer", "designer", "marketer", "pm"]
+# Engineer now also gets todo_write + shared cross-beat skills for resume parity.
+EMPLOYEES = [
+    "analyst",
+    "backend_engineer",
+    "frontend_engineer",
+    "designer",
+    "marketer",
+    "pm",
+    "engineer",
+]
 
 
 @pytest.fixture(scope="module")

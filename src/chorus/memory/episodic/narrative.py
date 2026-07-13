@@ -13,9 +13,12 @@ it only narrows the text used for search + display.
 from __future__ import annotations
 
 import json
+import re
 
 _NARRATIVE_KIND = "role.text"
 _SUMMARY_MAX = 160
+_TAG_RE = re.compile(r"</?[A-Za-z][^>]*>")
+_WS_RE = re.compile(r"\s+")
 
 
 def narrative(raw_record: str) -> str:
@@ -33,19 +36,25 @@ def narrative(raw_record: str) -> str:
     return "\n".join(lines)
 
 
+def normalize_for_fts(text: str) -> str:
+    """Strip XML-like tags and collapse whitespace before BM25 indexing."""
+    if not text:
+        return ""
+    return _WS_RE.sub(" ", _TAG_RE.sub(" ", text)).strip()
+
+
 def beat_summary(body: str, *, intent: str) -> str:
     """Deterministic one-liner for slim recall hits — first narrative sentence or intent."""
-    prose = narrative(body).strip()
+    prose = normalize_for_fts(narrative(body))
     if prose:
         sentence = prose[: prose.index(".") + 1].strip() if "." in prose else prose
     else:
-        sentence = intent.strip().split(".", 1)[0].strip()
+        sentence = normalize_for_fts(intent).split(".", 1)[0].strip()
     if not sentence:
         return ""
-    one_line = " ".join(sentence.split())
-    if len(one_line) <= _SUMMARY_MAX:
-        return one_line
-    return one_line[: _SUMMARY_MAX - 1].rstrip() + "…"
+    if len(sentence) <= _SUMMARY_MAX:
+        return sentence
+    return sentence[: _SUMMARY_MAX - 1].rstrip() + "…"
 
 
-__all__ = ["beat_summary", "narrative"]
+__all__ = ["beat_summary", "narrative", "normalize_for_fts"]

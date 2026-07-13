@@ -9,12 +9,16 @@ We copy it under ``.harness/skills/`` — already excluded from every worktree b
 ``info/exclude`` (see :mod:`chorus.workspace`), so the bundle is reachable by ``read_file`` yet never
 committed or merged as a deliverable — and set it read-only, so a beat may read the bundle but never
 mutate it (the guardrail). The copy is regenerated per beat, so it always mirrors the canonical source.
+
+Shared cross-cutting skills (``chorus_employee/skills/``) are merged in after the role bundle; a
+role-specific skill of the same name wins.
 """
 
 from __future__ import annotations
 
 import shutil
 import stat
+from collections.abc import Sequence
 from pathlib import Path
 
 # Under ``.harness/`` (git-excluded in every worktree), so the materialized bundle never lands.
@@ -42,18 +46,39 @@ def _set_read_only(root: Path) -> None:
     root.chmod(_READ_ONLY_DIR)
 
 
-def materialize_skills(harness_dir: Path, skills_root: str | Path) -> Path:
+def _merge_skill_dirs(dest: Path, extra_root: Path) -> None:
+    """Copy skill packages from ``extra_root`` into ``dest``; existing names are left alone."""
+    if not extra_root.is_dir():
+        return
+    for child in extra_root.iterdir():
+        if not child.is_dir() or not (child / "SKILL.md").is_file():
+            continue
+        target = dest / child.name
+        if target.exists():
+            continue
+        shutil.copytree(child, target)
+
+
+def materialize_skills(
+    harness_dir: Path,
+    skills_root: str | Path,
+    *,
+    extra_roots: Sequence[Path] = (),
+) -> Path:
     """Copy the skill bundle at ``skills_root`` into ``harness_dir/.harness/skills`` (read-only).
 
-    Returns the destination — the ``project_dir`` to point dream's skill registry at, so both dream's
-    SKILL.md load and the model's reference reads resolve to the same in-worktree, git-excluded copy.
-    Idempotent: re-materializing replaces the prior copy (the factory rebuilds the harness per beat).
+    Optional ``extra_roots`` are merged afterward (role-specific names win). Returns the destination —
+    the ``project_dir`` to point dream's skill registry at, so both dream's SKILL.md load and the
+    model's reference reads resolve to the same in-worktree, git-excluded copy. Idempotent:
+    re-materializing replaces the prior copy (the factory rebuilds the harness per beat).
     """
     dest = harness_dir.joinpath(*_SKILLS_SUBDIR)
     if dest.exists():
         _restore_writable(dest)
         shutil.rmtree(dest)
     shutil.copytree(Path(skills_root), dest)
+    for extra in extra_roots:
+        _merge_skill_dirs(dest, Path(extra))
     _set_read_only(dest)
     return dest
 

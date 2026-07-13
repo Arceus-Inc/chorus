@@ -89,7 +89,7 @@ def test_recall_is_admitted_to_the_read_only_evaluator_head(
 def test_materialize_does_not_inject_episodic_teaser(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """Teaser push removed — recall + TODO.md carry resume orientation."""
+    """No prompt teaser / resume-nudge file — recall + TODO.md + skills carry orientation."""
     factory, _ = _factory(monkeypatch, tmp_path)
     memory_root = tmp_path / "acme" / "memory"
     store = EpisodicStore(memory_root)
@@ -115,8 +115,24 @@ def test_materialize_does_not_inject_episodic_teaser(
     )
     teaser_path = mat.working_dir / ".harness" / "episodic-beat-start.json"
     assert not teaser_path.is_file()
+    assert not (mat.working_dir / ".harness" / "episodic-resume-nudge.json").is_file()
     generator = (mat.working_dir / ".harness" / "roles" / "generator.toml").read_text(
         encoding="utf-8"
     )
     assert "Episodic orientation (auto)" not in generator
     assert "recall" in generator
+    skills = mat.working_dir / ".harness" / "skills"
+    assert (skills / "cross-beat-recall" / "SKILL.md").is_file()
+    assert (skills / "cross-beat-resume" / "SKILL.md").is_file()
+
+
+def test_engineer_gets_todo_write_and_shared_cross_beat_skills(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    factory, captured = _factory(monkeypatch, tmp_path)
+    mat = factory.materialize(Employee(id="eng", name="Eng", role="engineer"))
+    names = {t.name for t in captured["registry"].list_tools()}
+    assert {"recall", "get_run", "todo_write", "skill"}.issubset(names)
+    skills = mat.working_dir / ".harness" / "skills"
+    assert (skills / "cross-beat-recall" / "SKILL.md").is_file()
+    assert (skills / "cross-beat-resume" / "SKILL.md").is_file()

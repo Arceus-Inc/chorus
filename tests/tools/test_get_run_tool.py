@@ -11,7 +11,7 @@ from dream.tools._context import ToolExecutionContext
 
 from chorus.heartbeat import BeatContext
 from chorus.memory import EpisodicRecallService, EpisodicStore, SprintDelta
-from chorus_tools._get_run import GetRunTool
+from chorus_tools._get_run import GetRunInput, GetRunTool
 
 pytestmark = pytest.mark.integration
 
@@ -57,7 +57,12 @@ async def test_get_run_returns_full_prose(tmp_path: Path) -> None:
 
     assert result.is_error is False
     assert "full beat narrative here" in result.content
-    assert (result.structured or {})["run_id"] == "r_a"
+    structured = result.structured or {}
+    assert structured["status"] == "success"
+    assert structured["run_id"] == "r_a"
+    assert "summary" in structured
+    assert structured["next_actions"]
+    assert "run_id" in (structured.get("artifacts") or {})
 
 
 async def test_get_run_rejects_cross_employee(tmp_path: Path) -> None:
@@ -70,6 +75,10 @@ async def test_get_run_rejects_cross_employee(tmp_path: Path) -> None:
 
     assert result.is_error is True
     assert "refused" in result.content
+    structured = result.structured or {}
+    assert structured["status"] == "error"
+    assert structured["next_actions"]
+    assert structured["stop_condition"]
 
 
 async def test_get_run_missing_run_id(tmp_path: Path) -> None:
@@ -80,3 +89,11 @@ async def test_get_run_missing_run_id(tmp_path: Path) -> None:
     result = await GetRunTool(svc).execute({"run_id": "r_missing"}, _ctx(tmp_path))
 
     assert result.is_error is True
+    structured = result.structured or {}
+    assert structured["status"] == "error"
+    assert any("recall" in action for action in structured["next_actions"])
+
+
+async def test_get_run_copy_does_not_mention_teaser() -> None:
+    assert "teaser" not in GetRunTool.description.lower()
+    assert "teaser" not in GetRunInput.model_fields["run_id"].description.lower()

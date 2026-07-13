@@ -186,6 +186,31 @@ async def test_malformed_input_is_refused(tmp_path: Path) -> None:
     _beat(tmp_path)
     result = await _tool(store).execute({"limit": 0}, _ctx(tmp_path))  # ge=1
     assert result.is_error is True
+    structured = result.structured or {}
+    assert structured["status"] == "error"
+    assert "summary" in structured
+    assert structured["next_actions"]
+    assert structured["stop_condition"]
+
+
+async def test_success_and_empty_carry_observation_contract(tmp_path: Path) -> None:
+    store = EpisodicStore(tmp_path / "memory")
+    store.append(_delta(run_id="r_a"))
+    _beat(tmp_path)
+    filled = await _tool(store).execute({}, _ctx(tmp_path))
+    structured = filled.structured or {}
+    assert structured["status"] == "success"
+    assert "summary" in structured
+    assert structured["next_actions"]
+    assert "run_ids" in (structured.get("artifacts") or {})
+
+    empty_store = EpisodicStore(tmp_path / "memory_empty")
+    _beat(tmp_path)
+    empty = await _tool(empty_store).execute({}, _ctx(tmp_path))
+    empty_s = empty.structured or {}
+    assert empty_s["status"] == "empty"
+    assert "summary" in empty_s
+    assert empty_s["next_actions"] == ["proceed without prior history"]
 
 
 async def test_recency_prefers_yesterday_over_old_failure(tmp_path: Path) -> None:

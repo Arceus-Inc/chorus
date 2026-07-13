@@ -40,6 +40,7 @@ from chorus.workforce import Employee
 from chorus.workspace import CompanyWorkspace, default_work_root
 from chorus_employee import default_landers
 from chorus_employee._recall import PLANNER_TOOLLESS_NOTE
+from chorus_employee._shared_skills import SHARED_SKILLS_ROOT
 from chorus_harness._skills import materialize_skills
 from chorus_harness._trust import apply_trust
 from chorus_tools import (
@@ -705,7 +706,11 @@ class EmployeeHarnessFactory:
         # dream's registry at that in-worktree copy, so SKILL.md load and reference reads share a path.
         skill_registry = None
         if config.skills_root:
-            skills_dir = materialize_skills(root, config.skills_root)
+            skills_dir = materialize_skills(
+                root,
+                config.skills_root,
+                extra_roots=(SHARED_SKILLS_ROOT,),
+            )
             skill_registry, _shadows = load_skill_registry(project_dirs=[skills_dir])
         harness = dream.build_harness(
             model=config.model or self._deployment,

@@ -129,3 +129,37 @@ def test_search_no_match_is_empty(tmp_path) -> None:
     store = EpisodicStore(tmp_path)
     store.append(_delta())
     assert store.search("xyzzy_nonexistent") == []
+
+
+def test_search_multi_word_requires_all_terms_and(tmp_path) -> None:
+    """Implicit AND: both tokens must appear — OR-soup used to match either term."""
+    store = EpisodicStore(tmp_path)
+    store.append(
+        _delta(
+            run_id="r_both",
+            intent="retry upload client",
+            body=_role_text_body("retry on upload timeout"),
+        )
+    )
+    store.append(
+        _delta(
+            run_id="r_one",
+            intent="retry alone",
+            body=_role_text_body("retry once without the other token"),
+        )
+    )
+    hits = store.search("retry upload")
+    assert [d.run_id for d in hits] == ["r_both"]
+
+
+def test_search_indexes_normalized_narrative_without_tags(tmp_path) -> None:
+    store = EpisodicStore(tmp_path)
+    store.append(
+        _delta(
+            run_id="r_tagged",
+            intent="cleanup",
+            body=_role_text_body("<spec>implement slugify helper</spec>"),
+        )
+    )
+    assert [d.run_id for d in store.search("slugify")] == ["r_tagged"]
+    assert [d.run_id for d in store.search("spec")] == []

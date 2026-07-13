@@ -6,8 +6,9 @@ import sqlite3
 from datetime import datetime
 
 from chorus.ledger.repos._base import dumps, loads, to_iso
+from chorus.memory.episodic.fts_query import sanitize_fts5_query
 from chorus.memory.episodic.models import SprintDelta
-from chorus.memory.episodic.narrative import narrative
+from chorus.memory.episodic.narrative import narrative, normalize_for_fts
 from chorus.memory.episodic.recall_filters import EpisodicQueryFilters, filter_clause
 
 _HOT_TIER = "hot"
@@ -50,7 +51,11 @@ class EpisodicRepo:
             return
         self._conn.execute(
             "INSERT INTO record_fts (run_id, intent, body) VALUES (?, ?, ?)",
-            (delta.run_id, delta.intent, narrative(delta.body)),
+            (
+                delta.run_id,
+                normalize_for_fts(delta.intent),
+                normalize_for_fts(narrative(delta.body)),
+            ),
         )
         self._conn.commit()
 
@@ -92,7 +97,7 @@ class EpisodicRepo:
         filters: EpisodicQueryFilters | None = None,
     ) -> list[SprintDelta]:
         """Keyword search over intent+body; optionally scoped to one employee's hot tier."""
-        match = _fts_or_query(query)
+        match = sanitize_fts5_query(query)
         if not match:
             return []
         sql = (
@@ -109,7 +114,11 @@ class EpisodicRepo:
         params.extend(extra_params)
         sql += " ORDER BY bm25(record_fts) LIMIT ?"
         params.append(limit)
-        rows = self._conn.execute(sql, params).fetchall()
+        try:
+            rows = self._conn.execute(sql, params).fetchall()
+        except sqlite3.OperationalError:
+            # Bad FTS5 syntax despite sanitize — empty result, never raise to the agent.
+            return []
         return [self._to_delta(row) for row in rows]
 
     def touch_recalled(self, run_ids: tuple[str, ...], *, now: datetime) -> None:
@@ -162,13 +171,6 @@ class EpisodicRepo:
             ),
             tier=str(row["tier"]),
         )
-
-
-def _fts_or_query(query: str) -> str:
-    """Turn free text into a safe FTS5 ``MATCH`` expression: quoted terms, OR-joined."""
-    terms = query.split()
-    quoted = (f'"{term.replace(chr(34), chr(34) * 2)}"' for term in terms)
-    return " OR ".join(quoted)
 
 
 __all__ = ["EpisodicRepo"]

@@ -20,6 +20,11 @@ _OUTCOME_HINT: dict[str, str] = {
 }
 
 
+def outcome_hint(outcome: str) -> str:
+    """One-line guidance for how to treat a past beat outcome."""
+    return _OUTCOME_HINT.get(outcome, "use as past evidence")
+
+
 def deliverable_files(delta: SprintDelta) -> list[str]:
     """Product / test paths only — drop harness noise even on pre-filter records."""
     return [path for path in delta.files_touched if is_deliverable_path(path)][:_MAX_FILES_SHOWN]
@@ -34,7 +39,7 @@ def slim_hit_dict(delta: SprintDelta, *, rank_note: str | None = None) -> dict[s
         "summary": beat_summary(delta.body, intent=delta.intent),
         "files_touched": deliverable_files(delta),
         "recorded_at": recorded_at(delta).isoformat(),
-        "hint": _OUTCOME_HINT.get(delta.outcome, "use as past evidence"),
+        "hint": outcome_hint(delta.outcome),
         "drill_down": f"get_run(run_id={delta.run_id!r})",
     }
     if rank_note:
@@ -68,7 +73,7 @@ def format_full_run(delta: SprintDelta) -> str:
     return (
         f"run_id: {delta.run_id}\n"
         f"task_id: {delta.task_id}\n"
-        f"outcome: {delta.outcome} — {_OUTCOME_HINT.get(delta.outcome, 'past evidence')}\n"
+        f"outcome: {delta.outcome} — {outcome_hint(delta.outcome)}\n"
         f"intent: {delta.intent!r}\n"
         f"recorded_at: {recorded_at(delta).isoformat()}\n"
         f"files: {files_s}\n"
@@ -81,5 +86,6 @@ __all__ = [
     "deliverable_files",
     "format_full_run",
     "format_slim_hit",
+    "outcome_hint",
     "slim_hit_dict",
 ]

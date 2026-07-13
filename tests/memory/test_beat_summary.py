@@ -29,3 +29,8 @@ def test_summary_truncates_long_narrative() -> None:
 
 def test_summary_falls_back_to_intent_when_body_empty() -> None:
     assert beat_summary("", intent="add truncate helper") == "add truncate helper"
+
+
+def test_summary_strips_spec_tags() -> None:
+    body = _body("<spec>Fixed slugify edge case.</spec> Then added tests.")
+    assert beat_summary(body, intent="fix slugify") == "Fixed slugify edge case."
