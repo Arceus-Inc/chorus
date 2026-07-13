@@ -57,6 +57,14 @@ from chorus_tools._manager_actions import (
     SubmitTaskInput,
     SubmitTaskTool,
 )
+from chorus_tools._lattice import (
+    LatticeApplyInput,
+    LatticeApplyTool,
+    LatticeContextInput,
+    LatticeContextTool,
+    LatticePacketInput,
+    LatticePacketTool,
+)
 from chorus_tools._recall import RecallInput, RecallTool
 from chorus_tools._record_decision import RecordDecisionInput, RecordDecisionTool
 from chorus_tools._registry import chorus_tool_registry
@@ -119,6 +127,12 @@ __all__ = [
     "QualityCheck",
     "QualityCheckSpec",
     "QualityReport",
+    "LatticeApplyInput",
+    "LatticeApplyTool",
+    "LatticeContextInput",
+    "LatticeContextTool",
+    "LatticePacketInput",
+    "LatticePacketTool",
     "RecallInput",
     "RecallTool",
     "RecordDecisionInput",
