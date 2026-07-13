@@ -10,7 +10,7 @@ from typing import Any
 class SkillObservation:
     """Deterministic tool observation (agent-harness-construction contract)."""
 
-    status: str  # success | warning | error
+    status: str  # success | error
     summary: str
     next_actions: tuple[str, ...] = ()
     artifacts: dict[str, Any] = field(default_factory=dict)

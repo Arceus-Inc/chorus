@@ -37,12 +37,7 @@ class Skill:
     latest_revision_id: str | None = None
     latest_revision_no: int = 0
     state: SkillState = SkillState.ACTIVE
-    created_by: str | None = None
-    curation_eligible: bool = False
-    use_count: int = 0
-    view_count: int = 0
     patch_count: int = 0
-    last_used_at: datetime | None = None
     last_patched_at: datetime | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
@@ -71,20 +66,9 @@ class SkillRevision:
         return list(data) if isinstance(data, list) else []
 
 
-@dataclass(frozen=True)
-class SkillPin:
-    """Optional pin: ``revision_id is None`` means live HEAD."""
-
-    employee_id: str
-    slug: str
-    revision_id: str | None
-    updated_at: datetime | None = None
-
-
 __all__ = [
     "Skill",
     "SkillOrigin",
-    "SkillPin",
     "SkillRevision",
     "SkillState",
 ]

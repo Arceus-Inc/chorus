@@ -16,7 +16,7 @@ from chorus.ids import mint_id
 from chorus.ledger._migrations import MigrationRunner
 from chorus.skills._models import Skill, SkillOrigin, SkillRevision, SkillState
 from chorus.skills.migrations import MIGRATIONS
-from chorus.skills.repos import SkillPinRepo, SkillRepo, SkillRevisionRepo
+from chorus.skills.repos import SkillRepo, SkillRevisionRepo
 
 _DB_NAME = "skills.db"
 
@@ -37,7 +37,6 @@ class SkillStore:
         MigrationRunner(MIGRATIONS).apply(self._conn)
         self._skills = SkillRepo(self._conn)
         self._revisions = SkillRevisionRepo(self._conn)
-        self._pins = SkillPinRepo(self._conn)
 
     def create(
         self,
@@ -54,8 +53,6 @@ class SkillStore:
         label: str | None = None,
         source_run_ids: list[str] | tuple[str, ...] = (),
         author_run_id: str | None = None,
-        created_by: str | None = None,
-        curation_eligible: bool = False,
     ) -> tuple[Skill, SkillRevision]:
         if self._skills.get_by_slug(employee_id, slug) is not None:
             raise SkillConflictError(f"skill slug already exists: {employee_id}/{slug}")
@@ -78,8 +75,6 @@ class SkillStore:
                 latest_revision_id=None,
                 latest_revision_no=0,
                 state=SkillState.ACTIVE,
-                created_by=created_by,
-                curation_eligible=curation_eligible,
             )
         )
         rev = self._revisions.append(
@@ -128,7 +123,7 @@ class SkillStore:
                 restored_from_revision_id=restored_from_revision_id,
             )
         )
-        bump = action in {"patch", "edit", "write_file", "remove_file", "restore"}
+        bump = action in {"patch", "write_file", "remove_file", "restore"}
         self._skills.set_head(skill_id, revision_id=rev.id, revision_no=next_no, bump_patch=bump)
         return rev
 
@@ -171,19 +166,11 @@ class SkillStore:
     def set_state(self, skill_id: str, state: SkillState) -> Skill:
         return self._skills.set_state(skill_id, state)
 
-    def set_pin(self, employee_id: str, slug: str, revision_id: str | None) -> None:
-        self._pins.set(employee_id, slug, revision_id)
-
     def resolve_inventory(self, employee_id: str, slug: str) -> SkillRevision | None:
-        """Pinned revision if set, else live HEAD."""
+        """Live HEAD for the slug, or None when unknown."""
         skill = self._skills.get_by_slug(employee_id, slug)
         if skill is None:
             return None
-        pin = self._pins.get(employee_id, slug)
-        if pin is not None and pin.revision_id:
-            rev = self._revisions.get(pin.revision_id)
-            if rev is not None:
-                return rev
         return self._revisions.head(skill.id)
 
     def close(self) -> None:

@@ -200,35 +200,3 @@ def test_list_active_for_employee(tmp_path: Path) -> None:
         assert [s.slug for s in active] == ["a"]
     finally:
         store.close()
-
-
-def test_pin_and_resolve_revision(tmp_path: Path) -> None:
-    store = _store(tmp_path)
-    try:
-        skill, rev1 = store.create(
-            employee_id="bex",
-            slug="alpha",
-            name="Alpha",
-            description="d",
-            when_to_use="w",
-            file_inventory=[{"path": "SKILL.md", "kind": "file", "content": "# v1\n"}],
-            origin=SkillOrigin.CREATED,
-            action="create",
-        )
-        rev2 = store.append_revision(
-            skill_id=skill.id,
-            file_inventory=[{"path": "SKILL.md", "kind": "file", "content": "# v2\n"}],
-            action="edit",
-        )
-        # No pin → HEAD
-        resolved = store.resolve_inventory("bex", "alpha")
-        assert resolved is not None
-        assert json.loads(resolved.file_inventory)[0]["content"] == "# v2\n"
-        store.set_pin("bex", "alpha", rev1.id)
-        pinned = store.resolve_inventory("bex", "alpha")
-        assert pinned is not None
-        assert pinned.id == rev1.id
-        store.set_pin("bex", "alpha", None)  # clear → HEAD
-        assert store.resolve_inventory("bex", "alpha").id == rev2.id
-    finally:
-        store.close()

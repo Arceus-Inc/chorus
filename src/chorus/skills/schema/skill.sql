@@ -11,12 +11,7 @@ CREATE TABLE skill (
     latest_revision_id   TEXT,
     latest_revision_no   INTEGER NOT NULL DEFAULT 0,
     state                TEXT NOT NULL DEFAULT 'active',
-    created_by           TEXT,
-    curation_eligible    INTEGER NOT NULL DEFAULT 0,
-    use_count            INTEGER NOT NULL DEFAULT 0,
-    view_count           INTEGER NOT NULL DEFAULT 0,
     patch_count          INTEGER NOT NULL DEFAULT 0,
-    last_used_at         TEXT,
     last_patched_at      TEXT,
     created_at           TEXT NOT NULL,
     updated_at           TEXT NOT NULL

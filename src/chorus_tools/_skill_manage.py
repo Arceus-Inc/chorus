@@ -16,9 +16,7 @@ from chorus.skills import SkillManager, SkillStore
 
 
 class SkillManageInput(BaseModel):
-    action: Literal[
-        "view", "create", "evolve", "patch", "edit", "restore", "delete", "list_versions"
-    ] = Field(
+    action: Literal["view", "create", "evolve", "patch"] = Field(
         description=("Prefer patch/evolve over create. Facts → lattice_apply patterns[] only.")
     )
     name: str | None = Field(default=None, description="Skill slug")
@@ -28,7 +26,6 @@ class SkillManageInput(BaseModel):
     new_string: str | None = Field(default=None, description="patch replace")
     source_run_ids: list[str] = Field(default_factory=list)
     label: str | None = None
-    version_id: str | None = Field(default=None, description="restore target revision id")
     replace_all: bool = False
 
 
@@ -60,7 +57,7 @@ class SkillManageTool(BaseTool):
             return ToolResult(
                 content=(
                     f"refused: malformed skill_manage input — {exc}. "
-                    "Retry with action=view|evolve|patch|…"
+                    "Retry with action=view|create|evolve|patch"
                 ),
                 is_error=True,
                 structured={
@@ -75,15 +72,17 @@ class SkillManageTool(BaseTool):
 
         beat = BeatContext.read(ctx.working_dir)
         store = SkillStore(self._company_root / "skills")
+        # Habit validation reads recent episodes; read paths (view) skip the fetch.
         episodes: tuple[SprintDelta, ...] = ()
-        try:
-            episodic = EpisodicStore(self._company_root / "memory")
+        if args.action in ("evolve", "create", "patch"):
             try:
-                episodes = tuple(episodic.records_for(beat.employee_id, limit=50))
-            finally:
-                episodic.close()
-        except Exception:
-            episodes = ()
+                episodic = EpisodicStore(self._company_root / "memory")
+                try:
+                    episodes = tuple(episodic.records_for(beat.employee_id, limit=50))
+                finally:
+                    episodic.close()
+            except Exception:
+                episodes = ()
 
         mgr = SkillManager(
             store,
@@ -101,7 +100,6 @@ class SkillManageTool(BaseTool):
                 new_string=args.new_string,
                 source_run_ids=args.source_run_ids,
                 label=args.label,
-                version_id=args.version_id,
                 replace_all=args.replace_all,
             )
         finally:

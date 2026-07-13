@@ -17,9 +17,9 @@ class SkillRepo:
         self._conn.execute(
             "INSERT INTO skill ("
             "id, employee_id, slug, name, description, when_to_use, origin, canonical_slug, "
-            "latest_revision_id, latest_revision_no, state, created_by, curation_eligible, "
-            "use_count, view_count, patch_count, last_used_at, last_patched_at, created_at, updated_at"
-            ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "latest_revision_id, latest_revision_no, state, patch_count, last_patched_at, "
+            "created_at, updated_at"
+            ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 skill.id,
                 skill.employee_id,
@@ -32,12 +32,7 @@ class SkillRepo:
                 skill.latest_revision_id,
                 skill.latest_revision_no,
                 skill.state.value,
-                skill.created_by,
-                1 if skill.curation_eligible else 0,
-                skill.use_count,
-                skill.view_count,
                 skill.patch_count,
-                None,
                 None,
                 now,
                 now,
@@ -106,12 +101,7 @@ def _row_to_skill(row: sqlite3.Row) -> Skill:
         latest_revision_id=row["latest_revision_id"],
         latest_revision_no=int(row["latest_revision_no"] or 0),
         state=SkillState(row["state"]),
-        created_by=row["created_by"],
-        curation_eligible=bool(row["curation_eligible"]),
-        use_count=int(row["use_count"] or 0),
-        view_count=int(row["view_count"] or 0),
         patch_count=int(row["patch_count"] or 0),
-        last_used_at=from_iso(row["last_used_at"]),
         last_patched_at=from_iso(row["last_patched_at"]),
         created_at=from_iso(row["created_at"]),
         updated_at=from_iso(row["updated_at"]),

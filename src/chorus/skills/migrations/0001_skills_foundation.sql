@@ -1,4 +1,4 @@
--- Skills store foundation: skill HEAD + append-only skill_revision + optional pins.
+-- Skills store foundation: skill HEAD + append-only skill_revision.
 -- Chorus-owned procedural memory (not Lattice). Pattern: routine_revision / Paperclip versions.
 
 CREATE TABLE skill (
@@ -13,12 +13,7 @@ CREATE TABLE skill (
     latest_revision_id   TEXT,
     latest_revision_no   INTEGER NOT NULL DEFAULT 0,
     state                TEXT NOT NULL DEFAULT 'active',
-    created_by           TEXT,
-    curation_eligible    INTEGER NOT NULL DEFAULT 0,
-    use_count            INTEGER NOT NULL DEFAULT 0,
-    view_count           INTEGER NOT NULL DEFAULT 0,
     patch_count          INTEGER NOT NULL DEFAULT 0,
-    last_used_at         TEXT,
     last_patched_at      TEXT,
     created_at           TEXT NOT NULL,
     updated_at           TEXT NOT NULL
@@ -43,11 +38,3 @@ CREATE TABLE skill_revision (
 
 CREATE UNIQUE INDEX skill_revision_no_uq ON skill_revision(skill_id, revision_no);
 CREATE INDEX skill_revision_skill_created_idx ON skill_revision(skill_id, created_at);
-
-CREATE TABLE skill_pin (
-    employee_id   TEXT NOT NULL,
-    slug          TEXT NOT NULL,
-    revision_id   TEXT REFERENCES skill_revision(id) ON DELETE SET NULL,
-    updated_at    TEXT NOT NULL,
-    PRIMARY KEY (employee_id, slug)
-);

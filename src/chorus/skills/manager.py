@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
 
-from chorus.skills._models import SkillOrigin, SkillState
+from chorus.skills._models import SkillOrigin
 from chorus.skills._observation import SkillObservation
 from chorus.skills._patch import find_and_replace
 from chorus.skills._store import SkillConflictError, SkillStore
@@ -68,7 +68,6 @@ class SkillManager:
         new_string: str | None = None,
         source_run_ids: list[str] | tuple[str, ...] | None = None,
         label: str | None = None,
-        version_id: str | None = None,
         replace_all: bool = False,
     ) -> SkillObservation:
         action = (action or "").strip().lower()
@@ -97,25 +96,12 @@ class SkillManager:
                     source_run_ids=source_run_ids or (),
                     label=label,
                 )
-            if action == "edit":
-                return self._edit(
-                    name=name,
-                    content=content,
-                    source_run_ids=source_run_ids or (),
-                    label=label,
-                )
-            if action == "restore":
-                return self._restore(name=name, version_id=version_id, label=label)
-            if action == "delete":
-                return self._delete(name=name)
             if action == "view":
                 return self._view(name=name)
-            if action == "list_versions":
-                return self._list_versions(name=name)
             return SkillObservation.error(
                 summary=f"unknown action {action!r}",
                 root_cause="action not in skill_manage vocabulary",
-                retry="use view|create|evolve|patch|edit|restore|delete|list_versions",
+                retry="use view|create|evolve|patch",
                 stop="do not invent actions",
                 next_actions=["skill_manage(action='view')"],
             )
@@ -272,8 +258,6 @@ class SkillManager:
             action="create",
             label=label or "Initial",
             source_run_ids=source_run_ids,
-            created_by="agent",
-            curation_eligible=True,
         )
         return SkillObservation.ok(
             f"created skill {name!r} revision 1",
@@ -338,98 +322,6 @@ class SkillManager:
             next_actions=["load via skill tool on next beat"],
         )
 
-    def _edit(
-        self,
-        *,
-        name: str | None,
-        content: str | None,
-        source_run_ids: list[str] | tuple[str, ...],
-        label: str | None,
-    ) -> SkillObservation:
-        if not name or not content:
-            return SkillObservation.error(
-                summary="edit requires name and content",
-                root_cause="missing required fields",
-                retry="prefer patch; use edit only for major overhauls",
-                stop="do not edit to stash diary notes",
-            )
-        skill = self.store.get_by_slug(self.employee_id, name)
-        if skill is None:
-            return SkillObservation.error(
-                summary=f"unknown skill {name!r}",
-                root_cause="skill missing",
-                retry="create or evolve first",
-                stop="do not invent slugs",
-            )
-        rev = self.store.append_revision(
-            skill_id=skill.id,
-            file_inventory=[{"path": "SKILL.md", "kind": "file", "content": content}],
-            action="edit",
-            label=label or "edit",
-            source_run_ids=source_run_ids,
-        )
-        skill = self.store.get(skill.id)
-        assert skill is not None
-        return SkillObservation.ok(
-            f"edited {name!r} → revision {rev.revision_no}",
-            artifacts=_artifacts(skill, rev),
-            next_actions=["prefer patch for subsequent fixes"],
-        )
-
-    def _restore(
-        self,
-        *,
-        name: str | None,
-        version_id: str | None,
-        label: str | None,
-    ) -> SkillObservation:
-        if not name or not version_id:
-            return SkillObservation.error(
-                summary="restore requires name and version_id",
-                root_cause="missing required fields",
-                retry="list_versions then restore",
-                stop="never rewrite old revision rows",
-            )
-        skill = self.store.get_by_slug(self.employee_id, name)
-        if skill is None:
-            return SkillObservation.error(
-                summary=f"unknown skill {name!r}",
-                root_cause="skill missing",
-                retry="list skills",
-                stop="stop",
-            )
-        rev = self.store.restore(skill_id=skill.id, from_revision_id=version_id, label=label)
-        skill = self.store.get(skill.id)
-        assert skill is not None
-        return SkillObservation.ok(
-            f"restored {name!r} → new revision {rev.revision_no}",
-            artifacts=_artifacts(skill, rev),
-            next_actions=["history is append-only; old revisions remain"],
-        )
-
-    def _delete(self, *, name: str | None) -> SkillObservation:
-        if not name:
-            return SkillObservation.error(
-                summary="delete requires name",
-                root_cause="missing name",
-                retry="pass slug",
-                stop="prefer archive over inventing deletes",
-            )
-        skill = self.store.get_by_slug(self.employee_id, name)
-        if skill is None:
-            return SkillObservation.error(
-                summary=f"unknown skill {name!r}",
-                root_cause="skill missing",
-                retry="view",
-                stop="stop",
-            )
-        self.store.set_state(skill.id, SkillState.ARCHIVED)
-        return SkillObservation.ok(
-            f"archived skill {name!r}",
-            artifacts={"skill": name, "skill_id": skill.id, "state": "archived"},
-            next_actions=["restore via a prior revision if needed"],
-        )
-
     def _view(self, *, name: str | None) -> SkillObservation:
         if not name:
             active = self.store.list_active(self.employee_id)
@@ -461,39 +353,6 @@ class SkillManager:
             },
             next_actions=["patch small fixes; evolve new sections"],
         )
-
-    def _list_versions(self, *, name: str | None) -> SkillObservation:
-        if not name:
-            return SkillObservation.error(
-                summary="list_versions requires name",
-                root_cause="missing name",
-                retry="pass slug",
-                stop="stop",
-            )
-        skill = self.store.get_by_slug(self.employee_id, name)
-        if skill is None:
-            return SkillObservation.error(
-                summary=f"unknown skill {name!r}",
-                root_cause="not in store",
-                retry="view",
-                stop="stop",
-            )
-        revs = [
-            {
-                "version_id": r.id,
-                "revision_no": r.revision_no,
-                "action": r.action,
-                "label": r.label,
-            }
-            for r in self.store.revisions(skill.id)
-        ]
-        return SkillObservation.ok(
-            f"{len(revs)} revision(s) for {name!r}",
-            artifacts={"skill": name, "revisions": revs},
-            next_actions=["skill_manage(action='restore', version_id=…)"],
-        )
-
-    # --- validation / helpers ----------------------------------------------------
 
     def _validate_habit(
         self,

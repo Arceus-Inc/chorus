@@ -817,9 +817,7 @@ class EmployeeHarnessFactory:
         # merged in as another shared root — same transport as cross-beat-recall, no extra mechanism.
         # A role WITHOUT lattice tools must not see them: a skill telling you to call lattice_context
         # when the tool isn't in your manifest is harmful guidance.
-        has_lattice = bool(_LATTICE_TOOLS.intersection(config.tools)) or (
-            "skill_manage" in config.tools
-        )
+        has_lattice = bool(_LATTICE_TOOLS.intersection(config.tools))
         extra_roots = (
             (SHARED_SKILLS_ROOT, LATTICE_SKILLS_ROOT) if has_lattice else (SHARED_SKILLS_ROOT,)
         )
@@ -837,18 +835,6 @@ class EmployeeHarnessFactory:
                     company_root=self._company_root,
                     employee_id=employee.id,
                 )
-            skill_registry, _shadows = load_skill_registry(project_dirs=[skills_dir])
-        elif has_lattice:
-            # A lattice-carrying role with no canonical bundle still needs the lattice playbooks +
-            # its versioned skills materialized so `skill` can load them.
-            skills_dir = root / ".harness" / "skills"
-            if LATTICE_SKILLS_ROOT.is_dir():
-                materialize_skills(root, LATTICE_SKILLS_ROOT, extra_roots=(SHARED_SKILLS_ROOT,))
-            materialize_versioned_skills_into(
-                skills_dir,
-                company_root=self._company_root,
-                employee_id=employee.id,
-            )
             skill_registry, _shadows = load_skill_registry(project_dirs=[skills_dir])
         harness = dream.build_harness(
             model=config.model or self._deployment,
