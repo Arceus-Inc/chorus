@@ -3,7 +3,7 @@
 One object, built once, wires the concrete backends and is the **only** thing
 that imports dream (the "wiring"). ``build()`` news-up the ``SqliteLedger``, the
 ``LedgerWorkforce`` (the single live org store), the ``GitMemoryStore`` +
-``AppendOnlyMemoryWriter``, the dream board ``ClaimManager``, the ``Scheduler``,
+``EpisodicStore``, the dream board ``ClaimManager``, the ``Scheduler``,
 the ``EventBus``, and the ``Inspector``, and injects them — nothing else creates
 concrete classes.
 
@@ -53,7 +53,7 @@ from chorus.lifecycle import (
     assign_task,
     deliver_message,
 )
-from chorus.memory import AppendOnlyMemoryWriter
+from chorus.memory import EpisodicStore
 from chorus.observability import EventBus, LedgerInspector, WorkforceStatus
 from chorus.outcomes import LanderRegistry, Verifier
 from chorus.roles import RolePlugin, RoleRegistry, default_roles
@@ -83,7 +83,7 @@ class Chorus:
         *,
         ledger: SqliteLedger,
         workforce: Workforce,
-        memory_writer: AppendOnlyMemoryWriter,
+        memory_writer: EpisodicStore,
         scheduler: Scheduler,
         event_bus: EventBus,
         inspector: LedgerInspector,
@@ -185,7 +185,7 @@ class Chorus:
         return cls(
             ledger=store,
             workforce=workforce,
-            memory_writer=AppendOnlyMemoryWriter(memory_repo),
+            memory_writer=EpisodicStore(memory_repo),
             scheduler=scheduler,
             event_bus=event_bus,
             inspector=LedgerInspector(store),

@@ -56,6 +56,40 @@ def test_materialised_bundle_is_read_only(tmp_path: Path) -> None:
         template.write_text("tampered", encoding="utf-8")
 
 
+def test_merges_extra_roots_without_overwriting_role_skills(tmp_path: Path) -> None:
+    role = _bundle(tmp_path / "role")
+    shared = tmp_path / "shared"
+    shared_skill = shared / "cross-beat-resume"
+    shared_skill.mkdir(parents=True)
+    (shared_skill / "SKILL.md").write_text("# resume", encoding="utf-8")
+    # Role already has a same-named skill — it must win.
+    clash = role / "cross-beat-resume"
+    clash.mkdir()
+    (clash / "SKILL.md").write_text("# role wins", encoding="utf-8")
+    worktree = tmp_path / "worktree"
+    worktree.mkdir()
+
+    dest = materialize_skills(worktree, role, extra_roots=(shared,))
+
+    assert (dest / "cross-beat-resume" / "SKILL.md").read_text(encoding="utf-8") == "# role wins"
+    assert (dest / "recommendation-canvas" / "SKILL.md").exists()
+
+
+def test_merges_shared_skills_when_role_bundle_is_empty(tmp_path: Path) -> None:
+    role = tmp_path / "role"
+    role.mkdir()
+    shared = tmp_path / "shared"
+    skill = shared / "cross-beat-recall"
+    skill.mkdir(parents=True)
+    (skill / "SKILL.md").write_text("# recall", encoding="utf-8")
+    worktree = tmp_path / "worktree"
+    worktree.mkdir()
+
+    dest = materialize_skills(worktree, role, extra_roots=(shared,))
+
+    assert (dest / "cross-beat-recall" / "SKILL.md").read_text(encoding="utf-8") == "# recall"
+
+
 def test_re_materialising_replaces_the_prior_copy(tmp_path: Path) -> None:
     """Idempotent per beat: a second materialize reflects the source and never trips on read-only."""
     source = _bundle(tmp_path / "pkg")

@@ -24,7 +24,7 @@ from chorus.budgets import BudgetEnforcer
 from chorus.heartbeat import Scheduler
 from chorus.ledger import SqliteLedger, Task, TaskStatus
 from chorus.lifecycle import assign_task
-from chorus.memory import AppendOnlyMemoryWriter
+from chorus.memory import EpisodicStore
 from chorus.roles import RoleRegistry, default_roles
 from chorus.workforce import Employee, LedgerWorkforce
 from chorus_cli._beats import default_pricing_from_env
@@ -105,7 +105,7 @@ def main() -> int:
             ledger=ledger, workforce=LedgerWorkforce(ledger.employees),
             beat_runner_for=factory, budget_enforcer=BudgetEnforcer(ledger, company_id="acme"),
             roles=registry, landers=default_landers(factory.company_root),
-            memory_writer=AppendOnlyMemoryWriter(factory.company_root / "memory"),
+            memory_writer=EpisodicStore(factory.company_root / "memory"),
             max_concurrent_runs=2,
         )
 

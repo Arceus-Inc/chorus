@@ -46,7 +46,15 @@ def test_engineer_materializes_a_writable_harness_in_its_worktree(
     assert mat.working_dir == tmp_path / "acme" / "worktrees" / "ada"
     assert mat.workspace is not None
     names = {t.name for t in captured["registry"].list_tools()}
-    assert names == {"read_file", "write_file", "bash", "git", "memory_search", "memory_get"}
+    assert names == {
+        "read_file",
+        "write_file",
+        "bash",
+        "git",
+        "memory_search",
+        "memory_get",
+        "recall",
+    }
     assert mat.config.permission_mode == "acceptEdits"
     assert captured["max_turns"] == 12  # the engine scalars come from the role too
     assert captured["working_memory"] is True
@@ -72,6 +80,7 @@ def test_engineer_role_overlays_admit_read_memory_for_read_only_heads(
     )
 
     assert "tools = []" in planner  # toolless on purpose
+    assert "PLANNER PHASE" in planner
     assert '"memory_search"' in evaluator
     assert '"memory_get"' in evaluator
     assert '"working_memory_read"' in evaluator

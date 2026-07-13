@@ -7,6 +7,7 @@ role as a per-role overlay (see :func:`chorus_harness.write_role_overlays`).
 
 from __future__ import annotations
 
+from chorus_employee._recall import RECALL_DIRECTIVE
 from chorus_employee._resume import RESUME_DIRECTIVE
 
 # The conventional file a PM writes its plan to, in its worktree. The lander snapshots this file as the
@@ -78,6 +79,6 @@ PM_BRIEF = (
     "one red-teamed, recorded decision plus its plan file IS the finished deliverable."
 )
 
-PM_BRIEF = PM_BRIEF + "\n\n" + RESUME_DIRECTIVE
+PM_BRIEF = PM_BRIEF + "\n\n" + RESUME_DIRECTIVE + "\n\n" + RECALL_DIRECTIVE
 
 __all__ = ["PM_BRIEF", "PM_PLAN_DOC"]

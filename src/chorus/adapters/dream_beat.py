@@ -12,6 +12,7 @@ dream's ``RunTaskResult`` (the protocols below), so the SDK import stays at the 
 from __future__ import annotations
 
 import asyncio
+import json
 from collections.abc import Callable, Mapping, Sequence
 from contextlib import suppress
 from dataclasses import asdict, replace
@@ -27,6 +28,11 @@ from chorus.adapters._pricing import TokenPricing, UsageView
 from chorus.adapters._trace import beat_subagent_stats, sidecar_traces
 from chorus.events import Event
 from chorus.heartbeat import BeatContext, BeatOutcome
+from chorus.heartbeat._todo_flush import (
+    TODO_FLUSH_REMAINING_FRACTION,
+    clear_todo_flush_nudge,
+    write_todo_flush_nudge,
+)
 from chorus.outcomes import VerificationStep
 
 
@@ -99,6 +105,36 @@ class TaskHarness(Protocol):
         harness_dir: Path | None = None,
         rubric: str | None = None,
     ) -> RunResult: ...
+
+
+class _ReasoningRecorder:
+    """Capture the agent's account for the episodic raw record (spec 07 §3), then forward downstream.
+
+    dream calls ``on_event(dict)`` for every engine event. Its lifecycle/handoff kinds (``planner.*``,
+    ``handoff.*``) are structural noise; the *reasoning* lives in ``role.text`` (what the model
+    concluded) and its *actions* in ``role.tool.start`` / ``role.tool.result`` (the tool it called, its
+    args, and the output preview). We keep exactly those and drop the rest, so the record is the
+    agent's own account — not the orchestration log. Every event is still forwarded to the chorus
+    observer bridge (when present) so liveness/subagent witnessing is unaffected.
+    """
+
+    _KEPT_KINDS = frozenset({"role.text", "role.tool.start", "role.tool.result"})
+
+    def __init__(self, forward: Callable[[dict[str, Any]], None] | None) -> None:
+        self._forward = forward
+        self._events: list[dict[str, Any]] = []
+
+    def on_event(self, event: dict[str, Any]) -> None:
+        if str(event.get("kind", "")) in self._KEPT_KINDS:
+            self._events.append(event)
+        if self._forward is not None:
+            self._forward(event)
+
+    def as_jsonl(self) -> str:
+        """The captured account as JSON lines — one reasoning/action event per line."""
+        return "\n".join(
+            json.dumps(event, default=str, ensure_ascii=False) for event in self._events
+        )
 
 
 def to_beat_outcome(result: RunResult, *, pricing: TokenPricing | None = None) -> BeatOutcome:
@@ -199,6 +235,13 @@ class DreamBeatRunner:
             if observer is not None
             else None
         )
+        # Record the agent's reasoning + actions for the episodic raw record, forwarding to the bridge
+        # so liveness witnessing is unchanged (spec 07 §3). It is dream's observer for this beat.
+        recorder = _ReasoningRecorder(bridge.on_event if bridge is not None else None)
+
+        def _with_record(outcome: BeatOutcome) -> BeatOutcome:
+            return replace(outcome, raw_record=recorder.as_jsonl())
+
         # Snapshot existing sidecar traces so we can isolate *this* beat's trace afterwards and recover
         # the subagent counters dream drops before they reach the observer (see ``_trace``).
         traces_before = (
@@ -217,13 +260,18 @@ class DreamBeatRunner:
         # instead of repairing it. Each beat is its own run, so each is an independent planning pass; the
         # worktree carries state across beats. Events still correlate via the bridge's chorus task_id.
         dream_task_id = run_id if run_id is not None else task_id
+        nudge_task: asyncio.Task[None] | None = None
+        if self._working_dir is not None:
+            clear_todo_flush_nudge(self._working_dir)
+        if self._working_dir is not None and self._timeout_s is not None and self._timeout_s > 0:
+            nudge_task = asyncio.create_task(self._arm_todo_flush_nudge())
         try:
             if self._working_dir is None:
                 run = self._harness.run_task(
                     task_id=dream_task_id,
                     intent=intent,
                     verification_steps=steps,
-                    observer=bridge,
+                    observer=recorder,
                     max_sprints=self._max_sprints,
                     rubric=rubric,
                 )
@@ -232,7 +280,7 @@ class DreamBeatRunner:
                     task_id=dream_task_id,
                     intent=intent,
                     verification_steps=steps,
-                    observer=bridge,
+                    observer=recorder,
                     max_sprints=self._max_sprints,
                     harness_dir=self._working_dir / ".harness",
                     rubric=rubric,
@@ -240,43 +288,53 @@ class DreamBeatRunner:
             result = await asyncio.wait_for(run, timeout=self._timeout_s)
         except TimeoutError as exc:
             if verification and await self._verification_passed(verification):
-                return BeatOutcome(
-                    passed=True,
-                    summary="objective verification passed after dream timeout",
-                    outcome={
-                        "steps_total": len(verification),
-                        "steps_done": len(verification),
-                        "verified_after_timeout": True,
-                        "timeout_s": self._timeout_s,
-                    },
+                return _with_record(
+                    BeatOutcome(
+                        passed=True,
+                        summary="objective verification passed after dream timeout",
+                        outcome={
+                            "steps_total": len(verification),
+                            "steps_done": len(verification),
+                            "verified_after_timeout": True,
+                            "timeout_s": self._timeout_s,
+                        },
+                    )
                 )
-            return failure_outcome(exc)
+            return _with_record(failure_outcome(exc))
         except asyncio.CancelledError:
             raise  # structured cancellation must propagate — never classify it as a beat outcome
         except (
             Exception
         ) as exc:  # typed by failure_outcome — a beat never crashes the dispatch loop
-            return failure_outcome(exc)
+            return _with_record(failure_outcome(exc))
         finally:
+            if nudge_task is not None:
+                nudge_task.cancel()
+                with suppress(asyncio.CancelledError):
+                    await nudge_task
+            if self._working_dir is not None:
+                clear_todo_flush_nudge(self._working_dir)
             await self._close_harness()
         outcome = self._attach_subagent_stats(
             to_beat_outcome(result, pricing=self._pricing), traces_before
         )
         if not outcome.passed and verification and await self._verification_passed(verification):
-            return BeatOutcome(
-                passed=True,
-                summary="objective verification passed after dream returned incomplete",
-                outcome={
-                    **outcome.outcome,
-                    "verified_after_incomplete_dream_result": True,
-                    "verification_steps": len(verification),
-                },
-                cost_cents=outcome.cost_cents,
-                model=outcome.model,
-                input_tokens=outcome.input_tokens,
-                output_tokens=outcome.output_tokens,
+            return _with_record(
+                BeatOutcome(
+                    passed=True,
+                    summary="objective verification passed after dream returned incomplete",
+                    outcome={
+                        **outcome.outcome,
+                        "verified_after_incomplete_dream_result": True,
+                        "verification_steps": len(verification),
+                    },
+                    cost_cents=outcome.cost_cents,
+                    model=outcome.model,
+                    input_tokens=outcome.input_tokens,
+                    output_tokens=outcome.output_tokens,
+                )
             )
-        return outcome
+        return _with_record(outcome)
 
     def _attach_subagent_stats(
         self, outcome: BeatOutcome, traces_before: frozenset[Path]
@@ -289,6 +347,22 @@ class DreamBeatRunner:
             return outcome
         return replace(
             outcome, outcome={**outcome.outcome, "subagents": [asdict(s) for s in stats]}
+        )
+
+    async def _arm_todo_flush_nudge(self) -> None:
+        """Write the TODO flush nudge when beat budget drops below the remaining threshold."""
+        assert self._working_dir is not None
+        assert self._timeout_s is not None
+        delay = self._timeout_s * (1.0 - TODO_FLUSH_REMAINING_FRACTION)
+        try:
+            await asyncio.sleep(delay)
+        except asyncio.CancelledError:
+            return
+        remaining = self._timeout_s * TODO_FLUSH_REMAINING_FRACTION
+        write_todo_flush_nudge(
+            self._working_dir,
+            timeout_s=self._timeout_s,
+            remaining_s=remaining,
         )
 
     async def _close_harness(self) -> None:

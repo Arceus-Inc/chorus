@@ -18,7 +18,7 @@ from chorus.adapters import ModelRate, TokenPricing
 from chorus.budgets import BudgetEnforcer
 from chorus.heartbeat import Scheduler, TickReport
 from chorus.ledger import SqliteLedger
-from chorus.memory import AppendOnlyMemoryWriter
+from chorus.memory import EpisodicStore
 from chorus.observability import EventBus
 from chorus.roles import (
     RolePlugin,
@@ -166,7 +166,7 @@ def build_beat_service(
         landers=default_landers(
             factory.company_root, ledger=ledger
         ),  # a passed beat lands its role artifact (§2)
-        memory_writer=AppendOnlyMemoryWriter(
+        memory_writer=EpisodicStore(
             factory.company_root / "memory"
         ),  # one episodic delta/beat (§7)
         event_bus=EventBus(log_path=factory.company_root / "events.jsonl"),

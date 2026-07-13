@@ -24,6 +24,7 @@ standard, stack-independent *verification* entry points, not a mandate about how
 
 from __future__ import annotations
 
+from chorus_employee._recall import RECALL_DIRECTIVE
 from chorus_employee._resume import RESUME_DIRECTIVE
 
 # --- the evidence contract (the ONE fixed, framework-agnostic layout brief/DoD/test_evidence share) ---
@@ -188,7 +189,9 @@ FRONTEND_ENGINEER_BRIEF = (
     "never fabricate a result or skip a failing test to go green; never force-push."
 )
 
-FRONTEND_ENGINEER_BRIEF = FRONTEND_ENGINEER_BRIEF + "\n\n" + RESUME_DIRECTIVE
+FRONTEND_ENGINEER_BRIEF = (
+    FRONTEND_ENGINEER_BRIEF + "\n\n" + RESUME_DIRECTIVE + "\n\n" + RECALL_DIRECTIVE
+)
 
 __all__ = [
     "E2E_TEST_LOG",

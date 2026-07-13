@@ -30,6 +30,7 @@ from dream.tools.builtin import default_registry
 
 from chorus.adapters import DreamBeatRunner, TokenPricing
 from chorus.heartbeat import BeatRunner, IntegrateContextPacket
+from chorus.memory import EpisodicRecallService, EpisodicStore
 from chorus.outcomes import LanderRegistry, runtime_brief_block
 from chorus.roles import RoleBeatConfig, RoleRegistry, role_beat_config
 from chorus.roles._manifest import McpServerSpec
@@ -38,6 +39,8 @@ from chorus.trust import TrustPolicy
 from chorus.workforce import Employee
 from chorus.workspace import CompanyWorkspace, default_work_root
 from chorus_employee import default_landers
+from chorus_employee._recall import PLANNER_TOOLLESS_NOTE
+from chorus_employee._shared_skills import SHARED_SKILLS_ROOT
 from chorus_harness._skills import materialize_skills
 from chorus_harness._trust import apply_trust
 from chorus_tools import (
@@ -48,7 +51,9 @@ from chorus_tools import (
     DesignExemplarTool,
     DesignLintTool,
     EvidenceScanTool,
+    GetRunTool,
     GoLiveTool,
+    RecallTool,
     RecordDecisionTool,
     SecretScanTool,
     SubmitTaskTool,
@@ -57,6 +62,7 @@ from chorus_tools import (
     analysis_tool,
     governance_tool,
 )
+from chorus_tools._todo_flush_nudge import registry_with_todo_flush_nudge
 from chorus_tools.cms import CmsDraftTool, cms_backend_from_env
 from chorus_tools.delivery import (
     ExecuteGoLiveTool,
@@ -140,6 +146,11 @@ _CHORUS_TO_DREAM_TOOL: dict[str, str] = {
     # IDENTITY-mapped so the subagent projection keeps it. The structural analog of design_lint (pure
     # reader). Distinct from the Backend Engineer's test_evidence gate-runner, which WRITES the bundle.
     "evidence_scan": "evidence_scan",
+    # recall — a chorus capability tool (read-only episodic memory, spec 07 §11). Identity-mapped for
+    # the same reason as evidence_scan: registered in the materialize flow (needs company_root), not
+    # via _capability_tool, so it must stay in this map for the subagent projection to keep it.
+    "recall": "recall",
+    "get_run": "get_run",
     # cms_draft — a chorus capability tool (reversible CMS write, §08 Channel). Identity-mapped for the
     # same reason as brand_lint: so the projection keeps it; it is registered in the materialize flow
     # (it needs the worktree for the Markdown backend, which _capability_tool has no access to).
@@ -179,6 +190,10 @@ _READ_ONLY_DREAM_SURFACE_TOOLS = frozenset(
         "memory_search",
         "memory_get",
         "working_memory_read",
+        # recall is safe/read-only (chorus's own episodic counterpart to memory_search's durable
+        # facts), so an evaluator verifying past-beat context needs it just as much as the generator.
+        "recall",
+        "get_run",
         # A read-only reviewer that reads a large artifact (a long findings.md) gets its read_file
         # output offloaded to scratch with a "Full output saved to: <file>" pointer; without
         # read_offloaded it cannot see the overflow and wrongly fails with "content is truncated /
@@ -388,7 +403,16 @@ def write_role_overlays(harness_dir: Path, config: RoleBeatConfig) -> None:
     roles_dir.mkdir(parents=True, exist_ok=True)
     for role in _DREAM_ROLES:
         base = default_role_manifest(role).system_prompt
-        prompt = f"{base}\n\n## Operating brief (your role in the org)\n{config.system_prompt}"
+        if role == "planner":
+            # The brief names tools (recall, todo_write, …) the generator uses later; without an
+            # explicit planner-only guard the model sometimes emits a tool call here and gets
+            # "tool-not-in-role-manifest" noise (planner is toolless on purpose).
+            prompt = (
+                f"{base}\n\n## Operating brief (your role in the org)\n"
+                f"{PLANNER_TOOLLESS_NOTE}\n{config.system_prompt}"
+            )
+        else:
+            prompt = f"{base}\n\n## Operating brief (your role in the org)\n{config.system_prompt}"
         lines = [
             f'system_prompt = "{_toml_escape(prompt)}"',
             f'permission_mode = "{config.permission_mode}"',
@@ -604,6 +628,9 @@ class EmployeeHarnessFactory:
                 config, system_prompt=config.system_prompt + "\n\n" + runtime_brief_block()
             )
 
+        if "recall" in config.tools and "get_run" not in config.tools:
+            config = replace(config, tools=(*config.tools, "get_run"))
+
         # ``working_dir`` IS the worktree, because dream confines its tools to it — that is what
         # isolates one employee's edits from another's. A non-worktree posture falls back to a flat
         # per-employee dir under the org root.
@@ -671,6 +698,13 @@ class EmployeeHarnessFactory:
         # the durable code_quality/ report. No ledger — registers UNCONDITIONALLY, like the above.
         if "code_quality" in config.tools:
             registry.register(CodeQualityTool(), source=ToolSource.DEFAULT)
+        # recall (spec 07 §11): read your OWN past episodic beats — recency/keyword. No
+        # ledger; rooted at the ORG's memory dir (company_root/memory), not the per-employee worktree
+        # — episodic capture is one shared SQLite store for the whole company.
+        if "recall" in config.tools:
+            episodic = EpisodicRecallService(EpisodicStore(self._company_root / "memory"))
+            registry.register(RecallTool(episodic), source=ToolSource.DEFAULT)
+            registry.register(GetRunTool(episodic), source=ToolSource.DEFAULT)
         # execute_go_live pairs with cms_draft: it publishes the staged draft once the human approves
         # the stage_go_live gate. Needs BOTH the ledger (fail-closed gate check) and the worktree
         # (standing-draft + delivery indexes), so it registers here rather than in _capability_tool.
@@ -692,6 +726,9 @@ class EmployeeHarnessFactory:
             if atool is not None and registry.get(name) is None:
                 registry.register(atool, source=ToolSource.DEFAULT)
 
+        if "todo_write" in config.tools:
+            registry = registry_with_todo_flush_nudge(registry)
+
         # Subagents: project the role's Tier-1 declarations into dream's SubagentSet. The
         # spawn_subagent tool (already in the registry if "spawn_subagent" is in the role's tools)
         # discovers available subagents from this set at runtime.
@@ -704,7 +741,11 @@ class EmployeeHarnessFactory:
         # dream's registry at that in-worktree copy, so SKILL.md load and reference reads share a path.
         skill_registry = None
         if config.skills_root:
-            skills_dir = materialize_skills(root, config.skills_root)
+            skills_dir = materialize_skills(
+                root,
+                config.skills_root,
+                extra_roots=(SHARED_SKILLS_ROOT,),
+            )
             skill_registry, _shadows = load_skill_registry(project_dirs=[skills_dir])
         harness = dream.build_harness(
             model=config.model or self._deployment,

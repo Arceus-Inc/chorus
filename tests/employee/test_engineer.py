@@ -30,6 +30,7 @@ def test_engineer_declares_every_build_harness_component() -> None:
         "working_memory_write",
         "working_memory_append",
         "memory_propose",
+        "recall",
     )
     assert manifest.permission_mode.value == "acceptEdits"  # can write under its own posture
     assert manifest.memory_scope.value == "project"

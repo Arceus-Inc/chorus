@@ -182,7 +182,7 @@ def _probe_and_report(
     memory_tools = {t: c for t, c in tools.items() if t.startswith(("memory_", "working_memory"))}
 
     # — append-only episodic memory (today's feature) — read back through dream's own scanner, which
-    # finds records under each {scope}/ subdir the AppendOnlyMemoryWriter writes.
+    # finds records under each {scope}/ subdir the EpisodicStore writes.
     mem_dir = company_root / "memory"
     records: list[tuple[str, dict[str, str]]] = []  # (filename == run id, frontmatter)
     total_files = len(list(mem_dir.rglob("*.md"))) if mem_dir.exists() else 0
@@ -319,7 +319,7 @@ code — every child file was built and merged by an engineer, then integrated b
 
 <div class=card><h2>Append-only episodic memory — today's feature, verified</h2>
 <p class=meta>spec 07 §3 · the kernel writes one immutable <code>sprint_delta</code> per beat via
-<code>AppendOnlyMemoryWriter</code> — for the manager's beats AND the engineers' — with dream-readable
+<code>EpisodicStore</code> — for the manager's beats AND the engineers' — with dream-readable
 frontmatter. Read back through dream's own <code>scan_memory_dir</code>.</p>
 <table><tr><th>Check</th><th>Result</th><th>Detail</th></tr>{mem_checks}</table>
 <h3 class=meta style="margin-top:14px">The records on disk (read back by dream)</h3>

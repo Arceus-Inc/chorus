@@ -40,6 +40,7 @@ from chorus_tools._evidence_scan import (
     EvidenceSpec,
     LogAssessment,
 )
+from chorus_tools._get_run import GetRunInput, GetRunTool
 from chorus_tools._go_live import GoLiveAction, GoLiveInput, GoLiveTool
 from chorus_tools._governance import (
     GOVERNANCE_TOOL_NAMES,
@@ -56,6 +57,7 @@ from chorus_tools._manager_actions import (
     SubmitTaskInput,
     SubmitTaskTool,
 )
+from chorus_tools._recall import RecallInput, RecallTool
 from chorus_tools._record_decision import RecordDecisionInput, RecordDecisionTool
 from chorus_tools._registry import chorus_tool_registry
 from chorus_tools._secret_scan import (
@@ -102,6 +104,8 @@ __all__ = [
     "EvidenceSpec",
     "GateResult",
     "GateSpec",
+    "GetRunInput",
+    "GetRunTool",
     "GoLiveAction",
     "GoLiveInput",
     "GoLiveTool",
@@ -115,6 +119,8 @@ __all__ = [
     "QualityCheck",
     "QualityCheckSpec",
     "QualityReport",
+    "RecallInput",
+    "RecallTool",
     "RecordDecisionInput",
     "RecordDecisionTool",
     "RepoSearchTool",

@@ -16,7 +16,7 @@ from chorus.budgets import BudgetEnforcer
 from chorus.errors import UnknownEmployee
 from chorus.heartbeat import Scheduler
 from chorus.ledger import SqliteLedger
-from chorus.memory import AppendOnlyMemoryWriter
+from chorus.memory import EpisodicStore
 from chorus.observability import EventBus, FanoutBus
 from chorus.roles import RoleRegistry, default_roles
 from chorus.workforce import LedgerWorkforce
@@ -74,7 +74,7 @@ def build_role_chat_service(
         landers=default_landers(
             factory.company_root, ledger=ledger
         ),  # a passed beat lands its role artifact (§2)
-        memory_writer=AppendOnlyMemoryWriter(
+        memory_writer=EpisodicStore(
             factory.company_root / "memory"
         ),  # one episodic delta/beat (§7)
         max_concurrent_runs=1,

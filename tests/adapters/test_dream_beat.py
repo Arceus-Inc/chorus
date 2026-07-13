@@ -21,6 +21,7 @@ import pytest
 from chorus.adapters import DreamBeatRunner, ModelRate, TokenPricing, to_beat_outcome
 from chorus.events import Event, EventKind
 from chorus.heartbeat import BeatDisposition
+from chorus.heartbeat._todo_flush import read_todo_flush_nudge
 from chorus.outcomes import VerificationStep
 
 pytestmark = pytest.mark.unit
@@ -237,6 +238,33 @@ def test_passed_when_every_step_done() -> None:
     assert outcome.outcome["sprint_outcomes"] == ["pass", "pass"]
 
 
+async def test_run_task_records_reasoning_and_actions_into_raw_record() -> None:
+    harness = _FakeHarness(
+        result=_result("done"),
+        events=(
+            {"kind": "role.text", "text": "I chose a salted hashlib password hash"},
+            {"kind": "role.tool.start", "tool": "write_file", "input": {"path": "auth/service.py"}},
+            {"kind": "role.tool.result", "tool": "write_file", "content_preview": "wrote 42 lines"},
+            {"kind": "planner.run.completed"},  # lifecycle noise — must NOT be recorded
+        ),
+    )
+    outcome = await DreamBeatRunner(harness).run_task(task_id="t", intent="build auth", run_id="r1")
+    assert "salted hashlib password hash" in outcome.raw_record  # the reasoning
+    assert "auth/service.py" in outcome.raw_record  # the action + its args
+    assert "wrote 42 lines" in outcome.raw_record  # the tool result
+    assert "planner.run.completed" not in outcome.raw_record  # lifecycle excluded
+
+
+async def test_run_task_records_reasoning_even_on_failure() -> None:
+    harness = _FakeHarness(
+        error=_FakeRunTaskError("boom", phase="plan"),
+        events=({"kind": "role.text", "text": "tried the pool bump, it regressed"},),
+    )
+    outcome = await DreamBeatRunner(harness).run_task(task_id="t", intent="x", run_id="r1")
+    assert outcome.passed is False
+    assert "tried the pool bump" in outcome.raw_record  # a failed beat still keeps its account
+
+
 def test_not_passed_when_a_step_is_unfinished() -> None:
     assert to_beat_outcome(_result("done", "in_progress")).passed is False
 
@@ -406,10 +434,14 @@ async def test_run_task_drops_dream_events_without_a_chorus_equivalent() -> None
     assert [e.kind for e in seen] == [EventKind.RUN_TEXT]
 
 
-async def test_run_task_runs_dream_silent_without_an_observer() -> None:
-    harness = _FakeHarness(result=_result("done"), events=({"kind": "role.text", "text": "x"},))
-    await DreamBeatRunner(harness).run_task(task_id="t1", intent="x")
-    assert harness.observer is None  # no observer in -> no bridge handed to dream
+async def test_run_task_records_the_account_even_without_a_chorus_observer() -> None:
+    # No chorus observer -> no liveness bridge, but the reasoning recorder is always handed to dream so
+    # the episodic account is captured regardless of whether anyone is witnessing the run.
+    harness = _FakeHarness(
+        result=_result("done"), events=({"kind": "role.text", "text": "picked X"},)
+    )
+    outcome = await DreamBeatRunner(harness).run_task(task_id="t1", intent="x")
+    assert "picked X" in outcome.raw_record  # captured with no chorus observer wired
 
 
 # -- the failure contract: a raise -> a typed disposition (spec 05 §5) -----------------------------
@@ -437,6 +469,40 @@ async def test_run_task_propagates_asyncio_cancellation() -> None:
     harness = _FakeHarness(error=asyncio.CancelledError())
     with pytest.raises(asyncio.CancelledError):
         await DreamBeatRunner(harness).run_task(task_id="t1", intent="x")
+
+
+async def test_run_task_arms_todo_flush_nudge_at_ninety_percent_budget(tmp_path: Path) -> None:
+    timeout_s = 0.2
+    runner = DreamBeatRunner(
+        _HangingHarness(),
+        timeout_s=timeout_s,
+        working_dir=tmp_path,
+        employee_id="bex",
+    )
+    run = asyncio.create_task(
+        runner.run_task(task_id="t1", intent="x", run_id="run-1"),
+    )
+    try:
+        await asyncio.sleep(timeout_s * 0.91)
+        nudge = read_todo_flush_nudge(tmp_path)
+        assert nudge is not None
+        assert nudge.timeout_s == timeout_s
+        assert nudge.remaining_s == pytest.approx(timeout_s * 0.10)
+    finally:
+        outcome = await run
+        assert outcome.disposition is BeatDisposition.ERRORED
+        assert read_todo_flush_nudge(tmp_path) is None
+
+
+async def test_run_task_clears_stale_todo_flush_nudge_at_beat_start(tmp_path: Path) -> None:
+    from chorus.heartbeat._todo_flush import write_todo_flush_nudge
+
+    write_todo_flush_nudge(tmp_path, timeout_s=10.0, remaining_s=1.0)
+    harness = _FakeHarness(result=_result("done"))
+    await DreamBeatRunner(harness, working_dir=tmp_path, employee_id="bex").run_task(
+        task_id="t1", intent="x", run_id="run-1"
+    )
+    assert read_todo_flush_nudge(tmp_path) is None
 
 
 def test_beat_outcome_disposition_defaults_from_passed() -> None:
