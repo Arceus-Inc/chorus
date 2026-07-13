@@ -39,6 +39,10 @@ def test_analyst_declares_its_analysis_toolset() -> None:
         "working_memory_write",
         "working_memory_append",
         "recall",
+        "lattice_context",
+        "lattice_packet",
+        "lattice_apply",
+        "skill_manage",
     )
     assert (
         manifest.permission_mode.value == "acceptEdits"

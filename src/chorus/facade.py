@@ -16,6 +16,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Sequence
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from chorus.budgets import BudgetEnforcer
@@ -177,6 +178,7 @@ class Chorus:
             beat_runner=beat_runner,
             beat_runner_for=resolved_runner_for,  # role-faithful per-employee runners (spec 06 §2)
             event_bus=event_bus,
+            company_root=Path(memory_repo).parent,  # lattice beat-end gate root (memory/ sibling)
             # budgets are inert until a policy is created — injecting the enforcer just arms the gates
             budget_enforcer=BudgetEnforcer(store, company_id=company_id),
             roles=registry,  # a task inherits its assignee role's DoD at intake (spec 04 §1 / 06 §2)

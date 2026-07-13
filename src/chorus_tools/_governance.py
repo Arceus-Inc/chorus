@@ -142,7 +142,10 @@ class ProposalApproveTool(BaseTool):
                 structured={"proposal_id": args.proposal_id, "error": str(exc)},
                 is_error=True,
             )
-        _audit(ctx, f"APPROVED proposal {args.proposal_id} → decision {decision_id} (by {beat.employee_id})")
+        _audit(
+            ctx,
+            f"APPROVED proposal {args.proposal_id} → decision {decision_id} (by {beat.employee_id})",
+        )
         return ToolResult(
             content=f"approved proposal {args.proposal_id} — it is now decision {decision_id}",
             structured={"proposal_id": args.proposal_id, "decision_id": decision_id},
@@ -187,7 +190,10 @@ class ProposalRejectTool(BaseTool):
                 structured={"proposal_id": args.proposal_id, "error": str(exc)},
                 is_error=True,
             )
-        _audit(ctx, f"REJECTED proposal {args.proposal_id} (by {beat.employee_id}) — reason: {args.reason or 'n/a'}")
+        _audit(
+            ctx,
+            f"REJECTED proposal {args.proposal_id} (by {beat.employee_id}) — reason: {args.reason or 'n/a'}",
+        )
         return ToolResult(
             content=f"rejected proposal {args.proposal_id}",
             structured={"proposal_id": args.proposal_id, "reason": args.reason},

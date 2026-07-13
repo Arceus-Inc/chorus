@@ -52,6 +52,10 @@ def marketer_manifest() -> RoleManifest:
             # read your own past episodic beats — recency/keyword, outcome attached
             # (spec 07 §11). The reasoning-recall counterpart to memory_search's durable facts.
             "recall",
+            "lattice_context",
+            "lattice_packet",
+            "lattice_apply",
+            "skill_manage",
             "spawn_subagent",
             # market/audience research: Tavily-backed web search (§06 Researcher, §07 read reach).
             # An allowlisted-egress read (its declared host is api.tavily.com) — needs the net tier below.

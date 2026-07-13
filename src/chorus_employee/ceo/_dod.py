@@ -33,8 +33,21 @@ class ActionClass(StrEnum):
 # a human. Ordinary governance/decision prose ("decide where to focus", "recommend a direction") stays
 # a reviewed directive, not a human gate.
 _COMMIT_CUES = (
-    "spend", "hire", "fire", "terminate", "lay off", "acquire", "acquisition", "sign the",
-    "sign a", "wire", "pay out", "ship to production", "go live", "raise capital", "fundraise",
+    "spend",
+    "hire",
+    "fire",
+    "terminate",
+    "lay off",
+    "acquire",
+    "acquisition",
+    "sign the",
+    "sign a",
+    "wire",
+    "pay out",
+    "ship to production",
+    "go live",
+    "raise capital",
+    "fundraise",
 )
 
 
