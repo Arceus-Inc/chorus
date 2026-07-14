@@ -128,6 +128,23 @@ def test_proposal_approve_reaches_the_port_with_the_ceo_identity(tmp_path: Path)
     assert "APPROVED proposal p1" in ledger and "decision d2" in ledger
 
 
+def test_audit_lines_are_stamped_with_the_beat_run_id(tmp_path: Path) -> None:
+    """A standing worktree accumulates ledger lines across beats — the run stamp is what
+    lets an evaluator tell THIS beat's actions from prior beats' (dream's per-beat task id
+    IS the chorus run_id, so the stamp is directly matchable from the evaluator's paths)."""
+    _beat(tmp_path)
+    port = FakeGovernance()
+    asyncio.run(ProposalApproveTool(port).execute({"proposal_id": "p1"}, _ctx(tmp_path)))
+    BeatContext(task_id="C", run_id="run-next-beat", employee_id="ceo").write(tmp_path)
+    asyncio.run(ProposalRejectTool(port).execute({"proposal_id": "p2"}, _ctx(tmp_path)))
+
+    lines = (tmp_path / "governance-ledger.md").read_text(encoding="utf-8").splitlines()
+    approve = next(line for line in lines if "APPROVED proposal p1" in line)
+    reject = next(line for line in lines if "REJECTED proposal p2" in line)
+    assert f"[run {REV}]" in approve
+    assert "[run run-next-beat]" in reject
+
+
 def test_proposal_reject_carries_the_reason(tmp_path: Path) -> None:
     _beat(tmp_path)
     port = FakeGovernance()

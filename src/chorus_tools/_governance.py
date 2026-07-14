@@ -26,12 +26,23 @@ _LEDGER_FILE = "governance-ledger.md"
 
 
 def _audit(ctx: ToolExecutionContext, line: str) -> None:
-    """Append one line to the worktree's governance ledger (best-effort; never fails a tool)."""
+    """Append one run-stamped line to the worktree's governance ledger (best-effort).
+
+    A standing worktree accumulates lines across beats, so each line carries its beat's
+    run id — dream's per-beat task identity IS the chorus run_id, which is what lets an
+    evaluator separate THIS beat's actions from prior beats' without guessing.
+    """
     try:
         path = ctx.working_dir / _LEDGER_FILE
-        header = "" if path.exists() else "# Governance ledger — actions taken this beat\n\n"
+        try:
+            stamp = f"[run {BeatContext.read(ctx.working_dir).run_id}] "
+        except Exception:  # no beat context (e.g. a bare test harness) — log unstamped
+            stamp = ""
+        header = (
+            "" if path.exists() else "# Governance ledger — one run-stamped line per action\n\n"
+        )
         with path.open("a", encoding="utf-8") as fh:
-            fh.write(f"{header}- {line}\n")
+            fh.write(f"{header}- {stamp}{line}\n")
     except Exception:  # an audit-log hiccup must never break the actual governance action
         pass
 
