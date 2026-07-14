@@ -111,7 +111,9 @@ class GovernanceReadTool(BaseTool):
 class ProposalApproveInput(BaseModel):
     """Arguments for ``proposal_approve`` — accept one open proposal into the direction."""
 
-    proposal_id: str = Field(description="the id of an open proposal, as shown by governance_read")
+    proposal_id: str = Field(
+        description="the open proposal's id (prop_…), as shown by governance_read"
+    )
 
 
 class ProposalApproveTool(BaseTool):
@@ -155,7 +157,9 @@ class ProposalApproveTool(BaseTool):
 class ProposalRejectInput(BaseModel):
     """Arguments for ``proposal_reject`` — decline one open proposal."""
 
-    proposal_id: str = Field(description="the id of an open proposal, as shown by governance_read")
+    proposal_id: str = Field(
+        description="the open proposal's id (prop_…), as shown by governance_read"
+    )
     reason: str = Field(
         default="", description="a short reason for the record — why this proposal was declined"
     )
@@ -203,7 +207,12 @@ class ProposalRejectTool(BaseTool):
 class GoalSetPriorityInput(BaseModel):
     """Arguments for ``goal_set_priority`` — reprioritise one goal."""
 
-    goal_id: str = Field(description="the id of a goal, as shown by governance_read")
+    goal_id: str = Field(
+        description=(
+            "the goal's id (goal_…), as shown by governance_read — not a decision (dec_…) "
+            "or proposal (prop_…) id"
+        )
+    )
     priority: str = Field(description="the new priority: one of low, medium, high")
 
 
@@ -275,7 +284,12 @@ class GoalSetPriorityTool(BaseTool):
 class GoalArchiveInput(BaseModel):
     """Arguments for ``goal_archive`` — retire one goal from the active direction."""
 
-    goal_id: str = Field(description="the id of a goal, as shown by governance_read")
+    goal_id: str = Field(
+        description=(
+            "the goal's id (goal_…), as shown by governance_read — not a decision (dec_…) "
+            "or proposal (prop_…) id"
+        )
+    )
 
 
 class GoalArchiveTool(BaseTool):
