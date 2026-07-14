@@ -99,7 +99,7 @@ def test_cascade_cancels_a_task_blocked_by_a_failed_prerequisite(ledger: SqliteL
     reconcile cancels it so the subtree terminalizes and the manager gets a ``children_done`` beat to
     react (re-submit the failed branch) — instead of the whole goal deadlocking on a stuck ``todo``.
     """
-    ledger.employees.create(Employee(id="moe", name="moe", role="manager"))
+    ledger.employees.create(Employee(id="moe", name="moe", role="engineer"))
     ledger.tasks.submit(
         Task(id="goal", intent="goal", status=TaskStatus.BLOCKED, assignee_employee_id="moe")
     )
@@ -133,7 +133,7 @@ def test_stranded_child_terminalizes_so_the_parent_can_integrate(ledger: SqliteL
     """A child stranded on a recovery card (auto-recovery exhausted) would block its parent's integration
     forever with no human to clear it. reconcile terminalizes it (rejected) so the manager integrates and
     reacts — the autonomous org self-heals instead of deadlocking on a dead child."""
-    ledger.employees.create(Employee(id="moe", name="moe", role="manager"))
+    ledger.employees.create(Employee(id="moe", name="moe", role="engineer"))
     ledger.tasks.submit(
         Task(id="goal", intent="goal", status=TaskStatus.BLOCKED, assignee_employee_id="moe")
     )
@@ -160,7 +160,7 @@ def test_stranded_top_level_task_keeps_escalating_to_a_human(ledger: SqliteLedge
 
 def test_cascade_leaves_a_task_with_a_still_pending_blocker_alone(ledger: SqliteLedger) -> None:
     """Only a *failed* prerequisite cascades — a blocker still in flight just keeps the dependent waiting."""
-    ledger.employees.create(Employee(id="moe", name="moe", role="manager"))
+    ledger.employees.create(Employee(id="moe", name="moe", role="engineer"))
     ledger.tasks.submit(
         Task(id="goal", intent="goal", status=TaskStatus.BLOCKED, assignee_employee_id="moe")
     )

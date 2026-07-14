@@ -17,7 +17,7 @@ from dream.tools._context import ToolExecutionContext
 from pydantic import BaseModel, Field, ValidationError
 
 from chorus.heartbeat import BeatContext
-from chorus.ledger import SqliteLedger
+from chorus.ledger import ExecutionMode, SqliteLedger
 from chorus.lifecycle import CapabilityService, ChildPlan
 
 
@@ -29,6 +29,14 @@ class _ChildInput(BaseModel):
     )
     intent: str = Field(description="what the subtask should accomplish")
     assignee: str = Field(description="the employee id of the report who will own this subtask")
+    execution_mode: ExecutionMode = Field(
+        default=ExecutionMode.DELIVERY,
+        description="delivery for specialist work, delegation for a nested management assignment",
+    )
+    can_subdelegate: bool = Field(
+        default=False,
+        description="explicitly grant this nested lead authority to sub-delegate",
+    )
     depends_on: list[str] = Field(
         default_factory=list,
         description="labels of sibling subtasks in this call that must finish before this one starts",
@@ -75,11 +83,16 @@ class DecomposeTool(BaseTool):
                 intent=child.intent,
                 assignee=child.assignee,
                 depends_on=tuple(child.depends_on),
+                execution_mode=child.execution_mode,
+                can_subdelegate=child.can_subdelegate,
             )
             for child in args.children
         ]
         result = self._service.decompose(
-            parent_id=beat.task_id, revision=beat.run_id, children=plans
+            parent_id=beat.task_id,
+            revision=beat.run_id,
+            children=plans,
+            actor_employee_id=beat.employee_id,
         )
         if result.reviewer_assignees:
             joined = ", ".join(result.reviewer_assignees)
@@ -109,6 +122,12 @@ class DecomposeTool(BaseTool):
                     "no subtasks created and the task is now blocked"
                 ),
                 structured={"depth_capped": True},
+            )
+        if result.authority_denied is not None:
+            return ToolResult(
+                content=f"refused: {result.authority_denied}; no subtasks created",
+                structured={"authority_denied": result.authority_denied},
+                is_error=True,
             )
         listing = ", ".join(f"{c.label}→{c.assignee}" for c in args.children)
         return ToolResult(

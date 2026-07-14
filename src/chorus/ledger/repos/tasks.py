@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import sqlite3
 
-from chorus.ledger._models import OriginKind, Task, TaskPriority, TaskStatus
+from chorus.ledger._models import ExecutionMode, OriginKind, Task, TaskPriority, TaskStatus
 from chorus.ledger.repos._base import dumps, from_iso, loads, to_iso, utcnow_iso
 from chorus.lifecycle._transitions import assert_legal
 
@@ -39,12 +39,13 @@ class TaskRepo:
         """Insert a task. Exact-once for self-spawned work via the origin partial-unique indexes."""
         now = utcnow_iso()
         self._conn.execute(
-            "INSERT INTO task (id, parent_id, goal_id, intent, status, priority, "
+            "INSERT INTO task (id, parent_id, goal_id, intent, status, priority, execution_mode, "
+            "team_id, "
             "assignee_employee_id, assignee_user_id, checkout_run_id, execution_run_id, depth, "
             "request_depth, origin_kind, origin_id, origin_fingerprint, created_by_employee_id, "
             "created_by_user_id, created_at, updated_at, started_at, completed_at, cancelled_at, "
             "trust_preset, trust_boundary) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 task.id,
                 task.parent_id,
@@ -52,6 +53,8 @@ class TaskRepo:
                 task.intent,
                 task.status.value,
                 task.priority.value,
+                task.execution_mode.value,
+                task.team_id,
                 task.assignee_employee_id,
                 task.assignee_user_id,
                 task.checkout_run_id,
@@ -266,6 +269,15 @@ class TaskRepo:
         ).fetchone()
         return _row_to_task(row) if row is not None else None
 
+    def has_unresolved_for_assignee(self, employee_id: str) -> bool:
+        """Whether an employee still owns any nonterminal task, including parked work."""
+        row = self._conn.execute(
+            "SELECT 1 FROM task WHERE assignee_employee_id = ? "
+            "AND status NOT IN ('done', 'cancelled', 'rejected') LIMIT 1",
+            (employee_id,),
+        ).fetchone()
+        return row is not None
+
     def has_open_for_routine(self, routine_id: str) -> bool:
         """True iff a non-terminal task spawned by this routine is still live (spec 03 §4).
 
@@ -286,6 +298,8 @@ def _row_to_task(row: sqlite3.Row) -> Task:
         intent=row["intent"],
         status=TaskStatus(row["status"]),
         priority=TaskPriority(row["priority"]),
+        execution_mode=ExecutionMode(row["execution_mode"]),
+        team_id=row["team_id"],
         assignee_employee_id=row["assignee_employee_id"],
         assignee_user_id=row["assignee_user_id"],
         goal_id=row["goal_id"],

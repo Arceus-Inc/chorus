@@ -25,6 +25,7 @@ def record_activity(
     subject_id: str,
     subject_kind: str = "task",
     actor_employee_id: str | None = None,
+    actor_user_id: str | None = None,
     payload: Mapping[str, Any] | None = None,
 ) -> None:
     """Append one immutable governance-audit row (spec 08 §5). Kernel actor when ``actor`` is null."""
@@ -35,6 +36,7 @@ def record_activity(
             subject_kind=subject_kind,
             subject_id=subject_id,
             actor_employee_id=actor_employee_id,
+            actor_user_id=actor_user_id,
             payload=payload or {},
         )
     )

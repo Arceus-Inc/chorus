@@ -9,8 +9,19 @@ from __future__ import annotations
 
 import pytest
 
-from chorus.ledger import Run, RunStatus, SqliteLedger, Task, TaskStatus
-from chorus.lifecycle import DEFAULT_REQUEST_DEPTH_CAP
+from chorus.ledger import (
+    DelegationContract,
+    DelegationContractStatus,
+    ExecutionMode,
+    Goal,
+    ManagementProfile,
+    Run,
+    RunStatus,
+    SqliteLedger,
+    Task,
+    TaskStatus,
+)
+from chorus.lifecycle import DEFAULT_REQUEST_DEPTH_CAP, MissionTeamPolicy
 from chorus.lifecycle._capability import CapabilityService, ChildPlan
 from chorus.workforce import Employee
 
@@ -20,20 +31,56 @@ REV = "run_mgr_1"  # the manager's beat (run_id) — the decompose idempotency k
 
 
 def _service(ledger: SqliteLedger, *, request_depth: int = 0) -> CapabilityService:
-    ledger.employees.create(Employee(id="mgr", name="Mgr", role="manager"))
+    lead = ledger.employees.create(Employee(id="mgr", name="Mgr", role="engineer"))
+    ledger.management_profiles.upsert(
+        ManagementProfile(
+            employee_id="mgr",
+            granted_by_user_id="operator",
+            active=True,
+            can_lead=True,
+            can_subdelegate=True,
+            max_delegation_depth=DEFAULT_REQUEST_DEPTH_CAP,
+            max_team_size=3,
+            allowed_professions=("engineer",),
+        )
+    )
     ledger.employees.create(Employee(id="ada", name="Ada", role="engineer", reports_to="mgr"))
     ledger.employees.create(Employee(id="bob", name="Bob", role="engineer", reports_to="mgr"))
+    ledger.goals.create(Goal(id="goal-M", title="Ship the feature"))
+    team_policy = MissionTeamPolicy(ledger)
+    team = team_policy.create_for_root(lead, "goal-M")
+    team_policy.activate(team.id)
     ledger.tasks.submit(
         Task(
             id="M",
             intent="ship the feature",
             status=TaskStatus.TODO,
+            execution_mode=ExecutionMode.DELEGATION,
+            team_id=team.id,
             assignee_employee_id="mgr",
+            goal_id="goal-M",
             request_depth=request_depth,
+        )
+    )
+    ledger.delegation_contracts.create(
+        DelegationContract(
+            task_id="M",
+            team_id=team.id,
+            lead_employee_id="mgr",
+            management_profile_version=1,
+            can_subdelegate=True,
+            max_depth=DEFAULT_REQUEST_DEPTH_CAP,
+            max_team_size=3,
+            objective_rubric="Ship the feature",
+            status=DelegationContractStatus.DELEGATED,
         )
     )
     ledger.runs.create(Run(id=REV, employee_id="mgr", task_id="M", status=RunStatus.RUNNING))
     return CapabilityService(ledger)
+
+
+def _start_integrating(ledger: SqliteLedger) -> None:
+    ledger.delegation_contracts.update_status("M", DelegationContractStatus.INTEGRATING)
 
 
 def test_decompose_creates_assigned_children_gated_to_parent(ledger: SqliteLedger) -> None:
@@ -41,6 +88,7 @@ def test_decompose_creates_assigned_children_gated_to_parent(ledger: SqliteLedge
     res = svc.decompose(
         parent_id="M",
         revision=REV,
+        actor_employee_id="mgr",
         children=[
             ChildPlan(label="api", intent="build the api", assignee="ada"),
             ChildPlan(label="ui", intent="build the ui", assignee="bob"),
@@ -68,6 +116,7 @@ def test_decompose_rejects_a_deliverable_assigned_to_a_reviewer(ledger: SqliteLe
     res = svc.decompose(
         parent_id="M",
         revision=REV,
+        actor_employee_id="mgr",
         children=[
             ChildPlan(label="impl", intent="build it", assignee="ada"),
             ChildPlan(
@@ -82,9 +131,13 @@ def test_decompose_rejects_a_deliverable_assigned_to_a_reviewer(ledger: SqliteLe
 
 def test_submit_one_rejects_a_deliverable_assigned_to_a_reviewer(ledger: SqliteLedger) -> None:
     svc = _service(ledger)
+    _start_integrating(ledger)
     ledger.employees.create(Employee(id="rev", name="Rev", role="reviewer", reports_to="mgr"))
     res = svc.submit_one(
-        parent_id="M", revision=REV, child=ChildPlan(label="qa", intent="checks", assignee="rev")
+        parent_id="M",
+        revision=REV,
+        actor_employee_id="mgr",
+        child=ChildPlan(label="qa", intent="checks", assignee="rev"),
     )
     assert res.reviewer_assignees == ("rev",)
     assert res.child_id is None
@@ -93,8 +146,10 @@ def test_submit_one_rejects_a_deliverable_assigned_to_a_reviewer(ledger: SqliteL
 def test_idempotent_within_a_revision(ledger: SqliteLedger) -> None:
     svc = _service(ledger)
     plan = [ChildPlan(label="api", intent="build the api", assignee="ada")]
-    r1 = svc.decompose(parent_id="M", revision=REV, children=plan)
-    r2 = svc.decompose(parent_id="M", revision=REV, children=plan)  # the generator re-fired
+    r1 = svc.decompose(parent_id="M", revision=REV, children=plan, actor_employee_id="mgr")
+    r2 = svc.decompose(
+        parent_id="M", revision=REV, children=plan, actor_employee_id="mgr"
+    )  # the generator re-fired
     assert r1.child_ids == r2.child_ids  # same deterministic ids
     assert (
         len(ledger.dependencies.unresolved_blockers("M")) == 1
@@ -106,6 +161,7 @@ def test_inter_child_dependency_is_wired(ledger: SqliteLedger) -> None:
     res = svc.decompose(
         parent_id="M",
         revision=REV,
+        actor_employee_id="mgr",
         children=[
             ChildPlan(label="api", intent="api", assignee="ada"),
             ChildPlan(label="tests", intent="tests", assignee="bob", depends_on=("api",)),
@@ -122,6 +178,7 @@ def test_unknown_assignee_fails_closed_without_mutating(ledger: SqliteLedger) ->
     res = svc.decompose(
         parent_id="M",
         revision=REV,
+        actor_employee_id="mgr",
         children=[
             ChildPlan(label="api", intent="api", assignee="ada"),
             ChildPlan(label="ghost", intent="x", assignee="nobody"),  # not an employee
@@ -139,6 +196,7 @@ def test_decompose_rejects_non_report_assignee_without_mutating(ledger: SqliteLe
     res = svc.decompose(
         parent_id="M",
         revision=REV,
+        actor_employee_id="mgr",
         children=[ChildPlan(label="ops", intent="ops", assignee="eve")],
     )
 
@@ -147,13 +205,26 @@ def test_decompose_rejects_non_report_assignee_without_mutating(ledger: SqliteLe
     assert ledger.dependencies.unresolved_blockers("M") == []
 
 
-def test_decompose_allows_recursive_manager_report(ledger: SqliteLedger) -> None:
+def test_decompose_allows_specialist_lead_report(ledger: SqliteLedger) -> None:
     svc = _service(ledger)
-    ledger.employees.create(Employee(id="lead", name="Lead", role="manager", reports_to="mgr"))
+    ledger.employees.create(Employee(id="lead", name="Lead", role="engineer", reports_to="mgr"))
+    ledger.management_profiles.upsert(
+        ManagementProfile(
+            employee_id="lead",
+            granted_by_user_id="operator",
+            active=True,
+            can_lead=True,
+            can_subdelegate=True,
+            max_delegation_depth=1,
+            max_team_size=2,
+            allowed_professions=("engineer",),
+        )
+    )
 
     res = svc.decompose(
         parent_id="M",
         revision=REV,
+        actor_employee_id="mgr",
         children=[ChildPlan(label="platform", intent="delegate platform", assignee="lead")],
     )
 
@@ -164,10 +235,12 @@ def test_decompose_allows_recursive_manager_report(ledger: SqliteLedger) -> None
 
 def test_submit_one_adds_incremental_child_for_direct_report(ledger: SqliteLedger) -> None:
     svc = _service(ledger)
+    _start_integrating(ledger)
 
     res = svc.submit_one(
         parent_id="M",
         revision="run_mgr_integrate_1",
+        actor_employee_id="mgr",
         child=ChildPlan(label="fix", intent="fix the gap", assignee="ada"),
     )
 
@@ -180,13 +253,27 @@ def test_submit_one_adds_incremental_child_for_direct_report(ledger: SqliteLedge
     assert ledger.dependencies.unresolved_blockers("M") == [res.child_id]
 
 
-def test_submit_one_allows_recursive_manager_report(ledger: SqliteLedger) -> None:
+def test_submit_one_allows_specialist_lead_report(ledger: SqliteLedger) -> None:
     svc = _service(ledger)
-    ledger.employees.create(Employee(id="lead", name="Lead", role="manager", reports_to="mgr"))
+    _start_integrating(ledger)
+    ledger.employees.create(Employee(id="lead", name="Lead", role="engineer", reports_to="mgr"))
+    ledger.management_profiles.upsert(
+        ManagementProfile(
+            employee_id="lead",
+            granted_by_user_id="operator",
+            active=True,
+            can_lead=True,
+            can_subdelegate=True,
+            max_delegation_depth=1,
+            max_team_size=2,
+            allowed_professions=("engineer",),
+        )
+    )
 
     res = svc.submit_one(
         parent_id="M",
         revision="run_mgr_integrate_1",
+        actor_employee_id="mgr",
         child=ChildPlan(label="platform", intent="delegate platform", assignee="lead"),
     )
 
@@ -196,11 +283,13 @@ def test_submit_one_allows_recursive_manager_report(ledger: SqliteLedger) -> Non
 
 def test_submit_one_rejects_non_report_without_mutating(ledger: SqliteLedger) -> None:
     svc = _service(ledger)
+    _start_integrating(ledger)
     ledger.employees.create(Employee(id="eve", name="Eve", role="engineer"))
 
     res = svc.submit_one(
         parent_id="M",
         revision="run_mgr_integrate_1",
+        actor_employee_id="mgr",
         child=ChildPlan(label="fix", intent="fix", assignee="eve"),
     )
 
@@ -211,9 +300,11 @@ def test_submit_one_rejects_non_report_without_mutating(ledger: SqliteLedger) ->
 
 def test_reassign_routes_existing_child_to_direct_report(ledger: SqliteLedger) -> None:
     svc = _service(ledger)
+    _start_integrating(ledger)
     child_id = svc.submit_one(
         parent_id="M",
         revision="run_mgr_integrate_1",
+        actor_employee_id="mgr",
         child=ChildPlan(label="fix", intent="fix", assignee="ada"),
     ).child_id
     assert child_id is not None
@@ -230,6 +321,7 @@ def test_reassign_routes_existing_child_to_direct_report(ledger: SqliteLedger) -
 
 def test_reassign_rejects_work_outside_parent_subtree(ledger: SqliteLedger) -> None:
     svc = _service(ledger)
+    _start_integrating(ledger)
     ledger.tasks.submit(
         Task(id="outside", intent="elsewhere", status=TaskStatus.TODO, assignee_employee_id="ada")
     )
@@ -243,9 +335,11 @@ def test_reassign_rejects_work_outside_parent_subtree(ledger: SqliteLedger) -> N
 
 def test_reassign_rejects_non_report_assignee(ledger: SqliteLedger) -> None:
     svc = _service(ledger)
+    _start_integrating(ledger)
     child_id = svc.submit_one(
         parent_id="M",
         revision="run_mgr_integrate_1",
+        actor_employee_id="mgr",
         child=ChildPlan(label="fix", intent="fix", assignee="ada"),
     ).child_id
     assert child_id is not None
@@ -263,7 +357,10 @@ def test_depth_cap_fails_closed(ledger: SqliteLedger) -> None:
         ledger, request_depth=DEFAULT_REQUEST_DEPTH_CAP
     )  # one more level exceeds the cap
     res = svc.decompose(
-        parent_id="M", revision=REV, children=[ChildPlan(label="x", intent="x", assignee="ada")]
+        parent_id="M",
+        revision=REV,
+        actor_employee_id="mgr",
+        children=[ChildPlan(label="x", intent="x", assignee="ada")],
     )
     assert res.depth_capped is True
     assert res.child_ids == {}

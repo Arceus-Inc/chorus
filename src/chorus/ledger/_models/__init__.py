@@ -3,6 +3,12 @@ every name is re-exported here so `from chorus.ledger._models import X` is uncha
 
 from __future__ import annotations
 
+from chorus.ledger._models._authority import (
+    DelegationContract,
+    ManagementProfile,
+    Team,
+    TeamMember,
+)
 from chorus.ledger._models._budget import (
     BudgetIncident,
     BudgetPolicy,
@@ -24,7 +30,9 @@ from chorus.ledger._models._enums import (
     BudgetScope,
     BudgetThreshold,
     DecompositionStatus,
+    DelegationContractStatus,
     DodStatus,
+    ExecutionMode,
     GoalLevel,
     MessageKind,
     MonitorRecoveryPolicy,
@@ -41,6 +49,8 @@ from chorus.ledger._models._enums import (
     RunStatus,
     TaskPriority,
     TaskStatus,
+    TeamMembershipRole,
+    TeamStatus,
     TriggerKind,
     WakeReason,
     WakeStatus,
@@ -95,10 +105,14 @@ __all__ = [
     "DecisionRecord",
     "DecompositionClaim",
     "DecompositionStatus",
+    "DelegationContract",
+    "DelegationContractStatus",
     "Dod",
     "DodStatus",
+    "ExecutionMode",
     "Goal",
     "GoalLevel",
+    "ManagementProfile",
     "Message",
     "MessageKind",
     "Monitor",
@@ -125,6 +139,10 @@ __all__ = [
     "TaskDependency",
     "TaskPriority",
     "TaskStatus",
+    "Team",
+    "TeamMember",
+    "TeamMembershipRole",
+    "TeamStatus",
     "TriggerKind",
     "Wake",
     "WakeReason",

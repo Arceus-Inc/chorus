@@ -24,6 +24,8 @@ CREATE TABLE task (
     cancelled_at           TEXT,
     trust_preset           TEXT,
     trust_boundary         TEXT,
+    execution_mode         TEXT NOT NULL DEFAULT 'delivery',
+    team_id                TEXT,
     CONSTRAINT task_single_assignee
         CHECK (assignee_employee_id IS NULL OR assignee_user_id IS NULL)
 );
@@ -35,6 +37,10 @@ CREATE INDEX task_status_idx ON task(status);
 CREATE INDEX task_origin_idx ON task(origin_kind, origin_id);
 
 -- exact-once partial-unique indexes — one per self-spawned kind (spec 01, deliberate)
+CREATE UNIQUE INDEX task_horizon_intake_fingerprint_uq
+    ON task(origin_kind, origin_fingerprint)
+    WHERE origin_kind = 'horizon_intake';
+
 CREATE UNIQUE INDEX task_open_routine_uq
     ON task(origin_kind, origin_id, origin_fingerprint)
     WHERE origin_kind = 'routine_execution' AND origin_id IS NOT NULL

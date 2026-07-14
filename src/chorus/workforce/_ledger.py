@@ -16,9 +16,10 @@ form (:class:`~chorus.workforce.GitWorkforce`) is the *export/import* serializat
 
 from __future__ import annotations
 
+import builtins
 from typing import Protocol
 
-from chorus.errors import OrgInvariantViolation, UnknownEmployee
+from chorus.errors import ActiveDelegationConflict, OrgInvariantViolation, UnknownEmployee
 from chorus.workforce._models import Employee, EmployeeStatus
 from chorus.workforce._slug import slugify
 
@@ -33,6 +34,10 @@ class EmployeeStore(Protocol):
     def list(self) -> list[Employee]: ...
 
     def set_status(self, employee_id: str, status: EmployeeStatus) -> None: ...
+
+    def set_reports_to(self, employee_id: str, reports_to: str | None) -> None: ...
+
+    def active_contract_refs(self, employee_id: str) -> builtins.list[tuple[str, str]]: ...
 
 
 class LedgerWorkforce:
@@ -84,10 +89,33 @@ class LedgerWorkforce:
             return  # irreversible — repeating is a harmless no-op
         if employee.reports_to is None:
             raise OrgInvariantViolation(f"the org root {employee_id!r} cannot be terminated")
+        self._assert_no_active_delegation(employee_id)
         self._store.set_status(employee_id, EmployeeStatus.TERMINATED)
+
+    def reassign(self, employee_id: str, *, reports_to: str | None) -> Employee:
+        """Move an employee in the line org after cycle and active-contract checks."""
+        self.get(employee_id)
+        if reports_to == employee_id:
+            raise OrgInvariantViolation(f"{employee_id!r} cannot report to itself")
+        if reports_to is not None:
+            manager = self.get(reports_to)
+            while manager.reports_to is not None:
+                if manager.reports_to == employee_id:
+                    raise OrgInvariantViolation(
+                        f"moving {employee_id!r} under {reports_to!r} would create a cycle"
+                    )
+                manager = self.get(manager.reports_to)
+        self._assert_no_active_delegation(employee_id)
+        self._store.set_reports_to(employee_id, reports_to)
+        return self.get(employee_id)
 
     def list(self) -> list[Employee]:
         return [e for e in self._store.list() if e.status is not EmployeeStatus.TERMINATED]
+
+    def _assert_no_active_delegation(self, employee_id: str) -> None:
+        refs = self._store.active_contract_refs(employee_id)
+        if refs:
+            raise ActiveDelegationConflict(contract_refs=refs)
 
 
 __all__ = ["EmployeeStore", "LedgerWorkforce"]

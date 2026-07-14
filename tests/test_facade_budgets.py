@@ -32,7 +32,7 @@ def _chorus(ledger: SqliteLedger) -> Chorus:
 def test_set_creates_an_employee_cap() -> None:
     ledger = SqliteLedger.open(":memory:")
     try:
-        ledger.employees.create(Employee(id="moe", name="Moe", role="manager"))
+        ledger.employees.create(Employee(id="moe", name="Moe", role="engineer"))
         policy = _chorus(ledger).budgets.set(BudgetScope.EMPLOYEE, "moe", 5000)
         assert policy.scope_type is BudgetScope.EMPLOYEE
         assert policy.scope_id == "moe"

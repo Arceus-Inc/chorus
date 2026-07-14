@@ -20,7 +20,7 @@ def _run(line: str, session: CliSession) -> tuple[LoopSignal, str]:
 
 
 def _seed(ledger: SqliteLedger) -> None:
-    ledger.employees.create(Employee(id="mgr", name="Moe", role="manager"))
+    ledger.employees.create(Employee(id="mgr", name="Moe", role="engineer"))
     ledger.employees.create(Employee(id="ada", name="Ada", role="engineer", reports_to="mgr"))
     ledger.employees.create(Employee(id="bob", name="Bob", role="engineer", reports_to="mgr"))
     ledger.tasks.submit(

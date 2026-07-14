@@ -10,12 +10,19 @@ from chorus.heartbeat import IntegrateContextPacket
 from chorus.ledger import (
     Artifact,
     ArtifactType,
+    DelegationContract,
+    DelegationContractStatus,
     DodStatus,
+    ManagementProfile,
     Run,
     RunStatus,
     SqliteLedger,
     Task,
     TaskStatus,
+    Team,
+    TeamMember,
+    TeamMembershipRole,
+    TeamStatus,
 )
 from chorus.lifecycle import CapabilityService, ChildPlan
 from chorus.observability import LedgerInspector
@@ -33,7 +40,7 @@ def ledger() -> Iterator[SqliteLedger]:
 
 
 def _seed_manager_tree(ledger: SqliteLedger) -> None:
-    ledger.employees.create(Employee(id="mgr", name="Moe", role="manager"))
+    ledger.employees.create(Employee(id="mgr", name="Moe", role="engineer"))
     ledger.employees.create(Employee(id="ada", name="Ada", role="engineer", reports_to="mgr"))
     ledger.employees.create(Employee(id="bob", name="Bob", role="engineer", reports_to="mgr"))
     ledger.tasks.submit(
@@ -125,3 +132,90 @@ def test_integrate_packet_emission_is_audited(ledger: SqliteLedger, tmp_path) ->
     assert activity.verb.value == "scrum_packet"
     assert activity.payload["child_count"] == 2
     assert activity.payload["completed_children"] == 1
+
+
+def test_inspector_exposes_management_authority_and_delegation_views(
+    ledger: SqliteLedger,
+) -> None:
+    ledger.employees.create(Employee(id="lead", name="Lead", role="engineer"))
+    ledger.employees.create(
+        Employee(id="member", name="Member", role="designer", reports_to="lead")
+    )
+    ledger.management_profiles.upsert(
+        ManagementProfile(
+            employee_id="lead",
+            granted_by_user_id="user-admin",
+            active=True,
+            can_lead=True,
+            can_subdelegate=True,
+            max_delegation_depth=2,
+            max_team_size=4,
+            allowed_professions=("engineer", "designer"),
+            spend_limit_cents=50_000,
+        )
+    )
+    ledger.teams.create(
+        Team(
+            id="team-alpha",
+            name="Alpha",
+            lead_employee_id="lead",
+            created_by="user-admin",
+            status=TeamStatus.ACTIVE,
+            policy_version=3,
+        )
+    )
+    for employee_id, membership_role in (
+        ("lead", TeamMembershipRole.LEAD),
+        ("member", TeamMembershipRole.MEMBER),
+    ):
+        ledger.team_members.add(
+            TeamMember(
+                team_id="team-alpha",
+                employee_id=employee_id,
+                source_manager_id="lead",
+                membership_role=membership_role,
+                can_subdelegate=employee_id == "lead",
+            )
+        )
+    ledger.tasks.submit(Task(id="task-alpha", intent="Ship Alpha"))
+    ledger.delegation_contracts.create(
+        DelegationContract(
+            task_id="task-alpha",
+            team_id="team-alpha",
+            lead_employee_id="lead",
+            management_profile_version=1,
+            objective_rubric="all Alpha outcomes are integrated and verified",
+            can_subdelegate=True,
+            max_depth=2,
+            max_team_size=4,
+            spend_limit_cents=50_000,
+            status=DelegationContractStatus.DELEGATED,
+        )
+    )
+
+    inspector = LedgerInspector(ledger)
+    team = inspector.teams()[0]
+    contract = inspector.delegation_contracts()[0]
+    profile = inspector.management_profiles()[0]
+
+    assert (team.id, team.status, team.lead_employee_id, team.member_employee_ids) == (
+        "team-alpha",
+        TeamStatus.ACTIVE,
+        "lead",
+        ("lead", "member"),
+    )
+    assert (team.goal_id, team.policy_version) == (None, 3)
+    assert (
+        contract.task_id,
+        contract.team_id,
+        contract.status,
+        contract.management_profile_version,
+    ) == ("task-alpha", "team-alpha", DelegationContractStatus.DELEGATED, 1)
+    assert (contract.max_depth, contract.max_team_size, contract.spend_limit_cents) == (
+        2,
+        4,
+        50_000,
+    )
+    assert (profile.employee_id, profile.active, profile.version) == ("lead", True, 1)
+    assert (profile.max_delegation_depth, profile.max_team_size) == (2, 4)
+    assert profile.allowed_professions == ("engineer", "designer")

@@ -7,6 +7,7 @@ from datetime import datetime
 
 from chorus.ledger._models._enums import (
     DecompositionStatus,
+    ExecutionMode,
     OriginKind,
     TaskPriority,
     TaskStatus,
@@ -30,6 +31,8 @@ class Task:
     intent: str
     status: TaskStatus = TaskStatus.BACKLOG
     priority: TaskPriority = TaskPriority.MEDIUM
+    execution_mode: ExecutionMode = ExecutionMode.DELIVERY
+    team_id: str | None = None
     assignee_employee_id: str | None = None
     assignee_user_id: str | None = None
     goal_id: str | None = None

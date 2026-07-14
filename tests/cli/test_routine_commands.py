@@ -33,7 +33,7 @@ def _run(line: str, session: CliSession) -> tuple[LoopSignal, str]:
 
 
 def _with_moe(ledger: SqliteLedger) -> SqliteLedger:
-    ledger.employees.create(Employee(id="moe", name="Moe", role="manager"))
+    ledger.employees.create(Employee(id="moe", name="Moe", role="engineer"))
     return ledger
 
 

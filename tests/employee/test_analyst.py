@@ -218,4 +218,5 @@ def test_default_roles_sources_the_analyst_from_its_package() -> None:
 def test_default_employees_includes_the_analyst_plus_the_rest() -> None:
     names = {r.name for r in default_employees()}
     assert "analyst" in names
-    assert {"engineer", "reviewer", "manager", "pm"} <= names
+    assert {"engineer", "reviewer", "pm"} <= names
+    assert "manager" not in names

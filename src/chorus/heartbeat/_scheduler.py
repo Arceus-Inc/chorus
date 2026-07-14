@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import subprocess
 import uuid
 from collections.abc import Awaitable, Callable
@@ -29,7 +30,11 @@ from chorus.cron._fire import fire_routine
 from chorus.governance import GovernanceResolver
 from chorus.heartbeat._beat import BeatDisposition, BeatOutcome
 from chorus.heartbeat._beat_context import BeatContext, IntegrateContextPacket
-from chorus.heartbeat._invokability import invokability_block
+from chorus.heartbeat._execution_profile import (
+    ExecutionProfileResolver,
+    ResolvedExecutionProfile,
+)
+from chorus.heartbeat._invokability import InvokabilityReason, invokability_block
 from chorus.heartbeat._runner_for import single
 from chorus.heartbeat._wake import TickReport, Wake
 from chorus.ids import mint_id
@@ -39,7 +44,9 @@ from chorus.ledger._models import (
     Artifact,
     ArtifactType,
     CostEvent,
+    DelegationContractStatus,
     DodStatus,
+    ExecutionMode,
     Monitor,
     MonitorRecoveryPolicy,
     MonitorStatus,
@@ -51,6 +58,7 @@ from chorus.ledger._models import (
     WakeReason,
 )
 from chorus.lifecycle import TERMINAL, record_activity
+from chorus.lifecycle._team_policy import MissionTeamPolicy
 from chorus.memory import EpisodicStore, SprintDelta, beat_fingerprint
 from chorus.outcomes import AgentReview, DoDKind, ReviewedBuild, Verifier
 from chorus.recovery import reconcile
@@ -69,6 +77,7 @@ if TYPE_CHECKING:
     from chorus.workforce import Employee, Workforce
 
 _T = TypeVar("_T")
+_logger = logging.getLogger("chorus.heartbeat.scheduler")
 
 
 @runtime_checkable
@@ -94,6 +103,15 @@ class _ReviewRunnerFor(Protocol):
     """
 
     def review_runner_for(
+        self, reviewer: Employee, *, task_id: str, worktree_owner_id: str
+    ) -> BeatRunner: ...
+
+
+@runtime_checkable
+class _VerificationRunnerFor(Protocol):
+    """Materialize a reviewer that can inspect but cannot write a verdict or mutate work."""
+
+    def verification_runner_for(
         self, reviewer: Employee, *, task_id: str, worktree_owner_id: str
     ) -> BeatRunner: ...
 
@@ -396,7 +414,7 @@ class Scheduler:
         # (a) RECOVER — reap orphaned leases + reconcile stranded work before any new dispatch, so
         # a crashed beat's lock is freed and its slot returned to the budget this same pulse.
         swept = reconcile(ledger, now=now)
-        recovered = len(swept.reaped_runs)
+        recovered = len(swept.reaped_runs) + self._recover_landed_delegations(ledger)
 
         # (b) CRON — fire due routines (each firing double-fire-guarded; writes a task, never a beat).
         routines_fired = 0
@@ -457,6 +475,39 @@ class Scheduler:
             stale = ledger.tasks.get(str(wake.payload["task_id"]))
             if stale is None or stale.status in TERMINAL:
                 ledger.wakes.mark_done(wake.id)
+                continue
+            employee = ledger.employees.get(wake.employee_id)
+            if (
+                employee is not None
+                and employee.role == "manager"
+                and ledger.management_profiles.get(employee.id) is None
+            ):
+                reason = InvokabilityReason.UNMIGRATED_MANAGER
+                task_id = str(wake.payload["task_id"])
+                _logger.warning(
+                    "refusing dispatch for unmigrated Manager %s; run workforce "
+                    "specialize-manager before retrying",
+                    employee.id,
+                )
+                ledger.wakes.mark_done(wake.id)
+                ledger.tasks.set_status(task_id, TaskStatus.BLOCKED)
+                if ledger.recovery_actions.active_for_source(task_id) is None:
+                    ledger.recovery_actions.open(
+                        RecoveryAction(
+                            id=mint_id("rec"),
+                            source_task_id=task_id,
+                            kind=RecoveryKind.STRANDED,
+                            owner_user_id="operator",
+                            cause=reason.value,
+                            fingerprint=employee.id,
+                            evidence={"employee_id": employee.id, "role": employee.role},
+                            next_action=(
+                                "run workforce specialize-manager with an explicit profession "
+                                "and management profile"
+                            ),
+                        )
+                    )
+                invokability_skipped += 1
                 continue
             # Gate 0 (spec 06 §3): a dead, orphaned, or paused identity never starts a beat. A
             # terminal verdict cancels the wake and its task; a paused one releases it to wait.
@@ -639,10 +690,32 @@ class Scheduler:
             raise KeyError(task_id)
         employee = workforce.get(wake.employee_id)
 
+        if (
+            task.execution_mode is ExecutionMode.DELEGATION
+            and ledger.tasks.all_children_terminal(task.id)
+        ):
+            contract = ledger.delegation_contracts.active_for_task(task.id)
+            if contract is not None and contract.status is DelegationContractStatus.DELEGATED:
+                ledger.delegation_contracts.update_status(
+                    task.id, DelegationContractStatus.INTEGRATING
+                )
+
+        execution_profile: ResolvedExecutionProfile | None = None
+        profile_error: Exception | None = None
+        if self._roles is not None and employee.role in self._roles:
+            try:
+                execution_profile = ExecutionProfileResolver(self._roles, ledger).resolve(
+                    employee, task
+                )
+            except Exception as exc:
+                profile_error = exc
+
         # begin_execution — mint the run row the checkout lock already points at, with a fresh lease.
         # The lease TTL is the assignee role's (a research-heavy role widens it past the org default),
         # so a beat that blocks for minutes inside one uninterrupted subagent call isn't reaped.
-        lease = now + timedelta(seconds=self._lease_seconds_for(employee))
+        lease = now + timedelta(
+            seconds=self._lease_seconds_for(employee, execution_profile=execution_profile)
+        )
         ledger.runs.create(
             Run(
                 id=run_id,
@@ -658,8 +731,14 @@ class Scheduler:
         # Integrate-iteration cap (M3 §5): a manager that keeps spawning follow-ups would re-park /
         # re-integrate forever, bounded only by budget. Past the cap, accept the completed subtree
         # mechanically — no further adaptive beat — so the loop is bounded.
-        if await self._maybe_cap_integrate(
-            ledger, wake=wake, run_id=run_id, task=task, employee=employee, now=now
+        if profile_error is None and await self._maybe_cap_integrate(
+            ledger,
+            wake=wake,
+            run_id=run_id,
+            task=task,
+            employee=employee,
+            execution_profile=execution_profile,
+            now=now,
         ):
             return
 
@@ -672,6 +751,8 @@ class Scheduler:
         working_dir: Path | None = None
         base_sha: str | None = None
         try:
+            if profile_error is not None:
+                raise profile_error
             # Resolve the runner for *this* employee's role + beat phase (an integrate beat — the task
             # already has children — is materialized without ``decompose``, spec 06 §2 / M3 §5).
             beat_runner = beat_runner_for.runner_for(employee, task_id=task_id)
@@ -684,14 +765,8 @@ class Scheduler:
             # Intake DoD (spec 04 §1 / 06 §2): a task with no explicit DoD inherits its assignee role's, so
             # a beat is always held to the role's gate — the engineer to its tests, etc. A DoD a human set
             # via ``dod set`` always wins (only filled when absent). Persisted so ``task <id>`` shows it.
-            if (
-                self._roles is not None
-                and employee.role in self._roles
-                and ledger.dod.get_for_task(task_id) is None
-            ):
-                ledger.dod.create(
-                    task_id, self._roles.get(employee.role).dod_generator(task.intent)
-                )
+            if execution_profile is not None and ledger.dod.get_for_task(task_id) is None:
+                ledger.dod.create(task_id, execution_profile.verifier)
             # The DoD's objective checks ride into the beat: dream's evaluator runs them as the
             # acceptance gate, so ``done`` means plan-complete *and* the Command gate passed (spec 04 §1).
             verifier = ledger.dod.verifier_for_task(task_id)
@@ -730,6 +805,22 @@ class Scheduler:
             if not ledger.tasks.all_children_terminal(task_id):
                 # PARK (delegated) — wait for the children; not done, not failed, no recovery ladder.
                 ledger.tasks.set_status(task_id, TaskStatus.BLOCKED)
+            elif task.execution_mode is ExecutionMode.DELEGATION:
+                await self._finish_delegation_parent(
+                    task=task,
+                    run_id=run_id,
+                    verifier=verifier,
+                    verdict=verdict,
+                    employee=employee,
+                    result=result,
+                    beat_runner=beat_runner,
+                    outcome_kind=(
+                        execution_profile.outcome_kind
+                        if execution_profile is not None
+                        else None
+                    ),
+                    now=now,
+                )
             elif (
                 self._integrate_floor_verdict(task_id, verifier=verifier, beat_runner=beat_runner)
                 is False
@@ -754,6 +845,11 @@ class Scheduler:
                     verdict=verdict,
                     employee=employee,
                     result=result,
+                    outcome_kind=(
+                        execution_profile.outcome_kind
+                        if execution_profile is not None
+                        else None
+                    ),
                     now=now,
                 )
         elif result.disposition is BeatDisposition.ERRORED:
@@ -771,6 +867,11 @@ class Scheduler:
                 verdict=verdict,
                 employee=employee,
                 result=result,
+                outcome_kind=(
+                    execution_profile.outcome_kind
+                    if execution_profile is not None
+                    else None
+                ),
                 now=now,
             )
         else:
@@ -795,6 +896,11 @@ class Scheduler:
             employee=employee,
             task=task,
             result=result,
+            memory_scope=(
+                execution_profile.config.memory_scope
+                if execution_profile is not None
+                else self._memory_scope(employee)
+            ),
             now=now,
             working_dir=working_dir,
             base_sha=base_sha,
@@ -811,6 +917,7 @@ class Scheduler:
         employee: Employee,
         task: Task,
         result: BeatOutcome,
+        memory_scope: str | None = None,
         now: datetime,
         working_dir: Path | None,
         base_sha: str | None,
@@ -834,7 +941,7 @@ class Scheduler:
             employee=employee,
             task=task,
             result=result,
-            scope=self._memory_scope(employee),
+            scope=memory_scope or self._memory_scope(employee),
             now=now,
             files_touched=files_touched,
             artifacts=artifacts,
@@ -883,6 +990,241 @@ class Scheduler:
                 return False
         return True
 
+    async def _finish_delegation_parent(
+        self,
+        *,
+        task: Task,
+        run_id: str,
+        verifier: Verifier | None,
+        verdict: dict[str, object] | None,
+        employee: Employee,
+        result: BeatOutcome,
+        beat_runner: BeatRunner | None,
+        outcome_kind: str | None,
+        now: datetime,
+    ) -> None:
+        """Require lead acceptance and an independent gate before closing delegated work."""
+        ledger = self._require_ledger()
+        contract = ledger.delegation_contracts.active_for_task(task.id)
+        if contract is None:
+            raise RuntimeError(f"delegation task {task.id!r} has no active contract")
+        if not self._required_descendants_passed(task.id):
+            ledger.tasks.set_status(task.id, TaskStatus.BLOCKED)
+            ledger.wakes.enqueue(
+                Wake(
+                    id=mint_id("wake"),
+                    employee_id=employee.id,
+                    reason=WakeReason.CHILDREN_DONE,
+                    payload={"task_id": task.id, "cause": "required_descendant_failed"},
+                )
+            )
+            return
+        with ledger.transaction():
+            ledger.delegation_contracts.accept_for_verification(task.id, run_id)
+            record_activity(
+                ledger,
+                verb=ActivityVerb.LEAD_ACCEPTED,
+                subject_kind="delegation_contract",
+                subject_id=task.id,
+                actor_employee_id=employee.id,
+                payload={"run_id": run_id},
+            )
+
+        floor_passed = self._integrate_floor_verdict(
+            task.id,
+            verifier=verifier,
+            beat_runner=beat_runner,
+        )
+        review_passed, reviewer_id, verification_run_id = await self._verify_delegation_parent(
+            task=task,
+            lead=employee,
+            verifier=verifier,
+            now=now,
+        )
+        verified = result.passed and review_passed and floor_passed is not False
+        if not verified:
+            with ledger.transaction():
+                ledger.delegation_contracts.update_status(
+                    task.id, DelegationContractStatus.INTEGRATING
+                )
+                record_activity(
+                    ledger,
+                    verb=ActivityVerb.PARENT_VERIFIED,
+                    subject_kind="delegation_contract",
+                    subject_id=task.id,
+                    payload={
+                        "passed": False,
+                        "run_id": run_id,
+                        "reviewer_id": reviewer_id,
+                        "verification_run_id": verification_run_id,
+                    },
+                )
+                ledger.finalize_beat(
+                    task_id=task.id,
+                    run_id=run_id,
+                    dod_status=DodStatus.FAILED,
+                    verdict=verdict,
+                )
+                ledger.tasks.set_status(task.id, TaskStatus.BLOCKED)
+                ledger.wakes.enqueue(
+                    Wake(
+                        id=mint_id("wake"),
+                        employee_id=employee.id,
+                        reason=WakeReason.CHILDREN_DONE,
+                        payload={"task_id": task.id},
+                    )
+                )
+            return
+
+        await self._land_passed(
+            task.id,
+            run_id=run_id,
+            verifier=verifier,
+            verdict=verdict,
+            employee=employee,
+            result=result,
+            outcome_kind=outcome_kind,
+            now=now,
+        )
+        self._close_verified_delegation(
+            task.id,
+            run_id=run_id,
+            recovered=False,
+            reviewer_id=reviewer_id,
+            verification_run_id=verification_run_id,
+        )
+
+    def _required_descendants_passed(self, task_id: str) -> bool:
+        """Require every persisted parent gate, or every legacy direct child, to be done."""
+        ledger = self._require_ledger()
+        required_ids = ledger.dependencies.blockers(task_id)
+        required = (
+            [ledger.tasks.get(child_id) for child_id in required_ids]
+            if required_ids
+            else list(ledger.tasks.children(task_id))
+        )
+        return bool(required) and all(
+            child is not None and child.status is TaskStatus.DONE for child in required
+        )
+
+    async def _verify_delegation_parent(
+        self,
+        *,
+        task: Task,
+        lead: Employee,
+        verifier: Verifier | None,
+        now: datetime,
+    ) -> tuple[bool, str | None, str | None]:
+        """Run the integrated parent gate under a distinct, read-only Reviewer identity."""
+        ledger = self._require_ledger()
+        reviewer = self._resolve_reviewer(reviewer_role="reviewer", author_id=lead.id)
+        if reviewer is None:
+            return False, None, None
+        verification_run_id = mint_id("rev")
+        runner = self._verification_runner(
+            reviewer,
+            task_id=task.id,
+            worktree_owner_id=lead.id,
+        )
+        ledger.runs.create(
+            Run(
+                id=verification_run_id,
+                employee_id=reviewer.id,
+                task_id=task.id,
+                status=RunStatus.RUNNING,
+                lease_expires_at=now + timedelta(seconds=self._lease_seconds_for(reviewer)),
+                started_at=now,
+            )
+        )
+        worktree = runner.working_dir if isinstance(runner, _RunnerWithWorkingDir) else None
+        if worktree is not None:
+            BeatContext(
+                task_id=task.id,
+                run_id=verification_run_id,
+                employee_id=reviewer.id,
+            ).write(worktree)
+        rubric = verifier.rubric() if verifier is not None else task.intent
+        try:
+            review = await runner.run_task(
+                task_id=task.id,
+                run_id=verification_run_id,
+                intent=(
+                    f"Independently verify the integrated delegated objective: {task.intent}\n"
+                    f"Objective rubric: {rubric}\n"
+                    "Inspect the assembled result read-only and return a passing outcome only when "
+                    "the objective is satisfied."
+                ),
+                rubric=rubric,
+                observer=self._event_bus.emit if self._event_bus is not None else None,
+            )
+        except Exception as exc:
+            review = failure_outcome(exc)
+        ledger.runs.finish(
+            verification_run_id,
+            RunStatus.SUCCEEDED if review.passed else RunStatus.FAILED,
+            outcome=review.outcome or None,
+        )
+        return review.passed, reviewer.id, verification_run_id
+
+    def _recover_landed_delegations(self, ledger: SqliteLedger) -> int:
+        """Close delegation metadata left behind after a verified parent landed."""
+        recovered = 0
+        for contract in ledger.delegation_contracts.landed_awaiting_closure():
+            if contract.accepted_run_id is None:
+                continue
+            if self._close_verified_delegation(
+                contract.task_id,
+                run_id=contract.accepted_run_id,
+                recovered=True,
+            ):
+                recovered += 1
+        return recovered
+
+    def _close_verified_delegation(
+        self,
+        task_id: str,
+        *,
+        run_id: str,
+        recovered: bool,
+        reviewer_id: str | None = None,
+        verification_run_id: str | None = None,
+    ) -> bool:
+        """Atomically record verification, close the contract, and archive its Team."""
+        ledger = self._require_ledger()
+        with ledger.transaction():
+            contract = ledger.delegation_contracts.get(task_id)
+            if contract is None or contract.status is DelegationContractStatus.DONE:
+                return False
+            if contract.status is not DelegationContractStatus.VERIFYING:
+                raise RuntimeError(
+                    f"delegation task {task_id!r} cannot close from {contract.status.value!r}"
+                )
+            record_activity(
+                ledger,
+                verb=ActivityVerb.PARENT_VERIFIED,
+                subject_kind="delegation_contract",
+                subject_id=task_id,
+                payload={
+                    "passed": True,
+                    "run_id": run_id,
+                    **({"reviewer_id": reviewer_id} if reviewer_id is not None else {}),
+                    **(
+                        {"verification_run_id": verification_run_id}
+                        if verification_run_id is not None
+                        else {}
+                    ),
+                    **({"recovered": True} if recovered else {}),
+                },
+            )
+            ledger.delegation_contracts.update_status(task_id, DelegationContractStatus.DONE)
+            MissionTeamPolicy(ledger).archive(contract.team_id)
+            if recovered:
+                ledger.tasks.release_locks(task_id, run_id=run_id)
+                run = ledger.runs.get(run_id)
+                if run is not None and run.wake_id is not None:
+                    ledger.wakes.mark_done(run.wake_id)
+        return True
+
     async def _maybe_cap_integrate(
         self,
         ledger: SqliteLedger,
@@ -891,6 +1233,7 @@ class Scheduler:
         run_id: str,
         task: Task,
         employee: Employee,
+        execution_profile: ResolvedExecutionProfile | None,
         now: datetime,
     ) -> bool:
         """At the integrate-iteration cap, accept the completed subtree mechanically — no model beat.
@@ -901,8 +1244,37 @@ class Scheduler:
         """
         if not (ledger.tasks.has_children(task.id) and ledger.tasks.all_children_terminal(task.id)):
             return False
-        if IntegrateContextPacket.iteration_for(ledger, task.id) <= self.max_integrate_iterations:
+        iteration = IntegrateContextPacket.iteration_for(ledger, task.id)
+        if iteration <= self.max_integrate_iterations:
             return False
+        if task.execution_mode is ExecutionMode.DELEGATION:
+            evidence: dict[str, object] = {
+                "iteration": iteration,
+                "cap": self.max_integrate_iterations,
+                "contract_task_id": task.id,
+            }
+            with ledger.transaction():
+                ledger.runs.finish(run_id, RunStatus.FAILED, outcome=evidence)
+                ledger.tasks.set_status(task.id, TaskStatus.BLOCKED)
+                ledger.delegation_contracts.update_status(
+                    task.id, DelegationContractStatus.BLOCKED
+                )
+                if ledger.recovery_actions.active_for_source(task.id) is None:
+                    ledger.recovery_actions.open(
+                        RecoveryAction(
+                            id=mint_id("rec"),
+                            source_task_id=task.id,
+                            kind=RecoveryKind.STRANDED,
+                            owner_employee_id=employee.id,
+                            cause="integrate_iteration_exhausted",
+                            fingerprint="integrate_iteration",
+                            evidence=evidence,
+                            next_action="human review of delegated objective and Team plan",
+                        )
+                    )
+            ledger.tasks.release_locks(task.id, run_id=run_id)
+            ledger.wakes.mark_done(wake.id)
+            return True
         verifier = ledger.dod.verifier_for_task(task.id)
         beat_runner_for = self._require(self._beat_runner_for, "beat_runner")
         beat_runner = beat_runner_for.runner_for(employee, task_id=task.id)
@@ -928,6 +1300,11 @@ class Scheduler:
                 result=BeatOutcome(
                     passed=True, outcome={}, summary="integrated (iteration cap reached)"
                 ),
+                outcome_kind=(
+                    execution_profile.outcome_kind
+                    if execution_profile is not None
+                    else None
+                ),
                 now=now,
             )
         ledger.tasks.release_locks(task.id, run_id=run_id)
@@ -949,6 +1326,7 @@ class Scheduler:
         verdict: dict[str, object] | None,
         employee: Employee,
         result: BeatOutcome,
+        outcome_kind: str | None,
         now: datetime,
     ) -> None:
         """A passed beat lands its role's outcome, then ``done`` — unless a person or reviewer decides.
@@ -987,10 +1365,17 @@ class Scheduler:
             and not ledger.tasks.has_children(task_id)
         ):
             await self._run_review(
-                task_id, verifier=verifier, author=employee, work_result=result, now=now
+                task_id,
+                verifier=verifier,
+                author=employee,
+                work_result=result,
+                author_outcome_kind=outcome_kind,
+                now=now,
             )
             return
-        await self._land_outcome(task_id, employee=employee, result=result)
+        await self._land_outcome(
+            task_id, employee=employee, result=result, outcome_kind=outcome_kind
+        )
         ledger.finalize_beat(
             task_id=task_id, run_id=run_id, dod_status=DodStatus.PASSED, verdict=verdict
         )
@@ -1002,6 +1387,7 @@ class Scheduler:
         verifier: Verifier,
         author: Employee,
         work_result: BeatOutcome,
+        author_outcome_kind: str | None,
         now: datetime,
     ) -> None:
         """Dispatch a read-only Reviewer beat as the verification step for a reviewer-gated DoD.
@@ -1079,7 +1465,12 @@ class Scheduler:
         await self._land_outcome(
             task_id, employee=reviewer, result=result
         )  # the `verdict` artifact
-        await self._land_outcome(task_id, employee=author, result=work_result)
+        await self._land_outcome(
+            task_id,
+            employee=author,
+            result=work_result,
+            outcome_kind=author_outcome_kind,
+        )
         dod_after = ledger.dod.get_for_task(task_id)
         ledger.finalize_beat(
             task_id=task_id,
@@ -1207,6 +1598,25 @@ class Scheduler:
             )
         return beat_runner_for.runner_for(reviewer, task_id=task_id)
 
+    def _verification_runner(
+        self, reviewer: Employee, *, task_id: str, worktree_owner_id: str
+    ) -> BeatRunner:
+        """Resolve the strict verifier seam, with compatibility fallbacks for test runners."""
+        beat_runner_for = self._require(self._beat_runner_for, "beat_runner")
+        if isinstance(beat_runner_for, _VerificationRunnerFor):
+            return beat_runner_for.verification_runner_for(
+                reviewer,
+                task_id=task_id,
+                worktree_owner_id=worktree_owner_id,
+            )
+        if isinstance(beat_runner_for, _ReviewRunnerFor):
+            return beat_runner_for.review_runner_for(
+                reviewer,
+                task_id=task_id,
+                worktree_owner_id=worktree_owner_id,
+            )
+        return beat_runner_for.runner_for(reviewer, task_id=task_id)
+
     def _review_intent(
         self, task_id: str, verifier: Verifier, rubric: str, *, worktree: Path | None = None
     ) -> str:
@@ -1270,28 +1680,48 @@ class Scheduler:
             )
         )
 
-    def _lease_seconds_for(self, employee: Employee) -> float:
+    def _lease_seconds_for(
+        self,
+        employee: Employee,
+        *,
+        execution_profile: ResolvedExecutionProfile | None = None,
+    ) -> float:
         """The run-lease TTL for a beat of ``employee``'s role — the role's override, else the default.
 
         A research-heavy role (one that spawns a multi-minute ``web_research`` sweep in a single
         uninterrupted call, unable to renew its lease meanwhile) sets a larger ``lease_ttl_s`` so the
         stale-run reaper doesn't claim its still-live beat at the org default (spec 06 §2).
         """
+        if (
+            execution_profile is not None
+            and execution_profile.config.lease_ttl_s is not None
+        ):
+            return execution_profile.config.lease_ttl_s
         if self._roles is not None and employee.role in self._roles:
             ttl = self._roles.get(employee.role).manifest.lease_ttl_s
             if ttl is not None:
                 return ttl
         return self.lease_ttl_s
 
-    async def _land_outcome(self, task_id: str, *, employee: Employee, result: BeatOutcome) -> None:
+    async def _land_outcome(
+        self,
+        task_id: str,
+        *,
+        employee: Employee,
+        result: BeatOutcome,
+        outcome_kind: str | None = None,
+    ) -> None:
         """Record the role's deliverable as an artifact via its registered lander (spec 04 §2).
 
         A no-op when no lander registry is wired or the employee's role lands no artifact kind — the
         beat still finalises ``done``, so landing is purely additive (the strict-completion record).
         """
-        if self._landers is None or self._roles is None or employee.role not in self._roles:
+        if self._landers is None:
             return
-        outcome_kind = self._roles.get(employee.role).outcome_kind
+        if outcome_kind is None:
+            if self._roles is None or employee.role not in self._roles:
+                return
+            outcome_kind = self._roles.get(employee.role).outcome_kind
         lander = self._landers.get(outcome_kind)
         if lander is None:
             return

@@ -55,14 +55,14 @@ class ActivityRepo:
         """One row's audit history, oldest first."""
         rows = self._conn.execute(
             "SELECT * FROM activity WHERE subject_kind = ? AND subject_id = ? "
-            "ORDER BY occurred_at, id",
+            "ORDER BY occurred_at, rowid",
             (subject_kind, subject_id),
         ).fetchall()
         return [_row_to_activity(row) for row in rows]
 
     def all(self) -> list[Activity]:
         """Every audit row, oldest first — for read-model rollups."""
-        rows = self._conn.execute("SELECT * FROM activity ORDER BY occurred_at, id").fetchall()
+        rows = self._conn.execute("SELECT * FROM activity ORDER BY occurred_at, rowid").fetchall()
         return [_row_to_activity(row) for row in rows]
 
     def recent(self, *, limit: int) -> list[Activity]:
@@ -74,7 +74,7 @@ class ActivityRepo:
         if limit <= 0:
             raise ValueError("limit must be positive")
         rows = self._conn.execute(
-            "SELECT * FROM activity ORDER BY occurred_at DESC, id DESC LIMIT ?", (limit,)
+            "SELECT * FROM activity ORDER BY occurred_at DESC, rowid DESC LIMIT ?", (limit,)
         ).fetchall()
         return [_row_to_activity(row) for row in rows]
 

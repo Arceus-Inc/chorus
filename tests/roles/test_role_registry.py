@@ -13,6 +13,7 @@ from chorus.roles import (
     RoleRegistry,
     default_roles,
 )
+from chorus_employee.manager import manager_plugin
 
 pytestmark = pytest.mark.unit
 
@@ -38,7 +39,6 @@ def test_default_roles_register_cleanly() -> None:
         "engineer",
         "backend_engineer",
         "reviewer",
-        "manager",
         "pm",
         "analyst",
         "marketer",
@@ -46,6 +46,13 @@ def test_default_roles_register_cleanly() -> None:
         "frontend_engineer",
         "ceo",
     }
+
+
+def test_manager_plugin_warns_with_explicit_migration_command() -> None:
+    with pytest.warns(DeprecationWarning, match="specialize-manager"):
+        plugin = manager_plugin()
+
+    assert plugin.name == "manager"
 
 
 def test_get_returns_the_plugin() -> None:

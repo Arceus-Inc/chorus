@@ -12,7 +12,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
 
-from chorus.ledger import TaskStatus
+from chorus.ledger import DelegationContractStatus, TaskStatus, TeamStatus
 from chorus.ledger._models import (
     RoutineCatchUp,
     RoutineConcurrency,
@@ -95,6 +95,55 @@ class WorkforceStatus:
     running_beats: int = 0
     blocked: tuple[TaskView, ...] = field(default_factory=tuple)
     open_incidents: tuple[IncidentView, ...] = field(default_factory=tuple)
+
+
+@dataclass(frozen=True)
+class TeamView:
+    """A durable Team with its current responsibility membership."""
+
+    id: str
+    name: str
+    lead_employee_id: str
+    status: TeamStatus
+    policy_version: int
+    created_by: str
+    goal_id: str | None = None
+    parent_team_id: str | None = None
+    member_employee_ids: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class DelegationContractView:
+    """Pinned delegation authority and its current lifecycle state."""
+
+    task_id: str
+    team_id: str
+    lead_employee_id: str
+    management_profile_version: int
+    objective_rubric: str
+    status: DelegationContractStatus
+    parent_contract_task_id: str | None = None
+    can_subdelegate: bool = False
+    max_depth: int = 0
+    max_team_size: int = 1
+    spend_limit_cents: int | None = None
+    accepted_run_id: str | None = None
+
+
+@dataclass(frozen=True)
+class ManagementProfileView:
+    """Current bounded human-granted management authority for one specialist."""
+
+    employee_id: str
+    granted_by_user_id: str
+    active: bool
+    can_lead: bool
+    can_subdelegate: bool
+    max_delegation_depth: int
+    max_team_size: int
+    allowed_professions: tuple[str, ...]
+    spend_limit_cents: int | None
+    version: int
 
 
 @dataclass(frozen=True)
@@ -195,8 +244,10 @@ class RoutineView:
 
 
 __all__ = [
+    "DelegationContractView",
     "EmployeeView",
     "IncidentView",
+    "ManagementProfileView",
     "OrgObservabilityReport",
     "RoutineRunView",
     "RoutineTriggerView",
@@ -205,5 +256,6 @@ __all__ = [
     "ScrumChildView",
     "ScrumPacketView",
     "TaskView",
+    "TeamView",
     "WorkforceStatus",
 ]

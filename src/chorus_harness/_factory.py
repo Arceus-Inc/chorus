@@ -29,7 +29,7 @@ from dream.tools._registry import ToolRegistry, ToolSource
 from dream.tools.builtin import default_registry
 
 from chorus.adapters import DreamBeatRunner, TokenPricing
-from chorus.heartbeat import BeatRunner, IntegrateContextPacket
+from chorus.heartbeat import BeatRunner, ExecutionProfileResolver, IntegrateContextPacket
 from chorus.memory import EpisodicRecallService, EpisodicStore
 from chorus.outcomes import LanderRegistry, runtime_brief_block
 from chorus.roles import RoleBeatConfig, RoleRegistry, role_beat_config
@@ -58,6 +58,7 @@ from chorus_tools import (
     SecretScanTool,
     SubmitTaskTool,
     SubmitVerdictTool,
+    TeamReadTool,
     TestEvidenceTool,
     analysis_tool,
     governance_tool,
@@ -282,6 +283,8 @@ def _capability_tool(name: str, ledger: SqliteLedger | None) -> BaseTool | None:
             return SubmitTaskTool(ledger)
         if name == "assign_task":
             return AssignTaskTool(ledger)
+        if name == "team_read":
+            return TeamReadTool(ledger)
         if name == "submit_verdict":
             return SubmitVerdictTool(ledger)
         if name == "stage_go_live":
@@ -318,7 +321,9 @@ _DELEGATING_TOOLS = frozenset({"decompose", "submit_task", "assign_task"})
 _REACTIVE_TOOLS = frozenset({"submit_task", "assign_task"})
 
 
-def _team_roster(ledger: SqliteLedger, *, exclude: str) -> str:
+def _team_roster(
+    ledger: SqliteLedger, *, exclude: str, team_id: str | None = None
+) -> str:
     """The employee's direct reports (id + role), so a delegator names valid assignees.
 
     When any report is itself a *manager*, the delegator is a director: it must hand each manager a
@@ -327,7 +332,19 @@ def _team_roster(ledger: SqliteLedger, *, exclude: str) -> str:
     goal into one file per manager (so whole areas are silently lost) and then, on integrate, re-submits
     the area a manager already delivered instead of the area that is still missing.
     """
-    reports = [emp for emp in ledger.employees.list() if emp.reports_to == exclude]
+    if team_id is None:
+        reports = [emp for emp in ledger.employees.list() if emp.reports_to == exclude]
+    else:
+        member_ids = {
+            member.employee_id
+            for member in ledger.team_members.members_of(team_id)
+            if member.employee_id != exclude
+        }
+        reports = [
+            emp
+            for emp in ledger.employees.list()
+            if emp.id in member_ids and emp.reports_to == exclude
+        ]
     lines = [f"- {emp.id} ({emp.role})" for emp in reports]
     body = "\n".join(lines) if lines else "(no other employees are currently hired)"
     roster = (
@@ -560,12 +577,24 @@ class EmployeeHarnessFactory:
             reviewer, task_id=task_id, review_worktree_of=worktree_owner_id
         ).runner
 
+    def verification_runner_for(
+        self, reviewer: Employee, *, task_id: str, worktree_owner_id: str
+    ) -> BeatRunner:
+        """Build a read-only reviewer that returns evidence without mutating the task DoD."""
+        return self.materialize(
+            reviewer,
+            task_id=task_id,
+            review_worktree_of=worktree_owner_id,
+            verification_only=True,
+        ).runner
+
     def materialize(
         self,
         employee: Employee,
         *,
         task_id: str | None = None,
         review_worktree_of: str | None = None,
+        verification_only: bool = False,
     ) -> EmployeeHarness:
         """Resolve ``employee``'s role into a configured dream harness in its isolated worktree.
 
@@ -580,8 +609,6 @@ class EmployeeHarnessFactory:
         """
         if employee.role not in self._roles:
             raise ValueError(f"role {employee.role!r} for {employee.id!r} is not a registered role")
-        manifest = self._roles.get(employee.role).manifest
-        config = role_beat_config(manifest)
 
         # §4 trust: narrow the harness to the task's effective preset (read-only / plan for a low-trust
         # beat) and assert containment. A TrustDenied propagates — an uncontained beat is not built.
@@ -590,19 +617,29 @@ class EmployeeHarnessFactory:
             if task_id is not None and self._ledger is not None
             else None
         )
+        if self._ledger is None or review_worktree_of is not None:
+            config = role_beat_config(self._roles.get(employee.role).manifest)
+        else:
+            config = ExecutionProfileResolver(self._roles, self._ledger).resolve(
+                employee, task
+            ).config
         config = apply_trust(config, task=task, policy=self._trust_policy)
+        if verification_only:
+            config = replace(
+                config,
+                tools=tuple(tool for tool in config.tools if tool != "submit_verdict"),
+            )
 
-        # Structural over-decompose guard: on an integrate beat the parent already owns children, so
-        # ``decompose`` is dropped from the toolset entirely — the model never sees it (M3 §5). Brief
-        # discipline alone is not enough; under load a manager re-decomposes and balloons the subtree.
+        # Persisted contract status selects the phase-specific management tools in the execution
+        # profile. Child presence is retained only for worktree synchronization and the completed
+        # subtree guard; it is not an authority source.
         is_integrate_beat = (
             task_id is not None
             and self._ledger is not None
             and self._ledger.tasks.has_children(task_id)
         )
-        if is_integrate_beat and "decompose" in config.tools:
+        if is_integrate_beat:
             assert task_id is not None and self._ledger is not None  # narrowed by is_integrate_beat
-            config = replace(config, tools=tuple(t for t in config.tools if t != "decompose"))
             # Structural over-submit guard: when the kernel's verdict is `accept` — every child done,
             # unblocked, and passing — the delegated work is complete, so submit_task/assign_task are
             # withheld too. The manager can only review and accept; it cannot bolt on redundant work.
@@ -615,7 +652,11 @@ class EmployeeHarnessFactory:
         # Team rehydration: a delegating role (decompose/submit/assign) gets its reports appended to its
         # brief, read live from the workforce — so the model assigns to real employee ids, not invented.
         if self._ledger is not None and _DELEGATING_TOOLS.intersection(config.tools):
-            roster = _team_roster(self._ledger, exclude=employee.id)
+            roster = _team_roster(
+                self._ledger,
+                exclude=employee.id,
+                team_id=task.team_id if task is not None else None,
+            )
             config = replace(config, system_prompt=config.system_prompt + roster)
 
         # Operating environment: a role that RUNS commands (a build engineer) gets a factual runtime

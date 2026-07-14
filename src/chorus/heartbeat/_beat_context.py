@@ -12,11 +12,11 @@ this one model so the on-disk shape can't drift between them.
 from __future__ import annotations
 
 import json
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from chorus.ledger._models import ActivityVerb, TaskStatus
+from chorus.ledger._models import ActivityVerb, ExecutionMode, TaskStatus
 from chorus.lifecycle._audit import record_activity
 
 if TYPE_CHECKING:
@@ -88,6 +88,19 @@ class ChildOutcomeContext:
 
 
 @dataclass(frozen=True)
+class NestedSubtreeSummary:
+    """Durable rollup context for one direct delegation-mode child."""
+
+    task_id: str
+    team_id: str | None
+    lead_employee_id: str | None
+    contract_status: str | None
+    task_status: str
+    child_count: int
+    terminal_child_count: int
+
+
+@dataclass(frozen=True)
 class IntegrateContextPacket:
     """The manager's scrum packet: parent goal, reports, and child feedback."""
 
@@ -97,6 +110,11 @@ class IntegrateContextPacket:
     recommended_action: str
     available_reports: tuple[ReportContext, ...]
     children: tuple[ChildOutcomeContext, ...]
+    team_id: str | None = None
+    contract_status: str | None = None
+    delegation_depth: int = 0
+    management_limits: dict[str, object] = field(default_factory=dict)
+    nested_subtree_summaries: tuple[NestedSubtreeSummary, ...] = ()
 
     @staticmethod
     def path_in(working_dir: Path) -> Path:
@@ -162,6 +180,7 @@ class IntegrateContextPacket:
             if manager_id is not None and emp.reports_to == manager_id
         )
         children = cls._children_for(ledger, parent_task_id)
+        contract = ledger.delegation_contracts.get(parent.id)
         packet = cls(
             parent_task_id=parent.id,
             parent_intent=parent.intent,
@@ -169,6 +188,20 @@ class IntegrateContextPacket:
             recommended_action=cls.recommend(children),
             available_reports=reports,
             children=children,
+            team_id=contract.team_id if contract is not None else parent.team_id,
+            contract_status=contract.status.value if contract is not None else None,
+            delegation_depth=_delegation_depth(ledger, contract.task_id) if contract else 0,
+            management_limits=(
+                {
+                    "can_subdelegate": contract.can_subdelegate,
+                    "max_depth": contract.max_depth,
+                    "max_team_size": contract.max_team_size,
+                    "spend_limit_cents": contract.spend_limit_cents,
+                }
+                if contract is not None
+                else {}
+            ),
+            nested_subtree_summaries=_nested_subtree_summaries(ledger, parent.id),
         )
         if audit:
             record_activity(
@@ -201,6 +234,9 @@ class IntegrateContextPacket:
         """Load a persisted integrate packet."""
         data = json.loads(cls.path_in(working_dir).read_text(encoding="utf-8"))
         children = tuple(ChildOutcomeContext(**item) for item in data["children"])
+        nested = tuple(
+            NestedSubtreeSummary(**item) for item in data.get("nested_subtree_summaries", ())
+        )
         return cls(
             parent_task_id=data["parent_task_id"],
             parent_intent=data["parent_intent"],
@@ -208,7 +244,53 @@ class IntegrateContextPacket:
             recommended_action=data.get("recommended_action") or cls.recommend(children),
             available_reports=tuple(ReportContext(**item) for item in data["available_reports"]),
             children=children,
+            team_id=data.get("team_id"),
+            contract_status=data.get("contract_status"),
+            delegation_depth=int(data.get("delegation_depth", 0)),
+            management_limits=dict(data.get("management_limits", {})),
+            nested_subtree_summaries=nested,
         )
+
+
+def _delegation_depth(ledger: SqliteLedger, task_id: str) -> int:
+    depth = 0
+    seen: set[str] = set()
+    contract = ledger.delegation_contracts.get(task_id)
+    while contract is not None and contract.parent_contract_task_id is not None:
+        if contract.task_id in seen:
+            raise RuntimeError(f"delegation contract cycle at {contract.task_id!r}")
+        seen.add(contract.task_id)
+        depth += 1
+        contract = ledger.delegation_contracts.get(contract.parent_contract_task_id)
+    return depth
+
+
+def _nested_subtree_summaries(
+    ledger: SqliteLedger, parent_task_id: str
+) -> tuple[NestedSubtreeSummary, ...]:
+    summaries: list[NestedSubtreeSummary] = []
+    terminal = {TaskStatus.DONE, TaskStatus.CANCELLED, TaskStatus.REJECTED}
+    for child in ledger.tasks.children(parent_task_id):
+        if child.execution_mode is not ExecutionMode.DELEGATION:
+            continue
+        contract = ledger.delegation_contracts.get(child.id)
+        descendants = ledger.tasks.children(child.id)
+        summaries.append(
+            NestedSubtreeSummary(
+                task_id=child.id,
+                team_id=contract.team_id if contract is not None else child.team_id,
+                lead_employee_id=(
+                    contract.lead_employee_id
+                    if contract is not None
+                    else child.assignee_employee_id
+                ),
+                contract_status=contract.status.value if contract is not None else None,
+                task_status=child.status.value,
+                child_count=len(descendants),
+                terminal_child_count=sum(1 for row in descendants if row.status in terminal),
+            )
+        )
+    return tuple(summaries)
 
 
 def _child_outcome(ledger: SqliteLedger, task_id: str) -> ChildOutcomeContext:

@@ -69,6 +69,7 @@ from chorus_tools._secret_scan import (
     write_report,
 )
 from chorus_tools._submit_verdict import SubmitVerdictInput, SubmitVerdictTool
+from chorus_tools._team_read import TeamReadInput, TeamReadTool
 from chorus_tools._test_evidence import (
     EvidenceManifest,
     GateResult,
@@ -132,6 +133,8 @@ __all__ = [
     "SubmitTaskTool",
     "SubmitVerdictInput",
     "SubmitVerdictTool",
+    "TeamReadInput",
+    "TeamReadTool",
     "TestEvidenceInput",
     "TestEvidenceTool",
     "WarehouseQueryTool",

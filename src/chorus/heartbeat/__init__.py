@@ -13,11 +13,18 @@ from chorus.heartbeat._beat_context import (
     IntegrateContextPacket,
     ReportContext,
 )
+from chorus.heartbeat._execution_profile import (
+    DELEGATION_BRIEF,
+    ExecutionProfileDenied,
+    ExecutionProfileResolver,
+    ResolvedExecutionProfile,
+)
 from chorus.heartbeat._runner_for import BeatRunnerFor, BeatRunnerForFn, runner_from, single
 from chorus.heartbeat._scheduler import PRIORITY_RANK, Scheduler
 from chorus.heartbeat._wake import TickReport, Wake, WakeReason, WakeStatus
 
 __all__ = [
+    "DELEGATION_BRIEF",
     "PRIORITY_RANK",
     "BeatContext",
     "BeatDisposition",
@@ -26,8 +33,11 @@ __all__ = [
     "BeatRunnerFor",
     "BeatRunnerForFn",
     "ChildOutcomeContext",
+    "ExecutionProfileDenied",
+    "ExecutionProfileResolver",
     "IntegrateContextPacket",
     "ReportContext",
+    "ResolvedExecutionProfile",
     "Scheduler",
     "TickReport",
     "Wake",

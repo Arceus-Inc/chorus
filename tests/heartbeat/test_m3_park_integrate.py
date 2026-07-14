@@ -16,7 +16,20 @@ import pytest
 
 from chorus.heartbeat import IntegrateContextPacket, Scheduler
 from chorus.heartbeat._beat import BeatOutcome
-from chorus.ledger import SqliteLedger, Task, TaskStatus
+from chorus.ledger import (
+    DelegationContract,
+    DelegationContractStatus,
+    ExecutionMode,
+    Goal,
+    ManagementProfile,
+    SqliteLedger,
+    Task,
+    TaskStatus,
+    Team,
+    TeamMember,
+    TeamMembershipRole,
+    TeamStatus,
+)
 from chorus.lifecycle import CapabilityService, ChildPlan, assign_task
 from chorus.roles import RoleRegistry, default_roles
 from chorus.workforce import Employee, LedgerWorkforce
@@ -25,6 +38,25 @@ from chorus_employee import default_landers
 pytestmark = pytest.mark.integration
 
 _NOW = datetime(2026, 6, 18, 12, 0, tzinfo=UTC)
+
+
+class _PassingVerifier:
+    async def run_task(self, **_: object) -> BeatOutcome:
+        return BeatOutcome(passed=True, outcome={}, summary="independently verified", model="m")
+
+
+class _RunnerFactory:
+    def __init__(self, beat: object) -> None:
+        self._beat = beat
+        self._verifier = _PassingVerifier()
+
+    def runner_for(self, employee: Employee, *, task_id: str) -> object:
+        return self._beat
+
+    def verification_runner_for(
+        self, reviewer: Employee, *, task_id: str, worktree_owner_id: str
+    ) -> object:
+        return self._verifier
 
 
 class _TeamBeat:
@@ -37,6 +69,7 @@ class _TeamBeat:
         self._parent = parent
         self.ran: list[str] = []
         self.integrate_packets: list[IntegrateContextPacket] = []
+        self.submission_results: list[object] = []
         self.working_dir = None
 
     async def run_task(
@@ -61,6 +94,7 @@ class _TeamBeat:
                             label="ui", intent="build the ui", assignee="bob", depends_on=("api",)
                         ),
                     ],
+                    actor_employee_id="mgr",
                 )
                 return BeatOutcome(passed=False, outcome={}, summary="delegated", model="m")
             assert self.working_dir is not None
@@ -69,10 +103,69 @@ class _TeamBeat:
         return BeatOutcome(passed=True, outcome={}, summary="ok", model="m")  # an engineer child
 
 
-def _team(ledger: SqliteLedger) -> None:
-    ledger.employees.create(Employee(id="mgr", name="Moe", role="manager"))
+def _delegated_parent(ledger: SqliteLedger) -> None:
+    ledger.employees.create(Employee(id="mgr", name="Moe", role="engineer"))
+    ledger.employees.create(Employee(id="reviewer", name="Rae", role="reviewer"))
     ledger.employees.create(Employee(id="ada", name="Ada", role="engineer", reports_to="mgr"))
     ledger.employees.create(Employee(id="bob", name="Bob", role="engineer", reports_to="mgr"))
+    ledger.management_profiles.upsert(
+        ManagementProfile(
+            employee_id="mgr",
+            granted_by_user_id="operator",
+            active=True,
+            can_lead=True,
+            max_delegation_depth=2,
+            max_team_size=3,
+            allowed_professions=("engineer",),
+        )
+    )
+    ledger.goals.create(Goal(id="goal-M", title="Ship the feature"))
+    ledger.teams.create(
+        Team(
+            id="team-M",
+            name="Feature Team",
+            lead_employee_id="mgr",
+            created_by="operator",
+            goal_id="goal-M",
+            status=TeamStatus.ACTIVE,
+        )
+    )
+    for employee_id, membership_role in (
+        ("mgr", TeamMembershipRole.LEAD),
+        ("ada", TeamMembershipRole.MEMBER),
+        ("bob", TeamMembershipRole.MEMBER),
+    ):
+        ledger.team_members.add(
+            TeamMember(
+                team_id="team-M",
+                employee_id=employee_id,
+                source_manager_id="mgr",
+                membership_role=membership_role,
+            )
+        )
+    ledger.tasks.submit(
+        Task(
+            id="M",
+            intent="ship the feature",
+            status=TaskStatus.TODO,
+            goal_id="goal-M",
+            execution_mode=ExecutionMode.DELEGATION,
+            team_id="team-M",
+        )
+    )
+    ledger.delegation_contracts.create(
+        DelegationContract(
+            task_id="M",
+            team_id="team-M",
+            lead_employee_id="mgr",
+            management_profile_version=1,
+            objective_rubric="the full feature is integrated and independently verified",
+            max_depth=2,
+            max_team_size=3,
+            status=DelegationContractStatus.DELEGATED,
+        )
+    )
+    assign_task(ledger, "M", "mgr")
 
 
 def _objective_roles() -> RoleRegistry:
@@ -101,7 +194,7 @@ def _sched(ledger: SqliteLedger, beat: _TeamBeat, *, tmp_path: object = None) ->
     return Scheduler(
         ledger=ledger,
         workforce=LedgerWorkforce(ledger.employees),
-        beat_runner=beat,
+        beat_runner_for=_RunnerFactory(beat),  # type: ignore[arg-type]
         roles=_objective_roles(),
         landers=default_landers(
             root, ledger=ledger
@@ -112,9 +205,7 @@ def _sched(ledger: SqliteLedger, beat: _TeamBeat, *, tmp_path: object = None) ->
 
 
 async def test_decompose_beat_parks_the_parent_not_strands_it(ledger: SqliteLedger) -> None:
-    _team(ledger)
-    ledger.tasks.submit(Task(id="M", intent="ship the feature", status=TaskStatus.TODO))
-    assign_task(ledger, "M", "mgr")
+    _delegated_parent(ledger)
     beat = _TeamBeat(ledger, parent="M")
     sched = _sched(ledger, beat)
 
@@ -123,6 +214,8 @@ async def test_decompose_beat_parks_the_parent_not_strands_it(ledger: SqliteLedg
 
     parent = ledger.tasks.get("M")
     assert parent is not None and parent.status is TaskStatus.BLOCKED  # PARKED, not failed
+    contract = ledger.delegation_contracts.get("M")
+    assert contract is not None and contract.status is DelegationContractStatus.DELEGATED
     assert ledger.recovery_actions.active_for_source("M") is None  # never stranded onto recovery
     # the two children exist, assigned, gating the parent
     assert set(
@@ -133,9 +226,7 @@ async def test_decompose_beat_parks_the_parent_not_strands_it(ledger: SqliteLedg
 async def test_full_loop_decompose_then_children_then_integrate_to_done(
     ledger: SqliteLedger, tmp_path: object
 ) -> None:
-    _team(ledger)
-    ledger.tasks.submit(Task(id="M", intent="ship the feature", status=TaskStatus.TODO))
-    assign_task(ledger, "M", "mgr")
+    _delegated_parent(ledger)
     beat = _TeamBeat(ledger, parent="M")
     sched = _sched(ledger, beat, tmp_path=tmp_path)
 
@@ -146,6 +237,8 @@ async def test_full_loop_decompose_then_children_then_integrate_to_done(
     assert ledger.tasks.get("M").status is TaskStatus.DONE  # type: ignore[union-attr]  # integrated
     assert ledger.tasks.all_children_terminal("M")  # the whole subtree landed
     assert beat.ran.count("M") == 2  # decompose beat, then real integrate beat
+    contract = ledger.delegation_contracts.get("M")
+    assert contract is not None and contract.status is DelegationContractStatus.DONE
     assert len(beat.integrate_packets) == 1
     assert {child.assignee for child in beat.integrate_packets[0].children} == {"ada", "bob"}
     # the ManagerLander recorded the subtree as the manager's primary deliverable
@@ -167,6 +260,7 @@ class _AdaptiveBeat:
         self._parent = parent
         self.ran: list[str] = []
         self.integrate_packets: list[IntegrateContextPacket] = []
+        self.submission_results: list[object] = []
         self.working_dir: object = None
         self._integrates = 0
 
@@ -194,6 +288,7 @@ class _AdaptiveBeat:
                     ChildPlan(label="api", intent="api", assignee="ada"),
                     ChildPlan(label="ui", intent="ui", assignee="bob"),
                 ],
+                actor_employee_id="mgr",
             )
             return BeatOutcome(passed=False, outcome={}, summary="delegated", model="m")
         self._integrates += 1
@@ -201,11 +296,14 @@ class _AdaptiveBeat:
 
         self.integrate_packets.append(IntegrateContextPacket.read(Path(str(self.working_dir))))
         if self._integrates == 1:  # react: one concrete follow-up
-            svc.submit_one(
+            submitted = svc.submit_one(
                 parent_id=self._parent,
                 revision=str(run_id),
                 child=ChildPlan(label="polish", intent="polish", assignee="ada"),
+                actor_employee_id="mgr",
             )
+            self.submission_results.append(submitted)
+            assert submitted.child_id is not None, submitted
             return BeatOutcome(passed=False, outcome={}, summary="submitted follow-up", model="m")
         return BeatOutcome(passed=True, outcome={}, summary="accepted", model="m")  # integrate #2
 
@@ -239,14 +337,17 @@ class _AlwaysSubmitBeat:
                 parent_id=self._parent,
                 revision=str(run_id),
                 children=[ChildPlan(label="c0", intent="c0", assignee="ada")],
+                actor_employee_id="mgr",
             )
             return BeatOutcome(passed=False, outcome={}, summary="delegated", model="m")
         self._n += 1
-        svc.submit_one(
+        submitted = svc.submit_one(
             parent_id=self._parent,
             revision=str(run_id),
             child=ChildPlan(label=f"more{self._n}", intent="more", assignee="ada"),
+            actor_employee_id="mgr",
         )
+        assert submitted.child_id is not None, submitted
         return BeatOutcome(passed=False, outcome={}, summary="never accepts", model="m")
 
 
@@ -257,7 +358,7 @@ def _adaptive_sched(ledger: SqliteLedger, beat: object, root: object, *, cap: in
     return Scheduler(
         ledger=ledger,
         workforce=LedgerWorkforce(ledger.employees),
-        beat_runner=beat,  # type: ignore[arg-type]
+        beat_runner_for=_RunnerFactory(beat),  # type: ignore[arg-type]
         roles=_objective_roles(),
         landers=default_landers(Path(str(root)), ledger=ledger),
         clock=lambda: _NOW,
@@ -269,9 +370,7 @@ def _adaptive_sched(ledger: SqliteLedger, beat: object, root: object, *, cap: in
 async def test_adaptive_integrate_submits_a_follow_up_then_re_integrates_to_done(
     ledger: SqliteLedger, tmp_path: object
 ) -> None:
-    _team(ledger)
-    ledger.tasks.submit(Task(id="M", intent="ship the feature", status=TaskStatus.TODO))
-    assign_task(ledger, "M", "mgr")
+    _delegated_parent(ledger)
     beat = _AdaptiveBeat(ledger, parent="M")
     sched = _adaptive_sched(ledger, beat, tmp_path)
 
@@ -282,6 +381,7 @@ async def test_adaptive_integrate_submits_a_follow_up_then_re_integrates_to_done
         await sched.drain()
 
     assert ledger.tasks.get("M").status is TaskStatus.DONE  # type: ignore[union-attr]
+    assert all(result.child_id is not None for result in beat.submission_results), beat.submission_results
     assert len(ledger.tasks.children("M")) == 3  # api, ui, + the submitted polish
     assert ledger.tasks.all_children_terminal("M")
     # the manager REACTED: kickoff + integrate#1 (submitted) + integrate#2 (accepted) = 3 model beats
@@ -290,12 +390,10 @@ async def test_adaptive_integrate_submits_a_follow_up_then_re_integrates_to_done
     assert [p.iteration for p in beat.integrate_packets] == [1, 2]
 
 
-async def test_adaptive_integrate_is_bounded_by_the_iteration_cap(
+async def test_adaptive_integrate_cap_escalates_without_force_acceptance(
     ledger: SqliteLedger, tmp_path: object
 ) -> None:
-    _team(ledger)
-    ledger.tasks.submit(Task(id="M", intent="ship the feature", status=TaskStatus.TODO))
-    assign_task(ledger, "M", "mgr")
+    _delegated_parent(ledger)
     beat = _AlwaysSubmitBeat(ledger, parent="M")
     sched = _adaptive_sched(
         ledger, beat, tmp_path, cap=2
@@ -305,8 +403,11 @@ async def test_adaptive_integrate_is_bounded_by_the_iteration_cap(
         await sched.tick_once()
         await sched.drain()
 
-    # the kernel forced acceptance at the cap — the subtree is done, not looping forever
-    assert ledger.tasks.get("M").status is TaskStatus.DONE  # type: ignore[union-attr]
+    assert ledger.tasks.get("M").status is TaskStatus.BLOCKED  # type: ignore[union-attr]
+    contract = ledger.delegation_contracts.get("M")
+    assert contract is not None and contract.status is DelegationContractStatus.BLOCKED
+    recovery = ledger.recovery_actions.active_for_source("M")
+    assert recovery is not None and recovery.cause == "integrate_iteration_exhausted"
     # kickoff + exactly cap(=2) adaptive integrate beats; the 3rd integrate was capped (mechanical, no beat)
     assert beat.ran.count("M") == 3
 
@@ -333,9 +434,7 @@ async def test_integrate_blocks_when_the_goals_objective_rollup_floor_fails(
     from chorus.ledger import DodStatus
     from chorus.outcomes import Verifier
 
-    _team(ledger)
-    ledger.tasks.submit(Task(id="M", intent="ship the feature", status=TaskStatus.TODO))
-    assign_task(ledger, "M", "mgr")
+    _delegated_parent(ledger)
     ledger.dod.create("M", Verifier.command(_PY_FAIL))  # the goal's objective rollup floor FAILS
     beat = _TeamBeat(ledger, parent="M")
     sched = _sched(ledger, beat, tmp_path=tmp_path)
@@ -360,9 +459,7 @@ async def test_integrate_lands_done_when_the_objective_rollup_floor_passes(
 ) -> None:
     from chorus.outcomes import Verifier
 
-    _team(ledger)
-    ledger.tasks.submit(Task(id="M", intent="ship the feature", status=TaskStatus.TODO))
-    assign_task(ledger, "M", "mgr")
+    _delegated_parent(ledger)
     ledger.dod.create("M", Verifier.command(_PY_PASS))  # the goal's objective rollup floor PASSES
     beat = _TeamBeat(ledger, parent="M")
     sched = _sched(ledger, beat, tmp_path=tmp_path)

@@ -36,10 +36,12 @@ from chorus.ledger.repos import (
     CostEventRepo,
     DecisionRepo,
     DecompositionClaimRepo,
+    DelegationContractRepo,
     DependencyRepo,
     DodRepo,
     EmployeeRepo,
     GoalRepo,
+    ManagementProfileRepo,
     MessageRepo,
     MonitorRepo,
     RecoveryActionRepo,
@@ -49,6 +51,8 @@ from chorus.ledger.repos import (
     RoutineTriggerRepo,
     RunRepo,
     TaskRepo,
+    TeamMemberRepo,
+    TeamRepo,
     WakeRepo,
 )
 
@@ -85,6 +89,10 @@ class Ledger(Protocol):
     employees: EmployeeRepo
     goals: GoalRepo
     tasks: TaskRepo
+    management_profiles: ManagementProfileRepo
+    teams: TeamRepo
+    team_members: TeamMemberRepo
+    delegation_contracts: DelegationContractRepo
     decomposition_claims: DecompositionClaimRepo
     dependencies: DependencyRepo
     wakes: WakeRepo
@@ -143,6 +151,10 @@ class SqliteLedger:
         self.employees = EmployeeRepo(conn)
         self.goals = GoalRepo(conn)
         self.tasks = TaskRepo(conn)
+        self.management_profiles = ManagementProfileRepo(conn)
+        self.teams = TeamRepo(conn)
+        self.team_members = TeamMemberRepo(conn)
+        self.delegation_contracts = DelegationContractRepo(conn)
         self.decomposition_claims = DecompositionClaimRepo(conn)
         self.dependencies = DependencyRepo(conn)
         self.wakes = WakeRepo(conn)

@@ -17,8 +17,10 @@ from chorus.heartbeat import IntegrateContextPacket
 from chorus.ledger import ActivityVerb, RunStatus, TaskStatus
 from chorus.lifecycle import classify
 from chorus.observability._views import (
+    DelegationContractView,
     EmployeeView,
     IncidentView,
+    ManagementProfileView,
     OrgObservabilityReport,
     RoutineRunView,
     RoutineTriggerView,
@@ -27,6 +29,7 @@ from chorus.observability._views import (
     ScrumChildView,
     ScrumPacketView,
     TaskView,
+    TeamView,
     WorkforceStatus,
 )
 
@@ -64,6 +67,18 @@ class Inspector(Protocol):
 
     def org_report(self) -> OrgObservabilityReport:
         """Combined manager + leaf observability rollup."""
+        ...
+
+    def teams(self) -> list[TeamView]:
+        """Every durable Team, including archived history."""
+        ...
+
+    def delegation_contracts(self) -> list[DelegationContractView]:
+        """Every delegation contract, including completed history."""
+        ...
+
+    def management_profiles(self) -> list[ManagementProfileView]:
+        """Every current management profile, including inactive grants."""
         ...
 
     def routine(self, routine_id: str) -> RoutineView:
@@ -198,7 +213,9 @@ class LedgerInspector:
                     if activity.payload.get("reassigned") is True:
                         reassignment_count += 1
         parent_edges = len(self._ledger.dependencies.blockers(parent_task_id))
-        child_edges = sum(len(child.blockers) for child in packet.children)
+        child_edges = sum(
+            len(self._ledger.dependencies.blockers(child.task_id)) for child in packet.children
+        )
         completed = sum(1 for child in packet.children if child.status in _TERMINAL_STATUS_VALUES)
         blocked = sum(1 for child in packet.children if child.blockers)
         total = len(packet.children)
@@ -265,6 +282,60 @@ class LedgerInspector:
             ),
             manager_packets=packets,
         )
+
+    def teams(self) -> list[TeamView]:
+        return [
+            TeamView(
+                id=team.id,
+                name=team.name,
+                lead_employee_id=team.lead_employee_id,
+                status=team.status,
+                policy_version=team.policy_version,
+                created_by=team.created_by,
+                goal_id=team.goal_id,
+                parent_team_id=team.parent_team_id,
+                member_employee_ids=tuple(
+                    member.employee_id for member in self._ledger.team_members.members_of(team.id)
+                ),
+            )
+            for team in self._ledger.teams.list()
+        ]
+
+    def delegation_contracts(self) -> list[DelegationContractView]:
+        return [
+            DelegationContractView(
+                task_id=contract.task_id,
+                team_id=contract.team_id,
+                lead_employee_id=contract.lead_employee_id,
+                management_profile_version=contract.management_profile_version,
+                objective_rubric=contract.objective_rubric,
+                status=contract.status,
+                parent_contract_task_id=contract.parent_contract_task_id,
+                can_subdelegate=contract.can_subdelegate,
+                max_depth=contract.max_depth,
+                max_team_size=contract.max_team_size,
+                spend_limit_cents=contract.spend_limit_cents,
+                accepted_run_id=contract.accepted_run_id,
+            )
+            for contract in self._ledger.delegation_contracts.list()
+        ]
+
+    def management_profiles(self) -> list[ManagementProfileView]:
+        return [
+            ManagementProfileView(
+                employee_id=profile.employee_id,
+                granted_by_user_id=profile.granted_by_user_id,
+                active=profile.active,
+                can_lead=profile.can_lead,
+                can_subdelegate=profile.can_subdelegate,
+                max_delegation_depth=profile.max_delegation_depth,
+                max_team_size=profile.max_team_size,
+                allowed_professions=profile.allowed_professions,
+                spend_limit_cents=profile.spend_limit_cents,
+                version=profile.version,
+            )
+            for profile in self._ledger.management_profiles.list()
+        ]
 
     def routine(self, routine_id: str) -> RoutineView:
         routine = self._ledger.routines.get(routine_id)

@@ -8,7 +8,7 @@ from dream.tools._context import ToolExecutionContext
 from pydantic import BaseModel, Field
 
 from chorus.heartbeat import BeatContext
-from chorus.ledger import SqliteLedger
+from chorus.ledger import ExecutionMode, SqliteLedger
 from chorus.lifecycle import CapabilityService, ChildPlan
 
 
@@ -20,6 +20,18 @@ class SubmitTaskInput(BaseModel):
     )
     intent: str = Field(description="what the follow-up task should accomplish")
     assignee: str = Field(description="the employee id of the direct report who will own this task")
+    execution_mode: ExecutionMode = Field(
+        default=ExecutionMode.DELIVERY,
+        description="delivery for specialist work, delegation for a nested management assignment",
+    )
+    can_subdelegate: bool = Field(
+        default=False,
+        description="explicitly grant this nested lead authority to sub-delegate",
+    )
+    replaces_task_id: str | None = Field(
+        default=None,
+        description="rejected or cancelled required child this corrective task replaces",
+    )
 
 
 class AssignTaskInput(BaseModel):
@@ -50,7 +62,15 @@ class SubmitTaskTool(BaseTool):
         result = self._service.submit_one(
             parent_id=beat.task_id,
             revision=beat.run_id,
-            child=ChildPlan(label=args.label, intent=args.intent, assignee=args.assignee),
+            actor_employee_id=beat.employee_id,
+            child=ChildPlan(
+                label=args.label,
+                intent=args.intent,
+                assignee=args.assignee,
+                execution_mode=args.execution_mode,
+                can_subdelegate=args.can_subdelegate,
+                replaces_task_id=args.replaces_task_id,
+            ),
         )
         if result.reviewer_assignees:
             joined = ", ".join(result.reviewer_assignees)
@@ -73,6 +93,12 @@ class SubmitTaskTool(BaseTool):
             return ToolResult(
                 content="refused: this task is at the delegation depth cap; no task created",
                 structured={"depth_capped": True},
+                is_error=True,
+            )
+        if result.authority_denied is not None:
+            return ToolResult(
+                content=f"refused: {result.authority_denied}; no task created",
+                structured={"authority_denied": result.authority_denied},
                 is_error=True,
             )
         return ToolResult(
@@ -120,6 +146,12 @@ class AssignTaskTool(BaseTool):
             return ToolResult(
                 content="refused: task is missing or terminal; no assignment changed",
                 structured={"terminal_or_missing": True},
+                is_error=True,
+            )
+        if result.authority_denied is not None:
+            return ToolResult(
+                content=f"refused: {result.authority_denied}; no assignment changed",
+                structured={"authority_denied": result.authority_denied},
                 is_error=True,
             )
         return ToolResult(

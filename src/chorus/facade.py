@@ -14,6 +14,7 @@ below; the behavior is stubbed pending implementation (M1+, spec 11 build plan).
 from __future__ import annotations
 
 import asyncio
+import sqlite3
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
@@ -42,6 +43,10 @@ from chorus.heartbeat import (
 )
 from chorus.ids import mint_id
 from chorus.ledger import (
+    ActivityVerb,
+    DelegationContract,
+    DelegationContractStatus,
+    ExecutionMode,
     Message,
     OriginKind,
     SqliteLedger,
@@ -50,8 +55,10 @@ from chorus.ledger import (
 )
 from chorus.lifecycle import (
     DEFAULT_REQUEST_DEPTH_CAP,
+    MissionTeamPolicy,
     assign_task,
     deliver_message,
+    record_activity,
 )
 from chorus.memory import EpisodicStore
 from chorus.observability import EventBus, LedgerInspector, WorkforceStatus
@@ -73,6 +80,11 @@ class Caps:
     max_concurrent_runs: int = 4
     request_depth_cap: int = DEFAULT_REQUEST_DEPTH_CAP
     tick_interval_s: float = 1.0
+
+
+def _bounded_limit(profile_limit: int | None, request_limit: int | None) -> int | None:
+    limits = [limit for limit in (profile_limit, request_limit) if limit is not None]
+    return min(limits) if limits else None
 
 
 class Chorus:
@@ -210,6 +222,9 @@ class Chorus:
         origin_fingerprint: str = "default",
         trust_preset: TrustPreset | None = None,
         trust_boundary: dict[str, object] | None = None,
+        execution_mode: ExecutionMode = ExecutionMode.DELIVERY,
+        delegation_max_team_size: int | None = None,
+        delegation_spend_limit_cents: int | None = None,
     ) -> Task:
         """Create a flat ``depth=0`` intake task, optionally wired in one call (spec 10 §5 / 14 §3).
 
@@ -221,7 +236,28 @@ class Chorus:
         its OKR node (the alignment tree horizon authors); ``origin_kind`` / ``origin_fingerprint`` stamp
         provenance so horizon's idempotent intake (``horizon_intake`` + a fingerprint) can dedup.
         """
-        employee_id = self._workforce.get(slugify(assignee)).id if assignee is not None else None
+        employee = self._workforce.get(slugify(assignee)) if assignee is not None else None
+        if execution_mode is ExecutionMode.DELEGATION:
+            if employee is None:
+                raise ValueError("root delegation requires an assignee lead")
+            if goal_id is None or self._ledger.goals.get(goal_id) is None:
+                raise ValueError("root delegation requires an existing goal_id")
+            return self._submit_root_delegation(
+                intent,
+                lead=employee,
+                dod=dod,
+                depends_on=depends_on,
+                priority=priority,
+                goal_id=goal_id,
+                origin_kind=origin_kind,
+                origin_fingerprint=origin_fingerprint,
+                trust_preset=trust_preset,
+                trust_boundary=trust_boundary,
+                delegation_max_team_size=delegation_max_team_size,
+                delegation_spend_limit_cents=delegation_spend_limit_cents,
+            )
+
+        employee_id = employee.id if employee is not None else None
         task = self._ledger.tasks.submit(
             Task(
                 id=mint_id("task"),
@@ -240,6 +276,95 @@ class Chorus:
             self._ledger.dependencies.add(task.id, blocker)
         if employee_id is not None:
             assign_task(self._ledger, task.id, employee_id)
+        return task
+
+    def _submit_root_delegation(
+        self,
+        intent: str,
+        *,
+        lead: Employee,
+        dod: Verifier | None,
+        depends_on: Sequence[str],
+        priority: TaskPriority,
+        goal_id: str,
+        origin_kind: OriginKind,
+        origin_fingerprint: str,
+        trust_preset: TrustPreset | None,
+        trust_boundary: dict[str, object] | None,
+        delegation_max_team_size: int | None,
+        delegation_spend_limit_cents: int | None,
+    ) -> Task:
+        if origin_kind is OriginKind.HORIZON_INTAKE:
+            existing = self._ledger.tasks.find_by_origin(origin_kind, origin_fingerprint)
+            if existing is not None:
+                return existing
+        policy = MissionTeamPolicy(self._ledger)
+        try:
+            with self._ledger.transaction():
+                team = policy.create_for_root(lead, goal_id)
+                profile = self._ledger.management_profiles.get(lead.id)
+                if profile is None:
+                    raise RuntimeError("eligible delegation lead has no management profile")
+                task = self._ledger.tasks.submit(
+                    Task(
+                        id=mint_id("task"),
+                        intent=intent,
+                        priority=priority,
+                        execution_mode=ExecutionMode.DELEGATION,
+                        team_id=team.id,
+                        goal_id=goal_id,
+                        origin_kind=origin_kind,
+                        origin_fingerprint=origin_fingerprint,
+                        trust_preset=trust_preset.value if trust_preset is not None else None,
+                        trust_boundary=trust_boundary,
+                    )
+                )
+                self._ledger.delegation_contracts.create(
+                DelegationContract(
+                    task_id=task.id,
+                    team_id=team.id,
+                    lead_employee_id=lead.id,
+                    management_profile_version=profile.version,
+                    can_subdelegate=profile.can_subdelegate,
+                    max_depth=min(
+                        profile.max_delegation_depth,
+                        self._caps.request_depth_cap,
+                    ),
+                    max_team_size=min(
+                        profile.max_team_size,
+                        delegation_max_team_size
+                        if delegation_max_team_size is not None
+                        else profile.max_team_size,
+                    ),
+                    spend_limit_cents=_bounded_limit(
+                        profile.spend_limit_cents,
+                        delegation_spend_limit_cents,
+                    ),
+                    objective_rubric=intent,
+                    status=DelegationContractStatus.DELEGATED,
+                )
+                )
+                record_activity(
+                self._ledger,
+                verb=ActivityVerb.DELEGATION_CREATED,
+                subject_kind="delegation_contract",
+                subject_id=task.id,
+                actor_employee_id=lead.id,
+                payload={"team_id": team.id, "root": True},
+                )
+                policy.activate(team.id)
+                if dod is not None:
+                    self._ledger.dod.create(task.id, dod)
+                for blocker in depends_on:
+                    self._ledger.dependencies.add(task.id, blocker)
+                assign_task(self._ledger, task.id, lead.id)
+        except sqlite3.IntegrityError:
+            if origin_kind is not OriginKind.HORIZON_INTAKE:
+                raise
+            existing = self._ledger.tasks.find_by_origin(origin_kind, origin_fingerprint)
+            if existing is None:
+                raise
+            return existing
         return task
 
     def assign(

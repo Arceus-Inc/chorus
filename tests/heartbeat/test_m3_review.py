@@ -9,6 +9,7 @@ self-repair then a recovery card. Fake beat runners stand in for the worker / re
 from __future__ import annotations
 
 import asyncio
+import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -16,7 +17,20 @@ import pytest
 
 from chorus.heartbeat import IntegrateContextPacket, Scheduler
 from chorus.heartbeat._beat import BeatOutcome
-from chorus.ledger import SqliteLedger, Task, TaskStatus
+from chorus.ledger import (
+    DelegationContract,
+    DelegationContractStatus,
+    ExecutionMode,
+    Goal,
+    ManagementProfile,
+    SqliteLedger,
+    Task,
+    TaskStatus,
+    Team,
+    TeamMember,
+    TeamMembershipRole,
+    TeamStatus,
+)
 from chorus.lifecycle import CapabilityService, ChildPlan, assign_task
 from chorus.recovery import reconcile
 from chorus.roles import RoleRegistry, default_roles
@@ -26,6 +40,8 @@ from chorus_employee import default_landers
 pytestmark = pytest.mark.integration
 
 _NOW = datetime(2026, 6, 19, 12, 0, tzinfo=UTC)
+_PASS_COMMAND = f'"{sys.executable}" -c "raise SystemExit(0)"'
+_FAIL_COMMAND = f'"{sys.executable}" -c "raise SystemExit(1)"'
 
 
 class _Runner:
@@ -198,6 +214,7 @@ class _Manager(_Runner):
                 parent_id=self._parent,
                 revision=str(run_id),
                 children=[ChildPlan(label="draft", intent="draft the spec", assignee="pen")],
+                actor_employee_id="moe",
             )
             return BeatOutcome(passed=False, outcome={}, summary="delegated", model="m")
         if IntegrateContextPacket.recommended_for(self._ledger, self._parent) == "react":
@@ -205,6 +222,7 @@ class _Manager(_Runner):
                 parent_id=self._parent,
                 revision=str(run_id),
                 child=ChildPlan(label="redraft", intent="redraft the spec", assignee="paul"),
+                actor_employee_id="moe",
             )
             return BeatOutcome(
                 passed=False, outcome={}, summary="reacted to the rejection", model="m"
@@ -264,7 +282,8 @@ class _Org:
                 working_dir=self._root,
                 verify_command=self._verify_command,
             )
-        if employee.role == "manager":
+        profile = self._ledger.management_profiles.get(employee.id)
+        if profile is not None and profile.active:
             return _Manager(self._ledger, parent=self._parent, working_dir=self._root)
         return _Worker(self._root, decide=self._worker_decide)
 
@@ -315,7 +334,11 @@ async def test_review_run_survives_a_concurrent_recover_sweep(
     """
     _reviewed_build_task(ledger)
     org = _Org(
-        ledger, decide=lambda _tid: True, root=tmp_path, reconciling=True, verify_command="true"
+        ledger,
+        decide=lambda _tid: True,
+        root=tmp_path,
+        reconciling=True,
+        verify_command=_PASS_COMMAND,
     )
     sched = _sched(ledger, org, tmp_path)
 
@@ -353,7 +376,11 @@ async def test_run_forever_lands_a_reviewed_deliverable_done(
     """
     _reviewed_build_task(ledger)
     org = _Org(
-        ledger, decide=lambda _tid: True, root=tmp_path, slow_review=True, verify_command="true"
+        ledger,
+        decide=lambda _tid: True,
+        root=tmp_path,
+        slow_review=True,
+        verify_command=_PASS_COMMAND,
     )
 
     pulses = 0
@@ -466,7 +493,9 @@ async def test_reviewed_build_approve_and_passing_command_lands_done(
     ledger: SqliteLedger, tmp_path: Path
 ) -> None:
     _reviewed_build_task(ledger)
-    org = _Org(ledger, decide=lambda _tid: True, root=tmp_path, verify_command="true")  # exit 0
+    org = _Org(
+        ledger, decide=lambda _tid: True, root=tmp_path, verify_command=_PASS_COMMAND
+    )
     sched = _sched(ledger, org, tmp_path)
 
     await sched.tick_once()
@@ -483,7 +512,9 @@ async def test_reviewed_build_failing_command_does_not_land(
     # The reviewer liked the diff, but the kernel-run command fails → the build is NOT done (the floor
     # is un-rationalizable). Standalone → bounded self-repair, never a silent pass.
     _reviewed_build_task(ledger)
-    org = _Org(ledger, decide=lambda _tid: True, root=tmp_path, verify_command="false")  # exit 1
+    org = _Org(
+        ledger, decide=lambda _tid: True, root=tmp_path, verify_command=_FAIL_COMMAND
+    )
     sched = _sched(ledger, org, tmp_path, max_review_rounds=1)
 
     for _ in range(6):
@@ -501,7 +532,9 @@ async def test_reviewed_build_quality_block_skips_the_command(
 ) -> None:
     _reviewed_build_task(ledger)
     # the reviewer blocks on quality; the command never runs (no build_passed recorded)
-    org = _Org(ledger, decide=lambda _tid: False, root=tmp_path, verify_command="true")
+    org = _Org(
+        ledger, decide=lambda _tid: False, root=tmp_path, verify_command=_PASS_COMMAND
+    )
     sched = _sched(ledger, org, tmp_path, max_review_rounds=1)
 
     for _ in range(4):
@@ -513,17 +546,71 @@ async def test_reviewed_build_quality_block_skips_the_command(
     assert dod is not None and dod.verdict is not None and "build_passed" not in dod.verdict
 
 
-async def test_manager_parented_block_escalates_and_manager_reacts(
+async def test_delegation_rejection_reacts_once_then_escalates_without_force_acceptance(
     ledger: SqliteLedger, tmp_path: Path
 ) -> None:
-    # The headline: an in-beat block on a manager's child becomes a child outcome the Slice-2 manager
-    # reacts to. draft is blocked → REJECTED → manager integrate sees `react` → submits redraft →
-    # redraft is approved → subtree completes → manager accepts → goal done. Spec 16: the child's
-    # needs-changes verdict is rendered by its own in-beat evaluator, not a second Reviewer beat.
-    ledger.employees.create(Employee(id="moe", name="Moe", role="manager"))
+    # A rejected child remains part of the durable subtree. The lead may submit one correction, but
+    # cannot force acceptance when independent verification still sees the rejected attempt.
+    ledger.employees.create(Employee(id="moe", name="Moe", role="pm"))
     ledger.employees.create(Employee(id="pen", name="Pen", role="pm", reports_to="moe"))
     ledger.employees.create(Employee(id="paul", name="Paul", role="pm", reports_to="moe"))
-    ledger.tasks.submit(Task(id="M", intent="ship the spec", status=TaskStatus.TODO))
+    ledger.management_profiles.upsert(
+        ManagementProfile(
+            employee_id="moe",
+            granted_by_user_id="operator",
+            active=True,
+            can_lead=True,
+            max_delegation_depth=1,
+            max_team_size=3,
+            allowed_professions=("pm",),
+        )
+    )
+    ledger.goals.create(Goal(id="goal-M", title="Ship the spec"))
+    ledger.teams.create(
+        Team(
+            id="team-M",
+            name="Spec Team",
+            lead_employee_id="moe",
+            created_by="operator",
+            goal_id="goal-M",
+            status=TeamStatus.ACTIVE,
+        )
+    )
+    for employee_id, membership_role in (
+        ("moe", TeamMembershipRole.LEAD),
+        ("pen", TeamMembershipRole.MEMBER),
+        ("paul", TeamMembershipRole.MEMBER),
+    ):
+        ledger.team_members.add(
+            TeamMember(
+                team_id="team-M",
+                employee_id=employee_id,
+                source_manager_id="moe",
+                membership_role=membership_role,
+            )
+        )
+    ledger.tasks.submit(
+        Task(
+            id="M",
+            intent="ship the spec",
+            status=TaskStatus.TODO,
+            goal_id="goal-M",
+            execution_mode=ExecutionMode.DELEGATION,
+            team_id="team-M",
+        )
+    )
+    ledger.delegation_contracts.create(
+        DelegationContract(
+            task_id="M",
+            team_id="team-M",
+            lead_employee_id="moe",
+            management_profile_version=1,
+            objective_rubric="the complete spec is independently reviewed",
+            max_depth=1,
+            max_team_size=3,
+            status=DelegationContractStatus.DELEGATED,
+        )
+    )
     assign_task(ledger, "M", "moe")
 
     def decide(task_id: str) -> bool:
@@ -539,8 +626,13 @@ async def test_manager_parented_block_escalates_and_manager_reacts(
 
     children = {c.origin_fingerprint: c for c in ledger.tasks.children("M")}
     assert children["draft"].status is TaskStatus.REJECTED  # in-beat block → terminal-rejected
-    assert children["redraft"].status is TaskStatus.DONE  # the manager's fix, approved on review
-    assert ledger.tasks.get("M").status is TaskStatus.DONE  # type: ignore[union-attr]  # integrated
+    assert children["redraft"].status is TaskStatus.DONE
+    assert len(children) == 2
+    assert ledger.tasks.get("M").status is TaskStatus.BLOCKED  # type: ignore[union-attr]
+    contract = ledger.delegation_contracts.get("M")
+    assert contract is not None and contract.status is DelegationContractStatus.BLOCKED
+    recovery = ledger.recovery_actions.active_for_source("M")
+    assert recovery is not None and recovery.cause == "integrate_iteration_exhausted"
 
 
 def test_worktree_file_manifest_lists_the_files_a_listless_reviewer_cannot_see(

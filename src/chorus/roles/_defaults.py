@@ -21,12 +21,11 @@ from chorus.roles._plugin import RolePlugin
 # there — single source, no drift — rather than re-declaring them here. Submodule imports (not the
 # chorus_employee package root) keep this edge cycle-free.
 from chorus_employee.analyst import analyst_plugin
-from chorus_employee.ceo import ceo_plugin
 from chorus_employee.backend_engineer import backend_engineer_plugin
+from chorus_employee.ceo import ceo_plugin
 from chorus_employee.designer import designer_plugin
 from chorus_employee.engineer import engineer_plugin
 from chorus_employee.frontend_engineer import frontend_engineer_plugin
-from chorus_employee.manager import manager_plugin
 from chorus_employee.marketer import marketer_plugin
 from chorus_employee.pm import pm_plugin
 from chorus_employee.reviewer import reviewer_plugin
@@ -42,7 +41,6 @@ def default_roles() -> tuple[RolePlugin, ...]:
         engineer_plugin(),
         backend_engineer_plugin(),
         reviewer_plugin(),
-        manager_plugin(),
         pm_plugin(),
         analyst_plugin(),
         marketer_plugin(),

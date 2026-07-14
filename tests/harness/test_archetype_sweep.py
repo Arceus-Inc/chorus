@@ -15,9 +15,6 @@ from chorus_harness import EmployeeHarnessFactory
 
 pytestmark = pytest.mark.unit
 
-_ARCHETYPES = ("engineer", "reviewer", "manager", "pm", "analyst")
-
-
 def _factory(tmp_path) -> EmployeeHarnessFactory:
     return EmployeeHarnessFactory(
         api_key="x",
@@ -31,7 +28,7 @@ def _factory(tmp_path) -> EmployeeHarnessFactory:
 
 def test_every_default_archetype_materializes(tmp_path) -> None:
     factory = _factory(tmp_path)
-    for role in _ARCHETYPES:
+    for role in (plugin.name for plugin in default_roles()):
         mat = factory.materialize(Employee(id=f"e-{role}", name=role.title(), role=role))
         assert mat.runner is not None, f"{role} produced no runner"
         assert mat.config.tools, f"{role} has an empty toolset"

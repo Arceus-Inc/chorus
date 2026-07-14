@@ -24,7 +24,7 @@ _USER = "lead"
 
 def _decomposed_and_gated(ledger: SqliteLedger) -> str:
     """A manager (moe) decomposes G into two children, then a plan gate is opened. Returns gate id."""
-    ledger.employees.create(Employee(id="moe", name="moe", role="manager"))
+    ledger.employees.create(Employee(id="moe", name="moe", role="engineer"))
     for emp in ("ada", "bob"):
         ledger.employees.create(Employee(id=emp, name=emp, role="engineer", reports_to="moe"))
     ledger.tasks.submit(Task(id="G", intent="ship", status=TaskStatus.TODO))

@@ -126,7 +126,7 @@ def test_assign_wakes_through_the_facade() -> None:
 def test_send_message_wakes_through_the_facade() -> None:
     ledger = SqliteLedger.open(":memory:")
     try:
-        ledger.employees.create(Employee(id="mgr", name="m", role="manager"))
+        ledger.employees.create(Employee(id="mgr", name="m", role="engineer"))
         ledger.employees.create(Employee(id="rep", name="r", role="engineer"))
         wake = _chorus_on(ledger).send_message(
             Message(id="m1", from_employee_id="mgr", to_employee_id="rep", body="hi")
@@ -185,7 +185,7 @@ def test_hire_validates_role_against_the_registry(tmp_path: Path) -> None:
 def test_terminate_cancels_in_flight_work(tmp_path: Path) -> None:
     ledger = _CancelSpyLedger()
     chorus = _chorus_hr(str(tmp_path / "org"), ledger)
-    boss = chorus.hire(name="Boss", role="manager")
+    boss = chorus.hire(name="Boss", role="engineer")
     rep = chorus.hire(name="Rep", role="engineer", reports_to=boss.id)
     chorus.terminate(rep.id)
     assert ledger.cancelled_runs == [rep.id]
@@ -220,7 +220,7 @@ def test_export_then_import_workforce_round_trips_through_the_ledger(tmp_path: P
     ledger = SqliteLedger.open(":memory:")
     try:
         chorus = _chorus_io(ledger)
-        chorus.hire(name="Boss", role="manager")
+        chorus.hire(name="Boss", role="engineer")
         chorus.hire(name="Alice", role="engineer", reports_to="boss")
         org = str(tmp_path / "org")
         assert chorus.workforce.export(org) == 2
