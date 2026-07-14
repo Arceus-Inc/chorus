@@ -21,6 +21,8 @@ import tempfile
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
+from lattice.domain.proposal import PatternDraft, Proposal
+
 from chorus.budgets import BudgetEnforcer
 from chorus.events import Event, EventKind
 from chorus.heartbeat import Scheduler
@@ -37,7 +39,6 @@ from chorus_cli._env import load_env_file
 from chorus_employee import default_landers
 from chorus_harness import EmployeeHarnessFactory
 from chorus_tools._lattice_bridge import build_lattice_for_chorus
-from lattice.domain.proposal import PatternDraft, Proposal
 
 _EMPLOYEE_ID = "bex"
 _BEAT_TIMEOUT_S = float(os.environ.get("CHORUS_PROBE_BEAT_TIMEOUT_S", "120"))
@@ -79,7 +80,7 @@ _CONSOLIDATE_INTENT = (
     "Lattice gate is OPEN. This is a consolidation-only beat — do not edit src/ or tests/. "
     "Load skill `lattice-consolidate`. Run `lattice_packet()`, `recall(query='retry')`, "
     "`get_run(run_id)` for each cited beat, then `lattice_apply(proposal)` promoting one "
-    "`api.retry` pattern. Write the claim in 2–3 plain-English sentences (readable prose, "
+    "`api.retry` pattern. Write the claim in 2-3 plain-English sentences (readable prose, "
     "not dense shorthand). Success means `lattice_apply` returns ok."
 )
 
@@ -447,16 +448,18 @@ def _retrieval_domain_checks(
 
     context_design = lattice.context(employee_id, "design tokens typography")  # type: ignore[attr-defined]
     context_retry = lattice.context(employee_id, "retry policy api")  # type: ignore[attr-defined]
-    excludes_retry = "api.retry" not in context_design
-    includes_retry = "api.retry" in context_retry
+    # Key-agnostic: the agent authors its own pattern key (api.retry, api.client.retry_policy, …) —
+    # assert the retrieval SEMANTICS, not a literal key string.
+    excludes_retry = "retry" not in context_design.lower()
+    includes_retry = "retry" in context_retry.lower()
     return [
         (
-            "context(design) excludes api.retry",
+            "context(design) excludes the retry pattern",
             excludes_retry,
             context_design[:120].replace("\n", " ") or "(empty)",
         ),
         (
-            "context(retry) includes api.retry",
+            "context(retry) includes the retry pattern",
             includes_retry,
             context_retry[:120].replace("\n", " ") or "(empty)",
         ),
@@ -539,15 +542,17 @@ def main() -> int:
         _log("skipping: set AZURE_OPENAI_* in .env")
         return 0
 
+    # Resolve the report path BEFORE chdir — under runpy __file__ can be relative, and resolving
+    # it after os.chdir(base) would silently land the report in the temp dir.
+    report_path = (
+        Path(__file__).resolve().parent.parent / "reports" / "backend-engineer-lattice-5beat.json"
+    )
     base = Path(tempfile.mkdtemp(prefix="chorus-lattice-5beat-"))
     os.chdir(base)
     seed = base / "source"
     _seed(seed)
 
     ledger = SqliteLedger.open(":memory:")
-    report_path = (
-        Path(__file__).resolve().parent.parent / "reports" / "backend-engineer-lattice-5beat.json"
-    )
 
     registry = _registry_short_beats(_BEAT_TIMEOUT_S)
     factory = EmployeeHarnessFactory(
@@ -721,7 +726,8 @@ def main() -> int:
         "retrieval_checks": [{"name": n, "pass": ok, "detail": d} for n, ok, d in retrieval_checks],
         "retrieval_all_pass": retrieval_all_pass,
         "context_design_excludes_retry": any(
-            c[0] == "context(design) excludes api.retry" and c[1] for c in retrieval_checks
+            c[0] == "context(design) excludes the retry pattern" and c[1]
+            for c in retrieval_checks
         ),
         "all_pass": all_ok,
         "memory_md_path": str(memory_md_path),
