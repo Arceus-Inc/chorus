@@ -170,6 +170,7 @@ class Chorus:
         # export/import location (spec 09 §3, the GitWorkforce codec), not a second live store.
         workforce = LedgerWorkforce(store.employees)
         event_bus = EventBus()
+        memory_writer = EpisodicStore(memory_repo)
         scheduler = Scheduler(
             tick_interval_s=the_caps.tick_interval_s,
             max_concurrent_runs=the_caps.max_concurrent_runs,
@@ -183,11 +184,12 @@ class Chorus:
             budget_enforcer=BudgetEnforcer(store, company_id=company_id),
             roles=registry,  # a task inherits its assignee role's DoD at intake (spec 04 §1 / 06 §2)
             landers=landers,  # the landing seam — a passed beat lands its role artifact (spec 04 §2)
+            memory_writer=memory_writer,  # every beat's SprintDelta lands in the episodic store
         )
         return cls(
             ledger=store,
             workforce=workforce,
-            memory_writer=EpisodicStore(memory_repo),
+            memory_writer=memory_writer,
             scheduler=scheduler,
             event_bus=event_bus,
             inspector=LedgerInspector(store),
