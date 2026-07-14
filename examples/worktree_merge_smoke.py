@@ -63,7 +63,7 @@ def main() -> int:
 
     ledger = SqliteLedger.open(":memory:")
     try:
-        ledger.employees.create(Employee(id="ada", name="Ada", role="engineer"))
+        ledger.employees.create(Employee(id="ada", name="Ada", role="backend_engineer"))
         render = ChatRenderBus(out=sys.stdout)
         service = build_role_chat_service(
             ledger,

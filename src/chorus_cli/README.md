@@ -245,14 +245,16 @@ so it remembers earlier turns across a session.
 
 A task's `dod` is the typed gate its beat must clear — `done` is never self-report. **DoD at intake:**
 a task with no explicit `dod set` inherits its **assignee role's** DoD when the beat is dispatched — so
-an engineer (in `chat` or via `tick`) is always held to its `pytest -q && ruff check .` gate without
-you setting one; a manual `dod set` always wins.
+a backend engineer (in `chat` or via `tick`) is always held to its declared build gate without you
+setting one; a manual `dod set` always wins.
 
 - **`command`** — the shell check rides into the beat as dream's verification (dream runs it and
   gates on it). `done` means the plan completed **and** the command exited 0.
 - **`human_approval`** — when the beat completes, chorus opens an **acceptance approval** instead of
   finishing; the task sits `blocked` until someone runs `approval approve` (then it's `done`).
-- **`agent_review`** — a Reviewer-role verdict (ships with the Reviewer role; not enforced yet).
+- **`agent_review`** — the built-in, read-only system verifier inspects the assignee's worktree and
+  records an independent verdict without adding a Reviewer employee to the workforce.
+- **`reviewed_build`** — combines independent system verification with the deterministic build check.
 
 **Self-repair ladder** (Command DoD): a failed check re-wakes the same employee to retry (the task
 stays `todo`), up to a bounded budget; once spent, the task goes `blocked` with a `recovery_action`

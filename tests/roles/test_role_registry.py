@@ -36,9 +36,7 @@ def _plugin(
 def test_default_roles_register_cleanly() -> None:
     reg = RoleRegistry.from_plugins(default_roles())
     assert set(reg.names()) == {
-        "engineer",
         "backend_engineer",
-        "reviewer",
         "pm",
         "analyst",
         "marketer",
@@ -46,6 +44,7 @@ def test_default_roles_register_cleanly() -> None:
         "frontend_engineer",
         "ceo",
     }
+    assert {"engineer", "reviewer"}.isdisjoint(reg.names())
 
 
 def test_manager_plugin_warns_with_explicit_migration_command() -> None:

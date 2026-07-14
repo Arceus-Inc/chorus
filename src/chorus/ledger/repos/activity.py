@@ -29,12 +29,14 @@ class ActivityRepo:
         """Record one auditable transition; the single-actor XOR is enforced in the DB."""
         now = utcnow_iso()
         self._conn.execute(
-            "INSERT INTO activity (id, actor_employee_id, actor_user_id, verb, subject_kind, "
-            "subject_id, trace_id, payload, occurred_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO activity (id, actor_employee_id, actor_user_id, "
+            "actor_system_principal_id, verb, subject_kind, subject_id, trace_id, payload, "
+            "occurred_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 activity.id,
                 activity.actor_employee_id,
                 activity.actor_user_id,
+                activity.actor_system_principal_id,
                 activity.verb.value,
                 activity.subject_kind,
                 activity.subject_id,
@@ -87,6 +89,7 @@ def _row_to_activity(row: sqlite3.Row) -> Activity:
         subject_id=row["subject_id"],
         actor_employee_id=row["actor_employee_id"],
         actor_user_id=row["actor_user_id"],
+        actor_system_principal_id=row["actor_system_principal_id"],
         trace_id=row["trace_id"],
         payload=loads_dict(row["payload"]),
         occurred_at=from_iso(row["occurred_at"]),

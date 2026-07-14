@@ -130,8 +130,8 @@ def test_hiring_a_role_without_declarations_provisions_nothing() -> None:
     ledger = SqliteLedger.open(":memory:")
     try:
         chorus = _chorus(ledger, RoleRegistry.from_plugins(default_roles()))
-        eng = chorus.hire(name="Eli", role="engineer")
-        assert ledger.routines.list(employee_id=eng.id) == []
+        engineer = chorus.hire(name="Eli", role="frontend_engineer")
+        assert ledger.routines.list(employee_id=engineer.id) == []
     finally:
         ledger.close()
 

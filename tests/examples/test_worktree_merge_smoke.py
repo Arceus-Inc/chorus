@@ -1,6 +1,6 @@
 """End-to-end: the keyed worktree-isolation + merge smoke runs green (spec 04 §4, spec 06 §2).
 
-Seeds a company from a real repo, runs one live ``run_task`` turn where an ``engineer`` edits the
+Seeds a company from a real repo, runs one live ``run_task`` turn where a ``backend_engineer`` edits the
 seeded code in its branch-isolated worktree, then merges that branch into company ``main``. Requires
 Azure OpenAI credentials; the smoke skips (returns 0) when they are unset, so this passes in CI without
 keys and exercises the full seed → isolate → merge loop locally when they are present.

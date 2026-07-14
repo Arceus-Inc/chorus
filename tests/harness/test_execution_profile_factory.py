@@ -39,8 +39,10 @@ def ledger() -> SqliteLedger:
 
 
 def _seed_tasks(ledger: SqliteLedger) -> tuple[Employee, Task, Task]:
-    lead = Employee(id="lead", name="Lead", role="engineer")
-    worker = Employee(id="worker", name="Worker", role="engineer", reports_to="lead")
+    lead = Employee(id="lead", name="Lead", role="backend_engineer")
+    worker = Employee(
+        id="worker", name="Worker", role="backend_engineer", reports_to="lead"
+    )
     ledger.employees.create(lead)
     ledger.employees.create(worker)
     ledger.management_profiles.upsert(
@@ -51,7 +53,7 @@ def _seed_tasks(ledger: SqliteLedger) -> tuple[Employee, Task, Task]:
             can_lead=True,
             max_delegation_depth=1,
             max_team_size=2,
-            allowed_professions=("engineer",),
+            allowed_professions=("backend_engineer",),
             version=1,
         )
     )
@@ -131,7 +133,7 @@ def _factory(
     )
 
 
-def test_same_engineer_materializes_delivery_then_delegation_surface(
+def test_same_backend_engineer_materializes_delivery_then_delegation_surface(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, ledger: SqliteLedger
 ) -> None:
     lead, delivery, delegation = _seed_tasks(ledger)
@@ -143,10 +145,10 @@ def test_same_engineer_materializes_delivery_then_delegation_surface(
     delivery_tools = {tool.name for tool in calls[0]["registry"].list_tools()}
     delegation_tools = {tool.name for tool in calls[1]["registry"].list_tools()}
     assert {"write_file", "bash", "git"} <= delivery_tools
-    assert delegation_tools == {"read_file", "team_read", "decompose"}
+    assert delegation_tools == {"read_file", "team_read", "staffing_request", "decompose"}
     assert delivered.config.memory_scope == "project"
     assert delegated.config.memory_scope == "team"
-    assert "worker (engineer)" in delegated.config.system_prompt
+    assert "worker (backend_engineer)" in delegated.config.system_prompt
 
 
 def test_stale_profile_is_denied_before_harness_build(

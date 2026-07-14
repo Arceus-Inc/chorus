@@ -78,10 +78,22 @@ from chorus.ledger._models._scheduling import (
     Run,
     Wake,
 )
+from chorus.ledger._models._staffing import (
+    StaffingNeed,
+    StaffingRequest,
+    StaffingRequestStatus,
+)
 from chorus.ledger._models._work import (
     DecompositionClaim,
     Task,
     TaskDependency,
+)
+from chorus.ledger._models._workforce_plan import (
+    ManagementGrantDraft,
+    PlannedEmployee,
+    WorkforcePlan,
+    WorkforcePlanDraft,
+    WorkforcePlanStatus,
 )
 
 __all__ = [
@@ -112,6 +124,7 @@ __all__ = [
     "ExecutionMode",
     "Goal",
     "GoalLevel",
+    "ManagementGrantDraft",
     "ManagementProfile",
     "Message",
     "MessageKind",
@@ -119,6 +132,7 @@ __all__ = [
     "MonitorRecoveryPolicy",
     "MonitorStatus",
     "OriginKind",
+    "PlannedEmployee",
     "RecoveryAction",
     "RecoveryKind",
     "RecoveryOutcome",
@@ -135,6 +149,9 @@ __all__ = [
     "RoutineTrigger",
     "Run",
     "RunStatus",
+    "StaffingNeed",
+    "StaffingRequest",
+    "StaffingRequestStatus",
     "Task",
     "TaskDependency",
     "TaskPriority",
@@ -147,4 +164,7 @@ __all__ = [
     "Wake",
     "WakeReason",
     "WakeStatus",
+    "WorkforcePlan",
+    "WorkforcePlanDraft",
+    "WorkforcePlanStatus",
 ]

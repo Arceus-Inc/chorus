@@ -12,8 +12,22 @@ from datetime import UTC, datetime
 import pytest
 
 from chorus.governance import ApprovalDecision, GovernanceResolver
-from chorus.ledger import ApprovalAction, SqliteLedger, Task, TaskStatus
-from chorus.lifecycle import CapabilityService, ChildPlan, assign_task
+from chorus.ledger import (
+    ApprovalAction,
+    DelegationContract,
+    DelegationContractStatus,
+    ExecutionMode,
+    Goal,
+    ManagementProfile,
+    SqliteLedger,
+    Task,
+    TaskStatus,
+    Team,
+    TeamMember,
+    TeamMembershipRole,
+    TeamStatus,
+)
+from chorus.lifecycle import CapabilityService, ChildPlan
 from chorus.workforce import Employee
 
 pytestmark = pytest.mark.integration
@@ -24,11 +38,64 @@ _USER = "lead"
 
 def _decomposed_and_gated(ledger: SqliteLedger) -> str:
     """A manager (moe) decomposes G into two children, then a plan gate is opened. Returns gate id."""
-    ledger.employees.create(Employee(id="moe", name="moe", role="engineer"))
+    ledger.employees.create(Employee(id="moe", name="moe", role="backend_engineer"))
     for emp in ("ada", "bob"):
-        ledger.employees.create(Employee(id=emp, name=emp, role="engineer", reports_to="moe"))
-    ledger.tasks.submit(Task(id="G", intent="ship", status=TaskStatus.TODO))
-    assign_task(ledger, "G", "moe")
+        ledger.employees.create(
+            Employee(id=emp, name=emp, role="backend_engineer", reports_to="moe")
+        )
+    ledger.management_profiles.upsert(
+        ManagementProfile(
+            employee_id="moe",
+            granted_by_user_id="operator",
+            active=True,
+            can_lead=True,
+            max_delegation_depth=1,
+            max_team_size=3,
+            allowed_professions=("backend_engineer",),
+            version=1,
+        )
+    )
+    ledger.goals.create(Goal(id="goal-G", title="Ship"))
+    ledger.teams.create(
+        Team(
+            id="team-G",
+            name="Delivery Team",
+            lead_employee_id="moe",
+            created_by="operator",
+            status=TeamStatus.ACTIVE,
+        )
+    )
+    ledger.team_members.add(
+        TeamMember(
+            team_id="team-G",
+            employee_id="moe",
+            source_manager_id="moe",
+            membership_role=TeamMembershipRole.LEAD,
+        )
+    )
+    ledger.tasks.submit(
+        Task(
+            id="G",
+            intent="ship",
+            status=TaskStatus.TODO,
+            execution_mode=ExecutionMode.DELEGATION,
+            team_id="team-G",
+            goal_id="goal-G",
+            assignee_employee_id="moe",
+        )
+    )
+    ledger.delegation_contracts.create(
+        DelegationContract(
+            task_id="G",
+            team_id="team-G",
+            lead_employee_id="moe",
+            management_profile_version=1,
+            max_depth=1,
+            max_team_size=3,
+            objective_rubric="the approved plan is integrated",
+            status=DelegationContractStatus.DELEGATED,
+        )
+    )
     CapabilityService(ledger).decompose(
         parent_id="G",
         revision="r1",
@@ -36,6 +103,7 @@ def _decomposed_and_gated(ledger: SqliteLedger) -> str:
             ChildPlan(label="api", intent="build the api", assignee="ada"),
             ChildPlan(label="ui", intent="build the ui", assignee="bob"),
         ],
+        actor_employee_id="moe",
     )
     approval = GovernanceResolver(ledger).open_plan_gate("G", reason="sign off the plan")
     return approval.id

@@ -107,7 +107,7 @@ class _CapstoneOrg:
                 parent_id=task.id,
                 revision=f"forged-{run_id}",
                 children=plan,
-                actor_employee_id="reviewer",
+                actor_employee_id="outsider",
             )
             after = len(self._ledger.tasks.children(task.id))
             self.unauthorized_results.append((denied.authority_denied, before, after))
@@ -211,7 +211,7 @@ class _CapstoneOrg:
 
 def _seed_company(ledger: SqliteLedger) -> None:
     employees = (
-        Employee(id="root-lead", name="Root Lead", role="engineer"),
+        Employee(id="root-lead", name="Root Lead", role="backend_engineer"),
         Employee(
             id="nested-lead",
             name="Nested Lead",
@@ -230,7 +230,6 @@ def _seed_company(ledger: SqliteLedger) -> None:
             role="pm",
             reports_to="nested-lead",
         ),
-        Employee(id="reviewer", name="Independent Reviewer", role="reviewer"),
     )
     for employee in employees:
         ledger.employees.create(employee)
@@ -342,7 +341,7 @@ async def test_specialist_nested_delegation_capstone_folds_verified_root_exactly
     )
     assert len([task for task in tasks if task.origin_fingerprint == "nested-correction"]) == 1
     assert all(
-        task.assignee_employee_id != "reviewer" for task in tasks
+        task.assignee_employee_id != "system-verifier" for task in tasks
     )
     assert all(team.status is TeamStatus.ARCHIVED for team in ledger.teams.list())
     verified = [
@@ -352,13 +351,14 @@ async def test_specialist_nested_delegation_capstone_folds_verified_root_exactly
         if event.verb is ActivityVerb.PARENT_VERIFIED
     ]
     assert len(verified) == 2 and all(event.payload["passed"] is True for event in verified)
-    assert all(event.payload["reviewer_id"] == "reviewer" for event in verified)
+    assert all(event.payload["reviewer_id"] == "system-verifier" for event in verified)
     verification_runs = [
         ledger.runs.get(str(event.payload["verification_run_id"])) for event in verified
     ]
     assert all(run is not None for run in verification_runs)
     assert all(
-        run.employee_id == "reviewer"
+        run.principal_id == "system-verifier"
+        and run.employee_id in {"root-lead", "nested-lead"}
         and run.id.startswith("rev_")
         and run.lease_expires_at is not None
         and run.finished_at is not None

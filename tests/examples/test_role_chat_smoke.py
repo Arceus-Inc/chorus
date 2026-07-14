@@ -1,8 +1,8 @@
 """End-to-end: the keyed role-aware chat smoke runs green (spec 06 §2, spec 05).
 
-Builds a role-aware chat harness for an ``engineer`` and runs one real ``run_task`` turn. Requires
+Builds a role-aware chat harness for a ``backend_engineer`` and runs one real ``run_task`` turn. Requires
 Azure OpenAI credentials; the smoke itself skips (returns 0) when they are unset, so this test passes
-in CI without keys and exercises the live engineer-writes-a-file path locally when they are present.
+in CI without keys and exercises the live backend-engineer path locally when they are present.
 """
 
 from __future__ import annotations

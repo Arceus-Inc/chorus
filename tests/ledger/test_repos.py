@@ -204,6 +204,30 @@ def test_run_create_and_finish(ledger: SqliteLedger) -> None:
     assert got.outcome == {"passed": True}
 
 
+def test_run_records_a_system_principal_separately_from_its_employee_host(
+    ledger: SqliteLedger,
+) -> None:
+    ledger.employees.create(Employee(id="author", name="Author", role="backend_engineer"))
+    ledger.tasks.submit(Task(id="code", intent="ship it"))
+
+    ledger.runs.create(
+        Run(
+            id="verify",
+            employee_id="author",
+            task_id="code",
+            principal_kind="system",
+            system_principal_id="system-verifier",
+        )
+    )
+
+    run = ledger.runs.get("verify")
+    assert run is not None
+    assert run.employee_id == "author"
+    assert run.principal_kind == "system"
+    assert run.system_principal_id == "system-verifier"
+    assert run.principal_id == "system-verifier"
+
+
 def test_cancel_running_only_touches_running_and_returns_their_ids(ledger: SqliteLedger) -> None:
     ledger.employees.create(Employee(id="e1", name="a", role="engineer"))
     ledger.tasks.submit(Task(id="t1", intent="x"))

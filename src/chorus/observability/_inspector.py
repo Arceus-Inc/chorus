@@ -167,6 +167,8 @@ class LedgerInspector:
             task_id=run.task_id,
             employee_id=run.employee_id,
             status=run.status.value,
+            principal_kind=run.principal_kind,
+            principal_id=run.principal_id,
             liveness_state=run.liveness_state,
             started_at=run.started_at,
             finished_at=run.finished_at,

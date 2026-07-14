@@ -27,6 +27,7 @@ from chorus.ledger import (
     TeamStatus,
 )
 from chorus.roles import RoleRegistry, default_roles
+from chorus.verification import SYSTEM_VERIFIER
 from chorus.workforce import Employee
 from chorus_harness import _factory as _factory_mod
 
@@ -52,8 +53,8 @@ def _factory(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> tuple[Any, dict
 def _seed_delegation(
     ledger: SqliteLedger, *, child_status: TaskStatus | None = None
 ) -> Employee:
-    lead = Employee(id="moe", name="Moe", role="engineer")
-    worker = Employee(id="ada", name="Ada", role="engineer", reports_to=lead.id)
+    lead = Employee(id="moe", name="Moe", role="backend_engineer")
+    worker = Employee(id="ada", name="Ada", role="backend_engineer", reports_to=lead.id)
     ledger.employees.create(lead)
     ledger.employees.create(worker)
     ledger.management_profiles.upsert(
@@ -64,7 +65,7 @@ def _seed_delegation(
             can_lead=True,
             max_delegation_depth=1,
             max_team_size=3,
-            allowed_professions=("engineer",),
+            allowed_professions=("backend_engineer",),
             version=1,
         )
     )
@@ -108,7 +109,11 @@ def _seed_delegation(
             max_depth=1,
             max_team_size=3,
             objective_rubric="integrate the delegated subtree",
-            status=DelegationContractStatus.DELEGATED,
+            status=(
+                DelegationContractStatus.INTEGRATING
+                if child_status is not None
+                else DelegationContractStatus.DELEGATED
+            ),
         )
     )
     if child_status is not None:
@@ -124,11 +129,11 @@ def _seed_delegation(
     return lead
 
 
-def test_engineer_materializes_a_writable_harness_in_its_worktree(
+def test_backend_engineer_materializes_a_writable_harness_in_its_worktree(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     factory, captured = _factory(monkeypatch, tmp_path)
-    mat = factory.materialize(Employee(id="ada", name="Ada", role="engineer"))
+    mat = factory.materialize(Employee(id="ada", name="Ada", role="backend_engineer"))
     # the engineer works confined to its own branch-isolated worktree under the org root
     assert mat.working_dir == tmp_path / "acme" / "worktrees" / "ada"
     assert mat.workspace is not None
@@ -144,9 +149,12 @@ def test_engineer_materializes_a_writable_harness_in_its_worktree(
         "get_run",
         "skill",
         "todo_write",
+        "test_evidence",
+        "secret_scan",
+        "code_quality",
     }
     assert mat.config.permission_mode == "acceptEdits"
-    assert captured["max_turns"] == 12  # the engine scalars come from the role too
+    assert captured["max_turns"] == 18  # the engine scalars come from the role too
     assert captured["working_memory"] is True
 
 
@@ -159,7 +167,7 @@ def test_engineer_role_overlays_admit_read_memory_for_read_only_heads(
     # zero text and `run_task` fails with "planner reply missing <spec>" (see write_role_overlays). The
     # generator runs tools=null (no `tools =` line), so it sees the full role toolset.
     factory, _ = _factory(monkeypatch, tmp_path)
-    mat = factory.materialize(Employee(id="ada", name="Ada", role="engineer"))
+    mat = factory.materialize(Employee(id="ada", name="Ada", role="backend_engineer"))
 
     planner = (mat.working_dir / ".harness" / "roles" / "planner.toml").read_text(encoding="utf-8")
     evaluator = (mat.working_dir / ".harness" / "roles" / "evaluator.toml").read_text(
@@ -183,7 +191,7 @@ def test_engineer_gets_an_unrestricted_sandbox_so_it_can_run_commands(
     # the engineer must run tests/builds (arbitrary commands), which dream gates behind an interactive
     # approval the autonomous kernel can't supply — so its trust posture is unrestricted-in-worktree.
     factory, _ = _factory(monkeypatch, tmp_path)
-    mat = factory.materialize(Employee(id="ada", name="Ada", role="engineer"))
+    mat = factory.materialize(Employee(id="ada", name="Ada", role="backend_engineer"))
     sandbox = (mat.working_dir / ".harness" / "sandbox.toml").read_text(encoding="utf-8")
     assert 'tier = "unrestricted"' in sandbox
     assert "confirm_unrestricted = true" in sandbox  # dream double-gates it; the choice is explicit
@@ -230,11 +238,13 @@ def test_materialized_skill_bundle_is_git_excluded_from_the_worktree(
     )
 
 
-def test_reviewer_materializes_a_read_only_harness(
+def test_system_verifier_materializes_a_read_only_harness(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     factory, captured = _factory(monkeypatch, tmp_path)
-    mat = factory.materialize(Employee(id="rob", name="Rob", role="reviewer"))
+    mat = factory.materialize_verifier(
+        SYSTEM_VERIFIER, task_id="review", worktree_owner_id="ada"
+    )
     # the headline win: a reviewer is read-only EVERYWHERE — not just in chat. Its only tool with no
     # ledger is read_file (submit_verdict needs a ledger to bind to, registered in the ledger-bound test).
     names = {t.name for t in captured["registry"].list_tools()}
@@ -270,7 +280,7 @@ def test_delegation_harness_registers_the_decompose_capability_tool(
         lead = _seed_delegation(ledger)
         factory.materialize(lead, task_id="goal")
         names = {t.name for t in captured["registry"].list_tools()}
-        assert names == {"read_file", "decompose", "submit_task", "assign_task"}
+        assert names == {"read_file", "decompose", "team_read", "staffing_request"}
     finally:
         ledger.close()
 
@@ -374,12 +384,12 @@ def test_integrate_beat_over_a_complete_subtree_drops_all_mutating_tools(
         assert (
             "submit_task" not in names and "assign_task" not in names
         )  # cannot over-submit a done subtree
-        assert names == {"read_file"}  # only read remains — the manager reviews, then accepts
+        assert names == {"read_file", "team_read"}  # only reads remain before acceptance
     finally:
         ledger.close()
 
 
-def test_reviewer_harness_registers_the_submit_verdict_capability_tool(
+def test_system_verifier_harness_registers_the_submit_verdict_capability_tool(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     # The Reviewer's one capability is the chorus `submit_verdict` tool — read-only on the filesystem,
@@ -390,7 +400,6 @@ def test_reviewer_harness_registers_the_submit_verdict_capability_tool(
         monkeypatch.setattr(
             _factory_mod.dream, "build_harness", lambda **kw: captured.update(kw) or object()
         )
-        ledger.employees.create(Employee(id="rob", name="Rob", role="reviewer"))
         factory = _factory_mod.EmployeeHarnessFactory(
             api_key="k",
             base_url="https://x/openai/v1",
@@ -400,7 +409,9 @@ def test_reviewer_harness_registers_the_submit_verdict_capability_tool(
             work_root=tmp_path,
             ledger=ledger,
         )
-        factory.materialize(Employee(id="rob", name="Rob", role="reviewer"))
+        factory.materialize_verifier(
+            SYSTEM_VERIFIER, task_id="review", worktree_owner_id="ada"
+        )
         names = {t.name for t in captured["registry"].list_tools()}
         assert names == {
             "read_file",
@@ -410,18 +421,18 @@ def test_reviewer_harness_registers_the_submit_verdict_capability_tool(
         ledger.close()
 
 
-def test_reviewer_can_be_materialized_at_the_worker_s_worktree(
+def test_system_verifier_is_materialized_at_the_worker_s_worktree(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     # The reviewer inspects the work IN PLACE: pointed at the worker's worktree as its (read-only)
     # working dir, so the verdict is rendered on the real diff. Its read-only sandbox keeps it look-only.
     factory, _ = _factory(monkeypatch, tmp_path)
-    review = factory.materialize(
-        Employee(id="rob", name="Rob", role="reviewer"), review_worktree_of="ada"
+    review = factory.materialize_verifier(
+        SYSTEM_VERIFIER, task_id="review", worktree_owner_id="ada"
     )
     assert (
         review.working_dir == tmp_path / "acme" / "worktrees" / "ada"
-    )  # ada's worktree, not rob's
+    )  # ada's worktree, not a system-principal worktree
     sandbox = (review.working_dir / ".harness" / "sandbox.toml").read_text(encoding="utf-8")
     assert 'tier = "read-only"' in sandbox
 
@@ -436,8 +447,10 @@ def test_delegation_brief_is_rehydrated_with_its_team(
         from chorus.workforce import Employee as _Emp
 
         lead = _seed_delegation(ledger)
-        ledger.employees.create(_Emp(id="bob", name="Bob", role="engineer", reports_to="moe"))
-        ledger.employees.create(_Emp(id="eve", name="Eve", role="engineer"))
+        ledger.employees.create(
+            _Emp(id="bob", name="Bob", role="backend_engineer", reports_to="moe")
+        )
+        ledger.employees.create(_Emp(id="eve", name="Eve", role="backend_engineer"))
         ledger.team_members.add(
             TeamMember(
                 team_id="team-goal",
@@ -461,7 +474,8 @@ def test_delegation_brief_is_rehydrated_with_its_team(
         )
         mat = factory.materialize(lead, task_id="goal")
         generator = (mat.working_dir / ".harness" / "roles" / "generator.toml").read_text("utf-8")
-        assert "ada (engineer)" in generator and "bob (engineer)" in generator
+        assert "ada (backend_engineer)" in generator
+        assert "bob (backend_engineer)" in generator
         assert "eve (engineer)" not in generator
         assert "moe" not in generator.split("Your reports")[1]  # the manager isn't its own report
     finally:
@@ -495,7 +509,7 @@ def test_management_profile_without_a_delegation_task_keeps_delivery_tools(
 
 def test_runner_for_is_a_beat_runner(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     factory, _ = _factory(monkeypatch, tmp_path)
-    runner = factory.runner_for(Employee(id="ada", name="Ada", role="engineer"))
+    runner = factory.runner_for(Employee(id="ada", name="Ada", role="backend_engineer"))
     assert isinstance(runner, BeatRunner)  # the scheduler dispatches through this
 
 

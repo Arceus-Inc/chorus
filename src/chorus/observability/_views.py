@@ -32,6 +32,8 @@ class RunView:
     task_id: str
     employee_id: str
     status: str
+    principal_kind: str = "employee"
+    principal_id: str | None = None
     liveness_state: str | None = None
     score: float | None = None
     started_at: datetime | None = None

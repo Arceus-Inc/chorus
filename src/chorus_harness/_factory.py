@@ -36,11 +36,13 @@ from chorus.roles import RoleBeatConfig, RoleRegistry, role_beat_config
 from chorus.roles._manifest import McpServerSpec
 from chorus.roles._subagent import SubagentSpec
 from chorus.trust import TrustPolicy
+from chorus.verification import VerificationPrincipal
 from chorus.workforce import Employee
 from chorus.workspace import CompanyWorkspace, default_work_root
 from chorus_employee import default_landers
 from chorus_employee._recall import PLANNER_TOOLLESS_NOTE
 from chorus_employee._shared_skills import SHARED_SKILLS_ROOT
+from chorus_employee.reviewer._harness import reviewer_manifest
 from chorus_harness._skills import materialize_skills
 from chorus_harness._trust import apply_trust
 from chorus_tools import (
@@ -56,10 +58,13 @@ from chorus_tools import (
     RecallTool,
     RecordDecisionTool,
     SecretScanTool,
+    StaffingRequestTool,
     SubmitTaskTool,
     SubmitVerdictTool,
     TeamReadTool,
     TestEvidenceTool,
+    WorkforceCatalogReadTool,
+    WorkforcePlanProposeTool,
     analysis_tool,
     governance_tool,
 )
@@ -183,6 +188,9 @@ _CHORUS_TO_DREAM_TOOL: dict[str, str] = {
     "proposal_reject": "proposal_reject",
     "goal_set_priority": "goal_set_priority",
     "goal_archive": "goal_archive",
+    "staffing_request": "staffing_request",
+    "workforce_catalog_read": "workforce_catalog_read",
+    "workforce_plan_propose": "workforce_plan_propose",
 }
 
 _READ_ONLY_DREAM_SURFACE_TOOLS = frozenset(
@@ -211,6 +219,7 @@ _READ_ONLY_DREAM_SURFACE_TOOLS = frozenset(
         # (proposal_approve/reject, goal_set_priority/archive) are deliberately NOT here — they belong to
         # the generator phase only.
         "governance_read",
+        "workforce_catalog_read",
     }
 )
 
@@ -268,7 +277,11 @@ def _role_registry(dream_names: tuple[str, ...]) -> ToolRegistry:
     return registry
 
 
-def _capability_tool(name: str, ledger: SqliteLedger | None) -> BaseTool | None:
+def _capability_tool(
+    name: str,
+    ledger: SqliteLedger | None,
+    roles: RoleRegistry,
+) -> BaseTool | None:
     """Build the chorus capability tool for ``name``, or ``None`` if it isn't one.
 
     The ledger-bound tools require a live ``ledger``; the ledger-free ones (``brand_lint`` /
@@ -291,6 +304,12 @@ def _capability_tool(name: str, ledger: SqliteLedger | None) -> BaseTool | None:
             return GoLiveTool(ledger)
         if name == "record_decision":
             return RecordDecisionTool(ledger)
+        if name == "staffing_request":
+            return StaffingRequestTool(ledger)
+        if name == "workforce_catalog_read":
+            return WorkforceCatalogReadTool(ledger, roles)
+        if name == "workforce_plan_propose":
+            return WorkforcePlanProposeTool(ledger, roles)
     if name == "brand_lint":
         return (
             BrandLintTool()
@@ -400,7 +419,7 @@ def _toml_string_list(values: tuple[str, ...]) -> str:
 def _read_only_role_tools(
     role: Literal["planner", "evaluator"], config: RoleBeatConfig
 ) -> tuple[str, ...]:
-    """Default read-only Dream role tools plus safe Engineer read surfaces."""
+    """Default read-only Dream role tools plus safe employee read surfaces."""
     base = default_role_manifest(role).tools or ()
     tools = list(base)
     for name in dream_tool_names(config.tools):
@@ -560,8 +579,8 @@ class EmployeeHarnessFactory:
         Symmetric with :meth:`runner_for`: the factory owns execution, so it owns how each employee's
         deliverable lands. The consumer wires both at once —
         ``Chorus.build(..., beat_runner_for=factory.runner_for, landers=factory.landers)`` — instead of
-        hand-building ``default_landers`` at every call site. The manager/reviewer landers come online
-        only when the factory holds the live ledger they read from.
+        hand-building ``default_landers`` at every call site. The manager and verifier verdict landers
+        come online only when the factory holds the live ledger they read from.
         """
         return default_landers(self._company_root, ledger=self._ledger)
 
@@ -570,23 +589,42 @@ class EmployeeHarnessFactory:
         return self.materialize(employee, task_id=task_id).runner
 
     def review_runner_for(
-        self, reviewer: Employee, *, task_id: str, worktree_owner_id: str
+        self, reviewer: VerificationPrincipal, *, task_id: str, worktree_owner_id: str
     ) -> BeatRunner:
-        """The review seam — a read-only reviewer runner pointed at the author's worktree (M3 Reviewer)."""
-        return self.materialize(
-            reviewer, task_id=task_id, review_worktree_of=worktree_owner_id
+        """Build the system verifier in the author's worktree without a workforce role."""
+        return self.materialize_verifier(
+            reviewer,
+            task_id=task_id,
+            worktree_owner_id=worktree_owner_id,
         ).runner
 
     def verification_runner_for(
-        self, reviewer: Employee, *, task_id: str, worktree_owner_id: str
+        self, reviewer: VerificationPrincipal, *, task_id: str, worktree_owner_id: str
     ) -> BeatRunner:
-        """Build a read-only reviewer that returns evidence without mutating the task DoD."""
-        return self.materialize(
+        """Build a read-only system verifier that returns evidence without mutating the task DoD."""
+        return self.materialize_verifier(
             reviewer,
             task_id=task_id,
-            review_worktree_of=worktree_owner_id,
+            worktree_owner_id=worktree_owner_id,
             verification_only=True,
         ).runner
+
+    def materialize_verifier(
+        self,
+        principal: VerificationPrincipal,
+        *,
+        task_id: str,
+        worktree_owner_id: str,
+        verification_only: bool = False,
+    ) -> EmployeeHarness:
+        """Materialize the built-in verifier profile without registering or persisting an employee."""
+        return self._materialize(
+            principal,
+            task_id=task_id,
+            review_worktree_of=worktree_owner_id,
+            verification_only=verification_only,
+            config_override=role_beat_config(reviewer_manifest()),
+        )
 
     def materialize(
         self,
@@ -595,6 +633,22 @@ class EmployeeHarnessFactory:
         task_id: str | None = None,
         review_worktree_of: str | None = None,
         verification_only: bool = False,
+    ) -> EmployeeHarness:
+        return self._materialize(
+            employee,
+            task_id=task_id,
+            review_worktree_of=review_worktree_of,
+            verification_only=verification_only,
+        )
+
+    def _materialize(
+        self,
+        employee: Employee | VerificationPrincipal,
+        *,
+        task_id: str | None = None,
+        review_worktree_of: str | None = None,
+        verification_only: bool = False,
+        config_override: RoleBeatConfig | None = None,
     ) -> EmployeeHarness:
         """Resolve ``employee``'s role into a configured dream harness in its isolated worktree.
 
@@ -607,8 +661,11 @@ class EmployeeHarnessFactory:
         working dir, so it inspects the work under review *in place* — the verdict is rendered on the
         real diff, and the reviewer's read-only sandbox makes the borrowed worktree look-but-don't-touch.
         """
-        if employee.role not in self._roles:
-            raise ValueError(f"role {employee.role!r} for {employee.id!r} is not a registered role")
+        if config_override is None and (
+            not isinstance(employee, Employee) or employee.role not in self._roles
+        ):
+            role = employee.role if isinstance(employee, Employee) else employee.kind
+            raise ValueError(f"role {role!r} for {employee.id!r} is not a registered role")
 
         # §4 trust: narrow the harness to the task's effective preset (read-only / plan for a low-trust
         # beat) and assert containment. A TrustDenied propagates — an uncontained beat is not built.
@@ -617,9 +674,13 @@ class EmployeeHarnessFactory:
             if task_id is not None and self._ledger is not None
             else None
         )
-        if self._ledger is None or review_worktree_of is not None:
+        if config_override is not None:
+            config = config_override
+        elif self._ledger is None or review_worktree_of is not None:
+            assert isinstance(employee, Employee)
             config = role_beat_config(self._roles.get(employee.role).manifest)
         else:
+            assert isinstance(employee, Employee)
             config = ExecutionProfileResolver(self._roles, self._ledger).resolve(
                 employee, task
             ).config
@@ -707,7 +768,7 @@ class EmployeeHarnessFactory:
         for name in config.tools:
             if self._ledger is None and name not in _LEDGER_FREE_CAPABILITY_TOOLS:
                 continue
-            capability = _capability_tool(name, self._ledger)
+            capability = _capability_tool(name, self._ledger, self._roles)
             if capability is not None:
                 registry.register(capability, source=ToolSource.DEFAULT)
         # cms_draft is registered here (not in _capability_tool): its Markdown fallback backend needs the

@@ -68,6 +68,11 @@ from chorus_tools._secret_scan import (
     scan_text,
     write_report,
 )
+from chorus_tools._staffing_request import (
+    StaffingNeedInput,
+    StaffingRequestInput,
+    StaffingRequestTool,
+)
 from chorus_tools._submit_verdict import SubmitVerdictInput, SubmitVerdictTool
 from chorus_tools._team_read import TeamReadInput, TeamReadTool
 from chorus_tools._test_evidence import (
@@ -77,6 +82,14 @@ from chorus_tools._test_evidence import (
     TestEvidenceInput,
     TestEvidenceTool,
     write_bundle,
+)
+from chorus_tools._workforce_plan import (
+    ManagementGrantInput,
+    PlannedEmployeeInput,
+    WorkforceCatalogReadInput,
+    WorkforceCatalogReadTool,
+    WorkforcePlanProposeInput,
+    WorkforcePlanProposeTool,
 )
 
 __all__ = [
@@ -114,7 +127,9 @@ __all__ = [
     "GoalSetPriorityTool",
     "GovernanceReadTool",
     "LogAssessment",
+    "ManagementGrantInput",
     "NotebookRunTool",
+    "PlannedEmployeeInput",
     "ProposalApproveTool",
     "ProposalRejectTool",
     "QualityCheck",
@@ -129,6 +144,9 @@ __all__ = [
     "SecretScanInput",
     "SecretScanReport",
     "SecretScanTool",
+    "StaffingNeedInput",
+    "StaffingRequestInput",
+    "StaffingRequestTool",
     "SubmitTaskInput",
     "SubmitTaskTool",
     "SubmitVerdictInput",
@@ -138,6 +156,10 @@ __all__ = [
     "TestEvidenceInput",
     "TestEvidenceTool",
     "WarehouseQueryTool",
+    "WorkforceCatalogReadInput",
+    "WorkforceCatalogReadTool",
+    "WorkforcePlanProposeInput",
+    "WorkforcePlanProposeTool",
     "analysis_tool",
     "available_exemplars",
     "chorus_tool_registry",

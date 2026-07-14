@@ -64,12 +64,14 @@ class _RecordingLander:
 
 
 def _seed(ledger: SqliteLedger) -> Employee:
-    employee = ledger.employees.create(Employee(id="e1", name="e1", role="engineer"))
+    employee = ledger.employees.create(
+        Employee(id="e1", name="e1", role="backend_engineer")
+    )
     ledger.tasks.submit(
         Task(id="t1", intent="ship", status=TaskStatus.TODO, assignee_employee_id="e1")
     )
     # An explicit objective DoD so the beat lands directly — these tests exercise the landing path, not
-    # the engineer's reviewed-build gate (that is covered in tests/heartbeat/test_m3_review.py).
+    # the backend engineer's reviewed-build gate (covered in test_m3_review.py).
     ledger.dod.create("t1", Verifier.command("true"))
     ledger.wakes.enqueue(
         Wake(id="w1", employee_id="e1", reason=WakeReason.TASK_ASSIGNED, payload={"task_id": "t1"})
@@ -94,7 +96,7 @@ async def test_passed_beat_records_the_role_artifact(ledger: SqliteLedger) -> No
     lander = _RecordingLander()
     await _run(ledger, landers=LanderRegistry.from_landers([lander]))
 
-    assert lander.landed == ["t1"]  # the engineer's "pr" lander was called for the passed beat
+    assert lander.landed == ["t1"]
     artifacts = ledger.artifacts.list_for_task("t1")
     assert len(artifacts) == 1 and artifacts[0].type.value == "pr"  # recorded on the ledger
     assert artifacts[0].resource_ref == {"branch": "chorus/e1"}
@@ -111,7 +113,7 @@ async def test_no_lander_still_finalises_done(ledger: SqliteLedger) -> None:
 async def test_real_engineer_lander_records_a_pr_with_a_real_commit(
     ledger: SqliteLedger, tmp_path: Path
 ) -> None:
-    # the real EngineerLander over a real worktree — the full kernel landing path, no fakes
+    # the real engineering lander over a real worktree: full kernel landing, no fakes
     company_root = tmp_path / "acme"
     worktree = CompanyWorkspace(company_root).worktree_for("e1").path
     (worktree / "feature.py").write_text("def f():\n    return 1\n", encoding="utf-8")  # the work
@@ -121,7 +123,7 @@ async def test_real_engineer_lander_records_a_pr_with_a_real_commit(
         workforce=_FakeWorkforce(_seed(ledger)),
         beat_runner=_PassingBeat(),
         roles=RoleRegistry.from_plugins(default_roles()),
-        landers=default_landers(company_root),  # the engineer's real "pr" lander
+        landers=default_landers(company_root),
         max_concurrent_runs=1,
     )
     await sched.tick(_NOW)
@@ -134,7 +136,7 @@ async def test_real_engineer_lander_records_a_pr_with_a_real_commit(
     assert pr.resource_ref is not None
     assert pr.resource_ref["branch"] == "chorus/e1"
     assert pr.resource_ref["commit"]  # a real commit sha
-    # the engineer's work was committed on its branch (the "PR" has content)
+    # the employee's work was committed on its branch (the "PR" has content)
     tracked = subprocess.run(
         ["git", "-C", str(worktree), "ls-files"], check=True, capture_output=True, text=True
     ).stdout

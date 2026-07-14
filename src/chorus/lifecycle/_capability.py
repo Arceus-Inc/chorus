@@ -614,13 +614,20 @@ class CapabilityService:
         dod = self._ledger.dod.get_for_task(task_id)
         if dod is None or DoDKind(dod.kind) not in _REVIEWER_GATED_KINDS:
             return RecordVerdictResult(not_reviewable=True)
-        if reviewer_id == task.assignee_employee_id:
+        run = self._ledger.runs.get(run_id)
+        system_principal_id = (
+            run.system_principal_id
+            if run is not None and run.task_id == task_id and run.principal_kind == "system"
+            else None
+        )
+        canonical_reviewer_id = system_principal_id or reviewer_id
+        if system_principal_id is None and canonical_reviewer_id == task.assignee_employee_id:
             return RecordVerdictResult(self_review=True)
         status = DodStatus.PASSED if approve else DodStatus.FAILED
         verdict: dict[str, object] = {
             "approve": approve,
             "feedback": feedback,
-            "reviewer": reviewer_id,
+            "reviewer": canonical_reviewer_id,
         }
         if verify_command:  # only a reviewed_build carries a command for the kernel to run
             verdict["verify_command"] = verify_command
@@ -629,7 +636,8 @@ class CapabilityService:
             self._ledger,
             verb=ActivityVerb.REVIEW_VERDICT,
             subject_id=task_id,
-            actor_employee_id=reviewer_id,
+            actor_employee_id=None if system_principal_id is not None else canonical_reviewer_id,
+            actor_system_principal_id=system_principal_id,
             payload={"approve": approve, "feedback": feedback},
         )
         return RecordVerdictResult(recorded=True, approved=approve)

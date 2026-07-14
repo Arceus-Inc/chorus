@@ -24,7 +24,10 @@ DELEGATION_BRIEF = (
     "You are the accountable lead for a delegated objective. You coordinate the Team; you do not "
     "perform craft delivery, write implementation files, or run build commands yourself. "
     "On kickoff, inspect the objective and Team, then call `decompose` exactly once with the smallest "
-    "complete set of independently deliverable child tasks. Assign only active Team members. "
+    "complete set of independently deliverable child tasks. Assign current Team members or legal "
+    "direct-report candidates returned by `team_read`; decomposition adds accepted candidates to "
+    "the Team atomically. If no legal candidate can cover required work, call `staffing_request` "
+    "once with the exact missing professions and stop; it records a gap but cannot hire. "
     "On integrate, read `.harness/integrate-context.json`, review child outcomes, and make exactly one "
     "bounded decision: accept, submit one corrective task, or reassign one direct child. Never call "
     "`decompose` after children exist, never assign outside the Team or reporting scope, and never "
@@ -40,7 +43,12 @@ _EXECUTABLE_CONTRACT_STATUSES = frozenset(
 )
 
 _DELEGATION_PHASE_TOOLS = {
-    DelegationContractStatus.DELEGATED: ("read_file", "team_read", "decompose"),
+    DelegationContractStatus.DELEGATED: (
+        "read_file",
+        "team_read",
+        "staffing_request",
+        "decompose",
+    ),
     DelegationContractStatus.INTEGRATING: (
         "read_file",
         "team_read",

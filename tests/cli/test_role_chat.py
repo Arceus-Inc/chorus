@@ -58,7 +58,7 @@ def test_service_surfaces_the_materialized_worktree_and_config(
     _stub_build_harness(monkeypatch)
     ledger = SqliteLedger.open(":memory:")
     try:
-        ledger.employees.create(Employee(id="ada", name="Ada", role="engineer"))
+        ledger.employees.create(Employee(id="ada", name="Ada", role="backend_engineer"))
         service = _service(ledger, work_root=tmp_path)
         assert service.model == "gpt-x"
         # the chat service runs in the employee's branch-isolated worktree (shared with tick)
@@ -78,7 +78,7 @@ def test_chat_wires_the_role_registry_so_tasks_inherit_the_role_dod(
     _stub_build_harness(monkeypatch)
     ledger = SqliteLedger.open(":memory:")
     try:
-        ledger.employees.create(Employee(id="ada", name="Ada", role="engineer"))
+        ledger.employees.create(Employee(id="ada", name="Ada", role="backend_engineer"))
         captured: dict[str, Any] = {}
         real_scheduler = _role_chat.Scheduler
 
@@ -88,9 +88,9 @@ def test_chat_wires_the_role_registry_so_tasks_inherit_the_role_dod(
 
         monkeypatch.setattr(_role_chat, "Scheduler", _capture)
         _service(ledger, work_root=tmp_path)
-        # the scheduler is handed the role registry → a chat task inherits the engineer's DoD at intake
+        # the scheduler is handed the role registry, so chat tasks inherit the role's DoD at intake
         assert captured["roles"] is not None
-        assert "engineer" in captured["roles"]
+        assert "backend_engineer" in captured["roles"]
     finally:
         ledger.close()
 
@@ -125,7 +125,7 @@ def test_seed_makes_the_employee_branch_off_real_code(
 
     ledger = SqliteLedger.open(":memory:")
     try:
-        ledger.employees.create(Employee(id="ada", name="Ada", role="engineer"))
+        ledger.employees.create(Employee(id="ada", name="Ada", role="backend_engineer"))
         service = _service(ledger, work_root=tmp_path / "ws", seed=source)
         # the engineer's worktree starts from the seeded codebase, not a blank tree
         assert (Path(service.working_dir) / "app.py").read_text(

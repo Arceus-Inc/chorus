@@ -34,6 +34,7 @@ from chorus.ledger import (
 from chorus.lifecycle import CapabilityService, ChildPlan, assign_task
 from chorus.recovery import reconcile
 from chorus.roles import RoleRegistry, default_roles
+from chorus.verification import VerificationPrincipal
 from chorus.workforce import Employee, LedgerWorkforce
 from chorus_employee import default_landers
 
@@ -262,12 +263,12 @@ class _Org:
         return self._for(employee)
 
     def review_runner_for(
-        self, reviewer: Employee, *, task_id: str, worktree_owner_id: str
+        self, reviewer: VerificationPrincipal, *, task_id: str, worktree_owner_id: str
     ) -> object:
         return self._for(reviewer)
 
-    def _for(self, employee: Employee) -> object:
-        if employee.role == "reviewer":
+    def _for(self, employee: Employee | VerificationPrincipal) -> object:
+        if isinstance(employee, VerificationPrincipal):
             if self._silent:
                 return _SilentReviewer(self._root)
             reviewer_cls = _Reviewer
@@ -418,23 +419,42 @@ async def test_run_forever_lands_a_reviewed_deliverable_done(
     assert ledger.tasks.get("code").status is TaskStatus.DONE  # type: ignore[union-attr]
 
 
-async def test_no_reviewer_opens_a_recovery_card(ledger: SqliteLedger, tmp_path: Path) -> None:
-    # Spec 16: only ``reviewed_build`` still requires a Reviewer beat. With none hired, the gate cannot
-    # be discharged → the task blocks and a human is paged (never a silent pass).
-    ledger.employees.create(Employee(id="dev", name="Dev", role="engineer"))  # no reviewer hired
+async def test_system_verifier_reviews_without_a_reviewer_employee(
+    ledger: SqliteLedger, tmp_path: Path
+) -> None:
+    ledger.employees.create(Employee(id="dev", name="Dev", role="backend_engineer"))
     ledger.tasks.submit(Task(id="code", intent="build the widget", status=TaskStatus.TODO))
     assign_task(ledger, "code", "dev")
     from chorus.outcomes import Verifier
 
     ledger.dod.create("code", Verifier.reviewed_build(artifact_class="pr"))
-    org = _Org(ledger, decide=lambda _tid: True, root=tmp_path)
+    org = _Org(
+        ledger,
+        decide=lambda _tid: True,
+        root=tmp_path,
+        verify_command=_PASS_COMMAND,
+    )
     sched = _sched(ledger, org, tmp_path)
 
     await sched.tick_once()
     await sched.drain()
 
-    assert ledger.tasks.get("code").status is TaskStatus.BLOCKED  # type: ignore[union-attr]
-    assert ledger.recovery_actions.active_for_source("code") is not None  # a human must verify it
+    assert ledger.tasks.get("code").status is TaskStatus.DONE  # type: ignore[union-attr]
+    assert all(employee.role != "reviewer" for employee in ledger.employees.list())
+    review_runs = [run for run in ledger.runs.for_task("code") if run.id.startswith("rev_")]
+    assert len(review_runs) == 1
+    assert review_runs[0].employee_id == "dev"
+    assert review_runs[0].principal_kind == "system"
+    assert review_runs[0].principal_id == "system-verifier"
+    assert review_runs[0].lease_expires_at is not None
+    verdicts = [
+        event
+        for event in ledger.activity.by_subject("task", "code")
+        if event.verb.value == "review_verdict"
+    ]
+    assert len(verdicts) == 1
+    assert verdicts[0].actor_employee_id is None
+    assert verdicts[0].actor_system_principal_id == "system-verifier"
 
 
 async def test_standalone_block_self_repairs_then_opens_recovery(

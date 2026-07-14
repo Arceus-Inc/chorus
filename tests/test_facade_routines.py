@@ -40,7 +40,7 @@ def test_add_routine_persists_a_routine_and_its_cron_trigger() -> None:
     ledger = SqliteLedger.open(":memory:")
     try:
         chorus = _chorus(ledger)
-        chorus.hire(name="Moe", role="engineer")
+        chorus.hire(name="Moe", role="frontend_engineer")
         view = chorus.routines.add(
             employee="Moe", intent_template="weekly review", schedule="0 9 * * 1"
         )
@@ -63,7 +63,7 @@ def test_add_routine_resolves_a_name_to_its_slug() -> None:
     ledger = SqliteLedger.open(":memory:")
     try:
         chorus = _chorus(ledger)
-        chorus.hire(name="Big Moe", role="engineer")
+        chorus.hire(name="Big Moe", role="frontend_engineer")
         view = chorus.routines.add(employee="Big Moe", intent_template="x", schedule="0 * * * *")
         assert view.employee_id == "big-moe"
     finally:
@@ -87,7 +87,7 @@ def test_add_routine_honours_an_explicit_concurrency_enum() -> None:
     ledger = SqliteLedger.open(":memory:")
     try:
         chorus = _chorus(ledger)
-        chorus.hire(name="Moe", role="engineer")
+        chorus.hire(name="Moe", role="frontend_engineer")
         view = chorus.routines.add(
             employee="Moe",
             intent_template="x",
@@ -103,8 +103,8 @@ def test_list_routines_filters_by_employee() -> None:
     ledger = SqliteLedger.open(":memory:")
     try:
         chorus = _chorus(ledger)
-        chorus.hire(name="Moe", role="engineer")
-        chorus.hire(name="Ada", role="engineer", reports_to="moe")
+        chorus.hire(name="Moe", role="frontend_engineer")
+        chorus.hire(name="Ada", role="frontend_engineer", reports_to="moe")
         chorus.routines.add(employee="Moe", intent_template="m", schedule="0 * * * *")
         chorus.routines.add(employee="Ada", intent_template="a", schedule="0 * * * *")
         assert {v.employee_id for v in chorus.routines.list()} == {"moe", "ada"}
@@ -117,7 +117,7 @@ def test_routine_view_carries_triggers_and_recent_runs() -> None:
     ledger = SqliteLedger.open(":memory:")
     try:
         chorus = _chorus(ledger)
-        chorus.hire(name="Moe", role="engineer")
+        chorus.hire(name="Moe", role="frontend_engineer")
         view = chorus.routines.add(employee="Moe", intent_template="x", schedule="0 * * * *")
         shown = chorus.routines.get(view.id)
         assert len(shown.triggers) == 1
@@ -130,7 +130,7 @@ def test_pause_then_resume_toggles_the_firing_status() -> None:
     ledger = SqliteLedger.open(":memory:")
     try:
         chorus = _chorus(ledger)
-        chorus.hire(name="Moe", role="engineer")
+        chorus.hire(name="Moe", role="frontend_engineer")
         view = chorus.routines.add(employee="Moe", intent_template="x", schedule="0 * * * *")
 
         chorus.routines.pause(view.id)

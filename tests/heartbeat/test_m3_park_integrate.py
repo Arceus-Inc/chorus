@@ -100,14 +100,17 @@ class _TeamBeat:
             assert self.working_dir is not None
             self.integrate_packets.append(IntegrateContextPacket.read(self.working_dir))
             return BeatOutcome(passed=True, outcome={}, summary="accepted subtree", model="m")
-        return BeatOutcome(passed=True, outcome={}, summary="ok", model="m")  # an engineer child
+        return BeatOutcome(passed=True, outcome={}, summary="ok", model="m")
 
 
 def _delegated_parent(ledger: SqliteLedger) -> None:
-    ledger.employees.create(Employee(id="mgr", name="Moe", role="engineer"))
-    ledger.employees.create(Employee(id="reviewer", name="Rae", role="reviewer"))
-    ledger.employees.create(Employee(id="ada", name="Ada", role="engineer", reports_to="mgr"))
-    ledger.employees.create(Employee(id="bob", name="Bob", role="engineer", reports_to="mgr"))
+    ledger.employees.create(Employee(id="mgr", name="Moe", role="backend_engineer"))
+    ledger.employees.create(
+        Employee(id="ada", name="Ada", role="backend_engineer", reports_to="mgr")
+    )
+    ledger.employees.create(
+        Employee(id="bob", name="Bob", role="backend_engineer", reports_to="mgr")
+    )
     ledger.management_profiles.upsert(
         ManagementProfile(
             employee_id="mgr",
@@ -116,7 +119,7 @@ def _delegated_parent(ledger: SqliteLedger) -> None:
             can_lead=True,
             max_delegation_depth=2,
             max_team_size=3,
-            allowed_professions=("engineer",),
+            allowed_professions=("backend_engineer",),
         )
     )
     ledger.goals.create(Goal(id="goal-M", title="Ship the feature"))
@@ -169,16 +172,15 @@ def _delegated_parent(ledger: SqliteLedger) -> None:
 
 
 def _objective_roles() -> RoleRegistry:
-    """Default roles, but the engineer is gated by an objective command — these tests exercise park /
-    integrate, not the engineer's reviewed-build review gate (covered in test_m3_review)."""
+    """Default roles with an objective backend-engineer gate for park/integrate tests."""
     from chorus.outcomes import Verifier
     from chorus.roles._plugin import RolePlugin
 
     base = default_roles()
-    engineer = next(p for p in base if p.name == "engineer")
-    others = tuple(p for p in base if p.name != "engineer")
+    engineer = next(p for p in base if p.name == "backend_engineer")
+    others = tuple(p for p in base if p.name != "backend_engineer")
     objective = RolePlugin(
-        name="engineer",
+        name="backend_engineer",
         manifest=engineer.manifest,
         dod_generator=lambda intent: Verifier.command("true", artifact_class="pr"),
         outcome_kind=engineer.outcome_kind,

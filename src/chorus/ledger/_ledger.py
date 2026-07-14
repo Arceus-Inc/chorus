@@ -50,10 +50,12 @@ from chorus.ledger.repos import (
     RoutineRunRepo,
     RoutineTriggerRepo,
     RunRepo,
+    StaffingRequestRepo,
     TaskRepo,
     TeamMemberRepo,
     TeamRepo,
     WakeRepo,
+    WorkforcePlanRepo,
 )
 
 
@@ -114,6 +116,8 @@ class Ledger(Protocol):
     budget_policies: BudgetPolicyRepo
     budget_incidents: BudgetIncidentRepo
     cost_events: CostEventRepo
+    workforce_plans: WorkforcePlanRepo
+    staffing_requests: StaffingRequestRepo
 
     def schema_version(self) -> str | None: ...
 
@@ -176,6 +180,8 @@ class SqliteLedger:
         self.budget_policies = BudgetPolicyRepo(conn)
         self.budget_incidents = BudgetIncidentRepo(conn)
         self.cost_events = CostEventRepo(conn)
+        self.workforce_plans = WorkforcePlanRepo(conn)
+        self.staffing_requests = StaffingRequestRepo(conn)
 
     @classmethod
     def open(cls, db_path: str) -> SqliteLedger:

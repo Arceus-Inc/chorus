@@ -32,7 +32,7 @@ def _profile(*, granted_by_user_id: str = "spoofed-user") -> ManagementProfile:
         can_lead=True,
         max_delegation_depth=2,
         max_team_size=4,
-        allowed_professions=("engineer",),
+        allowed_professions=("backend_engineer",),
         version=1,
         granted_by_user_id=granted_by_user_id,
     )
@@ -222,7 +222,7 @@ def _specialization_profile() -> ManagementProfile:
         can_subdelegate=True,
         max_delegation_depth=2,
         max_team_size=4,
-        allowed_professions=("engineer",),
+        allowed_professions=("backend_engineer",),
         spend_limit_cents=50_000,
     )
 
@@ -254,7 +254,7 @@ def test_specialize_manager_preserves_identity_org_budget_memory_and_history(
 
     profile = ManagementAuthorityService(ledger).specialize_manager(
         "legacy-manager",
-        profession="engineer",
+        profession="backend_engineer",
         profile=_specialization_profile(),
         roles=_roles(),
         actor_user_id="operator-1",
@@ -263,7 +263,7 @@ def test_specialize_manager_preserves_identity_org_budget_memory_and_history(
     employee = ledger.employees.get("legacy-manager")
     report = ledger.employees.get("report")
     assert employee is not None and report is not None
-    assert employee.id == "legacy-manager" and employee.role == "engineer"
+    assert employee.id == "legacy-manager" and employee.role == "backend_engineer"
     assert employee.reports_to == "root" and report.reports_to == "legacy-manager"
     assert employee.memory_scope == "organization"
     assert (employee.budget_monthly_cents, employee.spent_monthly_cents) == (80_000, 12_345)
@@ -272,7 +272,7 @@ def test_specialize_manager_preserves_identity_org_budget_memory_and_history(
     audit = ledger.activity.by_subject("management_profile", "legacy-manager")
     assert tuple(ledger.activity.all()[: len(before_activity)]) == before_activity
     assert len(audit) == 1 and audit[0].verb is ActivityVerb.PROFILE_GRANTED
-    assert audit[0].payload == {"profession": "engineer", "version": 1}
+    assert audit[0].payload == {"profession": "backend_engineer", "version": 1}
 
 
 @pytest.mark.parametrize("profession", ["missing-role", "manager"])
@@ -304,7 +304,7 @@ def test_specialize_manager_rejects_non_manager_without_writes(ledger: SqliteLed
     with pytest.raises(ValueError, match="role='manager'"):
         ManagementAuthorityService(ledger).specialize_manager(
             "specialist",
-            profession="engineer",
+            profession="backend_engineer",
             profile=profile,
             roles=_roles(),
             actor_user_id="operator-1",
@@ -329,7 +329,7 @@ def test_specialize_manager_rejects_all_nonterminal_assigned_work(ledger: Sqlite
     with pytest.raises(ValueError, match="active work"):
         ManagementAuthorityService(ledger).specialize_manager(
             "legacy-manager",
-            profession="engineer",
+            profession="backend_engineer",
             profile=_specialization_profile(),
             roles=_roles(),
             actor_user_id="operator-1",
@@ -352,7 +352,7 @@ def test_specialize_manager_rolls_back_role_and_profile_when_audit_fails(
     with pytest.raises(RuntimeError, match="audit unavailable"):
         ManagementAuthorityService(ledger).specialize_manager(
             "legacy-manager",
-            profession="engineer",
+            profession="backend_engineer",
             profile=_specialization_profile(),
             roles=_roles(),
             actor_user_id="operator-1",

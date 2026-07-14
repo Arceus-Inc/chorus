@@ -36,7 +36,7 @@ def ledger() -> SqliteLedger:
 
 
 def _seed_authorized_engineer(ledger: SqliteLedger) -> tuple[Employee, Task]:
-    employee = Employee(id="lead", name="Lead", role="engineer")
+    employee = Employee(id="lead", name="Lead", role="backend_engineer")
     ledger.employees.create(employee)
     ledger.management_profiles.upsert(
         ManagementProfile(
@@ -91,7 +91,7 @@ def _seed_authorized_engineer(ledger: SqliteLedger) -> tuple[Employee, Task]:
 
 def test_delivery_mode_preserves_the_exact_profession_contract(ledger: SqliteLedger) -> None:
     roles = RoleRegistry.from_plugins(default_roles())
-    employee = Employee(id="lead", name="Lead", role="engineer")
+    employee = Employee(id="lead", name="Lead", role="backend_engineer")
     task = Task(
         id="task-delivery",
         intent="implement the API",
@@ -99,7 +99,7 @@ def test_delivery_mode_preserves_the_exact_profession_contract(ledger: SqliteLed
     )
 
     resolved = ExecutionProfileResolver(roles, ledger).resolve(employee, task)
-    profession = roles.get("engineer")
+    profession = roles.get("backend_engineer")
 
     assert resolved.config == role_beat_config(profession.manifest)
     assert resolved.verifier == profession.dod_generator(task.intent)
@@ -109,7 +109,10 @@ def test_delivery_mode_preserves_the_exact_profession_contract(ledger: SqliteLed
 @pytest.mark.parametrize(
     ("status", "expected_tools"),
     [
-        (DelegationContractStatus.DELEGATED, ("read_file", "team_read", "decompose")),
+        (
+            DelegationContractStatus.DELEGATED,
+            ("read_file", "team_read", "staffing_request", "decompose"),
+        ),
         (
             DelegationContractStatus.INTEGRATING,
             ("read_file", "team_read", "submit_task", "assign_task"),
@@ -154,7 +157,7 @@ def test_delegation_mode_rejects_a_stale_pinned_profile(ledger: SqliteLedger) ->
 def test_delegation_mode_rejects_an_employee_without_a_management_profile(
     ledger: SqliteLedger,
 ) -> None:
-    employee = Employee(id="lead", name="Lead", role="engineer")
+    employee = Employee(id="lead", name="Lead", role="backend_engineer")
     ledger.employees.create(employee)
     ledger.teams.create(
         Team(

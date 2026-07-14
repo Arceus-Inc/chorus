@@ -62,6 +62,8 @@ def ceo_manifest() -> RoleManifest:
             "proposal_reject",
             "goal_set_priority",
             "goal_archive",
+            "workforce_catalog_read",
+            "workforce_plan_propose",
         ),
         # - build_harness(memory=...) + working_memory -
         memory_scope=MemoryScope.PROJECT,

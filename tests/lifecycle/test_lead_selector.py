@@ -46,7 +46,9 @@ def _candidate(
             can_lead=True,
             max_delegation_depth=2,
             max_team_size=5,
-            allowed_professions=("engineer", "designer"),
+            allowed_professions=tuple(
+                dict.fromkeys(("engineer", "designer", *report_professions))
+            ),
             version=1,
         )
     )
@@ -185,3 +187,93 @@ def test_equal_candidates_use_stable_employee_id_tiebreak(ledger: SqliteLedger) 
     _candidate(ledger, "zulu")
 
     assert _selector(ledger).select(_request()) == selected
+
+
+def test_hierarchical_requirements_select_shallow_ceo_over_leaf_specialists(
+    ledger: SqliteLedger,
+) -> None:
+    ceo = ledger.employees.create(Employee(id="ceo", name="CEO", role="ceo"))
+    ledger.management_profiles.upsert(
+        ManagementProfile(
+            employee_id="ceo",
+            granted_by_user_id="founder",
+            active=True,
+            can_lead=True,
+            can_subdelegate=True,
+            max_delegation_depth=2,
+            max_team_size=3,
+            allowed_professions=("pm", "backend_engineer"),
+        )
+    )
+    ledger.employees.create(
+        Employee(id="product-lead", name="Product Lead", role="pm", reports_to="ceo")
+    )
+    ledger.employees.create(
+        Employee(
+            id="engineering-lead",
+            name="Engineering Lead",
+            role="backend_engineer",
+            reports_to="ceo",
+        )
+    )
+    ledger.employees.create(
+        Employee(
+            id="designer",
+            name="Designer",
+            role="designer",
+            reports_to="product-lead",
+        )
+    )
+    ledger.employees.create(
+        Employee(
+            id="frontend",
+            name="Frontend",
+            role="frontend_engineer",
+            reports_to="engineering-lead",
+        )
+    )
+    ledger.employees.create(
+        Employee(
+            id="backend",
+            name="Backend",
+            role="backend_engineer",
+            reports_to="engineering-lead",
+        )
+    )
+    request = DelegatedWorkRequest(
+        intent="Ship feedback triage",
+        goal_id="goal-product",
+        lead_professions=("ceo",),
+        requirements=(
+            StaffingRequirement("designer", coverage="subtree", outcome_area="product"),
+            StaffingRequirement(
+                "frontend_engineer", coverage="subtree", outcome_area="engineering"
+            ),
+            StaffingRequirement(
+                "backend_engineer", coverage="subtree", outcome_area="engineering"
+            ),
+        ),
+    )
+
+    selected = _selector(ledger).select(request)
+    assert isinstance(selected, Employee) and selected.id == ceo.id
+
+
+def test_explicit_lead_profession_selects_functional_owner(
+    ledger: SqliteLedger,
+) -> None:
+    _candidate(ledger, "product-lead", profession="pm")
+    engineering = _candidate(
+        ledger,
+        "engineering-lead",
+        profession="backend_engineer",
+        report_professions=("frontend_engineer",),
+    )
+    request = DelegatedWorkRequest(
+        intent="Build the interface",
+        goal_id="goal-engineering",
+        lead_professions=("backend_engineer",),
+        requirements=(StaffingRequirement("frontend_engineer"),),
+    )
+
+    assert _selector(ledger).select(request) == engineering

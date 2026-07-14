@@ -94,11 +94,12 @@ class _SubtreeLander:
 def _seed_delegation(
     ledger: SqliteLedger, *, child_status: TaskStatus = TaskStatus.DONE
 ) -> Employee:
-    lead = ledger.employees.create(Employee(id="lead", name="Lead", role="engineer"))
-    worker = ledger.employees.create(
-        Employee(id="worker", name="Worker", role="engineer", reports_to=lead.id)
+    lead = ledger.employees.create(
+        Employee(id="lead", name="Lead", role="backend_engineer")
     )
-    ledger.employees.create(Employee(id="reviewer", name="Reviewer", role="reviewer"))
+    worker = ledger.employees.create(
+        Employee(id="worker", name="Worker", role="backend_engineer", reports_to=lead.id)
+    )
     ledger.management_profiles.upsert(
         ManagementProfile(
             employee_id=lead.id,
@@ -107,7 +108,7 @@ def _seed_delegation(
             can_lead=True,
             max_delegation_depth=1,
             max_team_size=2,
-            allowed_professions=("engineer",),
+            allowed_professions=("backend_engineer",),
             version=1,
         )
     )
@@ -212,10 +213,16 @@ async def test_delegation_profile_drives_scheduler_contract(ledger: SqliteLedger
         ActivityVerb.PARENT_VERIFIED,
     ]
     assert contract_events[-1].payload["passed"] is True
-    assert contract_events[-1].payload["reviewer_id"] == "reviewer"
+    assert contract_events[-1].payload["reviewer_id"] == "system-verifier"
     assert contract_events[-1].payload["verification_run_id"].startswith("rev_")
-    assert any(run.employee_id == "reviewer" for run in ledger.runs.for_task("task-release"))
-    assert lead.role == "engineer"
+    verification_runs = [
+        run
+        for run in ledger.runs.for_task("task-release")
+        if run.principal_id == "system-verifier"
+    ]
+    assert len(verification_runs) == 1
+    assert verification_runs[0].employee_id == lead.id
+    assert lead.role == "backend_engineer"
 
 
 async def test_failed_parent_verification_returns_contract_to_integrating(
@@ -253,7 +260,7 @@ async def test_failed_parent_verification_returns_contract_to_integrating(
         ActivityVerb.PARENT_VERIFIED,
     ]
     assert contract_events[-1].payload["passed"] is False
-    assert contract_events[-1].payload["reviewer_id"] == "reviewer"
+    assert contract_events[-1].payload["reviewer_id"] == "system-verifier"
 
 
 async def test_rejected_required_child_cannot_reach_acceptance_or_verification(

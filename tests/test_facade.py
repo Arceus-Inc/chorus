@@ -176,8 +176,8 @@ def _chorus_hr(org_repo: str, ledger: object, roles: RoleRegistry | None = None)
 
 def test_hire_validates_role_against_the_registry(tmp_path: Path) -> None:
     chorus = _chorus_hr(str(tmp_path / "org"), _CancelSpyLedger())
-    emp = chorus.hire(name="Ada", role="engineer")
-    assert emp.role == "engineer"
+    emp = chorus.hire(name="Ada", role="frontend_engineer")
+    assert emp.role == "frontend_engineer"
     with pytest.raises(OrgInvariantViolation):
         chorus.hire(name="Bad", role="nonexistent-role")
 
@@ -185,19 +185,20 @@ def test_hire_validates_role_against_the_registry(tmp_path: Path) -> None:
 def test_terminate_cancels_in_flight_work(tmp_path: Path) -> None:
     ledger = _CancelSpyLedger()
     chorus = _chorus_hr(str(tmp_path / "org"), ledger)
-    boss = chorus.hire(name="Boss", role="engineer")
-    rep = chorus.hire(name="Rep", role="engineer", reports_to=boss.id)
+    boss = chorus.hire(name="Boss", role="frontend_engineer")
+    rep = chorus.hire(name="Rep", role="frontend_engineer", reports_to=boss.id)
     chorus.terminate(rep.id)
     assert ledger.cancelled_runs == [rep.id]
     assert ledger.dropped_wakes == [rep.id]
 
 
 def test_register_role_then_hire_into_it(tmp_path: Path) -> None:
+    from chorus_employee.engineer import engineer_plugin
+
     chorus = _chorus_hr(str(tmp_path / "org"), _CancelSpyLedger(), roles=RoleRegistry())
     with pytest.raises(OrgInvariantViolation):
         chorus.hire(name="Early", role="engineer")
-    (plugin,) = (p for p in default_roles() if p.name == "engineer")
-    chorus.workforce.register_role(plugin)
+    chorus.workforce.register_role(engineer_plugin())
     assert chorus.hire(name="Ada", role="engineer").role == "engineer"
 
 
@@ -220,8 +221,8 @@ def test_export_then_import_workforce_round_trips_through_the_ledger(tmp_path: P
     ledger = SqliteLedger.open(":memory:")
     try:
         chorus = _chorus_io(ledger)
-        chorus.hire(name="Boss", role="engineer")
-        chorus.hire(name="Alice", role="engineer", reports_to="boss")
+        chorus.hire(name="Boss", role="frontend_engineer")
+        chorus.hire(name="Alice", role="frontend_engineer", reports_to="boss")
         org = str(tmp_path / "org")
         assert chorus.workforce.export(org) == 2
 

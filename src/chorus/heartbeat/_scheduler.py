@@ -62,7 +62,7 @@ from chorus.lifecycle._team_policy import MissionTeamPolicy
 from chorus.memory import EpisodicStore, SprintDelta, beat_fingerprint
 from chorus.outcomes import AgentReview, DoDKind, ReviewedBuild, Verifier
 from chorus.recovery import reconcile
-from chorus.workforce._models import EmployeeStatus
+from chorus.verification import SYSTEM_VERIFIER, VerificationPrincipal
 
 if TYPE_CHECKING:
     from chorus.budgets import BudgetEnforcer
@@ -103,7 +103,7 @@ class _ReviewRunnerFor(Protocol):
     """
 
     def review_runner_for(
-        self, reviewer: Employee, *, task_id: str, worktree_owner_id: str
+        self, reviewer: VerificationPrincipal, *, task_id: str, worktree_owner_id: str
     ) -> BeatRunner: ...
 
 
@@ -112,7 +112,7 @@ class _VerificationRunnerFor(Protocol):
     """Materialize a reviewer that can inspect but cannot write a verdict or mutate work."""
 
     def verification_runner_for(
-        self, reviewer: Employee, *, task_id: str, worktree_owner_id: str
+        self, reviewer: VerificationPrincipal, *, task_id: str, worktree_owner_id: str
     ) -> BeatRunner: ...
 
 
@@ -192,23 +192,17 @@ def _worktree_file_manifest(worktree: Path | None, *, max_files: int = _MANIFEST
     return "\n".join(paths)
 
 
-# An employee can't take a review beat while paused or terminated; idle/active/running/error are all
-# dispatchable (the kernel leases and runs them).
-_UNINVOKABLE_EMPLOYEE_STATUSES = frozenset(
-    {EmployeeStatus.PENDING, EmployeeStatus.PAUSED, EmployeeStatus.TERMINATED}
-)
-
 # Leaf DoD kinds the kernel still gates with a separate read-only Reviewer beat. Spec 16 collapses
 # ``agent_review`` into dream's single in-beat evaluator (its rubric rides into ``run_task``), so only
 # ``reviewed_build`` keeps a second beat — for its reviewer-discovered objective command floor.
 _REVIEWER_GATED_DODS = frozenset({DoDKind.REVIEWED_BUILD})
 
 
-def _reviewer_role_and_rubric(spec: object) -> tuple[str, str]:
-    """The reviewer role + rubric a reviewer-gated DoD carries (``AgentReview`` or ``ReviewedBuild``)."""
+def _review_rubric(spec: object) -> str:
+    """The rubric carried by a reviewer-gated DoD."""
     if isinstance(spec, AgentReview | ReviewedBuild):
-        return spec.reviewer_role, spec.rubric
-    return "reviewer", ""
+        return spec.rubric
+    return ""
 
 
 _OUTCOME_BY_DISPOSITION: dict[BeatDisposition, str] = {
@@ -1115,11 +1109,9 @@ class Scheduler:
         verifier: Verifier | None,
         now: datetime,
     ) -> tuple[bool, str | None, str | None]:
-        """Run the integrated parent gate under a distinct, read-only Reviewer identity."""
+        """Run the integrated parent gate under the non-workforce system verifier."""
         ledger = self._require_ledger()
-        reviewer = self._resolve_reviewer(reviewer_role="reviewer", author_id=lead.id)
-        if reviewer is None:
-            return False, None, None
+        reviewer = SYSTEM_VERIFIER
         verification_run_id = mint_id("rev")
         runner = self._verification_runner(
             reviewer,
@@ -1129,10 +1121,12 @@ class Scheduler:
         ledger.runs.create(
             Run(
                 id=verification_run_id,
-                employee_id=reviewer.id,
+                employee_id=lead.id,
                 task_id=task.id,
+                principal_kind="system",
+                system_principal_id=reviewer.id,
                 status=RunStatus.RUNNING,
-                lease_expires_at=now + timedelta(seconds=self._lease_seconds_for(reviewer)),
+                lease_expires_at=now + timedelta(seconds=self.lease_ttl_s),
                 started_at=now,
             )
         )
@@ -1395,29 +1389,27 @@ class Scheduler:
         The reviewer inspects the work in the author's worktree and calls ``submit_verdict``, recording
         the work task's DoD verdict. The kernel reads it back: a quality ``approve`` lands the deliverable
         (for a ``reviewed_build`` it first runs the reviewer-discovered command as the objective floor); a
-        ``block`` routes per :meth:`_route_block`. No reviewer hired → a recovery card (the deliverable
-        can't be verified, so it must not silently pass).
+        ``block`` routes per :meth:`_route_block`. The verifier is a built-in system principal, never a
+        workforce member and never the author.
         """
         ledger = self._require_ledger()
-        reviewer_role, rubric = _reviewer_role_and_rubric(verifier.spec)
-        reviewer = self._resolve_reviewer(reviewer_role=reviewer_role, author_id=author.id)
-        if reviewer is None:
-            ledger.tasks.set_status(task_id, TaskStatus.BLOCKED)
-            self._open_review_recovery(task_id, cause="no_reviewer", owner_id=author.id)
-            return
+        rubric = _review_rubric(verifier.spec)
+        reviewer = SYSTEM_VERIFIER
 
         review_run_id = mint_id("rev")
         runner = self._review_runner(reviewer, task_id=task_id, worktree_owner_id=author.id)
         ledger.runs.create(
             Run(
                 id=review_run_id,
-                employee_id=reviewer.id,
+                employee_id=author.id,
                 task_id=task_id,
+                principal_kind="system",
+                system_principal_id=reviewer.id,
                 status=RunStatus.RUNNING,
                 # A lease, like every other running beat: a null lease reads as crash debris to the
                 # stale-run reaper (a concurrent RECOVER under run_forever, or another Arceus worker),
                 # which would reap this in-flight review and strand the deliverable (spec 03 §5).
-                lease_expires_at=now + timedelta(seconds=self._lease_seconds_for(reviewer)),
+                lease_expires_at=now + timedelta(seconds=self.lease_ttl_s),
                 started_at=now,
             )
         )
@@ -1443,10 +1435,12 @@ class Scheduler:
             # The reviewer beat rendered no verdict (it never called ``submit_verdict``). Don't silently
             # pass it and don't loop self-repair forever — a human looks at why the reviewer stalled.
             ledger.tasks.set_status(task_id, TaskStatus.BLOCKED)
-            self._open_review_recovery(task_id, cause="no_verdict", owner_id=reviewer.id)
+            self._open_review_recovery(task_id, cause="no_verdict", owner_id=author.id)
             return
         if dod.status is not DodStatus.PASSED:  # the reviewer blocked on quality
-            await self._land_outcome(task_id, employee=reviewer, result=result)
+            await self._land_outcome(
+                task_id, employee=None, result=result, outcome_kind="verdict"
+            )
             self._route_block(task_id, author=author)
             return
         # Quality approved. A reviewed_build still has an objective floor: the kernel runs the
@@ -1459,11 +1453,13 @@ class Scheduler:
             verdict=dod.verdict,
             worktree=worktree,
         ):
-            await self._land_outcome(task_id, employee=reviewer, result=result)
+            await self._land_outcome(
+                task_id, employee=None, result=result, outcome_kind="verdict"
+            )
             self._route_block(task_id, author=author)
             return
         await self._land_outcome(
-            task_id, employee=reviewer, result=result
+            task_id, employee=None, result=result, outcome_kind="verdict"
         )  # the `verdict` artifact
         await self._land_outcome(
             task_id,
@@ -1567,18 +1563,6 @@ class Scheduler:
         ledger.tasks.set_status(task_id, TaskStatus.BLOCKED)
         self._open_review_recovery(task_id, cause="review_exhausted", owner_id=author.id)
 
-    def _resolve_reviewer(self, *, reviewer_role: str, author_id: str) -> Employee | None:
-        """The first invokable employee of ``reviewer_role`` that is not the work's own author."""
-        ledger = self._require_ledger()
-        for employee in ledger.employees.list():
-            if (
-                employee.role == reviewer_role
-                and employee.id != author_id
-                and employee.status not in _UNINVOKABLE_EMPLOYEE_STATUSES
-            ):
-                return employee
-        return None
-
     def _manager_of(self, task: Task) -> str | None:
         """The employee id of the task's manager (its parent's assignee), or ``None`` if standalone."""
         if task.parent_id is None:
@@ -1588,7 +1572,7 @@ class Scheduler:
         return parent.assignee_employee_id if parent is not None else None
 
     def _review_runner(
-        self, reviewer: Employee, *, task_id: str, worktree_owner_id: str
+        self, reviewer: VerificationPrincipal, *, task_id: str, worktree_owner_id: str
     ) -> BeatRunner:
         """Resolve a reviewer runner at the author's worktree, else its own (a non-review-aware seam)."""
         beat_runner_for = self._require(self._beat_runner_for, "beat_runner")
@@ -1596,10 +1580,10 @@ class Scheduler:
             return beat_runner_for.review_runner_for(
                 reviewer, task_id=task_id, worktree_owner_id=worktree_owner_id
             )
-        return beat_runner_for.runner_for(reviewer, task_id=task_id)
+        return beat_runner_for.runner_for(reviewer, task_id=task_id)  # type: ignore[arg-type]
 
     def _verification_runner(
-        self, reviewer: Employee, *, task_id: str, worktree_owner_id: str
+        self, reviewer: VerificationPrincipal, *, task_id: str, worktree_owner_id: str
     ) -> BeatRunner:
         """Resolve the strict verifier seam, with compatibility fallbacks for test runners."""
         beat_runner_for = self._require(self._beat_runner_for, "beat_runner")
@@ -1615,7 +1599,7 @@ class Scheduler:
                 task_id=task_id,
                 worktree_owner_id=worktree_owner_id,
             )
-        return beat_runner_for.runner_for(reviewer, task_id=task_id)
+        return beat_runner_for.runner_for(reviewer, task_id=task_id)  # type: ignore[arg-type]
 
     def _review_intent(
         self, task_id: str, verifier: Verifier, rubric: str, *, worktree: Path | None = None
@@ -1707,7 +1691,7 @@ class Scheduler:
         self,
         task_id: str,
         *,
-        employee: Employee,
+        employee: Employee | None,
         result: BeatOutcome,
         outcome_kind: str | None = None,
     ) -> None:
@@ -1719,7 +1703,7 @@ class Scheduler:
         if self._landers is None:
             return
         if outcome_kind is None:
-            if self._roles is None or employee.role not in self._roles:
+            if employee is None or self._roles is None or employee.role not in self._roles:
                 return
             outcome_kind = self._roles.get(employee.role).outcome_kind
         lander = self._landers.get(outcome_kind)
