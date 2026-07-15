@@ -22,6 +22,7 @@ import subprocess
 import uuid
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
+from hashlib import sha256
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol, TypeVar, runtime_checkable
 
@@ -60,7 +61,13 @@ from chorus.ledger._models import (
 from chorus.lifecycle import TERMINAL, record_activity
 from chorus.lifecycle._team_policy import MissionTeamPolicy
 from chorus.memory import EpisodicStore, SprintDelta, beat_fingerprint
-from chorus.outcomes import AgentReview, DoDKind, ReviewedBuild, Verifier
+from chorus.outcomes import (
+    AgentReview,
+    DoDKind,
+    ReviewedBuild,
+    ReviewedBuildEvidenceProfile,
+    Verifier,
+)
 from chorus.recovery import reconcile
 from chorus.verification import SYSTEM_VERIFIER, VerificationPrincipal
 
@@ -78,6 +85,104 @@ if TYPE_CHECKING:
 
 _T = TypeVar("_T")
 _logger = logging.getLogger("chorus.heartbeat.scheduler")
+_MAX_EVIDENCE_BYTES = 1_048_576
+
+
+def _read_evidence_object(
+    worktree: Path, relative_path: str
+) -> tuple[dict[str, object] | None, str]:
+    """Load one bounded, regular JSON evidence object from the worktree."""
+    path = worktree / relative_path
+    if not path.is_file() or path.is_symlink():
+        return None, f"{relative_path} is missing or is not a regular file"
+    try:
+        if path.stat().st_size > _MAX_EVIDENCE_BYTES:
+            return None, f"{relative_path} exceeds {_MAX_EVIDENCE_BYTES} bytes"
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        return None, f"{relative_path} is not valid JSON: {exc}"
+    if not isinstance(value, dict):
+        return None, f"{relative_path} must contain a JSON object"
+    return value, ""
+
+
+def _tdd_review_evidence_passes(worktree: Path) -> tuple[bool, str]:
+    """Validate the versioned RED, gate, plan, and independent-review evidence contract."""
+    manifest, reason = _read_evidence_object(worktree, "test_evidence/manifest.json")
+    if manifest is None:
+        return False, reason
+    gates = manifest.get("gates")
+    if manifest.get("verdict") != "pass" or not isinstance(gates, list) or not gates:
+        return False, "test_evidence/manifest.json must declare pass with at least one gate"
+    for index, gate in enumerate(gates):
+        if not isinstance(gate, dict):
+            return False, f"test_evidence/manifest.json gate {index} is not an object"
+        if (
+            not str(gate.get("name", "")).strip()
+            or not str(gate.get("command", "")).strip()
+            or gate.get("status") != "pass"
+            or type(gate.get("returncode")) is not int
+            or gate.get("returncode") != 0
+        ):
+            return False, f"test_evidence/manifest.json gate {index} is not a recorded pass"
+
+    red, reason = _read_evidence_object(worktree, "test_evidence/red.json")
+    if red is None:
+        return False, reason
+    test_paths = red.get("test_paths")
+    test_hashes = red.get("test_hashes")
+    if (
+        red.get("verdict") != "red-confirmed"
+        or red.get("expected_failure_matched") is not True
+        or red.get("command_unavailable") is not False
+        or not str(red.get("command", "")).strip()
+        or type(red.get("returncode")) is not int
+        or red.get("returncode") == 0
+        or not isinstance(test_paths, list)
+        or not test_paths
+        or not all(isinstance(path, str) and path.strip() for path in test_paths)
+        or not isinstance(test_hashes, dict)
+        or set(test_hashes) != set(test_paths)
+        or not all(isinstance(value, str) and len(value) == 64 for value in test_hashes.values())
+        or red.get("production_paths") != []
+        or red.get("invalid_test_paths") != []
+        or red.get("missing_tests") != []
+    ):
+        return False, "test_evidence/red.json does not prove valid RED-before-production"
+    for relative_path in test_paths:
+        candidate = Path(relative_path)
+        if candidate.is_absolute() or ".." in candidate.parts:
+            return False, f"test_evidence/red.json test path escapes worktree: {relative_path}"
+        test_path = worktree / candidate
+        if not test_path.is_file() or test_path.is_symlink():
+            return False, f"RED-captured test is missing or invalid: {relative_path}"
+        try:
+            current_hash = sha256(test_path.read_bytes()).hexdigest()
+        except OSError as exc:
+            return False, f"RED-captured test cannot be read: {relative_path}: {exc}"
+        if current_hash != test_hashes[relative_path]:
+            return False, f"RED-captured test changed after RED: {relative_path}"
+
+    test_plan, reason = _read_evidence_object(worktree, "test_plan.json")
+    if test_plan is None:
+        return False, reason
+    if not test_plan:
+        return False, "test_plan.json must contain a non-empty independent test plan"
+
+    review, reason = _read_evidence_object(worktree, "review_verdict.json")
+    if review is None:
+        return False, reason
+    findings = review.get("findings")
+    if (
+        review.get("cleared") is not True
+        or not isinstance(findings, list)
+        or not str(review.get("evidence", "")).strip()
+        or any(
+            isinstance(finding, dict) and finding.get("severity") == "high" for finding in findings
+        )
+    ):
+        return False, "review_verdict.json is not a cleared independent review"
+    return True, "structured TDD and review evidence passed"
 
 
 @runtime_checkable
@@ -260,6 +365,34 @@ def _baseline_sha(working_dir: Path | None) -> str | None:
     except (subprocess.CalledProcessError, OSError):
         return None
     return head or None
+
+
+def _execution_intent(ledger: SqliteLedger, task: Task) -> str:
+    """Carry ancestor objectives into a delegated beat without widening its assigned scope."""
+    if task.parent_id is None:
+        return task.intent
+
+    ancestors: list[Task] = []
+    parent_id: str | None = task.parent_id
+    visited = {task.id}
+    while parent_id is not None and parent_id not in visited:
+        visited.add(parent_id)
+        parent = ledger.tasks.get(parent_id)
+        if parent is None:
+            break
+        ancestors.append(parent)
+        parent_id = parent.parent_id
+
+    if not ancestors:
+        return task.intent
+    context = "\n".join(f"- {ancestor.id}: {ancestor.intent}" for ancestor in reversed(ancestors))
+    return (
+        f"{task.intent}\n\n"
+        "Parent objective context (preserve its acceptance criteria):\n"
+        f"{context}\n\n"
+        "Do not expand beyond the assigned child scope. Use this context only to keep the child "
+        "contract faithful to the delegated objective."
+    )
 
 
 def _sprint_delta(
@@ -684,9 +817,8 @@ class Scheduler:
             raise KeyError(task_id)
         employee = workforce.get(wake.employee_id)
 
-        if (
-            task.execution_mode is ExecutionMode.DELEGATION
-            and ledger.tasks.all_children_terminal(task.id)
+        if task.execution_mode is ExecutionMode.DELEGATION and ledger.tasks.all_children_terminal(
+            task.id
         ):
             contract = ledger.delegation_contracts.active_for_task(task.id)
             if contract is not None and contract.status is DelegationContractStatus.DELEGATED:
@@ -778,7 +910,7 @@ class Scheduler:
                 beat_runner,
                 run_id=run_id,
                 task_id=task_id,
-                intent=task.intent,
+                intent=_execution_intent(ledger, task),
                 verification=verification,
                 rubric=rubric,
                 observer=observer,
@@ -809,9 +941,7 @@ class Scheduler:
                     result=result,
                     beat_runner=beat_runner,
                     outcome_kind=(
-                        execution_profile.outcome_kind
-                        if execution_profile is not None
-                        else None
+                        execution_profile.outcome_kind if execution_profile is not None else None
                     ),
                     now=now,
                 )
@@ -840,9 +970,7 @@ class Scheduler:
                     employee=employee,
                     result=result,
                     outcome_kind=(
-                        execution_profile.outcome_kind
-                        if execution_profile is not None
-                        else None
+                        execution_profile.outcome_kind if execution_profile is not None else None
                     ),
                     now=now,
                 )
@@ -862,9 +990,7 @@ class Scheduler:
                 employee=employee,
                 result=result,
                 outcome_kind=(
-                    execution_profile.outcome_kind
-                    if execution_profile is not None
-                    else None
+                    execution_profile.outcome_kind if execution_profile is not None else None
                 ),
                 now=now,
             )
@@ -1250,9 +1376,7 @@ class Scheduler:
             with ledger.transaction():
                 ledger.runs.finish(run_id, RunStatus.FAILED, outcome=evidence)
                 ledger.tasks.set_status(task.id, TaskStatus.BLOCKED)
-                ledger.delegation_contracts.update_status(
-                    task.id, DelegationContractStatus.BLOCKED
-                )
+                ledger.delegation_contracts.update_status(task.id, DelegationContractStatus.BLOCKED)
                 if ledger.recovery_actions.active_for_source(task.id) is None:
                     ledger.recovery_actions.open(
                         RecoveryAction(
@@ -1295,9 +1419,7 @@ class Scheduler:
                     passed=True, outcome={}, summary="integrated (iteration cap reached)"
                 ),
                 outcome_kind=(
-                    execution_profile.outcome_kind
-                    if execution_profile is not None
-                    else None
+                    execution_profile.outcome_kind if execution_profile is not None else None
                 ),
                 now=now,
             )
@@ -1438,9 +1560,7 @@ class Scheduler:
             self._open_review_recovery(task_id, cause="no_verdict", owner_id=author.id)
             return
         if dod.status is not DodStatus.PASSED:  # the reviewer blocked on quality
-            await self._land_outcome(
-                task_id, employee=None, result=result, outcome_kind="verdict"
-            )
+            await self._land_outcome(task_id, employee=None, result=result, outcome_kind="verdict")
             self._route_block(task_id, author=author)
             return
         # Quality approved. A reviewed_build still has an objective floor: the kernel runs the
@@ -1453,9 +1573,7 @@ class Scheduler:
             verdict=dod.verdict,
             worktree=worktree,
         ):
-            await self._land_outcome(
-                task_id, employee=None, result=result, outcome_kind="verdict"
-            )
+            await self._land_outcome(task_id, employee=None, result=result, outcome_kind="verdict")
             self._route_block(task_id, author=author)
             return
         await self._land_outcome(
@@ -1485,15 +1603,39 @@ class Scheduler:
         verdict: dict[str, object] | None,
         worktree: Path | None,
     ) -> bool:
-        """Run the reviewer-discovered verify command as the objective floor; record the evidence.
+        """Validate configured evidence, then run the project command as a separate objective floor.
 
-        Returns ``True`` iff the command exits 0. On a missing command (the reviewer approved without one)
-        or a non-zero exit, records the failure on the DoD verdict and returns ``False`` (→ block)."""
+        Returns ``True`` iff both configured floors pass. Failures are recorded on the DoD verdict and
+        block landing without relying on model-composed shell fragments."""
         ledger = self._require_ledger()
         command = str((verdict or {}).get("verify_command", "")).strip()
         timeout_s = (
             verifier.spec.verify_timeout_s if isinstance(verifier.spec, ReviewedBuild) else 600
         )
+        evidence: dict[str, object] = {}
+        profile = (
+            verifier.spec.evidence_profile if isinstance(verifier.spec, ReviewedBuild) else None
+        )
+        if profile is not None:
+            if worktree is None:
+                evidence = {
+                    "evidence_passed": False,
+                    "evidence_output": "no worktree to validate structured evidence in",
+                }
+            elif profile is ReviewedBuildEvidenceProfile.TDD_REVIEW_V1:
+                evidence_passed, evidence_output = _tdd_review_evidence_passes(worktree)
+                evidence = {
+                    "evidence_passed": evidence_passed,
+                    "evidence_output": evidence_output,
+                }
+            if evidence.get("evidence_passed") is not True:
+                ledger.dod.record_verdict(
+                    dod_id,
+                    DodStatus.FAILED,
+                    verdict={**(verdict or {}), **evidence, "build_passed": False},
+                    run_id=run_id,
+                )
+                return False
         if not command or worktree is None:
             reason = (
                 "reviewer approved but supplied no verify command"
@@ -1503,7 +1645,12 @@ class Scheduler:
             ledger.dod.record_verdict(
                 dod_id,
                 DodStatus.FAILED,
-                verdict={**(verdict or {}), "build_passed": False, "build_output": reason},
+                verdict={
+                    **(verdict or {}),
+                    **evidence,
+                    "build_passed": False,
+                    "build_output": reason,
+                },
                 run_id=run_id,
             )
             return False
@@ -1513,6 +1660,7 @@ class Scheduler:
             DodStatus.PASSED if exit_code == 0 else DodStatus.FAILED,
             verdict={
                 **(verdict or {}),
+                **evidence,
                 "build_passed": exit_code == 0,
                 "build_exit": exit_code,
                 "build_output": output,
@@ -1619,6 +1767,16 @@ class Scheduler:
         rubric_line = rubric or "the task is complete, correct, and meets its stated intent"
         build = ""
         if verifier.kind is DoDKind.REVIEWED_BUILD:
+            evidence_instruction = ""
+            if (
+                isinstance(verifier.spec, ReviewedBuild)
+                and verifier.spec.evidence_profile is not None
+            ):
+                evidence_instruction = (
+                    "Pass only the repository's exact configured build/test command as "
+                    "`verify_command`; do not append grep, test -f, PowerShell, or other evidence-file "
+                    "checks. The kernel parses the configured structured evidence separately. "
+                )
             build = (
                 "This is a code task: inspect the project's files (package.json / Cargo.toml / "
                 "pyproject.toml / Makefile / go.mod, etc.) to determine the correct command that builds + "
@@ -1627,7 +1785,9 @@ class Scheduler:
                 "you CANNOT run it (you are read-only). Do NOT block merely because you could not execute "
                 "the tests: judge the diff's correctness against the contract by reading it; if the code is "
                 "correct, approve=true and pass the command — the kernel runs it and will fail the build if "
-                "the tests do not pass. Reserve approve=false for a concrete correctness defect you can name.\n"
+                "the tests do not pass. "
+                f"{evidence_instruction}"
+                "Reserve approve=false for a concrete correctness defect you can name.\n"
             )
         manifest = _worktree_file_manifest(worktree)
         files = (
@@ -1676,10 +1836,7 @@ class Scheduler:
         uninterrupted call, unable to renew its lease meanwhile) sets a larger ``lease_ttl_s`` so the
         stale-run reaper doesn't claim its still-live beat at the org default (spec 06 §2).
         """
-        if (
-            execution_profile is not None
-            and execution_profile.config.lease_ttl_s is not None
-        ):
+        if execution_profile is not None and execution_profile.config.lease_ttl_s is not None:
             return execution_profile.config.lease_ttl_s
         if self._roles is not None and employee.role in self._roles:
             ttl = self._roles.get(employee.role).manifest.lease_ttl_s

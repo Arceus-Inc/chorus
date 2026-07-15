@@ -53,6 +53,13 @@ def test_reviewed_build_adds_the_build_obligation_over_review() -> None:
     assert classify(old, new) is RevisionDirection.TIGHTEN
 
 
+def test_adding_structured_evidence_to_reviewed_build_is_a_tightening() -> None:
+    old = Verifier.reviewed_build()
+    new = Verifier.reviewed_build(evidence_profile="tdd_review_v1")
+
+    assert classify(old, new) is RevisionDirection.TIGHTEN
+
+
 def test_reviewed_build_to_review_drops_the_build_obligation() -> None:
     old = Verifier.reviewed_build(reviewer_role="reviewer")
     new = Verifier.agent_review(reviewer_role="reviewer")

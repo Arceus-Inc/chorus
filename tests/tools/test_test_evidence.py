@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import asyncio
 import json
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -20,6 +22,7 @@ from chorus_tools._test_evidence import (
     EvidenceManifest,
     GateResult,
     TestEvidenceTool,
+    TestRedTool,
     write_bundle,
 )
 
@@ -90,9 +93,36 @@ def _run(tool: TestEvidenceTool, payload: dict[str, object], ctx: object) -> Too
     return asyncio.run(tool.execute(payload, ctx))  # type: ignore[arg-type]
 
 
+def _run_red(payload: dict[str, object], ctx: object) -> ToolResult:
+    return asyncio.run(TestRedTool().execute(payload, ctx))  # type: ignore[arg-type]
+
+
+def _seed_git_repo(root: Path) -> None:
+    subprocess.run(["git", "init", "-b", "trunk", root], check=True, capture_output=True)
+    (root / "src").mkdir()
+    (root / "src" / "app.py").write_text("VALUE = 1\n", encoding="utf-8")
+    subprocess.run(["git", "-C", root, "add", "-A"], check=True, capture_output=True)
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            root,
+            "-c",
+            "user.name=Test",
+            "-c",
+            "user.email=test@example.invalid",
+            "commit",
+            "-m",
+            "seed",
+        ],
+        check=True,
+        capture_output=True,
+    )
+
+
 def test_tool_writes_a_green_bundle_when_all_gates_pass(tmp_path: Path) -> None:
     result = _run(
-        TestEvidenceTool(), {"gates": [{"name": "ok", "command": "true"}]}, _ctx(tmp_path)
+        TestEvidenceTool(), {"gates": [{"name": "ok", "command": "echo ok"}]}, _ctx(tmp_path)
     )
 
     assert result.is_error is False
@@ -134,3 +164,132 @@ def test_tool_rejects_an_empty_gate_list(tmp_path: Path) -> None:
     # No gates = no proof; the input must carry at least one command to run.
     with pytest.raises(ValidationError):
         _run(TestEvidenceTool(), {"gates": []}, _ctx(tmp_path))
+
+
+def test_red_tool_confirms_a_failing_run_when_only_tests_changed(tmp_path: Path) -> None:
+    _seed_git_repo(tmp_path)
+    (tmp_path / "tests").mkdir()
+    test_path = tmp_path / "tests" / "test_app.py"
+    test_path.write_text("def test_future():\n    assert False\n", encoding="utf-8")
+
+    result = _run_red(
+        {
+            "command": (
+                "echo missing behavior & exit /b 1"
+                if sys.platform == "win32"
+                else "printf 'missing behavior\\n'; false"
+            ),
+            "test_paths": ["tests/test_app.py"],
+            "expected_failure": "missing behavior",
+        },
+        _ctx(tmp_path),
+    )
+
+    assert result.is_error is False
+    manifest = json.loads((tmp_path / "test_evidence" / "red.json").read_text())
+    assert manifest["verdict"] == "red-confirmed"
+    assert manifest["returncode"] != 0
+    assert manifest["production_paths"] == []
+    assert manifest["test_hashes"]["tests/test_app.py"]
+
+
+def test_red_tool_refuses_proof_when_production_changed_first(tmp_path: Path) -> None:
+    _seed_git_repo(tmp_path)
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "tests" / "test_app.py").write_text("def test_future(): pass\n")
+    (tmp_path / "src" / "app.py").write_text("VALUE = 2\n", encoding="utf-8")
+
+    result = _run_red(
+        {
+            "command": "printf 'missing behavior\\n'; false",
+            "test_paths": ["tests/test_app.py"],
+            "expected_failure": "missing behavior",
+        },
+        _ctx(tmp_path),
+    )
+
+    assert result.is_error is True
+    manifest = json.loads((tmp_path / "test_evidence" / "red.json").read_text())
+    assert manifest["verdict"] == "invalid"
+    assert manifest["production_paths"] == ["src/app.py"]
+
+
+def test_red_tool_refuses_a_green_command(tmp_path: Path) -> None:
+    _seed_git_repo(tmp_path)
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "tests" / "test_app.py").write_text("def test_existing(): pass\n")
+
+    result = _run_red(
+        {
+            "command": "echo missing behavior",
+            "test_paths": ["tests/test_app.py"],
+            "expected_failure": "missing behavior",
+        },
+        _ctx(tmp_path),
+    )
+
+    assert result.is_error is True
+    manifest = json.loads((tmp_path / "test_evidence" / "red.json").read_text())
+    assert manifest["verdict"] == "invalid"
+    assert manifest["returncode"] == 0
+
+
+def test_red_tool_refuses_a_command_that_could_not_run(tmp_path: Path) -> None:
+    _seed_git_repo(tmp_path)
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "tests" / "test_app.py").write_text("def test_future(): pass\n")
+
+    result = _run_red(
+        {
+            "command": "definitely-not-a-real-test-command",
+            "test_paths": ["tests/test_app.py"],
+            "expected_failure": "not recognized" if sys.platform == "win32" else "not found",
+        },
+        _ctx(tmp_path),
+    )
+
+    assert result.is_error is True
+    manifest = json.loads((tmp_path / "test_evidence" / "red.json").read_text())
+    assert manifest["verdict"] == "invalid"
+    assert manifest["returncode"] == (1 if sys.platform == "win32" else 127)
+    assert manifest["command_unavailable"] is True
+
+
+def test_red_tool_refuses_a_failure_for_the_wrong_reason(tmp_path: Path) -> None:
+    _seed_git_repo(tmp_path)
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "tests" / "test_app.py").write_text("def test_future(): pass\n")
+
+    result = _run_red(
+        {
+            "command": "printf 'collection typo\\n'; false",
+            "test_paths": ["tests/test_app.py"],
+            "expected_failure": "missing target behavior",
+        },
+        _ctx(tmp_path),
+    )
+
+    assert result.is_error is True
+    manifest = json.loads((tmp_path / "test_evidence" / "red.json").read_text())
+    assert manifest["verdict"] == "invalid"
+    assert manifest["expected_failure_matched"] is False
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows shell parity regression")
+def test_red_tool_uses_the_same_windows_shell_as_run_command(tmp_path: Path) -> None:
+    _seed_git_repo(tmp_path)
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "tests" / "test_app.py").write_text("def test_future(): pass\n")
+
+    result = _run_red(
+        {
+            "command": "echo %ComSpec% & exit /b 9",
+            "test_paths": ["tests/test_app.py"],
+            "expected_failure": "cmd.exe",
+        },
+        _ctx(tmp_path),
+    )
+
+    assert result.is_error is False
+    manifest = json.loads((tmp_path / "test_evidence" / "red.json").read_text())
+    assert manifest["verdict"] == "red-confirmed"

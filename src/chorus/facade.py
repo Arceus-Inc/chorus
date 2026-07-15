@@ -224,6 +224,7 @@ class Chorus:
         trust_boundary: dict[str, object] | None = None,
         execution_mode: ExecutionMode = ExecutionMode.DELIVERY,
         delegation_max_team_size: int | None = None,
+        delegation_max_direct_children: int | None = None,
         delegation_spend_limit_cents: int | None = None,
     ) -> Task:
         """Create a flat ``depth=0`` intake task, optionally wired in one call (spec 10 §5 / 14 §3).
@@ -254,6 +255,7 @@ class Chorus:
                 trust_preset=trust_preset,
                 trust_boundary=trust_boundary,
                 delegation_max_team_size=delegation_max_team_size,
+                delegation_max_direct_children=delegation_max_direct_children,
                 delegation_spend_limit_cents=delegation_spend_limit_cents,
             )
 
@@ -292,6 +294,7 @@ class Chorus:
         trust_preset: TrustPreset | None,
         trust_boundary: dict[str, object] | None,
         delegation_max_team_size: int | None,
+        delegation_max_direct_children: int | None,
         delegation_spend_limit_cents: int | None,
     ) -> Task:
         if origin_kind is OriginKind.HORIZON_INTAKE:
@@ -320,37 +323,38 @@ class Chorus:
                     )
                 )
                 self._ledger.delegation_contracts.create(
-                DelegationContract(
-                    task_id=task.id,
-                    team_id=team.id,
-                    lead_employee_id=lead.id,
-                    management_profile_version=profile.version,
-                    can_subdelegate=profile.can_subdelegate,
-                    max_depth=min(
-                        profile.max_delegation_depth,
-                        self._caps.request_depth_cap,
-                    ),
-                    max_team_size=min(
-                        profile.max_team_size,
-                        delegation_max_team_size
-                        if delegation_max_team_size is not None
-                        else profile.max_team_size,
-                    ),
-                    spend_limit_cents=_bounded_limit(
-                        profile.spend_limit_cents,
-                        delegation_spend_limit_cents,
-                    ),
-                    objective_rubric=intent,
-                    status=DelegationContractStatus.DELEGATED,
-                )
+                    DelegationContract(
+                        task_id=task.id,
+                        team_id=team.id,
+                        lead_employee_id=lead.id,
+                        management_profile_version=profile.version,
+                        can_subdelegate=profile.can_subdelegate,
+                        max_depth=min(
+                            profile.max_delegation_depth,
+                            self._caps.request_depth_cap,
+                        ),
+                        max_team_size=min(
+                            profile.max_team_size,
+                            delegation_max_team_size
+                            if delegation_max_team_size is not None
+                            else profile.max_team_size,
+                        ),
+                        max_direct_children=delegation_max_direct_children,
+                        spend_limit_cents=_bounded_limit(
+                            profile.spend_limit_cents,
+                            delegation_spend_limit_cents,
+                        ),
+                        objective_rubric=intent,
+                        status=DelegationContractStatus.DELEGATED,
+                    )
                 )
                 record_activity(
-                self._ledger,
-                verb=ActivityVerb.DELEGATION_CREATED,
-                subject_kind="delegation_contract",
-                subject_id=task.id,
-                actor_employee_id=lead.id,
-                payload={"team_id": team.id, "root": True},
+                    self._ledger,
+                    verb=ActivityVerb.DELEGATION_CREATED,
+                    subject_kind="delegation_contract",
+                    subject_id=task.id,
+                    actor_employee_id=lead.id,
+                    payload={"team_id": team.id, "root": True},
                 )
                 policy.activate(team.id)
                 if dod is not None:

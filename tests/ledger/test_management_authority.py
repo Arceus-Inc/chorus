@@ -157,6 +157,7 @@ def test_authority_graph_round_trips_with_pinned_profile_version(ledger: SqliteL
             can_subdelegate=False,
             max_depth=1,
             max_team_size=3,
+            max_direct_children=2,
             spend_limit_cents=20_000,
             objective_rubric="all delegated outcomes are integrated",
             status=DelegationContractStatus.DELEGATED,
@@ -169,3 +170,4 @@ def test_authority_graph_round_trips_with_pinned_profile_version(ledger: SqliteL
     assert {member.employee_id for member in persisted_members} == {"lead", "member"}
     assert ledger.delegation_contracts.get("task-release") == created
     assert created.management_profile_version == 1
+    assert created.max_direct_children == 2

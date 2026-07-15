@@ -138,6 +138,26 @@ def test_ceo_proposal_is_typed_persisted_and_does_not_hire(ledger: SqliteLedger)
     assert [employee.id for employee in ledger.employees.list()] == ["ceo"]
     assert ledger.management_profiles.list() == []
 
+
+def test_ceo_cannot_open_a_second_plan_while_one_awaits_human_decision(
+    ledger: SqliteLedger,
+) -> None:
+    _seed_ceo(ledger)
+    service = _service(ledger)
+    first = service.propose(_draft(), proposed_by_employee_id="ceo")
+
+    with pytest.raises(ValueError, match="already has a proposed workforce plan"):
+        service.propose(_draft(), proposed_by_employee_id="ceo")
+
+    assert ledger.workforce_plans.list() == [first]
+    proposal_activities = [
+        activity
+        for activity in ledger.activity.all()
+        if activity.verb.value == "workforce_plan_proposed"
+    ]
+    assert len(proposal_activities) == 1
+
+
 def test_human_rejection_closes_plan_without_materializing(
     ledger: SqliteLedger,
 ) -> None:
@@ -188,7 +208,9 @@ def test_human_can_revise_fields_then_atomically_apply_the_latest_plan(
     assert applied.status is WorkforcePlanStatus.APPLIED
     assert applied.revision == 2
     assert applied.decided_by_user_id == "founder"
-    assert ledger.workforce_plans.get(applied.id, revision=1).status is WorkforcePlanStatus.SUPERSEDED  # type: ignore[union-attr]
+    assert (
+        ledger.workforce_plans.get(applied.id, revision=1).status is WorkforcePlanStatus.SUPERSEDED
+    )  # type: ignore[union-attr]
     assert len(ledger.employees.list()) == 8
     assert {employee.role for employee in ledger.employees.list()} == {
         "ceo",

@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from pathlib import Path
 
 import pytest
@@ -98,11 +99,19 @@ def test_catalog_exposes_analyst_and_excludes_legacy_professions(
     assert "engineer" not in result.structured["hireable_professions"]
     assert "manager" not in result.structured["hireable_professions"]
     assert "reviewer" not in result.structured["hireable_professions"]
+    assert result.structured["proposal_contract"] == {
+        "employees": "new hires only; omit current permanent employees",
+        "existing_employee_references": ["ceo"],
+        "existing_employee_reference_fields": [
+            "employees[].reports_to_ref",
+            "management_grants[].employee_ref",
+        ],
+    }
+    assert "NEW HIRES ONLY" in result.content
+    assert "use existing ids directly" in result.content
 
 
-def test_ceo_tool_persists_proposal_without_hiring(
-    ledger: SqliteLedger, tmp_path: Path
-) -> None:
+def test_ceo_tool_persists_proposal_without_hiring(ledger: SqliteLedger, tmp_path: Path) -> None:
     ledger.employees.create(
         Employee(id="ceo", name="CEO", role="ceo", status=EmployeeStatus.ACTIVE)
     )
@@ -118,6 +127,19 @@ def test_ceo_tool_persists_proposal_without_hiring(
     assert plan.proposed_by_employee_id == "ceo"
     assert [employee.id for employee in ledger.employees.list()] == ["ceo"]
     assert ledger.management_profiles.list() == []
+    assert result.structured["evidence_path"] == "workforce_plan.json"
+    evidence = json.loads((tmp_path / "workforce_plan.json").read_text(encoding="utf-8"))
+    assert evidence["plan_id"] == plan.id
+    assert evidence["status"] == "proposed"
+    assert evidence["requires_human_approval"] is True
+    assert [employee["ref"] for employee in evidence["employees"]] == [
+        "product-lead",
+        "analyst",
+    ]
+    assert [grant["employee_ref"] for grant in evidence["management_grants"]] == [
+        "ceo",
+        "product-lead",
+    ]
 
 
 def test_ceo_tool_returns_refusal_for_deep_plan_without_partial_writes(
@@ -146,3 +168,31 @@ def test_ceo_tool_returns_refusal_for_deep_plan_without_partial_writes(
     assert "depth" in result.content
     assert ledger.workforce_plans.list() == []
     assert [employee.id for employee in ledger.employees.list()] == ["ceo"]
+
+
+def test_ceo_tool_refusal_explains_how_to_reference_existing_employees(
+    ledger: SqliteLedger, tmp_path: Path
+) -> None:
+    ledger.employees.create(
+        Employee(id="ceo", name="CEO", role="ceo", status=EmployeeStatus.ACTIVE)
+    )
+    BeatContext(task_id="formation", run_id="run-1", employee_id="ceo").write(tmp_path)
+    payload = _payload()
+    payload["employees"] = [
+        {
+            "ref": "new-ceo",
+            "name": "CEO",
+            "profession": "ceo",
+            "reports_to_ref": "new-ceo",
+        },
+        *payload["employees"],  # type: ignore[misc]
+    ]
+
+    result = asyncio.run(
+        WorkforcePlanProposeTool(ledger, _roles()).execute(payload, _ctx(tmp_path))
+    )
+
+    assert result.is_error is True
+    assert "employees contains new hires only" in result.content
+    assert "current employee ids directly" in result.content
+    assert ledger.workforce_plans.list() == []

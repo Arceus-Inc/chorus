@@ -143,6 +143,7 @@ def test_submit_root_delegation_atomically_wires_active_team_and_contract() -> N
             assignee="Lead",
             goal_id="goal-release",
             execution_mode=ExecutionMode.DELEGATION,
+            delegation_max_direct_children=2,
         )
 
         stored = ledger.tasks.get(task.id)
@@ -168,6 +169,7 @@ def test_submit_root_delegation_atomically_wires_active_team_and_contract() -> N
             contract.can_subdelegate,
             contract.max_depth,
             contract.max_team_size,
+            contract.max_direct_children,
             contract.spend_limit_cents,
             contract.objective_rubric,
         ) == (
@@ -176,6 +178,7 @@ def test_submit_root_delegation_atomically_wires_active_team_and_contract() -> N
             True,
             2,
             4,
+            2,
             50_000,
             "coordinate the release",
         )
@@ -262,8 +265,9 @@ def test_submit_root_delegation_rolls_back_the_whole_kickoff(
         assert [member.employee_id for member in ledger.team_members.members_of(team.id)] == [
             "lead"
         ]
-        assert [
-            event.verb for event in ledger.activity.by_subject("team", team.id)
-        ] == [ActivityVerb.TEAM_FORMED, ActivityVerb.TEAM_ACTIVATED]
+        assert [event.verb for event in ledger.activity.by_subject("team", team.id)] == [
+            ActivityVerb.TEAM_FORMED,
+            ActivityVerb.TEAM_ACTIVATED,
+        ]
     finally:
         ledger.close()

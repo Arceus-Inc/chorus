@@ -246,6 +246,7 @@ def test_inspector_exposes_management_authority_and_delegation_views(
             can_subdelegate=True,
             max_depth=2,
             max_team_size=4,
+            max_direct_children=2,
             spend_limit_cents=50_000,
             status=DelegationContractStatus.DELEGATED,
         )
@@ -274,6 +275,7 @@ def test_inspector_exposes_management_authority_and_delegation_views(
         4,
         50_000,
     )
+    assert contract.max_direct_children == 2
     assert (profile.employee_id, profile.active, profile.version) == ("lead", True, 1)
     assert (profile.max_delegation_depth, profile.max_team_size) == (2, 4)
     assert profile.allowed_professions == ("engineer", "designer")

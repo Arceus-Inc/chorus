@@ -42,12 +42,8 @@ def _ctx(working_dir: Path) -> object:
 
 def _seed_delegation(ledger: SqliteLedger) -> None:
     ledger.employees.create(Employee(id="lead", name="Lead", role="architect"))
-    ledger.employees.create(
-        Employee(id="ada", name="Ada", role="engineer", reports_to="lead")
-    )
-    ledger.employees.create(
-        Employee(id="bob", name="Bob", role="designer", reports_to="lead")
-    )
+    ledger.employees.create(Employee(id="ada", name="Ada", role="engineer", reports_to="lead"))
+    ledger.employees.create(Employee(id="bob", name="Bob", role="designer", reports_to="lead"))
     ledger.employees.create(
         Employee(
             id="pat",
@@ -154,6 +150,7 @@ def test_team_read_returns_safe_contract_scoped_roster(
         {
             "employee_id": "ada",
             "profession": "engineer",
+            "reports_to": "lead",
             "status": "idle",
             "observed_load": 1,
         }
@@ -165,14 +162,16 @@ def test_team_read_returns_safe_contract_scoped_roster(
         "can_subdelegate": True,
         "max_depth": 3,
         "max_team_size": 3,
+        "max_direct_children": None,
         "spend_limit_cents": 20_000,
         "allowed_professions": ["engineer"],
     }
+    assert "lead: profession=architect, reports_to=none, membership_role=lead" in result.content
+    assert "ada: profession=engineer, reports_to=lead, membership_role=member" in result.content
+    assert "Use these exact employee_id values in decompose.assignee" in result.content
 
 
-def test_team_read_lists_legal_unassigned_candidate(
-    ledger: SqliteLedger, tmp_path: Path
-) -> None:
+def test_team_read_lists_legal_unassigned_candidate(ledger: SqliteLedger, tmp_path: Path) -> None:
     _seed_delegation(ledger)
     ledger.team_members.remove("team-1", "ada")
     BeatContext(task_id="root", run_id="run-1", employee_id="lead").write(tmp_path)
@@ -182,6 +181,8 @@ def test_team_read_lists_legal_unassigned_candidate(
     assert [candidate["employee_id"] for candidate in result.structured["team_candidates"]] == [
         "ada"
     ]
+    assert "Legal candidates:" in result.content
+    assert "ada: profession=engineer, reports_to=lead, status=idle" in result.content
 
 
 def test_team_read_refuses_non_lead_actor(ledger: SqliteLedger, tmp_path: Path) -> None:
@@ -194,9 +195,7 @@ def test_team_read_refuses_non_lead_actor(ledger: SqliteLedger, tmp_path: Path) 
     assert "not the delegation contract lead" in result.content
 
 
-def test_team_read_refuses_non_delegation_beat(
-    ledger: SqliteLedger, tmp_path: Path
-) -> None:
+def test_team_read_refuses_non_delegation_beat(ledger: SqliteLedger, tmp_path: Path) -> None:
     ledger.employees.create(Employee(id="ada", name="Ada", role="engineer"))
     ledger.tasks.submit(
         Task(id="plain", intent="Plain", status=TaskStatus.TODO, assignee_employee_id="ada")

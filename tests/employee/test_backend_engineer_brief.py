@@ -102,6 +102,14 @@ def test_brief_keeps_the_landed_diff_clean_of_scratch_files() -> None:
     assert "no scratch" in BACKEND_ENGINEER_BRIEF.lower()
 
 
+def test_brief_keeps_generated_runtime_state_out_of_the_diff() -> None:
+    brief = BACKEND_ENGINEER_BRIEF.lower()
+    assert "generated runtime state" in brief
+    assert "database" in brief
+    assert "cache" in brief
+    assert "git status" in brief
+
+
 def test_brief_has_the_resume_reconcile_directive() -> None:
     # The cross-beat resumption protocol: keep a durable TODO.md via todo_write, read it FIRST and
     # reconcile intent (the checklist) against reality (git + tests), resume rather than restart.
@@ -123,6 +131,22 @@ def test_brief_resume_trusts_green_artifacts_and_skips_to_the_missing_one() -> N
     assert "do not re-run" in lower or "don't re-run" in lower or "do not redo" in lower
 
 
+def test_brief_initial_checklist_cannot_omit_independent_review() -> None:
+    brief = BACKEND_ENGINEER_BRIEF
+    assert "every initial `todo.md`" in brief.lower()
+    assert "spawn `code_reviewer`" in brief
+    assert "do not return your final answer" in brief.lower()
+    assert "review_verdict.json" in brief
+
+
+def test_brief_invalidates_review_after_every_later_mutation() -> None:
+    lower = BACKEND_ENGINEER_BRIEF.lower()
+    assert "every git-visible mutation after review invalidates that review" in lower
+    assert "correction sprint" in lower
+    assert "rerun the configured gates" in lower
+    assert "spawn `code_reviewer` again" in lower
+
+
 def test_brief_mandates_test_first_tdd_via_the_test_author() -> None:
     # TDD is not optional: the test_author writes the FAILING test FIRST (RED), before the engineer
     # implements — delegation is mandatory, not "for non-trivial behaviour".
@@ -135,6 +159,12 @@ def test_brief_mandates_test_first_tdd_via_the_test_author() -> None:
     )
     # the old optional phrasing is gone — delegation is required
     assert "for non-trivial behaviour, delegate" not in lower
+    assert "test_red" in lower
+    assert "without writing a production file" in lower
+    assert "do not edit those test files after red" in lower
+    assert "test hashes" in lower
+    assert "quote the exact assigned behavior" in lower
+    assert "never ask it to infer" in lower
 
 
 def test_brief_gates_done_on_the_subagent_artifacts() -> None:
@@ -143,6 +173,7 @@ def test_brief_gates_done_on_the_subagent_artifacts() -> None:
     brief = BACKEND_ENGINEER_BRIEF
     assert "test_plan.json" in brief
     assert "api_verdict.json" in brief
+    assert "`api_verdict.json` only when the deliverable is a running service or API" in brief
 
 
 def test_brief_mandates_the_code_reviewer_red_team() -> None:
@@ -166,19 +197,33 @@ def test_dod_rubric_gates_on_the_cleared_review() -> None:
 
 
 def test_dod_rubric_makes_the_reviewer_gate_on_the_tdd_artifacts() -> None:
-    # reviewed_build's only deterministic floor is the reviewer-discovered verify_command the kernel
-    # runs. The rubric compels the reviewer to fold the artifact checks into that command, so "done"
-    # mechanically requires the RED-first test_plan.json + (for a service) api_verdict.json.
-    from chorus.outcomes import DoDKind
+    # The reviewed build carries a typed, kernel-owned evidence profile, so the project command stays
+    # separate from cross-platform JSON checks for RED, the test plan, and independent review.
+    from chorus.outcomes import DoDKind, ReviewedBuild
     from chorus_employee.backend_engineer import backend_engineer_dod
 
     dod = backend_engineer_dod("build a small commerce API")
     assert dod.kind is DoDKind.REVIEWED_BUILD
+    assert isinstance(dod.spec, ReviewedBuild)
+    assert dod.spec.evidence_profile == "tdd_review_v1"
     rubric = dod.rubric()
     assert "test_plan.json" in rubric
     assert "api_verdict.json" in rubric
-    assert "verify_command" in rubric  # instruct the reviewer to assert them in the run command
     assert "red_evidence" in rubric.lower() or "red" in rubric.lower()
+    assert "test_evidence/red.json" in rubric
+    assert "red-confirmed" in rubric
+    assert "grep -q" not in rubric
+    assert "test -f" not in rubric
+
+
+def test_reviewer_treats_red_evidence_as_historical_and_runs_current_floor() -> None:
+    from chorus_employee.reviewer._brief import REVIEWER_BRIEF
+
+    brief = REVIEWER_BRIEF.lower()
+    assert "historical" in brief
+    assert "red_evidence" in brief
+    assert "current defect" in brief
+    assert "verify_command" in brief
 
 
 def test_dod_rubric_mechanically_requires_the_durable_evidence_floor() -> None:

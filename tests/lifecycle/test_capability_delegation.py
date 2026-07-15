@@ -30,6 +30,7 @@ def _seed_delegation_parent(
     can_subdelegate: bool = True,
     max_depth: int = 3,
     max_team_size: int = 3,
+    max_direct_children: int | None = None,
     profile_spend_limit_cents: int = 20_000,
     contract_spend_limit_cents: int = 20_000,
 ) -> tuple[CapabilityService, Task]:
@@ -89,6 +90,7 @@ def _seed_delegation_parent(
             can_subdelegate=can_subdelegate,
             max_depth=max_depth,
             max_team_size=max_team_size,
+            max_direct_children=max_direct_children,
             spend_limit_cents=contract_spend_limit_cents,
             objective_rubric="All release outcomes are integrated",
             status=DelegationContractStatus.DELEGATED,
@@ -119,9 +121,7 @@ def _seed_delivery_parent(ledger: SqliteLedger) -> tuple[CapabilityService, Task
 
 
 def _start_integrating(ledger: SqliteLedger, parent: Task) -> None:
-    ledger.delegation_contracts.update_status(
-        parent.id, DelegationContractStatus.INTEGRATING
-    )
+    ledger.delegation_contracts.update_status(parent.id, DelegationContractStatus.INTEGRATING)
 
 
 def test_decompose_rejects_delivery_parent_without_partial_writes(
@@ -133,9 +133,7 @@ def test_decompose_rejects_delivery_parent_without_partial_writes(
         parent_id=parent.id,
         revision="forged-delivery-decompose",
         actor_employee_id="delivery-lead",
-        children=[
-            ChildPlan(label="design", intent="Design", assignee="delivery-report")
-        ],
+        children=[ChildPlan(label="design", intent="Design", assignee="delivery-report")],
     )
 
     assert result.authority_denied == "management mutations require a delegation task"
@@ -201,9 +199,7 @@ def test_decompose_rejects_integrating_contract_without_partial_writes(
     ledger: SqliteLedger,
 ) -> None:
     service, parent = _seed_delegation_parent(ledger)
-    ledger.delegation_contracts.update_status(
-        parent.id, DelegationContractStatus.INTEGRATING
-    )
+    ledger.delegation_contracts.update_status(parent.id, DelegationContractStatus.INTEGRATING)
 
     result = service.decompose(
         parent_id=parent.id,
@@ -656,6 +652,93 @@ def test_submit_one_atomically_replaces_one_rejected_required_child(
     assert ledger.tasks.get(rejected).status is TaskStatus.REJECTED  # type: ignore[union-attr]
 
 
+def test_submit_one_respects_contract_direct_child_record_cap(
+    ledger: SqliteLedger,
+) -> None:
+    service, parent = _seed_delegation_parent(ledger, max_direct_children=2)
+    initial = service.decompose(
+        parent_id=parent.id,
+        revision="initial-wave",
+        actor_employee_id="lead",
+        children=[
+            ChildPlan(label="first", intent="First", assignee="member"),
+            ChildPlan(label="second", intent="Second", assignee="member"),
+        ],
+    ).child_ids
+    rejected = initial["first"]
+    ledger.tasks.set_status(rejected, TaskStatus.REJECTED)
+    _start_integrating(ledger, parent)
+
+    result = service.submit_one(
+        parent_id=parent.id,
+        revision="correction-wave",
+        actor_employee_id="lead",
+        child=ChildPlan(
+            label="replacement",
+            intent="Replace first",
+            assignee="member",
+            replaces_task_id=rejected,
+        ),
+    )
+
+    assert result.child_id is None
+    assert result.authority_denied == "delegation contract direct child limit exceeded"
+    assert {child.id for child in ledger.tasks.children(parent.id)} == set(initial.values())
+    assert set(ledger.dependencies.blockers(parent.id)) == set(initial.values())
+
+
+def test_submit_one_requires_replacement_lineage_while_a_direct_child_failed(
+    ledger: SqliteLedger,
+) -> None:
+    service, parent = _seed_delegation_parent(ledger)
+    rejected = service.decompose(
+        parent_id=parent.id,
+        revision="initial-wave",
+        actor_employee_id="lead",
+        children=[ChildPlan(label="broken", intent="Broken", assignee="member")],
+    ).child_ids["broken"]
+    ledger.tasks.set_status(rejected, TaskStatus.REJECTED)
+    _start_integrating(ledger, parent)
+
+    result = service.submit_one(
+        parent_id=parent.id,
+        revision="correction-wave",
+        actor_employee_id="lead",
+        child=ChildPlan(label="duplicate", intent="Redo the work", assignee="member"),
+    )
+
+    assert result.child_id is None
+    assert result.authority_denied == (
+        f"failed direct child {rejected} must be named in replaces_task_id"
+    )
+    assert [child.id for child in ledger.tasks.children(parent.id)] == [rejected]
+
+
+def test_submit_one_refuses_a_different_second_follow_up_in_the_same_beat(
+    ledger: SqliteLedger,
+) -> None:
+    service, parent = _seed_delegation_parent(ledger)
+    _start_integrating(ledger, parent)
+
+    first = service.submit_one(
+        parent_id=parent.id,
+        revision="one-integrate-beat",
+        actor_employee_id="lead",
+        child=ChildPlan(label="first", intent="First gap", assignee="member"),
+    )
+    second = service.submit_one(
+        parent_id=parent.id,
+        revision="one-integrate-beat",
+        actor_employee_id="lead",
+        child=ChildPlan(label="second", intent="Second gap", assignee="member"),
+    )
+
+    assert first.child_id is not None
+    assert second.child_id is None
+    assert second.authority_denied == "this manager beat already committed a different child wave"
+    assert [child.id for child in ledger.tasks.children(parent.id)] == [first.child_id]
+
+
 def test_submit_one_rejects_forged_actor_without_partial_writes(ledger: SqliteLedger) -> None:
     service, parent = _seed_delegation_parent(ledger)
     _start_integrating(ledger, parent)
@@ -736,7 +819,9 @@ def test_reassign_returns_terminal_or_missing_for_unknown_task(ledger: SqliteLed
 def test_reassign_succeeds_for_direct_report_child(ledger: SqliteLedger) -> None:
     """reassign happy path: re-routes a child task to another direct report."""
     service, parent = _seed_delegation_parent(ledger)
-    ledger.employees.create(Employee(id="member2", name="Member2", role="designer", reports_to="lead"))
+    ledger.employees.create(
+        Employee(id="member2", name="Member2", role="designer", reports_to="lead")
+    )
     dec = service.decompose(
         parent_id=parent.id,
         revision="seed2-run",

@@ -29,6 +29,7 @@ from chorus.outcomes._verifier import (
     DoDSpec,
     HumanApproval,
     ReviewedBuild,
+    ReviewedBuildEvidenceProfile,
     VerificationStep,
     Verifier,
 )
@@ -47,6 +48,7 @@ __all__ = [
     "OutcomeLander",
     "PlatformInfo",
     "ReviewedBuild",
+    "ReviewedBuildEvidenceProfile",
     "RevisionDirection",
     "VerificationStep",
     "Verifier",

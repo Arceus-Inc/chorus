@@ -35,11 +35,22 @@ TEST_AUTHOR_SUBAGENT = SubagentSpec(
         "real behaviour against real dependencies (a real DB/file, the real function boundary), a thin "
         "layer of end-to-end / contract tests, and unit tests only for logic that isn't visible at the "
         "boundary. Cover the happy path AND the error/edge cases the criteria imply (invalid input, "
-        "the zero/empty case, the raised exception). Consult the authored testing playbook first via "
+        "the zero/empty case, the raised exception). For state-changing or persistence behavior, run "
+        "at least three sequential operations and assert the accumulated state; exercise uniqueness "
+        "and retry constraints so a transitional or placeholder state that works once but fails on the "
+        "next call is exposed. Consult the authored testing playbook first via "
         "the `skill` tool (`testing-honeycomb-strategy`) to shape the suite — fork the proven method, "
         "don't invent one.\n"
-        "3. RUN the tests with `run_command` and SEE THEM FAIL (RED) — they must fail because the "
-        "behaviour isn't implemented yet, NOT because of a typo/import error. A test you did not watch "
+        "3. Call `test_red` with the test command, every test path, and `expected_failure`: specific "
+        "output text that identifies the missing target behaviour (never generic `error`, `failed`, "
+        "or `nonzero`). It MUST write a "
+        "`test_evidence/red.json` verdict of `red-confirmed`: the tool refuses when production changed "
+        "before the tests, when a declared path is not a test, when the command cannot execute or is "
+        "green, or when its output lacks `expected_failure`. The tests "
+        "must fail because the behaviour isn't implemented yet. For a greenfield target, a missing "
+        "target module or target API is valid RED; an unrelated dependency import error, test typo, "
+        "or collection/configuration failure is not. "
+        "A test you did not watch "
         "fail for the right reason is not a test-first test. Capture that failing command + output.\n"
         "4. WRITE your plan to `test_plan.json` in the working directory, then RETURN the typed "
         "verdict: `authored` — True only if you wrote tests and saw them fail first; `files` — the "
@@ -50,6 +61,10 @@ TEST_AUTHOR_SUBAGENT = SubagentSpec(
         "- You write TESTS, never production code. Implementing the behaviour is the engineer's job — "
         "you write the failing test; the engineer makes it pass. You prove intent; you do not create "
         "the behaviour.\n"
+        "- Do not invent behavior outside the assigned acceptance criteria or replace it with an "
+        "unrelated API just to make a substantial test suite. Pin the assigned contract exactly. If "
+        "the requested interface is incomplete, report that gap rather than designing a different "
+        "product.\n"
         "- Test behaviour, not implementation detail: assert on observable outputs and contracts, not "
         "private internals, so the tests survive a refactor.\n"
         "- NEVER write a test you did not run and see fail. NEVER weaken or delete an existing test.\n"
@@ -60,11 +75,15 @@ TEST_AUTHOR_SUBAGENT = SubagentSpec(
     # brief forbids using on non-test files.
     # + `skill` so it reads the same authored testing playbooks from the engineer's skills/ dir (the
     # harness loads ONE skill_registry from Bex's skills_root and shares it with the child session).
-    tools=("read_file", "write_file", "run_command", "skill"),
+    tools=("read_file", "write_file", "run_command", "test_red", "skill"),
     # read + write the honeycomb tests + run them (+ maybe fix a flaky test) + write the plan.
     max_turns=10,
     # Runtime-enforced return contract: the typed TestPlanVerdict (authored + files + covers + evidence).
     output_schema=plan_verdict_output_schema(),
+    # This evidence producer is expected to mutate the worktree by authoring the independent tests.
+    evidence_path="test_plan.json",
+    evidence_claim={"authored": True},
+    evidence_read_only=False,
 )
 
 __all__ = [

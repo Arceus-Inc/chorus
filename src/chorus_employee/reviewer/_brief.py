@@ -18,7 +18,10 @@ REVIEWER_BRIEF = (
     "the code's CORRECTNESS against the intent from what you can READ. Do NOT block merely because you "
     "could not personally run the tests, see a CI log, or find a test in a specific folder — if the "
     "code is correct, approve, and the kernel's floor runs the real checks; a true failure there routes "
-    "back automatically. Block only for a concrete defect you can actually see in the code.\n"
+    "back automatically. `red_evidence` and a failing RED log are historical TDD proof, not a current "
+    "defect; judge current code and report the current `verify_command` instead of treating expected "
+    "historical failures as present failures. Block only for a concrete defect you can actually see "
+    "in the current code.\n"
     "Always give concrete feedback; when you block, name precisely what must change. Do not rubber-stamp, "
     "and never write approving feedback and then block — your approve flag MUST match your assessment."
 )

@@ -48,7 +48,8 @@ class SubmitTaskTool(BaseTool):
     description = (
         "Create one follow-up child task for the current manager task, assign it to a direct "
         "report, and make the current task wait on it. Use this during integration when exactly "
-        "one new piece of work is needed."
+        "one new piece of work is needed. Keep it a BIG chunk — a whole module or feature with its "
+        "own tests; do not split by function, file, or layer."
     )
     declaration = ToolDeclaration(risk="mutating", tier_required=1, timeout_seconds=30.0)
     input_model = SubmitTaskInput

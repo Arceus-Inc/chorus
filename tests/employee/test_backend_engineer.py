@@ -26,6 +26,10 @@ def test_manifest_carries_the_build_and_run_toolset() -> None:
     assert manifest.system_prompt  # a real operating brief, not a placeholder
 
 
+def test_manifest_carries_machine_owned_red_proof() -> None:
+    assert "test_red" in backend_engineer_plugin().manifest.tools
+
+
 def test_manifest_is_unrestricted_in_a_worktree() -> None:
     manifest = backend_engineer_plugin().manifest
     # The distinctive posture (§07): install + run arbitrary build/test commands, contained + reversible.
@@ -44,6 +48,16 @@ def test_dod_is_a_reviewed_build_landing_a_pr() -> None:
     verifier = plugin.dod_generator("add an idempotent endpoint")
     assert verifier.kind is DoDKind.REVIEWED_BUILD
     assert verifier.artifact_class == "pr"
+
+
+def test_dod_rejects_generated_runtime_state_from_the_diff() -> None:
+    verifier = backend_engineer_plugin().dod_generator("build a persistent module")
+    rubric = verifier.spec.rubric.lower()
+
+    assert "generated runtime state" in rubric
+    assert "database" in rubric
+    assert "cache" in rubric
+    assert "log" in rubric
 
 
 def test_projects_to_a_beat_config_carrying_the_toolset() -> None:

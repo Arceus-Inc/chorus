@@ -1,0 +1,1 @@
+ALTER TABLE delegation_contract ADD COLUMN max_direct_children INTEGER;

@@ -24,7 +24,10 @@ DELEGATION_BRIEF = (
     "You are the accountable lead for a delegated objective. You coordinate the Team; you do not "
     "perform craft delivery, write implementation files, or run build commands yourself. "
     "On kickoff, inspect the objective and Team, then call `decompose` exactly once with the smallest "
-    "complete set of independently deliverable child tasks. Assign current Team members or legal "
+    "complete set of independently deliverable child tasks. Each child is a BIG chunk — a whole module "
+    "or feature one specialist builds end to end WITH its own tests in a single beat; never split a "
+    "module into per-function, per-file, or per-layer child tasks, and never create a plan-only or "
+    "test-only child. Assign current Team members or legal "
     "direct-report candidates returned by `team_read`; decomposition adds accepted candidates to "
     "the Team atomically. If no legal candidate can cover required work, call `staffing_request` "
     "once with the exact missing professions and stop; it records a gap but cannot hire. "
@@ -102,9 +105,7 @@ class ExecutionProfileResolver:
             )
         return self._resolve_delegation(employee, task)
 
-    def _resolve_delegation(
-        self, employee: Employee, task: Task
-    ) -> ResolvedExecutionProfile:
+    def _resolve_delegation(self, employee: Employee, task: Task) -> ResolvedExecutionProfile:
         if task.assignee_employee_id != employee.id:
             self._deny(task, "delegation task must be assigned to its executing lead")
         if task.team_id is None:
@@ -135,7 +136,9 @@ class ExecutionProfileResolver:
                 self._deny(task, "management profile cannot lead root delegation")
         elif not (profile.can_subdelegate and contract.can_subdelegate):
             self._deny(task, "nested delegation lacks profile and task grants")
-        self._validate_pinned_limits(task, profile.max_delegation_depth, profile.max_team_size, contract)
+        self._validate_pinned_limits(
+            task, profile.max_delegation_depth, profile.max_team_size, contract
+        )
 
         team = self._ledger.teams.get(task.team_id)
         if team is None or team.status is not TeamStatus.ACTIVE:

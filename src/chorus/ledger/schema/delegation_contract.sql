@@ -14,7 +14,7 @@ CREATE TABLE delegation_contract (
     accepted_at                TEXT,
     created_at                 TEXT NOT NULL,
     updated_at                 TEXT NOT NULL
-);
+    , max_direct_children      INTEGER);
 
 CREATE INDEX delegation_contract_team_status_idx ON delegation_contract(team_id, status);
 CREATE INDEX delegation_contract_lead_status_idx ON delegation_contract(lead_employee_id, status);

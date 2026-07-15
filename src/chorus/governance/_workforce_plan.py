@@ -66,6 +66,20 @@ class WorkforcePlanService:
             or proposer.status in {EmployeeStatus.PENDING, EmployeeStatus.TERMINATED}
         ):
             raise ValueError("workforce plans require an active CEO proposer")
+        pending = next(
+            (
+                plan
+                for plan in self._ledger.workforce_plans.list()
+                if plan.proposed_by_employee_id == proposer.id
+                and plan.status is WorkforcePlanStatus.PROPOSED
+            ),
+            None,
+        )
+        if pending is not None:
+            raise ValueError(
+                f"CEO already has a proposed workforce plan {pending.id!r}; "
+                "a human must approve, reject, or revise it before another proposal"
+            )
         staffing_request = self._validate_staffing_amendment(
             draft,
             staffing_request_id=staffing_request_id,
@@ -237,7 +251,10 @@ class WorkforcePlanService:
         for employee in draft.employees:
             if self._ledger.employees.get(employee.ref) is not None:
                 raise ValueError(f"employee ref {employee.ref!r} already exists")
-            if employee.profession not in _PLAN_PROFESSIONS or employee.profession not in self._roles:
+            if (
+                employee.profession not in _PLAN_PROFESSIONS
+                or employee.profession not in self._roles
+            ):
                 raise ValueError(f"profession {employee.profession!r} is not hireable")
         planned = {employee.ref: employee for employee in draft.employees}
         depths = self._depths(
@@ -245,9 +262,7 @@ class WorkforcePlanService:
             root_employee_id=root_employee_id,
         )
         if max(depths.values(), default=0) > self._max_org_depth:
-            raise ValueError(
-                f"workforce plan depth exceeds maximum {self._max_org_depth}"
-            )
+            raise ValueError(f"workforce plan depth exceeds maximum {self._max_org_depth}")
 
         grants = {grant.employee_ref: grant for grant in draft.management_grants}
         if len(grants) != len(draft.management_grants):
@@ -255,7 +270,9 @@ class WorkforcePlanService:
         known_refs = set(planned) | {root_employee_id}
         unknown_grants = set(grants) - known_refs
         if unknown_grants:
-            raise ValueError(f"management grant references unknown employees: {sorted(unknown_grants)}")
+            raise ValueError(
+                f"management grant references unknown employees: {sorted(unknown_grants)}"
+            )
         direct_reports: dict[str, list[str]] = defaultdict(list)
         professions = {root_employee_id: root.role} | {
             ref: employee.profession for ref, employee in planned.items()
@@ -274,9 +291,7 @@ class WorkforcePlanService:
                     f"management grant for {manager_ref!r} does not cover direct-report professions"
                 )
             if grant.max_team_size < 1 + len(report_refs):
-                raise ValueError(
-                    f"management grant for {manager_ref!r} has insufficient team size"
-                )
+                raise ValueError(f"management grant for {manager_ref!r} has insufficient team size")
             remaining_depth = self._max_org_depth - depths.get(manager_ref, 0)
             if grant.max_delegation_depth > remaining_depth:
                 raise ValueError(
@@ -285,7 +300,9 @@ class WorkforcePlanService:
         for grant in draft.management_grants:
             invalid = set(grant.allowed_professions) - _PLAN_PROFESSIONS
             if invalid:
-                raise ValueError(f"management grant names non-hireable professions: {sorted(invalid)}")
+                raise ValueError(
+                    f"management grant names non-hireable professions: {sorted(invalid)}"
+                )
 
     def _depths(
         self,
@@ -342,12 +359,7 @@ class WorkforcePlanService:
         request = self._ledger.staffing_requests.get(staffing_request_id)
         if request is None or request.status is not StaffingRequestStatus.OPEN:
             raise ValueError("staffing amendment requires an open staffing request")
-        requested = Counter(
-            {
-                need.profession: need.count
-                for need in request.needs
-            }
-        )
+        requested = Counter({need.profession: need.count for need in request.needs})
         proposed = Counter(employee.profession for employee in draft.employees)
         if (
             proposed != requested
@@ -368,9 +380,7 @@ class WorkforcePlanService:
         if plan is None:
             raise ValueError(f"no such workforce plan: {plan_id!r}")
         if plan.status is not WorkforcePlanStatus.PROPOSED:
-            raise ValueError(
-                f"workforce plan {plan_id!r} is {plan.status.value!r}, not proposed"
-            )
+            raise ValueError(f"workforce plan {plan_id!r} is {plan.status.value!r}, not proposed")
         return plan
 
 

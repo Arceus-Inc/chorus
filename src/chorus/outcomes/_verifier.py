@@ -26,6 +26,12 @@ class DoDKind(StrEnum):
     REVIEWED_BUILD = "reviewed_build"
 
 
+class ReviewedBuildEvidenceProfile(StrEnum):
+    """Versioned structured evidence contracts the kernel can enforce without a shell."""
+
+    TDD_REVIEW_V1 = "tdd_review_v1"
+
+
 @dataclass(frozen=True)
 class Command:
     """Objective gate — a shell command must exit 0 (tests/CI/typecheck)."""
@@ -62,6 +68,7 @@ class ReviewedBuild:
     reviewer_role: str = "reviewer"
     rubric: str = ""
     verify_timeout_s: int = 600
+    evidence_profile: ReviewedBuildEvidenceProfile | None = None
 
 
 # The DoD spec union (spec 04 §1).
@@ -116,10 +123,14 @@ class Verifier:
         rubric: str = "",
         artifact_class: str = "pr",
         verify_timeout_s: int = 600,
+        evidence_profile: ReviewedBuildEvidenceProfile | str | None = None,
     ) -> Verifier:
+        profile = (
+            ReviewedBuildEvidenceProfile(evidence_profile) if evidence_profile is not None else None
+        )
         return cls(
             DoDKind.REVIEWED_BUILD,
-            ReviewedBuild(reviewer_role, rubric, verify_timeout_s),
+            ReviewedBuild(reviewer_role, rubric, verify_timeout_s, profile),
             artifact_class,
         )
 
@@ -154,6 +165,7 @@ __all__ = [
     "DoDSpec",
     "HumanApproval",
     "ReviewedBuild",
+    "ReviewedBuildEvidenceProfile",
     "VerificationStep",
     "Verifier",
 ]

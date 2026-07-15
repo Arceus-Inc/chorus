@@ -9,8 +9,10 @@ self-repair then a recovery card. Fake beat runners stand in for the worker / re
 from __future__ import annotations
 
 import asyncio
+import json
 import sys
 from datetime import UTC, datetime, timedelta
+from hashlib import sha256
 from pathlib import Path
 
 import pytest
@@ -219,10 +221,20 @@ class _Manager(_Runner):
             )
             return BeatOutcome(passed=False, outcome={}, summary="delegated", model="m")
         if IntegrateContextPacket.recommended_for(self._ledger, self._parent) == "react":
+            rejected_id = next(
+                child.id
+                for child in self._ledger.tasks.children(self._parent)
+                if child.status is TaskStatus.REJECTED
+            )
             svc.submit_one(
                 parent_id=self._parent,
                 revision=str(run_id),
-                child=ChildPlan(label="redraft", intent="redraft the spec", assignee="paul"),
+                child=ChildPlan(
+                    label="redraft",
+                    intent="redraft the spec",
+                    assignee="paul",
+                    replaces_task_id=rejected_id,
+                ),
                 actor_employee_id="moe",
             )
             return BeatOutcome(
@@ -509,13 +521,72 @@ def _reviewed_build_task(ledger: SqliteLedger) -> None:
     ledger.dod.create("code", Verifier.reviewed_build(artifact_class="pr"))  # the engineer's gate
 
 
+def _structured_reviewed_build_task(ledger: SqliteLedger) -> None:
+    from chorus.outcomes import Verifier
+
+    ledger.employees.create(Employee(id="dev", name="Dev", role="backend_engineer"))
+    ledger.employees.create(Employee(id="rob", name="Rob", role="reviewer"))
+    ledger.tasks.submit(Task(id="code", intent="build the widget", status=TaskStatus.TODO))
+    assign_task(ledger, "code", "dev")
+    ledger.dod.create(
+        "code",
+        Verifier.reviewed_build(artifact_class="pr", evidence_profile="tdd_review_v1"),
+    )
+
+
+def _write_structured_review_evidence(root: Path) -> None:
+    test_path = root / "tests" / "test_widget.py"
+    test_path.parent.mkdir()
+    test_path.write_text("def test_widget():\n    assert True\n", encoding="utf-8")
+    evidence = root / "test_evidence"
+    evidence.mkdir()
+    (evidence / "manifest.json").write_text(
+        json.dumps(
+            {
+                "verdict": "pass",
+                "gates": [
+                    {
+                        "name": "unit",
+                        "command": "python -m pytest -q",
+                        "status": "pass",
+                        "returncode": 0,
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    (evidence / "red.json").write_text(
+        json.dumps(
+            {
+                "verdict": "red-confirmed",
+                "command": "python -m pytest -q",
+                "returncode": 1,
+                "expected_failure_matched": True,
+                "command_unavailable": False,
+                "test_paths": ["tests/test_widget.py"],
+                "test_hashes": {"tests/test_widget.py": sha256(test_path.read_bytes()).hexdigest()},
+                "production_paths": [],
+                "invalid_test_paths": [],
+                "missing_tests": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    (root / "test_plan.json").write_text(
+        json.dumps({"tests": ["tests/test_widget.py"]}), encoding="utf-8"
+    )
+    (root / "review_verdict.json").write_text(
+        json.dumps({"cleared": True, "findings": [], "evidence": "reviewed widget"}),
+        encoding="utf-8",
+    )
+
+
 async def test_reviewed_build_approve_and_passing_command_lands_done(
     ledger: SqliteLedger, tmp_path: Path
 ) -> None:
     _reviewed_build_task(ledger)
-    org = _Org(
-        ledger, decide=lambda _tid: True, root=tmp_path, verify_command=_PASS_COMMAND
-    )
+    org = _Org(ledger, decide=lambda _tid: True, root=tmp_path, verify_command=_PASS_COMMAND)
     sched = _sched(ledger, org, tmp_path)
 
     await sched.tick_once()
@@ -526,15 +597,95 @@ async def test_reviewed_build_approve_and_passing_command_lands_done(
     assert dod is not None and dod.verdict is not None and dod.verdict["build_passed"] is True
 
 
+async def test_reviewed_build_structured_evidence_and_project_command_both_pass(
+    ledger: SqliteLedger, tmp_path: Path
+) -> None:
+    _structured_reviewed_build_task(ledger)
+    _write_structured_review_evidence(tmp_path)
+    org = _Org(ledger, decide=lambda _tid: True, root=tmp_path, verify_command=_PASS_COMMAND)
+    sched = _sched(ledger, org, tmp_path)
+
+    await sched.tick_once()
+    await sched.drain()
+
+    assert ledger.tasks.get("code").status is TaskStatus.DONE  # type: ignore[union-attr]
+    dod = ledger.dod.get_for_task("code")
+    assert dod is not None and dod.verdict is not None
+    assert dod.verdict["evidence_passed"] is True
+    assert dod.verdict["build_passed"] is True
+    assert dod.verdict["build_exit"] == 0
+
+
+async def test_reviewed_build_rejects_test_changed_after_red(
+    ledger: SqliteLedger, tmp_path: Path
+) -> None:
+    _structured_reviewed_build_task(ledger)
+    _write_structured_review_evidence(tmp_path)
+    (tmp_path / "tests" / "test_widget.py").write_text(
+        "def test_widget():\n    assert False\n", encoding="utf-8"
+    )
+    org = _Org(ledger, decide=lambda _tid: True, root=tmp_path, verify_command=_PASS_COMMAND)
+    sched = _sched(ledger, org, tmp_path, max_review_rounds=0)
+
+    await sched.tick_once()
+    await sched.drain()
+
+    assert ledger.tasks.get("code").status is not TaskStatus.DONE  # type: ignore[union-attr]
+    dod = ledger.dod.get_for_task("code")
+    assert dod is not None and dod.verdict is not None
+    assert dod.verdict["evidence_passed"] is False
+    assert "changed after red" in str(dod.verdict["evidence_output"]).lower()
+    assert "build_exit" not in dod.verdict
+
+
+@pytest.mark.parametrize(
+    ("relative_path", "invalid_payload", "reason"),
+    [
+        (
+            "test_evidence/manifest.json",
+            {"verdict": "pass", "gates": [{"status": "fail", "returncode": 1}]},
+            "manifest",
+        ),
+        (
+            "test_evidence/red.json",
+            {"verdict": "red-confirmed", "expected_failure_matched": False},
+            "red",
+        ),
+        ("test_plan.json", [], "test_plan"),
+        ("review_verdict.json", {"cleared": False}, "review_verdict"),
+    ],
+)
+async def test_reviewed_build_rejects_invalid_structured_evidence_before_project_command(
+    ledger: SqliteLedger,
+    tmp_path: Path,
+    relative_path: str,
+    invalid_payload: object,
+    reason: str,
+) -> None:
+    _structured_reviewed_build_task(ledger)
+    _write_structured_review_evidence(tmp_path)
+    (tmp_path / relative_path).write_text(json.dumps(invalid_payload), encoding="utf-8")
+    org = _Org(ledger, decide=lambda _tid: True, root=tmp_path, verify_command=_PASS_COMMAND)
+    sched = _sched(ledger, org, tmp_path, max_review_rounds=0)
+
+    await sched.tick_once()
+    await sched.drain()
+
+    assert ledger.tasks.get("code").status is not TaskStatus.DONE  # type: ignore[union-attr]
+    dod = ledger.dod.get_for_task("code")
+    assert dod is not None and dod.verdict is not None
+    assert dod.verdict["evidence_passed"] is False
+    assert reason in str(dod.verdict["evidence_output"])
+    assert "build_exit" not in dod.verdict
+
+
 async def test_reviewed_build_failing_command_does_not_land(
     ledger: SqliteLedger, tmp_path: Path
 ) -> None:
     # The reviewer liked the diff, but the kernel-run command fails → the build is NOT done (the floor
     # is un-rationalizable). Standalone → bounded self-repair, never a silent pass.
     _reviewed_build_task(ledger)
-    org = _Org(
-        ledger, decide=lambda _tid: True, root=tmp_path, verify_command=_FAIL_COMMAND
-    )
+    org = _Org(ledger, decide=lambda _tid: True, root=tmp_path, verify_command=_FAIL_COMMAND)
     sched = _sched(ledger, org, tmp_path, max_review_rounds=1)
 
     for _ in range(6):
@@ -552,9 +703,7 @@ async def test_reviewed_build_quality_block_skips_the_command(
 ) -> None:
     _reviewed_build_task(ledger)
     # the reviewer blocks on quality; the command never runs (no build_passed recorded)
-    org = _Org(
-        ledger, decide=lambda _tid: False, root=tmp_path, verify_command=_PASS_COMMAND
-    )
+    org = _Org(ledger, decide=lambda _tid: False, root=tmp_path, verify_command=_PASS_COMMAND)
     sched = _sched(ledger, org, tmp_path, max_review_rounds=1)
 
     for _ in range(4):

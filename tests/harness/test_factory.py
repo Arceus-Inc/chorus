@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from dream.tools._context import ToolExecutionContext
 
 from chorus.heartbeat import BeatRunner
 from chorus.ledger import (
@@ -50,9 +51,7 @@ def _factory(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> tuple[Any, dict
     return factory, captured
 
 
-def _seed_delegation(
-    ledger: SqliteLedger, *, child_status: TaskStatus | None = None
-) -> Employee:
+def _seed_delegation(ledger: SqliteLedger, *, child_status: TaskStatus | None = None) -> Employee:
     lead = Employee(id="moe", name="Moe", role="backend_engineer")
     worker = Employee(id="ada", name="Ada", role="backend_engineer", reports_to=lead.id)
     ledger.employees.create(lead)
@@ -140,6 +139,7 @@ def test_backend_engineer_materializes_a_writable_harness_in_its_worktree(
     names = {t.name for t in captured["registry"].list_tools()}
     assert names == {
         "read_file",
+        "read_offloaded",
         "write_file",
         "bash",
         "git",
@@ -150,12 +150,24 @@ def test_backend_engineer_materializes_a_writable_harness_in_its_worktree(
         "skill",
         "todo_write",
         "test_evidence",
+        "test_red",
         "secret_scan",
         "code_quality",
     }
     assert mat.config.permission_mode == "acceptEdits"
     assert captured["max_turns"] == 18  # the engine scalars come from the role too
     assert captured["working_memory"] is True
+    assert mat.runner._subagent_evidence == {
+        "test_author": ("test_plan.json", {"authored": True}, False),
+        "code_reviewer": ("review_verdict.json", {"cleared": True}, True),
+    }
+
+
+def test_role_registry_registers_the_read_file_offload_companion() -> None:
+    from chorus_harness._factory import _role_registry
+
+    names = {tool.name for tool in _role_registry(("read_file",)).list_tools()}
+    assert names == {"read_file", "read_offloaded"}
 
 
 def test_engineer_role_overlays_admit_read_memory_for_read_only_heads(
@@ -242,13 +254,12 @@ def test_system_verifier_materializes_a_read_only_harness(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     factory, captured = _factory(monkeypatch, tmp_path)
-    mat = factory.materialize_verifier(
-        SYSTEM_VERIFIER, task_id="review", worktree_owner_id="ada"
-    )
+    mat = factory.materialize_verifier(SYSTEM_VERIFIER, task_id="review", worktree_owner_id="ada")
     # the headline win: a reviewer is read-only EVERYWHERE — not just in chat. Its only tool with no
-    # ledger is read_file (submit_verdict needs a ledger to bind to, registered in the ledger-bound test).
+    # ledger is read_file plus its scratch-confined offload companion (submit_verdict needs a ledger to
+    # bind to, registered in the ledger-bound test).
     names = {t.name for t in captured["registry"].list_tools()}
-    assert names == {"read_file"}
+    assert names == {"read_file", "read_offloaded"}
     # DEFAULT permission so it can call its ledger-only verdict tool; its read-only-ness is structural —
     # no file-writing tool + the read-only sandbox tier.
     assert mat.config.permission_mode == "default"
@@ -280,7 +291,13 @@ def test_delegation_harness_registers_the_decompose_capability_tool(
         lead = _seed_delegation(ledger)
         factory.materialize(lead, task_id="goal")
         names = {t.name for t in captured["registry"].list_tools()}
-        assert names == {"read_file", "decompose", "team_read", "staffing_request"}
+        assert names == {
+            "read_file",
+            "read_offloaded",
+            "decompose",
+            "team_read",
+            "staffing_request",
+        }
     finally:
         ledger.close()
 
@@ -384,7 +401,11 @@ def test_integrate_beat_over_a_complete_subtree_drops_all_mutating_tools(
         assert (
             "submit_task" not in names and "assign_task" not in names
         )  # cannot over-submit a done subtree
-        assert names == {"read_file", "team_read"}  # only reads remain before acceptance
+        assert names == {
+            "read_file",
+            "read_offloaded",
+            "team_read",
+        }  # only reads remain before acceptance
     finally:
         ledger.close()
 
@@ -409,12 +430,11 @@ def test_system_verifier_harness_registers_the_submit_verdict_capability_tool(
             work_root=tmp_path,
             ledger=ledger,
         )
-        factory.materialize_verifier(
-            SYSTEM_VERIFIER, task_id="review", worktree_owner_id="ada"
-        )
+        factory.materialize_verifier(SYSTEM_VERIFIER, task_id="review", worktree_owner_id="ada")
         names = {t.name for t in captured["registry"].list_tools()}
         assert names == {
             "read_file",
+            "read_offloaded",
             "submit_verdict",
         }  # read-only inspection + the verdict capability
     finally:
@@ -482,6 +502,44 @@ def test_delegation_brief_is_rehydrated_with_its_team(
         ledger.close()
 
 
+@pytest.mark.parametrize(
+    ("active", "can_lead", "expects_director_guidance"),
+    ((True, True, True), (False, True, False), (True, False, False)),
+)
+def test_team_roster_uses_management_authority_to_identify_manager_reports(
+    active: bool, can_lead: bool, expects_director_guidance: bool
+) -> None:
+    ledger = SqliteLedger.open(":memory:")
+    try:
+        director = Employee(id="ceo", name="Casey", role="ceo")
+        specialist_lead = Employee(
+            id="backend-lead",
+            name="Blair",
+            role="backend_engineer",
+            reports_to=director.id,
+        )
+        ledger.employees.create(director)
+        ledger.employees.create(specialist_lead)
+        ledger.management_profiles.upsert(
+            ManagementProfile(
+                employee_id=specialist_lead.id,
+                granted_by_user_id="operator",
+                active=active,
+                can_lead=can_lead,
+                max_delegation_depth=1,
+                max_team_size=3,
+                allowed_professions=("backend_engineer",),
+            )
+        )
+
+        roster = _factory_mod._team_roster(ledger, exclude=director.id)
+
+        assert ("You are a director" in roster) is expects_director_guidance
+        assert ("manager reports (backend-lead)" in roster) is expects_director_guidance
+    finally:
+        ledger.close()
+
+
 def test_management_profile_without_a_delegation_task_keeps_delivery_tools(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -504,6 +562,54 @@ def test_management_profile_without_a_delegation_task_keeps_delivery_tools(
     names = {t.name for t in captured["registry"].list_tools()}
     assert not {"decompose", "submit_task", "assign_task"}.intersection(names)
     assert {"write_file", "bash", "git"} <= names
+    ledger.close()
+
+
+async def test_tdd_review_delivery_task_gates_parent_production_tools(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    ledger = SqliteLedger.open(":memory:")
+    _seed_delegation(ledger)
+    worker = ledger.employees.get("ada")
+    assert worker is not None
+    ledger.tasks.submit(
+        Task(
+            id="delivery",
+            intent="implement the backend",
+            status=TaskStatus.TODO,
+            execution_mode=ExecutionMode.DELIVERY,
+            assignee_employee_id=worker.id,
+        )
+    )
+    captured: dict[str, Any] = {}
+    monkeypatch.setattr(
+        _factory_mod.dream, "build_harness", lambda **kw: captured.update(kw) or object()
+    )
+    factory = _factory_mod.EmployeeHarnessFactory(
+        api_key="k",
+        base_url="https://x/openai/v1",
+        deployment="gpt-x",
+        company_id="acme",
+        roles=RoleRegistry.from_plugins(default_roles()),
+        work_root=tmp_path,
+        ledger=ledger,
+    )
+
+    materialized = factory.materialize(worker, task_id="delivery")
+    write_file = captured["registry"].get("write_file")
+    assert write_file is not None
+    result = await write_file.execute(
+        {"path": "backend/service.py", "content": "implemented = True\n"},
+        ToolExecutionContext(
+            working_dir=materialized.working_dir,
+            session_id="session",
+            metadata={"dream.role": "generator"},
+        ),
+    )
+
+    assert result.is_error is True
+    assert result.metadata["root_cause"] == "strict_tdd_red_not_authorized"
+    assert captured["registry"].get("spawn_subagent") is not None
     ledger.close()
 
 

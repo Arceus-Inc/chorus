@@ -18,8 +18,9 @@ class DelegationContractRepo:
         self._conn.execute(
             "INSERT INTO delegation_contract (task_id, team_id, lead_employee_id, "
             "management_profile_version, parent_contract_task_id, can_subdelegate, max_depth, "
-            "max_team_size, spend_limit_cents, objective_rubric, status, accepted_run_id, "
-            "accepted_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "max_team_size, max_direct_children, spend_limit_cents, objective_rubric, status, "
+            "accepted_run_id, accepted_at, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 contract.task_id,
                 contract.team_id,
@@ -29,6 +30,7 @@ class DelegationContractRepo:
                 int(contract.can_subdelegate),
                 contract.max_depth,
                 contract.max_team_size,
+                contract.max_direct_children,
                 contract.spend_limit_cents,
                 contract.objective_rubric,
                 contract.status.value,
@@ -70,9 +72,7 @@ class DelegationContractRepo:
         ).fetchall()
         return [_row_to_contract(row) for row in rows]
 
-    def active_contracts_involving(
-        self, employee_id: str
-    ) -> builtins.list[DelegationContract]:
+    def active_contracts_involving(self, employee_id: str) -> builtins.list[DelegationContract]:
         return self.active_for_employee(employee_id)
 
     def landed_awaiting_closure(self) -> builtins.list[DelegationContract]:
@@ -86,9 +86,7 @@ class DelegationContractRepo:
         ).fetchall()
         return [_row_to_contract(row) for row in rows]
 
-    def update_status(
-        self, task_id: str, status: DelegationContractStatus
-    ) -> DelegationContract:
+    def update_status(self, task_id: str, status: DelegationContractStatus) -> DelegationContract:
         self._conn.execute(
             "UPDATE delegation_contract SET status = ?, updated_at = ? WHERE task_id = ?",
             (status.value, utcnow_iso(), task_id),
@@ -118,6 +116,7 @@ def _row_to_contract(row: sqlite3.Row) -> DelegationContract:
         can_subdelegate=bool(row["can_subdelegate"]),
         max_depth=row["max_depth"],
         max_team_size=row["max_team_size"],
+        max_direct_children=row["max_direct_children"],
         spend_limit_cents=row["spend_limit_cents"],
         objective_rubric=row["objective_rubric"],
         status=DelegationContractStatus(row["status"]),

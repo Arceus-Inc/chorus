@@ -40,9 +40,7 @@ def ledger() -> SqliteLedger:
 
 def _seed_tasks(ledger: SqliteLedger) -> tuple[Employee, Task, Task]:
     lead = Employee(id="lead", name="Lead", role="backend_engineer")
-    worker = Employee(
-        id="worker", name="Worker", role="backend_engineer", reports_to="lead"
-    )
+    worker = Employee(id="worker", name="Worker", role="backend_engineer", reports_to="lead")
     ledger.employees.create(lead)
     ledger.employees.create(worker)
     ledger.management_profiles.upsert(
@@ -145,7 +143,13 @@ def test_same_backend_engineer_materializes_delivery_then_delegation_surface(
     delivery_tools = {tool.name for tool in calls[0]["registry"].list_tools()}
     delegation_tools = {tool.name for tool in calls[1]["registry"].list_tools()}
     assert {"write_file", "bash", "git"} <= delivery_tools
-    assert delegation_tools == {"read_file", "team_read", "staffing_request", "decompose"}
+    assert delegation_tools == {
+        "read_file",
+        "read_offloaded",
+        "team_read",
+        "staffing_request",
+        "decompose",
+    }
     assert delivered.config.memory_scope == "project"
     assert delegated.config.memory_scope == "team"
     assert "worker (backend_engineer)" in delegated.config.system_prompt
@@ -180,6 +184,6 @@ def test_independent_verifier_uses_reviewer_read_only_surface_in_lead_worktree(
     )
 
     tools = {tool.name for tool in calls[0]["registry"].list_tools()}
-    assert tools == {"read_file"}
+    assert tools == {"read_file", "read_offloaded"}
     sandbox = Path(calls[0]["working_dir"]) / ".harness" / "sandbox.toml"
     assert 'tier = "read-only"' in sandbox.read_text(encoding="utf-8")

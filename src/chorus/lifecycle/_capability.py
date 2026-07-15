@@ -13,6 +13,7 @@ re-fires the same tool within a beat therefore produces the same children, and t
 from __future__ import annotations
 
 import hashlib
+import json
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
@@ -290,6 +291,44 @@ class CapabilityService:
             raise RuntimeError("authorized delegation wave has no effective limits")
 
         ids = {child.label: _child_id(parent.id, child.label) for child in children}
+        request_fingerprint = hashlib.sha256(
+            json.dumps(
+                [
+                    {
+                        "assignee": child.assignee,
+                        "can_subdelegate": child.can_subdelegate,
+                        "depends_on": list(child.depends_on),
+                        "execution_mode": child.execution_mode.value,
+                        "intent": child.intent,
+                        "replaces_task_id": child.replaces_task_id,
+                        "task_id": ids[child.label],
+                    }
+                    for child in children
+                ],
+                separators=(",", ":"),
+                sort_keys=True,
+            ).encode()
+        ).hexdigest()
+        accepted_plan_revision_id = self._ensure_plan_revision(parent.id, revision)
+        existing_claim = self._ledger.decomposition_claims.by_source_revision(
+            parent.id, accepted_plan_revision_id
+        )
+        if existing_claim is not None and existing_claim.request_fingerprint != request_fingerprint:
+            return DecomposeResult(
+                authority_denied="this manager beat already committed a different child wave"
+            )
+        contract = self._ledger.delegation_contracts.get(parent.id)
+        if contract is None:
+            raise RuntimeError("authorized delegation task is missing its contract")
+        existing_child_ids = {child.id for child in self._ledger.tasks.children(parent.id)}
+        new_child_count = sum(child_id not in existing_child_ids for child_id in ids.values())
+        if (
+            contract.max_direct_children is not None
+            and len(existing_child_ids) + new_child_count > contract.max_direct_children
+        ):
+            return DecomposeResult(
+                authority_denied="delegation contract direct child limit exceeded"
+            )
         team_policy = MissionTeamPolicy(self._ledger)
         child_team_ids: dict[str, str | None] = {}
         with self._ledger.transaction():
@@ -343,9 +382,10 @@ class CapabilityService:
             outcome = decompose(
                 self._ledger,
                 source_task_id=parent.id,
-                accepted_plan_revision_id=self._ensure_plan_revision(parent.id, revision),
+                accepted_plan_revision_id=accepted_plan_revision_id,
                 owner_run_id=self._owner_run_id(revision),
                 children=specs,
+                request_fingerprint=request_fingerprint,
                 **decompose_args,  # type: ignore[arg-type]
             )
             if isinstance(outcome, DepthCapped):
@@ -398,10 +438,7 @@ class CapabilityService:
             )
             if not target_decision.authorized:
                 return target_decision
-            if (
-                child.execution_mode is ExecutionMode.DELEGATION
-                and not child.can_subdelegate
-            ):
+            if child.execution_mode is ExecutionMode.DELEGATION and not child.can_subdelegate:
                 return AuthorizationResult(
                     False,
                     reason="nested delegation requires an explicit Team grant",
@@ -509,6 +546,17 @@ class CapabilityService:
     def _replacement_denial(self, parent: Task, child: ChildPlan) -> DecomposeResult | None:
         replaced_id = child.replaces_task_id
         if replaced_id is None:
+            for blocker_id in self._ledger.dependencies.blockers(parent.id):
+                blocker = self._ledger.tasks.get(blocker_id)
+                if blocker is not None and blocker.status in {
+                    TaskStatus.REJECTED,
+                    TaskStatus.CANCELLED,
+                }:
+                    return DecomposeResult(
+                        authority_denied=(
+                            f"failed direct child {blocker_id} must be named in replaces_task_id"
+                        )
+                    )
             return None
         replaced = self._ledger.tasks.get(replaced_id)
         correction_id = _child_id(parent.id, child.label)

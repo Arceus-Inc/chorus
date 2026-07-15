@@ -55,8 +55,11 @@ class DecomposeTool(BaseTool):
     name = "decompose"
     description = (
         "Split the current task into concrete subtasks and assign each to a report. Call once with "
-        "every subtask in 'children'; use 'depends_on' to order them. The current task then waits on "
-        "the whole subtree. Refused if the task is already at the delegation depth cap."
+        "every subtask in 'children'; use 'depends_on' to order them. Keep each subtask a BIG chunk — "
+        "a whole module or feature the owner builds end to end with its own tests in one beat; do not "
+        "split a module by function, file, or layer, and do not create plan-only or test-only "
+        "subtasks. The current task then waits on the whole subtree. Refused if the task is already at "
+        "the delegation depth cap."
     )
     # tier_required=1 (REPO_WRITE): a mutating tool is gated as a write effect, so its *trusted* tier
     # (from this declaration, since it registers DEFAULT/built-in) must meet that — else dream denies it

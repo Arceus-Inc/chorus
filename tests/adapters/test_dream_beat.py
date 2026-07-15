@@ -10,6 +10,7 @@ in for dream's real types.
 from __future__ import annotations
 
 import asyncio
+import json
 import subprocess
 import sys
 from dataclasses import dataclass, field
@@ -442,6 +443,266 @@ async def test_run_task_records_the_account_even_without_a_chorus_observer() -> 
     )
     outcome = await DreamBeatRunner(harness).run_task(task_id="t1", intent="x")
     assert "picked X" in outcome.raw_record  # captured with no chorus observer wired
+
+
+async def test_run_task_rejects_a_parent_replaced_subagent_artifact(tmp_path: Path) -> None:
+    reviewer_output = {
+        "cleared": False,
+        "findings": [
+            {
+                "category": "other",
+                "severity": "high",
+                "location": "links.py:1",
+                "detail": "runtime state is committed",
+                "fix": "remove it",
+            }
+        ],
+        "evidence": "reviewed the diff",
+    }
+    (tmp_path / "review_verdict.json").write_text(
+        json.dumps({"cleared": True, "findings": [], "evidence": "parent replacement"})
+    )
+    events = (
+        {
+            "kind": "role.tool.start",
+            "role": "generator",
+            "tool": "spawn_subagent",
+            "input": {"name": "code_reviewer", "prompt": "Review"},
+        },
+        {
+            "kind": "role.tool.result",
+            "role": "generator",
+            "tool": "spawn_subagent",
+            "is_error": False,
+            "content": json.dumps(reviewer_output),
+            "content_preview": json.dumps(reviewer_output)[:240],
+        },
+    )
+    harness = _FakeHarness(result=_result("done"), events=events)
+
+    outcome = await DreamBeatRunner(
+        harness,
+        working_dir=tmp_path,
+        subagent_evidence={"code_reviewer": ("review_verdict.json", {"cleared": True})},
+    ).run_task(task_id="t1", intent="x")
+
+    assert outcome.passed is False
+    assert outcome.outcome["subagent_evidence"] == "failed"
+    assert "required claim" in outcome.summary
+    assert json.loads((tmp_path / "review_verdict.json").read_text()) == reviewer_output
+
+
+async def test_run_task_records_and_reuses_valid_subagent_provenance(tmp_path: Path) -> None:
+    reviewer_output = {"cleared": True, "findings": [], "evidence": "reviewed the diff"}
+    events = (
+        {
+            "kind": "role.tool.start",
+            "role": "generator",
+            "tool": "spawn_subagent",
+            "input": {"name": "code_reviewer", "prompt": "Review"},
+        },
+        {
+            "kind": "role.tool.result",
+            "role": "generator",
+            "tool": "spawn_subagent",
+            "is_error": False,
+            "content": json.dumps(reviewer_output),
+            "content_preview": json.dumps(reviewer_output)[:40],
+        },
+    )
+    requirement = {"code_reviewer": ("review_verdict.json", {"cleared": True})}
+
+    first = await DreamBeatRunner(
+        _FakeHarness(result=_result("done"), events=events),
+        working_dir=tmp_path,
+        subagent_evidence=requirement,
+    ).run_task(task_id="t1", intent="x")
+    resumed = await DreamBeatRunner(
+        _FakeHarness(result=_result("done")),
+        working_dir=tmp_path,
+        subagent_evidence=requirement,
+    ).run_task(task_id="t1", intent="resume")
+
+    assert first.passed is True
+    assert resumed.passed is True
+    assert json.loads((tmp_path / "review_verdict.json").read_text()) == reviewer_output
+    assert (tmp_path / ".harness" / "subagent-evidence" / "code_reviewer.json").is_file()
+
+
+async def test_run_task_rejects_code_changed_after_independent_review(tmp_path: Path) -> None:
+    reviewer_output = {"cleared": True, "findings": [], "evidence": "reviewed links.py"}
+    (tmp_path / "links.py").write_text("VALUE = 1\n")
+    (tmp_path / "review_verdict.json").write_text(json.dumps(reviewer_output))
+    events = (
+        {
+            "kind": "role.tool.start",
+            "role": "generator",
+            "tool": "spawn_subagent",
+            "input": {"name": "code_reviewer", "prompt": "Review"},
+        },
+        {
+            "kind": "role.tool.result",
+            "role": "generator",
+            "tool": "spawn_subagent",
+            "is_error": False,
+            "content": json.dumps(reviewer_output),
+            "content_preview": json.dumps(reviewer_output),
+        },
+    )
+
+    class _MutatesAfterReview(_FakeHarness):
+        async def run_task(self, **kwargs: Any) -> _Result:
+            result = await super().run_task(**kwargs)
+            (tmp_path / "links.py").write_text("VALUE = 2\n")
+            return result
+
+    outcome = await DreamBeatRunner(
+        _MutatesAfterReview(result=_result("done"), events=events),
+        working_dir=tmp_path,
+        subagent_evidence={"code_reviewer": ("review_verdict.json", {"cleared": True})},
+    ).run_task(task_id="t1", intent="x")
+
+    assert outcome.passed is False
+    assert "worktree changed after independent review" in outcome.summary
+
+
+async def test_run_task_rejects_evidence_subagent_mutating_worktree(tmp_path: Path) -> None:
+    reviewer_output = {"cleared": True, "findings": [], "evidence": "reviewed links.py"}
+    (tmp_path / "links.py").write_text("VALUE = 1\n")
+
+    class _MutatesDuringReview(_FakeHarness):
+        async def run_task(self, **kwargs: Any) -> _Result:
+            observer = kwargs["observer"]
+            observer.on_event(
+                {
+                    "kind": "role.tool.start",
+                    "role": "generator",
+                    "tool": "spawn_subagent",
+                    "input": {"name": "code_reviewer", "prompt": "Review"},
+                }
+            )
+            (tmp_path / "review_verdict.old.json").write_text("{}\n")
+            observer.on_event(
+                {
+                    "kind": "role.tool.result",
+                    "role": "generator",
+                    "tool": "spawn_subagent",
+                    "is_error": False,
+                    "content": json.dumps(reviewer_output),
+                    "content_preview": json.dumps(reviewer_output),
+                }
+            )
+            assert self._result is not None
+            return self._result
+
+    outcome = await DreamBeatRunner(
+        _MutatesDuringReview(result=_result("done")),
+        working_dir=tmp_path,
+        subagent_evidence={"code_reviewer": ("review_verdict.json", {"cleared": True})},
+    ).run_task(task_id="t1", intent="x")
+
+    assert outcome.passed is False
+    assert "changed the worktree during independent review" in outcome.summary
+
+
+async def test_run_task_accepts_mutating_test_author_provenance(tmp_path: Path) -> None:
+    author_output = {
+        "authored": True,
+        "files": ["tests/test_links.py"],
+        "covers": ["create and resolve"],
+        "red_evidence": "red-confirmed",
+        "evidence": "python -m pytest -q",
+    }
+
+    class _AuthorsTestsThenProductionChanges(_FakeHarness):
+        async def run_task(self, **kwargs: Any) -> _Result:
+            observer = kwargs["observer"]
+            observer.on_event(
+                {
+                    "kind": "role.tool.start",
+                    "role": "generator",
+                    "tool": "spawn_subagent",
+                    "input": {"name": "test_author", "prompt": "Author tests"},
+                }
+            )
+            tests = tmp_path / "tests"
+            tests.mkdir()
+            (tests / "test_links.py").write_text("def test_links():\n    assert True\n")
+            observer.on_event(
+                {
+                    "kind": "role.tool.result",
+                    "role": "generator",
+                    "tool": "spawn_subagent",
+                    "is_error": False,
+                    "content": json.dumps(author_output),
+                    "content_preview": json.dumps(author_output),
+                }
+            )
+            (tmp_path / "links.py").write_text("VALUE = 1\n")
+            assert self._result is not None
+            return self._result
+
+    outcome = await DreamBeatRunner(
+        _AuthorsTestsThenProductionChanges(result=_result("done")),
+        working_dir=tmp_path,
+        subagent_evidence={"test_author": ("test_plan.json", {"authored": True}, False)},
+    ).run_task(task_id="t1", intent="x")
+
+    assert outcome.passed is True
+    provenance = json.loads(
+        (tmp_path / ".harness" / "subagent-evidence" / "test_author.json").read_text()
+    )
+    assert provenance["evidence_read_only"] is False
+    assert json.loads((tmp_path / "test_plan.json").read_text()) == author_output
+
+
+async def test_review_provenance_ignores_post_review_machine_bookkeeping(tmp_path: Path) -> None:
+    reviewer_output = {"cleared": True, "findings": [], "evidence": "reviewed links.py"}
+    (tmp_path / "links.py").write_text("VALUE = 1\n")
+    (tmp_path / "review_verdict.json").write_text(json.dumps(reviewer_output))
+    events = (
+        {
+            "kind": "role.tool.start",
+            "role": "generator",
+            "tool": "spawn_subagent",
+            "input": {"name": "code_reviewer", "prompt": "Review"},
+        },
+        {
+            "kind": "role.tool.result",
+            "role": "generator",
+            "tool": "spawn_subagent",
+            "is_error": False,
+            "content": json.dumps(reviewer_output),
+            "content_preview": json.dumps(reviewer_output),
+        },
+    )
+
+    class _WritesBookkeepingAfterReview(_FakeHarness):
+        async def run_task(self, **kwargs: Any) -> _Result:
+            result = await super().run_task(**kwargs)
+            (tmp_path / "TODO.md").write_text("- [x] independent review\n")
+            report = tmp_path / "security_scan" / "report.json"
+            report.parent.mkdir()
+            report.write_text('{"verdict": "clean"}\n')
+            evaluation = tmp_path / "docs" / "evals" / "run-1" / "sprint-1.json"
+            evaluation.parent.mkdir(parents=True)
+            evaluation.write_text('{"outcome": "pass"}\n')
+            plan = tmp_path / "docs" / "exec-plans" / "active" / "run-1.json"
+            plan.parent.mkdir(parents=True)
+            plan.write_text('{"status": "complete"}\n')
+            evidence = tmp_path / "test_evidence" / "discovered-gate.txt"
+            evidence.parent.mkdir()
+            evidence.write_text("gate passed\n")
+            (tmp_path / "test_plan.json").write_text('{"authored": true}\n')
+            return result
+
+    outcome = await DreamBeatRunner(
+        _WritesBookkeepingAfterReview(result=_result("done"), events=events),
+        working_dir=tmp_path,
+        subagent_evidence={"code_reviewer": ("review_verdict.json", {"cleared": True})},
+    ).run_task(task_id="t1", intent="x")
+
+    assert outcome.passed is True
 
 
 # -- the failure contract: a raise -> a typed disposition (spec 05 §5) -----------------------------

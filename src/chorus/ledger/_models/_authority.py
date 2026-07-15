@@ -87,6 +87,7 @@ class DelegationContract:
     can_subdelegate: bool = False
     max_depth: int = 0
     max_team_size: int = 1
+    max_direct_children: int | None = None
     spend_limit_cents: int | None = None
     status: DelegationContractStatus = DelegationContractStatus.FORMING
     accepted_run_id: str | None = None
@@ -101,5 +102,7 @@ class DelegationContract:
             raise ValueError("max_depth cannot be negative")
         if self.max_team_size < 1:
             raise ValueError("max_team_size must be at least 1")
+        if self.max_direct_children is not None and self.max_direct_children < 1:
+            raise ValueError("max_direct_children must be at least 1")
         if self.spend_limit_cents is not None and self.spend_limit_cents < 0:
             raise ValueError("spend_limit_cents cannot be negative")

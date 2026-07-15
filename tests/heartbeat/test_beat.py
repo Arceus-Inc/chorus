@@ -211,6 +211,40 @@ async def test_beat_passes_task_intent_to_dream(ledger: SqliteLedger) -> None:
     assert beat.calls[0]["intent"] == "do t1"
 
 
+async def test_delegated_beat_carries_parent_objective_context(ledger: SqliteLedger) -> None:
+    ledger.employees.create(Employee(id="e1", name="e1", role="engineer"))
+    ledger.tasks.submit(Task(id="parent", intent="Build SQLite click ingestion keyed by event id"))
+    ledger.tasks.submit(
+        Task(
+            id="child",
+            intent="Implement analytics.py and its dedicated tests",
+            parent_id="parent",
+            depth=1,
+            assignee_employee_id="e1",
+        )
+    )
+    ledger.tasks.set_status("child", TaskStatus.TODO)
+    assert ledger.tasks.checkout("child", employee_id="e1", run_id="r1")
+    ledger.wakes.enqueue(
+        Wake(
+            id="w1",
+            employee_id="e1",
+            reason=WakeReason.TASK_ASSIGNED,
+            payload={"task_id": "child"},
+        )
+    )
+    (wake,) = ledger.wakes.claim(limit=1)
+    beat = _FakeBeat(passed=True)
+
+    await _wired(ledger, beat).run_beat(wake, run_id="r1", now=_NOW)
+
+    intent = str(beat.calls[0]["intent"])
+    assert intent.startswith("Implement analytics.py and its dedicated tests")
+    assert "Parent objective context" in intent
+    assert "Build SQLite click ingestion keyed by event id" in intent
+    assert "Do not expand beyond the assigned child scope" in intent
+
+
 async def test_errored_beat_strands_task_to_recovery(ledger: SqliteLedger) -> None:
     wake = _setup_task(ledger)
     outcome = BeatOutcome(

@@ -128,6 +128,7 @@ class DelegationContractView:
     can_subdelegate: bool = False
     max_depth: int = 0
     max_team_size: int = 1
+    max_direct_children: int | None = None
     spend_limit_cents: int | None = None
     accepted_run_id: str | None = None
 

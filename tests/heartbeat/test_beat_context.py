@@ -229,6 +229,7 @@ def test_delegation_packet_carries_pinned_contract_and_nested_subtree_context(
         "can_subdelegate": True,
         "max_depth": 3,
         "max_team_size": 5,
+        "max_direct_children": None,
         "spend_limit_cents": 12_000,
     }
     assert len(packet.nested_subtree_summaries) == 1

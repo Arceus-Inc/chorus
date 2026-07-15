@@ -36,9 +36,7 @@ class TeamReadTool(BaseTool):
         self._ledger = ledger
         self._workforce = LedgerWorkforce(ledger.employees)
 
-    async def execute(
-        self, input: dict[str, object], ctx: ToolExecutionContext
-    ) -> ToolResult:
+    async def execute(self, input: dict[str, object], ctx: ToolExecutionContext) -> ToolResult:
         TeamReadInput.model_validate(input)
         beat = BeatContext.read(ctx.working_dir)
         task = self._ledger.tasks.get(beat.task_id)
@@ -77,16 +75,14 @@ class TeamReadTool(BaseTool):
             employee
             for employee in self._workforce.list()
             if employee.reports_to == beat.employee_id
-            and (
-                not profile.allowed_professions
-                or employee.role in profile.allowed_professions
-            )
+            and (not profile.allowed_professions or employee.role in profile.allowed_professions)
             and invokability_block(self._workforce, employee.id) is None
         ]
         report_views = [
             {
                 "employee_id": employee.id,
                 "profession": employee.role,
+                "reports_to": employee.reports_to,
                 "status": employee.status.value,
                 "observed_load": load[employee.id],
             }
@@ -104,12 +100,16 @@ class TeamReadTool(BaseTool):
                 {
                     "employee_id": employee.id,
                     "profession": employee.role,
+                    "reports_to": employee.reports_to,
                     "membership_role": member.membership_role.value,
                     "can_subdelegate": member.can_subdelegate,
                     "observed_load": load[employee.id],
                 }
             )
         relevant_ids = member_ids | {employee.id for employee in legal_reports}
+        team_candidates = [
+            report for report in report_views if report["employee_id"] not in member_ids
+        ]
         structured = {
             "task_id": task.id,
             "team": {
@@ -124,13 +124,12 @@ class TeamReadTool(BaseTool):
                 "can_subdelegate": contract.can_subdelegate,
                 "max_depth": contract.max_depth,
                 "max_team_size": contract.max_team_size,
+                "max_direct_children": contract.max_direct_children,
                 "spend_limit_cents": contract.spend_limit_cents,
             },
             "current_members": current_member_views,
             "legal_direct_reports": report_views,
-            "team_candidates": [
-                report for report in report_views if report["employee_id"] not in member_ids
-            ],
+            "team_candidates": team_candidates,
             "observed_load": {
                 employee_id: load[employee_id] for employee_id in sorted(relevant_ids)
             },
@@ -139,14 +138,44 @@ class TeamReadTool(BaseTool):
                 "can_subdelegate": contract.can_subdelegate,
                 "max_depth": contract.max_depth,
                 "max_team_size": contract.max_team_size,
+                "max_direct_children": contract.max_direct_children,
                 "spend_limit_cents": contract.spend_limit_cents,
                 "allowed_professions": sorted(profile.allowed_professions),
             },
         }
+        member_lines = [
+            f"- {member['employee_id']}: profession={member['profession']}, "
+            f"reports_to={member['reports_to'] or 'none'}, "
+            f"membership_role={member['membership_role']}, "
+            f"observed_load={member['observed_load']}"
+            for member in current_member_views
+        ]
+        report_lines = [
+            f"- {report['employee_id']}: profession={report['profession']}, "
+            f"reports_to={report['reports_to'] or 'none'}, status={report['status']}, "
+            f"observed_load={report['observed_load']}"
+            for report in report_views
+        ]
+        candidate_lines = [
+            f"- {report['employee_id']}: profession={report['profession']}, "
+            f"reports_to={report['reports_to'] or 'none'}, status={report['status']}, "
+            f"observed_load={report['observed_load']}"
+            for report in team_candidates
+        ]
         return ToolResult(
-            content=(
-                f"Team {team.id}: {len(current_member_views)} current members, "
-                f"{len(structured['team_candidates'])} legal candidates"
+            content="\n".join(
+                [
+                    f"Team {team.id}: {len(current_member_views)} current members, "
+                    f"{len(team_candidates)} legal candidates",
+                    "Current members:",
+                    *(member_lines or ["- (none)"]),
+                    "Legal direct reports:",
+                    *(report_lines or ["- (none)"]),
+                    "Legal candidates:",
+                    *(candidate_lines or ["- (none)"]),
+                    "Use these exact employee_id values in decompose.assignee; do not invent "
+                    "aliases or request staffing while a legal candidate is available.",
+                ]
             ),
             structured=structured,
         )

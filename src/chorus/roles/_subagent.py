@@ -13,6 +13,7 @@ never widen, what its parent can do.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 
@@ -36,6 +37,9 @@ class SubagentSpec:
     model: str | None = None
     max_turns: int = 6
     output_schema: dict[str, Any] | None = None
+    evidence_path: str | None = None
+    evidence_claim: dict[str, Any] | None = None
+    evidence_read_only: bool = False
     spawnable: tuple[SubagentSpec, ...] = ()
     """Tier-2 subagents THIS spec may itself dispatch (depth-2). Empty (default) = a leaf. The
     composition root projects these onto dream's ``Subagent.spawnable``, intersecting each with this
@@ -48,6 +52,22 @@ class SubagentSpec:
             raise ValueError(f"SubagentSpec {self.name!r} must carry a non-empty description")
         if isinstance(self.tools, str):
             raise TypeError("SubagentSpec.tools must be a sequence of strings, not a bare string")
+        if (self.evidence_path is None) != (self.evidence_claim is None):
+            raise ValueError(
+                f"SubagentSpec {self.name!r} evidence_path and evidence_claim must be set together"
+            )
+        if self.evidence_read_only and self.evidence_path is None:
+            raise ValueError(
+                f"SubagentSpec {self.name!r} cannot be evidence_read_only without evidence"
+            )
+        if self.evidence_path is not None:
+            evidence_path = Path(self.evidence_path)
+            if evidence_path.is_absolute() or ".." in evidence_path.parts:
+                raise ValueError(
+                    f"SubagentSpec {self.name!r} evidence_path must stay within the worktree"
+                )
+            if not self.evidence_claim:
+                raise ValueError(f"SubagentSpec {self.name!r} evidence_claim must not be empty")
         if self.spawnable and "spawn_subagent" not in self.tools:
             raise ValueError(
                 f"SubagentSpec {self.name!r} declares spawnable children but lacks 'spawn_subagent' "

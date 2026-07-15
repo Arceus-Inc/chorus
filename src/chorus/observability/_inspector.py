@@ -316,6 +316,7 @@ class LedgerInspector:
                 can_subdelegate=contract.can_subdelegate,
                 max_depth=contract.max_depth,
                 max_team_size=contract.max_team_size,
+                max_direct_children=contract.max_direct_children,
                 spend_limit_cents=contract.spend_limit_cents,
                 accepted_run_id=contract.accepted_run_id,
             )

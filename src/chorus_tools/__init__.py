@@ -81,6 +81,8 @@ from chorus_tools._test_evidence import (
     GateSpec,
     TestEvidenceInput,
     TestEvidenceTool,
+    TestRedInput,
+    TestRedTool,
     write_bundle,
 )
 from chorus_tools._workforce_plan import (
@@ -155,6 +157,8 @@ __all__ = [
     "TeamReadTool",
     "TestEvidenceInput",
     "TestEvidenceTool",
+    "TestRedInput",
+    "TestRedTool",
     "WarehouseQueryTool",
     "WorkforceCatalogReadInput",
     "WorkforceCatalogReadTool",
