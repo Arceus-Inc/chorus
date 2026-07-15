@@ -27,9 +27,14 @@ from chorus.roles import RoleRegistry, default_roles
 from chorus.workforce import Employee, LedgerWorkforce
 from chorus_employee import default_landers
 
-_HORIZON_SRC = Path(__file__).resolve().parents[4] / "horizon" / "src"
-if str(_HORIZON_SRC) not in sys.path:
+# The sibling horizon checkout lives NEXT TO this repo (…/chorus/tests/heartbeat/x.py →
+# parents[2] is the repo root, parents[3] its parent). Skip — not fail collection — when
+# horizon isn't checked out or importable, so the rest of the suite still runs.
+_HORIZON_SRC = Path(__file__).resolve().parents[3] / "horizon" / "src"
+if _HORIZON_SRC.is_dir() and str(_HORIZON_SRC) not in sys.path:
     sys.path.insert(0, str(_HORIZON_SRC))
+
+pytest.importorskip("horizon", reason="sibling horizon checkout not available")
 
 from horizon.feedback import OutcomeFold  # noqa: E402
 from horizon.model import StrategyRecord  # noqa: E402
@@ -60,9 +65,7 @@ class _Runner:
 
 
 class _CapstoneOrg:
-    def __init__(
-        self, ledger: SqliteLedger, working_dir: Path, strategy: StrategyRecord
-    ) -> None:
+    def __init__(self, ledger: SqliteLedger, working_dir: Path, strategy: StrategyRecord) -> None:
         self._ledger = ledger
         self._working_dir = working_dir
         self._strategy = strategy
@@ -140,16 +143,16 @@ class _CapstoneOrg:
                         intent="correct and independently re-check the nested implementation",
                         assignee="nested-worker",
                         replaces_task_id=next(
-                            child.id
-                            for child in children
-                            if child.status is TaskStatus.REJECTED
+                            child.id for child in children if child.status is TaskStatus.REJECTED
                         ),
                     ),
                     actor_employee_id=employee_id,
                 )
                 assert result.child_id is not None
                 self.reactions.append(task.id)
-                return BeatOutcome(passed=False, outcome={}, summary="correction submitted", model="fake")
+                return BeatOutcome(
+                    passed=False, outcome={}, summary="correction submitted", model="fake"
+                )
 
         statuses = tuple(child.status for child in self._ledger.tasks.children(task.id))
         self.verification_snapshots.append((task.id, statuses))
@@ -322,7 +325,9 @@ async def test_specialist_nested_delegation_capstone_folds_verified_root_exactly
     contracts = ledger.delegation_contracts.list()
     assert all(employee.role != "manager" for employee in employees)
     assert org.injected_failures == 1
-    assert org.reactions == [next(task.id for task in tasks if task.origin_fingerprint == "nested-area")]
+    assert org.reactions == [
+        next(task.id for task in tasks if task.origin_fingerprint == "nested-area")
+    ]
     assert org.health_after_failure == "drifting"
     assert strategy.done is True and strategy.health == "on_track"
     assert ledger.tasks.get("root").status is TaskStatus.DONE  # type: ignore[union-attr]
@@ -340,9 +345,7 @@ async def test_specialist_nested_delegation_capstone_folds_verified_root_exactly
         for task in tasks
     )
     assert len([task for task in tasks if task.origin_fingerprint == "nested-correction"]) == 1
-    assert all(
-        task.assignee_employee_id != "system-verifier" for task in tasks
-    )
+    assert all(task.assignee_employee_id != "system-verifier" for task in tasks)
     assert all(team.status is TeamStatus.ARCHIVED for team in ledger.teams.list())
     verified = [
         event
@@ -365,10 +368,9 @@ async def test_specialist_nested_delegation_capstone_folds_verified_root_exactly
         for run in verification_runs
         if run is not None
     )
-    assert {
-        str(event.payload["verification_run_id"])
-        for event in verified
-    }.isdisjoint({contract.accepted_run_id for contract in contracts})
+    assert {str(event.payload["verification_run_id"]) for event in verified}.isdisjoint(
+        {contract.accepted_run_id for contract in contracts}
+    )
     assert {task_id for task_id, _ in org.verification_snapshots} == {
         contract.task_id for contract in contracts
     }

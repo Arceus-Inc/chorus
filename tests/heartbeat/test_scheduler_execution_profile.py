@@ -94,9 +94,7 @@ class _SubtreeLander:
 def _seed_delegation(
     ledger: SqliteLedger, *, child_status: TaskStatus = TaskStatus.DONE
 ) -> Employee:
-    lead = ledger.employees.create(
-        Employee(id="lead", name="Lead", role="backend_engineer")
-    )
+    lead = ledger.employees.create(Employee(id="lead", name="Lead", role="backend_engineer"))
     worker = ledger.employees.create(
         Employee(id="worker", name="Worker", role="backend_engineer", reports_to=lead.id)
     )
@@ -216,9 +214,7 @@ async def test_delegation_profile_drives_scheduler_contract(ledger: SqliteLedger
     assert contract_events[-1].payload["reviewer_id"] == "system-verifier"
     assert contract_events[-1].payload["verification_run_id"].startswith("rev_")
     verification_runs = [
-        run
-        for run in ledger.runs.for_task("task-release")
-        if run.principal_id == "system-verifier"
+        run for run in ledger.runs.for_task("task-release") if run.principal_id == "system-verifier"
     ]
     assert len(verification_runs) == 1
     assert verification_runs[0].employee_id == lead.id
@@ -287,6 +283,37 @@ async def test_rejected_required_child_cannot_reach_acceptance_or_verification(
     assert ledger.tasks.get("task-release").status is TaskStatus.BLOCKED  # type: ignore[union-attr]
     assert not any(intent.startswith("Independently verify") for intent in beat.intents)
     assert ledger.activity.by_subject("delegation_contract", "task-release") == []
+
+
+async def test_authority_denial_is_never_laundered_into_delegated_success(
+    ledger: SqliteLedger,
+) -> None:
+    """A profile denial refuses the beat BEFORE it runs — on a parent WITH children that must
+    surface as a FAILED run + recovery, never as the 'success by delegating' branch (which would
+    record SUCCEEDED and walk the denial into lead acceptance)."""
+    _seed_delegation(ledger)
+    ledger.teams.archive("team-release")  # revoked mid-flight → ExecutionProfileDenied
+    beat = _RecordingBeat()
+    scheduler = Scheduler(
+        ledger=ledger,
+        workforce=LedgerWorkforce(ledger.employees),
+        beat_runner=beat,
+        roles=RoleRegistry.from_plugins(default_roles()),
+        memory_writer=_RecordingMemory(),
+        landers=LanderRegistry.from_landers([_SubtreeLander()]),
+        max_concurrent_runs=1,
+    )
+
+    await scheduler.tick(_NOW)
+    await scheduler.drain()
+
+    assert beat.rubrics == []  # the denied beat never reached the runner
+    runs = ledger.runs.for_task("task-release")
+    assert [run.status.value for run in runs] == ["failed"]
+    contract = ledger.delegation_contracts.get("task-release")
+    assert contract is not None and contract.accepted_run_id is None
+    assert ledger.activity.by_subject("delegation_contract", "task-release") == []
+    assert ledger.recovery_actions.active_for_source("task-release") is not None
 
 
 async def test_unmigrated_manager_is_blocked_before_dispatch(

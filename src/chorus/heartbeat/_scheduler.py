@@ -924,6 +924,13 @@ class Scheduler:
             # to its pre-beat (dispatchable) state — no DoD verdict, no recovery card (spec 05 §5/§6).
             ledger.runs.finish(run_id, RunStatus.CANCELLED, outcome=verdict)
             ledger.tasks.set_status(task_id, TaskStatus.TODO)
+        elif profile_error is not None:
+            # Authority refused the beat BEFORE it ran (ExecutionProfileDenied — a revoked grant,
+            # a contract/Team mismatch, a resolver fault). Even for a parent with children this is
+            # never "success by delegating": recording SUCCEEDED here would walk the denial straight
+            # into lead acceptance. Fail the run and strand it so an operator sees the denial.
+            ledger.runs.finish(run_id, RunStatus.FAILED, outcome=verdict)
+            self._resume_or_strand(task_id, employee_id=employee.id, result=result)
         elif ledger.tasks.has_children(task_id):
             # The task delegated: its lifecycle is its subtree's, not its own dream verdict (spec M3 §5).
             # This is the fifth beat outcome — the manager "succeeded by delegating".

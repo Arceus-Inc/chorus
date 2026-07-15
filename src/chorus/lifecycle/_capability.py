@@ -331,7 +331,32 @@ class CapabilityService:
             )
         team_policy = MissionTeamPolicy(self._ledger)
         child_team_ids: dict[str, str | None] = {}
+        decompose_args: dict[str, object] = {}
+        request_depth_cap = DEFAULT_REQUEST_DEPTH_CAP
+        if authority is not None:
+            request_depth_cap = min(
+                DEFAULT_REQUEST_DEPTH_CAP,
+                parent.request_depth + authority.max_depth,
+            )
+            decompose_args["request_depth_cap"] = request_depth_cap
         with self._ledger.transaction():
+            # The kernel depth cap is deterministic from the parent alone — mirror decompose()'s
+            # own check BEFORE any Team mutation. transaction() commits on an early return, so a
+            # refusal here must commit ONLY decompose()'s fail-closed card (source blocked +
+            # recovery action), never a roster/Team write for a wave that was refused.
+            if parent.request_depth + 1 > request_depth_cap:
+                outcome = decompose(
+                    self._ledger,
+                    source_task_id=parent.id,
+                    accepted_plan_revision_id=accepted_plan_revision_id,
+                    owner_run_id=self._owner_run_id(revision),
+                    children=(),
+                    request_fingerprint=request_fingerprint,
+                    **decompose_args,  # type: ignore[arg-type]
+                )
+                if not isinstance(outcome, DepthCapped):  # pragma: no cover — condition mirror
+                    raise RuntimeError("depth precheck disagreed with decompose()")
+                return DecomposeResult(depth_capped=True)
             if authority is not None:
                 if parent.team_id is None or parent.goal_id is None:
                     raise RuntimeError("authorized delegation task is missing Team or goal")
@@ -373,12 +398,6 @@ class CapabilityService:
                 )
                 for child in children
             ]
-            decompose_args: dict[str, object] = {}
-            if authority is not None:
-                decompose_args["request_depth_cap"] = min(
-                    DEFAULT_REQUEST_DEPTH_CAP,
-                    parent.request_depth + authority.max_depth,
-                )
             outcome = decompose(
                 self._ledger,
                 source_task_id=parent.id,
@@ -388,8 +407,10 @@ class CapabilityService:
                 request_fingerprint=request_fingerprint,
                 **decompose_args,  # type: ignore[arg-type]
             )
-            if isinstance(outcome, DepthCapped):
-                return DecomposeResult(depth_capped=True)
+            if isinstance(outcome, DepthCapped):  # pragma: no cover — precheck above prevents this
+                # Raising (not returning) rolls the Team mutations back if the precheck and
+                # decompose() ever drift apart — a refusal must never commit partial writes.
+                raise RuntimeError("decompose depth-capped after Team mutations")
 
             for child in children:
                 if child.replaces_task_id is not None:
@@ -623,9 +644,12 @@ class CapabilityService:
         if parent.team_id is None:
             return AssignTaskResult(authority_denied="active delegation Team is invalid")
         with self._ledger.transaction():
-            MissionTeamPolicy(self._ledger).add_member(parent.team_id, assignee)
+            # Assign FIRST: a terminal/missing task refuses before anything is written, so the
+            # early return (which commits) commits nothing — the roster only ever gains the
+            # member alongside a real assignment.
             if assign_task(self._ledger, task_id, assignee, assigned_by=assigned_by) is None:
                 return AssignTaskResult(terminal_or_missing=True)
+            MissionTeamPolicy(self._ledger).add_member(parent.team_id, assignee)
         return AssignTaskResult(assigned=True)
 
     def _phase_denial(

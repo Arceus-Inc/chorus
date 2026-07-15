@@ -54,3 +54,9 @@ uv.lock
 standup-app/hard-task-report/runs/*/tmp/
 standup-app/hard-task-report/runs/*/run.log
 reports/ceo-live-baseline.log
+
+# M8 live-run transcripts — regenerated per qualification run; keep as external artifacts, not blobs
+reports/M8-live-qualification.html
+reports/t1-live-runs/
+reports/t2-live-runs/
+reports/t3-live-runs/

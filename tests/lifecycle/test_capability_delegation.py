@@ -18,7 +18,12 @@ from chorus.ledger import (
     TaskStatus,
     TeamStatus,
 )
-from chorus.lifecycle import CapabilityService, ChildPlan, MissionTeamPolicy
+from chorus.lifecycle import (
+    DEFAULT_REQUEST_DEPTH_CAP,
+    CapabilityService,
+    ChildPlan,
+    MissionTeamPolicy,
+)
 from chorus.workforce import Employee
 
 pytestmark = pytest.mark.integration
@@ -415,6 +420,64 @@ def test_nested_delegation_refuses_exhausted_depth(ledger: SqliteLedger) -> None
 
     assert result.authority_denied == "delegation depth limit exceeded"
     assert ledger.tasks.children(parent.id) == []
+
+
+def test_kernel_depth_cap_refusal_commits_no_team_writes(ledger: SqliteLedger) -> None:
+    """A DepthCapped refusal from the KERNEL cap (not the authority layer) must not leave the
+    wave's Team mutations behind: the tool reports 'nothing was created' and the roster must
+    agree. The fail-closed recovery card decompose() opens is still expected to persist."""
+    service, parent = _seed_delegation_parent(ledger, max_depth=3)
+    assert parent.team_id is not None
+    ledger._conn.execute(  # arrange: parent already AT the kernel request-depth ceiling
+        "UPDATE task SET request_depth = ? WHERE id = ?",
+        (DEFAULT_REQUEST_DEPTH_CAP, parent.id),
+    )
+    ledger._conn.commit()
+    roster_before = {m.employee_id for m in ledger.team_members.members_of(parent.team_id)}
+    teams_before = len(ledger.teams.list_active())
+
+    result = service.decompose(
+        parent_id=parent.id,
+        revision="depth-cap-run",
+        actor_employee_id="lead",
+        children=[ChildPlan(label="design", intent="Design", assignee="member")],
+    )
+
+    assert result.depth_capped is True
+    assert ledger.tasks.children(parent.id) == []
+    roster_after = {m.employee_id for m in ledger.team_members.members_of(parent.team_id)}
+    assert roster_after == roster_before  # 'member' was NOT silently added to the Team
+    assert len(ledger.teams.list_active()) == teams_before
+    # decompose()'s fail-closed contract still holds: the operator card survives the refusal
+    assert ledger.recovery_actions.active_for_source(parent.id) is not None
+
+
+def test_reassign_terminal_child_refusal_commits_no_team_writes(ledger: SqliteLedger) -> None:
+    """reassign on a terminal child reports 'no assignment changed' — the target employee must
+    not be left on the Team roster by a refused call."""
+    service, parent = _seed_delegation_parent(ledger)
+    assert parent.team_id is not None
+    ledger.employees.create(
+        Employee(id="member2", name="Member Two", role="designer", reports_to="lead")
+    )
+    dec = service.decompose(
+        parent_id=parent.id,
+        revision="seed-run",
+        actor_employee_id="lead",
+        children=[ChildPlan(label="design", intent="Design", assignee="member")],
+    )
+    child_id = dec.child_ids["design"]
+    ledger.tasks.set_status(child_id, TaskStatus.DONE)  # terminal → assign_task will refuse
+    _start_integrating(ledger, parent)
+    roster_before = {m.employee_id for m in ledger.team_members.members_of(parent.team_id)}
+
+    result = service.reassign(
+        parent_id=parent.id, task_id=child_id, assignee="member2", assigned_by="lead"
+    )
+
+    assert result.terminal_or_missing is True and not result.assigned
+    roster_after = {m.employee_id for m in ledger.team_members.members_of(parent.team_id)}
+    assert roster_after == roster_before  # member2 was NOT silently added
 
 
 def test_contract_spend_widening_refuses_whole_wave(ledger: SqliteLedger) -> None:
