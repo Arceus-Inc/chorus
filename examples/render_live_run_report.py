@@ -41,6 +41,26 @@ class EventEntry:
 
 
 @dataclass(frozen=True)
+class ArtifactFile:
+    path: str
+    content: str | None
+    state: str
+    kind: str
+    task_id: str
+    employee_id: str
+    role: str
+    at: str
+    sequence: int | None
+    write_count: int
+
+
+@dataclass(frozen=True)
+class ArtifactRecord:
+    title: str
+    content: str
+
+
+@dataclass(frozen=True)
 class RunReport:
     label: str
     title: str
@@ -53,6 +73,9 @@ class RunReport:
     invariants: tuple[Invariant, ...]
     events_path: Path | None
     events: tuple[EventEntry, ...]
+    artifacts: tuple[ArtifactFile, ...]
+    artifact_records: tuple[ArtifactRecord, ...]
+    has_tracked_inventory: bool
 
     @property
     def passed(self) -> bool:
@@ -74,6 +97,20 @@ _REPORT_FILES: Final = (
     ("T1", Path("t1-live-runs/T1-latest.md")),
     ("T2", Path("t2-live-runs/T2-latest.md")),
     ("T3", Path("t3-live-runs/T3-latest.md")),
+)
+
+_ARTIFACT_RECORD_HEADINGS: Final = frozenset(
+    {
+        "Active management profiles",
+        "Applied plan after explicit approval",
+        "Artifacts",
+        "Artifacts Written and Landed",
+        "Employees",
+        "Employees before approval",
+        "Management profiles before approval",
+        "Per-Child Quality Reconstruction",
+        "Persisted proposal before approval",
+    }
 )
 
 _EMBEDDED_EVENT: Final = re.compile(
@@ -118,6 +155,16 @@ def _one_line(value: object, *, limit: int = 320) -> str:
         rendered = json.dumps(value, ensure_ascii=False, sort_keys=True)
     rendered = " ".join(rendered.split())
     return rendered if len(rendered) <= limit else f"{rendered[: limit - 3]}..."
+
+
+def _preformatted(value: str) -> str:
+    escaped = html.escape(value)
+    return re.sub(
+        r"[ \t]+$",
+        lambda match: "".join("&#32;" if char == " " else "&#9;" for char in match[0]),
+        escaped,
+        flags=re.MULTILINE,
+    )
 
 
 def _event_summary(kind: str, payload: dict[str, Any]) -> str:
@@ -263,9 +310,167 @@ def parse_embedded_events(markdown: str) -> tuple[EventEntry, ...]:
     return _coalesce_events(events)
 
 
+def _normalize_path(value: str) -> str:
+    normalized = value.strip().replace("\\", "/")
+    while normalized.startswith("./"):
+        normalized = normalized[2:]
+    return normalized.casefold()
+
+
+def _tracked_files(markdown: str) -> tuple[tuple[str, ...], bool]:
+    match = re.search(
+        r"^### Tracked files\s*$\r?\n(?P<fence>`{3,})(?:text)?\r?\n"
+        r"(?P<files>.*?)\r?\n(?P=fence)\s*$",
+        markdown,
+        re.MULTILINE | re.DOTALL,
+    )
+    if match is None:
+        return (), False
+    files = tuple(line.strip() for line in match.group("files").splitlines() if line.strip())
+    return files, True
+
+
+def _artifact_kind(path: str) -> str:
+    normalized = _normalize_path(path)
+    suffix = Path(normalized).suffix
+    if normalized.startswith("tests/") or "/tests/" in normalized:
+        return "test code"
+    if suffix in {".py", ".js", ".jsx", ".ts", ".tsx"}:
+        return "code"
+    if suffix in {".json", ".jsonl"}:
+        return "structured record"
+    if suffix in {".md", ".txt"}:
+        return "document"
+    if suffix in {".toml", ".yaml", ".yml", ".ini"} or normalized.endswith(".gitignore"):
+        return "configuration"
+    return "file"
+
+
+def _artifact_records(markdown: str) -> tuple[ArtifactRecord, ...]:
+    heading_pattern = re.compile(r"^(?P<marks>#{2,6})\s+(?P<title>.+?)\s*$", re.MULTILINE)
+    headings = tuple(heading_pattern.finditer(markdown))
+    records: list[ArtifactRecord] = []
+    for index, heading in enumerate(headings):
+        title = heading.group("title")
+        if title not in _ARTIFACT_RECORD_HEADINGS:
+            continue
+        level = len(heading.group("marks"))
+        end = len(markdown)
+        for next_heading in headings[index + 1 :]:
+            if len(next_heading.group("marks")) <= level:
+                end = next_heading.start()
+                break
+        content = markdown[heading.end() : end].strip()
+        if content:
+            records.append(ArtifactRecord(title=title, content=content))
+    return tuple(records)
+
+
+def _artifact_identity(event: dict[str, Any]) -> tuple[str, str, str, str]:
+    return (
+        _text(event.get("task_id")),
+        _text(event.get("employee_id")),
+        _text(event.get("run_id")),
+        _text(event.get("trace_id")),
+    )
+
+
+def _artifacts(
+    markdown: str, events: tuple[EventEntry, ...]
+) -> tuple[tuple[ArtifactFile, ...], bool]:
+    tracked_files, has_tracked_inventory = _tracked_files(markdown)
+    tracked_paths = {_normalize_path(path) for path in tracked_files}
+    pending: dict[
+        tuple[str, str, str, str],
+        list[tuple[int, dict[str, Any], str, str]],
+    ] = {}
+    latest: dict[tuple[str, str], ArtifactFile] = {}
+    successful_writes: Counter[tuple[str, str]] = Counter()
+
+    sequence = 0
+    for entry in events:
+        for event in entry.raw_events:
+            sequence += 1
+            raw_payload = event.get("payload")
+            payload = raw_payload if isinstance(raw_payload, dict) else {}
+            identity = _artifact_identity(event)
+            if event.get("kind") == "run.tool_use" and payload.get("tool") == "write_file":
+                tool_input = payload.get("input")
+                if not isinstance(tool_input, dict):
+                    continue
+                path = tool_input.get("path")
+                content = tool_input.get("content")
+                if not isinstance(path, str) or not path.strip() or not isinstance(content, str):
+                    continue
+                pending.setdefault(identity, []).append((sequence, event, path.strip(), content))
+                continue
+            if event.get("kind") != "run.tool_result" or payload.get("tool") != "write_file":
+                continue
+            candidates = pending.get(identity)
+            if not candidates:
+                continue
+            write_sequence, source_event, path, content = candidates.pop(0)
+            if payload.get("is_error") is True:
+                continue
+            normalized_path = _normalize_path(path)
+            key = (_text(source_event.get("task_id")), normalized_path)
+            successful_writes[key] += 1
+            source_payload = source_event.get("payload")
+            source = source_payload if isinstance(source_payload, dict) else {}
+            state = (
+                "landed"
+                if normalized_path in tracked_paths
+                else "transient"
+                if has_tracked_inventory
+                else "authored"
+            )
+            latest[key] = ArtifactFile(
+                path=path,
+                content=content,
+                state=state,
+                kind=_artifact_kind(path),
+                task_id=key[0] or "not recorded",
+                employee_id=_text(source_event.get("employee_id")) or "not recorded",
+                role=_text(source.get("role")) or "not recorded",
+                at=_text(source_event.get("at")),
+                sequence=write_sequence,
+                write_count=successful_writes[key],
+            )
+
+    written_paths = {key[1] for key in latest}
+    for path in tracked_files:
+        if _normalize_path(path) in written_paths:
+            continue
+        latest[("final-workspace", _normalize_path(path))] = ArtifactFile(
+            path=path,
+            content=None,
+            state="landed",
+            kind=_artifact_kind(path),
+            task_id="final-workspace",
+            employee_id="not recorded",
+            role="not recorded",
+            at="",
+            sequence=None,
+            write_count=0,
+        )
+
+    state_order = {"landed": 0, "authored": 1, "transient": 2}
+    artifacts = tuple(
+        sorted(
+            latest.values(),
+            key=lambda item: (state_order[item.state], item.path.casefold(), item.task_id),
+        )
+    )
+    return artifacts, has_tracked_inventory
+
+
 def parse_report(label: str, source_path: Path, *, events_path: Path | None = None) -> RunReport:
     markdown = source_path.read_text(encoding="utf-8")
     title_match = re.search(r"^#\s+(.+)$", markdown, re.MULTILINE)
+    events = (
+        parse_events(events_path) if events_path is not None else parse_embedded_events(markdown)
+    )
+    artifacts, has_tracked_inventory = _artifacts(markdown, events)
     return RunReport(
         label=label,
         title=title_match.group(1).strip() if title_match else label,
@@ -277,11 +482,10 @@ def parse_report(label: str, source_path: Path, *, events_path: Path | None = No
         markdown=markdown,
         invariants=_invariants(markdown),
         events_path=events_path,
-        events=(
-            parse_events(events_path)
-            if events_path is not None
-            else parse_embedded_events(markdown)
-        ),
+        events=events,
+        artifacts=artifacts,
+        artifact_records=_artifact_records(markdown),
+        has_tracked_inventory=has_tracked_inventory,
     )
 
 
@@ -401,6 +605,132 @@ def _event_explorer(report: RunReport) -> str:
       </section>"""
 
 
+def _artifact_state_label(state: str) -> str:
+    return {
+        "authored": "Authored / landing not recorded",
+        "landed": "Landed",
+        "record": "Durable report record",
+        "transient": "Transient / not landed",
+    }[state]
+
+
+def _artifact_rows(report: RunReport) -> str:
+    rows: list[str] = []
+    for record in report.artifact_records:
+        search_text = f"{record.title} durable report record {record.content}".casefold()
+        rows.append(
+            f'<details class="artifact-record" data-artifact-item data-state="record" '
+            f'data-search="{html.escape(search_text, quote=True)}">'
+            "<summary>"
+            '<span class="chevron" aria-hidden="true"></span>'
+            f'<span class="artifact-path">{html.escape(record.title)}</span>'
+            '<span class="artifact-kind">report evidence</span>'
+            '<span class="artifact-state record">Durable report record</span>'
+            "</summary>"
+            '<div class="artifact-detail">'
+            '<dl class="event-metadata">'
+            "<div><dt>Provenance</dt><dd>Committed Markdown report section</dd></div>"
+            "<div><dt>Representation</dt><dd>Complete escaped source content</dd></div>"
+            "</dl>"
+            f"<pre>{_preformatted(record.content)}</pre>"
+            "</div>"
+            "</details>"
+        )
+    for artifact in report.artifacts:
+        state_label = _artifact_state_label(artifact.state)
+        search_text = " ".join(
+            (
+                artifact.path,
+                artifact.kind,
+                state_label,
+                artifact.task_id,
+                artifact.employee_id,
+                artifact.role,
+                artifact.content or "",
+            )
+        ).casefold()
+        provenance = (
+            f"event #{artifact.sequence} at {artifact.at}"
+            if artifact.sequence is not None
+            else "final tracked-file inventory"
+        )
+        writes = (
+            f"{artifact.write_count} successful write"
+            f"{'s' if artifact.write_count != 1 else ''}; latest shown"
+            if artifact.write_count
+            else "No captured write body"
+        )
+        content = (
+            f"<pre>{_preformatted(artifact.content)}</pre>"
+            if artifact.content is not None
+            else '<p class="artifact-unavailable">Content body was not captured in a successful <code>write_file</code> event. The path is retained because it appears in the final tracked-file inventory.</p>'
+        )
+        rows.append(
+            f'<details class="artifact-row" data-artifact-item data-state="{artifact.state}" '
+            f'data-search="{html.escape(search_text, quote=True)}">'
+            "<summary>"
+            '<span class="chevron" aria-hidden="true"></span>'
+            f'<code class="artifact-path">{html.escape(artifact.path)}</code>'
+            f'<span class="artifact-kind">{html.escape(artifact.kind)}</span>'
+            f'<span class="artifact-state {artifact.state}">{html.escape(state_label)}</span>'
+            "</summary>"
+            '<div class="artifact-detail">'
+            '<dl class="event-metadata">'
+            f"<div><dt>Task</dt><dd>{html.escape(artifact.task_id)}</dd></div>"
+            f"<div><dt>Role / employee</dt><dd>{html.escape(artifact.role)} / "
+            f"{html.escape(artifact.employee_id)}</dd></div>"
+            f"<div><dt>Provenance</dt><dd>{html.escape(provenance)}</dd></div>"
+            f"<div><dt>Write history</dt><dd>{html.escape(writes)}</dd></div>"
+            "</dl>"
+            f"{content}"
+            "</div>"
+            "</details>"
+        )
+    return "\n".join(rows)
+
+
+def _artifact_explorer(report: RunReport) -> str:
+    if not report.artifacts and not report.artifact_records:
+        return """<section class="artifact-explorer empty">
+    <h3>Artifacts and code</h3>
+    <p class="muted">No successful file writes or final tracked-file inventory were captured for this run.</p>
+</section>"""
+
+    counts = Counter(artifact.state for artifact in report.artifacts)
+    counts["record"] = len(report.artifact_records)
+    total = len(report.artifacts) + len(report.artifact_records)
+    state_buttons = "".join(
+        f'<button type="button" class="artifact-state-filter" data-artifact-state="{state}">'
+        f"{html.escape(_artifact_state_label(state))} <span>{counts[state]}</span></button>"
+        for state in ("record", "landed", "authored", "transient")
+        if counts[state]
+    )
+    if report.label == "T2":
+        context = "This was an organization-formation run. It produced workforce/governance records and a directive; production application code was not expected or landed."
+    elif report.label == "T3":
+        context = "The child code below is preserved as execution evidence. It did not land in the final workspace; only paths marked Landed were final deliverables."
+    elif report.has_tracked_inventory:
+        context = "Landed paths are reconciled against the report's final tracked-file inventory. For repeated writes, the latest successful complete body is shown."
+    else:
+        context = "The report did not record a final tracked-file inventory, so successful writes are shown without claiming they landed."
+
+    return f"""<section class="artifact-explorer" data-run="{report.label.lower()}">
+    <div class="event-heading">
+        <div>
+            <h3>Artifacts and code</h3>
+            <p class="muted">{html.escape(context)}</p>
+        </div>
+        <label>Search artifacts<input class="artifact-search" type="search" placeholder="path, task, role, content..."></label>
+    </div>
+    <div class="artifact-filters" aria-label="Artifact state filters">
+        <button type="button" class="artifact-state-filter active" data-artifact-state="*">All <span>{total}</span></button>
+        {state_buttons}
+    </div>
+    <p class="artifact-status" aria-live="polite">{total} of {total} artifacts</p>
+    <div class="artifact-list">{_artifact_rows(report)}</div>
+</section>"""
+
+
 def _run_section(report: RunReport, *, open_by_default: bool) -> str:
     relative_source = f"{report.source_path.parent.name}/{report.source_path.name}"
     open_attribute = " open" if open_by_default else ""
@@ -425,6 +755,7 @@ def _run_section(report: RunReport, *, open_by_default: bool) -> str:
             <tbody>{_invariant_rows(report)}</tbody>
           </table>
         </div>
+            {_artifact_explorer(report)}
         {_event_explorer(report)}
         <details class="source-report">
           <summary><span class="chevron" aria-hidden="true"></span> Complete source report</summary>
@@ -606,18 +937,34 @@ def render(reports: tuple[RunReport, ...]) -> str:
   .source-report {{ margin-top: 16px; border: 1px solid var(--cp-border); background: var(--cp-bg-elevated); }}
   .source-report > summary {{ display: flex; align-items: center; gap: 12px; padding: 14px; cursor: pointer; font-weight: 650; }}
   .source-report > p {{ margin: 0; padding: 0 14px 14px; }}
-  .event-explorer {{ margin-top: 20px; padding-top: 20px; border-top: 1px solid var(--cp-border); }}
+    .artifact-explorer, .event-explorer {{ margin-top: 20px; padding-top: 20px; border-top: 1px solid var(--cp-border); }}
   .event-heading {{ display: grid; grid-template-columns: minmax(0, 1fr) minmax(220px, 320px); gap: 20px; align-items: end; }}
   .event-heading h3 {{ margin: 0 0 4px; font-size: 22px; }}
   .event-heading p {{ margin: 0; line-height: 1.5; }}
   .event-heading label {{ display: grid; gap: 6px; color: var(--cp-text-muted); font-size: 12px; font-weight: 700; text-transform: uppercase; }}
-  .event-search {{ width: 100%; min-height: 38px; padding: 7px 10px; border: 1px solid var(--cp-border-strong); border-radius: 6px; background: var(--cp-surface); color: var(--cp-text); font: inherit; }}
-  .event-search:focus {{ border-color: var(--cp-accent); outline: 2px solid var(--cp-highlight); }}
-  .event-filters {{ display: flex; gap: 6px; flex-wrap: wrap; margin: 14px 0 8px; }}
-  .event-kind-filter {{ padding: 5px 8px; border: 1px solid var(--cp-border); border-radius: 6px; background: var(--cp-surface); color: var(--cp-text-muted); cursor: pointer; }}
-  .event-kind-filter span {{ color: var(--cp-text-soft); }}
-  .event-kind-filter:hover, .event-kind-filter.active {{ border-color: var(--cp-accent); background: var(--cp-accent-soft); color: var(--cp-accent); }}
-  .event-status {{ margin: 8px 0; color: var(--cp-text-muted); font-size: 13px; }}
+    .event-search, .artifact-search {{ width: 100%; min-height: 38px; padding: 7px 10px; border: 1px solid var(--cp-border-strong); border-radius: 6px; background: var(--cp-surface); color: var(--cp-text); font: inherit; }}
+    .event-search:focus, .artifact-search:focus {{ border-color: var(--cp-accent); outline: 2px solid var(--cp-highlight); }}
+    .event-filters, .artifact-filters {{ display: flex; gap: 6px; flex-wrap: wrap; margin: 14px 0 8px; }}
+    .event-kind-filter, .artifact-state-filter {{ padding: 5px 8px; border: 1px solid var(--cp-border); border-radius: 6px; background: var(--cp-surface); color: var(--cp-text-muted); cursor: pointer; }}
+    .event-kind-filter span, .artifact-state-filter span {{ color: var(--cp-text-soft); }}
+    .event-kind-filter:hover, .event-kind-filter.active, .artifact-state-filter:hover, .artifact-state-filter.active {{ border-color: var(--cp-accent); background: var(--cp-accent-soft); color: var(--cp-accent); }}
+    .event-status, .artifact-status {{ margin: 8px 0; color: var(--cp-text-muted); font-size: 13px; }}
+    .artifact-list {{ border: 1px solid var(--cp-border); }}
+    .artifact-row, .artifact-record {{ border-bottom: 1px solid var(--cp-border); background: var(--cp-surface); }}
+    .artifact-row:last-child, .artifact-record:last-child {{ border-bottom: 0; }}
+    .artifact-row[hidden], .artifact-record[hidden] {{ display: none; }}
+    .artifact-row > summary, .artifact-record > summary {{ display: grid; grid-template-columns: 16px minmax(240px, 1fr) 150px 190px; gap: 10px; align-items: center; min-height: 44px; padding: 9px 10px; cursor: pointer; list-style: none; }}
+    .artifact-row > summary:hover, .artifact-record > summary:hover {{ background: var(--cp-accent-soft); }}
+    .artifact-path {{ overflow-wrap: anywhere; }}
+    .artifact-kind {{ color: var(--cp-text-muted); text-transform: capitalize; }}
+    .artifact-state {{ font-size: 12px; font-weight: 700; }}
+    .artifact-state.landed {{ color: var(--cp-success); }}
+    .artifact-state.authored {{ color: var(--cp-warning); }}
+    .artifact-state.record {{ color: var(--cp-link); }}
+    .artifact-state.transient {{ color: var(--cp-danger); }}
+    .artifact-detail {{ border-top: 1px solid var(--cp-border); background: var(--cp-bg-elevated); }}
+    .artifact-detail .event-metadata {{ padding: 12px 16px 2px; }}
+    .artifact-unavailable {{ margin: 10px 16px 16px; padding: 12px; border-left: 3px solid var(--cp-warning); background: var(--cp-surface-soft); color: var(--cp-text-muted); }}
   .event-list {{ border: 1px solid var(--cp-border); }}
   .event-row {{ border-bottom: 1px solid var(--cp-border); background: var(--cp-surface); }}
   .event-row:last-child {{ border-bottom: 0; }}
@@ -641,6 +988,8 @@ def render(reports: tuple[RunReport, ...]) -> str:
     .run-panel > summary {{ grid-template-columns: 18px 42px minmax(0, 1fr); }}
     .run-panel > summary .badge {{ grid-column: 3; }}
     .event-heading, .event-metadata {{ grid-template-columns: 1fr; }}
+    .artifact-row > summary, .artifact-record > summary {{ grid-template-columns: 16px minmax(0, 1fr); }}
+    .artifact-kind, .artifact-state {{ grid-column: 2; }}
     .event-row > summary {{ grid-template-columns: 16px 64px minmax(0, 1fr); }}
     .event-row time {{ grid-column: 3; }}
     .event-kind {{ grid-column: 2; }}
@@ -705,6 +1054,31 @@ def render(reports: tuple[RunReport, ...]) -> str:
     }}));
     search.addEventListener("input", apply);
   }});
+    document.querySelectorAll(".artifact-explorer").forEach(explorer => {{
+        const rows = [...explorer.querySelectorAll("[data-artifact-item]")];
+        const search = explorer.querySelector(".artifact-search");
+        const status = explorer.querySelector(".artifact-status");
+        const filters = [...explorer.querySelectorAll(".artifact-state-filter")];
+        if (!search || !status) return;
+        let activeState = "*";
+        const apply = () => {{
+            const query = search.value.trim().toLowerCase();
+            let visible = 0;
+            rows.forEach(row => {{
+                const matchesState = activeState === "*" || row.dataset.state === activeState;
+                const matchesSearch = !query || row.dataset.search.includes(query);
+                row.hidden = !(matchesState && matchesSearch);
+                if (!row.hidden) visible += 1;
+            }});
+            status.textContent = `${{visible}} of ${{rows.length}} artifacts`;
+        }};
+        filters.forEach(filter => filter.addEventListener("click", () => {{
+            activeState = filter.dataset.artifactState;
+            filters.forEach(item => item.classList.toggle("active", item === filter));
+            apply();
+        }}));
+        search.addEventListener("input", apply);
+    }});
   </script>
 </body>
 </html>

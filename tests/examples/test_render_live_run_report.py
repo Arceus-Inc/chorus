@@ -82,6 +82,97 @@ def _events(path: Path) -> Path:
     return path
 
 
+def _artifact_events(path: Path) -> Path:
+    events = (
+        {
+            "at": "2026-07-15T01:00:00+00:00",
+            "kind": "run.tool_use",
+            "payload": {
+                "role": "generator",
+                "tool": "write_file",
+                "input": {"path": "links.py", "content": "old body"},
+            },
+            "task_id": "links-task",
+        },
+        {
+            "at": "2026-07-15T01:00:01+00:00",
+            "kind": "run.tool_result",
+            "payload": {
+                "role": "generator",
+                "tool": "write_file",
+                "is_error": False,
+                "content": "Wrote links.py",
+            },
+            "task_id": "links-task",
+        },
+        {
+            "at": "2026-07-15T01:00:02+00:00",
+            "kind": "run.tool_use",
+            "payload": {
+                "role": "generator",
+                "tool": "write_file",
+                "input": {"path": "links.py", "content": "final <body>"},
+            },
+            "task_id": "links-task",
+        },
+        {
+            "at": "2026-07-15T01:00:03+00:00",
+            "kind": "run.tool_result",
+            "payload": {
+                "role": "generator",
+                "tool": "write_file",
+                "is_error": False,
+                "content": "Wrote links.py",
+            },
+            "task_id": "links-task",
+        },
+        {
+            "at": "2026-07-15T01:00:04+00:00",
+            "kind": "run.tool_use",
+            "payload": {
+                "role": "generator",
+                "tool": "write_file",
+                "input": {"path": "scratch.py", "content": "must not appear"},
+            },
+            "task_id": "links-task",
+        },
+        {
+            "at": "2026-07-15T01:00:05+00:00",
+            "kind": "run.tool_result",
+            "payload": {
+                "role": "generator",
+                "tool": "write_file",
+                "is_error": True,
+                "content": "write denied",
+            },
+            "task_id": "links-task",
+        },
+        {
+            "at": "2026-07-15T01:00:06+00:00",
+            "kind": "run.tool_use",
+            "payload": {
+                "role": "generator",
+                "tool": "write_file",
+                "input": {"path": "review.json", "content": '{"cleared": true}'},
+            },
+            "task_id": "review-task",
+        },
+        {
+            "at": "2026-07-15T01:00:07+00:00",
+            "kind": "run.tool_result",
+            "payload": {
+                "role": "generator",
+                "tool": "write_file",
+                "is_error": False,
+                "content": "Wrote review.json",
+            },
+            "task_id": "review-task",
+        },
+    )
+    path.write_text("".join(json.dumps(event) + "\n" for event in events), encoding="utf-8")
+    return path
+
+
 def test_render_preserves_all_reports_and_builds_collapsible_dashboard(tmp_path: Path) -> None:
     sources = (
         _report(tmp_path / "T1-latest.md", "T1", "PASS"),
@@ -165,3 +256,52 @@ task=`task-1` employee=`bex` run=`run-1` trace=`trace-1`
     assert len(report.events) == 1
     assert report.events[0].summary == "Hello```"
     assert report.events[0].raw_events[0]["trace_id"] == "trace-1"
+
+
+def test_artifacts_show_latest_successful_code_and_landing_state(tmp_path: Path) -> None:
+    source = _report(tmp_path / "T1-latest.md", "T1", "PASS")
+    with source.open("a", encoding="utf-8") as stream:
+        stream.write(
+            """
+
+## Deliverables
+
+### Tracked files
+```text
+links.py
+generated/report.json
+```
+
+### Artifacts
+```json
+{"artifact_type": "merged_pr", "commit": "abc123", "unsafe": "<value>"}
+```
+"""
+        )
+
+    report = parse_report("T1", source, events_path=_artifact_events(tmp_path / "events.jsonl"))
+    output = render((report,))
+
+    artifacts = {(item.task_id, item.path): item for item in report.artifacts}
+    assert set(artifacts) == {
+        ("links-task", "links.py"),
+        ("review-task", "review.json"),
+        ("final-workspace", "generated/report.json"),
+    }
+    assert artifacts[("links-task", "links.py")].content == "final <body>"
+    assert artifacts[("links-task", "links.py")].write_count == 2
+    assert artifacts[("links-task", "links.py")].state == "landed"
+    assert artifacts[("review-task", "review.json")].state == "transient"
+    assert artifacts[("final-workspace", "generated/report.json")].content is None
+    artifact_output = output.split('<section class="event-explorer"', 1)[0]
+    assert "must not appear" not in artifact_output
+    assert 'class="artifact-explorer"' in output
+    assert "final &lt;body&gt;" in output
+    assert "Content body was not captured" in output
+    assert "Landed" in output
+    assert "Transient / not landed" in output
+    assert len(report.artifact_records) == 1
+    assert report.artifact_records[0].title == "Artifacts"
+    assert '"commit": "abc123"' in report.artifact_records[0].content
+    assert 'class="artifact-record"' in output
+    assert "&quot;unsafe&quot;: &quot;&lt;value&gt;&quot;" in output
