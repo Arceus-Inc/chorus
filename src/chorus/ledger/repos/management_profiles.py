@@ -137,12 +137,9 @@ def _weakens(current: ManagementProfile, candidate: ManagementProfile) -> bool:
         and candidate.spend_limit_cents < current.spend_limit_cents)
     )
     return (
-        (current.active
-        and not candidate.active)
-        or (current.can_lead
-        and not candidate.can_lead)
-        or (current.can_subdelegate
-        and not candidate.can_subdelegate)
+        (current.active and not candidate.active)
+        or (current.can_lead and not candidate.can_lead)
+        or (current.can_subdelegate and not candidate.can_subdelegate)
         or candidate.max_delegation_depth < current.max_delegation_depth
         or candidate.max_team_size < current.max_team_size
         or professions_narrowed
