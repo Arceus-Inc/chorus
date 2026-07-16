@@ -130,11 +130,12 @@ def _weakens(current: ManagementProfile, candidate: ManagementProfile) -> bool:
         and not set(current.allowed_professions).issubset(candidate.allowed_professions))
     )
     spend_narrowed = (
-        (current.spend_limit_cents is None
-        and candidate.spend_limit_cents is not None)
-        or (current.spend_limit_cents is not None
-        and candidate.spend_limit_cents is not None
-        and candidate.spend_limit_cents < current.spend_limit_cents)
+        (current.spend_limit_cents is None and candidate.spend_limit_cents is not None)
+        or (
+            current.spend_limit_cents is not None
+            and candidate.spend_limit_cents is not None
+            and candidate.spend_limit_cents < current.spend_limit_cents
+        )
     )
     return (
         (current.active and not candidate.active)
