@@ -123,11 +123,12 @@ def _row_to_profile(row: sqlite3.Row) -> ManagementProfile:
 
 def _weakens(current: ManagementProfile, candidate: ManagementProfile) -> bool:
     professions_narrowed = (
-        (not current.allowed_professions
-        and bool(candidate.allowed_professions))
-        or (bool(current.allowed_professions)
-        and bool(candidate.allowed_professions)
-        and not set(current.allowed_professions).issubset(candidate.allowed_professions))
+        (not current.allowed_professions and bool(candidate.allowed_professions))
+        or (
+            bool(current.allowed_professions)
+            and bool(candidate.allowed_professions)
+            and not set(current.allowed_professions).issubset(candidate.allowed_professions)
+        )
     )
     spend_narrowed = (
         (current.spend_limit_cents is None and candidate.spend_limit_cents is not None)
