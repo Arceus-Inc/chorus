@@ -14,7 +14,15 @@ from typing import cast
 from chorus.ids import mint_id
 from chorus.ledger._models import Dod, DodStatus
 from chorus.ledger.repos._base import dumps, loads, loads_dict, utcnow_iso
-from chorus.outcomes import AgentReview, Command, DoDKind, HumanApproval, ReviewedBuild, Verifier
+from chorus.outcomes import (
+    AgentReview,
+    Command,
+    DoDKind,
+    HumanApproval,
+    ReviewedBuild,
+    ReviewedBuildEvidenceProfile,
+    Verifier,
+)
 
 
 class DodRepo:
@@ -167,12 +175,16 @@ def _verifier_from_parts(kind_value: str, spec: dict[str, object], artifact_clas
             kind, AgentReview(str(spec["reviewer_role"]), str(spec["rubric"])), artifact_class
         )
     if kind is DoDKind.REVIEWED_BUILD:
+        evidence_profile = spec.get("evidence_profile")
         return Verifier(
             kind,
             ReviewedBuild(
                 str(spec["reviewer_role"]),
                 str(spec["rubric"]),
                 int(cast("int", spec["verify_timeout_s"])),
+                ReviewedBuildEvidenceProfile(str(evidence_profile))
+                if evidence_profile is not None
+                else None,
             ),
             artifact_class,
         )

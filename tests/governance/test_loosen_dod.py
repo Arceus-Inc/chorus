@@ -25,7 +25,7 @@ _USER = "chair"
 
 def _loosened_with_open_gate(ledger: SqliteLedger) -> str:
     """A manager loosens t1's DoD (reviewed_build → command); returns the open gate id."""
-    ledger.employees.create(Employee(id="moe", name="moe", role="manager"))
+    ledger.employees.create(Employee(id="moe", name="moe", role="engineer"))
     ledger.employees.create(Employee(id="ada", name="ada", role="engineer", reports_to="moe"))
     ledger.tasks.submit(Task(id="t1", intent="ship", status=TaskStatus.IN_PROGRESS))
     assign_task(ledger, "t1", "ada")

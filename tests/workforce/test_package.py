@@ -21,7 +21,7 @@ pytestmark = pytest.mark.integration
 
 
 def _seed(wf: LedgerWorkforce) -> None:
-    wf.hire(name="Boss", role="manager")
+    wf.hire(name="Boss", role="engineer")
     wf.hire(name="Alice", role="engineer", reports_to="boss")
     wf.hire(name="Bob", role="engineer", reports_to="boss")
 
@@ -62,7 +62,7 @@ def test_copy_writes_parents_before_reports(ledger: SqliteLedger, tmp_path: Path
     # A report listed before its manager must still land — the codec orders parents first, so the
     # reports_to edge resolves when the report is hired (otherwise hire raises UnknownEmployee).
     source = LedgerWorkforce(ledger.employees)
-    source.hire(name="Boss", role="manager")
+    source.hire(name="Boss", role="engineer")
     source.hire(name="Zara", role="engineer", reports_to="boss")  # "zara" sorts after "boss"
     copied = copy_org(source, GitWorkforce(str(tmp_path / "org")))
     assert copied == 2

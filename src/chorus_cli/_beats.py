@@ -76,7 +76,7 @@ def default_pricing_from_env() -> TokenPricing:
 
 
 def default_roles_from_env() -> tuple[RolePlugin, ...]:
-    """Default role plugins with optional Engineer harness-surface activation.
+    """Default role plugins with optional Backend Engineer harness-surface activation.
 
     ``CHORUS_ENGINEER_SURFACES=skills,mcp,plugins`` is a CLI/demo switch only; the SDK helper it uses
     is reusable by other front ends that need to opt a role into the same Dream surfaces.
@@ -91,7 +91,7 @@ def default_roles_from_env() -> tuple[RolePlugin, ...]:
     return apply_role_surface_overrides(
         default_roles(),
         RoleSurfaceOverride(
-            role="engineer",
+            role="backend_engineer",
             skills=True if "skills" in surfaces else None,
             mcp=True if "mcp" in surfaces else None,
             plugins=True if "plugins" in surfaces else None,

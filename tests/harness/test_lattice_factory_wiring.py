@@ -13,11 +13,11 @@ from chorus_harness import _factory as _factory_mod
 
 pytestmark = pytest.mark.integration
 
+# M8 canonicalized professions: the generic "engineer" role folded into backend_engineer.
 _LATTICE_ROLES = (
     "analyst",
     "backend_engineer",
     "designer",
-    "engineer",
     "frontend_engineer",
     "marketer",
     "pm",
@@ -76,7 +76,7 @@ def test_lattice_failure_leaves_observable_breadcrumb(
         "build_lattice_for_chorus",
         lambda *a, **kw: (_ for _ in ()).throw(RuntimeError("lattice db corrupt")),
     )
-    mat = factory.materialize(Employee(id="emp", name="Emp", role="engineer"))
+    mat = factory.materialize(Employee(id="emp", name="Emp", role="backend_engineer"))
 
     breadcrumb = mat.working_dir / ".harness" / "lattice-error.json"
     assert breadcrumb.is_file()

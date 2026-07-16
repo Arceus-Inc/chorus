@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from chorus.governance._actions import HireEmployeeAction, TaskGateAction
 from chorus.governance._actions._hire import HireError
+from chorus.governance._management_authority import ManagementAuthorityService
 from chorus.governance._policy import GovernancePolicy
 from chorus.governance._registry import (
     GovernanceRegistry,
@@ -19,7 +20,9 @@ from chorus.governance._registry import (
     default_actions,
 )
 from chorus.governance._resolver import GovernanceError, GovernanceResolver, ResolveOutcome
+from chorus.governance._staffing_request import StaffingRequestService
 from chorus.governance._types import ActionOutcome, ApprovalDecision, GovernedAction
+from chorus.governance._workforce_plan import WorkforcePlanService
 
 __all__ = [
     "ActionOutcome",
@@ -31,8 +34,11 @@ __all__ = [
     "GovernedAction",
     "HireEmployeeAction",
     "HireError",
+    "ManagementAuthorityService",
     "ResolveOutcome",
+    "StaffingRequestService",
     "TaskGateAction",
     "UnregisteredAction",
+    "WorkforcePlanService",
     "default_actions",
 ]

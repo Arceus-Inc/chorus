@@ -35,7 +35,7 @@ def _chorus(ledger: SqliteLedger) -> Chorus:
 
 def _org(ledger: SqliteLedger) -> Chorus:
     chorus = _chorus(ledger)
-    chorus.hire(name="Moe", role="manager")
+    chorus.hire(name="Moe", role="frontend_engineer")
     chorus.hire(name="Ada", role="pm", reports_to="moe")
     return chorus
 

@@ -4,13 +4,18 @@ CREATE TABLE activity (
     id                 TEXT PRIMARY KEY,
     actor_employee_id  TEXT,
     actor_user_id      TEXT,
+    actor_system_principal_id TEXT REFERENCES system_principal(id),
     verb               TEXT NOT NULL,
     subject_kind       TEXT NOT NULL,
     subject_id         TEXT NOT NULL,
     trace_id           TEXT,
     payload            TEXT NOT NULL DEFAULT '{}',
     occurred_at        TEXT NOT NULL,
-    CONSTRAINT activity_single_actor CHECK (actor_employee_id IS NULL OR actor_user_id IS NULL)
+    CONSTRAINT activity_single_actor CHECK (
+        (actor_employee_id IS NULL OR actor_user_id IS NULL)
+        AND (actor_employee_id IS NULL OR actor_system_principal_id IS NULL)
+        AND (actor_user_id IS NULL OR actor_system_principal_id IS NULL)
+    )
 );
 
 CREATE INDEX activity_subject_idx ON activity(subject_kind, subject_id, occurred_at, id);

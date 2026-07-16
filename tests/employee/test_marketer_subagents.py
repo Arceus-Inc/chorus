@@ -124,13 +124,14 @@ class TestMarketerManifestSubagents:
 
         import chorus_harness._factory as factory
         from chorus.ledger import SqliteLedger
+        from chorus.roles import RoleRegistry
 
         config = role_beat_config(marketer_plugin().manifest)
         ledger = SqliteLedger.open(":memory:")
         try:
             registry = factory._role_registry(factory.dream_tool_names(config.tools))
             for name in config.tools:
-                cap = factory._capability_tool(name, ledger)
+                cap = factory._capability_tool(name, ledger, RoleRegistry())
                 if cap is not None:
                     registry.register(cap, source=ToolSource.DEFAULT)
             declarations = {t.name: t.declaration for t in registry.list_tools()}

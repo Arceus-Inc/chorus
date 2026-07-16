@@ -2,15 +2,21 @@
 
 from __future__ import annotations
 
+import json
 import os
+from pathlib import Path
 
-from chorus.errors import OrgInvariantViolation, UnknownEmployee
+from chorus.errors import ChorusError, OrgInvariantViolation, UnknownEmployee
+from chorus.governance import ManagementAuthorityService
+from chorus.ledger import ManagementProfile
 from chorus.workforce import EmployeeStatus, GitWorkforce, LedgerWorkforce, copy_org
 from chorus.workspace import CompanyWorkspace, WorkspaceError, default_work_root
 from chorus_cli._context import CommandContext, LoopSignal
 from chorus_cli.commands._base import REGISTRY
 from chorus_cli.commands._shared import (
+    _OPERATOR,
     _fmt,
+    _roles_from_env,
 )
 
 _HIRE = "hire <name> <role> [reports_to]"
@@ -98,7 +104,85 @@ def _resume(ctx: CommandContext) -> LoopSignal:
     return LoopSignal.CONTINUE
 
 
-_WORKFORCE = "workforce"
+_SPECIALIZE_MANAGER = (
+    "workforce specialize-manager <employee_id> --profession <role> --profile <policy>"
+)
+_WORKFORCE = "workforce [specialize-manager <employee_id> --profession <role> --profile <policy>]"
+
+
+def _management_profile(employee_id: str, raw_policy: str) -> ManagementProfile:
+    policy_path = Path(raw_policy)
+    raw = policy_path.read_text(encoding="utf-8") if policy_path.is_file() else raw_policy
+    decoded = json.loads(raw)
+    if not isinstance(decoded, dict):
+        raise ValueError("management policy must be a JSON object")
+    allowed_keys = {
+        "active",
+        "can_lead",
+        "can_subdelegate",
+        "max_delegation_depth",
+        "max_team_size",
+        "allowed_professions",
+        "spend_limit_cents",
+    }
+    unknown = sorted(set(decoded) - allowed_keys)
+    if unknown:
+        raise ValueError(f"unknown management policy fields: {', '.join(unknown)}")
+
+    def policy_bool(key: str, default: bool) -> bool:
+        value = decoded.get(key, default)
+        if not isinstance(value, bool):
+            raise ValueError(f"management policy field {key!r} must be a boolean")
+        return value
+
+    def policy_int(key: str, default: int) -> int:
+        value = decoded.get(key, default)
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise ValueError(f"management policy field {key!r} must be an integer")
+        return value
+
+    professions = decoded.get("allowed_professions", [])
+    if not isinstance(professions, list) or not all(
+        isinstance(item, str) for item in professions
+    ):
+        raise ValueError("management policy field 'allowed_professions' must be a string list")
+    spend_limit = decoded.get("spend_limit_cents")
+    if spend_limit is not None and (
+        isinstance(spend_limit, bool) or not isinstance(spend_limit, int)
+    ):
+        raise ValueError("management policy field 'spend_limit_cents' must be an integer or null")
+    return ManagementProfile(
+        employee_id=employee_id,
+        granted_by_user_id=_OPERATOR,
+        active=policy_bool("active", False),
+        can_lead=policy_bool("can_lead", False),
+        can_subdelegate=policy_bool("can_subdelegate", False),
+        max_delegation_depth=policy_int("max_delegation_depth", 0),
+        max_team_size=policy_int("max_team_size", 1),
+        allowed_professions=tuple(professions),
+        spend_limit_cents=spend_limit,
+    )
+
+
+def _specialize_manager(ctx: CommandContext, args: tuple[str, ...]) -> LoopSignal:
+    if len(args) != 5 or args[1] != "--profession" or args[3] != "--profile":
+        ctx.out.error(f"usage: {_SPECIALIZE_MANAGER}")
+        return LoopSignal.CONTINUE
+    employee_id, profession, raw_policy = args[0], args[2], args[4]
+    try:
+        profile = _management_profile(employee_id, raw_policy)
+        ManagementAuthorityService(ctx.session.ledger).specialize_manager(
+            employee_id,
+            profession=profession,
+            profile=profile,
+            roles=_roles_from_env(),
+            actor_user_id=_OPERATOR,
+        )
+    except (ChorusError, OSError, ValueError) as exc:
+        ctx.out.error(f"manager specialization failed: {exc}")
+        return LoopSignal.CONTINUE
+    ctx.out.line(f"specialized {employee_id} as {profession} with management profile v1")
+    return LoopSignal.CONTINUE
 
 
 @REGISTRY.command(
@@ -106,6 +190,8 @@ _WORKFORCE = "workforce"
 )
 def _workforce(ctx: CommandContext) -> LoopSignal:
     if ctx.args:
+        if ctx.args[0] == "specialize-manager":
+            return _specialize_manager(ctx, ctx.args[1:])
         ctx.out.error(f"usage: {_WORKFORCE}")
         return LoopSignal.CONTINUE
     employees = ctx.session.ledger.employees.list()

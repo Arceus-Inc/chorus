@@ -36,7 +36,7 @@ def _inspector(ledger: SqliteLedger) -> LedgerInspector:
 
 
 def _seed(ledger: SqliteLedger) -> None:
-    ledger.employees.create(Employee(id="mgr", name="Moe", role="manager"))
+    ledger.employees.create(Employee(id="mgr", name="Moe", role="engineer"))
     ledger.employees.create(Employee(id="ada", name="Ada", role="engineer", reports_to="mgr"))
     ledger.employees.create(Employee(id="bob", name="Bob", role="engineer", reports_to="mgr"))
     # active: in-progress with a live lease → healthy, and a running beat to count

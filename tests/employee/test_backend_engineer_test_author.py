@@ -102,6 +102,12 @@ class TestTestAuthorDeclaration:
         assert "write_file" in TEST_AUTHOR_SUBAGENT.tools
         assert "run_command" in TEST_AUTHOR_SUBAGENT.tools
         assert "read_file" in TEST_AUTHOR_SUBAGENT.tools
+        assert "test_red" in TEST_AUTHOR_SUBAGENT.tools
+
+    def test_test_plan_is_a_required_independent_artifact(self) -> None:
+        assert TEST_AUTHOR_SUBAGENT.evidence_path == "test_plan.json"
+        assert TEST_AUTHOR_SUBAGENT.evidence_claim == {"authored": True}
+        assert TEST_AUTHOR_SUBAGENT.evidence_read_only is False
 
     def test_description_writes_tests_never_production_code(self) -> None:
         desc = TEST_AUTHOR_SUBAGENT.description.lower()
@@ -117,6 +123,23 @@ class TestTestAuthorDeclaration:
         assert "red" in desc
         assert "before" in desc and "implement" in desc
         assert "red_evidence" in desc  # it must record the failing run it saw first
+        assert "test_red" in desc
+        assert "refuse" in desc and "production" in desc
+        assert "expected_failure" in desc
+
+    def test_greenfield_missing_target_is_valid_red_but_unrelated_import_failure_is_not(
+        self,
+    ) -> None:
+        desc = TEST_AUTHOR_SUBAGENT.description.lower()
+        assert "missing target module" in desc
+        assert "valid red" in desc
+        assert "unrelated" in desc and "import" in desc
+
+    def test_description_forbids_inventing_an_unassigned_contract(self) -> None:
+        desc = TEST_AUTHOR_SUBAGENT.description.lower()
+        assert "do not invent" in desc
+        assert "assigned acceptance criteria" in desc
+        assert "unrelated api" in desc
 
     def test_max_turns_bounded(self) -> None:
         assert TEST_AUTHOR_SUBAGENT.max_turns <= 10

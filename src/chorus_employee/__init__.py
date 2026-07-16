@@ -2,12 +2,12 @@
 
 An *employee role* is the unit of heterogeneity (spec 06 §2): a ``RoleManifest`` (the full
 ``build_harness`` identity) + a DoD generator + an outcome kind. This package is the home for
-those concrete definitions, one package per role as the org scales. The :mod:`.engineer`
-subpackage is the first; it is the **single source** the kernel's :func:`chorus.roles.default_roles`
-imports the Engineer from.
+those concrete definitions, one package per role as the org scales. Canonical defaults use specific
+professions; the generic :mod:`.engineer` package remains available for explicit compatibility
+registration.
 
-This package depends on :mod:`chorus.roles` (the machinery), never the reverse — the only edge
-into the kernel is ``default_roles`` reaching here for the one concrete Engineer instance.
+This package depends on :mod:`chorus.roles` (the machinery), while the kernel's lazy default-role
+assembly imports the concrete profession plugins from here.
 """
 
 from __future__ import annotations
@@ -34,7 +34,7 @@ if TYPE_CHECKING:
 def default_landers(company_root: Path, *, ledger: SqliteLedger | None = None) -> LanderRegistry:
     """The default outcome landers, keyed by ``outcome_kind`` (spec 04 §2).
 
-    The Engineer's ``pr`` lander, the PM's ``doc`` lander, and the Analyst's ``finding`` lander always
+    The engineering ``pr`` lander, the PM's ``doc`` lander, and the Analyst's ``finding`` lander always
     (each only needs the org workspace); the Manager's ``subtree`` lander when a ``ledger`` is supplied
     (it reads its delegated children from there). As employees that land artifacts are added, each
     registers its lander here — the kernel dispatches landing through the registry with no scheduler
@@ -57,7 +57,7 @@ def default_landers(company_root: Path, *, ledger: SqliteLedger | None = None) -
 
 
 def default_employees() -> tuple[RolePlugin, ...]:
-    """The default employee roster — the kernel's registered roles, Engineer sourced from here.
+    """The canonical employee roster assembled by the kernel's default-role registry.
 
     A thin roster view over :func:`chorus.roles.default_roles` (imported lazily so importing this
     package never races the kernel's role assembly). As more roles move into ``chorus_employee``,

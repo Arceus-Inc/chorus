@@ -20,7 +20,8 @@ class RunRepo:
         self._conn.execute(
             "INSERT INTO run (id, employee_id, task_id, wake_id, status, lease_expires_at, "
             "liveness_state, continuation_attempt, outcome, usage, started_at, finished_at, "
-            "created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "created_at, principal_kind, system_principal_id) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 run.id,
                 run.employee_id,
@@ -35,6 +36,8 @@ class RunRepo:
                 to_iso(run.started_at),
                 to_iso(run.finished_at),
                 now,
+                run.principal_kind,
+                run.system_principal_id,
             ),
         )
         self._conn.commit()
@@ -148,4 +151,6 @@ def _row_to_run(row: sqlite3.Row) -> Run:
         finished_at=from_iso(row["finished_at"]),
         outcome=loads_dict(row["outcome"]),
         usage=loads_dict(row["usage"]),
+        principal_kind=row["principal_kind"],
+        system_principal_id=row["system_principal_id"],
     )

@@ -25,19 +25,19 @@ from chorus_employee.pm._decision import CONFIDENCE_FLOOR
 
 _DECISION_DOC = "decision.json"
 
-# A python3 check the oracle runs in the worktree: the recorded decision states an option, meets the
-# confidence floor, and cites >= 1 source. Single quotes inside so the shell wrapper can use double
-# quotes; the only interpolations are the floor value and the filename (no literal braces).
+# A Python check the oracle runs in the worktree: both artifacts are non-empty and the recorded
+# decision states an option, meets the confidence floor, and cites at least one source.
 _DECISION_CHECK = (
-    "import json,sys; d=json.load(open('" + _DECISION_DOC + "')); "
-    "sys.exit(0 if bool(d.get('option')) "
+    "import json,sys; from pathlib import Path; "
+    "plan=Path('" + PM_PLAN_DOC + "'); decision=Path('" + _DECISION_DOC + "'); "
+    "d=json.loads(decision.read_text()) if decision.is_file() else {}; "
+    "sys.exit(0 if plan.is_file() and plan.stat().st_size > 0 "
+    "and decision.stat().st_size > 0 and bool(d.get('option')) "
     "and float(d.get('confidence',0)) >= " + repr(CONFIDENCE_FLOOR) + " "
     "and any(c.get('source_url') for c in d.get('claims',[])) else 1)"
 )
 
-_GROUNDING_FLOOR = (
-    f'test -s {PM_PLAN_DOC} && test -s {_DECISION_DOC} && python3 -c "{_DECISION_CHECK}"'
-)
+_GROUNDING_FLOOR = f'python -c "{_DECISION_CHECK}"'
 
 
 def pm_dod(intent: str) -> Verifier:

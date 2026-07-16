@@ -202,10 +202,11 @@ class TestEvidenceScanTool:
 class TestWiring:
     def test_capability_tool_registers_test_evidence_without_a_ledger(self) -> None:
         # It is a pure reader — it must register even in a ledger-free materialization.
+        from chorus.roles import RoleRegistry
         from chorus_harness._factory import _LEDGER_FREE_CAPABILITY_TOOLS, _capability_tool
 
         assert "evidence_scan" in _LEDGER_FREE_CAPABILITY_TOOLS
-        tool = _capability_tool("evidence_scan", None)
+        tool = _capability_tool("evidence_scan", None, RoleRegistry())
         assert isinstance(tool, EvidenceScanTool)
 
     def test_identity_mapped_for_the_subagent_projection(self) -> None:

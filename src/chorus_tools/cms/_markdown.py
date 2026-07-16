@@ -57,7 +57,7 @@ class MarkdownCmsBackend:
         return DraftRef(
             backend=BackendName.MARKDOWN.value,
             content_type=draft.content_type,
-            ref_id=str(relative),
+            ref_id=relative.as_posix(),
             url=path.as_uri(),
         )
 

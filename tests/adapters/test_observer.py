@@ -43,6 +43,22 @@ class TestVerdictNormalization:
         # the original key is preserved too (no data loss)
         assert result.payload["content_preview"] == "PASS — on brand"
 
+    def test_tool_result_preserves_full_content_when_dream_supplies_it(self) -> None:
+        sink: list[Event] = []
+        full_content = "complete output " + ("x" * 400)
+        _bridge(sink).on_event(
+            {
+                "kind": "role.tool.result",
+                "tool": "read_file",
+                "is_error": False,
+                "content": full_content,
+                "content_preview": full_content[:240],
+            }
+        )
+        result = next(e for e in sink if e.kind is EventKind.RUN_TOOL_RESULT)
+        assert result.payload["content"] == full_content
+        assert result.payload["content_preview"] == full_content[:240]
+
     def test_tool_result_without_preview_has_empty_content(self) -> None:
         sink: list[Event] = []
         _bridge(sink).on_event({"kind": "role.tool.result", "tool": "read_file", "is_error": False})
@@ -86,6 +102,30 @@ class TestSubagentLifecycle:
         assert completed.payload["subagent_name"] == "brand_critic"
         assert "FAIL" in completed.payload["content"]
         assert completed.payload["is_error"] is False
+
+    def test_spawn_subagent_completion_preserves_full_typed_output(self) -> None:
+        sink: list[Event] = []
+        bridge = _bridge(sink)
+        full_content = '{"cleared": false, "evidence": "' + ("x" * 400) + '"}'
+        bridge.on_event(
+            {
+                "kind": "role.tool.start",
+                "tool": "spawn_subagent",
+                "input": {"name": "code_reviewer", "prompt": "Review"},
+            }
+        )
+        bridge.on_event(
+            {
+                "kind": "role.tool.result",
+                "tool": "spawn_subagent",
+                "is_error": False,
+                "content": full_content,
+                "content_preview": full_content[:240],
+            }
+        )
+
+        completed = next(e for e in sink if e.kind is EventKind.SUBAGENT_COMPLETED)
+        assert completed.payload["content"] == full_content
 
     def test_non_subagent_tools_emit_no_subagent_events(self) -> None:
         sink: list[Event] = []

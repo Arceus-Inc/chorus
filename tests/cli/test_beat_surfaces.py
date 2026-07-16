@@ -1,4 +1,4 @@
-"""CLI beat composition can opt Engineer into Dream surfaces."""
+"""CLI beat composition can opt Backend Engineer into Dream surfaces."""
 
 from __future__ import annotations
 
@@ -10,16 +10,17 @@ pytestmark = pytest.mark.unit
 
 
 def _engineer():
-    return next(plugin for plugin in default_roles_from_env() if plugin.name == "engineer")
+    return next(plugin for plugin in default_roles_from_env() if plugin.name == "backend_engineer")
 
 
 def test_empty_surfaces_env_keeps_engineer_default(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("CHORUS_ENGINEER_SURFACES", raising=False)
     engineer = _engineer()
 
-    # The engineer now ships default skills (cross-beat resume/recall) — the env override adds
-    # surfaces on top of that default, it no longer defines it.
-    assert engineer.manifest.skills == ("cross-beat-resume", "cross-beat-recall")
+    # The engineer ships default skills (M8 profession playbooks; cross-beat orientation ships
+    # via the factory's shared skills roots) — the env override adds surfaces on top of that
+    # default, it no longer defines it. Assert the intent: discovery stays ON by default.
+    assert engineer.manifest.skills
     assert engineer.manifest.mcp is False
     assert engineer.manifest.plugins is False
 

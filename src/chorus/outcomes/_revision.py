@@ -48,7 +48,10 @@ def _obligations(verifier: Verifier) -> frozenset[Obligation]:
         return frozenset({("human", spec.approver)})
     if isinstance(spec, ReviewedBuild):
         # a reviewed build is a review *plus* the kernel-run objective build — strictly more than review.
-        return frozenset({("review", spec.reviewer_role), ("build", "")})
+        obligations = {("review", spec.reviewer_role), ("build", "")}
+        if spec.evidence_profile is not None:
+            obligations.add(("evidence", spec.evidence_profile.value))
+        return frozenset(obligations)
     return frozenset()  # unknown spec → empty → any change reads as a loosen (fail-closed)
 
 

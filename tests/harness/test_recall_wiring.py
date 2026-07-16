@@ -2,8 +2,7 @@
 
 Mirrors ``tests/harness/test_factory.py``'s stub-harness pattern: dream's harness build is stubbed so
 the role → tool-registry translation is tested without a provider. ``recall`` is rolled out to every
-worker role (analyst, backend_engineer, designer, engineer, frontend_engineer, marketer, pm) — manager
-and reviewer keep their deliberately minimal, decision-only toolsets and are not included.
+worker role (analyst, backend_engineer, designer, frontend_engineer, marketer, pm).
 """
 
 from __future__ import annotations
@@ -42,7 +41,6 @@ _RECALL_ROLES = (
     "analyst",
     "backend_engineer",
     "designer",
-    "engineer",
     "frontend_engineer",
     "marketer",
     "pm",
@@ -126,11 +124,11 @@ def test_materialize_does_not_inject_episodic_teaser(
     assert (skills / "cross-beat-resume" / "SKILL.md").is_file()
 
 
-def test_engineer_gets_todo_write_and_shared_cross_beat_skills(
+def test_backend_engineer_gets_todo_write_and_shared_cross_beat_skills(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     factory, captured = _factory(monkeypatch, tmp_path)
-    mat = factory.materialize(Employee(id="eng", name="Eng", role="engineer"))
+    mat = factory.materialize(Employee(id="eng", name="Eng", role="backend_engineer"))
     names = {t.name for t in captured["registry"].list_tools()}
     assert {"recall", "get_run", "todo_write", "skill"}.issubset(names)
     skills = mat.working_dir / ".harness" / "skills"

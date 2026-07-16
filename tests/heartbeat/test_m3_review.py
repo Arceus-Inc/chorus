@@ -9,23 +9,42 @@ self-repair then a recovery card. Fake beat runners stand in for the worker / re
 from __future__ import annotations
 
 import asyncio
+import json
+import sys
 from datetime import UTC, datetime, timedelta
+from hashlib import sha256
 from pathlib import Path
 
 import pytest
 
 from chorus.heartbeat import IntegrateContextPacket, Scheduler
 from chorus.heartbeat._beat import BeatOutcome
-from chorus.ledger import SqliteLedger, Task, TaskStatus
+from chorus.ledger import (
+    DelegationContract,
+    DelegationContractStatus,
+    ExecutionMode,
+    Goal,
+    ManagementProfile,
+    SqliteLedger,
+    Task,
+    TaskStatus,
+    Team,
+    TeamMember,
+    TeamMembershipRole,
+    TeamStatus,
+)
 from chorus.lifecycle import CapabilityService, ChildPlan, assign_task
 from chorus.recovery import reconcile
 from chorus.roles import RoleRegistry, default_roles
+from chorus.verification import VerificationPrincipal
 from chorus.workforce import Employee, LedgerWorkforce
 from chorus_employee import default_landers
 
 pytestmark = pytest.mark.integration
 
 _NOW = datetime(2026, 6, 19, 12, 0, tzinfo=UTC)
+_PASS_COMMAND = f'"{sys.executable}" -c "raise SystemExit(0)"'
+_FAIL_COMMAND = f'"{sys.executable}" -c "raise SystemExit(1)"'
 
 
 class _Runner:
@@ -198,13 +217,25 @@ class _Manager(_Runner):
                 parent_id=self._parent,
                 revision=str(run_id),
                 children=[ChildPlan(label="draft", intent="draft the spec", assignee="pen")],
+                actor_employee_id="moe",
             )
             return BeatOutcome(passed=False, outcome={}, summary="delegated", model="m")
         if IntegrateContextPacket.recommended_for(self._ledger, self._parent) == "react":
+            rejected_id = next(
+                child.id
+                for child in self._ledger.tasks.children(self._parent)
+                if child.status is TaskStatus.REJECTED
+            )
             svc.submit_one(
                 parent_id=self._parent,
                 revision=str(run_id),
-                child=ChildPlan(label="redraft", intent="redraft the spec", assignee="paul"),
+                child=ChildPlan(
+                    label="redraft",
+                    intent="redraft the spec",
+                    assignee="paul",
+                    replaces_task_id=rejected_id,
+                ),
+                actor_employee_id="moe",
             )
             return BeatOutcome(
                 passed=False, outcome={}, summary="reacted to the rejection", model="m"
@@ -244,12 +275,12 @@ class _Org:
         return self._for(employee)
 
     def review_runner_for(
-        self, reviewer: Employee, *, task_id: str, worktree_owner_id: str
+        self, reviewer: VerificationPrincipal, *, task_id: str, worktree_owner_id: str
     ) -> object:
         return self._for(reviewer)
 
-    def _for(self, employee: Employee) -> object:
-        if employee.role == "reviewer":
+    def _for(self, employee: Employee | VerificationPrincipal) -> object:
+        if isinstance(employee, VerificationPrincipal):
             if self._silent:
                 return _SilentReviewer(self._root)
             reviewer_cls = _Reviewer
@@ -264,7 +295,8 @@ class _Org:
                 working_dir=self._root,
                 verify_command=self._verify_command,
             )
-        if employee.role == "manager":
+        profile = self._ledger.management_profiles.get(employee.id)
+        if profile is not None and profile.active:
             return _Manager(self._ledger, parent=self._parent, working_dir=self._root)
         return _Worker(self._root, decide=self._worker_decide)
 
@@ -315,7 +347,11 @@ async def test_review_run_survives_a_concurrent_recover_sweep(
     """
     _reviewed_build_task(ledger)
     org = _Org(
-        ledger, decide=lambda _tid: True, root=tmp_path, reconciling=True, verify_command="true"
+        ledger,
+        decide=lambda _tid: True,
+        root=tmp_path,
+        reconciling=True,
+        verify_command=_PASS_COMMAND,
     )
     sched = _sched(ledger, org, tmp_path)
 
@@ -353,7 +389,11 @@ async def test_run_forever_lands_a_reviewed_deliverable_done(
     """
     _reviewed_build_task(ledger)
     org = _Org(
-        ledger, decide=lambda _tid: True, root=tmp_path, slow_review=True, verify_command="true"
+        ledger,
+        decide=lambda _tid: True,
+        root=tmp_path,
+        slow_review=True,
+        verify_command=_PASS_COMMAND,
     )
 
     pulses = 0
@@ -391,23 +431,42 @@ async def test_run_forever_lands_a_reviewed_deliverable_done(
     assert ledger.tasks.get("code").status is TaskStatus.DONE  # type: ignore[union-attr]
 
 
-async def test_no_reviewer_opens_a_recovery_card(ledger: SqliteLedger, tmp_path: Path) -> None:
-    # Spec 16: only ``reviewed_build`` still requires a Reviewer beat. With none hired, the gate cannot
-    # be discharged → the task blocks and a human is paged (never a silent pass).
-    ledger.employees.create(Employee(id="dev", name="Dev", role="engineer"))  # no reviewer hired
+async def test_system_verifier_reviews_without_a_reviewer_employee(
+    ledger: SqliteLedger, tmp_path: Path
+) -> None:
+    ledger.employees.create(Employee(id="dev", name="Dev", role="backend_engineer"))
     ledger.tasks.submit(Task(id="code", intent="build the widget", status=TaskStatus.TODO))
     assign_task(ledger, "code", "dev")
     from chorus.outcomes import Verifier
 
     ledger.dod.create("code", Verifier.reviewed_build(artifact_class="pr"))
-    org = _Org(ledger, decide=lambda _tid: True, root=tmp_path)
+    org = _Org(
+        ledger,
+        decide=lambda _tid: True,
+        root=tmp_path,
+        verify_command=_PASS_COMMAND,
+    )
     sched = _sched(ledger, org, tmp_path)
 
     await sched.tick_once()
     await sched.drain()
 
-    assert ledger.tasks.get("code").status is TaskStatus.BLOCKED  # type: ignore[union-attr]
-    assert ledger.recovery_actions.active_for_source("code") is not None  # a human must verify it
+    assert ledger.tasks.get("code").status is TaskStatus.DONE  # type: ignore[union-attr]
+    assert all(employee.role != "reviewer" for employee in ledger.employees.list())
+    review_runs = [run for run in ledger.runs.for_task("code") if run.id.startswith("rev_")]
+    assert len(review_runs) == 1
+    assert review_runs[0].employee_id == "dev"
+    assert review_runs[0].principal_kind == "system"
+    assert review_runs[0].principal_id == "system-verifier"
+    assert review_runs[0].lease_expires_at is not None
+    verdicts = [
+        event
+        for event in ledger.activity.by_subject("task", "code")
+        if event.verb.value == "review_verdict"
+    ]
+    assert len(verdicts) == 1
+    assert verdicts[0].actor_employee_id is None
+    assert verdicts[0].actor_system_principal_id == "system-verifier"
 
 
 async def test_standalone_block_self_repairs_then_opens_recovery(
@@ -462,11 +521,72 @@ def _reviewed_build_task(ledger: SqliteLedger) -> None:
     ledger.dod.create("code", Verifier.reviewed_build(artifact_class="pr"))  # the engineer's gate
 
 
+def _structured_reviewed_build_task(ledger: SqliteLedger) -> None:
+    from chorus.outcomes import Verifier
+
+    ledger.employees.create(Employee(id="dev", name="Dev", role="backend_engineer"))
+    ledger.employees.create(Employee(id="rob", name="Rob", role="reviewer"))
+    ledger.tasks.submit(Task(id="code", intent="build the widget", status=TaskStatus.TODO))
+    assign_task(ledger, "code", "dev")
+    ledger.dod.create(
+        "code",
+        Verifier.reviewed_build(artifact_class="pr", evidence_profile="tdd_review_v1"),
+    )
+
+
+def _write_structured_review_evidence(root: Path) -> None:
+    test_path = root / "tests" / "test_widget.py"
+    test_path.parent.mkdir()
+    test_path.write_text("def test_widget():\n    assert True\n", encoding="utf-8")
+    evidence = root / "test_evidence"
+    evidence.mkdir()
+    (evidence / "manifest.json").write_text(
+        json.dumps(
+            {
+                "verdict": "pass",
+                "gates": [
+                    {
+                        "name": "unit",
+                        "command": "python -m pytest -q",
+                        "status": "pass",
+                        "returncode": 0,
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    (evidence / "red.json").write_text(
+        json.dumps(
+            {
+                "verdict": "red-confirmed",
+                "command": "python -m pytest -q",
+                "returncode": 1,
+                "expected_failure_matched": True,
+                "command_unavailable": False,
+                "test_paths": ["tests/test_widget.py"],
+                "test_hashes": {"tests/test_widget.py": sha256(test_path.read_bytes()).hexdigest()},
+                "production_paths": [],
+                "invalid_test_paths": [],
+                "missing_tests": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    (root / "test_plan.json").write_text(
+        json.dumps({"tests": ["tests/test_widget.py"]}), encoding="utf-8"
+    )
+    (root / "review_verdict.json").write_text(
+        json.dumps({"cleared": True, "findings": [], "evidence": "reviewed widget"}),
+        encoding="utf-8",
+    )
+
+
 async def test_reviewed_build_approve_and_passing_command_lands_done(
     ledger: SqliteLedger, tmp_path: Path
 ) -> None:
     _reviewed_build_task(ledger)
-    org = _Org(ledger, decide=lambda _tid: True, root=tmp_path, verify_command="true")  # exit 0
+    org = _Org(ledger, decide=lambda _tid: True, root=tmp_path, verify_command=_PASS_COMMAND)
     sched = _sched(ledger, org, tmp_path)
 
     await sched.tick_once()
@@ -477,13 +597,95 @@ async def test_reviewed_build_approve_and_passing_command_lands_done(
     assert dod is not None and dod.verdict is not None and dod.verdict["build_passed"] is True
 
 
+async def test_reviewed_build_structured_evidence_and_project_command_both_pass(
+    ledger: SqliteLedger, tmp_path: Path
+) -> None:
+    _structured_reviewed_build_task(ledger)
+    _write_structured_review_evidence(tmp_path)
+    org = _Org(ledger, decide=lambda _tid: True, root=tmp_path, verify_command=_PASS_COMMAND)
+    sched = _sched(ledger, org, tmp_path)
+
+    await sched.tick_once()
+    await sched.drain()
+
+    assert ledger.tasks.get("code").status is TaskStatus.DONE  # type: ignore[union-attr]
+    dod = ledger.dod.get_for_task("code")
+    assert dod is not None and dod.verdict is not None
+    assert dod.verdict["evidence_passed"] is True
+    assert dod.verdict["build_passed"] is True
+    assert dod.verdict["build_exit"] == 0
+
+
+async def test_reviewed_build_rejects_test_changed_after_red(
+    ledger: SqliteLedger, tmp_path: Path
+) -> None:
+    _structured_reviewed_build_task(ledger)
+    _write_structured_review_evidence(tmp_path)
+    (tmp_path / "tests" / "test_widget.py").write_text(
+        "def test_widget():\n    assert False\n", encoding="utf-8"
+    )
+    org = _Org(ledger, decide=lambda _tid: True, root=tmp_path, verify_command=_PASS_COMMAND)
+    sched = _sched(ledger, org, tmp_path, max_review_rounds=0)
+
+    await sched.tick_once()
+    await sched.drain()
+
+    assert ledger.tasks.get("code").status is not TaskStatus.DONE  # type: ignore[union-attr]
+    dod = ledger.dod.get_for_task("code")
+    assert dod is not None and dod.verdict is not None
+    assert dod.verdict["evidence_passed"] is False
+    assert "changed after red" in str(dod.verdict["evidence_output"]).lower()
+    assert "build_exit" not in dod.verdict
+
+
+@pytest.mark.parametrize(
+    ("relative_path", "invalid_payload", "reason"),
+    [
+        (
+            "test_evidence/manifest.json",
+            {"verdict": "pass", "gates": [{"status": "fail", "returncode": 1}]},
+            "manifest",
+        ),
+        (
+            "test_evidence/red.json",
+            {"verdict": "red-confirmed", "expected_failure_matched": False},
+            "red",
+        ),
+        ("test_plan.json", [], "test_plan"),
+        ("review_verdict.json", {"cleared": False}, "review_verdict"),
+    ],
+)
+async def test_reviewed_build_rejects_invalid_structured_evidence_before_project_command(
+    ledger: SqliteLedger,
+    tmp_path: Path,
+    relative_path: str,
+    invalid_payload: object,
+    reason: str,
+) -> None:
+    _structured_reviewed_build_task(ledger)
+    _write_structured_review_evidence(tmp_path)
+    (tmp_path / relative_path).write_text(json.dumps(invalid_payload), encoding="utf-8")
+    org = _Org(ledger, decide=lambda _tid: True, root=tmp_path, verify_command=_PASS_COMMAND)
+    sched = _sched(ledger, org, tmp_path, max_review_rounds=0)
+
+    await sched.tick_once()
+    await sched.drain()
+
+    assert ledger.tasks.get("code").status is not TaskStatus.DONE  # type: ignore[union-attr]
+    dod = ledger.dod.get_for_task("code")
+    assert dod is not None and dod.verdict is not None
+    assert dod.verdict["evidence_passed"] is False
+    assert reason in str(dod.verdict["evidence_output"])
+    assert "build_exit" not in dod.verdict
+
+
 async def test_reviewed_build_failing_command_does_not_land(
     ledger: SqliteLedger, tmp_path: Path
 ) -> None:
     # The reviewer liked the diff, but the kernel-run command fails → the build is NOT done (the floor
     # is un-rationalizable). Standalone → bounded self-repair, never a silent pass.
     _reviewed_build_task(ledger)
-    org = _Org(ledger, decide=lambda _tid: True, root=tmp_path, verify_command="false")  # exit 1
+    org = _Org(ledger, decide=lambda _tid: True, root=tmp_path, verify_command=_FAIL_COMMAND)
     sched = _sched(ledger, org, tmp_path, max_review_rounds=1)
 
     for _ in range(6):
@@ -501,7 +703,7 @@ async def test_reviewed_build_quality_block_skips_the_command(
 ) -> None:
     _reviewed_build_task(ledger)
     # the reviewer blocks on quality; the command never runs (no build_passed recorded)
-    org = _Org(ledger, decide=lambda _tid: False, root=tmp_path, verify_command="true")
+    org = _Org(ledger, decide=lambda _tid: False, root=tmp_path, verify_command=_PASS_COMMAND)
     sched = _sched(ledger, org, tmp_path, max_review_rounds=1)
 
     for _ in range(4):
@@ -513,17 +715,71 @@ async def test_reviewed_build_quality_block_skips_the_command(
     assert dod is not None and dod.verdict is not None and "build_passed" not in dod.verdict
 
 
-async def test_manager_parented_block_escalates_and_manager_reacts(
+async def test_delegation_rejection_reacts_once_then_escalates_without_force_acceptance(
     ledger: SqliteLedger, tmp_path: Path
 ) -> None:
-    # The headline: an in-beat block on a manager's child becomes a child outcome the Slice-2 manager
-    # reacts to. draft is blocked → REJECTED → manager integrate sees `react` → submits redraft →
-    # redraft is approved → subtree completes → manager accepts → goal done. Spec 16: the child's
-    # needs-changes verdict is rendered by its own in-beat evaluator, not a second Reviewer beat.
-    ledger.employees.create(Employee(id="moe", name="Moe", role="manager"))
+    # A rejected child remains part of the durable subtree. The lead may submit one correction, but
+    # cannot force acceptance when independent verification still sees the rejected attempt.
+    ledger.employees.create(Employee(id="moe", name="Moe", role="pm"))
     ledger.employees.create(Employee(id="pen", name="Pen", role="pm", reports_to="moe"))
     ledger.employees.create(Employee(id="paul", name="Paul", role="pm", reports_to="moe"))
-    ledger.tasks.submit(Task(id="M", intent="ship the spec", status=TaskStatus.TODO))
+    ledger.management_profiles.upsert(
+        ManagementProfile(
+            employee_id="moe",
+            granted_by_user_id="operator",
+            active=True,
+            can_lead=True,
+            max_delegation_depth=1,
+            max_team_size=3,
+            allowed_professions=("pm",),
+        )
+    )
+    ledger.goals.create(Goal(id="goal-M", title="Ship the spec"))
+    ledger.teams.create(
+        Team(
+            id="team-M",
+            name="Spec Team",
+            lead_employee_id="moe",
+            created_by="operator",
+            goal_id="goal-M",
+            status=TeamStatus.ACTIVE,
+        )
+    )
+    for employee_id, membership_role in (
+        ("moe", TeamMembershipRole.LEAD),
+        ("pen", TeamMembershipRole.MEMBER),
+        ("paul", TeamMembershipRole.MEMBER),
+    ):
+        ledger.team_members.add(
+            TeamMember(
+                team_id="team-M",
+                employee_id=employee_id,
+                source_manager_id="moe",
+                membership_role=membership_role,
+            )
+        )
+    ledger.tasks.submit(
+        Task(
+            id="M",
+            intent="ship the spec",
+            status=TaskStatus.TODO,
+            goal_id="goal-M",
+            execution_mode=ExecutionMode.DELEGATION,
+            team_id="team-M",
+        )
+    )
+    ledger.delegation_contracts.create(
+        DelegationContract(
+            task_id="M",
+            team_id="team-M",
+            lead_employee_id="moe",
+            management_profile_version=1,
+            objective_rubric="the complete spec is independently reviewed",
+            max_depth=1,
+            max_team_size=3,
+            status=DelegationContractStatus.DELEGATED,
+        )
+    )
     assign_task(ledger, "M", "moe")
 
     def decide(task_id: str) -> bool:
@@ -539,8 +795,13 @@ async def test_manager_parented_block_escalates_and_manager_reacts(
 
     children = {c.origin_fingerprint: c for c in ledger.tasks.children("M")}
     assert children["draft"].status is TaskStatus.REJECTED  # in-beat block → terminal-rejected
-    assert children["redraft"].status is TaskStatus.DONE  # the manager's fix, approved on review
-    assert ledger.tasks.get("M").status is TaskStatus.DONE  # type: ignore[union-attr]  # integrated
+    assert children["redraft"].status is TaskStatus.DONE
+    assert len(children) == 2
+    assert ledger.tasks.get("M").status is TaskStatus.BLOCKED  # type: ignore[union-attr]
+    contract = ledger.delegation_contracts.get("M")
+    assert contract is not None and contract.status is DelegationContractStatus.BLOCKED
+    recovery = ledger.recovery_actions.active_for_source("M")
+    assert recovery is not None and recovery.cause == "integrate_iteration_exhausted"
 
 
 def test_worktree_file_manifest_lists_the_files_a_listless_reviewer_cannot_see(

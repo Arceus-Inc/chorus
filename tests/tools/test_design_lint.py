@@ -211,11 +211,12 @@ class TestDesignLintTool:
 class TestWiring:
     def test_capability_tool_registers_design_lint(self) -> None:
         from chorus.ledger import SqliteLedger
+        from chorus.roles import RoleRegistry
         from chorus_harness._factory import _capability_tool
 
         ledger = SqliteLedger.open(":memory:")
         try:
-            tool = _capability_tool("design_lint", ledger)
+            tool = _capability_tool("design_lint", ledger, RoleRegistry())
             assert isinstance(tool, DesignLintTool)
         finally:
             ledger.close()

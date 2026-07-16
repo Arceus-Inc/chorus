@@ -27,15 +27,22 @@ from dream.subagents._projection import build_subagent_set
 from dream.tools._base import BaseTool
 from dream.tools._registry import ToolRegistry, ToolSource
 from dream.tools.builtin import default_registry
+from dream.tools.builtin.spawn_subagent import SpawnSubagentTool
 
 from chorus.adapters import DreamBeatRunner, TokenPricing
-from chorus.heartbeat import BeatRunner, IntegrateContextPacket
+from chorus.heartbeat import BeatRunner, ExecutionProfileResolver, IntegrateContextPacket
 from chorus.memory import EpisodicRecallService, EpisodicStore
-from chorus.outcomes import LanderRegistry, runtime_brief_block
+from chorus.outcomes import (
+    LanderRegistry,
+    ReviewedBuild,
+    ReviewedBuildEvidenceProfile,
+    runtime_brief_block,
+)
 from chorus.roles import RoleBeatConfig, RoleRegistry, role_beat_config
 from chorus.roles._manifest import McpServerSpec
 from chorus.roles._subagent import SubagentSpec
 from chorus.trust import TrustPolicy
+from chorus.verification import VerificationPrincipal
 from chorus.workforce import Employee
 from chorus.workspace import CompanyWorkspace, default_work_root
 from chorus_employee import default_landers
@@ -47,7 +54,9 @@ from chorus_employee._lattice import (
 )
 from chorus_employee._recall import PLANNER_TOOLLESS_NOTE
 from chorus_employee._shared_skills import SHARED_SKILLS_ROOT
+from chorus_employee.reviewer._harness import reviewer_manifest
 from chorus_harness._skills import materialize_skills, materialize_versioned_skills_into
+from chorus_harness._tdd_gate import TddProductionGate
 from chorus_harness._trust import apply_trust
 from chorus_tools import (
     AssignTaskTool,
@@ -62,9 +71,14 @@ from chorus_tools import (
     RecallTool,
     RecordDecisionTool,
     SecretScanTool,
+    StaffingRequestTool,
     SubmitTaskTool,
     SubmitVerdictTool,
+    TeamReadTool,
     TestEvidenceTool,
+    TestRedTool,
+    WorkforceCatalogReadTool,
+    WorkforcePlanProposeTool,
     analysis_tool,
     governance_tool,
 )
@@ -174,6 +188,7 @@ _CHORUS_TO_DREAM_TOOL: dict[str, str] = {
     # UNCONDITIONALLY in the materialize flow below — the design_lint lesson: never behind the ledger
     # gate, so it always exists in a ledger-less run instead of being mis-routed as a subagent.
     "test_evidence": "test_evidence",
+    "test_red": "test_red",
     "secret_scan": "secret_scan",
     "code_quality": "code_quality",
     # execute_go_live — the §05 dark-node executor: publishes the staged draft ONLY once its
@@ -196,6 +211,9 @@ _CHORUS_TO_DREAM_TOOL: dict[str, str] = {
     "proposal_reject": "proposal_reject",
     "goal_set_priority": "goal_set_priority",
     "goal_archive": "goal_archive",
+    "staffing_request": "staffing_request",
+    "workforce_catalog_read": "workforce_catalog_read",
+    "workforce_plan_propose": "workforce_plan_propose",
 }
 
 _READ_ONLY_DREAM_SURFACE_TOOLS = frozenset(
@@ -227,6 +245,7 @@ _READ_ONLY_DREAM_SURFACE_TOOLS = frozenset(
         # (proposal_approve/reject, goal_set_priority/archive) are deliberately NOT here — they belong to
         # the generator phase only.
         "governance_read",
+        "workforce_catalog_read",
     }
 )
 
@@ -277,14 +296,21 @@ def _role_registry(dream_names: tuple[str, ...]) -> ToolRegistry:
     """A dream registry holding only the role's built-in tools — the harness's effective toolset."""
     full = default_registry()
     registry = ToolRegistry()
-    for name in dream_names:
+    names = dream_names
+    if "read_file" in names and "read_offloaded" not in names:
+        names = (*names, "read_offloaded")
+    for name in names:
         tool = full.get(name)
         if tool is not None:
             registry.register(tool, source=ToolSource.DEFAULT)
     return registry
 
 
-def _capability_tool(name: str, ledger: SqliteLedger | None) -> BaseTool | None:
+def _capability_tool(
+    name: str,
+    ledger: SqliteLedger | None,
+    roles: RoleRegistry,
+) -> BaseTool | None:
     """Build the chorus capability tool for ``name``, or ``None`` if it isn't one.
 
     The ledger-bound tools require a live ``ledger``; the ledger-free ones (``brand_lint`` /
@@ -299,12 +325,20 @@ def _capability_tool(name: str, ledger: SqliteLedger | None) -> BaseTool | None:
             return SubmitTaskTool(ledger)
         if name == "assign_task":
             return AssignTaskTool(ledger)
+        if name == "team_read":
+            return TeamReadTool(ledger)
         if name == "submit_verdict":
             return SubmitVerdictTool(ledger)
         if name == "stage_go_live":
             return GoLiveTool(ledger)
         if name == "record_decision":
             return RecordDecisionTool(ledger)
+        if name == "staffing_request":
+            return StaffingRequestTool(ledger)
+        if name == "workforce_catalog_read":
+            return WorkforceCatalogReadTool(ledger, roles)
+        if name == "workforce_plan_propose":
+            return WorkforcePlanProposeTool(ledger, roles)
     if name == "brand_lint":
         return (
             BrandLintTool()
@@ -335,23 +369,47 @@ _DELEGATING_TOOLS = frozenset({"decompose", "submit_task", "assign_task"})
 _REACTIVE_TOOLS = frozenset({"submit_task", "assign_task"})
 
 
-def _team_roster(ledger: SqliteLedger, *, exclude: str) -> str:
+def _team_roster(ledger: SqliteLedger, *, exclude: str, team_id: str | None = None) -> str:
     """The employee's direct reports (id + role), so a delegator names valid assignees.
 
-    When any report is itself a *manager*, the delegator is a director: it must hand each manager a
-    whole self-contained AREA (a multi-file sub-goal) and let that manager sub-decompose — never a
-    single file, and never dropping part of the goal. Without this the model collapses a multi-area
-    goal into one file per manager (so whole areas are silently lost) and then, on integrate, re-submits
-    the area a manager already delivered instead of the area that is still missing.
+    When any report has active authority to lead, the delegator is a director: it must hand each lead a
+    whole self-contained AREA (a multi-file sub-goal) and let that lead sub-decompose — never a single
+    file, and never dropping part of the goal. Without this the model collapses a multi-area goal into
+    one file per lead (so whole areas are silently lost) and then, on integrate, re-submits the area a
+    lead already delivered instead of the area that is still missing.
     """
-    reports = [emp for emp in ledger.employees.list() if emp.reports_to == exclude]
+    if team_id is None:
+        reports = [emp for emp in ledger.employees.list() if emp.reports_to == exclude]
+    else:
+        member_ids = {
+            member.employee_id
+            for member in ledger.team_members.members_of(team_id)
+            if member.employee_id != exclude
+        }
+        reports = [
+            emp
+            for emp in ledger.employees.list()
+            if emp.id in member_ids and emp.reports_to == exclude
+        ]
     lines = [f"- {emp.id} ({emp.role})" for emp in reports]
     body = "\n".join(lines) if lines else "(no other employees are currently hired)"
     roster = (
         "\n\n## Your reports (assign each subtask's `assignee` to one of these employee ids)\n"
         + body
     )
-    manager_reports = [emp for emp in reports if emp.role == "manager"]
+    roster += (
+        "\n\n## Keep each subtask a BIG chunk — do NOT over-split\n"
+        "A modern coding harness is powerful: one subtask is a whole module or a whole feature, built "
+        "end to end WITH its own tests in a single beat. Create the FEWEST children that cover the "
+        "objective — roughly one per module or feature. Never split a single module into per-function, "
+        "per-file, or per-layer subtasks, and never create a plan-only or test-only subtask (the owner "
+        "writes the code and its tests together)."
+    )
+    manager_reports = []
+    for employee in reports:
+        profile = ledger.management_profiles.get(employee.id)
+        if profile is not None and profile.active and profile.can_lead:
+            manager_reports.append(employee)
     if manager_reports:
         ids = ", ".join(emp.id for emp in manager_reports)
         roster += (
@@ -400,7 +458,7 @@ def _toml_string_list(values: tuple[str, ...]) -> str:
 def _read_only_role_tools(
     role: Literal["planner", "evaluator"], config: RoleBeatConfig
 ) -> tuple[str, ...]:
-    """Default read-only Dream role tools plus safe Engineer read surfaces."""
+    """Default read-only Dream role tools plus safe employee read surfaces."""
     base = default_role_manifest(role).tools or ()
     tools = list(base)
     for name in dream_tool_names(config.tools):
@@ -560,8 +618,8 @@ class EmployeeHarnessFactory:
         Symmetric with :meth:`runner_for`: the factory owns execution, so it owns how each employee's
         deliverable lands. The consumer wires both at once —
         ``Chorus.build(..., beat_runner_for=factory.runner_for, landers=factory.landers)`` — instead of
-        hand-building ``default_landers`` at every call site. The manager/reviewer landers come online
-        only when the factory holds the live ledger they read from.
+        hand-building ``default_landers`` at every call site. The manager and verifier verdict landers
+        come online only when the factory holds the live ledger they read from.
         """
         return default_landers(self._company_root, ledger=self._ledger)
 
@@ -570,12 +628,42 @@ class EmployeeHarnessFactory:
         return self.materialize(employee, task_id=task_id).runner
 
     def review_runner_for(
-        self, reviewer: Employee, *, task_id: str, worktree_owner_id: str
+        self, reviewer: VerificationPrincipal, *, task_id: str, worktree_owner_id: str
     ) -> BeatRunner:
-        """The review seam — a read-only reviewer runner pointed at the author's worktree (M3 Reviewer)."""
-        return self.materialize(
-            reviewer, task_id=task_id, review_worktree_of=worktree_owner_id
+        """Build the system verifier in the author's worktree without a workforce role."""
+        return self.materialize_verifier(
+            reviewer,
+            task_id=task_id,
+            worktree_owner_id=worktree_owner_id,
         ).runner
+
+    def verification_runner_for(
+        self, reviewer: VerificationPrincipal, *, task_id: str, worktree_owner_id: str
+    ) -> BeatRunner:
+        """Build a read-only system verifier that returns evidence without mutating the task DoD."""
+        return self.materialize_verifier(
+            reviewer,
+            task_id=task_id,
+            worktree_owner_id=worktree_owner_id,
+            verification_only=True,
+        ).runner
+
+    def materialize_verifier(
+        self,
+        principal: VerificationPrincipal,
+        *,
+        task_id: str,
+        worktree_owner_id: str,
+        verification_only: bool = False,
+    ) -> EmployeeHarness:
+        """Materialize the built-in verifier profile without registering or persisting an employee."""
+        return self._materialize(
+            principal,
+            task_id=task_id,
+            review_worktree_of=worktree_owner_id,
+            verification_only=verification_only,
+            config_override=role_beat_config(reviewer_manifest()),
+        )
 
     def materialize(
         self,
@@ -583,6 +671,23 @@ class EmployeeHarnessFactory:
         *,
         task_id: str | None = None,
         review_worktree_of: str | None = None,
+        verification_only: bool = False,
+    ) -> EmployeeHarness:
+        return self._materialize(
+            employee,
+            task_id=task_id,
+            review_worktree_of=review_worktree_of,
+            verification_only=verification_only,
+        )
+
+    def _materialize(
+        self,
+        employee: Employee | VerificationPrincipal,
+        *,
+        task_id: str | None = None,
+        review_worktree_of: str | None = None,
+        verification_only: bool = False,
+        config_override: RoleBeatConfig | None = None,
     ) -> EmployeeHarness:
         """Resolve ``employee``'s role into a configured dream harness in its isolated worktree.
 
@@ -595,10 +700,11 @@ class EmployeeHarnessFactory:
         working dir, so it inspects the work under review *in place* — the verdict is rendered on the
         real diff, and the reviewer's read-only sandbox makes the borrowed worktree look-but-don't-touch.
         """
-        if employee.role not in self._roles:
-            raise ValueError(f"role {employee.role!r} for {employee.id!r} is not a registered role")
-        manifest = self._roles.get(employee.role).manifest
-        config = role_beat_config(manifest)
+        if config_override is None and (
+            not isinstance(employee, Employee) or employee.role not in self._roles
+        ):
+            role = employee.role if isinstance(employee, Employee) else employee.kind
+            raise ValueError(f"role {role!r} for {employee.id!r} is not a registered role")
 
         # §4 trust: narrow the harness to the task's effective preset (read-only / plan for a low-trust
         # beat) and assert containment. A TrustDenied propagates — an uncontained beat is not built.
@@ -607,19 +713,38 @@ class EmployeeHarnessFactory:
             if task_id is not None and self._ledger is not None
             else None
         )
+        strict_tdd = False
+        if config_override is not None:
+            config = config_override
+        elif self._ledger is None or review_worktree_of is not None:
+            assert isinstance(employee, Employee)
+            config = role_beat_config(self._roles.get(employee.role).manifest)
+        else:
+            assert isinstance(employee, Employee)
+            profile = ExecutionProfileResolver(self._roles, self._ledger).resolve(employee, task)
+            config = profile.config
+            strict_tdd = (
+                isinstance(profile.verifier.spec, ReviewedBuild)
+                and profile.verifier.spec.evidence_profile
+                is ReviewedBuildEvidenceProfile.TDD_REVIEW_V1
+            )
         config = apply_trust(config, task=task, policy=self._trust_policy)
+        if verification_only:
+            config = replace(
+                config,
+                tools=tuple(tool for tool in config.tools if tool != "submit_verdict"),
+            )
 
-        # Structural over-decompose guard: on an integrate beat the parent already owns children, so
-        # ``decompose`` is dropped from the toolset entirely — the model never sees it (M3 §5). Brief
-        # discipline alone is not enough; under load a manager re-decomposes and balloons the subtree.
+        # Persisted contract status selects the phase-specific management tools in the execution
+        # profile. Child presence is retained only for worktree synchronization and the completed
+        # subtree guard; it is not an authority source.
         is_integrate_beat = (
             task_id is not None
             and self._ledger is not None
             and self._ledger.tasks.has_children(task_id)
         )
-        if is_integrate_beat and "decompose" in config.tools:
+        if is_integrate_beat:
             assert task_id is not None and self._ledger is not None  # narrowed by is_integrate_beat
-            config = replace(config, tools=tuple(t for t in config.tools if t != "decompose"))
             # Structural over-submit guard: when the kernel's verdict is `accept` — every child done,
             # unblocked, and passing — the delegated work is complete, so submit_task/assign_task are
             # withheld too. The manager can only review and accept; it cannot bolt on redundant work.
@@ -632,7 +757,11 @@ class EmployeeHarnessFactory:
         # Team rehydration: a delegating role (decompose/submit/assign) gets its reports appended to its
         # brief, read live from the workforce — so the model assigns to real employee ids, not invented.
         if self._ledger is not None and _DELEGATING_TOOLS.intersection(config.tools):
-            roster = _team_roster(self._ledger, exclude=employee.id)
+            roster = _team_roster(
+                self._ledger,
+                exclude=employee.id,
+                team_id=task.team_id if task is not None else None,
+            )
             config = replace(config, system_prompt=config.system_prompt + roster)
 
         # Operating environment: a role that RUNS commands (a build engineer) gets a factual runtime
@@ -712,7 +841,7 @@ class EmployeeHarnessFactory:
         for name in config.tools:
             if self._ledger is None and name not in _LEDGER_FREE_CAPABILITY_TOOLS:
                 continue
-            capability = _capability_tool(name, self._ledger)
+            capability = _capability_tool(name, self._ledger, self._roles)
             if capability is not None:
                 registry.register(capability, source=ToolSource.DEFAULT)
         # cms_draft is registered here (not in _capability_tool): its Markdown fallback backend needs the
@@ -736,6 +865,8 @@ class EmployeeHarnessFactory:
         # registers UNCONDITIONALLY (not behind the `self._ledger is not None` gate) — the design_lint fix.
         if "test_evidence" in config.tools:
             registry.register(TestEvidenceTool(), source=ToolSource.DEFAULT)
+        if "test_red" in config.tools:
+            registry.register(TestRedTool(), source=ToolSource.DEFAULT)
         # secret_scan is the same shape: a pure worktree scanner that reads files + writes the
         # security_scan/ report. No ledger, so it registers UNCONDITIONALLY too.
         if "secret_scan" in config.tools:
@@ -798,6 +929,11 @@ class EmployeeHarnessFactory:
             atool = analysis_tool(name)
             if atool is not None and registry.get(name) is None:
                 registry.register(atool, source=ToolSource.DEFAULT)
+
+        if strict_tdd:
+            if registry.get("spawn_subagent") is None:
+                registry.register(SpawnSubagentTool(), source=ToolSource.DEFAULT)
+            registry = TddProductionGate(root).wrap_registry(registry)
 
         if "todo_write" in config.tools:
             registry = registry_with_todo_flush_nudge(registry)
@@ -864,6 +1000,15 @@ class EmployeeHarnessFactory:
                 else self._timeout_s,
                 working_dir=root,
                 employee_id=employee.id,  # stamped into each beat's context for capability tools
+                subagent_evidence={
+                    spec.name: (
+                        spec.evidence_path,
+                        spec.evidence_claim,
+                        spec.evidence_read_only,
+                    )
+                    for spec in config.subagents
+                    if spec.evidence_path is not None and spec.evidence_claim is not None
+                },
             ),
             workspace=workspace,
             working_dir=root,

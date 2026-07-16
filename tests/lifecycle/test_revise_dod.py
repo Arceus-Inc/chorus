@@ -23,7 +23,7 @@ pytestmark = pytest.mark.integration
 
 
 def _task_with_manager(ledger: SqliteLedger, verifier: Verifier) -> None:
-    ledger.employees.create(Employee(id="moe", name="moe", role="manager"))
+    ledger.employees.create(Employee(id="moe", name="moe", role="engineer"))
     ledger.employees.create(Employee(id="ada", name="ada", role="engineer", reports_to="moe"))
     ledger.tasks.submit(Task(id="t1", intent="ship", status=TaskStatus.IN_PROGRESS))
     assign_task(ledger, "t1", "ada")

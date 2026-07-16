@@ -7,11 +7,13 @@ the dream Harness behind the :class:`~chorus.heartbeat.BeatRunner` protocol.
 
 from __future__ import annotations
 
+from chorus.adapters._capacity import CapacityAdapter
 from chorus.adapters._contract import (
     SUPPORTED_DREAM_CONTRACT,
     DreamContractError,
     check_dream_contract,
 )
+from chorus.adapters._delegated_intake import DelegatedIntakeAdapter
 from chorus.adapters._observer import DreamObserverBridge
 from chorus.adapters._pricing import ModelRate, TokenPricing, UsageView
 from chorus.adapters.dream_beat import (
@@ -24,6 +26,8 @@ from chorus.adapters.dream_beat import (
 
 __all__ = [
     "SUPPORTED_DREAM_CONTRACT",
+    "CapacityAdapter",
+    "DelegatedIntakeAdapter",
     "DreamBeatRunner",
     "DreamContractError",
     "DreamObserverBridge",

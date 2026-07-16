@@ -13,11 +13,15 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
+import subprocess
+import tempfile
 from collections.abc import Callable, Mapping, Sequence
 from contextlib import suppress
 from dataclasses import asdict, replace
 from datetime import UTC, datetime
 from enum import StrEnum
+from hashlib import sha256
 from inspect import isawaitable
 from pathlib import Path
 from typing import Any, Protocol
@@ -27,7 +31,7 @@ from chorus.adapters._observer import DreamObserverBridge
 from chorus.adapters._pricing import TokenPricing, UsageView
 from chorus.adapters._trace import beat_subagent_stats, sidecar_traces
 from chorus.events import Event
-from chorus.heartbeat import BeatContext, BeatOutcome
+from chorus.heartbeat import BeatContext, BeatDisposition, BeatOutcome
 from chorus.heartbeat._todo_flush import (
     TODO_FLUSH_REMAINING_FRACTION,
     clear_todo_flush_nudge,
@@ -38,6 +42,96 @@ from chorus.outcomes import VerificationStep
 
 def _utc_now() -> datetime:
     return datetime.now(UTC)
+
+
+_REVIEW_FINGERPRINT_EXCLUDED_PATHS = frozenset(
+    {
+        "TODO.md",
+        "api_verdict.json",
+        "code_quality/report.json",
+        "review_verdict.json",
+        "security_scan/report.json",
+        "test_evidence/manifest.json",
+        "test_evidence/red.json",
+        "test_evidence/red.txt",
+        "test_plan.json",
+    }
+)
+_REVIEW_FINGERPRINT_EXCLUDED_PREFIXES = (
+    ".dream/",
+    ".harness/",
+    "docs/evals/",
+    "docs/exec-plans/active/",
+    "test_evidence/",
+)
+
+
+def _is_review_fingerprint_path(relative_path: str) -> bool:
+    normalized = relative_path.replace("\\", "/")
+    return normalized not in _REVIEW_FINGERPRINT_EXCLUDED_PATHS and not normalized.startswith(
+        _REVIEW_FINGERPRINT_EXCLUDED_PREFIXES
+    )
+
+
+def _worktree_fingerprint(root: Path) -> str:
+    """Hash the Git-visible worktree state, with a filesystem fallback for bare test roots."""
+    digest = sha256()
+    listed = subprocess.run(
+        ["git", "ls-files", "--cached", "--others", "--exclude-standard", "-z"],
+        cwd=root,
+        capture_output=True,
+        check=False,
+    )
+    status = subprocess.run(
+        ["git", "status", "--porcelain=v1", "-z", "--untracked-files=all"],
+        cwd=root,
+        capture_output=True,
+        check=False,
+    )
+    if listed.returncode == 0 and status.returncode == 0:
+        relative_paths = sorted(
+            os.fsdecode(raw)
+            for raw in listed.stdout.split(b"\0")
+            if raw and _is_review_fingerprint_path(os.fsdecode(raw))
+        )
+    else:
+        relative_paths = sorted(
+            path.relative_to(root).as_posix()
+            for path in root.rglob("*")
+            if path.is_file() and _is_review_fingerprint_path(path.relative_to(root).as_posix())
+        )
+    for relative_path in relative_paths:
+        digest.update(relative_path.encode("utf-8", errors="surrogateescape"))
+        path = root / relative_path
+        if not path.exists():
+            digest.update(b"\0missing\0")
+        elif path.is_symlink():
+            digest.update(b"\0link\0" + os.readlink(path).encode("utf-8"))
+        elif path.is_file():
+            digest.update(b"\0file\0" + path.read_bytes())
+    return digest.hexdigest()
+
+
+def _write_json_atomic(path: Path, value: Mapping[str, object]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary_name: str | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=path.parent,
+            prefix=f".{path.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as temporary:
+            temporary_name = temporary.name
+            json.dump(value, temporary, indent=2, sort_keys=True)
+            temporary.write("\n")
+        os.replace(temporary_name, path)
+    finally:
+        if temporary_name is not None:
+            with suppress(FileNotFoundError):
+                Path(temporary_name).unlink()
 
 
 class DreamStepStatus(StrEnum):
@@ -120,13 +214,44 @@ class _ReasoningRecorder:
 
     _KEPT_KINDS = frozenset({"role.text", "role.tool.start", "role.tool.result"})
 
-    def __init__(self, forward: Callable[[dict[str, Any]], None] | None) -> None:
+    def __init__(
+        self,
+        forward: Callable[[dict[str, Any]], None] | None,
+        *,
+        working_dir: Path | None = None,
+        evidence_subagents: frozenset[str] = frozenset(),
+    ) -> None:
         self._forward = forward
         self._events: list[dict[str, Any]] = []
+        self._working_dir = working_dir
+        self._evidence_subagents = evidence_subagents
+        self._pending_subagents: list[tuple[str, str]] = []
+        self._subagent_results: dict[str, tuple[str, bool, str, str]] = {}
 
     def on_event(self, event: dict[str, Any]) -> None:
         if str(event.get("kind", "")) in self._KEPT_KINDS:
             self._events.append(event)
+        if event.get("tool") == "spawn_subagent":
+            if event.get("kind") == "role.tool.start":
+                name = str(dict(event.get("input") or {}).get("name", "subagent"))
+                before_hash = (
+                    _worktree_fingerprint(self._working_dir)
+                    if name in self._evidence_subagents and self._working_dir is not None
+                    else ""
+                )
+                self._pending_subagents.append((name, before_hash))
+            elif event.get("kind") == "role.tool.result":
+                name, before_hash = (
+                    self._pending_subagents.pop(0) if self._pending_subagents else ("subagent", "")
+                )
+                if name in self._evidence_subagents and self._working_dir is not None:
+                    content = str(event.get("content", event.get("content_preview", "")))
+                    self._subagent_results[name] = (
+                        content,
+                        bool(event.get("is_error", False)),
+                        before_hash,
+                        _worktree_fingerprint(self._working_dir),
+                    )
         if self._forward is not None:
             self._forward(event)
 
@@ -135,6 +260,10 @@ class _ReasoningRecorder:
         return "\n".join(
             json.dumps(event, default=str, ensure_ascii=False) for event in self._events
         )
+
+    def subagent_results(self) -> dict[str, tuple[str, bool, str, str]]:
+        """Return evidence results with their pre-run and completion worktree fingerprints."""
+        return dict(self._subagent_results)
 
 
 def to_beat_outcome(result: RunResult, *, pricing: TokenPricing | None = None) -> BeatOutcome:
@@ -198,6 +327,11 @@ class DreamBeatRunner:
         working_dir: str | Path | None = None,
         employee_id: str | None = None,
         clock: Callable[[], datetime] | None = None,
+        subagent_evidence: Mapping[
+            str,
+            tuple[str, Mapping[str, object]] | tuple[str, Mapping[str, object], bool],
+        ]
+        | None = None,
     ) -> None:
         self._harness = harness
         self._pricing = pricing
@@ -206,6 +340,12 @@ class DreamBeatRunner:
         self._working_dir = Path(working_dir) if working_dir is not None else None
         self._employee_id = employee_id
         self._clock = clock or _utc_now
+        self._subagent_evidence: dict[str, tuple[str, dict[str, object], bool]] = {}
+        for name, requirement in (subagent_evidence or {}).items():
+            path = requirement[0]
+            claim = requirement[1]
+            read_only = requirement[2] if len(requirement) == 3 else True
+            self._subagent_evidence[name] = (path, dict(claim), read_only)
 
     @property
     def working_dir(self) -> Path | None:
@@ -237,10 +377,15 @@ class DreamBeatRunner:
         )
         # Record the agent's reasoning + actions for the episodic raw record, forwarding to the bridge
         # so liveness witnessing is unchanged (spec 07 §3). It is dream's observer for this beat.
-        recorder = _ReasoningRecorder(bridge.on_event if bridge is not None else None)
+        recorder = _ReasoningRecorder(
+            bridge.on_event if bridge is not None else None,
+            working_dir=self._working_dir,
+            evidence_subagents=frozenset(self._subagent_evidence),
+        )
 
         def _with_record(outcome: BeatOutcome) -> BeatOutcome:
-            return replace(outcome, raw_record=recorder.as_jsonl())
+            guarded = self._guard_subagent_evidence(outcome, recorder.subagent_results())
+            return replace(guarded, raw_record=recorder.as_jsonl())
 
         # Snapshot existing sidecar traces so we can isolate *this* beat's trace afterwards and recover
         # the subagent counters dream drops before they reach the observer (see ``_trace``).
@@ -335,6 +480,143 @@ class DreamBeatRunner:
                 )
             )
         return _with_record(outcome)
+
+    def _guard_subagent_evidence(
+        self,
+        outcome: BeatOutcome,
+        fresh_results: Mapping[str, tuple[str, bool, str, str]],
+    ) -> BeatOutcome:
+        """Reject a passing beat whose durable subagent evidence lacks valid provenance."""
+        if not outcome.passed or not self._subagent_evidence:
+            return outcome
+        if self._working_dir is None:
+            return self._subagent_evidence_failure(outcome, "working directory is unavailable")
+
+        provenance_to_write: list[tuple[Path, dict[str, object]]] = []
+        for name, (
+            relative_path,
+            required_claim,
+            evidence_read_only,
+        ) in self._subagent_evidence.items():
+            artifact_path = (self._working_dir / relative_path).resolve()
+            try:
+                artifact_path.relative_to(self._working_dir.resolve())
+            except ValueError:
+                return self._subagent_evidence_failure(
+                    outcome, f"{name} evidence path escapes the worktree"
+                )
+            provenance_path = self._working_dir / ".harness" / "subagent-evidence" / f"{name}.json"
+            fresh = fresh_results.get(name)
+            if fresh is not None:
+                content, is_error, before_worktree_hash, reviewed_worktree_hash = fresh
+                if is_error:
+                    return self._subagent_evidence_failure(
+                        outcome, f"{name} subagent execution failed"
+                    )
+                if evidence_read_only and before_worktree_hash != reviewed_worktree_hash:
+                    return self._subagent_evidence_failure(
+                        outcome, f"{name} changed the worktree during independent review"
+                    )
+                try:
+                    returned = json.loads(content)
+                except (json.JSONDecodeError, ValueError):
+                    return self._subagent_evidence_failure(
+                        outcome, f"{name} typed output was invalid or fail-open"
+                    )
+                if not isinstance(returned, dict):
+                    return self._subagent_evidence_failure(
+                        outcome, f"{name} typed output was invalid or fail-open"
+                    )
+                current_worktree_hash = _worktree_fingerprint(self._working_dir)
+                if evidence_read_only and current_worktree_hash != reviewed_worktree_hash:
+                    return self._subagent_evidence_failure(
+                        outcome, f"{name} worktree changed after independent review"
+                    )
+                _write_json_atomic(artifact_path, returned)
+                artifact = returned
+            else:
+                if not artifact_path.is_file():
+                    return self._subagent_evidence_failure(
+                        outcome, f"{name} evidence artifact is missing: {relative_path}"
+                    )
+                try:
+                    artifact = json.loads(artifact_path.read_text(encoding="utf-8"))
+                except (OSError, json.JSONDecodeError, ValueError):
+                    return self._subagent_evidence_failure(
+                        outcome, f"{name} evidence artifact is not valid JSON"
+                    )
+
+            if not isinstance(artifact, dict) or any(
+                artifact.get(field) != expected for field, expected in required_claim.items()
+            ):
+                return self._subagent_evidence_failure(
+                    outcome, f"{name} evidence does not carry the required claim"
+                )
+
+            artifact_hash = sha256(artifact_path.read_bytes()).hexdigest()
+            if fresh is not None:
+                _content, _is_error, _before_worktree_hash, reviewed_worktree_hash = fresh
+                provenance_to_write.append(
+                    (
+                        provenance_path,
+                        {
+                            "subagent_name": name,
+                            "artifact_path": relative_path,
+                            "artifact_sha256": artifact_hash,
+                            "worktree_sha256": reviewed_worktree_hash,
+                            "required_claim": required_claim,
+                            "evidence_read_only": evidence_read_only,
+                        },
+                    )
+                )
+                continue
+
+            try:
+                provenance = json.loads(provenance_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError, ValueError):
+                return self._subagent_evidence_failure(
+                    outcome, f"{name} has no machine provenance from an independent run"
+                )
+            if (
+                not isinstance(provenance, dict)
+                or provenance.get("artifact_path") != relative_path
+                or provenance.get("artifact_sha256") != artifact_hash
+                or provenance.get("required_claim") != required_claim
+                or provenance.get("evidence_read_only", True) is not evidence_read_only
+                or (
+                    evidence_read_only
+                    and provenance.get("worktree_sha256")
+                    != _worktree_fingerprint(self._working_dir)
+                )
+            ):
+                return self._subagent_evidence_failure(
+                    outcome, f"{name} artifact changed after independent review"
+                )
+
+        for provenance_path, provenance in provenance_to_write:
+            provenance_path.parent.mkdir(parents=True, exist_ok=True)
+            provenance_path.write_text(
+                json.dumps(provenance, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+            )
+        return replace(
+            outcome,
+            outcome={**outcome.outcome, "subagent_evidence": "passed"},
+        )
+
+    @staticmethod
+    def _subagent_evidence_failure(outcome: BeatOutcome, reason: str) -> BeatOutcome:
+        return replace(
+            outcome,
+            passed=False,
+            outcome={
+                **outcome.outcome,
+                "subagent_evidence": "failed",
+                "subagent_evidence_reason": reason,
+            },
+            summary=f"subagent evidence failed: {reason}",
+            disposition=BeatDisposition.DOD_FAILED,
+            retryable=False,
+        )
 
     def _attach_subagent_stats(
         self, outcome: BeatOutcome, traces_before: frozenset[Path]

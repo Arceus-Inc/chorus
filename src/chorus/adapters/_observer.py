@@ -85,7 +85,7 @@ class DreamObserverBridge:
                 EventKind.SUBAGENT_COMPLETED,
                 {
                     "subagent_name": name,
-                    "content": event.get("content_preview", ""),
+                    "content": event.get("content", event.get("content_preview", "")),
                     "is_error": bool(event.get("is_error", False)),
                 },
             )

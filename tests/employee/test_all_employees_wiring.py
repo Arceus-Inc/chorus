@@ -19,8 +19,7 @@ from chorus_harness._factory import dream_tool_names
 
 pytestmark = pytest.mark.integration
 
-# The six role-playing employees this suite covers (engineer/reviewer/manager are the M3 core).
-# Engineer now also gets todo_write + shared cross-beat skills for resume parity.
+# The canonical craft employees whose multi-turn work uses durable checklists and skill bundles.
 EMPLOYEES = [
     "analyst",
     "backend_engineer",
@@ -28,7 +27,6 @@ EMPLOYEES = [
     "designer",
     "marketer",
     "pm",
-    "engineer",
 ]
 
 

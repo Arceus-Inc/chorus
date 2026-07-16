@@ -31,6 +31,7 @@ class InvokabilityReason(StrEnum):
     PENDING = "pending"
     TERMINATED = "terminated"
     INVALID_ORG_CHAIN = "invalid_org_chain"
+    UNMIGRATED_MANAGER = "unmigrated_manager"
 
 
 @dataclass(frozen=True)

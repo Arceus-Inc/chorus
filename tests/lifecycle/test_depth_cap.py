@@ -19,7 +19,7 @@ pytestmark = pytest.mark.integration
 
 
 def _manager_with_source(ledger: SqliteLedger, *, request_depth: int) -> None:
-    ledger.employees.create(Employee(id="mgr", name="m", role="manager"))
+    ledger.employees.create(Employee(id="mgr", name="m", role="engineer"))
     ledger.tasks.submit(
         Task(id="src", intent="big", assignee_employee_id="mgr", request_depth=request_depth)
     )

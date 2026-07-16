@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import io
+import json
 
 import pytest
 
@@ -116,8 +117,40 @@ def test_pause_unknown_errors(session: CliSession) -> None:
 
 
 def test_workforce_lists_the_org(session: CliSession) -> None:
-    _run("hire Boss manager", session)
-    _run("hire Alice engineer boss", session)
+    _run("hire Boss backend_engineer", session)
+    _run("hire Alice frontend_engineer boss", session)
     _, out = _run("workforce", session)
     assert "boss" in out
     assert "alice" in out
+
+
+def test_workforce_specialize_manager_uses_explicit_profession_and_policy(
+    session: CliSession, ledger: SqliteLedger, tmp_path
+) -> None:
+    _run("hire Legacy manager", session)
+    policy = tmp_path / "management-profile.json"
+    policy.write_text(
+        json.dumps(
+            {
+                "active": True,
+                "can_lead": True,
+                "can_subdelegate": False,
+                "max_delegation_depth": 1,
+                "max_team_size": 3,
+                "allowed_professions": ["backend_engineer"],
+                "spend_limit_cents": 25_000,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    _, out = _run(
+        f"workforce specialize-manager legacy --profession backend_engineer --profile {policy}",
+        session,
+    )
+
+    employee = ledger.employees.get("legacy")
+    profile = ledger.management_profiles.get("legacy")
+    assert employee is not None and employee.role == "backend_engineer"
+    assert profile is not None and profile.active and profile.max_team_size == 3
+    assert "specialized legacy as backend_engineer" in out

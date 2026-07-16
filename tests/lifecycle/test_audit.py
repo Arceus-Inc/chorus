@@ -38,7 +38,7 @@ def _verbs(ledger: SqliteLedger, task_id: str) -> list[ActivityVerb]:
 
 
 def test_decompose_emits_decomposed_activity(ledger: SqliteLedger) -> None:
-    ledger.employees.create(Employee(id="mgr", name="m", role="manager"))
+    ledger.employees.create(Employee(id="mgr", name="m", role="engineer"))
     ledger.tasks.submit(Task(id="src", intent="big", assignee_employee_id="mgr"))
     ledger.artifacts.create(Artifact(id="plan", task_id="src", type=ArtifactType.DOC))
     ledger.artifact_revisions.record(ArtifactRevision(id="rev_1", artifact_id="plan"))
@@ -60,7 +60,7 @@ def test_decompose_emits_decomposed_activity(ledger: SqliteLedger) -> None:
 
 
 def test_recovery_escalation_audits_and_wakes_manager(ledger: SqliteLedger) -> None:
-    ledger.employees.create(Employee(id="mgr", name="boss", role="manager"))
+    ledger.employees.create(Employee(id="mgr", name="boss", role="engineer"))
     ledger.employees.create(Employee(id="emp_1", name="alice", role="engineer", reports_to="mgr"))
     ledger.tasks.submit(
         Task(id="t1", intent="x", status=TaskStatus.TODO, assignee_employee_id="emp_1")

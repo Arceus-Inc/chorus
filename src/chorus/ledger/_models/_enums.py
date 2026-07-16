@@ -27,6 +27,40 @@ class TaskPriority(StrEnum):
     LOW = "low"
 
 
+class ExecutionMode(StrEnum):
+    """The persisted execution contract selected for a task (M8 §5.5)."""
+
+    DELIVERY = "delivery"
+    DELEGATION = "delegation"
+
+
+class TeamStatus(StrEnum):
+    """Lifecycle of a durable delegation team (M8 §5.4)."""
+
+    FORMING = "forming"
+    ACTIVE = "active"
+    BLOCKED = "blocked"
+    ARCHIVED = "archived"
+
+
+class TeamMembershipRole(StrEnum):
+    """Responsibility inside a Team, independent of profession."""
+
+    LEAD = "lead"
+    MEMBER = "member"
+
+
+class DelegationContractStatus(StrEnum):
+    """Lifecycle of a persisted delegation contract (M8 §5.6)."""
+
+    FORMING = "forming"
+    DELEGATED = "delegated"
+    INTEGRATING = "integrating"
+    VERIFYING = "verifying"
+    DONE = "done"
+    BLOCKED = "blocked"
+
+
 class OriginKind(StrEnum):
     """What spawned a task — keys the partial-unique exact-once indexes (spec 01)."""
 
@@ -229,7 +263,25 @@ class ActivityVerb(StrEnum):
 
     ASSIGNED = "assigned"
     DECOMPOSED = "decomposed"
+    PROFILE_GRANTED = "profile_granted"
+    PROFILE_REVOKED = "profile_revoked"
+    TEAM_FORMED = "team_formed"
+    TEAM_ACTIVATED = "team_activated"
+    TEAM_ARCHIVED = "team_archived"
+    TEAM_MEMBER_ADDED = "team_member_added"
+    TEAM_MEMBER_REMOVED = "team_member_removed"
+    DELEGATION_CREATED = "delegation_created"
+    DELEGATION_STATUS_CHANGED = "delegation_status_changed"
+    LEAD_ACCEPTED = "lead_accepted"
+    PARENT_VERIFIED = "parent_verified"
+    REORG_REFUSED = "reorg_refused"
     SCRUM_PACKET = "scrum_packet"
+    WORKFORCE_PLAN_PROPOSED = "workforce_plan_proposed"
+    WORKFORCE_PLAN_REVISED = "workforce_plan_revised"
+    WORKFORCE_PLAN_APPLIED = "workforce_plan_applied"
+    WORKFORCE_PLAN_REJECTED = "workforce_plan_rejected"
+    STAFFING_REQUESTED = "staffing_requested"
+    STAFFING_REQUEST_FULFILLED = "staffing_request_fulfilled"
     RECOVERED = "recovered"
     GATED = "gated"
     HIRED = "hired"

@@ -36,10 +36,12 @@ from chorus.ledger.repos import (
     CostEventRepo,
     DecisionRepo,
     DecompositionClaimRepo,
+    DelegationContractRepo,
     DependencyRepo,
     DodRepo,
     EmployeeRepo,
     GoalRepo,
+    ManagementProfileRepo,
     MessageRepo,
     MonitorRepo,
     RecoveryActionRepo,
@@ -48,8 +50,12 @@ from chorus.ledger.repos import (
     RoutineRunRepo,
     RoutineTriggerRepo,
     RunRepo,
+    StaffingRequestRepo,
     TaskRepo,
+    TeamMemberRepo,
+    TeamRepo,
     WakeRepo,
+    WorkforcePlanRepo,
 )
 
 
@@ -85,6 +91,10 @@ class Ledger(Protocol):
     employees: EmployeeRepo
     goals: GoalRepo
     tasks: TaskRepo
+    management_profiles: ManagementProfileRepo
+    teams: TeamRepo
+    team_members: TeamMemberRepo
+    delegation_contracts: DelegationContractRepo
     decomposition_claims: DecompositionClaimRepo
     dependencies: DependencyRepo
     wakes: WakeRepo
@@ -106,6 +116,8 @@ class Ledger(Protocol):
     budget_policies: BudgetPolicyRepo
     budget_incidents: BudgetIncidentRepo
     cost_events: CostEventRepo
+    workforce_plans: WorkforcePlanRepo
+    staffing_requests: StaffingRequestRepo
 
     def schema_version(self) -> str | None: ...
 
@@ -143,6 +155,10 @@ class SqliteLedger:
         self.employees = EmployeeRepo(conn)
         self.goals = GoalRepo(conn)
         self.tasks = TaskRepo(conn)
+        self.management_profiles = ManagementProfileRepo(conn)
+        self.teams = TeamRepo(conn)
+        self.team_members = TeamMemberRepo(conn)
+        self.delegation_contracts = DelegationContractRepo(conn)
         self.decomposition_claims = DecompositionClaimRepo(conn)
         self.dependencies = DependencyRepo(conn)
         self.wakes = WakeRepo(conn)
@@ -164,6 +180,8 @@ class SqliteLedger:
         self.budget_policies = BudgetPolicyRepo(conn)
         self.budget_incidents = BudgetIncidentRepo(conn)
         self.cost_events = CostEventRepo(conn)
+        self.workforce_plans = WorkforcePlanRepo(conn)
+        self.staffing_requests = StaffingRequestRepo(conn)
 
     @classmethod
     def open(cls, db_path: str) -> SqliteLedger:

@@ -10,7 +10,7 @@ from __future__ import annotations
 import pytest
 
 from chorus.ledger import DodStatus, SqliteLedger, Task, TaskStatus
-from chorus.outcomes import DoDKind, Verifier
+from chorus.outcomes import DoDKind, ReviewedBuild, Verifier
 
 pytestmark = pytest.mark.integration
 
@@ -76,3 +76,12 @@ def test_clear_proposed_drops_the_staged_revision(ledger: SqliteLedger) -> None:
     dod = ledger.dod.get_for_task("t1")
     assert dod is not None and dod.proposed_revision is None
     assert ledger.dod.verifier_for_task("t1").kind is DoDKind.REVIEWED_BUILD  # type: ignore[union-attr]
+
+
+def test_reviewed_build_evidence_profile_round_trips(ledger: SqliteLedger) -> None:
+    ledger.tasks.submit(Task(id="t1", intent="ship", status=TaskStatus.TODO))
+    ledger.dod.create("t1", Verifier.reviewed_build(evidence_profile="tdd_review_v1"))
+
+    verifier = ledger.dod.verifier_for_task("t1")
+    assert verifier is not None and isinstance(verifier.spec, ReviewedBuild)
+    assert verifier.spec.evidence_profile == "tdd_review_v1"

@@ -25,7 +25,7 @@ pytestmark = pytest.mark.unit
 
 def _ledger() -> SqliteLedger:
     ledger = SqliteLedger.open(":memory:")
-    ledger.employees.create(Employee(id="mgr", name="Mo", role="manager"))
+    ledger.employees.create(Employee(id="mgr", name="Mo", role="engineer"))
     ledger.employees.create(Employee(id="e1", name="Ada", role="pm", reports_to="mgr"))
     ledger.employees.create(Employee(id="x1", name="Eve", role="pm"))
     return ledger

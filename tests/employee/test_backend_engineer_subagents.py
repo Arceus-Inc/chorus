@@ -17,6 +17,7 @@ from pydantic import ValidationError
 from chorus.roles import role_beat_config
 from chorus_employee.backend_engineer import (
     API_VERIFIER_SUBAGENT,
+    CODE_REVIEWER_SUBAGENT,
     TEST_AUTHOR_SUBAGENT,
     ApiCheck,
     ApiTestVerdict,
@@ -138,16 +139,22 @@ class TestApiVerifierDeclaration:
         assert "restart" in desc
 
 
+class TestCodeReviewerEvidenceDeclaration:
+    def test_review_verdict_is_a_required_independent_artifact(self) -> None:
+        assert CODE_REVIEWER_SUBAGENT.evidence_path == "review_verdict.json"
+        assert CODE_REVIEWER_SUBAGENT.evidence_claim == {"cleared": True}
+
+
 # --- the beat time budget (the heaviest beat: build a running service, boot it, restart it, verify) ---
 
 
 class TestBackendEngineerBeatBudget:
     def test_beat_timeout_is_sized_for_the_full_sandwich(self) -> None:
-        # The backend beat boots the built service AND restarts it (durability) AND runs the test
-        # sandwich — far more wall-clock than the 90s DreamBeatRunner default. It must set its own.
+        # The backend beat must leave room for one evaluator correction sprint and its terminal
+        # independent re-review after the build, mutation, and durability gates complete.
         manifest = backend_engineer_plugin().manifest
         assert manifest.beat_timeout_s is not None
-        assert manifest.beat_timeout_s >= 300.0
+        assert manifest.beat_timeout_s >= 1200.0
 
     def test_lease_ttl_outlives_the_beat_timeout(self) -> None:
         # The stale-run reaper must not claim a beat that is still legitimately running: the run lease
@@ -230,3 +237,9 @@ class TestSubagentsCanLoadSkills:
 
     def test_test_author_prompt_points_at_a_testing_playbook(self) -> None:
         assert "skill" in TEST_AUTHOR_SUBAGENT.description.lower()
+
+    def test_test_author_exercises_repeated_state_changes_and_constraints(self) -> None:
+        desc = TEST_AUTHOR_SUBAGENT.description.lower()
+        assert "at least three sequential operations" in desc
+        assert "uniqueness" in desc
+        assert "transitional or placeholder state" in desc

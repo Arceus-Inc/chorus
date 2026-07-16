@@ -45,6 +45,8 @@ def backend_engineer_manifest() -> RoleManifest:
             # the load-bearing proof primitive (§10): run the discovered verify commands + collate a
             # durable test_evidence/ bundle. "it was tested" becomes a file on disk, not a claim.
             "test_evidence",
+            # strict chronology proof: refuses RED capture after production code has changed.
+            "test_red",
             # the safety floor (§09): scan the worktree for hardcoded credentials + write a durable
             # security_scan/ report. "no secrets in the diff" becomes a file on disk, not a claim.
             "secret_scan",
@@ -107,11 +109,12 @@ def backend_engineer_manifest() -> RoleManifest:
         # service, INSTALLS its real quality tools (ruff/mypy — no gaming), BOOTS it, RESTARTS it
         # (durability proof), and runs the full test sandwich (test_author + api_verifier + test_evidence),
         # each spending real wall-clock (installs, server polls, sleeps, subprocesses) on top of many
-        # model turns. The 90s default is far too tight; a real multi-file service lands around 10-15 min.
-        beat_timeout_s=900.0,
+        # model turns. The 90s default is far too tight; a correction sprint plus terminal independent
+        # review can legitimately take 15-20 minutes without introducing a retry or resume.
+        beat_timeout_s=1200.0,
         # — run-lease TTL — must OUTLIVE the beat's own wall-clock budget so the stale-run reaper never
         # claims a beat that is still legitimately running.
-        lease_ttl_s=1200.0,
+        lease_ttl_s=1500.0,
         # — opt-in surfaces off by default (the Playwright/DB MCP + net-allowlist are later slices) —
         mcp=False,
         plugins=False,

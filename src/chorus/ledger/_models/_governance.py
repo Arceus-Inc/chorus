@@ -114,6 +114,7 @@ class Activity:
     subject_id: str
     actor_employee_id: str | None = None
     actor_user_id: str | None = None
+    actor_system_principal_id: str | None = None
     trace_id: str | None = None
     payload: Mapping[str, Any] = field(default_factory=dict)
     occurred_at: datetime | None = None

@@ -113,6 +113,8 @@ class Run:
     id: str
     employee_id: str
     task_id: str
+    principal_kind: str = "employee"
+    system_principal_id: str | None = None
     wake_id: str | None = None
     status: RunStatus = RunStatus.QUEUED
     lease_expires_at: datetime | None = None
@@ -122,6 +124,13 @@ class Run:
     finished_at: datetime | None = None
     outcome: dict[str, object] = field(default_factory=dict)
     usage: dict[str, object] = field(default_factory=dict)
+
+    @property
+    def principal_id(self) -> str:
+        """The canonical actor, distinct from the employee host used for scheduling and costs."""
+        if self.principal_kind == "system" and self.system_principal_id is not None:
+            return self.system_principal_id
+        return self.employee_id
 
 
 @dataclass(frozen=True)

@@ -6,9 +6,9 @@ is generated at intake by the assignee's role plugin, persisted typed on
 self-report. Three tiers:
 
     Verifier(kind) = Command        # objective gate: a shell command exits 0
-                   | AgentReview    # judgment gate: a Reviewer employee verdicts
+                   | AgentReview    # judgment gate: the built-in system verifier verdicts
                    | HumanApproval  # a person decides (the approval primitive)
-                   | ReviewedBuild  # a Reviewer discovers + judges; the kernel runs the command
+                   | ReviewedBuild  # the system verifier discovers + judges; the kernel runs the command
 """
 
 from __future__ import annotations
@@ -26,6 +26,12 @@ class DoDKind(StrEnum):
     REVIEWED_BUILD = "reviewed_build"
 
 
+class ReviewedBuildEvidenceProfile(StrEnum):
+    """Versioned structured evidence contracts the kernel can enforce without a shell."""
+
+    TDD_REVIEW_V1 = "tdd_review_v1"
+
+
 @dataclass(frozen=True)
 class Command:
     """Objective gate — a shell command must exit 0 (tests/CI/typecheck)."""
@@ -36,7 +42,7 @@ class Command:
 
 @dataclass(frozen=True)
 class AgentReview:
-    """Judgment gate — a Reviewer-role employee renders a verdict against a rubric."""
+    """Judgment gate — the built-in system verifier renders a verdict against a rubric."""
 
     reviewer_role: str = "reviewer"
     rubric: str = ""
@@ -53,15 +59,16 @@ class HumanApproval:
 class ReviewedBuild:
     """Reviewed build — language-agnostic, judgment-aware engineer gate (M3 reviewed-build).
 
-    A read-only Reviewer *discovers* the project's verify command and *judges* the diff; the kernel runs
-    that command as the deterministic objective floor. So the engineer's own beat runs no hardcoded
-    command (no language-lock), and ``done`` means the discovered command exits 0 *and* the reviewer
+    The read-only system verifier *discovers* the project's verify command and *judges* the diff; the
+    kernel runs that command as the deterministic objective floor. The author's beat runs no hardcoded
+    command (no language lock), and ``done`` means the discovered command exits 0 and verification
     approved the diff.
     """
 
     reviewer_role: str = "reviewer"
     rubric: str = ""
     verify_timeout_s: int = 600
+    evidence_profile: ReviewedBuildEvidenceProfile | None = None
 
 
 # The DoD spec union (spec 04 §1).
@@ -116,10 +123,14 @@ class Verifier:
         rubric: str = "",
         artifact_class: str = "pr",
         verify_timeout_s: int = 600,
+        evidence_profile: ReviewedBuildEvidenceProfile | str | None = None,
     ) -> Verifier:
+        profile = (
+            ReviewedBuildEvidenceProfile(evidence_profile) if evidence_profile is not None else None
+        )
         return cls(
             DoDKind.REVIEWED_BUILD,
-            ReviewedBuild(reviewer_role, rubric, verify_timeout_s),
+            ReviewedBuild(reviewer_role, rubric, verify_timeout_s, profile),
             artifact_class,
         )
 
@@ -154,6 +165,7 @@ __all__ = [
     "DoDSpec",
     "HumanApproval",
     "ReviewedBuild",
+    "ReviewedBuildEvidenceProfile",
     "VerificationStep",
     "Verifier",
 ]

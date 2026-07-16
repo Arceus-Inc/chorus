@@ -29,12 +29,14 @@ class ActivityRepo:
         """Record one auditable transition; the single-actor XOR is enforced in the DB."""
         now = utcnow_iso()
         self._conn.execute(
-            "INSERT INTO activity (id, actor_employee_id, actor_user_id, verb, subject_kind, "
-            "subject_id, trace_id, payload, occurred_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO activity (id, actor_employee_id, actor_user_id, "
+            "actor_system_principal_id, verb, subject_kind, subject_id, trace_id, payload, "
+            "occurred_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 activity.id,
                 activity.actor_employee_id,
                 activity.actor_user_id,
+                activity.actor_system_principal_id,
                 activity.verb.value,
                 activity.subject_kind,
                 activity.subject_id,
@@ -55,14 +57,14 @@ class ActivityRepo:
         """One row's audit history, oldest first."""
         rows = self._conn.execute(
             "SELECT * FROM activity WHERE subject_kind = ? AND subject_id = ? "
-            "ORDER BY occurred_at, id",
+            "ORDER BY occurred_at, rowid",
             (subject_kind, subject_id),
         ).fetchall()
         return [_row_to_activity(row) for row in rows]
 
     def all(self) -> list[Activity]:
         """Every audit row, oldest first — for read-model rollups."""
-        rows = self._conn.execute("SELECT * FROM activity ORDER BY occurred_at, id").fetchall()
+        rows = self._conn.execute("SELECT * FROM activity ORDER BY occurred_at, rowid").fetchall()
         return [_row_to_activity(row) for row in rows]
 
     def recent(self, *, limit: int) -> list[Activity]:
@@ -74,7 +76,7 @@ class ActivityRepo:
         if limit <= 0:
             raise ValueError("limit must be positive")
         rows = self._conn.execute(
-            "SELECT * FROM activity ORDER BY occurred_at DESC, id DESC LIMIT ?", (limit,)
+            "SELECT * FROM activity ORDER BY occurred_at DESC, rowid DESC LIMIT ?", (limit,)
         ).fetchall()
         return [_row_to_activity(row) for row in rows]
 
@@ -87,6 +89,7 @@ def _row_to_activity(row: sqlite3.Row) -> Activity:
         subject_id=row["subject_id"],
         actor_employee_id=row["actor_employee_id"],
         actor_user_id=row["actor_user_id"],
+        actor_system_principal_id=row["actor_system_principal_id"],
         trace_id=row["trace_id"],
         payload=loads_dict(row["payload"]),
         occurred_at=from_iso(row["occurred_at"]),

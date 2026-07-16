@@ -108,10 +108,10 @@ class TestCodeReviewerDeclaration:
         assert schema is not None
         assert {"cleared", "evidence"} <= set(schema["required"])
 
-    def test_can_read_and_persist_its_verdict(self) -> None:
-        # It reads the diff and writes ONLY its own review_verdict.json (independent authorship).
+    def test_can_read_but_cannot_persist_or_patch(self) -> None:
+        # The adapter persists the validated typed return; the reviewer itself remains read-only.
         assert "read_file" in CODE_REVIEWER_SUBAGENT.tools
-        assert "write_file" in CODE_REVIEWER_SUBAGENT.tools
+        assert "write_file" not in CODE_REVIEWER_SUBAGENT.tools
 
     def test_description_reviews_never_patches(self) -> None:
         # A red-teamer reviews; the prompt forbids it from patching production code.
@@ -123,6 +123,47 @@ class TestCodeReviewerDeclaration:
         desc = CODE_REVIEWER_SUBAGENT.description.lower()
         assert "authz" in desc or "authorization" in desc
         assert "n+1" in desc or "n_plus_1" in desc or "injection" in desc
+
+    def test_description_rejects_generated_runtime_state(self) -> None:
+        desc = CODE_REVIEWER_SUBAGENT.description.lower()
+        assert "generated runtime state" in desc
+        assert "database" in desc
+        assert "cache" in desc
+
+    def test_description_reviews_untracked_files_without_comparing_directories(self) -> None:
+        desc = CODE_REVIEWER_SUBAGENT.description.lower()
+        assert "git status --short" in desc
+        assert "untracked" in desc
+        assert "read each changed file directly" in desc
+        assert "never compare unrelated directories" in desc
+        assert "an empty `git diff` is not an empty change" in desc
+        assert "untracked status is never itself a finding" in desc
+        assert "can be cleared" in desc
+
+    def test_description_reproduces_failures_with_the_repository_command(self) -> None:
+        desc = CODE_REVIEWER_SUBAGENT.description.lower()
+        assert "repository's exact configured command" in desc
+        assert "bare alternative" in desc
+        assert "only report a test or import failure" in desc
+
+    def test_description_requires_running_the_repository_gate_before_clearance(self) -> None:
+        desc = CODE_REVIEWER_SUBAGENT.description.lower()
+        assert "before `cleared=true`" in desc
+        assert "execute" in desc
+        assert "manifest" in desc
+        assert "not a substitute" in desc
+
+    def test_description_forbids_shell_writes_and_scratch_files(self) -> None:
+        desc = CODE_REVIEWER_SUBAGENT.description.lower()
+        assert "never use the command tool to write" in desc
+        assert "scratch" in desc
+        assert "backup" in desc
+
+    def test_description_cross_checks_database_constraints_against_repeated_calls(self) -> None:
+        desc = CODE_REVIEWER_SUBAGENT.description.lower()
+        assert "placeholder" in desc
+        assert "uniqueness constraints" in desc
+        assert "at least three repeated writes" in desc
 
     def test_max_turns_bounded(self) -> None:
         assert CODE_REVIEWER_SUBAGENT.max_turns <= 10
