@@ -19,8 +19,8 @@ import pytest
 # Paths
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 _CHORUS_SRC = _REPO_ROOT / "src"
-# Horizon lives in the main repo tree, not the worktree.
-_HORIZON_SRC = _REPO_ROOT.parents[1] / "horizon" / "src"
+# The sibling horizon checkout lives NEXT TO this repo (repo root's parent).
+_HORIZON_SRC = _REPO_ROOT.parent / "horizon" / "src"
 
 # Chorus production package roots (CON-001 scope).
 _CHORUS_PACKAGES = ("chorus", "chorus_harness", "chorus_tools", "chorus_employee", "chorus_cli")
@@ -37,11 +37,7 @@ class _Violation(NamedTuple):
 
 def _collect_python_files(root: Path) -> list[Path]:
     """Collect all .py files under *root*, excluding __pycache__."""
-    return sorted(
-        p
-        for p in root.rglob("*.py")
-        if "__pycache__" not in p.parts
-    )
+    return sorted(p for p in root.rglob("*.py") if "__pycache__" not in p.parts)
 
 
 def _find_imports_of(source_file: Path, forbidden_roots: tuple[str, ...]) -> list[_Violation]:
@@ -54,9 +50,7 @@ def _find_imports_of(source_file: Path, forbidden_roots: tuple[str, ...]) -> lis
             for alias in node.names:
                 top = alias.name.split(".")[0]
                 if top in forbidden_roots:
-                    violations.append(
-                        _Violation(source_file, node.lineno, f"import {alias.name}")
-                    )
+                    violations.append(_Violation(source_file, node.lineno, f"import {alias.name}"))
         elif isinstance(node, ast.ImportFrom):
             if node.module is not None:
                 top = node.module.split(".")[0]
@@ -88,12 +82,8 @@ def _chorus_production_files() -> list[Path]:
 def test_chorus_does_not_import_horizon(source_file: Path) -> None:
     """CON-001: Chorus production code must not import horizon."""
     violations = _find_imports_of(source_file, (_HORIZON_PACKAGE,))
-    assert not violations, (
-        "CON-001 violation: Chorus file imports horizon.\n"
-        + "\n".join(
-            f"  {v.file.relative_to(_CHORUS_SRC)}:{v.line}  {v.statement}"
-            for v in violations
-        )
+    assert not violations, "CON-001 violation: Chorus file imports horizon.\n" + "\n".join(
+        f"  {v.file.relative_to(_CHORUS_SRC)}:{v.line}  {v.statement}" for v in violations
     )
 
 
@@ -101,10 +91,14 @@ def test_chorus_does_not_import_horizon(source_file: Path) -> None:
 
 
 def _horizon_production_files() -> list[Path]:
-    """All .py files under the Horizon production package."""
+    """All .py files under the Horizon production package.
+
+    Runs at COLLECTION time (parametrize), where ``pytest.skip`` is a hard error — return an
+    empty list instead; pytest's empty-parameter-set default marks the test skipped.
+    """
     horizon_pkg = _HORIZON_SRC / _HORIZON_PACKAGE
     if not horizon_pkg.is_dir():
-        pytest.skip(f"Horizon source not found at {horizon_pkg}")
+        return []
     return _collect_python_files(horizon_pkg)
 
 
@@ -116,10 +110,6 @@ def _horizon_production_files() -> list[Path]:
 def test_horizon_does_not_import_chorus(source_file: Path) -> None:
     """CON-001: Horizon production code must not import chorus."""
     violations = _find_imports_of(source_file, _CHORUS_PACKAGES)
-    assert not violations, (
-        "CON-001 violation: Horizon file imports chorus.\n"
-        + "\n".join(
-            f"  {v.file.relative_to(_HORIZON_SRC)}:{v.line}  {v.statement}"
-            for v in violations
-        )
+    assert not violations, "CON-001 violation: Horizon file imports chorus.\n" + "\n".join(
+        f"  {v.file.relative_to(_HORIZON_SRC)}:{v.line}  {v.statement}" for v in violations
     )

@@ -26,12 +26,23 @@ _LEDGER_FILE = "governance-ledger.md"
 
 
 def _audit(ctx: ToolExecutionContext, line: str) -> None:
-    """Append one line to the worktree's governance ledger (best-effort; never fails a tool)."""
+    """Append one run-stamped line to the worktree's governance ledger (best-effort).
+
+    A standing worktree accumulates lines across beats, so each line carries its beat's
+    run id — dream's per-beat task identity IS the chorus run_id, which is what lets an
+    evaluator separate THIS beat's actions from prior beats' without guessing.
+    """
     try:
         path = ctx.working_dir / _LEDGER_FILE
-        header = "" if path.exists() else "# Governance ledger — actions taken this beat\n\n"
+        try:
+            stamp = f"[run {BeatContext.read(ctx.working_dir).run_id}] "
+        except Exception:  # no beat context (e.g. a bare test harness) — log unstamped
+            stamp = ""
+        header = (
+            "" if path.exists() else "# Governance ledger — one run-stamped line per action\n\n"
+        )
         with path.open("a", encoding="utf-8") as fh:
-            fh.write(f"{header}- {line}\n")
+            fh.write(f"{header}- {stamp}{line}\n")
     except Exception:  # an audit-log hiccup must never break the actual governance action
         pass
 
@@ -111,7 +122,9 @@ class GovernanceReadTool(BaseTool):
 class ProposalApproveInput(BaseModel):
     """Arguments for ``proposal_approve`` — accept one open proposal into the direction."""
 
-    proposal_id: str = Field(description="the id of an open proposal, as shown by governance_read")
+    proposal_id: str = Field(
+        description="the open proposal's id (prop_…), as shown by governance_read"
+    )
 
 
 class ProposalApproveTool(BaseTool):
@@ -142,7 +155,10 @@ class ProposalApproveTool(BaseTool):
                 structured={"proposal_id": args.proposal_id, "error": str(exc)},
                 is_error=True,
             )
-        _audit(ctx, f"APPROVED proposal {args.proposal_id} → decision {decision_id} (by {beat.employee_id})")
+        _audit(
+            ctx,
+            f"APPROVED proposal {args.proposal_id} → decision {decision_id} (by {beat.employee_id})",
+        )
         return ToolResult(
             content=f"approved proposal {args.proposal_id} — it is now decision {decision_id}",
             structured={"proposal_id": args.proposal_id, "decision_id": decision_id},
@@ -152,7 +168,9 @@ class ProposalApproveTool(BaseTool):
 class ProposalRejectInput(BaseModel):
     """Arguments for ``proposal_reject`` — decline one open proposal."""
 
-    proposal_id: str = Field(description="the id of an open proposal, as shown by governance_read")
+    proposal_id: str = Field(
+        description="the open proposal's id (prop_…), as shown by governance_read"
+    )
     reason: str = Field(
         default="", description="a short reason for the record — why this proposal was declined"
     )
@@ -187,7 +205,10 @@ class ProposalRejectTool(BaseTool):
                 structured={"proposal_id": args.proposal_id, "error": str(exc)},
                 is_error=True,
             )
-        _audit(ctx, f"REJECTED proposal {args.proposal_id} (by {beat.employee_id}) — reason: {args.reason or 'n/a'}")
+        _audit(
+            ctx,
+            f"REJECTED proposal {args.proposal_id} (by {beat.employee_id}) — reason: {args.reason or 'n/a'}",
+        )
         return ToolResult(
             content=f"rejected proposal {args.proposal_id}",
             structured={"proposal_id": args.proposal_id, "reason": args.reason},
@@ -197,7 +218,12 @@ class ProposalRejectTool(BaseTool):
 class GoalSetPriorityInput(BaseModel):
     """Arguments for ``goal_set_priority`` — reprioritise one goal."""
 
-    goal_id: str = Field(description="the id of a goal, as shown by governance_read")
+    goal_id: str = Field(
+        description=(
+            "the goal's id (goal_…), as shown by governance_read — not a decision (dec_…) "
+            "or proposal (prop_…) id"
+        )
+    )
     priority: str = Field(description="the new priority: one of low, medium, high")
 
 
@@ -269,7 +295,12 @@ class GoalSetPriorityTool(BaseTool):
 class GoalArchiveInput(BaseModel):
     """Arguments for ``goal_archive`` — retire one goal from the active direction."""
 
-    goal_id: str = Field(description="the id of a goal, as shown by governance_read")
+    goal_id: str = Field(
+        description=(
+            "the goal's id (goal_…), as shown by governance_read — not a decision (dec_…) "
+            "or proposal (prop_…) id"
+        )
+    )
 
 
 class GoalArchiveTool(BaseTool):

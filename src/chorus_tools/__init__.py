@@ -51,6 +51,14 @@ from chorus_tools._governance import (
     ProposalRejectTool,
     governance_tool,
 )
+from chorus_tools._lattice import (
+    LatticeApplyInput,
+    LatticeApplyTool,
+    LatticeContextInput,
+    LatticeContextTool,
+    LatticePacketInput,
+    LatticePacketTool,
+)
 from chorus_tools._manager_actions import (
     AssignTaskInput,
     AssignTaskTool,
@@ -128,6 +136,12 @@ __all__ = [
     "GoalArchiveTool",
     "GoalSetPriorityTool",
     "GovernanceReadTool",
+    "LatticeApplyInput",
+    "LatticeApplyTool",
+    "LatticeContextInput",
+    "LatticeContextTool",
+    "LatticePacketInput",
+    "LatticePacketTool",
     "LogAssessment",
     "ManagementGrantInput",
     "NotebookRunTool",

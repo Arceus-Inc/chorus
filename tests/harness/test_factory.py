@@ -143,16 +143,20 @@ def test_backend_engineer_materializes_a_writable_harness_in_its_worktree(
         "write_file",
         "bash",
         "git",
+        "todo_write",
+        "skill",
         "memory_search",
         "memory_get",
         "recall",
         "get_run",
-        "skill",
-        "todo_write",
         "test_evidence",
         "test_red",
         "secret_scan",
         "code_quality",
+        "lattice_context",
+        "lattice_packet",
+        "lattice_apply",
+        "skill_manage",
     }
     assert mat.config.permission_mode == "acceptEdits"
     assert captured["max_turns"] == 18  # the engine scalars come from the role too

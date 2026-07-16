@@ -472,6 +472,7 @@ class Scheduler:
         max_integrate_iterations: int = 3,
         max_review_rounds: int = 2,
         memory_writer: EpisodicStore | None = None,
+        company_root: Path | None = None,
         ledger: SqliteLedger | None = None,
         workforce: Workforce | None = None,
         beat_runner: BeatRunner | None = None,
@@ -521,6 +522,7 @@ class Scheduler:
         self._memory_writer = (
             memory_writer  # None = no episodic capture (the kernel is writer-agnostic)
         )
+        self._company_root = company_root  # None = no lattice beat-end gate (lattice is optional)
         self._clock = clock or _utc_now  # the time source the run loop stamps each pulse with
         self._sleep = (
             sleep or asyncio.sleep
@@ -1032,6 +1034,11 @@ class Scheduler:
             working_dir=working_dir,
             base_sha=base_sha,
         )
+        self._write_lattice_beat_end(
+            employee=employee,
+            run_id=run_id,
+            working_dir=working_dir,
+        )
         ledger.tasks.release_locks(task_id, run_id=run_id)
         ledger.wakes.mark_done(wake.id)
         self._record_cost(employee.id, task_id=task_id, run_id=run_id, result=result, now=now)
@@ -1074,6 +1081,40 @@ class Scheduler:
             artifacts=artifacts,
         )
         self._memory_writer.append(delta)
+
+    def _write_lattice_beat_end(
+        self,
+        *,
+        employee: Employee,
+        run_id: str,
+        working_dir: Path | None,
+    ) -> None:
+        """Post-beat lattice teaser file — gate-gated, non-blocking (integration-plan §4.4)."""
+        if self._company_root is None or working_dir is None:
+            return
+        harness = working_dir / ".harness"
+        path = harness / "lattice-beat-end.json"
+        try:
+            from chorus_tools._lattice_bridge import build_lattice_for_chorus
+
+            lattice = build_lattice_for_chorus(self._company_root)
+            if not lattice.gate_open(employee.id):
+                if path.exists():
+                    path.unlink()
+                return
+            payload = {
+                "gate_open": True,
+                "teaser": lattice.beat_end_teaser(employee.id),
+                "employee_id": employee.id,
+                "run_id": run_id,
+            }
+            harness.mkdir(parents=True, exist_ok=True)
+            path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+        except Exception as exc:
+            from chorus_tools._lattice_bridge import write_lattice_error
+
+            write_lattice_error(working_dir, site="scheduler.beat_end_gate", error=exc)
+            return
 
     def _write_integrate_packet(
         self, ledger: SqliteLedger, *, beat_runner: BeatRunner, task_id: str

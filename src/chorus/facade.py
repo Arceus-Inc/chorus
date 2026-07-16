@@ -17,6 +17,7 @@ import asyncio
 import sqlite3
 from collections.abc import Sequence
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from chorus.budgets import BudgetEnforcer
@@ -181,6 +182,7 @@ class Chorus:
         # export/import location (spec 09 §3, the GitWorkforce codec), not a second live store.
         workforce = LedgerWorkforce(store.employees)
         event_bus = EventBus()
+        memory_writer = EpisodicStore(memory_repo)
         scheduler = Scheduler(
             tick_interval_s=the_caps.tick_interval_s,
             max_concurrent_runs=the_caps.max_concurrent_runs,
@@ -189,15 +191,17 @@ class Chorus:
             beat_runner=beat_runner,
             beat_runner_for=resolved_runner_for,  # role-faithful per-employee runners (spec 06 §2)
             event_bus=event_bus,
+            company_root=Path(memory_repo).parent,  # lattice beat-end gate root (memory/ sibling)
             # budgets are inert until a policy is created — injecting the enforcer just arms the gates
             budget_enforcer=BudgetEnforcer(store, company_id=company_id),
             roles=registry,  # a task inherits its assignee role's DoD at intake (spec 04 §1 / 06 §2)
             landers=landers,  # the landing seam — a passed beat lands its role artifact (spec 04 §2)
+            memory_writer=memory_writer,  # every beat's SprintDelta lands in the episodic store
         )
         return cls(
             ledger=store,
             workforce=workforce,
-            memory_writer=EpisodicStore(memory_repo),
+            memory_writer=memory_writer,
             scheduler=scheduler,
             event_bus=event_bus,
             inspector=LedgerInspector(store),

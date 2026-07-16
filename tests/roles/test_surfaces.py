@@ -23,6 +23,10 @@ def test_skills_override_enables_discovery_and_skill_tool() -> None:
         if plugin.name == "engineer"
     ]
 
+    # The override's contract: skills discovery ON — the engineer ships default skills
+    # (cross-beat), so the override leaves the existing tuple untouched; the ("project",)
+    # placeholder only fills a previously-EMPTY tuple.
+    assert engineer.manifest.skills  # non-empty ⇒ dream skill discovery is enabled
     assert engineer.manifest.skills == engineer_plugin().manifest.skills
     assert "skill" in engineer.manifest.tools
 

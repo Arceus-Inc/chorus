@@ -73,6 +73,10 @@ def frontend_engineer_manifest() -> RoleManifest:
             # read your own past episodic beats — recency/keyword, outcome attached
             # (spec 07 §11). The reasoning-recall counterpart to memory_search's durable facts.
             "recall",
+            "lattice_context",
+            "lattice_packet",
+            "lattice_apply",
+            "skill_manage",
             # read-only egress for grounding (MDN/WAI-ARIA/framework docs) — needs the net tier below.
             "web_search",
             "web_extract",

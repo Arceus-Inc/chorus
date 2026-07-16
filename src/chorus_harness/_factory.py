@@ -46,10 +46,16 @@ from chorus.verification import VerificationPrincipal
 from chorus.workforce import Employee
 from chorus.workspace import CompanyWorkspace, default_work_root
 from chorus_employee import default_landers
+from chorus_employee._lattice import (
+    LATTICE_BEAT_START_HEADER,
+    LATTICE_DIRECTIVES_BLOCK,
+    LATTICE_SKILLS_ROOT,
+    read_lattice_consolidation_push,
+)
 from chorus_employee._recall import PLANNER_TOOLLESS_NOTE
 from chorus_employee._shared_skills import SHARED_SKILLS_ROOT
 from chorus_employee.reviewer._harness import reviewer_manifest
-from chorus_harness._skills import materialize_skills
+from chorus_harness._skills import materialize_skills, materialize_versioned_skills_into
 from chorus_harness._tdd_gate import TddProductionGate
 from chorus_harness._trust import apply_trust
 from chorus_tools import (
@@ -76,6 +82,9 @@ from chorus_tools import (
     analysis_tool,
     governance_tool,
 )
+from chorus_tools._lattice import _LATTICE_TOOLS, lattice_tool
+from chorus_tools._lattice_bridge import build_lattice_for_chorus, write_lattice_error
+from chorus_tools._skill_manage import SkillManageTool
 from chorus_tools._todo_flush_nudge import registry_with_todo_flush_nudge
 from chorus_tools.cms import CmsDraftTool, cms_backend_from_env
 from chorus_tools.delivery import (
@@ -165,6 +174,11 @@ _CHORUS_TO_DREAM_TOOL: dict[str, str] = {
     # via _capability_tool, so it must stay in this map for the subagent projection to keep it.
     "recall": "recall",
     "get_run": "get_run",
+    # lattice — semantic pattern consolidation (read-mostly; apply is gated). Identity-mapped like recall.
+    "lattice_context": "lattice_context",
+    "lattice_packet": "lattice_packet",
+    "lattice_apply": "lattice_apply",
+    "skill_manage": "skill_manage",
     # cms_draft — a chorus capability tool (reversible CMS write, §08 Channel). Identity-mapped for the
     # same reason as brand_lint: so the projection keeps it; it is registered in the materialize flow
     # (it needs the worktree for the Markdown backend, which _capability_tool has no access to).
@@ -212,6 +226,9 @@ _READ_ONLY_DREAM_SURFACE_TOOLS = frozenset(
         # facts), so an evaluator verifying past-beat context needs it just as much as the generator.
         "recall",
         "get_run",
+        # lattice_context is the read half of the lattice loop (consolidated patterns lookup) — safe
+        # for a verifier head; the write half (lattice_apply / skill_manage) stays generator-only.
+        "lattice_context",
         # A read-only reviewer that reads a large artifact (a long findings.md) gets its read_file
         # output offloaded to scratch with a "Full output saved to: <file>" pointer; without
         # read_offloaded it cannot see the overflow and wrongly fails with "content is truncated /
@@ -759,6 +776,8 @@ class EmployeeHarnessFactory:
 
         if "recall" in config.tools and "get_run" not in config.tools:
             config = replace(config, tools=(*config.tools, "get_run"))
+        if _LATTICE_TOOLS.intersection(config.tools):
+            config = replace(config, system_prompt=config.system_prompt + LATTICE_DIRECTIVES_BLOCK)
 
         # ``working_dir`` IS the worktree, because dream confines its tools to it — that is what
         # isolates one employee's edits from another's. A non-worktree posture falls back to a flat
@@ -777,6 +796,33 @@ class EmployeeHarnessFactory:
         else:
             root = self._company_root / employee.id
         root.mkdir(parents=True, exist_ok=True)
+        # Lattice sleep-as-verifier (integration §4.4): adjudicate fresh episodes at beat START, then
+        # inject the prior beat's gate-open consolidation teaser (if any) so the model consolidates
+        # FIRST this beat. Best-effort: a lattice failure never blocks the beat.
+        lattice = None
+        if _LATTICE_TOOLS.intersection(config.tools):
+            try:
+                lattice = build_lattice_for_chorus(
+                    self._company_root,
+                    canonical_skills_root=config.skills_root,
+                )
+                if lattice.has_fresh_episodes(employee.id):
+                    lattice.adjudicate(employee.id)
+            except Exception as exc:
+                lattice = None
+                write_lattice_error(root, site="materialize.adjudicate", error=exc)
+            lattice_push = read_lattice_consolidation_push(root)
+            if lattice_push:
+                config = replace(
+                    config,
+                    system_prompt=(
+                        config.system_prompt
+                        + "\n\n"
+                        + LATTICE_BEAT_START_HEADER
+                        + lattice_push
+                        + "\n"
+                    ),
+                )
         write_role_overlays(root, config)  # the employee's identity overlays the whole harness
         write_sandbox_config(
             root, config.sandbox
@@ -836,6 +882,33 @@ class EmployeeHarnessFactory:
             episodic = EpisodicRecallService(EpisodicStore(self._company_root / "memory"))
             registry.register(RecallTool(episodic), source=ToolSource.DEFAULT)
             registry.register(GetRunTool(episodic), source=ToolSource.DEFAULT)
+        # lattice tools: read consolidated patterns (context), build the consolidation packet, apply
+        # adjudicated proposals. Reuses the lattice built (or not) at beat start above. Advisory like
+        # the adjudicate step: a broken lattice skips these tools (with a breadcrumb), never the beat.
+        if _LATTICE_TOOLS.intersection(config.tools):
+            if lattice is None:
+                try:
+                    lattice = build_lattice_for_chorus(
+                        self._company_root,
+                        canonical_skills_root=config.skills_root,
+                    )
+                except Exception as exc:
+                    write_lattice_error(root, site="materialize.tool_registration", error=exc)
+            if lattice is not None:
+                for name in _LATTICE_TOOLS.intersection(config.tools):
+                    tool = lattice_tool(name, lattice)
+                    if tool is not None:
+                        registry.register(tool, source=ToolSource.DEFAULT)
+        if "skill_manage" in config.tools:
+            registry.register(
+                SkillManageTool(
+                    company_root=self._company_root,
+                    canonical_skills_root=(
+                        Path(config.skills_root) if config.skills_root else None
+                    ),
+                ),
+                source=ToolSource.DEFAULT,
+            )
         # execute_go_live pairs with cms_draft: it publishes the staged draft once the human approves
         # the stage_go_live gate. Needs BOTH the ledger (fail-closed gate check) and the worktree
         # (standing-draft + delivery indexes), so it registers here rather than in _capability_tool.
@@ -876,12 +949,28 @@ class EmployeeHarnessFactory:
         # model can reach the bundled reference files with its worktree-confined read_file — then point
         # dream's registry at that in-worktree copy, so SKILL.md load and reference reads share a path.
         skill_registry = None
+        # Lattice-carrying roles also get the lattice playbooks (lattice-context/lattice-consolidate)
+        # merged in as another shared root — same transport as cross-beat-recall, no extra mechanism.
+        # A role WITHOUT lattice tools must not see them: a skill telling you to call lattice_context
+        # when the tool isn't in your manifest is harmful guidance.
+        has_lattice = bool(_LATTICE_TOOLS.intersection(config.tools))
+        extra_roots = (
+            (SHARED_SKILLS_ROOT, LATTICE_SKILLS_ROOT) if has_lattice else (SHARED_SKILLS_ROOT,)
+        )
         if config.skills_root:
             skills_dir = materialize_skills(
                 root,
                 config.skills_root,
-                extra_roots=(SHARED_SKILLS_ROOT,),
+                extra_roots=extra_roots,
             )
+            if has_lattice:
+                # SkillStore HEAD (evolved/created procedural skills) overlays the canonical bundle —
+                # the DB is the source of truth; this materialized copy is the per-beat cache.
+                materialize_versioned_skills_into(
+                    skills_dir,
+                    company_root=self._company_root,
+                    employee_id=employee.id,
+                )
             skill_registry, _shadows = load_skill_registry(project_dirs=[skills_dir])
         harness = dream.build_harness(
             model=config.model or self._deployment,

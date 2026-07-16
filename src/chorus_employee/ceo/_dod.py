@@ -33,8 +33,21 @@ class ActionClass(StrEnum):
 # a human. Ordinary governance/decision prose ("decide where to focus", "recommend a direction") stays
 # a reviewed directive, not a human gate.
 _COMMIT_CUES = (
-    "spend", "hire", "fire", "terminate", "lay off", "acquire", "acquisition", "sign the",
-    "sign a", "wire", "pay out", "ship to production", "go live", "raise capital", "fundraise",
+    "spend",
+    "hire",
+    "fire",
+    "terminate",
+    "lay off",
+    "acquire",
+    "acquisition",
+    "sign the",
+    "sign a",
+    "wire",
+    "pay out",
+    "ship to production",
+    "go live",
+    "raise capital",
+    "fundraise",
 )
 
 
@@ -75,7 +88,16 @@ _DIRECTIVE_RUBRIC = (
     "read_file). Every approval, rejection, re-prioritisation, and archive the CEO performed this beat is "
     "recorded there as an append-only line. That ledger + `directive.md` are the COMPLETE evidence — the "
     "actions ARE auditable from artifacts. Do NOT fail the directive for lack of proof that the tool "
-    "calls happened; the ledger is that proof."
+    "calls happened; the ledger is that proof.\n\n"
+    "SCOPE — a standing company accumulates history: RECENTLY DECIDED and DECISIONS may contain "
+    "proposals adjudicated in PRIOR beats, and governance-ledger.md accumulates lines across beats. "
+    "Each ledger line is stamped `[run <id>]`; THIS beat's actions are exactly the lines whose run id "
+    "matches the current task id (the same `run-…` id in your exec-plan/eval paths). The directive "
+    "owes per-proposal coverage ONLY for the proposals adjudicated this beat by that measure; earlier "
+    "beats' decisions need at most a brief standing-direction summary, and omitting them per-id is "
+    "NOT a defect. Likewise this beat may record intermediate self-corrected actions (a priority set "
+    "then adjusted); judge the directive against the FINAL state it claims, not against every "
+    "intermediate ledger line."
 )
 
 

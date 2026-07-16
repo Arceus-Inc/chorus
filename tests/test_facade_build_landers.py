@@ -40,6 +40,13 @@ def test_build_defaults_to_no_landers() -> None:
     )  # unset → a passed beat lands without recording an artifact
 
 
+def test_build_threads_the_memory_writer_into_the_scheduler(tmp_path) -> None:
+    """The store the facade opens must be the one the scheduler captures beats into — otherwise a
+    front-door org runs every beat with NO episodic memory (recall/lattice see an empty store)."""
+    org = _build(memory_repo=str(tmp_path / "mem"))
+    assert org._scheduler._memory_writer is org._memory_writer
+
+
 def test_build_shares_an_injected_ledger() -> None:
     """``ledger=`` lets the consumer hand build the *same* store the harness factory holds — so a
     reviewed-build reviewer (a capability tool) records its verdict into one ledger, not two."""

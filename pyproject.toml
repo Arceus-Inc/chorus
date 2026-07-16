@@ -36,6 +36,7 @@ dependencies = [
   # Built-in analyst notebook/chart tools execute against the current environment.
   "pandas>=2.2",
   "matplotlib>=3.8",
+  "lattice",
 ]
 
 [project.optional-dependencies]
@@ -60,9 +61,10 @@ Repository = "https://github.com/Arceus-Inc/chorus"
 #   uv pip install -e ../dream -e .[dev]
 [tool.uv.sources]
 dream = { path = "../dream", editable = true }
+lattice = { path = "../lattice", editable = true }
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/chorus", "src/chorus_cli", "src/chorus_employee", "src/chorus_harness", "src/swarm"]
+packages = ["src/chorus", "src/chorus_cli", "src/chorus_employee", "src/chorus_harness", "src/chorus_tools", "src/swarm"]
 
 [tool.hatch.build.targets.sdist]
 include = ["src/chorus", "src/chorus_cli", "src/chorus_employee", "src/chorus_harness", "src/swarm", "tests", "README.md", "pyproject.toml"]
@@ -97,6 +99,9 @@ ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# tests/examples imports the examples/ scripts as a package — keep the repo root importable
+# under the `pytest` binary too (python -m pytest adds the cwd; the binary does not).
+pythonpath = ["."]
 asyncio_mode = "auto"
 addopts = ["-q", "--strict-markers"]
 markers = [
