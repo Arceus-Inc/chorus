@@ -243,6 +243,10 @@ class Chorus:
                 raise ValueError("root delegation requires an assignee lead")
             if goal_id is None or self._ledger.goals.get(goal_id) is None:
                 raise ValueError("root delegation requires an existing goal_id")
+            if delegation_max_team_size is not None and delegation_max_team_size < 1:
+                raise ValueError("delegation_max_team_size must be at least 1")
+            if delegation_spend_limit_cents is not None and delegation_spend_limit_cents < 0:
+                raise ValueError("delegation_spend_limit_cents cannot be negative")
             return self._submit_root_delegation(
                 intent,
                 lead=employee,
