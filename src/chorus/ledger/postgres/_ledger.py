@@ -44,6 +44,15 @@ def _baseline_checksum(statements: list[str]) -> str:
     return digest.hexdigest()
 
 
+def baseline() -> tuple[str, str, list[str]]:
+    """(baseline id, checksum, DDL statements) — for deployments that apply the engine schema in
+    their own migration stream (e.g. podium's alembic) instead of driver-side bootstrap. Writing
+    the returned id+checksum into ``chorus_schema_migrations`` makes every later
+    :meth:`PostgresLedger.open` probe see the baseline and skip DDL."""
+    statements = postgres_ddl()
+    return _BASELINE_ID, _baseline_checksum(statements), statements
+
+
 class PostgresLedger(LedgerCore):
     """The Postgres-backed :class:`~chorus.ledger.Ledger` (spec 12 §6)."""
 
@@ -112,4 +121,4 @@ class PostgresLedger(LedgerCore):
         self._pg_conn.close()
 
 
-__all__ = ["PostgresLedger", "SchemaDriftError"]
+__all__ = ["PostgresLedger", "SchemaDriftError", "baseline"]
