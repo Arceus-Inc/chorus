@@ -75,7 +75,7 @@ class ManagementProfileRepo:
 
     def active_profiles(self) -> builtins.list[ManagementProfile]:
         rows = self._conn.execute(
-            "SELECT * FROM management_profile WHERE active = 1 ORDER BY employee_id"
+            "SELECT * FROM management_profile WHERE active ORDER BY employee_id"
         ).fetchall()
         return [_row_to_profile(row) for row in rows]
 

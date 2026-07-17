@@ -1,4 +1,4 @@
--- Migration 0027 — portability: explicit columns replace SQLite-only constructs (spec 12 §4).
+-- Migration 0029 — portability: explicit columns replace SQLite-only constructs (spec 12 §4).
 --
 -- wake.task_id: the dispatch-order join previously used json_extract(payload, '$.task_id') —
 -- SQLite json1, no Postgres equivalent in the intersection. The task link becomes a real column,

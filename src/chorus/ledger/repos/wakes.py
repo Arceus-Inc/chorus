@@ -49,7 +49,7 @@ class WakeRepo:
             "coalesced_count, idempotency_key, run_id, created_at, claimed_at, finished_at) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, 0, NULL, ?, ?, NULL, NULL) "
             "ON CONFLICT (coalesce_key) WHERE status = 'queued' "
-            "DO UPDATE SET coalesced_count = coalesced_count + 1, payload = excluded.payload, "
+            "DO UPDATE SET coalesced_count = wake.coalesced_count + 1, payload = excluded.payload, "
             "task_id = excluded.task_id",
             (
                 wake.id,

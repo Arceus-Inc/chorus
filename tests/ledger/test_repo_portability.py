@@ -7,6 +7,7 @@ keeps it that way — same style as ``test_architecture_boundaries``.
 
 from __future__ import annotations
 
+import re
 from importlib.resources import files
 from pathlib import Path
 
@@ -35,5 +36,38 @@ def test_repos_use_no_engine_specific_sql(repo_file: Path) -> None:
     ).lower()
     # rowid is SQLite's implicit physical id; Postgres has none. Insertion order must be explicit
     # data (a position column) or derived from time-ordered ids — never physical storage order.
-    for construct in ("rowid", "pragma", "json_extract", "json_each", " glob "):
+    banned = (
+        "rowid",
+        "pragma",
+        "json_extract",
+        "json_each",
+        " glob ",
+        "ifnull",
+        "group_concat",
+        "strftime",
+        "datetime(",
+        "julianday",
+        "insert or ",
+        "replace into",
+        "limit -1",
+    )
+    for construct in banned:
         assert construct not in source, f"{repo_file.name} uses {construct!r} — not portable"
+
+
+_BOOLEAN_COLUMNS = (
+    "active",
+    "can_lead",
+    "can_subdelegate",
+    "is_primary",
+    "hard_stop_enabled",
+)
+_BOOL_LITERAL = re.compile(rf"({'|'.join(_BOOLEAN_COLUMNS)})\s*(=|<>|!=)\s*[01]\b")
+
+
+@pytest.mark.parametrize("repo_file", _REPO_FILES, ids=lambda p: p.name)
+def test_repos_never_compare_boolean_columns_to_integer_literals(repo_file: Path) -> None:
+    """SQLite stores flags as 0/1; Postgres as boolean. ``active = 1`` breaks on Postgres — the
+    portable predicate is the bare boolean expression (``WHERE active``) or a bound parameter."""
+    match = _BOOL_LITERAL.search(repo_file.read_text())
+    assert match is None, f"{repo_file.name}: {match.group(0)!r} — compare booleans as booleans"
