@@ -382,3 +382,45 @@ def test_runs_running_lists_live_beats_oldest_first(ledger: Ledger) -> None:
             )
         )
     assert [run.id for run in ledger.runs.running()] == [uid("rr-r1"), uid("rr-r2")]
+
+
+def test_cost_events_grouped_spend(ledger: Ledger) -> None:
+    from datetime import UTC, datetime
+
+    from chorus.ledger._models import CostEvent
+
+    ledger.employees.create(Employee(id="ada", name="Ada", role="engineer"))
+    ledger.employees.create(Employee(id="bex", name="Bex", role="pm"))
+    for n, (eid, model, cents) in enumerate(
+        [("ada", "gpt-x", 300), ("ada", "gpt-mini", 50), ("bex", "gpt-x", 100)]
+    ):
+        ledger.cost_events.record(
+            CostEvent(
+                id=uid(f"ce-{n}"),
+                employee_id=eid,
+                provider="dream",
+                model=model,
+                cost_cents=cents,
+                input_tokens=10 * (n + 1),
+                output_tokens=5,
+                occurred_at=datetime(2026, 6, 1 + n, 12, 0, tzinfo=UTC),
+            )
+        )
+
+    by_model = {row.key: row for row in ledger.cost_events.grouped("model")}
+    assert by_model["gpt-x"].cost_cents == 400
+    assert by_model["gpt-mini"].cost_cents == 50
+    assert by_model["gpt-x"].events == 2
+
+    by_employee = {row.key: row for row in ledger.cost_events.grouped("employee")}
+    assert by_employee["ada"].cost_cents == 350
+
+    by_day = {row.key: row for row in ledger.cost_events.grouped("day")}
+    assert by_day["2026-06-01"].cost_cents == 300
+    assert len(by_day) == 3
+
+    try:
+        ledger.cost_events.grouped("provider; DROP TABLE cost_event")  # type: ignore[arg-type]
+        raise AssertionError("unreachable")
+    except ValueError:
+        pass  # closed whitelist — never interpolate a caller string
