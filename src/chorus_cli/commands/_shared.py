@@ -140,9 +140,7 @@ def _maybe_bootstrap_employee(ctx: CommandContext) -> None:
     if ledger.employees.list():
         return
     try:
-        created = LedgerWorkforce(ledger.employees).hire(
-            name="employee", role="backend_engineer"
-        )
+        created = LedgerWorkforce(ledger.employees).hire(name="employee", role="backend_engineer")
     except Exception as exc:
         # The demo can continue without the seed employee, but the operator should know why the
         # org came up empty rather than have it fail silently.

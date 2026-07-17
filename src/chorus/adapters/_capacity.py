@@ -93,9 +93,7 @@ class CapacityAdapter:
 
         policies = [
             policy
-            for policy in self._ledger.budget_policies.by_scope(
-                BudgetScope.EMPLOYEE, employee_id
-            )
+            for policy in self._ledger.budget_policies.by_scope(BudgetScope.EMPLOYEE, employee_id)
             if policy.metric == "cost_cents"
         ]
         if not policies:

@@ -114,7 +114,7 @@ def decompose(
     if claim is None:
         claim = ledger.decomposition_claims.open(
             DecompositionClaim(
-                id=mint_id("claim"),
+                id=mint_id(),
                 source_task_id=source_task_id,
                 accepted_plan_revision_id=accepted_plan_revision_id,
                 owner_run_id=owner_run_id,
@@ -162,7 +162,7 @@ def _fail_closed(ledger: SqliteLedger, source: Task, *, cap: int) -> DepthCapped
         return DepthCapped(existing)  # already surfaced — a retry must not double-open
     recovery = ledger.recovery_actions.open(
         RecoveryAction(
-            id=mint_id("rec"),
+            id=mint_id(),
             source_task_id=source.id,
             kind=RecoveryKind.STRANDED,
             owner_employee_id=source.assignee_employee_id,

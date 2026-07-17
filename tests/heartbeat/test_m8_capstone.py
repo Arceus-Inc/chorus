@@ -362,7 +362,6 @@ async def test_specialist_nested_delegation_capstone_folds_verified_root_exactly
     assert all(
         run.principal_id == "system-verifier"
         and run.employee_id in {"root-lead", "nested-lead"}
-        and run.id.startswith("rev_")
         and run.lease_expires_at is not None
         and run.finished_at is not None
         for run in verification_runs

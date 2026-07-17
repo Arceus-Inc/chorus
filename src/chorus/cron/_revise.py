@@ -61,7 +61,7 @@ def revise_routine(
     new_env = base.env if env is _UNSET else cast("dict[str, str] | None", env)
     assert_no_inline_secrets(new_env)  # fail-closed: env binds refs, never raw secrets (spec 13 §3)
     proposed = RoutineRevision(
-        id=mint_id("rrev"),
+        id=mint_id(),
         routine_id=routine_id,
         revision_no=routine.latest_revision_no + 1,
         intent_template=intent_template if intent_template is not None else base.intent_template,
@@ -90,7 +90,7 @@ def restore_routine(
         raise NoRoutineRevision(f"routine {routine_id!r} has no revision {revision_no}")
 
     restored = RoutineRevision(
-        id=mint_id("rrev"),
+        id=mint_id(),
         routine_id=routine_id,
         revision_no=routine.latest_revision_no + 1,
         intent_template=source.intent_template,

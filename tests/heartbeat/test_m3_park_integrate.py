@@ -383,7 +383,9 @@ async def test_adaptive_integrate_submits_a_follow_up_then_re_integrates_to_done
         await sched.drain()
 
     assert ledger.tasks.get("M").status is TaskStatus.DONE  # type: ignore[union-attr]
-    assert all(result.child_id is not None for result in beat.submission_results), beat.submission_results
+    assert all(result.child_id is not None for result in beat.submission_results), (
+        beat.submission_results
+    )
     assert len(ledger.tasks.children("M")) == 3  # api, ui, + the submitted polish
     assert ledger.tasks.all_children_terminal("M")
     # the manager REACTED: kickoff + integrate#1 (submitted) + integrate#2 (accepted) = 3 model beats

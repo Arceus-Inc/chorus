@@ -108,12 +108,8 @@ def test_snapshot_matches_manual_profession_counts(ledger: SqliteLedger) -> None
             status=RunStatus.RUNNING,
         )
     )
-    ledger.wakes.enqueue(
-        Wake(id="wake-a", employee_id="eng-a", reason=WakeReason.MANUAL)
-    )
-    ledger.wakes.enqueue(
-        Wake(id="wake-b", employee_id="eng-b", reason=WakeReason.MANUAL)
-    )
+    ledger.wakes.enqueue(Wake(id="wake-a", employee_id="eng-a", reason=WakeReason.MANUAL))
+    ledger.wakes.enqueue(Wake(id="wake-b", employee_id="eng-b", reason=WakeReason.MANUAL))
 
     adapter = CapacityAdapter(ledger, company_id="company", clock=lambda: _NOW)
 
@@ -147,9 +143,7 @@ def test_unbounded_employee_makes_profession_headroom_unbounded(
     _employee(ledger, "eng-b", "engineer")
     _budget(ledger, "eng-a", amount=1_000)
 
-    snapshot = CapacityAdapter(
-        ledger, company_id="company", clock=lambda: _NOW
-    ).snapshot()
+    snapshot = CapacityAdapter(ledger, company_id="company", clock=lambda: _NOW).snapshot()
 
     assert snapshot[0].budget_headroom_cents is None
 
@@ -175,9 +169,7 @@ def test_terminal_tasks_and_finished_runs_are_not_live_capacity(
         )
     )
 
-    capacity = CapacityAdapter(
-        ledger, company_id="company", clock=lambda: _NOW
-    ).snapshot()[0]
+    capacity = CapacityAdapter(ledger, company_id="company", clock=lambda: _NOW).snapshot()[0]
 
     assert capacity.running == 0
     assert capacity.assigned_nonterminal == 0

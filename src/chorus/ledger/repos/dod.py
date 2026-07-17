@@ -33,7 +33,7 @@ class DodRepo:
 
     def create(self, task_id: str, verifier: Verifier, *, dod_id: str | None = None) -> Dod:
         now = utcnow_iso()
-        did = dod_id or mint_id("dod")
+        did = dod_id or mint_id()
         spec: dict[str, object] = asdict(verifier.spec)
         kind = verifier.kind.value
         self._conn.execute(

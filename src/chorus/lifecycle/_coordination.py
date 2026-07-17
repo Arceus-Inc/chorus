@@ -37,7 +37,7 @@ def assign_task(
             return None
         wake = ledger.wakes.enqueue(
             Wake(
-                id=mint_id("wake"),
+                id=mint_id(),
                 employee_id=employee_id,
                 reason=WakeReason.TASK_ASSIGNED,
                 payload={"task_id": task_id},
@@ -70,7 +70,7 @@ def deliver_message(ledger: SqliteLedger, message: Message) -> Wake:
         sent = ledger.messages.send(message)
         wake = ledger.wakes.enqueue(
             Wake(
-                id=mint_id("wake"),
+                id=mint_id(),
                 employee_id=message.to_employee_id,
                 reason=WakeReason.MESSAGE,
                 payload={"message_id": sent.id},

@@ -270,7 +270,7 @@ class Chorus:
         employee_id = employee.id if employee is not None else None
         task = self._ledger.tasks.submit(
             Task(
-                id=mint_id("task"),
+                id=mint_id(),
                 intent=intent,
                 priority=priority,
                 goal_id=goal_id,
@@ -318,7 +318,7 @@ class Chorus:
                     raise RuntimeError("eligible delegation lead has no management profile")
                 task = self._ledger.tasks.submit(
                     Task(
-                        id=mint_id("task"),
+                        id=mint_id(),
                         intent=intent,
                         priority=priority,
                         execution_mode=ExecutionMode.DELEGATION,

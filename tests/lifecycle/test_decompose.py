@@ -198,7 +198,9 @@ def test_restart_after_claim_open_failure_resumes_fan_out(
 
     lg1 = SqliteLedger.open(db)
     _seed_source(lg1)
-    monkeypatch.setattr(lg1, "create_child", lambda *_args: (_ for _ in ()).throw(RuntimeError("crash")))
+    monkeypatch.setattr(
+        lg1, "create_child", lambda *_args: (_ for _ in ()).throw(RuntimeError("crash"))
+    )
     with pytest.raises(RuntimeError, match="crash"):
         decompose(
             lg1,

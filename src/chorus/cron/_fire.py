@@ -68,7 +68,7 @@ def fire_routine(ledger: SqliteLedger, trigger: RoutineTrigger, *, now: datetime
         return None
 
     idempotency_key = f"{routine.id}:{trigger.id}:{edge.isoformat()}"
-    run_id = mint_id("rr")
+    run_id = mint_id()
 
     # Concurrency policy (spec 03 §4): while a prior task for this routine is still open,
     # ``skip_if_active`` suppresses the firing and ``coalesce`` folds it onto the live run (linking
@@ -107,7 +107,7 @@ def fire_routine(ledger: SqliteLedger, trigger: RoutineTrigger, *, now: datetime
         return None  # a duplicate firing already landed this edge
 
     if routine.target is RoutineTarget.SPAWN_TASK:
-        task_id = mint_id("task")
+        task_id = mint_id()
         ledger.tasks.submit(
             Task(
                 id=task_id,
@@ -124,7 +124,7 @@ def fire_routine(ledger: SqliteLedger, trigger: RoutineTrigger, *, now: datetime
         ledger.routine_runs.dispatch(run_id, linked_task_id=task_id)
         ledger.wakes.enqueue(
             Wake(
-                id=mint_id("wake"),
+                id=mint_id(),
                 employee_id=routine.employee_id,
                 reason=WakeReason.CRON_DUE,
                 payload={"task_id": task_id},
@@ -135,7 +135,7 @@ def fire_routine(ledger: SqliteLedger, trigger: RoutineTrigger, *, now: datetime
     # next_beat — no new task, just extra context delivered on the employee's next beat.
     ledger.wakes.enqueue(
         Wake(
-            id=mint_id("wake"),
+            id=mint_id(),
             employee_id=routine.employee_id,
             reason=WakeReason.CRON_DUE,
             payload={"note": intent},

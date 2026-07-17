@@ -132,9 +132,7 @@ def test_terminal_contract_releases_reporting_termination_and_profile_guards(
     ledger: SqliteLedger,
 ) -> None:
     workforce = _seed_active_contract(ledger)
-    ledger.delegation_contracts.update_status(
-        "task-release", DelegationContractStatus.DONE
-    )
+    ledger.delegation_contracts.update_status("task-release", DelegationContractStatus.DONE)
 
     workforce.reassign("member", reports_to="other")
     workforce.terminate("lead")

@@ -32,7 +32,7 @@ def record_activity(
     """Append one immutable governance-audit row (spec 08 §5). Kernel actor when ``actor`` is null."""
     ledger.activity.append(
         Activity(
-            id=mint_id("act"),
+            id=mint_id(),
             verb=verb,
             subject_kind=subject_kind,
             subject_id=subject_id,

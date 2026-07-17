@@ -21,9 +21,7 @@ class ManagementProfileRepo:
         if current is None and profile.version != 1:
             raise ValueError("a new management profile must start at version 1")
         if current is not None and profile.version <= current.version:
-            raise ValueError(
-                f"management profile version must increase beyond {current.version}"
-            )
+            raise ValueError(f"management profile version must increase beyond {current.version}")
         if current is not None and _weakens(current, profile):
             refs = self._active_contract_refs(profile.employee_id)
             if refs:
@@ -123,20 +121,18 @@ def _row_to_profile(row: sqlite3.Row) -> ManagementProfile:
 
 def _weakens(current: ManagementProfile, candidate: ManagementProfile) -> bool:
     professions_narrowed = (
-        (not current.allowed_professions and bool(candidate.allowed_professions))
-        or (
-            bool(current.allowed_professions)
-            and bool(candidate.allowed_professions)
-            and not set(current.allowed_professions).issubset(candidate.allowed_professions)
-        )
+        not current.allowed_professions and bool(candidate.allowed_professions)
+    ) or (
+        bool(current.allowed_professions)
+        and bool(candidate.allowed_professions)
+        and not set(current.allowed_professions).issubset(candidate.allowed_professions)
     )
     spend_narrowed = (
-        (current.spend_limit_cents is None and candidate.spend_limit_cents is not None)
-        or (
-            current.spend_limit_cents is not None
-            and candidate.spend_limit_cents is not None
-            and candidate.spend_limit_cents < current.spend_limit_cents
-        )
+        current.spend_limit_cents is None and candidate.spend_limit_cents is not None
+    ) or (
+        current.spend_limit_cents is not None
+        and candidate.spend_limit_cents is not None
+        and candidate.spend_limit_cents < current.spend_limit_cents
     )
     return (
         (current.active and not candidate.active)

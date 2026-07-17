@@ -58,9 +58,13 @@ class StaffingRequestService:
         counts = Counter[str]()
         for need in needs:
             counts[need.profession] += need.count
-        normalized = tuple(StaffingNeed(profession, count) for profession, count in sorted(counts.items()))
+        normalized = tuple(
+            StaffingNeed(profession, count) for profession, count in sorted(counts.items())
+        )
         if profile.allowed_professions and not set(counts).issubset(profile.allowed_professions):
-            raise ValueError("staffing request names a profession outside approved profession authority")
+            raise ValueError(
+                "staffing request names a profession outside approved profession authority"
+            )
         current_members = self._ledger.team_members.members_of(contract.team_id)
         if len(current_members) + sum(counts.values()) > contract.max_team_size:
             raise ValueError("staffing request exceeds the pinned contract Team size")
@@ -76,7 +80,7 @@ class StaffingRequestService:
             raise ValueError("existing legal Team candidates already cover the staffing request")
 
         candidate = StaffingRequest(
-            id=mint_id("staffing-request"),
+            id=mint_id(),
             task_id=task.id,
             goal_id=task.goal_id,
             team_id=contract.team_id,

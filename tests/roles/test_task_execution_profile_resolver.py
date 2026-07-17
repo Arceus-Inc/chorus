@@ -128,9 +128,9 @@ def test_delegation_mode_returns_only_the_management_phase_contract(
     employee, task = _seed_authorized_engineer(ledger)
     ledger.delegation_contracts.update_status(task.id, status)
 
-    resolved = ExecutionProfileResolver(
-        RoleRegistry.from_plugins(default_roles()), ledger
-    ).resolve(employee, task)
+    resolved = ExecutionProfileResolver(RoleRegistry.from_plugins(default_roles()), ledger).resolve(
+        employee, task
+    )
 
     assert resolved.config.tools == expected_tools
     assert resolved.config.memory_scope == "team"

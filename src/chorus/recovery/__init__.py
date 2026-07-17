@@ -165,7 +165,7 @@ def _wake_parent_if_subtree_terminal(ledger: SqliteLedger, *, parent_id: str | N
         return
     ledger.wakes.enqueue(
         Wake(
-            id=mint_id("wake"),
+            id=mint_id(),
             employee_id=parent.assignee_employee_id,
             reason=WakeReason.CHILDREN_DONE,
             payload={"task_id": parent_id},
@@ -224,7 +224,7 @@ def _reconcile_stranded(ledger: SqliteLedger, *, now: datetime) -> tuple[list[st
 def _enqueue_recovery_wake(ledger: SqliteLedger, task: Task, *, kind: str, key: str) -> None:
     ledger.wakes.enqueue(
         Wake(
-            id=mint_id("wake"),
+            id=mint_id(),
             employee_id=task.assignee_employee_id,  # type: ignore[arg-type]  # agent-owned scan
             reason=WakeReason.RECOVERY,
             payload={"kind": kind, "task_id": task.id, **_CHEAP_LANE},
@@ -242,7 +242,7 @@ def _escalate(ledger: SqliteLedger, task: Task, *, cause: str) -> str | None:
     """
     if ledger.recovery_actions.active_for_source(task.id) is not None:
         return None
-    action_id = mint_id("rec")
+    action_id = mint_id()
     manager = _manager_of(ledger, task.assignee_employee_id)
     with ledger.transaction():
         if task.status is not TaskStatus.BLOCKED:
@@ -268,7 +268,7 @@ def _escalate(ledger: SqliteLedger, task: Task, *, cause: str) -> str | None:
         if manager is not None:
             ledger.wakes.enqueue(
                 Wake(
-                    id=mint_id("wake"),
+                    id=mint_id(),
                     employee_id=manager,
                     reason=WakeReason.RECOVERY,
                     payload={
@@ -295,7 +295,7 @@ def _open_recovery(ledger: SqliteLedger, task: Task, *, cause: str) -> str | Non
     """Open an explicit recovery card without a status change (the card IS the live path)."""
     if ledger.recovery_actions.active_for_source(task.id) is not None:
         return None
-    action_id = mint_id("rec")
+    action_id = mint_id()
     ledger.recovery_actions.open(
         RecoveryAction(
             id=action_id,

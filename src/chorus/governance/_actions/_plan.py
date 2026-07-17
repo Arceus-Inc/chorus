@@ -76,7 +76,7 @@ class PlanApprovalAction:
             return 0
         self._ledger.wakes.enqueue(
             Wake(
-                id=mint_id("wake"),
+                id=mint_id(),
                 employee_id=employee_id,
                 reason=reason,
                 payload={"task_id": task_id},
@@ -90,7 +90,7 @@ class PlanApprovalAction:
         parent = self._ledger.tasks.get(parent_id)
         self._ledger.recovery_actions.open(
             RecoveryAction(
-                id=mint_id("rec"),
+                id=mint_id(),
                 source_task_id=parent_id,
                 kind=RecoveryKind.STRANDED,
                 owner_employee_id=parent.assignee_employee_id if parent is not None else None,

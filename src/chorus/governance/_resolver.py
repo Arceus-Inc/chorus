@@ -77,7 +77,7 @@ class GovernanceResolver:
         The exact-once index rejects a second open gate on the same subject (a duplicate raises)."""
         handler = self._registry.get(action)
         approval = Approval(
-            id=mint_id("ap"),
+            id=mint_id(),
             subject_kind=subject_kind,
             subject_id=subject_id,
             reason=reason,
@@ -180,7 +180,7 @@ class GovernanceResolver:
     def _audit(self, verb: ActivityVerb, approval: Approval, *, actor: str | None) -> None:
         self._ledger.activity.append(
             Activity(
-                id=mint_id("act"),
+                id=mint_id(),
                 verb=verb,
                 subject_kind=approval.subject_kind.value,
                 subject_id=approval.subject_id,

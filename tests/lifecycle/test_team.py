@@ -97,9 +97,7 @@ def test_validate_membership_rejects_out_of_policy_candidates(
 
 def test_add_member_accepts_active_allowed_direct_report_and_audits(ledger: SqliteLedger) -> None:
     lead = _seed_lead(ledger)
-    member = Employee(
-        id="member", name="Member", role="designer", reports_to=lead.id
-    )
+    member = Employee(id="member", name="Member", role="designer", reports_to=lead.id)
     ledger.employees.create(member)
     policy = MissionTeamPolicy(ledger)
     team = policy.create_for_root(lead, "goal-release")

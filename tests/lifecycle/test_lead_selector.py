@@ -46,9 +46,7 @@ def _candidate(
             can_lead=True,
             max_delegation_depth=2,
             max_team_size=5,
-            allowed_professions=tuple(
-                dict.fromkeys(("engineer", "designer", *report_professions))
-            ),
+            allowed_professions=tuple(dict.fromkeys(("engineer", "designer", *report_professions))),
             version=1,
         )
     )
@@ -249,9 +247,7 @@ def test_hierarchical_requirements_select_shallow_ceo_over_leaf_specialists(
             StaffingRequirement(
                 "frontend_engineer", coverage="subtree", outcome_area="engineering"
             ),
-            StaffingRequirement(
-                "backend_engineer", coverage="subtree", outcome_area="engineering"
-            ),
+            StaffingRequirement("backend_engineer", coverage="subtree", outcome_area="engineering"),
         ),
     )
 

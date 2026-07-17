@@ -38,7 +38,7 @@ class BoardApprovalAction:
     def on_approve(self, approval: Approval) -> ActionOutcome:
         self._ledger.activity.append(
             Activity(
-                id=mint_id("act"),
+                id=mint_id(),
                 verb=ActivityVerb.PROMOTED,
                 subject_kind="artifact",
                 subject_id=approval.subject_id,
@@ -62,7 +62,7 @@ class BoardApprovalAction:
             return 0
         self._ledger.wakes.enqueue(
             Wake(
-                id=mint_id("wake"),
+                id=mint_id(),
                 employee_id=employee_id,
                 reason=WakeReason.RECOVERY,
                 payload={"task_id": task_id},

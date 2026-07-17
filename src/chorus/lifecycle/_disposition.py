@@ -94,7 +94,7 @@ def reconcile_disposition(task: Task, ledger: SqliteLedger, *, now: datetime) ->
 def _enqueue_handoff(task: Task, ledger: SqliteLedger, key: str) -> Disposition:
     ledger.wakes.enqueue(
         Wake(
-            id=mint_id("wake"),
+            id=mint_id(),
             employee_id=task.assignee_employee_id,  # type: ignore[arg-type]  # guarded above
             reason=WakeReason.RECOVERY,
             # carry the structured choice menu so the beat picks exactly one disposition (spec 02 §5)
@@ -111,7 +111,7 @@ def _enqueue_handoff(task: Task, ledger: SqliteLedger, key: str) -> Disposition:
 
 def _escalate(task: Task, ledger: SqliteLedger) -> Disposition:
     """Exhausted ladder: surface the stuck task as ``blocked`` + a recovery owner (spec 02 §5)."""
-    action_id = mint_id("rec")
+    action_id = mint_id()
     with ledger.transaction():
         ledger.tasks.transition(task.id, TaskStatus.BLOCKED)
         ledger.recovery_actions.open(

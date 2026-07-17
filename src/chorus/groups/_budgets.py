@@ -43,7 +43,7 @@ class BudgetsFacade:
             return updated
         return self._ledger.budget_policies.create(
             BudgetPolicy(
-                id=mint_id("bp"),
+                id=mint_id(),
                 scope_type=scope,
                 scope_id=scope_id,
                 amount=amount_cents,

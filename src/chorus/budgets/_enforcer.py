@@ -149,7 +149,7 @@ class BudgetEnforcer:
     ) -> BudgetIncident | None:
         if self._open_hard_incident(policy.id) is not None:
             return None  # already paused — the hard incident persists across windows (idempotent)
-        incident_id = mint_id("inc")
+        incident_id = mint_id()
         self._ledger.budget_incidents.open(
             BudgetIncident(
                 id=incident_id,
@@ -160,7 +160,7 @@ class BudgetEnforcer:
                 window_start=self._incident_window(policy, now),
             )
         )
-        approval_id = mint_id("ap")
+        approval_id = mint_id()
         self._ledger.approvals.request(
             Approval(
                 id=approval_id,
@@ -181,7 +181,7 @@ class BudgetEnforcer:
         for incident in self._ledger.budget_incidents.open_for_policy(policy.id):
             if incident.threshold_type is BudgetThreshold.SOFT and incident.window_start == window:
                 return None  # already warned for this window
-        incident_id = mint_id("inc")
+        incident_id = mint_id()
         self._ledger.budget_incidents.open(
             BudgetIncident(
                 id=incident_id,

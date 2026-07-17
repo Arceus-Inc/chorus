@@ -47,7 +47,5 @@ def test_runs_in_the_worktree(tmp_path: Path) -> None:
 
 
 def test_timeout_is_a_nonzero_exit(tmp_path: Path) -> None:
-    code, output = _run_verify_command(
-        tmp_path, _python("import time; time.sleep(5)"), timeout_s=1
-    )
+    code, output = _run_verify_command(tmp_path, _python("import time; time.sleep(5)"), timeout_s=1)
     assert code != 0 and "timeout" in output.lower()

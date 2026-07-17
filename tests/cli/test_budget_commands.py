@@ -48,7 +48,7 @@ def _spend(ledger: SqliteLedger, employee_id: str, cents: int) -> None:
 def test_set_employee_budget_creates_a_policy(ledger: SqliteLedger) -> None:
     ledger.employees.create(Employee(id="alice", name="A", role="engineer"))
     _, out = _run("budget set employee alice 500", _session(ledger))
-    assert "set bp" in out and "alice" in out
+    assert out.startswith("set ") and "employee alice cap 500 cents" in out
     policies = ledger.budget_policies.by_scope(BudgetScope.EMPLOYEE, "alice")
     assert len(policies) == 1 and policies[0].amount == 500
 

@@ -16,6 +16,7 @@ from chorus_harness import EmployeeHarnessFactory
 
 pytestmark = pytest.mark.unit
 
+
 def _factory(tmp_path) -> EmployeeHarnessFactory:
     return EmployeeHarnessFactory(
         api_key="x",
@@ -37,9 +38,7 @@ def test_every_default_archetype_materializes(tmp_path) -> None:
 
 
 def test_backend_engineer_can_run_commands(tmp_path) -> None:
-    mat = _factory(tmp_path).materialize(
-        Employee(id="e", name="E", role="backend_engineer")
-    )
+    mat = _factory(tmp_path).materialize(Employee(id="e", name="E", role="backend_engineer"))
     assert "run_command" in mat.config.tools
     assert mat.config.sandbox == "unrestricted"
 

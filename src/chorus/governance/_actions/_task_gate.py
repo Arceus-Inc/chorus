@@ -78,7 +78,7 @@ class TaskGateAction:
             return 0
         self._ledger.wakes.enqueue(
             Wake(
-                id=mint_id("wake"),
+                id=mint_id(),
                 employee_id=task.assignee_employee_id,
                 reason=WakeReason.TASK_ASSIGNED,
                 payload={"task_id": task_id},

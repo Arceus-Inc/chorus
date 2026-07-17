@@ -329,7 +329,7 @@ async def test_approve_lands_the_deliverable_done(ledger: SqliteLedger, tmp_path
 
     assert ledger.tasks.get("spec").status is TaskStatus.DONE  # type: ignore[union-attr]
     assert not [
-        r for r in ledger.runs.for_task("spec") if r.id.startswith("rev_")
+        r for r in ledger.runs.for_task("spec") if r.principal_kind == "system"
     ]  # one run, no review beat
     assert not [a for a in ledger.artifacts.list_for_task("spec") if a.type.value == "verdict"]
 
@@ -374,7 +374,7 @@ async def test_review_run_carries_a_lease(ledger: SqliteLedger, tmp_path: Path) 
     await sched.tick_once()
     await sched.drain()
 
-    review_runs = [r for r in ledger.runs.for_task("code") if r.id.startswith("rev_")]
+    review_runs = [r for r in ledger.runs.for_task("code") if r.principal_kind == "system"]
     assert review_runs and all(r.lease_expires_at is not None for r in review_runs)
 
 
@@ -453,7 +453,7 @@ async def test_system_verifier_reviews_without_a_reviewer_employee(
 
     assert ledger.tasks.get("code").status is TaskStatus.DONE  # type: ignore[union-attr]
     assert all(employee.role != "reviewer" for employee in ledger.employees.list())
-    review_runs = [run for run in ledger.runs.for_task("code") if run.id.startswith("rev_")]
+    review_runs = [run for run in ledger.runs.for_task("code") if run.principal_kind == "system"]
     assert len(review_runs) == 1
     assert review_runs[0].employee_id == "dev"
     assert review_runs[0].principal_kind == "system"

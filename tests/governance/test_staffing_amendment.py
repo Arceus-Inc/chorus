@@ -265,9 +265,7 @@ def test_lead_tool_opens_request_and_ceo_catalog_surfaces_it(
             _ctx(tmp_path),
         )
     )
-    catalog = asyncio.run(
-        WorkforceCatalogReadTool(ledger, _roles()).execute({}, _ctx(tmp_path))
-    )
+    catalog = asyncio.run(WorkforceCatalogReadTool(ledger, _roles()).execute({}, _ctx(tmp_path)))
 
     assert result.is_error is False
     assert result.structured["status"] == "open"

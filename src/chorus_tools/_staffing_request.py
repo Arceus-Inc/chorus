@@ -37,9 +37,7 @@ class StaffingRequestTool(BaseTool):
     def __init__(self, ledger: SqliteLedger) -> None:
         self._service = StaffingRequestService(ledger)
 
-    async def execute(
-        self, input: dict[str, object], ctx: ToolExecutionContext
-    ) -> ToolResult:
+    async def execute(self, input: dict[str, object], ctx: ToolExecutionContext) -> ToolResult:
         try:
             args = StaffingRequestInput.model_validate(input)
             beat = BeatContext.read(ctx.working_dir)
@@ -47,9 +45,7 @@ class StaffingRequestTool(BaseTool):
                 task_id=beat.task_id,
                 requested_by_employee_id=beat.employee_id,
                 rationale=args.rationale,
-                needs=tuple(
-                    StaffingNeed(need.profession, need.count) for need in args.needs
-                ),
+                needs=tuple(StaffingNeed(need.profession, need.count) for need in args.needs),
             )
         except (ValidationError, ValueError) as exc:
             return ToolResult(

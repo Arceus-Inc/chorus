@@ -60,7 +60,7 @@ from chorus.ledger.repos import (
 
 
 def _wake_id() -> str:
-    return mint_id("wake")
+    return mint_id()
 
 
 class _LedgerConnection(sqlite3.Connection):

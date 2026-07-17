@@ -55,8 +55,7 @@ class ActiveDelegationConflict(ChorusError):
         self.contract_ids = self.task_ids
         self.team_ids = tuple(sorted({team_id for _, team_id in contract_refs}))
         super().__init__(
-            "active delegation contracts block this org mutation: "
-            + ", ".join(self.task_ids)
+            "active delegation contracts block this org mutation: " + ", ".join(self.task_ids)
         )
 
 

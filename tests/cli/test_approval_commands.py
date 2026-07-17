@@ -41,7 +41,7 @@ def test_open_parks_the_task_and_lists_it(ledger: SqliteLedger) -> None:
     _task(ledger)
     session = _session(ledger)
     _, out = _run("approval open t1 acceptance sign off the spec", session)
-    assert "opened ap" in out and "blocked" in out
+    assert out.startswith("opened ") and "task blocked" in out
     assert ledger.tasks.get("t1").status is TaskStatus.BLOCKED  # type: ignore[union-attr]
     _, listed = _run("approvals", session)  # alias
     assert "t1" in listed and "acceptance" in listed

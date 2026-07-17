@@ -35,7 +35,7 @@ class DependencyRepo:
                 f"{task_id!r} depends on {depends_on_id!r} would create a cycle"
             )
         now = utcnow_iso()
-        edge_id = mint_id("dep")
+        edge_id = mint_id()
         self._conn.execute(
             "INSERT INTO task_dependency (id, task_id, depends_on_id, created_at) "
             "VALUES (?, ?, ?, ?) ON CONFLICT (task_id, depends_on_id) DO NOTHING",

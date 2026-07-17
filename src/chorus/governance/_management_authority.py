@@ -86,9 +86,7 @@ class ManagementAuthorityService:
             )
         return persisted
 
-    def deactivate_profile(
-        self, employee_id: str, *, actor_user_id: str
-    ) -> ManagementProfile:
+    def deactivate_profile(self, employee_id: str, *, actor_user_id: str) -> ManagementProfile:
         actor_user_id = _require_human_actor(actor_user_id)
         try:
             with self._ledger.transaction():
@@ -145,9 +143,7 @@ class ManagementAuthorityService:
             )
         return persisted
 
-    def add_team_member(
-        self, member: TeamMember, *, actor_user_id: str
-    ) -> TeamMember:
+    def add_team_member(self, member: TeamMember, *, actor_user_id: str) -> TeamMember:
         actor_user_id = _require_human_actor(actor_user_id)
         subject_id = f"{member.team_id}/{member.employee_id}"
         with self._ledger.transaction():

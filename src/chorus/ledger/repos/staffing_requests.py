@@ -61,8 +61,7 @@ class StaffingRequestRepo:
 
     def link_plan(self, request_id: str, plan_id: str) -> StaffingRequest:
         self._conn.execute(
-            "UPDATE staffing_request SET workforce_plan_id = ? "
-            "WHERE id = ? AND status = ?",
+            "UPDATE staffing_request SET workforce_plan_id = ? WHERE id = ? AND status = ?",
             (plan_id, request_id, StaffingRequestStatus.OPEN.value),
         )
         self._conn.commit()

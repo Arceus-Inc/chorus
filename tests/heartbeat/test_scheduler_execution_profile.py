@@ -212,7 +212,8 @@ async def test_delegation_profile_drives_scheduler_contract(ledger: SqliteLedger
     ]
     assert contract_events[-1].payload["passed"] is True
     assert contract_events[-1].payload["reviewer_id"] == "system-verifier"
-    assert contract_events[-1].payload["verification_run_id"].startswith("rev_")
+    verification_run = ledger.runs.get(str(contract_events[-1].payload["verification_run_id"]))
+    assert verification_run is not None and verification_run.principal_kind == "system"
     verification_runs = [
         run for run in ledger.runs.for_task("task-release") if run.principal_id == "system-verifier"
     ]

@@ -57,8 +57,8 @@ class SkillStore:
         if self._skills.get_by_slug(employee_id, slug) is not None:
             raise SkillConflictError(f"skill slug already exists: {employee_id}/{slug}")
 
-        skill_id = mint_id("skill")
-        rev_id = mint_id("srev")
+        skill_id = mint_id()
+        rev_id = mint_id()
         inventory_json = _dumps_inventory(file_inventory)
         content_hash = _hash_inventory(inventory_json)
 
@@ -111,7 +111,7 @@ class SkillStore:
         inventory_json = _dumps_inventory(file_inventory)
         rev = self._revisions.append(
             SkillRevision(
-                id=mint_id("srev"),
+                id=mint_id(),
                 skill_id=skill_id,
                 revision_no=next_no,
                 action=action,

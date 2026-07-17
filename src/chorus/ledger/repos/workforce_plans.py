@@ -93,9 +93,7 @@ class WorkforcePlanRepo:
         return self._row_to_plan(row) if row is not None else None
 
     def list(self) -> list[WorkforcePlan]:
-        rows = self._conn.execute(
-            "SELECT * FROM workforce_plan ORDER BY id, revision"
-        ).fetchall()
+        rows = self._conn.execute("SELECT * FROM workforce_plan ORDER BY id, revision").fetchall()
         return [self._row_to_plan(row) for row in rows]
 
     def update_status(

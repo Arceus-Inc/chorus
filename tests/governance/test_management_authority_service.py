@@ -165,9 +165,7 @@ def test_team_membership_mutations_emit_typed_human_audits(ledger: SqliteLedger)
         TeamMember(team_id="team-release", employee_id="member", source_manager_id="lead"),
         actor_user_id="user-admin",
     )
-    removed = service.remove_team_member(
-        "team-release", "member", actor_user_id="user-admin"
-    )
+    removed = service.remove_team_member("team-release", "member", actor_user_id="user-admin")
 
     activity = ledger.activity.by_subject("team_member", "team-release/member")
     assert removed.left_at is not None

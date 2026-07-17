@@ -164,14 +164,14 @@ def ensure_task(ledger: SqliteLedger, employee_id: str, line: str) -> tuple[str,
         if not _wake_already_queued(ledger, open_task.id):
             ledger.wakes.enqueue(
                 Wake(
-                    id=mint_id("wake"),
+                    id=mint_id(),
                     employee_id=employee_id,
                     reason=WakeReason.RECOVERY,
                     payload={"task_id": open_task.id, "cause": "chat_steer"},
                 )
             )
         return open_task.id, "attach"
-    task_id = mint_id("task")
+    task_id = mint_id()
     ledger.tasks.submit(Task(id=task_id, intent=line))
     ledger.messages.send(_message(employee_id, line, task_id=task_id))
     # No ``assigned_by`` — like the ``assign`` command; the activity actor FKs employees, and the
@@ -182,7 +182,7 @@ def ensure_task(ledger: SqliteLedger, employee_id: str, line: str) -> tuple[str,
 
 def _message(employee_id: str, body: str, *, task_id: str) -> Message:
     return Message(
-        id=mint_id("msg"),
+        id=mint_id(),
         to_employee_id=employee_id,
         body=body,
         kind=MessageKind.INSTRUCTION,

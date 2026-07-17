@@ -22,9 +22,7 @@ _TERMINAL_TASK_STATUSES = {
     "rejected",
 }
 _UNBOUNDED_HEADROOM = 2**63 - 1
-_BLOCKED_REASON = (
-    "no invokable lead satisfies profile, line, team-size, and budget constraints"
-)
+_BLOCKED_REASON = "no invokable lead satisfies profile, line, team-size, and budget constraints"
 
 
 class LeadSelector:
@@ -72,8 +70,7 @@ class LeadSelector:
                 requirement.profession: sum(
                     item.count
                     for item in request.requirements
-                    if item.coverage == "direct"
-                    and item.profession == requirement.profession
+                    if item.coverage == "direct" and item.profession == requirement.profession
                 )
                 for requirement in request.requirements
                 if requirement.coverage == "direct"
@@ -105,11 +102,12 @@ class LeadSelector:
                 continue
             if self._budgets.invocation_block(employee.id, now=now) is not None:
                 continue
-            direct_reports = [
-                report for report in workforce if report.reports_to == employee.id
-            ]
+            direct_reports = [report for report in workforce if report.reports_to == employee.id]
             direct_report_counts = Counter(report.role for report in direct_reports)
-            if any(direct_report_counts[profession] < count for profession, count in direct_counts.items()):
+            if any(
+                direct_report_counts[profession] < count
+                for profession, count in direct_counts.items()
+            ):
                 continue
             matched_branches = self._match_subtree_areas(
                 request,
@@ -176,7 +174,9 @@ class LeadSelector:
 
         ordered_areas = sorted(options, key=lambda area: (len(options[area]), area))
 
-        def assign(index: int, used: set[str], matched: list[Employee]) -> tuple[Employee, ...] | None:
+        def assign(
+            index: int, used: set[str], matched: list[Employee]
+        ) -> tuple[Employee, ...] | None:
             if index == len(ordered_areas):
                 return tuple(matched)
             area = ordered_areas[index]
@@ -207,10 +207,7 @@ class LeadSelector:
             visited.add(employee.id)
             counts[employee.role] += 1
             if depth < max_depth:
-                frontier.extend(
-                    (report, depth + 1)
-                    for report in by_manager.get(employee.id, ())
-                )
+                frontier.extend((report, depth + 1) for report in by_manager.get(employee.id, ()))
         return counts
 
     def _rank(
@@ -245,9 +242,7 @@ class LeadSelector:
 
         policies = [
             policy
-            for policy in self._ledger.budget_policies.by_scope(
-                BudgetScope.EMPLOYEE, employee_id
-            )
+            for policy in self._ledger.budget_policies.by_scope(BudgetScope.EMPLOYEE, employee_id)
             if policy.metric == "cost_cents"
         ]
         if not policies:

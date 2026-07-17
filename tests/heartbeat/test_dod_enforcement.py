@@ -50,9 +50,7 @@ class _FakeWorkforce:
 
 
 def _seed(ledger: SqliteLedger) -> Employee:
-    employee = ledger.employees.create(
-        Employee(id="e1", name="e1", role="backend_engineer")
-    )
+    employee = ledger.employees.create(Employee(id="e1", name="e1", role="backend_engineer"))
     ledger.tasks.submit(
         Task(id="t1", intent="ship", status=TaskStatus.TODO, assignee_employee_id="e1")
     )

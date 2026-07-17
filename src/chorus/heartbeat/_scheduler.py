@@ -432,7 +432,7 @@ def _sprint_delta(
 def _to_ledger_artifact(artifact: OutcomeArtifact) -> Artifact:
     """Map a lander's canonical :class:`~chorus.outcomes.Artifact` to a storable ledger row."""
     return Artifact(
-        id=mint_id("art"),
+        id=mint_id(),
         task_id=artifact.task_id,
         type=ArtifactType(artifact.type.value),
         external_id=artifact.external_id,
@@ -560,7 +560,7 @@ class Scheduler:
                 continue
             ledger.wakes.enqueue(
                 Wake(
-                    id=mint_id("wake"),
+                    id=mint_id(),
                     employee_id=fired.employee_id,
                     reason=WakeReason.MONITOR_DUE,
                     payload={"task_id": fired.task_id},
@@ -623,7 +623,7 @@ class Scheduler:
                 if ledger.recovery_actions.active_for_source(task_id) is None:
                     ledger.recovery_actions.open(
                         RecoveryAction(
-                            id=mint_id("rec"),
+                            id=mint_id(),
                             source_task_id=task_id,
                             kind=RecoveryKind.STRANDED,
                             owner_user_id="operator",
@@ -716,7 +716,7 @@ class Scheduler:
         if monitor.recovery_policy is MonitorRecoveryPolicy.WAKE_OWNER:
             ledger.wakes.enqueue(
                 Wake(
-                    id=mint_id("wake"),
+                    id=mint_id(),
                     employee_id=monitor.employee_id,
                     reason=WakeReason.RECOVERY,
                     payload={"task_id": monitor.task_id, "cause": "monitor_exhausted"},
@@ -730,7 +730,7 @@ class Scheduler:
             if monitor.recovery_policy is MonitorRecoveryPolicy.ESCALATE
             else RecoveryKind.STALE_RUN_WATCHDOG
         )
-        action_id = mint_id("rec")
+        action_id = mint_id()
         ledger.recovery_actions.open(
             RecoveryAction(
                 id=action_id,
@@ -1180,7 +1180,7 @@ class Scheduler:
             ledger.tasks.set_status(task.id, TaskStatus.BLOCKED)
             ledger.wakes.enqueue(
                 Wake(
-                    id=mint_id("wake"),
+                    id=mint_id(),
                     employee_id=employee.id,
                     reason=WakeReason.CHILDREN_DONE,
                     payload={"task_id": task.id, "cause": "required_descendant_failed"},
@@ -1236,7 +1236,7 @@ class Scheduler:
                 ledger.tasks.set_status(task.id, TaskStatus.BLOCKED)
                 ledger.wakes.enqueue(
                     Wake(
-                        id=mint_id("wake"),
+                        id=mint_id(),
                         employee_id=employee.id,
                         reason=WakeReason.CHILDREN_DONE,
                         payload={"task_id": task.id},
@@ -1286,7 +1286,7 @@ class Scheduler:
         """Run the integrated parent gate under the non-workforce system verifier."""
         ledger = self._require_ledger()
         reviewer = SYSTEM_VERIFIER
-        verification_run_id = mint_id("rev")
+        verification_run_id = mint_id()
         runner = self._verification_runner(
             reviewer,
             task_id=task.id,
@@ -1428,7 +1428,7 @@ class Scheduler:
                 if ledger.recovery_actions.active_for_source(task.id) is None:
                     ledger.recovery_actions.open(
                         RecoveryAction(
-                            id=mint_id("rec"),
+                            id=mint_id(),
                             source_task_id=task.id,
                             kind=RecoveryKind.STRANDED,
                             owner_employee_id=employee.id,
@@ -1566,7 +1566,7 @@ class Scheduler:
         rubric = _review_rubric(verifier.spec)
         reviewer = SYSTEM_VERIFIER
 
-        review_run_id = mint_id("rev")
+        review_run_id = mint_id()
         runner = self._review_runner(reviewer, task_id=task_id, worktree_owner_id=author.id)
         ledger.runs.create(
             Run(
@@ -1735,7 +1735,7 @@ class Scheduler:
             if task.parent_id is not None and ledger.tasks.all_children_terminal(task.parent_id):
                 ledger.wakes.enqueue(
                     Wake(
-                        id=mint_id("wake"),
+                        id=mint_id(),
                         employee_id=manager_id,
                         reason=WakeReason.CHILDREN_DONE,
                         payload={"task_id": task.parent_id},
@@ -1749,7 +1749,7 @@ class Scheduler:
             ledger.tasks.set_status(task_id, TaskStatus.TODO)  # re-dispatch the author to fix it
             ledger.wakes.enqueue(
                 Wake(
-                    id=mint_id("wake"),
+                    id=mint_id(),
                     employee_id=author.id,
                     reason=WakeReason.RECOVERY,
                     payload={"task_id": task_id, "cause": "review_blocked"},
@@ -1862,7 +1862,7 @@ class Scheduler:
             return
         ledger.recovery_actions.open(
             RecoveryAction(
-                id=mint_id("rec"),
+                id=mint_id(),
                 source_task_id=task_id,
                 kind=RecoveryKind.STRANDED,
                 owner_employee_id=owner_id,
@@ -1942,7 +1942,7 @@ class Scheduler:
             ledger.tasks.set_status(task_id, TaskStatus.TODO)  # dispatchable; not yet "stuck"
             ledger.wakes.enqueue(
                 Wake(
-                    id=mint_id("wake"),
+                    id=mint_id(),
                     employee_id=employee_id,
                     reason=WakeReason.RECOVERY,
                     payload={"task_id": task_id, "cause": "dod_failed"},
@@ -1953,7 +1953,7 @@ class Scheduler:
         if ledger.recovery_actions.active_for_source(task_id) is None:
             ledger.recovery_actions.open(
                 RecoveryAction(
-                    id=mint_id("rec"),
+                    id=mint_id(),
                     source_task_id=task_id,
                     kind=RecoveryKind.STALE_RUN_WATCHDOG,
                     owner_employee_id=employee_id,
@@ -1984,7 +1984,7 @@ class Scheduler:
                 ledger.tasks.set_status(task_id, TaskStatus.TODO)  # re-dispatchable; not stuck
                 ledger.wakes.enqueue(
                     Wake(
-                        id=mint_id("wake"),
+                        id=mint_id(),
                         employee_id=employee_id,
                         reason=WakeReason.RECOVERY,
                         payload={"task_id": task_id, "cause": "budget_resume"},
@@ -2008,7 +2008,7 @@ class Scheduler:
         phase = result.outcome.get("phase")
         ledger.recovery_actions.open(
             RecoveryAction(
-                id=mint_id("rec"),
+                id=mint_id(),
                 source_task_id=task_id,
                 kind=RecoveryKind.STRANDED,
                 owner_employee_id=employee_id,
@@ -2032,7 +2032,7 @@ class Scheduler:
         ledger = self._require_ledger()
         event = ledger.cost_events.record(
             CostEvent(
-                id=mint_id("cost"),
+                id=mint_id(),
                 employee_id=employee_id,
                 task_id=task_id,
                 run_id=run_id,
