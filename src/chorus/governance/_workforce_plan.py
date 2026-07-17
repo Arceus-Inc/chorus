@@ -255,7 +255,10 @@ class WorkforcePlanService:
                 employee.profession not in _PLAN_PROFESSIONS
                 or employee.profession not in self._roles
             ):
-                raise ValueError(f"profession {employee.profession!r} is not hireable")
+                hireable = sorted(_PLAN_PROFESSIONS & set(self._roles.names()))
+                raise ValueError(
+                    f"profession {employee.profession!r} is not hireable; use one of {hireable}"
+                )
         planned = {employee.ref: employee for employee in draft.employees}
         depths = self._depths(
             planned,
