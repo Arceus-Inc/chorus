@@ -70,7 +70,12 @@ def _lineage(ledger: Ledger, *, eid: str) -> tuple[str, str]:
     )
     ledger.tasks.set_status(child_id, TaskStatus.TODO)
     ledger.wakes.enqueue(
-        Wake(id=uid("w1"), employee_id=eid, reason=WakeReason.TASK_ASSIGNED, payload={"task_id": child_id})
+        Wake(
+            id=uid("w1"),
+            employee_id=eid,
+            reason=WakeReason.TASK_ASSIGNED,
+            payload={"task_id": child_id},
+        )
     )
     return root_id, child_id
 
@@ -123,7 +128,12 @@ async def test_a_root_task_is_its_own_trace(ledger: Ledger) -> None:
     ledger.tasks.submit(Task(id=task_id, intent="solo work", assignee_employee_id="ada"))
     ledger.tasks.set_status(task_id, TaskStatus.TODO)
     ledger.wakes.enqueue(
-        Wake(id=uid("w2"), employee_id="ada", reason=WakeReason.TASK_ASSIGNED, payload={"task_id": task_id})
+        Wake(
+            id=uid("w2"),
+            employee_id="ada",
+            reason=WakeReason.TASK_ASSIGNED,
+            payload={"task_id": task_id},
+        )
     )
     recorder = _Recorder()
     scheduler = Scheduler(
@@ -138,3 +148,50 @@ async def test_a_root_task_is_its_own_trace(ledger: Ledger) -> None:
 
     texts = [event for event in recorder.events if event.kind is EventKind.RUN_TEXT]
     assert texts and texts[0].trace_id == task_id
+
+
+async def test_three_concurrent_employees_produce_lane_separable_events(ledger: Ledger) -> None:
+    """The CP-1 exit: interleaved events from concurrent beats demux cleanly into per-lane,
+    per-trace order — no cross-lane bleed, every event fully stamped."""
+    employees = [
+        ledger.employees.create(Employee(id=name, name=name.title(), role="engineer"))
+        for name in ("ada", "bex", "cyn")
+    ]
+    tasks: dict[str, str] = {}
+    for employee in employees:
+        task_id = uid(f"lane-{employee.id}")
+        tasks[employee.id] = task_id
+        ledger.tasks.submit(
+            Task(id=task_id, intent=f"work for {employee.id}", assignee_employee_id=employee.id)
+        )
+        ledger.tasks.set_status(task_id, TaskStatus.TODO)
+        ledger.wakes.enqueue(
+            Wake(
+                id=uid(f"lane-w-{employee.id}"),
+                employee_id=employee.id,
+                reason=WakeReason.TASK_ASSIGNED,
+                payload={"task_id": task_id},
+            )
+        )
+    recorder = _Recorder()
+    scheduler = Scheduler(
+        ledger=ledger,
+        workforce=_Workforce(*employees),
+        beat_runner=_EmittingBeat(),
+        event_bus=recorder,
+        max_concurrent_runs=3,  # all three lanes live at once
+    )
+
+    await scheduler.tick(now=_NOW)
+    await scheduler.drain()
+
+    assert all(event.employee_id is not None for event in recorder.events)
+    assert all(event.trace_id is not None for event in recorder.events)
+    for employee_id, task_id in tasks.items():
+        lane = [event for event in recorder.events if event.employee_id == employee_id]
+        assert lane, f"lane {employee_id} is empty"
+        assert {event.trace_id for event in lane} == {task_id}  # one trace per lane, no bleed
+        kinds = [event.kind for event in lane]
+        # per-lane causal order: claimed → started(status) → beat output
+        assert kinds.index(EventKind.WAKE_CLAIMED) < kinds.index(EventKind.TASK_STATUS)
+        assert kinds.index(EventKind.TASK_STATUS) < kinds.index(EventKind.RUN_TEXT)
