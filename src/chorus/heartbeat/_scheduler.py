@@ -76,7 +76,7 @@ if TYPE_CHECKING:
     from chorus.events import Event
     from chorus.heartbeat._beat import BeatRunner
     from chorus.heartbeat._runner_for import BeatRunnerFor
-    from chorus.ledger import SqliteLedger, Task
+    from chorus.ledger import Ledger, Task
     from chorus.observability import EventSink
     from chorus.outcomes import Artifact as OutcomeArtifact
     from chorus.outcomes import LanderRegistry, VerificationStep
@@ -367,7 +367,7 @@ def _baseline_sha(working_dir: Path | None) -> str | None:
     return head or None
 
 
-def _execution_intent(ledger: SqliteLedger, task: Task) -> str:
+def _execution_intent(ledger: Ledger, task: Task) -> str:
     """Carry ancestor objectives into a delegated beat without widening its assigned scope."""
     if task.parent_id is None:
         return task.intent
@@ -473,7 +473,7 @@ class Scheduler:
         max_review_rounds: int = 2,
         memory_writer: EpisodicStore | None = None,
         company_root: Path | None = None,
-        ledger: SqliteLedger | None = None,
+        ledger: Ledger | None = None,
         workforce: Workforce | None = None,
         beat_runner: BeatRunner | None = None,
         beat_runner_for: BeatRunnerFor | None = None,
@@ -706,7 +706,7 @@ class Scheduler:
         """Signal :meth:`run` to exit after the current pulse (idempotent)."""
         self._stop.set()
 
-    def _apply_monitor_recovery(self, ledger: SqliteLedger, monitor: Monitor) -> None:
+    def _apply_monitor_recovery(self, ledger: Ledger, monitor: Monitor) -> None:
         """An exhausted monitor escalates per its recovery policy (spec 03 §3c, spec 01 Cluster B).
 
         ``wake_owner`` enqueues a recovery wake to the assignee; ``create_recovery``/``escalate``
@@ -1045,7 +1045,7 @@ class Scheduler:
 
     async def _capture_memory(
         self,
-        ledger: SqliteLedger,
+        ledger: Ledger,
         *,
         run_id: str,
         employee: Employee,
@@ -1117,7 +1117,7 @@ class Scheduler:
             return
 
     def _write_integrate_packet(
-        self, ledger: SqliteLedger, *, beat_runner: BeatRunner, task_id: str
+        self, ledger: Ledger, *, beat_runner: BeatRunner, task_id: str
     ) -> None:
         """Write the manager's child-feedback packet when the runner exposes a working directory."""
         if not isinstance(beat_runner, _RunnerWithWorkingDir):
@@ -1334,7 +1334,7 @@ class Scheduler:
         )
         return review.passed, reviewer.id, verification_run_id
 
-    def _recover_landed_delegations(self, ledger: SqliteLedger) -> int:
+    def _recover_landed_delegations(self, ledger: Ledger) -> int:
         """Close delegation metadata left behind after a verified parent landed."""
         recovered = 0
         for contract in ledger.delegation_contracts.landed_awaiting_closure():
@@ -1395,7 +1395,7 @@ class Scheduler:
 
     async def _maybe_cap_integrate(
         self,
-        ledger: SqliteLedger,
+        ledger: Ledger,
         *,
         wake: Wake,
         run_id: str,
@@ -2047,7 +2047,7 @@ class Scheduler:
         if self._budget_enforcer is not None:
             self._budget_enforcer.on_cost_event(event, now=now)
 
-    def _require_ledger(self) -> SqliteLedger:
+    def _require_ledger(self) -> Ledger:
         return self._require(self._ledger, "ledger")
 
     @staticmethod

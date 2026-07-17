@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from dream.contracts import ExecPlan, ExecPlanLedger, ExecPlanStatus
 
-from chorus.ledger._ledger import Ledger, SqliteLedger
+from chorus.ledger._ledger import Ledger, LedgerIntegrityError, SqliteLedger
 from chorus.ledger._migrations import (
     LedgerAheadError,
     Migration,
@@ -165,6 +165,7 @@ __all__ = [
     "GoalRepo",
     "Ledger",
     "LedgerAheadError",
+    "LedgerIntegrityError",
     "ManagementGrantDraft",
     "ManagementProfile",
     "ManagementProfileRepo",

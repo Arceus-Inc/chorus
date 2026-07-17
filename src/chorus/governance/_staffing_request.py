@@ -9,7 +9,7 @@ from chorus.ids import mint_id
 from chorus.ledger import (
     ActivityVerb,
     DelegationContractStatus,
-    SqliteLedger,
+    Ledger,
     StaffingNeed,
     StaffingRequest,
     StaffingRequestStatus,
@@ -22,7 +22,7 @@ from chorus.workforce import LedgerWorkforce
 class StaffingRequestService:
     """Persist staffing gaps that fit an active contract's existing authority envelope."""
 
-    def __init__(self, ledger: SqliteLedger) -> None:
+    def __init__(self, ledger: Ledger) -> None:
         self._ledger = ledger
         self._workforce = LedgerWorkforce(ledger.employees)
 

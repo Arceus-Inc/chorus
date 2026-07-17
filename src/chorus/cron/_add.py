@@ -25,11 +25,11 @@ from chorus.ledger import (
 from chorus.trust import assert_no_inline_secrets
 
 if TYPE_CHECKING:
-    from chorus.ledger import SqliteLedger
+    from chorus.ledger import Ledger
 
 
 def add_routine(
-    ledger: SqliteLedger,
+    ledger: Ledger,
     *,
     employee_id: str,
     intent_template: str,

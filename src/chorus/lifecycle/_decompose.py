@@ -3,7 +3,7 @@
 :func:`decompose` ties spec 01's durable primitives together into the manager-splits-work
 flow: open-or-resume the ``decomposition_claim`` keyed on
 ``(source_task_id, accepted_plan_revision_id)``, then for each child — one transaction each
-via :meth:`SqliteLedger.create_child` — set ``parent_id``, inherit the source goal, bump
+via :meth:`Ledger.create_child` — set ``parent_id``, inherit the source goal, bump
 ``request_depth``/``depth``, and (when the child *gates* the parent) add a first-class
 ``task_dependency`` of the parent. Sealing the claim ends the manager's run; it never blocks
 awaiting children (re-invocation is the ``children_done`` push, fired by ``finalize_beat``).
@@ -33,7 +33,7 @@ from chorus.ledger._models import (
 from chorus.lifecycle._audit import record_activity
 
 if TYPE_CHECKING:
-    from chorus.ledger import SqliteLedger
+    from chorus.ledger import Ledger
 
 # The delegation depth cap (spec 06 §4): the default number of hops from the intake root a manager
 # recursion may fan out. Mirrored by ``Caps.request_depth_cap`` (the per-workforce override).
@@ -81,7 +81,7 @@ class ChildSpec:
 
 
 def decompose(
-    ledger: SqliteLedger,
+    ledger: Ledger,
     *,
     source_task_id: str,
     accepted_plan_revision_id: str,
@@ -154,7 +154,7 @@ def decompose(
     return Fanned(sealed)
 
 
-def _fail_closed(ledger: SqliteLedger, source: Task, *, cap: int) -> DepthCapped:
+def _fail_closed(ledger: Ledger, source: Task, *, cap: int) -> DepthCapped:
     """Refuse the decomposition: block the source + open (or reuse) its depth-cap recovery."""
     ledger.tasks.set_status(source.id, TaskStatus.BLOCKED)
     existing = ledger.recovery_actions.active_for_source(source.id)

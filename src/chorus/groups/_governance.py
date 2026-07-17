@@ -26,7 +26,7 @@ from chorus.ledger import (
     ApprovalSubjectKind,
     BudgetPolicy,
     BudgetScope,
-    SqliteLedger,
+    Ledger,
     StaffingRequest,
     StaffingRequestStatus,
     WorkforcePlan,
@@ -52,7 +52,7 @@ class GovernanceFacade:
 
     def __init__(
         self,
-        ledger: SqliteLedger,
+        ledger: Ledger,
         workforce: Workforce,
         roles: RoleRegistry,
         policy: GovernancePolicy,

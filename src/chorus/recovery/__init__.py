@@ -41,7 +41,7 @@ from chorus.ledger._models import (
 from chorus.lifecycle import classify, record_activity
 
 if TYPE_CHECKING:
-    from chorus.ledger import SqliteLedger
+    from chorus.ledger import Ledger
 
 # The cheap-model recovery lane (spec 02 §9.3): status-only overhead carries guard context so a
 # recovery beat can't quietly resume deliverable work - it must hand back to a normal run.
@@ -75,7 +75,7 @@ class ReconcileReport:
     cascaded: list[str] = field(default_factory=list)
 
 
-def reconcile(ledger: SqliteLedger, *, now: datetime) -> ReconcileReport:
+def reconcile(ledger: Ledger, *, now: datetime) -> ReconcileReport:
     """Run one ordered recovery sweep over the ledger (spec 02 §7); see module docstring."""
     reaped = _reap_orphaned_runs(ledger, now=now)
     cascaded = _cascade_failed_prerequisites(ledger)
@@ -87,7 +87,7 @@ def reconcile(ledger: SqliteLedger, *, now: datetime) -> ReconcileReport:
     )
 
 
-def _terminalize_stranded_children(ledger: SqliteLedger) -> list[str]:
+def _terminalize_stranded_children(ledger: Ledger) -> list[str]:
     """Terminalize a *child* stranded on a recovery card so its parent can integrate (spec 02 §6).
 
     A child whose automatic recovery is spent sits ``blocked`` behind a ``recovery_action`` waiting for a
@@ -119,7 +119,7 @@ def _terminalize_stranded_children(ledger: SqliteLedger) -> list[str]:
 # -- failed-prerequisite cascade (don't deadlock a subtree on a rejected child) ------------------
 
 
-def _cascade_failed_prerequisites(ledger: SqliteLedger) -> list[str]:
+def _cascade_failed_prerequisites(ledger: Ledger) -> list[str]:
     """Cancel any open task whose blocker reached a terminal-but-not-``done`` state (spec 02 §2/§6).
 
     A reviewer block (``rejected``) or a cancel leaves the dependency permanently unsatisfiable: the
@@ -156,7 +156,7 @@ def _cascade_failed_prerequisites(ledger: SqliteLedger) -> list[str]:
     return cascaded
 
 
-def _wake_parent_if_subtree_terminal(ledger: SqliteLedger, *, parent_id: str | None) -> None:
+def _wake_parent_if_subtree_terminal(ledger: Ledger, *, parent_id: str | None) -> None:
     """A ``children_done`` wake to the parent once its subtree is wholly terminal — its react beat."""
     if parent_id is None or not ledger.tasks.all_children_terminal(parent_id):
         return
@@ -176,7 +176,7 @@ def _wake_parent_if_subtree_terminal(ledger: SqliteLedger, *, parent_id: str | N
 # -- §7 step 1: reap orphaned running runs ------------------------------------
 
 
-def _reap_orphaned_runs(ledger: SqliteLedger, *, now: datetime) -> list[str]:
+def _reap_orphaned_runs(ledger: Ledger, *, now: datetime) -> list[str]:
     reaped: list[str] = []
     for run in ledger.runs.running_with_expired_lease(now):
         with ledger.transaction():
@@ -189,7 +189,7 @@ def _reap_orphaned_runs(ledger: SqliteLedger, *, now: datetime) -> list[str]:
 # -- §7 step 3: reconcile stranded assigned work (the §6 ladder) --------------
 
 
-def _reconcile_stranded(ledger: SqliteLedger, *, now: datetime) -> tuple[list[str], list[str]]:
+def _reconcile_stranded(ledger: Ledger, *, now: datetime) -> tuple[list[str], list[str]]:
     recovered: list[str] = []
     opened: list[str] = []
     for task in ledger.tasks.agent_owned_open():
@@ -221,7 +221,7 @@ def _reconcile_stranded(ledger: SqliteLedger, *, now: datetime) -> tuple[list[st
     return recovered, opened
 
 
-def _enqueue_recovery_wake(ledger: SqliteLedger, task: Task, *, kind: str, key: str) -> None:
+def _enqueue_recovery_wake(ledger: Ledger, task: Task, *, kind: str, key: str) -> None:
     ledger.wakes.enqueue(
         Wake(
             id=mint_id(),
@@ -233,7 +233,7 @@ def _enqueue_recovery_wake(ledger: SqliteLedger, task: Task, *, kind: str, key: 
     )
 
 
-def _escalate(ledger: SqliteLedger, task: Task, *, cause: str) -> str | None:
+def _escalate(ledger: Ledger, task: Task, *, cause: str) -> str | None:
     """Exhausted ladder: surface the stuck task as ``blocked`` + a recovery owner (spec 02 §6).
 
     Not silent: leaves a governance ``activity(verb='recovered')`` trail and, when the owner has a
@@ -283,7 +283,7 @@ def _escalate(ledger: SqliteLedger, task: Task, *, cause: str) -> str | None:
     return action_id
 
 
-def _manager_of(ledger: SqliteLedger, employee_id: str | None) -> str | None:
+def _manager_of(ledger: Ledger, employee_id: str | None) -> str | None:
     """The owner's manager up the org chain (``reports_to``), or ``None`` at the org root."""
     if employee_id is None:
         return None
@@ -291,7 +291,7 @@ def _manager_of(ledger: SqliteLedger, employee_id: str | None) -> str | None:
     return owner.reports_to if owner is not None else None
 
 
-def _open_recovery(ledger: SqliteLedger, task: Task, *, cause: str) -> str | None:
+def _open_recovery(ledger: Ledger, task: Task, *, cause: str) -> str | None:
     """Open an explicit recovery card without a status change (the card IS the live path)."""
     if ledger.recovery_actions.active_for_source(task.id) is not None:
         return None
@@ -313,7 +313,7 @@ def _open_recovery(ledger: SqliteLedger, task: Task, *, cause: str) -> str | Non
 # -- §7 step 4 / §6: source-aware folding -------------------------------------
 
 
-def _fold_terminal_sources(ledger: SqliteLedger) -> list[str]:
+def _fold_terminal_sources(ledger: Ledger) -> list[str]:
     folded: list[str] = []
     for action in ledger.recovery_actions.all_open():
         source = ledger.tasks.get(action.source_task_id)

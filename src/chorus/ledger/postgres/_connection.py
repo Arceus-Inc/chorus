@@ -25,6 +25,8 @@ from psycopg.abc import AdaptContext
 from psycopg.adapt import Loader
 from psycopg.types.string import StrDumper
 
+from chorus.ledger._errors import LedgerIntegrityError
+
 _WRITE_PREFIXES = ("INSERT", "UPDATE", "DELETE")
 
 
@@ -42,7 +44,11 @@ class _TextLoader(Loader):
 
 
 def _qmark_to_percent(sql: str) -> str:
-    """Translate DB-API qmark placeholders to psycopg's format style, respecting quoted literals."""
+    """Translate DB-API qmark placeholders to psycopg's format style, respecting quoted literals.
+
+    Literal ``%`` doubles to ``%%`` (psycopg parses format placeholders whenever params are
+    passed); adjacent quotes (``''`` escapes) toggle in-and-out and stay untouched.
+    """
     out: list[str] = []
     in_string = False
     for ch in sql:
@@ -51,6 +57,8 @@ def _qmark_to_percent(sql: str) -> str:
             out.append(ch)
         elif ch == "?" and not in_string:
             out.append("%s")
+        elif ch == "%":
+            out.append("%%")
         else:
             out.append(ch)
     return "".join(out)
@@ -79,10 +87,34 @@ class PostgresLedgerConnection:
 
     def execute(self, sql: str, parameters: Any = (), /) -> Any:
         query = _qmark_to_percent(sql)
-        if not self._in_txn and query.lstrip()[:6].upper() in _WRITE_PREFIXES:
+        if query.lstrip()[:6].upper() in _WRITE_PREFIXES:
+            return self._execute_write(query, parameters)
+        return self._pg.execute(query, parameters or None)
+
+    def _execute_write(self, query: str, parameters: Any) -> Any:
+        """A write, with sqlite3's per-statement atomicity inside an open transaction.
+
+        In Postgres any error aborts the WHOLE transaction (every later statement raises
+        InFailedSqlTransaction until rollback) — but the kernel's exact-once pattern is
+        "try the insert, catch the unique violation, continue". A savepoint around each write
+        gives it sqlite semantics: the failed statement rolls back alone, the transaction and
+        its prior writes stay live. Constraint violations re-raise as the driver-neutral
+        LedgerIntegrityError.
+        """
+        if not self._in_txn:
             self._pg.execute("BEGIN")  # writes batch until commit(), exactly like sqlite3 deferred
             self._in_txn = True
-        return self._pg.execute(query, parameters or None)
+        self._pg.execute("SAVEPOINT ledger_write")
+        try:
+            cursor = self._pg.execute(query, parameters or None)
+        except psycopg.errors.IntegrityError as exc:
+            self._pg.execute("ROLLBACK TO SAVEPOINT ledger_write")
+            raise LedgerIntegrityError(str(exc)) from exc
+        except Exception:
+            self._pg.execute("ROLLBACK TO SAVEPOINT ledger_write")
+            raise
+        self._pg.execute("RELEASE SAVEPOINT ledger_write")
+        return cursor
 
     def commit(self) -> None:
         if self._defer_depth == 0 and self._in_txn:

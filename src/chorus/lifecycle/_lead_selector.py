@@ -13,7 +13,7 @@ from chorus.workforce import Employee
 from chorus.workforce._ledger import LedgerWorkforce
 
 if TYPE_CHECKING:
-    from chorus.ledger import SqliteLedger
+    from chorus.ledger import Ledger
     from chorus.ledger._models import ManagementProfile
 
 _TERMINAL_TASK_STATUSES = {
@@ -30,7 +30,7 @@ class LeadSelector:
 
     def __init__(
         self,
-        ledger: SqliteLedger,
+        ledger: Ledger,
         *,
         company_id: str,
         clock: Callable[[], datetime] | None = None,

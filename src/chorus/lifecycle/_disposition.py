@@ -40,7 +40,7 @@ from chorus.lifecycle._liveness import classify
 _HANDOFF_CHOICES: tuple[str, ...] = ("done", "cancelled", "in_review", "blocked", "delegate")
 
 if TYPE_CHECKING:
-    from chorus.ledger import SqliteLedger
+    from chorus.ledger import Ledger
 
 
 class DispositionAction(StrEnum):
@@ -63,7 +63,7 @@ def _handoff_key(task_id: str) -> str:
     return f"finish_handoff:{task_id}"
 
 
-def reconcile_disposition(task: Task, ledger: SqliteLedger, *, now: datetime) -> Disposition:
+def reconcile_disposition(task: Task, ledger: Ledger, *, now: datetime) -> Disposition:
     """Reconcile a succeeded-but-undisposed task (spec 02 §5); see module docstring."""
     if task.status is not TaskStatus.IN_PROGRESS:
         return Disposition(DispositionAction.NOOP, "not_in_progress")
@@ -91,7 +91,7 @@ def reconcile_disposition(task: Task, ledger: SqliteLedger, *, now: datetime) ->
     return _enqueue_handoff(task, ledger, key)
 
 
-def _enqueue_handoff(task: Task, ledger: SqliteLedger, key: str) -> Disposition:
+def _enqueue_handoff(task: Task, ledger: Ledger, key: str) -> Disposition:
     ledger.wakes.enqueue(
         Wake(
             id=mint_id(),
@@ -109,7 +109,7 @@ def _enqueue_handoff(task: Task, ledger: SqliteLedger, key: str) -> Disposition:
     return Disposition(DispositionAction.HANDOFF_ENQUEUED, "finish_handoff")
 
 
-def _escalate(task: Task, ledger: SqliteLedger) -> Disposition:
+def _escalate(task: Task, ledger: Ledger) -> Disposition:
     """Exhausted ladder: surface the stuck task as ``blocked`` + a recovery owner (spec 02 §5)."""
     action_id = mint_id()
     with ledger.transaction():

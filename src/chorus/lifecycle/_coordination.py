@@ -20,11 +20,11 @@ from chorus.ledger._models import ActivityVerb, Wake, WakeReason
 from chorus.lifecycle._audit import record_activity
 
 if TYPE_CHECKING:
-    from chorus.ledger import Message, SqliteLedger
+    from chorus.ledger import Ledger, Message
 
 
 def assign_task(
-    ledger: SqliteLedger, task_id: str, employee_id: str, *, assigned_by: str | None = None
+    ledger: Ledger, task_id: str, employee_id: str, *, assigned_by: str | None = None
 ) -> Wake | None:
     """Assign ``task_id`` to ``employee_id`` and wake them (spec 03 §2).
 
@@ -59,7 +59,7 @@ def assign_task(
     return wake
 
 
-def deliver_message(ledger: SqliteLedger, message: Message) -> Wake:
+def deliver_message(ledger: Ledger, message: Message) -> Wake:
     """Persist ``message`` and wake its recipient (spec 03 §2, spec 01 Cluster G).
 
     Atomic: the mailbox row and the ``message`` wake commit together. The wake coalesces per

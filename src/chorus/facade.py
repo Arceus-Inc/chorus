@@ -1,7 +1,7 @@
 """The ``Chorus`` facade — the composition root (spec 10 §1).
 
 One object, built once, wires the concrete backends and is the **only** thing
-that imports dream (the "wiring"). ``build()`` news-up the ``SqliteLedger``, the
+that imports dream (the "wiring"). ``build()`` news-up the ``Ledger``, the
 ``LedgerWorkforce`` (the single live org store), the ``GitMemoryStore`` +
 ``EpisodicStore``, the dream board ``ClaimManager``, the ``Scheduler``,
 the ``EventBus``, and the ``Inspector``, and injects them — nothing else creates
@@ -14,7 +14,6 @@ below; the behavior is stubbed pending implementation (M1+, spec 11 build plan).
 from __future__ import annotations
 
 import asyncio
-import sqlite3
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -48,6 +47,8 @@ from chorus.ledger import (
     DelegationContract,
     DelegationContractStatus,
     ExecutionMode,
+    Ledger,
+    LedgerIntegrityError,
     Message,
     OriginKind,
     SqliteLedger,
@@ -94,7 +95,7 @@ class Chorus:
     def __init__(
         self,
         *,
-        ledger: SqliteLedger,
+        ledger: Ledger,
         workforce: Workforce,
         memory_writer: EpisodicStore,
         scheduler: Scheduler,
@@ -135,7 +136,7 @@ class Chorus:
         cls,
         *,
         db_path: str | None = None,
-        ledger: SqliteLedger | None = None,
+        ledger: Ledger | None = None,
         org_repo: str,
         memory_repo: str,
         dream: Any,
@@ -370,7 +371,7 @@ class Chorus:
                 for blocker in depends_on:
                     self._ledger.dependencies.add(task.id, blocker)
                 assign_task(self._ledger, task.id, lead.id)
-        except sqlite3.IntegrityError:
+        except LedgerIntegrityError:
             if origin_kind is not OriginKind.HORIZON_INTAKE:
                 raise
             existing = self._ledger.tasks.find_by_origin(origin_kind, origin_fingerprint)

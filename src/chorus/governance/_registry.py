@@ -22,7 +22,7 @@ from chorus.governance._types import GovernedAction
 from chorus.ledger import ApprovalAction
 
 if TYPE_CHECKING:
-    from chorus.ledger import SqliteLedger
+    from chorus.ledger import Ledger
 
 
 class UnregisteredAction(GovernanceError):
@@ -54,7 +54,7 @@ class GovernanceRegistry:
             ) from exc
 
 
-def default_actions(ledger: SqliteLedger) -> list[GovernedAction]:
+def default_actions(ledger: Ledger) -> list[GovernedAction]:
     """The built-in governed actions, bound to ``ledger`` (extended one handler per slice)."""
     return [
         TaskGateAction(ledger),

@@ -34,7 +34,7 @@ from chorus.observability._views import (
 )
 
 if False:  # pragma: no cover - typing only without runtime import cost
-    from chorus.ledger import SqliteLedger
+    from chorus.ledger import Ledger
     from chorus.ledger._models import Routine, Run, Task
 
 _RECENT_RUNS = 5  # how many of a routine's most-recent firings the read model surfaces
@@ -93,7 +93,7 @@ class Inspector(Protocol):
 class LedgerInspector:
     """The default :class:`Inspector` over the SQLite ledger + event log (spec 08 §3)."""
 
-    def __init__(self, ledger: SqliteLedger, *, clock: Callable[[], datetime] = _utc_now) -> None:
+    def __init__(self, ledger: Ledger, *, clock: Callable[[], datetime] = _utc_now) -> None:
         self._ledger = ledger
         self._clock = clock  # liveness compares run leases to ``now`` — injected for determinism
 

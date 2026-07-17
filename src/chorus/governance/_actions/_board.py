@@ -17,7 +17,7 @@ from chorus.ids import mint_id
 from chorus.ledger import Activity, ActivityVerb, Approval, ApprovalAction, Wake, WakeReason
 
 if TYPE_CHECKING:
-    from chorus.ledger import SqliteLedger
+    from chorus.ledger import Ledger
 
 _PROMOTED = "promoted"
 _DENIED = "denied"
@@ -29,7 +29,7 @@ class BoardApprovalAction:
 
     action = ApprovalAction.BOARD_APPROVAL
 
-    def __init__(self, ledger: SqliteLedger) -> None:
+    def __init__(self, ledger: Ledger) -> None:
         self._ledger = ledger
 
     def on_open(self, approval: Approval) -> None:

@@ -16,7 +16,7 @@ from chorus.lifecycle._audit import record_activity
 from chorus.workforce import Employee, EmployeeStatus
 
 if TYPE_CHECKING:
-    from chorus.ledger import SqliteLedger
+    from chorus.ledger import Ledger
 
 _UNAVAILABLE = frozenset({EmployeeStatus.PENDING, EmployeeStatus.TERMINATED})
 
@@ -28,7 +28,7 @@ class MissionTeamPolicyDenied(ValueError):
 class MissionTeamPolicy:
     """Create, validate, activate, and archive one durable Team per delegated goal."""
 
-    def __init__(self, ledger: SqliteLedger) -> None:
+    def __init__(self, ledger: Ledger) -> None:
         self._ledger = ledger
 
     def create_for_root(self, lead: Employee, goal_id: str) -> Team:

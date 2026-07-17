@@ -9,9 +9,9 @@ from chorus.ledger import (
     ActivityVerb,
     BudgetPolicy,
     BudgetScope,
+    Ledger,
     ManagementProfile,
     PlannedEmployee,
-    SqliteLedger,
     StaffingRequest,
     StaffingRequestStatus,
     WorkforcePlan,
@@ -39,7 +39,7 @@ class WorkforcePlanService:
 
     def __init__(
         self,
-        ledger: SqliteLedger,
+        ledger: Ledger,
         *,
         workforce: Workforce,
         roles: RoleRegistry,

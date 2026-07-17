@@ -9,8 +9,8 @@ from chorus.ledger import (
     ActivityVerb,
     DelegationContract,
     DelegationContractStatus,
+    Ledger,
     ManagementProfile,
-    SqliteLedger,
     Team,
     TeamMember,
 )
@@ -21,7 +21,7 @@ from chorus.roles import RoleRegistry
 class ManagementAuthorityService:
     """Apply management-authority policy mutations atomically and audit the human decision."""
 
-    def __init__(self, ledger: SqliteLedger) -> None:
+    def __init__(self, ledger: Ledger) -> None:
         self._ledger = ledger
 
     def upsert_profile(

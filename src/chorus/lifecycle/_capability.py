@@ -51,7 +51,7 @@ from chorus.lifecycle._team_policy import MissionTeamPolicy
 from chorus.outcomes import DoDKind
 
 if TYPE_CHECKING:
-    from chorus.ledger import SqliteLedger
+    from chorus.ledger import Ledger
 
 
 @dataclass(frozen=True)
@@ -168,7 +168,7 @@ class DecisionOutcome:
 class CapabilityService:
     """Ledger-mutating capabilities a manager beat invokes (``decompose`` for M3 Slice 1)."""
 
-    def __init__(self, ledger: SqliteLedger) -> None:
+    def __init__(self, ledger: Ledger) -> None:
         self._ledger = ledger
 
     def record_decision(

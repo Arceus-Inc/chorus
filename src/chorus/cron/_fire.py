@@ -9,11 +9,11 @@ dispatch loop drains. It writes rows and returns; it never invokes ``dream.run_t
 
 from __future__ import annotations
 
-import sqlite3
 from typing import TYPE_CHECKING
 
 from chorus.cron._routine import parse_cron
 from chorus.ids import mint_id
+from chorus.ledger import LedgerIntegrityError
 from chorus.ledger._models import (
     OriginKind,
     RoutineCatchUp,
@@ -31,11 +31,11 @@ from chorus.ledger._models import (
 if TYPE_CHECKING:
     from datetime import datetime
 
-    from chorus.ledger import SqliteLedger
+    from chorus.ledger import Ledger
     from chorus.ledger._models import Routine, RoutineTrigger
 
 
-def fire_routine(ledger: SqliteLedger, trigger: RoutineTrigger, *, now: datetime) -> str | None:
+def fire_routine(ledger: Ledger, trigger: RoutineTrigger, *, now: datetime) -> str | None:
     """Resolve one due ``routine_trigger`` into ledger writes (spec 03 §4).
 
     Returns the spawned task id on the ``spawn_task`` path, else ``None`` (a ``next_beat`` note, a
@@ -145,7 +145,7 @@ def fire_routine(ledger: SqliteLedger, trigger: RoutineTrigger, *, now: datetime
 
 
 def _record(
-    ledger: SqliteLedger,
+    ledger: Ledger,
     run_id: str,
     routine: Routine,
     trigger: RoutineTrigger,
@@ -168,12 +168,12 @@ def _record(
                 coalesced_into_run_id=coalesced_into_run_id,
             )
         )
-    except sqlite3.IntegrityError:
+    except LedgerIntegrityError:
         return None
     return run_id
 
 
-def _latest_dispatched_run(ledger: SqliteLedger, routine_id: str) -> str | None:
+def _latest_dispatched_run(ledger: Ledger, routine_id: str) -> str | None:
     """The most recent *dispatched* run for the routine — the survivor a coalesced firing folds into."""
     dispatched = [
         run

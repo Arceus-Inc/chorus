@@ -22,7 +22,7 @@ from chorus.ledger._models import (
 from chorus.trust import assert_no_inline_secrets
 
 if TYPE_CHECKING:
-    from chorus.ledger import SqliteLedger
+    from chorus.ledger import Ledger
 
 # Sentinel distinguishing "env not supplied" from "env explicitly cleared to None" in a patch.
 _UNSET: Final = object()
@@ -37,7 +37,7 @@ class RoutineRevisionAuthorityError(RuntimeError):
 
 
 def revise_routine(
-    ledger: SqliteLedger,
+    ledger: Ledger,
     *,
     routine_id: str,
     revised_by: str,
@@ -77,7 +77,7 @@ def revise_routine(
 
 
 def restore_routine(
-    ledger: SqliteLedger, *, routine_id: str, revision_no: int, revised_by: str
+    ledger: Ledger, *, routine_id: str, revision_no: int, revised_by: str
 ) -> RoutineRevision:
     """Copy ``revision_no`` into a *new* head revision (provenance recorded; history never mutated)."""
     routine = ledger.routines.get(routine_id)
@@ -104,16 +104,14 @@ def restore_routine(
     return _commit_head(ledger, routine_id, restored)
 
 
-def _commit_head(
-    ledger: SqliteLedger, routine_id: str, revision: RoutineRevision
-) -> RoutineRevision:
+def _commit_head(ledger: Ledger, routine_id: str, revision: RoutineRevision) -> RoutineRevision:
     """Append the revision and make it the live head (definition mirror + pointer)."""
     appended = ledger.routine_revisions.append(revision)
     ledger.routines.set_head(routine_id, appended)
     return appended
 
 
-def _head(ledger: SqliteLedger, routine_id: str) -> RoutineRevision:
+def _head(ledger: Ledger, routine_id: str) -> RoutineRevision:
     """The live head revision. Every routine has a revision 1 (synthesized by migration 0019 or
     written by ``add_routine``), so a missing head is a broken invariant, not a normal case."""
     head = ledger.routine_revisions.head(routine_id)
@@ -132,7 +130,7 @@ def _same_definition(a: RoutineRevision, b: RoutineRevision) -> bool:
     )
 
 
-def _require_authority(ledger: SqliteLedger, owner_id: str, revised_by: str) -> None:
+def _require_authority(ledger: Ledger, owner_id: str, revised_by: str) -> None:
     """The owner may edit their own routine; otherwise the editor must be the owner's manager."""
     if revised_by == owner_id:
         return

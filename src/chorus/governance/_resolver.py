@@ -32,7 +32,7 @@ from chorus.ledger import (
 )
 
 if TYPE_CHECKING:
-    from chorus.ledger import SqliteLedger
+    from chorus.ledger import Ledger
 
 _TERMINAL = frozenset({TaskStatus.DONE, TaskStatus.CANCELLED, TaskStatus.REJECTED})
 
@@ -57,7 +57,7 @@ class ResolveOutcome:
 class GovernanceResolver:
     """Open and resolve governed-action approvals over a ledger, dispatching to handlers (spec 04 §5)."""
 
-    def __init__(self, ledger: SqliteLedger, registry: GovernanceRegistry | None = None) -> None:
+    def __init__(self, ledger: Ledger, registry: GovernanceRegistry | None = None) -> None:
         self._ledger = ledger
         self._registry = registry or GovernanceRegistry.from_actions(default_actions(ledger))
 

@@ -14,6 +14,7 @@ from contextlib import AbstractContextManager
 from typing import Protocol, runtime_checkable
 
 from chorus.ledger._core import LedgerCore
+from chorus.ledger._errors import LedgerIntegrityError
 from chorus.ledger._migrations import MigrationRunner
 from chorus.ledger._models import (
     DecompositionClaim,
@@ -63,10 +64,21 @@ class _LedgerConnection(sqlite3.Connection):
     transaction each repo write is its own unit (``commit`` passes through). Inside
     :meth:`LedgerCore.transaction` intermediate commits are *deferred* — the facade commits once on
     success or rolls back on error — so cross-aggregate operations land atomically (spec 01 Cluster F).
+
+    Constraint violations surface as the driver-neutral :class:`LedgerIntegrityError`, the same
+    exception the Postgres driver raises — kernel exact-once handling catches one name.
     """
 
     _defer_depth: int = 0  # >0 while a facade transaction is batching writes
     _tx_aborted: bool = False  # latched if any (even nested, caught) block raised
+
+    def execute(self, sql: str, parameters: object = (), /) -> sqlite3.Cursor:
+        try:
+            return super().execute(sql, parameters)  # type: ignore[arg-type]
+        except LedgerIntegrityError:
+            raise
+        except sqlite3.IntegrityError as exc:
+            raise LedgerIntegrityError(str(exc)) from exc
 
     def commit(self) -> None:
         if self._defer_depth == 0:
@@ -167,5 +179,6 @@ class SqliteLedger(LedgerCore):
 
 __all__ = [
     "Ledger",
+    "LedgerIntegrityError",
     "SqliteLedger",
 ]

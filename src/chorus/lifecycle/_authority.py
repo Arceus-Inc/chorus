@@ -16,7 +16,7 @@ from chorus.ledger._models import (
 from chorus.workforce import Employee, EmployeeStatus
 
 if TYPE_CHECKING:
-    from chorus.ledger import SqliteLedger
+    from chorus.ledger import Ledger
 
 
 @dataclass(frozen=True)
@@ -55,7 +55,7 @@ class AuthorityIntersection:
 
     def __init__(
         self,
-        ledger: SqliteLedger | None = None,
+        ledger: Ledger | None = None,
         *,
         global_limits: AuthorityLimits | None = None,
     ) -> None:

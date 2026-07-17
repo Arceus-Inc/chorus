@@ -15,11 +15,11 @@ from chorus.ledger._models import Activity, ActivityVerb
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
-    from chorus.ledger import SqliteLedger
+    from chorus.ledger import Ledger
 
 
 def record_activity(
-    ledger: SqliteLedger,
+    ledger: Ledger,
     *,
     verb: ActivityVerb,
     subject_id: str,

@@ -30,7 +30,7 @@ from chorus.ledger._models import (
 )
 
 if TYPE_CHECKING:
-    from chorus.ledger import SqliteLedger
+    from chorus.ledger import Ledger
     from chorus.ledger._models import CostEvent
 
 _PERCENT = 100
@@ -50,7 +50,7 @@ class BlockReason(StrEnum):
 class BudgetEnforcer:
     """Enforces the two-gate hard-stop over a ledger's budget repos for one company (spec 04 §3)."""
 
-    def __init__(self, ledger: SqliteLedger, *, company_id: str) -> None:
+    def __init__(self, ledger: Ledger, *, company_id: str) -> None:
         self._ledger = ledger
         self._company_id = company_id
 

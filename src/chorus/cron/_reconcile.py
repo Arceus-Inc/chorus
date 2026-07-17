@@ -21,7 +21,7 @@ from chorus.cron._add import add_routine
 from chorus.cron._revise import NoRoutineRevision, revise_routine
 
 if TYPE_CHECKING:
-    from chorus.ledger import SqliteLedger
+    from chorus.ledger import Ledger
     from chorus.roles import RoutineDeclaration
 
 
@@ -35,7 +35,7 @@ class ReconcileResult:
 
 
 def reconcile_declared_routines(
-    ledger: SqliteLedger,
+    ledger: Ledger,
     *,
     employee_id: str,
     declarations: Sequence[RoutineDeclaration],

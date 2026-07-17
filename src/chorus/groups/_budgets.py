@@ -11,7 +11,7 @@ from datetime import UTC, datetime
 
 from chorus.budgets import BudgetEnforcer, BudgetWindow
 from chorus.ids import mint_id
-from chorus.ledger import BudgetPolicy, BudgetScope, SqliteLedger
+from chorus.ledger import BudgetPolicy, BudgetScope, Ledger
 
 _DEFAULT_WARN_PERCENT = 80
 
@@ -19,7 +19,7 @@ _DEFAULT_WARN_PERCENT = 80
 class BudgetsFacade:
     """The ``org.budgets`` surface — set / raise_ / dismiss_incident."""
 
-    def __init__(self, ledger: SqliteLedger, *, company_id: str) -> None:
+    def __init__(self, ledger: Ledger, *, company_id: str) -> None:
         self._ledger = ledger
         self._enforcer = BudgetEnforcer(ledger, company_id=company_id)
 

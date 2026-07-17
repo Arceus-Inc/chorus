@@ -10,7 +10,7 @@ from chorus.ledger import (
     DelegationContract,
     DelegationContractStatus,
     ExecutionMode,
-    SqliteLedger,
+    Ledger,
     Task,
     TeamMembershipRole,
     TeamStatus,
@@ -81,7 +81,7 @@ class ResolvedExecutionProfile:
 class ExecutionProfileResolver:
     """Resolve profession delivery or a sealed management surface from persisted authority."""
 
-    def __init__(self, roles: RoleRegistry, ledger: SqliteLedger) -> None:
+    def __init__(self, roles: RoleRegistry, ledger: Ledger) -> None:
         self._roles = roles
         self._ledger = ledger
 

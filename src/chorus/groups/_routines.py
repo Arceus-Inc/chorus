@@ -9,11 +9,11 @@ from __future__ import annotations
 
 from chorus.cron import add_routine, restore_routine, revise_routine
 from chorus.ledger import (
+    Ledger,
     RoutineCatchUp,
     RoutineConcurrency,
     RoutineStatus,
     RoutineTarget,
-    SqliteLedger,
 )
 from chorus.observability import LedgerInspector, RoutineView
 from chorus.workforce import Workforce, slugify
@@ -22,9 +22,7 @@ from chorus.workforce import Workforce, slugify
 class RoutinesFacade:
     """The ``org.routines`` surface — add / list / get / pause / resume."""
 
-    def __init__(
-        self, ledger: SqliteLedger, workforce: Workforce, inspector: LedgerInspector
-    ) -> None:
+    def __init__(self, ledger: Ledger, workforce: Workforce, inspector: LedgerInspector) -> None:
         self._ledger = ledger
         self._workforce = workforce
         self._inspector = inspector

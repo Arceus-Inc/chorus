@@ -12,7 +12,7 @@ from dream.contracts.delegation import (
 
 if TYPE_CHECKING:
     from chorus.facade import Chorus
-    from chorus.ledger import SqliteLedger
+    from chorus.ledger import Ledger
 
 
 class DelegatedIntakeAdapter:
@@ -21,7 +21,7 @@ class DelegatedIntakeAdapter:
     def __init__(
         self,
         chorus: Chorus,
-        ledger: SqliteLedger,
+        ledger: Ledger,
         *,
         company_id: str,
     ) -> None:

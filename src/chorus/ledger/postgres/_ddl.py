@@ -45,6 +45,8 @@ _TEXT_ID_TABLES = set(_SEMANTIC_ID_TABLES)
 # a chorus-minted id and becomes uuid. (Loose *employee* refs — e.g. task.created_by_employee_id —
 # are semantic slugs and stay text; they are deliberately NOT in this set.)
 _EXTRA_UUID_COLUMNS: set[tuple[str, str]] = {
+    ("claim", "decision_id"),
+    ("decision_record", "task_id"),
     ("task", "checkout_run_id"),
     ("task", "execution_run_id"),
     ("decision_record", "superseded_by"),

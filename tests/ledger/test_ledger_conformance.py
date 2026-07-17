@@ -25,6 +25,7 @@ from chorus.ids import mint_id
 from chorus.ledger import (
     Goal,
     Ledger,
+    LedgerIntegrityError,
     OriginKind,
     Run,
     SqliteLedger,
@@ -168,8 +169,32 @@ def test_submit_is_exact_once_for_origin(any_ledger: Ledger) -> None:
         origin_id=origin_id,
     )
     assert first is not None
-    with pytest.raises(Exception):
+    # The DRIVER-NEUTRAL exception: SQLite and Postgres raise the same catchable name — the
+    # kernel's exact-once handling (facade horizon-intake dedup, cron firing) depends on it.
+    with pytest.raises(LedgerIntegrityError):
         _task(any_ledger, origin_kind=OriginKind.STRANDED_RECOVERY, origin_id=origin_id)
+
+
+def test_exact_once_collision_leaves_the_ledger_usable(any_ledger: Ledger) -> None:
+    """The kernel's normal pattern: try the insert, catch the violation, CONTINUE. On Postgres a
+    naive driver would leave the transaction server-side aborted (every later statement fails
+    InFailedSqlTransaction) — the savepoint-per-write emulation must absorb the failure."""
+    origin_id = mint_id()
+    _task(any_ledger, origin_kind=OriginKind.STRANDED_RECOVERY, origin_id=origin_id)
+    with pytest.raises(LedgerIntegrityError):
+        _task(any_ledger, origin_kind=OriginKind.STRANDED_RECOVERY, origin_id=origin_id)
+    # Reads AND writes keep working on the same connection after the collision.
+    survivor = _task(any_ledger, intent="after the collision")
+    assert any_ledger.tasks.get(survivor.id) is not None
+    assert len(any_ledger.tasks.list_eligible(limit=10)) >= 1
+    # And the same holds INSIDE a facade transaction batch (catch-and-continue mid-batch).
+    caught_inside = _task(any_ledger, intent="batch sibling")
+    with any_ledger.transaction():
+        with pytest.raises(LedgerIntegrityError):
+            _task(any_ledger, origin_kind=OriginKind.STRANDED_RECOVERY, origin_id=origin_id)
+        any_ledger.tasks.set_status(caught_inside.id, TaskStatus.DONE)  # continues, then commits
+    refreshed = any_ledger.tasks.get(caught_inside.id)
+    assert refreshed is not None and refreshed.status is TaskStatus.DONE
 
 
 def test_checkout_conflict_is_409(any_ledger: Ledger) -> None:
@@ -253,6 +278,189 @@ def test_run_round_trip(any_ledger: Ledger) -> None:
     assert [r.id for r in any_ledger.runs.for_task(task.id)] == [run_id]
 
 
+# --- the reviewer-flagged type-inference hot spots ----------------------------------------------
+
+
+def test_dod_verdict_records_with_coalesce(any_ledger: Ledger) -> None:
+    """`verified_by_run_id = COALESCE(?, verified_by_run_id)` — a NULL-able param feeding a uuid
+    column via server-side inference (the flagged risk shape)."""
+    from chorus.ledger import DodStatus
+    from chorus.outcomes import Verifier
+
+    employee = _employee(any_ledger)
+    task = _task(any_ledger)
+    dod = any_ledger.dod.create(task.id, Verifier.command("pytest -q", artifact_class="pr"))
+    run_id = mint_id()
+    any_ledger.runs.create(Run(id=run_id, employee_id=employee.id, task_id=task.id))
+    any_ledger.dod.record_verdict(
+        dod.id, DodStatus.PASSED, verdict={"passed": True, "notes": "solid"}, run_id=run_id
+    )
+    got = any_ledger.dod.get_for_task(task.id)
+    assert got is not None
+    assert got.status is DodStatus.PASSED
+    assert got.verified_by_run_id == run_id
+    assert got.verdict == {"notes": "solid", "passed": True}
+    # And the NULL branch of the COALESCE: verdict-only update keeps the run id.
+    any_ledger.dod.record_verdict(dod.id, DodStatus.FAILED, verdict={"passed": False})
+    kept = any_ledger.dod.get_for_task(task.id)
+    assert kept is not None and kept.verified_by_run_id == run_id
+
+
+def test_run_finish_coalesces_outcome_and_usage(any_ledger: Ledger) -> None:
+    from chorus.ledger import RunStatus
+
+    employee = _employee(any_ledger)
+    task = _task(any_ledger)
+    run_id = mint_id()
+    any_ledger.runs.create(Run(id=run_id, employee_id=employee.id, task_id=task.id))
+    any_ledger.runs.finish(run_id, RunStatus.SUCCEEDED, outcome={"ok": True}, usage={"tokens": 12})
+    got = any_ledger.runs.get(run_id)
+    assert got is not None
+    assert got.status is RunStatus.SUCCEEDED
+    assert (got.outcome, got.usage) == ({"ok": True}, {"tokens": 12})
+    assert got.finished_at is not None
+
+
+def test_timestamptz_comparisons_monitor_due_and_expired_lease(any_ledger: Ledger) -> None:
+    """`col <= ?` with ISO-text params against timestamptz columns, and the datetime round-trip."""
+    from datetime import UTC, datetime, timedelta
+
+    from chorus.ledger import Monitor, Run, RunStatus
+
+    employee = _employee(any_ledger)
+    task = _task(any_ledger)
+    now = datetime.now(UTC)
+    any_ledger.monitors.arm(
+        Monitor(
+            id=mint_id(),
+            task_id=task.id,
+            employee_id=employee.id,
+            next_check_at=now - timedelta(minutes=1),
+        )
+    )
+    due = any_ledger.monitors.due(now=now)
+    assert [monitor.task_id for monitor in due] == [task.id]
+    assert due[0].next_check_at is not None  # round-tripped back to a datetime
+
+    run_id = mint_id()
+    any_ledger.runs.create(
+        Run(
+            id=run_id,
+            employee_id=employee.id,
+            task_id=task.id,
+            status=RunStatus.RUNNING,
+            lease_expires_at=now - timedelta(seconds=5),
+        )
+    )
+    expired = any_ledger.runs.running_with_expired_lease(now)
+    assert [run.id for run in expired] == [run_id]
+
+
+def test_routine_trigger_claim_fire_cas_round_trips_timestamps(any_ledger: Ledger) -> None:
+    """The double-fire guard: `UPDATE … WHERE next_run_at = ?` — timestamptz EQUALITY against a
+    round-tripped datetime (write ISO → read text → parse → bind again). The strictest inference
+    test in the repo set."""
+    from datetime import UTC, datetime, timedelta
+
+    from chorus.ledger import Routine, RoutineTrigger, TriggerKind
+
+    employee = _employee(any_ledger)
+    routine = any_ledger.routines.create(
+        Routine(id=mint_id(), employee_id=employee.id, intent_template="tick")
+    )
+    first_edge = datetime.now(UTC).replace(microsecond=123456)
+    trigger = any_ledger.routine_triggers.create(
+        RoutineTrigger(
+            id=mint_id(),
+            routine_id=routine.id,
+            kind=TriggerKind.CRON,
+            cron_expression="* * * * *",
+            next_run_at=first_edge,
+        )
+    )
+    reread = any_ledger.routine_triggers.get(trigger.id)
+    assert reread is not None and reread.next_run_at is not None
+    next_edge = first_edge + timedelta(minutes=1)
+    assert (
+        any_ledger.routine_triggers.claim_fire(
+            trigger.id, expected_next_run_at=reread.next_run_at, new_next_run_at=next_edge
+        )
+        is True
+    )
+    # The edge advanced — the same expected value must now lose (the whole point of the CAS).
+    assert (
+        any_ledger.routine_triggers.claim_fire(
+            trigger.id, expected_next_run_at=reread.next_run_at, new_next_run_at=next_edge
+        )
+        is False
+    )
+
+
+def test_wake_claim_applies_the_dispatch_order(any_ledger: Ledger) -> None:
+    """The kernel's dispatch ranking (resume-first, then priority band, then FIFO) — the most
+    dialect-sensitive query in the repo set (correlated subquery + CASE over a join)."""
+    from chorus.ledger import TaskPriority
+
+    employee = _employee(any_ledger)
+    low = _task(any_ledger, intent="low", priority=TaskPriority.LOW)
+    critical = _task(any_ledger, intent="critical", priority=TaskPriority.CRITICAL)
+    resumed = _task(any_ledger, intent="resumed", status=TaskStatus.IN_PROGRESS)
+    for task in (low, critical, resumed):
+        any_ledger.wakes.enqueue(
+            Wake(
+                id=mint_id(),
+                employee_id=employee.id,
+                reason=WakeReason.DEPS_RESOLVED,
+                payload={"task_id": task.id},
+            )
+        )
+    claimed = any_ledger.wakes.claim(limit=10)
+    claimed_task_ids = [wake.payload.get("task_id") for wake in claimed]
+    # in_progress resume outranks everything; then the priority band (critical before low).
+    assert claimed_task_ids == [resumed.id, critical.id, low.id]
+
+
+def test_cost_event_aggregation_sums_bigints(any_ledger: Ledger) -> None:
+    from chorus.ledger import CostEvent
+
+    employee = _employee(any_ledger)
+    for cents in (150, 4_000_000_000):  # the second would wrap a 32-bit int
+        any_ledger.cost_events.record(
+            CostEvent(
+                id=mint_id(),
+                employee_id=employee.id,
+                provider="azure",
+                model="gpt",
+                cost_cents=cents,
+            )
+        )
+    assert any_ledger.cost_events.spent_cents(employee.id) == 4_000_000_150
+
+
+def test_create_child_is_idempotent_on_retry(any_ledger: Ledger) -> None:
+    from chorus.ledger import Artifact, ArtifactRevision, ArtifactType, DecompositionClaim
+
+    parent = _task(any_ledger, intent="parent")
+    plan = any_ledger.artifacts.create(
+        Artifact(id=mint_id(), task_id=parent.id, type=ArtifactType.ARTIFACT)
+    )
+    revision = any_ledger.artifact_revisions.record(
+        ArtifactRevision(id=mint_id(), artifact_id=plan.id)
+    )
+    claim = any_ledger.decomposition_claims.open(
+        DecompositionClaim(
+            id=mint_id(),
+            source_task_id=parent.id,
+            accepted_plan_revision_id=revision.id,
+            requested_children=[{"intent": "child"}],
+        )
+    )
+    child = Task(id=mint_id(), intent="child", status=TaskStatus.TODO, parent_id=parent.id)
+    first = any_ledger.create_child(claim.id, child)
+    again = any_ledger.create_child(claim.id, child)  # a resumed fan-out — no duplicate insert
+    assert list(first.child_task_ids) == list(again.child_task_ids) == [child.id]
+
+
 # --- cross-aggregate: the facade's atomic operations -------------------------------------------
 
 
@@ -320,6 +528,8 @@ def test_postgres_columns_are_native_types(pg_conninfo: str | None) -> None:
             ("delegation_contract", "spend_limit_cents"): "bigint",
             ("workforce_plan", "confidence"): "double precision",
             ("system_principal", "id"): "text",
+            ("decision_record", "task_id"): "uuid",
+            ("claim", "decision_id"): "uuid",
             # Tenancy: every table carries the company discriminator (M5 shared-schema shape).
             ("task", "company_id"): "uuid",
             ("wake", "company_id"): "uuid",
@@ -422,7 +632,7 @@ def test_postgres_employee_slugs_are_company_scoped(pg_conninfo: str | None) -> 
         ledger_b.employees.create(Employee(id="ace", name="Ace", role="engineer"))  # no collision
         got_b = ledger_b.employees.get("ace")
         assert got_b is not None and got_b.name == "Ace"
-        with pytest.raises(Exception):  # noqa: B017 - within-company duplicate slug is rejected
+        with pytest.raises(Exception):
             ledger_a.employees.create(Employee(id="ace", name="Ace 2", role="pm"))
     finally:
         ledger_a.close()
