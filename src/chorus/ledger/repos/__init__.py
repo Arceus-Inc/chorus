@@ -30,6 +30,8 @@ from chorus.ledger.repos.routine_runs import RoutineRunRepo
 from chorus.ledger.repos.routine_triggers import RoutineTriggerRepo
 from chorus.ledger.repos.routines import RoutineRepo
 from chorus.ledger.repos.runs import RunRepo
+from chorus.ledger.repos.skill_revisions import SkillRevisionRepo
+from chorus.ledger.repos.skills import SkillRepo
 from chorus.ledger.repos.staffing_requests import StaffingRequestRepo
 from chorus.ledger.repos.tasks import TaskRepo
 from chorus.ledger.repos.teams import TeamMemberRepo, TeamRepo
@@ -62,6 +64,8 @@ __all__ = [
     "RoutineRunRepo",
     "RoutineTriggerRepo",
     "RunRepo",
+    "SkillRepo",
+    "SkillRevisionRepo",
     "StaffingRequestRepo",
     "TaskRepo",
     "TeamMemberRepo",

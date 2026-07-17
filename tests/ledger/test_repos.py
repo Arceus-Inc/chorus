@@ -23,6 +23,7 @@ from chorus.ledger import (
     RunStatus,
     Task,
     TaskStatus,
+    load_migrations,
 )
 from chorus.outcomes import Verifier
 from chorus.testing import uid
@@ -32,9 +33,8 @@ pytestmark = pytest.mark.integration
 
 
 def test_open_applies_schema_and_reports_version(ledger: Ledger) -> None:
-    from chorus.ledger import baseline
 
-    assert ledger.schema_version() == baseline()[0]
+    assert ledger.schema_version() == load_migrations()[-1].id  # newest applied delta
 
 
 def test_employee_create_and_get(ledger: Ledger) -> None:

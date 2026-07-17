@@ -1,24 +1,22 @@
-"""``SkillStore`` — Chorus-owned procedural memory (skills.db under company skills dir).
+"""``SkillStore`` — Chorus-owned procedural memory in the shared Postgres schema.
 
-Mirrors :class:`~chorus.memory.EpisodicStore`: open path, migrate, expose repos.
-Versioning mirrors ``routine_revision`` / Paperclip ``company_skill_versions``.
+The one lattice-side store where the DB is the source of truth (evolved skills rematerialize
+from it every beat), so it rides the company ledger's RLS-scoped connection — unlike episodic
+memory, which stays a workdir-local SQLite file by design. Versioning mirrors
+``routine_revision`` / Paperclip ``company_skill_versions``.
 """
 
 from __future__ import annotations
 
 import hashlib
 import json
-import sqlite3
-from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from chorus._sqlite_migrations import MigrationRunner
 from chorus.ids import mint_id
-from chorus.skills._models import Skill, SkillOrigin, SkillRevision, SkillState
-from chorus.skills.migrations import MIGRATIONS
-from chorus.skills.repos import SkillRepo, SkillRevisionRepo
+from chorus.ledger import Skill, SkillOrigin, SkillRevision, SkillState
 
-_DB_NAME = "skills.db"
+if TYPE_CHECKING:
+    from chorus.ledger import Ledger
 
 
 class SkillConflictError(RuntimeError):
@@ -26,17 +24,15 @@ class SkillConflictError(RuntimeError):
 
 
 class SkillStore:
-    """Append-only skill HEAD + revision history for one company."""
+    """Append-only skill HEAD + revision history for one company.
 
-    def __init__(self, skills_dir: str | Path) -> None:
-        root = Path(skills_dir)
-        root.mkdir(parents=True, exist_ok=True)
-        self._conn = sqlite3.connect(root / _DB_NAME)
-        self._conn.row_factory = sqlite3.Row
-        self._conn.execute("PRAGMA foreign_keys = ON")
-        MigrationRunner(MIGRATIONS).apply(self._conn)
-        self._skills = SkillRepo(self._conn)
-        self._revisions = SkillRevisionRepo(self._conn)
+    The ``skill`` / ``skill_revision`` tables live beside the ledger tables — same database,
+    same ``company_id`` + FORCE RLS scoping — so the store rides the ledger's connection.
+    """
+
+    def __init__(self, ledger: Ledger) -> None:
+        self._skills = ledger.skills
+        self._revisions = ledger.skill_revisions
 
     def create(
         self,
@@ -174,7 +170,7 @@ class SkillStore:
         return self._revisions.head(skill.id)
 
     def close(self) -> None:
-        self._conn.close()
+        """No-op — the ledger owns the connection; closing the ledger closes the store."""
 
 
 def _dumps_inventory(file_inventory: list[dict[str, Any]]) -> str:

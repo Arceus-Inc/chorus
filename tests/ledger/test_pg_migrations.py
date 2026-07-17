@@ -23,11 +23,14 @@ from chorus.ledger._migrations import (
     MigrationDriftError,
     load_migrations,
 )
+from chorus.ledger._migrations import (
+    load_migrations as _real_load,
+)
 
 pytestmark = pytest.mark.integration
 
 _FIXTURE = Migration(
-    id="0002_widget",
+    id="0099_widget",
     checksum="",  # computed by __post_init__ from the statements
     sql=(
         "CREATE TABLE widget (\n"
@@ -60,9 +63,10 @@ def _table_exists(conninfo: str, table: str) -> bool:
 
 
 def test_shipped_migrations_load_in_id_order() -> None:
-    """The real shipped stream loads cleanly (empty today — the baseline subsumes everything)."""
+    """The real shipped stream loads cleanly, id-ordered (0002_skills is the first delta)."""
     shipped = load_migrations()
     assert [m.id for m in shipped] == sorted(m.id for m in shipped)
+    assert "0002_skills" in {m.id for m in shipped}
 
 
 def test_fresh_bootstrap_applies_baseline_then_all_migrations(
@@ -70,7 +74,7 @@ def test_fresh_bootstrap_applies_baseline_then_all_migrations(
 ) -> None:
     import chorus.ledger._ledger as ledger_mod
 
-    monkeypatch.setattr(ledger_mod, "load_migrations", lambda: [_FIXTURE])
+    monkeypatch.setattr(ledger_mod, "load_migrations", lambda: [*_real_load(), _FIXTURE])
     with psycopg.connect(pg_database, autocommit=True) as admin:
         admin.execute("DROP SCHEMA public CASCADE")
         admin.execute("CREATE SCHEMA public")
@@ -79,7 +83,7 @@ def test_fresh_bootstrap_applies_baseline_then_all_migrations(
     assert _table_exists(pg_database, "widget")
     applied = _applied_rows(pg_database)
     assert "0001_baseline" in applied
-    assert applied["0002_widget"] == _FIXTURE.checksum
+    assert applied["0099_widget"] == _FIXTURE.checksum
 
 
 def test_existing_database_applies_only_pending_migrations(
@@ -89,17 +93,17 @@ def test_existing_database_applies_only_pending_migrations(
     import chorus.ledger._ledger as ledger_mod
 
     assert not _table_exists(pg_database, "widget")  # template predates the fixture
-    monkeypatch.setattr(ledger_mod, "load_migrations", lambda: [_FIXTURE])
+    monkeypatch.setattr(ledger_mod, "load_migrations", lambda: [*_real_load(), _FIXTURE])
     store = Ledger.open(pg_database, company_id=str(uuid.uuid4()))
     store.close()
     assert _table_exists(pg_database, "widget")
-    assert _applied_rows(pg_database)["0002_widget"] == _FIXTURE.checksum
+    assert _applied_rows(pg_database)["0099_widget"] == _FIXTURE.checksum
 
 
 def test_reapply_is_a_noop(pg_database: str, monkeypatch: pytest.MonkeyPatch) -> None:
     import chorus.ledger._ledger as ledger_mod
 
-    monkeypatch.setattr(ledger_mod, "load_migrations", lambda: [_FIXTURE])
+    monkeypatch.setattr(ledger_mod, "load_migrations", lambda: [*_real_load(), _FIXTURE])
     Ledger.open(pg_database, company_id=str(uuid.uuid4())).close()
     Ledger.open(pg_database, company_id=str(uuid.uuid4())).close()  # second open: already applied
     assert _table_exists(pg_database, "widget")
@@ -111,10 +115,10 @@ def test_database_ahead_of_sdk_is_refused(
     """An applied id the SDK does not ship means the SDK is stale — upgrade it, never guess."""
     import chorus.ledger._ledger as ledger_mod
 
-    monkeypatch.setattr(ledger_mod, "load_migrations", lambda: [_FIXTURE])
+    monkeypatch.setattr(ledger_mod, "load_migrations", lambda: [*_real_load(), _FIXTURE])
     Ledger.open(pg_database, company_id=str(uuid.uuid4())).close()
-    monkeypatch.setattr(ledger_mod, "load_migrations", lambda: [])
-    with pytest.raises(LedgerAheadError, match="0002_widget"):
+    monkeypatch.setattr(ledger_mod, "load_migrations", _real_load)
+    with pytest.raises(LedgerAheadError, match="0099_widget"):
         Ledger.open(pg_database, company_id=str(uuid.uuid4()))
 
 
@@ -122,11 +126,11 @@ def test_edited_migration_is_refused(pg_database: str, monkeypatch: pytest.Monke
     """Deployed migrations are immutable — a checksum mismatch is drift, not a retry."""
     import chorus.ledger._ledger as ledger_mod
 
-    monkeypatch.setattr(ledger_mod, "load_migrations", lambda: [_FIXTURE])
+    monkeypatch.setattr(ledger_mod, "load_migrations", lambda: [*_real_load(), _FIXTURE])
     Ledger.open(pg_database, company_id=str(uuid.uuid4())).close()
-    edited = Migration(id="0002_widget", checksum="", sql="SELECT 1")
-    monkeypatch.setattr(ledger_mod, "load_migrations", lambda: [edited])
-    with pytest.raises(MigrationDriftError, match="0002_widget"):
+    edited = Migration(id="0099_widget", checksum="", sql="SELECT 1")
+    monkeypatch.setattr(ledger_mod, "load_migrations", lambda: [*_real_load(), edited])
+    with pytest.raises(MigrationDriftError, match="0099_widget"):
         Ledger.open(pg_database, company_id=str(uuid.uuid4()))
 
 
@@ -137,7 +141,7 @@ def test_migrated_and_fresh_databases_converge(
     same indexes, same RLS posture on the migration-created table."""
     import chorus.ledger._ledger as ledger_mod
 
-    monkeypatch.setattr(ledger_mod, "load_migrations", lambda: [_FIXTURE])
+    monkeypatch.setattr(ledger_mod, "load_migrations", lambda: [*_real_load(), _FIXTURE])
     Ledger.open(pg_database, company_id=str(uuid.uuid4())).close()  # migrated path
 
     fresh_db = f"chorus_mig_fresh_{uuid.uuid4().hex[:8]}"

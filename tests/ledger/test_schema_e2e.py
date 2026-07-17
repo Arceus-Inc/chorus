@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pytest
 
-from chorus.ledger import Ledger, LedgerConnection, LedgerIntegrityError
+from chorus.ledger import Ledger, LedgerConnection, LedgerIntegrityError, load_migrations
 from chorus.testing import uid
 
 pytestmark = pytest.mark.e2e
@@ -135,6 +135,5 @@ def test_dod_is_one_per_task(ledger: Ledger) -> None:
 
 
 def test_schema_version_reports_the_baseline(ledger: Ledger) -> None:
-    from chorus.ledger import baseline
 
-    assert ledger.schema_version() == baseline()[0]
+    assert ledger.schema_version() == load_migrations()[-1].id  # newest applied delta

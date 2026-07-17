@@ -59,6 +59,8 @@ from chorus.ledger.repos import (
     RoutineRunRepo,
     RoutineTriggerRepo,
     RunRepo,
+    SkillRepo,
+    SkillRevisionRepo,
     StaffingRequestRepo,
     TaskRepo,
     TeamMemberRepo,
@@ -188,6 +190,8 @@ class Ledger:
         self.routine_triggers = RoutineTriggerRepo(conn)
         self.routine_runs = RoutineRunRepo(conn)
         self.runs = RunRepo(conn)
+        self.skills = SkillRepo(conn)
+        self.skill_revisions = SkillRevisionRepo(conn)
         self.dod = DodRepo(conn)
         self.artifacts = ArtifactRepo(conn)
         self.artifact_revisions = ArtifactRevisionRepo(conn)

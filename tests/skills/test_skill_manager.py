@@ -10,6 +10,7 @@ from pathlib import Path
 
 import pytest
 
+from chorus.ledger import Ledger
 from chorus.skills import SkillStore
 from chorus.skills.manager import SkillManager, SkillObservation
 
@@ -52,8 +53,8 @@ class _Ep:
         self.outcome = outcome
 
 
-def _mgr(tmp_path: Path, *, canonical: Path | None = None) -> SkillManager:
-    store = SkillStore(tmp_path / "skills")
+def _mgr(ledger: Ledger, tmp_path: Path, *, canonical: Path | None = None) -> SkillManager:
+    store = SkillStore(ledger)
     if canonical is None:
         canonical = tmp_path / "canonical"
         skill = canonical / "structuring-any-service"
@@ -73,8 +74,8 @@ def _mgr(tmp_path: Path, *, canonical: Path | None = None) -> SkillManager:
     )
 
 
-def test_evolve_appends_section_and_returns_harness_obs(tmp_path: Path) -> None:
-    mgr = _mgr(tmp_path)
+def test_evolve_appends_section_and_returns_harness_obs(ledger: Ledger, tmp_path: Path) -> None:
+    mgr = _mgr(ledger, tmp_path)
     try:
         obs = mgr.apply(
             action="evolve",
@@ -96,8 +97,8 @@ def test_evolve_appends_section_and_returns_harness_obs(tmp_path: Path) -> None:
         mgr.close()
 
 
-def test_patch_find_replace_bumps_revision(tmp_path: Path) -> None:
-    mgr = _mgr(tmp_path)
+def test_patch_find_replace_bumps_revision(ledger: Ledger, tmp_path: Path) -> None:
+    mgr = _mgr(ledger, tmp_path)
     try:
         first = mgr.apply(
             action="evolve",
@@ -121,8 +122,8 @@ def test_patch_find_replace_bumps_revision(tmp_path: Path) -> None:
         mgr.close()
 
 
-def test_patch_miss_returns_recovery_contract(tmp_path: Path) -> None:
-    mgr = _mgr(tmp_path)
+def test_patch_miss_returns_recovery_contract(ledger: Ledger, tmp_path: Path) -> None:
+    mgr = _mgr(ledger, tmp_path)
     try:
         mgr.apply(
             action="evolve",
@@ -146,8 +147,8 @@ def test_patch_miss_returns_recovery_contract(tmp_path: Path) -> None:
         mgr.close()
 
 
-def test_diary_evolve_rejected(tmp_path: Path) -> None:
-    mgr = _mgr(tmp_path)
+def test_diary_evolve_rejected(ledger: Ledger, tmp_path: Path) -> None:
+    mgr = _mgr(ledger, tmp_path)
     try:
         obs = mgr.apply(
             action="evolve",
@@ -165,8 +166,8 @@ def test_diary_evolve_rejected(tmp_path: Path) -> None:
         mgr.close()
 
 
-def test_create_class_level_skill(tmp_path: Path) -> None:
-    mgr = _mgr(tmp_path)
+def test_create_class_level_skill(ledger: Ledger, tmp_path: Path) -> None:
+    mgr = _mgr(ledger, tmp_path)
     try:
         obs = mgr.apply(
             action="create",
@@ -188,8 +189,8 @@ def test_create_class_level_skill(tmp_path: Path) -> None:
         mgr.close()
 
 
-def test_observation_shape_keys(tmp_path: Path) -> None:
-    mgr = _mgr(tmp_path)
+def test_observation_shape_keys(ledger: Ledger, tmp_path: Path) -> None:
+    mgr = _mgr(ledger, tmp_path)
     try:
         obs = mgr.apply(
             action="evolve",

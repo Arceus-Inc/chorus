@@ -6,21 +6,21 @@ SoT lives in Chorus at ``{company_root}/skills/skills.db``, not Lattice.
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
 import pytest
 
+from chorus.ledger import Ledger
 from chorus.skills import SkillOrigin, SkillState, SkillStore
 
 pytestmark = pytest.mark.unit
 
 
-def _store(tmp_path: Path) -> SkillStore:
-    return SkillStore(tmp_path / "skills")
+def _store(ledger: Ledger) -> SkillStore:
+    return SkillStore(ledger)
 
 
-def test_create_skill_writes_revision_one(tmp_path: Path) -> None:
-    store = _store(tmp_path)
+def test_create_skill_writes_revision_one(ledger: Ledger) -> None:
+    store = _store(ledger)
     try:
         skill, rev = store.create(
             employee_id="bex",
@@ -54,8 +54,8 @@ def test_create_skill_writes_revision_one(tmp_path: Path) -> None:
         store.close()
 
 
-def test_append_revision_advances_head(tmp_path: Path) -> None:
-    store = _store(tmp_path)
+def test_append_revision_advances_head(ledger: Ledger) -> None:
+    store = _store(ledger)
     try:
         skill, _ = store.create(
             employee_id="bex",
@@ -93,8 +93,8 @@ def test_append_revision_advances_head(tmp_path: Path) -> None:
         store.close()
 
 
-def test_restore_appends_new_revision_never_rewrites(tmp_path: Path) -> None:
-    store = _store(tmp_path)
+def test_restore_appends_new_revision_never_rewrites(ledger: Ledger) -> None:
+    store = _store(ledger)
     try:
         skill, rev1 = store.create(
             employee_id="bex",
@@ -124,8 +124,8 @@ def test_restore_appends_new_revision_never_rewrites(tmp_path: Path) -> None:
         store.close()
 
 
-def test_get_by_employee_slug(tmp_path: Path) -> None:
-    store = _store(tmp_path)
+def test_get_by_employee_slug(ledger: Ledger) -> None:
+    store = _store(ledger)
     try:
         store.create(
             employee_id="bex",
@@ -144,8 +144,8 @@ def test_get_by_employee_slug(tmp_path: Path) -> None:
         store.close()
 
 
-def test_duplicate_slug_rejected(tmp_path: Path) -> None:
-    store = _store(tmp_path)
+def test_duplicate_slug_rejected(ledger: Ledger) -> None:
+    store = _store(ledger)
     try:
         store.create(
             employee_id="bex",
@@ -172,8 +172,8 @@ def test_duplicate_slug_rejected(tmp_path: Path) -> None:
         store.close()
 
 
-def test_list_active_for_employee(tmp_path: Path) -> None:
-    store = _store(tmp_path)
+def test_list_active_for_employee(ledger: Ledger) -> None:
+    store = _store(ledger)
     try:
         store.create(
             employee_id="bex",

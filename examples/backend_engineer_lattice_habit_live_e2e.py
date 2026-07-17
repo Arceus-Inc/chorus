@@ -261,7 +261,7 @@ def _seed_episodes(store: EpisodicStore, *, n: int = 5) -> list[str]:
 
 
 def _apply_pattern_and_habit(
-    *, company_root: Path, run_ids: list[str]
+    *, company_root: Path, ledger: Ledger, run_ids: list[str]
 ) -> list[tuple[str, bool, str]]:
     from chorus_employee.backend_engineer._harness import backend_engineer_manifest
 
@@ -302,7 +302,7 @@ def _apply_pattern_and_habit(
         )
     )
 
-    store = SkillStore(company_root / "skills")
+    store = SkillStore(ledger)
     episodes = tuple(EpisodicStore(company_root / "memory").records_for(_EMPLOYEE_ID, limit=20))
     mgr = SkillManager(
         store,
@@ -450,7 +450,9 @@ def main() -> int:
     _log(f"  seeded {len(run_ids)} runs")
 
     _log("\n--- PROGRAMMATIC pattern + habit EVOLVE ---")
-    prog_checks = _apply_pattern_and_habit(company_root=factory.company_root, run_ids=run_ids)
+    prog_checks = _apply_pattern_and_habit(
+        company_root=factory.company_root, ledger=ledger, run_ids=run_ids
+    )
     for name, ok, detail in prog_checks:
         _log(f"  [{'PASS' if ok else 'FAIL'}] {name} — {detail}")
     if not all(ok for _, ok, _ in prog_checks):
