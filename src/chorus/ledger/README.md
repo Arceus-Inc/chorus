@@ -1,33 +1,40 @@
-# `chorus.ledger` — the durable store (spec 01)
+# `chorus.ledger` — the durable store (spec 01, spec 12 §6)
 
 The ledger is chorus's source of truth for *what work exists and where it is*: the DAG of work, the
-org tree, scheduling/liveness rows, money, and outcomes. It is **SQLite by default, Postgres-pluggable
-later** — raw, intersection SQL (SQLite ∩ Postgres) behind a `Ledger` Protocol, with **no ORM**.
+org tree, scheduling/liveness rows, money, outcomes — and procedural skills. It is **Postgres, the
+only store** — raw native SQL (uuid, timestamptz, jsonb, boolean) behind the one concrete `Ledger`
+class, with **no ORM**. Every table carries `company_id` + FORCE ROW LEVEL SECURITY scoped by the
+session's `app.company_id`, so one shared schema serves every company (M5 tenancy).
 
 ```
 ledger/
-├── _ledger.py      # SqliteLedger facade + Ledger Protocol (the swappable seam)
-├── _models.py      # frozen dataclasses + StrEnums — the typed row shapes
-├── _migrations.py  # the applied-migration-set runner (forward-only)
-├── migrations/     # numbered .sql — the ordered, immutable history applied to a DB
-├── schema/         # declarative per-table .sql — what the schema *should* look like
+├── _ledger.py      # the Ledger facade — connection, bootstrap, repos, cross-aggregate atomics
+├── _connection.py  # LedgerConnection — psycopg wiring (qmark→%s, savepoint-per-write, loaders)
+├── _migrations.py  # the authored Postgres delta stream (applied-set runner, forward-only)
+├── _models/        # frozen dataclasses + StrEnums per domain — the typed row shapes
+├── migrations/     # NNNN_name.sql — immutable deltas applied on top of the baseline
+├── schema/         # per-table .sql — the frozen BASELINE that bootstraps fresh databases
 └── repos/          # one focused repo per aggregate (table), composed by the facade
 ```
 
 ## Using the DB
 
-Open a ledger (creates the file and applies any pending migrations on the way in):
+Open a ledger (bootstraps a fresh database and applies any pending deltas on the way in):
 
 ```python
-from chorus.ledger import SqliteLedger, Task
+from chorus.ledger import Ledger, Task
 
-ledger = SqliteLedger.open("chorus.db")   # or ":memory:" for tests
+ledger = Ledger.open("postgresql://localhost/chorus", company_id=str(uuid.uuid4()))
 try:
-    ledger.tasks.submit(Task(id="t1", intent="ship the thing"))
-    task = ledger.tasks.get("t1")
+    ledger.tasks.submit(Task(id=mint_id(), intent="ship the thing"))
 finally:
     ledger.close()
 ```
+
+`company_id` (canonical uuid text) pins the session's tenancy context: FORCE RLS scopes every
+read/write to that company, and the `company_id` column DEFAULT stamps every insert. In tests, use
+`chorus.testing.open_test_ledger()` / the `ledger` fixture (a fresh template-copied database per
+test on the session's throwaway PG18 cluster).
 
 You never touch SQL or a connection directly — every read/write goes through a **per-aggregate repo**
 exposed on the facade. The repos are wired in `_ledger.py`:
@@ -42,19 +49,20 @@ exposed on the facade. The repos are wired in `_ledger.py`:
 | `ledger.wakes` | `WakeRepo` | `wake` (coalescing push inbox) |
 | `ledger.routines` / `routine_triggers` / `routine_runs` | routine repos | cron |
 | `ledger.runs` | `RunRepo` | `run` (one beat) |
+| `ledger.skills` / `skill_revisions` | skill repos | `skill`, `skill_revision` (procedural memory HEAD + history) |
 | `ledger.employees` / `goals` | org repos | `employee`, `goal` |
 | `ledger.budget_policies` / `budget_incidents` / `cost_events` | budget repos | two-gate money |
 | `ledger.dod` / `artifacts` / `artifact_revisions` | outcome repos | enforced outcomes |
 | `ledger.messages` / `approvals` / `activity` | coordination repos | mailbox, gate, audit |
 
-The kernel depends on the `Ledger` **Protocol** (also in `_ledger.py`), never on `SqliteLedger`
-concretely — a Postgres-backed ledger can be dropped in behind the same shape (spec 12). Only
-`open()` (connection setup) and the migration DDL are dialect-specific.
+The kernel types against the concrete `Ledger` class directly — one driver, no protocol
+indirection. The domain facades that ride it (`chorus.skills.SkillStore`) compose these repos
+rather than owning connections.
 
 ### Cross-aggregate transactions
 
-A single repo write is atomic on its own. When an operation must touch **several** tables at once,
-wrap it so it commits (or rolls back) as one unit:
+A single repo write is atomic on its own (savepoint-per-write under the hood). When an operation
+must touch **several** tables at once, wrap it so it commits (or rolls back) as one unit:
 
 ```python
 with ledger.transaction():
@@ -74,64 +82,51 @@ rolls back on any exception. The facade exposes the spec-mandated multi-table op
 
 ### Conventions baked into the repos
 
-- **Immutable models** — every row is a `@dataclass(frozen=True)` in `_models.py`; enums are `StrEnum`.
-- **Timestamps** are ISO-8601 text; **JSON columns** are compact text (`repos/_base.py` helpers).
+- **Immutable models** — every row is a `@dataclass(frozen=True)` under `_models/`; enums are `StrEnum`.
+- **Native types on the wire** — uuid ids (`mint_id()` = uuidv7; `derive_id()` = deterministic uuid5),
+  `timestamptz` in UTC read back as canonical ISO text, `jsonb` blobs, real booleans.
 - **Crash-safety is in SQL**, not application locks: partial-unique indexes for exact-once /
   coalescing / single-pending guarantees, CAS-style conditional `UPDATE`s, and DB-level `CHECK`/`FK`
-  constraints as defense-in-depth.
+  constraints as defense-in-depth. Unique keys are company-prefixed unless the id is a minted uuid
+  (`tests/ledger/test_ledger_conformance.py` freezes the deliberate global-unique list).
 
-## Migrations
+## Schema lifecycle: baseline + authored deltas
 
-Versioning tracks an **applied-migration set** (not a single integer), so parallel development can't
-collide. A runner-owned `schema_migrations` table holds one row per applied migration
-(`id`, `checksum`, `applied_at`).
+Two layers, both owned here (deployments — e.g. podium's alembic — orchestrate, never author):
 
-**On `open()`** the runner (`_migrations.py`) diffs the migrations the SDK ships against the rows in
-`schema_migrations` and:
+- **`schema/<table>.sql`** — the **frozen baseline**: one native-PG file per table (DDL + RLS +
+  indexes), FK-dependency-ordered at load. `baseline()` returns `(id, checksum, statements)`;
+  fresh databases bootstrap from it under an advisory lock, recording the checksum in
+  `chorus_schema_migrations`. Once databases exist, the baseline never changes — a checksum
+  mismatch raises `SchemaDriftError`.
+- **`migrations/NNNN_name.sql`** — the **authored delta stream** (first delta: `0002_skills`).
+  `Ledger.open` applies pending deltas in id order inside the bootstrap transaction, recording each
+  in `chorus_schema_migrations` (`id`, `checksum`, `applied_at` — the applied-set model, so two
+  branches that each add a migration merge as two rows, never a renumber). It **refuses to open**
+  when the database is *ahead* of the SDK (`LedgerAheadError`) or a shipped delta was edited after
+  apply (`MigrationDriftError`). `ledger.schema_version()` reports the newest applied id.
 
-- applies anything shipped-but-not-in-the-DB, in `id` order — **forward-only, no down-migrations**;
-- **refuses to open** if the DB has a migration the SDK doesn't ship (DB is *ahead* of the SDK);
-- **refuses to open** on checksum drift (a shipped migration was edited after it was applied).
+`tests/ledger/test_pg_migrations.py` pins the invariant: a baseline+deltas database and a fresh
+bootstrap converge on identical columns, indexes, and FORCE-RLS posture.
 
-Each migration applies inside `BEGIN IMMEDIATE` with an in-lock re-check, so two processes starting at
-once can't double-apply.
-
-Migrations apply automatically — there is no separate "run migrations" command; just
-`SqliteLedger.open(path)`. To inspect the current version:
-
-```python
-ledger.schema_version()   # highest applied migration id, e.g. "0013_review_hardening"
-```
-
-### `migrations/` vs `schema/`
-
-Two views of the same schema, kept in sync **by hand** (no ORM to generate one from the other):
-
-- **`migrations/NNNN_name.sql`** — the ordered, **append-only** history. Once a migration has shipped,
-  never edit it; add a new numbered file instead. Loaded automatically via `migrations/__init__.py`.
-- **`schema/<table>.sql`** — the declarative "what the schema should look like now", one file per
-  table. Used by tooling and humans to read the current shape without replaying history.
-
-`tests/ledger/test_schema_parity.py` is the guard: it applies all migrations to a fresh DB and asserts
-the result **exactly equals** (by normalized DDL) the objects `schema/` declares. If they drift, it
-fails — so any schema change edits **both** places.
+Deployments whose runtime role cannot run DDL apply the same deltas as the schema owner via
+`load_migrations()` (each `Migration` exposes `statements()` and `table_names()` for exact-table
+grants); `Ledger.open` then sees the rows and skips — podium does this generically in its alembic
+`env.py`, so a new delta here needs zero podium code.
 
 ### Adding a migration
 
-1. Create the next-numbered file, e.g. `migrations/0014_add_widget.sql`, with the forward DDL.
-   - Adding a column/table/index → plain `ALTER`/`CREATE`.
-   - Adding a `CHECK`/`FK` to an existing table → SQLite can't `ALTER ADD CONSTRAINT`; rebuild with the
-     **rename-old** pattern (rename the old table aside, `CREATE` the final table directly with the new
-     name, `INSERT … SELECT`, drop the old, recreate indexes). Creating the final table directly —
-     rather than `RENAME`-ing a `_new` table into place — keeps the stored DDL unquoted so parity holds.
-     See `0013_review_hardening.sql` for a worked example.
-2. Update the matching `schema/<table>.sql` to the new final state.
-3. If it's a new table, add a `repos/<aggregate>.py` and wire it into `repos/__init__.py`,
-   `_ledger.py` (facade attribute + `Ledger` Protocol), and `__init__.py` exports.
-4. Run the suite — parity + e2e + your new tests must pass:
+1. Create the next-numbered file, e.g. `migrations/0003_add_widget.sql`, with the forward DDL —
+   native Postgres, and every new table follows the house pattern: `company_id uuid NOT NULL
+   DEFAULT (NULLIF(current_setting('app.company_id', true), ''))::uuid`, ENABLE + FORCE ROW LEVEL
+   SECURITY, an InitPlan-wrapped isolation policy, company-prefixed indexes. Copy an existing
+   `schema/*.sql` or `migrations/0002_skills.sql` as the template.
+2. If it's a new table, add a `repos/<aggregate>.py`, models under `_models/`, and wire the facade
+   attribute in `_ledger.py` plus the `repos/__init__.py` and `chorus.ledger.__init__` exports.
+3. Run the suite — migrations + conformance + your new tests must pass:
 
 ```bash
-uv run pytest -q -W error::ResourceWarning
+uv run pytest -q tests/ledger
 uv run ruff check . && uv run mypy src
 ```
 
