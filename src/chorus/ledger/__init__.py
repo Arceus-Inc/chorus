@@ -19,6 +19,12 @@ from chorus.ledger._ledger import (
     ledger_table_names,
     postgres_ddl,
 )
+from chorus.ledger._migrations import (
+    LedgerAheadError,
+    Migration,
+    MigrationDriftError,
+    load_migrations,
+)
 from chorus.ledger._models import (
     Activity,
     ActivityVerb,
@@ -163,6 +169,7 @@ __all__ = [
     "GoalLevel",
     "GoalRepo",
     "Ledger",
+    "LedgerAheadError",
     "LedgerConnection",
     "LedgerIntegrityError",
     "ManagementGrantDraft",
@@ -171,6 +178,8 @@ __all__ = [
     "Message",
     "MessageKind",
     "MessageRepo",
+    "Migration",
+    "MigrationDriftError",
     "Monitor",
     "MonitorRecoveryPolicy",
     "MonitorRepo",
@@ -224,5 +233,6 @@ __all__ = [
     "WorkforcePlanStatus",
     "baseline",
     "ledger_table_names",
+    "load_migrations",
     "postgres_ddl",
 ]

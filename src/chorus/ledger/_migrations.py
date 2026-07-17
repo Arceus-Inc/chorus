@@ -1,0 +1,70 @@
+"""The authored Postgres migration stream — immutable deltas over the frozen baseline.
+
+``schema/*.sql`` is the baseline snapshot that bootstraps *fresh* databases; every schema change
+after a database exists ships here as ``migrations/NNNN_name.sql`` — an immutable, Postgres-native
+delta applied in id order. ``chorus_schema_migrations`` records the applied set (id + checksum +
+applied_at), collision-safe under parallel development: two branches that each add a migration
+merge as two rows, never a renumber.
+
+The runner refuses two states rather than guessing:
+
+- **ledger ahead of the SDK** — an applied id the SDK does not ship (upgrade the SDK);
+- **checksum drift** — a shipped migration was edited after it was applied somewhere
+  (deployed migrations are immutable; author a new one instead).
+
+Deployments whose runtime role cannot run DDL (podium's ``podium_app``) apply pending deltas in
+their own migration stream as the schema owner — same statements, via :func:`load_migrations` —
+then every later ``Ledger.open`` sees them recorded and skips. Authoring rules: Postgres-native
+types, ``company_id`` + FORCE RLS on every new table (copy the house pattern from
+``schema/*.sql``), DDL only — data backfills are separate migrations.
+"""
+
+from __future__ import annotations
+
+import hashlib
+from dataclasses import dataclass, field
+from importlib.resources import files
+
+__all__ = [
+    "LedgerAheadError",
+    "Migration",
+    "MigrationDriftError",
+    "load_migrations",
+]
+
+
+class LedgerAheadError(RuntimeError):
+    """The database has an applied migration the running SDK does not ship (upgrade the SDK)."""
+
+
+class MigrationDriftError(RuntimeError):
+    """A shipped migration's checksum differs from its applied row (edited after apply)."""
+
+
+@dataclass(frozen=True)
+class Migration:
+    """One immutable delta: ``id`` orders it, ``checksum`` pins its exact bytes."""
+
+    id: str
+    checksum: str
+    sql: str = field(repr=False)
+
+    def __post_init__(self) -> None:
+        digest = hashlib.sha256(self.sql.encode("utf-8")).hexdigest()
+        object.__setattr__(self, "checksum", digest)
+
+    def statements(self) -> list[str]:
+        """``;``-separated statements with ``--`` comments stripped (checksum covers raw bytes)."""
+        without_comments = "\n".join(line.split("--", 1)[0] for line in self.sql.splitlines())
+        return [part.strip() for part in without_comments.split(";") if part.strip()]
+
+
+def load_migrations() -> list[Migration]:
+    """Every shipped ``migrations/*.sql`` delta, id order (empty while the baseline subsumes all)."""
+    directory = files("chorus.ledger.migrations")
+    shipped = [
+        Migration(id=entry.name.removesuffix(".sql"), checksum="", sql=entry.read_text())
+        for entry in directory.iterdir()
+        if entry.name.endswith(".sql")
+    ]
+    return sorted(shipped, key=lambda migration: migration.id)

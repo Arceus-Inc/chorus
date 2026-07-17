@@ -19,10 +19,12 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from importlib.resources import files
+from typing import Any
 
 from chorus.ids import mint_id
 from chorus.ledger._connection import LedgerConnection
 from chorus.ledger._errors import LedgerIntegrityError
+from chorus.ledger._migrations import LedgerAheadError, MigrationDriftError, load_migrations
 from chorus.ledger._models import (
     DecompositionClaim,
     DecompositionStatus,
@@ -255,18 +257,57 @@ class Ledger:
                 if row["checksum"] != checksum:
                     raise SchemaDriftError(
                         "the ledger baseline changed after this database was baselined; "
-                        "re-bootstrap the database (no authored Postgres migrations exist yet)"
+                        "author a migration in chorus/ledger/migrations/ instead of editing "
+                        "the baseline (schema/*.sql is frozen once databases exist)"
                     )
-                self._schema_version = baseline_id
-                return
-            for statement in statements:
+            else:
+                for statement in statements:
+                    pg.execute(statement)
+                pg.execute(
+                    "INSERT INTO chorus_schema_migrations (id, checksum, applied_at) "
+                    "VALUES (%s, %s, %s)",
+                    (baseline_id, checksum, datetime.now(UTC)),
+                )
+            self._apply_pending_migrations(pg, baseline_id)
+        # The display version: the newest applied id (the baseline when no deltas shipped yet).
+        shipped = load_migrations()
+        self._schema_version = shipped[-1].id if shipped else baseline_id
+
+    def _apply_pending_migrations(self, pg: Any, baseline_id: str) -> None:
+        """Apply the authored delta stream (applied-set model) inside the bootstrap transaction.
+
+        Runs under the advisory lock, so concurrent opens serialise. Refuses a database that is
+        AHEAD of the SDK (applied id we do not ship) and a shipped migration whose checksum
+        DRIFTED from its applied row — both mean human intervention, never guessing.
+        """
+        shipped = load_migrations()
+        applied = {
+            row["id"]: row["checksum"]
+            for row in pg.execute("SELECT id, checksum FROM chorus_schema_migrations").fetchall()
+        }
+        shipped_ids = {migration.id for migration in shipped} | {baseline_id}
+        ahead = sorted(set(applied) - shipped_ids)
+        if ahead:
+            raise LedgerAheadError(
+                f"database has applied migrations this SDK does not ship: {', '.join(ahead)} — "
+                "upgrade the SDK"
+            )
+        for migration in shipped:
+            recorded = applied.get(migration.id)
+            if recorded is not None:
+                if recorded != migration.checksum:
+                    raise MigrationDriftError(
+                        f"migration {migration.id} was edited after it was applied "
+                        "(deployed migrations are immutable — author a new migration)"
+                    )
+                continue
+            for statement in migration.statements():
                 pg.execute(statement)
             pg.execute(
                 "INSERT INTO chorus_schema_migrations (id, checksum, applied_at) "
                 "VALUES (%s, %s, %s)",
-                (baseline_id, checksum, datetime.now(UTC)),
+                (migration.id, migration.checksum, datetime.now(UTC)),
             )
-        self._schema_version = baseline_id
 
     def schema_version(self) -> str | None:
         return self._schema_version
