@@ -124,3 +124,40 @@ async def test_budget_gate_denial_is_an_event(ledger: Ledger) -> None:
     assert denied[0].employee_id == "ada"
     assert denied[0].payload["gate"] == "dispatch"
     assert EventKind.WAKE_CLAIMED not in recorder.kinds()  # refused before any claim
+
+
+async def test_facade_submit_emits_intake_events(ledger: Ledger) -> None:
+    """The front door mirrors intake: task.created (+task.assigned) + wake.enqueued (OBS P6)."""
+    from chorus.facade import Caps, Chorus
+    from chorus.observability import EventBus, LedgerInspector
+    from chorus.roles import RoleRegistry, default_roles
+    from chorus.workforce._ledger import LedgerWorkforce
+
+    recorder = _Recorder()
+    bus = EventBus()
+    bus.subscribe(recorder.emit)
+    org = Chorus(
+        ledger=ledger,
+        workforce=LedgerWorkforce(ledger.employees),
+        memory_writer=None,  # type: ignore[arg-type]
+        scheduler=None,  # type: ignore[arg-type]
+        event_bus=bus,
+        inspector=LedgerInspector(ledger),
+        dream=None,
+        roles=RoleRegistry.from_plugins(default_roles()),
+        caps=Caps(),
+    )
+    org.hire(name="Ada", role="backend_engineer")
+    recorder.events.clear()  # intake events only — hire has its own vocabulary
+
+    task = org.submit("build the login page", assignee="ada")
+
+    kinds = recorder.kinds()
+    assert EventKind.TASK_CREATED in kinds
+    assert EventKind.TASK_ASSIGNED in kinds
+    assert EventKind.WAKE_ENQUEUED in kinds
+    created = next(e for e in recorder.events if e.kind is EventKind.TASK_CREATED)
+    assert created.task_id == task.id
+    assert created.trace_id == task.id  # intake tasks are lineage roots
+    assigned = next(e for e in recorder.events if e.kind is EventKind.TASK_ASSIGNED)
+    assert assigned.employee_id == "ada"
