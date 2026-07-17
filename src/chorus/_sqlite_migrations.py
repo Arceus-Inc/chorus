@@ -1,4 +1,8 @@
-"""Applied-migration-set versioning + a forward-only runner (spec 01 §schema-versioning).
+"""SQLite applied-migration-set runner — NOW ONLY for the episodic-memory and skill stores.
+
+The ledger retired SQLite (spec 12 §6: Postgres-native, `chorus.ledger.Ledger`); this runner
+survives solely because the memory/skills storage engines still run on SQLite until their own
+Postgres port (M5-L). New code must not grow SQLite usage.
 
 Versioning tracks the *set* of applied migrations (``id`` + ``checksum``), not a single
 integer — collision-safe under parallel development (two branches that each add a migration

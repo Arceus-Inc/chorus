@@ -6,7 +6,7 @@ import sqlite3
 from datetime import datetime
 from pathlib import Path
 
-from chorus.ledger._migrations import MigrationRunner
+from chorus._sqlite_migrations import MigrationRunner
 from chorus.memory.episodic.models import SprintDelta
 from chorus.memory.episodic.recall_filters import EpisodicQueryFilters
 from chorus.memory.episodic.search_hit import EpisodicSearchHit

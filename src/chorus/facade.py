@@ -51,7 +51,6 @@ from chorus.ledger import (
     LedgerIntegrityError,
     Message,
     OriginKind,
-    SqliteLedger,
     Task,
     TaskPriority,
 )
@@ -135,7 +134,7 @@ class Chorus:
     def build(
         cls,
         *,
-        db_path: str | None = None,
+        dsn: str | None = None,
         ledger: Ledger | None = None,
         org_repo: str,
         memory_repo: str,
@@ -155,14 +154,14 @@ class Chorus:
         ticks (recover/cron/monitors/dispatch) but cannot execute a beat. ``landers`` is the
         symmetric *landing* seam — the registry the kernel lands a passed beat's deliverable
         through (the consumer passes ``factory.landers``); unset, a passed beat still completes
-        but records no role artifact. Pass **exactly one** of ``db_path`` (open a fresh store) or
+        but records no role artifact. Pass **exactly one** of ``dsn`` (open the Postgres store, RLS-scoped to ``company_id``) or
         ``ledger`` (share an already-open store with the harness factory, so a reviewer's verdict
         and the factory's capability tools land in *one* ledger, not two). ``roles`` defaults to
         :func:`chorus.roles.default_roles`; extra roles register through the same validated path
         (spec 09 §1).
         """
-        if db_path is not None and ledger is not None:
-            raise ValueError("provide either db_path or ledger, not both")
+        if dsn is not None and ledger is not None:
+            raise ValueError("provide either dsn or ledger, not both")
         the_caps = caps or Caps()
         registry = RoleRegistry.from_plugins(roles if roles is not None else default_roles())
         # The seam accepts either the resolver object or its bound method (the §0 front-door form,
@@ -174,10 +173,20 @@ class Chorus:
             resolved_runner_for = runner_from(beat_runner_for)
         if ledger is not None:
             store = ledger
-        elif db_path is not None:
-            store = SqliteLedger.open(db_path)
+        elif dsn is not None:
+            import uuid as _uuid
+
+            try:
+                _uuid.UUID(company_id)
+            except ValueError as exc:
+                # The ledger's RLS policies cast the company GUC to uuid — fail at build time.
+                raise ValueError(
+                    f"company_id must be canonical uuid text to open a ledger by dsn, "
+                    f"got {company_id!r}"
+                ) from exc
+            store = Ledger.open(dsn, company_id=company_id)
         else:
-            raise ValueError("provide exactly one of db_path or ledger")
+            raise ValueError("provide exactly one of dsn or ledger")
         # The live workforce is the ledger employee table — the single source of truth every
         # assignment FK points at (spec 06 §3). ``org_repo`` is the portable git-markdown
         # export/import location (spec 09 §3, the GitWorkforce codec), not a second live store.

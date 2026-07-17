@@ -1,4 +1,4 @@
-"""The Postgres driver connection — psycopg3 adapted to the repos' ``LedgerConnection`` shape.
+"""THE ledger connection — psycopg3, Postgres, the only driver (SQLite retired).
 
 Storage is native (uuid/timestamptz/jsonb/boolean); the *wire* stays exactly what the repos speak:
 
@@ -64,7 +64,7 @@ def _qmark_to_percent(sql: str) -> str:
     return "".join(out)
 
 
-class PostgresLedgerConnection:
+class LedgerConnection:
     """A psycopg connection presented through the repos' ``LedgerConnection`` protocol."""
 
     _defer_depth: int = 0  # >0 while a facade transaction is batching writes
@@ -75,7 +75,7 @@ class PostgresLedgerConnection:
         self._in_txn = False
 
     @classmethod
-    def connect(cls, conninfo: str, *, company_id: str | None = None) -> PostgresLedgerConnection:
+    def connect(cls, conninfo: str, *, company_id: str | None = None) -> LedgerConnection:
         pg = psycopg.connect(conninfo, autocommit=True, row_factory=rows.dict_row)
         _register_ledger_types(pg)
         if company_id is not None:
@@ -144,4 +144,4 @@ def _register_ledger_types(context: AdaptContext) -> None:
         adapters.register_loader(type_name, _TextLoader)
 
 
-__all__ = ["PostgresLedgerConnection"]
+__all__ = ["LedgerConnection"]

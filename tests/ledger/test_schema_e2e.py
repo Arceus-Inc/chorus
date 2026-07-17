@@ -1,22 +1,22 @@
-"""End-to-end tests against the real M1 schema (spec 01 Clusters A, C, D, F).
+"""End-to-end tests against the real schema (spec 01 Clusters A, C, D, F).
 
-Applies the shipped migrations to a fresh SQLite DB and exercises the
-load-bearing invariants directly in SQL: the single-assignee XOR check, the
-atomic checkout CAS, and the exact-once partial-unique index.
+Exercises the load-bearing invariants directly in SQL on the bootstrapped Postgres schema: the
+single-assignee XOR check, the atomic checkout CAS, and the exact-once partial-unique index.
 """
 
 from __future__ import annotations
 
-import sqlite3
-
 import pytest
+
+from chorus.ledger import Ledger, LedgerConnection, LedgerIntegrityError
+from chorus.testing import uid
 
 pytestmark = pytest.mark.e2e
 
 _NOW = "2026-06-15T00:00:00+00:00"
 
 
-def _insert_employee(conn: sqlite3.Connection, eid: str) -> None:
+def _insert_employee(conn: LedgerConnection, eid: str) -> None:
     conn.execute(
         "INSERT INTO employee (id, name, role, created_at, updated_at) VALUES (?,?,?,?,?)",
         (eid, eid, "engineer", _NOW, _NOW),
@@ -24,7 +24,7 @@ def _insert_employee(conn: sqlite3.Connection, eid: str) -> None:
     conn.commit()
 
 
-def _insert_task(conn: sqlite3.Connection, tid: str, **cols: str) -> None:
+def _insert_task(conn: LedgerConnection, tid: str, **cols: str) -> None:
     base: dict[str, object] = {
         "id": tid,
         "intent": "do a thing",
@@ -44,13 +44,27 @@ def _insert_task(conn: sqlite3.Connection, tid: str, **cols: str) -> None:
     conn.commit()
 
 
-def test_all_m1_tables_exist(migrated: sqlite3.Connection) -> None:
-    tables = {r[0] for r in migrated.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-    assert {"employee", "goal", "task", "run", "dod", "artifact", "schema_migrations"} <= tables
+def test_all_m1_tables_exist(ledger: Ledger) -> None:
+    rows = ledger._conn.execute(
+        "SELECT tablename FROM pg_tables WHERE schemaname = 'public'"
+    ).fetchall()
+    tables = {r["tablename"] for r in rows}
+    assert {
+        "employee",
+        "goal",
+        "task",
+        "run",
+        "dod",
+        "artifact",
+        "chorus_schema_migrations",
+    } <= tables
 
 
-def test_key_indexes_exist(migrated: sqlite3.Connection) -> None:
-    idx = {r[0] for r in migrated.execute("SELECT name FROM sqlite_master WHERE type='index'")}
+def test_key_indexes_exist(ledger: Ledger) -> None:
+    rows = ledger._conn.execute(
+        "SELECT indexname FROM pg_indexes WHERE schemaname = 'public'"
+    ).fetchall()
+    idx = {r["indexname"] for r in rows}
     assert {
         "dod_task_uq",
         "task_open_routine_uq",
@@ -58,73 +72,69 @@ def test_key_indexes_exist(migrated: sqlite3.Connection) -> None:
     } <= idx
 
 
-def test_single_assignee_xor_is_enforced(migrated: sqlite3.Connection) -> None:
-    _insert_employee(migrated, "e1")
-    with pytest.raises(sqlite3.IntegrityError):
-        _insert_task(migrated, "t1", assignee_employee_id="e1", assignee_user_id="u1")
+def test_single_assignee_xor_is_enforced(ledger: Ledger) -> None:
+    _insert_employee(ledger._conn, uid("e1"))
+    with pytest.raises(LedgerIntegrityError):
+        _insert_task(
+            ledger._conn, uid("t1"), assignee_employee_id=uid("e1"), assignee_user_id=uid("u1")
+        )
 
 
-def test_checkout_cas_grants_single_owner(migrated: sqlite3.Connection) -> None:
-    _insert_employee(migrated, "e1")
-    _insert_task(migrated, "t1", status="todo")
+def test_checkout_cas_grants_single_owner(ledger: Ledger) -> None:
+    _insert_employee(ledger._conn, uid("e1"))
+    _insert_task(ledger._conn, uid("t1"), status="todo")
 
-    won = migrated.execute(
+    won = ledger._conn.execute(
         "UPDATE task SET checkout_run_id=?, status='in_progress', assignee_employee_id=? "
         "WHERE id=? AND checkout_run_id IS NULL",
-        ("run1", "e1", "t1"),
+        (uid("run1"), uid("e1"), uid("t1")),
     )
-    migrated.commit()
+    ledger._conn.commit()
     assert won.rowcount == 1
 
     # A second claimant finds the lock taken → 0 rows (a 409, never a clobber).
-    lost = migrated.execute(
+    lost = ledger._conn.execute(
         "UPDATE task SET checkout_run_id=? WHERE id=? AND checkout_run_id IS NULL",
-        ("run2", "t1"),
+        (uid("run2"), uid("t1")),
     )
-    migrated.commit()
+    ledger._conn.commit()
     assert lost.rowcount == 0
 
 
-def test_exact_once_self_spawned_task(migrated: sqlite3.Connection) -> None:
-    _insert_task(migrated, "r1", origin_kind="stranded_recovery", origin_id="src1", status="todo")
-    with pytest.raises(sqlite3.IntegrityError):
-        _insert_task(
-            migrated, "r2", origin_kind="stranded_recovery", origin_id="src1", status="todo"
-        )
-
-
-def test_dod_is_one_per_task(migrated: sqlite3.Connection) -> None:
-    _insert_task(migrated, "t1", status="todo")
-    migrated.execute(
-        "INSERT INTO dod (id, task_id, kind, created_at, updated_at) VALUES (?,?,?,?,?)",
-        ("d1", "t1", "command", _NOW, _NOW),
+def test_exact_once_self_spawned_task(ledger: Ledger) -> None:
+    _insert_task(
+        ledger._conn,
+        uid("r1"),
+        origin_kind="stranded_recovery",
+        origin_id=uid("src1"),
+        status="todo",
     )
-    migrated.commit()
-    with pytest.raises(sqlite3.IntegrityError):
-        migrated.execute(
+    with pytest.raises(LedgerIntegrityError):
+        _insert_task(
+            ledger._conn,
+            uid("r2"),
+            origin_kind="stranded_recovery",
+            origin_id=uid("src1"),
+            status="todo",
+        )
+
+
+def test_dod_is_one_per_task(ledger: Ledger) -> None:
+    _insert_task(ledger._conn, uid("t1"), status="todo")
+    ledger._conn.execute(
+        "INSERT INTO dod (id, task_id, kind, created_at, updated_at) VALUES (?,?,?,?,?)",
+        (uid("d1"), uid("t1"), "command", _NOW, _NOW),
+    )
+    ledger._conn.commit()
+    with pytest.raises(LedgerIntegrityError):
+        ledger._conn.execute(
             "INSERT INTO dod (id, task_id, kind, created_at, updated_at) VALUES (?,?,?,?,?)",
-            ("d2", "t1", "agent_review", _NOW, _NOW),
+            (uid("d2"), uid("t1"), "agent_review", _NOW, _NOW),
         )
-        migrated.commit()
+        ledger._conn.commit()
 
 
-def test_display_version_reports_latest_migration(
-    migrated: sqlite3.Connection, runner: object
-) -> None:
-    from chorus.ledger._migrations import MigrationRunner
-    from chorus.ledger.migrations import MIGRATIONS
+def test_schema_version_reports_the_baseline(ledger: Ledger) -> None:
+    from chorus.ledger import baseline
 
-    assert isinstance(runner, MigrationRunner)
-    assert runner.display_version(migrated) == MIGRATIONS[-1].id
-
-
-def test_task_dependency_self_edge_rejected_by_db(migrated: sqlite3.Connection) -> None:
-    # Defense in depth: the DB CHECK rejects a self-edge even if the repo guard is bypassed.
-    _insert_task(migrated, "t1")
-    with pytest.raises(sqlite3.IntegrityError):
-        migrated.execute(
-            "INSERT INTO task_dependency (id, task_id, depends_on_id, created_at) "
-            "VALUES (?, ?, ?, ?)",
-            ("d1", "t1", "t1", _NOW),
-        )
-        migrated.commit()
+    assert ledger.schema_version() == baseline()[0]

@@ -2,7 +2,7 @@
 
 Each behavior here is a kernel-load-bearing contract (exact-once submit, checkout CAS,
 terminal-only lock release, eligibility gating, wake coalescing, transaction batching). The suite is
-parameterized over drivers: ``SqliteLedger`` and ``PostgresLedger`` must pass identically — that is
+parameterized over drivers: ``SqliteLedger`` and ``Ledger`` must pass identically — that is
 what makes the driver swap proven, not hoped. Ids are minted (uuidv7 text): Postgres's native
 ``uuid`` columns enforce the id contract; SQLite's TEXT accepts the same values.
 
@@ -11,13 +11,6 @@ skipped when PG18 isn't installed.
 """
 
 from __future__ import annotations
-
-import os
-import shutil
-import socket
-import subprocess
-from collections.abc import Iterator
-from pathlib import Path
 
 import pytest
 
@@ -28,96 +21,21 @@ from chorus.ledger import (
     LedgerIntegrityError,
     OriginKind,
     Run,
-    SqliteLedger,
     Task,
     TaskStatus,
     Wake,
     WakeReason,
 )
-from chorus.ledger.postgres import PostgresLedger
 from chorus.workforce import Employee, EmployeeStatus
 
 pytestmark = pytest.mark.integration
 
+
 # Overridable so CI (or a non-Homebrew machine) can point at its own PostgreSQL 18 install.
-_PG_BIN = Path(os.environ.get("CHORUS_PG_BIN", "/opt/homebrew/opt/postgresql@18/bin"))
-
-
-def _free_port() -> int:
-    with socket.socket() as s:
-        s.bind(("127.0.0.1", 0))
-        return int(s.getsockname()[1])
-
-
-@pytest.fixture(scope="session")
-def pg_conninfo(tmp_path_factory: pytest.TempPathFactory) -> Iterator[str | None]:
-    """A session-scoped throwaway PG18 cluster, or ``None`` when PG18 isn't installed."""
-    if not _PG_BIN.exists():
-        yield None
-        return
-    data = tmp_path_factory.mktemp("chorus_pgdata")
-    env = {**os.environ, "LC_ALL": "C"}
-    subprocess.run(
-        [
-            str(_PG_BIN / "initdb"),
-            "-D",
-            str(data),
-            "-U",
-            "postgres",
-            "--auth=trust",
-            "--encoding=UTF8",
-            "--locale=C",
-        ],
-        check=True,
-        capture_output=True,
-        env=env,
-    )
-    port = _free_port()
-    subprocess.run(
-        [
-            str(_PG_BIN / "pg_ctl"),
-            "-D",
-            str(data),
-            "-o",
-            f"-p {port} -c listen_addresses=127.0.0.1",
-            "-l",
-            str(data / "log"),
-            "-w",
-            "start",
-        ],
-        check=True,
-        capture_output=True,
-        env=env,
-    )
-    try:
-        yield f"host=127.0.0.1 port={port} user=postgres dbname=postgres"
-    finally:
-        subprocess.run(
-            [str(_PG_BIN / "pg_ctl"), "-D", str(data), "-w", "stop"],
-            capture_output=True,
-            env=env,
-        )
-        shutil.rmtree(data, ignore_errors=True)
-
-
-@pytest.fixture(params=["sqlite", "postgres"])
-def any_ledger(request: pytest.FixtureRequest, pg_conninfo: str | None) -> Iterator[Ledger]:
-    """The driver under test. Every test below runs once per driver — identical assertions."""
-    if request.param == "sqlite":
-        ledger: Ledger = SqliteLedger.open(":memory:")
-    else:
-        if pg_conninfo is None:
-            pytest.skip(f"PostgreSQL 18 not found at {_PG_BIN}")
-        import psycopg
-
-        with psycopg.connect(pg_conninfo, autocommit=True) as admin:
-            admin.execute("DROP SCHEMA public CASCADE")
-            admin.execute("CREATE SCHEMA public")
-        ledger = PostgresLedger.open(pg_conninfo, company_id=mint_id())
-    try:
-        yield ledger
-    finally:
-        ledger.close()
+@pytest.fixture
+def any_ledger(ledger: Ledger) -> Ledger:
+    """The (one) driver under test — kept as a named seam from the two-driver era."""
+    return ledger
 
 
 def _employee(ledger: Ledger) -> Employee:
@@ -592,16 +510,16 @@ def test_finalize_beat_fires_downstream_wakes(any_ledger: Ledger) -> None:
 # --- Postgres-native storage (the whole point) --------------------------------------------------
 
 
-def test_postgres_columns_are_native_types(pg_conninfo: str | None) -> None:
+def test_postgres_columns_are_native_types(pg_database: str) -> None:
     """uuid ids, timestamptz times, jsonb blobs, boolean flags — native, never intersection text."""
-    if pg_conninfo is None:
+    if pg_database is None:
         pytest.skip(f"PostgreSQL 18 not found at {_PG_BIN}")
     import psycopg
 
-    with psycopg.connect(pg_conninfo, autocommit=True) as admin:
+    with psycopg.connect(pg_database, autocommit=True) as admin:
         admin.execute("DROP SCHEMA public CASCADE")
         admin.execute("CREATE SCHEMA public")
-    ledger = PostgresLedger.open(pg_conninfo)
+    ledger = Ledger.open(pg_database)
     try:
         import psycopg
 
@@ -633,7 +551,7 @@ def test_postgres_columns_are_native_types(pg_conninfo: str | None) -> None:
             ("wake", "company_id"): "uuid",
             ("system_principal", "company_id"): "uuid",
         }
-        with psycopg.connect(pg_conninfo) as conn:
+        with psycopg.connect(pg_database) as conn:
             rows = conn.execute(
                 "SELECT table_name, column_name, data_type FROM information_schema.columns "
                 "WHERE table_schema = 'public'"
@@ -650,11 +568,11 @@ def test_postgres_columns_are_native_types(pg_conninfo: str | None) -> None:
 # --- Postgres tenancy: company_id + FORCE RLS (M5 shared-schema shape) --------------------------
 
 
-def _app_role_conninfo(pg_conninfo: str, admin_grants: bool = True) -> str:
+def _app_role_conninfo(pg_database: str, admin_grants: bool = True) -> str:
     """Create (once) a non-superuser NOBYPASSRLS role and grant it the ledger tables."""
     import psycopg
 
-    with psycopg.connect(pg_conninfo, autocommit=True) as admin:
+    with psycopg.connect(pg_database, autocommit=True) as admin:
         admin.execute(
             "DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'chorus_app') "
             "THEN CREATE ROLE chorus_app LOGIN NOSUPERUSER NOBYPASSRLS; END IF; END $$"
@@ -664,27 +582,27 @@ def _app_role_conninfo(pg_conninfo: str, admin_grants: bool = True) -> str:
             admin.execute(
                 "GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO chorus_app"
             )
-    return pg_conninfo.replace("user=postgres", "user=chorus_app")
+    return pg_database.replace("user=postgres", "user=chorus_app")
 
 
-def test_postgres_isolates_companies_with_force_rls(pg_conninfo: str | None) -> None:
+def test_postgres_isolates_companies_with_force_rls(pg_database: str) -> None:
     """Two companies, one database: A's rows are invisible to B, writes auto-stamp the session's
     company, and a session with no company context fails closed. Proven under a NON-superuser
     role (FORCE RLS bites; superusers bypass row security entirely)."""
-    if pg_conninfo is None:
+    if pg_database is None:
         pytest.skip(f"PostgreSQL 18 not found at {_PG_BIN}")
     import psycopg
 
-    with psycopg.connect(pg_conninfo, autocommit=True) as admin:
+    with psycopg.connect(pg_database, autocommit=True) as admin:
         admin.execute("DROP SCHEMA public CASCADE")
         admin.execute("CREATE SCHEMA public")
-    bootstrap = PostgresLedger.open(pg_conninfo, company_id=mint_id())  # owner applies DDL
+    bootstrap = Ledger.open(pg_database, company_id=mint_id())  # owner applies DDL
     bootstrap.close()
-    app_conninfo = _app_role_conninfo(pg_conninfo)
+    app_conninfo = _app_role_conninfo(pg_database)
 
     company_a, company_b = mint_id(), mint_id()
-    ledger_a = PostgresLedger.open(app_conninfo, company_id=company_a)
-    ledger_b = PostgresLedger.open(app_conninfo, company_id=company_b)
+    ledger_a = Ledger.open(app_conninfo, company_id=company_a)
+    ledger_b = Ledger.open(app_conninfo, company_id=company_b)
     try:
         task = _task(ledger_a, intent="secret work")
         assert ledger_a.tasks.get(task.id) is not None  # A sees its own row
@@ -701,30 +619,30 @@ def test_postgres_isolates_companies_with_force_rls(pg_conninfo: str | None) -> 
         ledger_b.close()
 
     # No company context at all -> inserts fail closed (NOT NULL company_id from a NULL GUC).
-    naked = PostgresLedger.open(app_conninfo)
+    naked = Ledger.open(app_conninfo)
     try:
         with pytest.raises(Exception):
             _task(naked)
-        naked._pg_conn.rollback()
+        naked._conn.rollback()
         assert naked.tasks.list_eligible(limit=10) == []  # and reads see zero rows
     finally:
         naked.close()
 
 
-def test_postgres_employee_slugs_are_company_scoped(pg_conninfo: str | None) -> None:
+def test_postgres_employee_slugs_are_company_scoped(pg_database: str) -> None:
     """Two companies may both employ "ace" (composite PK); within one company the slug is unique.
     This is the regression test for slug identity in the shared schema (spec 06 §3 slugs)."""
-    if pg_conninfo is None:
+    if pg_database is None:
         pytest.skip(f"PostgreSQL 18 not found at {_PG_BIN}")
     import psycopg
 
-    with psycopg.connect(pg_conninfo, autocommit=True) as admin:
+    with psycopg.connect(pg_database, autocommit=True) as admin:
         admin.execute("DROP SCHEMA public CASCADE")
         admin.execute("CREATE SCHEMA public")
-    PostgresLedger.open(pg_conninfo, company_id=mint_id()).close()
-    app_conninfo = _app_role_conninfo(pg_conninfo)
-    ledger_a = PostgresLedger.open(app_conninfo, company_id=mint_id())
-    ledger_b = PostgresLedger.open(app_conninfo, company_id=mint_id())
+    Ledger.open(pg_database, company_id=mint_id()).close()
+    app_conninfo = _app_role_conninfo(pg_database)
+    ledger_a = Ledger.open(app_conninfo, company_id=mint_id())
+    ledger_b = Ledger.open(app_conninfo, company_id=mint_id())
     try:
         ledger_a.employees.create(Employee(id="ace", name="Ace", role="engineer"))
         ledger_b.employees.create(Employee(id="ace", name="Ace", role="engineer"))  # no collision
@@ -737,20 +655,20 @@ def test_postgres_employee_slugs_are_company_scoped(pg_conninfo: str | None) -> 
         ledger_b.close()
 
 
-def test_postgres_horizon_fingerprint_is_company_scoped(pg_conninfo: str | None) -> None:
+def test_postgres_horizon_fingerprint_is_company_scoped(pg_database: str) -> None:
     """The one non-id-anchored exact-once index: two companies may carry the same intake
     fingerprint; within one company it stays exact-once."""
-    if pg_conninfo is None:
+    if pg_database is None:
         pytest.skip(f"PostgreSQL 18 not found at {_PG_BIN}")
     import psycopg
 
-    with psycopg.connect(pg_conninfo, autocommit=True) as admin:
+    with psycopg.connect(pg_database, autocommit=True) as admin:
         admin.execute("DROP SCHEMA public CASCADE")
         admin.execute("CREATE SCHEMA public")
-    PostgresLedger.open(pg_conninfo, company_id=mint_id()).close()
-    app_conninfo = _app_role_conninfo(pg_conninfo)
-    ledger_a = PostgresLedger.open(app_conninfo, company_id=mint_id())
-    ledger_b = PostgresLedger.open(app_conninfo, company_id=mint_id())
+    Ledger.open(pg_database, company_id=mint_id()).close()
+    app_conninfo = _app_role_conninfo(pg_database)
+    ledger_a = Ledger.open(app_conninfo, company_id=mint_id())
+    ledger_b = Ledger.open(app_conninfo, company_id=mint_id())
     try:
         fingerprint = "sha256:same-directive"
         _task(ledger_a, origin_kind=OriginKind.HORIZON_INTAKE, origin_fingerprint=fingerprint)
@@ -762,22 +680,22 @@ def test_postgres_horizon_fingerprint_is_company_scoped(pg_conninfo: str | None)
         ledger_b.close()
 
 
-def test_postgres_two_connections_share_one_company_concurrently(pg_conninfo: str | None) -> None:
+def test_postgres_two_connections_share_one_company_concurrently(pg_database: str) -> None:
     """The M5/M4 unblock: the api process and the conductor process hold SEPARATE connections to
     the SAME company's ledger and interleave reads and writes consistently — the thing a
     SQLite-file-per-company could never do across processes."""
-    if pg_conninfo is None:
+    if pg_database is None:
         pytest.skip(f"PostgreSQL 18 not found at {_PG_BIN}")
     import psycopg
 
-    with psycopg.connect(pg_conninfo, autocommit=True) as admin:
+    with psycopg.connect(pg_database, autocommit=True) as admin:
         admin.execute("DROP SCHEMA public CASCADE")
         admin.execute("CREATE SCHEMA public")
-    PostgresLedger.open(pg_conninfo, company_id=mint_id()).close()
-    app_conninfo = _app_role_conninfo(pg_conninfo)
+    Ledger.open(pg_database, company_id=mint_id()).close()
+    app_conninfo = _app_role_conninfo(pg_database)
     company_id = mint_id()
-    conductor_side = PostgresLedger.open(app_conninfo, company_id=company_id)
-    api_side = PostgresLedger.open(app_conninfo, company_id=company_id)
+    conductor_side = Ledger.open(app_conninfo, company_id=company_id)
+    api_side = Ledger.open(app_conninfo, company_id=company_id)
     try:
         employee = _employee(conductor_side)  # the conductor hires...
         task = _task(api_side, intent="from the api")  # ...the api submits...
@@ -840,7 +758,7 @@ def test_every_global_unique_index_is_a_deliberate_decision() -> None:
     anchored on a chorus-minted uuid, so global uniqueness is safe across companies."""
     import re
 
-    from chorus.ledger.postgres import postgres_ddl
+    from chorus.ledger import postgres_ddl
 
     pattern = re.compile(r"CREATE UNIQUE INDEX (\w+)\s+ON\s+\w+\s*\(([^)]*)\)", re.S)
     global_uniques = {

@@ -14,56 +14,65 @@ from chorus.ledger import (
     ApprovalAction,
     ApprovalStatus,
     ApprovalSubjectKind,
-    SqliteLedger,
+    Ledger,
 )
+from chorus.testing import uid
 
 pytestmark = pytest.mark.integration
 
 
-def test_action_round_trips(ledger: SqliteLedger) -> None:
+def test_action_round_trips(ledger: Ledger) -> None:
     ledger.approvals.request(
         Approval(
-            id="a1",
+            id=uid("a1"),
             subject_kind=ApprovalSubjectKind.EMPLOYEE,
-            subject_id="emp1",
+            subject_id=uid("emp1"),
             reason="hire the engineer",
             action=ApprovalAction.HIRE_EMPLOYEE,
         )
     )
-    got = ledger.approvals.get("a1")
+    got = ledger.approvals.get(uid("a1"))
     assert got is not None and got.action is ApprovalAction.HIRE_EMPLOYEE
 
 
-def test_action_defaults_to_task_gate(ledger: SqliteLedger) -> None:
+def test_action_defaults_to_task_gate(ledger: Ledger) -> None:
     ledger.approvals.request(
-        Approval(id="a1", subject_kind=ApprovalSubjectKind.TASK, subject_id="t1", reason="x")
+        Approval(
+            id=uid("a1"), subject_kind=ApprovalSubjectKind.TASK, subject_id=uid("t1"), reason="x"
+        )
     )
-    got = ledger.approvals.get("a1")
+    got = ledger.approvals.get(uid("a1"))
     assert got is not None and got.action is ApprovalAction.TASK_GATE
 
 
-def test_set_status_records_revision_requested(ledger: SqliteLedger) -> None:
+def test_set_status_records_revision_requested(ledger: Ledger) -> None:
     ledger.approvals.request(
         Approval(
-            id="a1",
+            id=uid("a1"),
             subject_kind=ApprovalSubjectKind.TASK,
-            subject_id="t1",
+            subject_id=uid("t1"),
             reason="re-plan it",
             action=ApprovalAction.PLAN_APPROVAL,
         )
     )
-    ledger.approvals.set_status("a1", ApprovalStatus.REVISION_REQUESTED, decided_by_user_id="u1")
-    got = ledger.approvals.get("a1")
+    ledger.approvals.set_status(
+        uid("a1"), ApprovalStatus.REVISION_REQUESTED, decided_by_user_id=uid("u1")
+    )
+    got = ledger.approvals.get(uid("a1"))
     assert got is not None
     assert got.status is ApprovalStatus.REVISION_REQUESTED
-    assert got.decided_by_user_id == "u1"
+    assert got.decided_by_user_id == uid("u1")
     assert got.decided_at is not None
 
 
-def test_revision_requested_frees_the_subject_gate(ledger: SqliteLedger) -> None:
+def test_revision_requested_frees_the_subject_gate(ledger: Ledger) -> None:
     # a resolved (revision_requested) gate no longer holds the subject's exact-once pending slot.
     ledger.approvals.request(
-        Approval(id="a1", subject_kind=ApprovalSubjectKind.TASK, subject_id="t1", reason="x")
+        Approval(
+            id=uid("a1"), subject_kind=ApprovalSubjectKind.TASK, subject_id=uid("t1"), reason="x"
+        )
     )
-    ledger.approvals.set_status("a1", ApprovalStatus.REVISION_REQUESTED, decided_by_user_id="u1")
+    ledger.approvals.set_status(
+        uid("a1"), ApprovalStatus.REVISION_REQUESTED, decided_by_user_id=uid("u1")
+    )
     assert ledger.approvals.pending() == []  # not pending anymore

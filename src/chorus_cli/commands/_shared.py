@@ -13,7 +13,6 @@ from pathlib import Path
 
 from chorus.ledger import (
     Ledger,
-    SqliteLedger,
     Task,
     TaskPriority,
 )
@@ -74,9 +73,8 @@ class _HeartbeatWorker:
             self._thread.join(timeout=2.0)
 
     def _run(self) -> None:
-        if self._db_path == ":memory:":
-            return
-        ledger = SqliteLedger.open(self._db_path)
+        # db_path carries the Postgres DSN (the field name survives for session compatibility).
+        ledger = Ledger.open(self._db_path, company_id=self._company_id)
         try:
             beats = self._build_thread_beat_service(ledger)
             if beats is None:

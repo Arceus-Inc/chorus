@@ -1,44 +1,57 @@
--- Cluster A: task (the universal work unit). Declarative; applied via migrations/.
+-- task — Postgres-native (uuid/timestamptz/jsonb/boolean; company_id + FORCE RLS).
+-- Loaded by chorus.ledger.baseline(); tables are FK-dependency-ordered at load.
+
 CREATE TABLE task (
-    id                     TEXT PRIMARY KEY,
-    parent_id              TEXT REFERENCES task(id),
-    goal_id                TEXT REFERENCES goal(id),
-    intent                 TEXT NOT NULL,
-    status                 TEXT NOT NULL DEFAULT 'backlog',
-    priority               TEXT NOT NULL DEFAULT 'medium',
-    assignee_employee_id   TEXT REFERENCES employee(id),
-    assignee_user_id       TEXT,
-    checkout_run_id        TEXT,
-    execution_run_id       TEXT,
-    depth                  INTEGER NOT NULL DEFAULT 0,
-    request_depth          INTEGER NOT NULL DEFAULT 0,
-    origin_kind            TEXT NOT NULL DEFAULT 'manual',
-    origin_id              TEXT,
-    origin_fingerprint     TEXT NOT NULL DEFAULT 'default',
-    created_by_employee_id TEXT,
-    created_by_user_id     TEXT,
-    created_at             TEXT NOT NULL,
-    updated_at             TEXT NOT NULL,
-    started_at             TEXT,
-    completed_at           TEXT,
-    cancelled_at           TEXT,
-    trust_preset           TEXT,
-    trust_boundary         TEXT,
-    execution_mode         TEXT NOT NULL DEFAULT 'delivery',
-    team_id                TEXT,
+    company_id uuid NOT NULL DEFAULT (NULLIF(current_setting('app.company_id', true), ''))::uuid,
+    id                     uuid PRIMARY KEY,
+    parent_id              uuid REFERENCES task(id),
+    goal_id                uuid REFERENCES goal(id),
+    intent                 text NOT NULL,
+    status                 text NOT NULL DEFAULT 'backlog',
+    priority               text NOT NULL DEFAULT 'medium',
+    assignee_employee_id   text,
+    assignee_user_id       text,
+    checkout_run_id        uuid,
+    execution_run_id       uuid,
+    depth                  integer NOT NULL DEFAULT 0,
+    request_depth          integer NOT NULL DEFAULT 0,
+    origin_kind            text NOT NULL DEFAULT 'manual',
+    origin_id              text,
+    origin_fingerprint     text NOT NULL DEFAULT 'default',
+    created_by_employee_id text,
+    created_by_user_id     text,
+    created_at             timestamptz NOT NULL,
+    updated_at             timestamptz NOT NULL,
+    started_at             timestamptz,
+    completed_at           timestamptz,
+    cancelled_at           timestamptz,
+    trust_preset           text,
+    trust_boundary         jsonb,
+    execution_mode         text NOT NULL DEFAULT 'delivery',
+    team_id                text,
     CONSTRAINT task_single_assignee
-        CHECK (assignee_employee_id IS NULL OR assignee_user_id IS NULL)
+        CHECK (assignee_employee_id IS NULL OR assignee_user_id IS NULL),
+    FOREIGN KEY (company_id, assignee_employee_id) REFERENCES employee (company_id, id)
 );
 
+ALTER TABLE task ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE task FORCE ROW LEVEL SECURITY;
+
+CREATE POLICY task_company_isolation ON task USING (company_id = (SELECT (NULLIF(current_setting('app.company_id', true), ''))::uuid)) WITH CHECK (company_id = (SELECT (NULLIF(current_setting('app.company_id', true), ''))::uuid));
+
 CREATE INDEX task_assignee_status_idx ON task(assignee_employee_id, status);
+
 CREATE INDEX task_parent_idx ON task(parent_id);
+
 CREATE INDEX task_goal_idx ON task(goal_id);
+
 CREATE INDEX task_status_idx ON task(status);
+
 CREATE INDEX task_origin_idx ON task(origin_kind, origin_id);
 
--- exact-once partial-unique indexes — one per self-spawned kind (spec 01, deliberate)
 CREATE UNIQUE INDEX task_horizon_intake_fingerprint_uq
-    ON task(origin_kind, origin_fingerprint)
+    ON task (company_id, origin_kind, origin_fingerprint)
     WHERE origin_kind = 'horizon_intake';
 
 CREATE UNIQUE INDEX task_open_routine_uq

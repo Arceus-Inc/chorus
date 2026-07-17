@@ -6,7 +6,7 @@ scheduler's ``dream.run_task`` loop) needs a configured dream beat runner and st
 console for now — see ``examples/real_beat.py``.
 
     chorus                 # open ./chorus.db and start the console
-    chorus --db PATH       # open a specific ledger (':memory:' for a throwaway one)
+    chorus --dsn CONNINFO  # open the ledger on a specific Postgres
 
 Set AZURE_OPENAI_API_KEY, AZURE_OPENAI_BASE_URL, AZURE_OPENAI_DEPLOYMENT to enable the ``tick`` and
 ``chat`` commands — ``tick`` is one kernel pulse that dispatches a real beat through dream; ``chat
@@ -21,17 +21,18 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+import uuid
 from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import TextIO
 
-from chorus.ledger import Ledger, SqliteLedger
+from chorus.ledger import Ledger
 from chorus_cli._commands import REGISTRY
 from chorus_cli._context import BeatService, CliSession
 from chorus_cli._env import load_env_file
 from chorus_cli._repl import run_repl
 
-_DEFAULT_DB = "chorus.db"
+_DEFAULT_DSN = "postgresql://localhost/chorus"
 _DEFAULT_ENV = ".env"
 _DEFAULT_COMPANY = "company"
 
@@ -40,9 +41,9 @@ def build_parser() -> argparse.ArgumentParser:
     """Construct the ``chorus`` argument parser."""
     parser = argparse.ArgumentParser(prog="chorus", description=__doc__)
     parser.add_argument(
-        "--db",
-        default=_DEFAULT_DB,
-        help=f"ledger database path (default: {_DEFAULT_DB!r}; ':memory:' for a throwaway one)",
+        "--dsn",
+        default=_DEFAULT_DSN,
+        help=f"ledger Postgres DSN (default: {_DEFAULT_DSN!r})",
     )
     parser.add_argument(
         "--env-file",
@@ -117,18 +118,20 @@ def main(
 
     # ``override`` so the gitignored .env wins over a stale shell var; warn on each real conflict.
     load_env_file(Path(args.env_file), override=True, on_conflict=_warn_env_override)
-    db_path = args.db if args.db == ":memory:" else str(Path(args.db).resolve())
-    ledger = SqliteLedger.open(args.db)
+    # A stable per-name company uuid (the ledger's RLS key) so repeated local sessions against
+    # the same DSN + company name see the same org.
+    company_uuid = str(uuid.uuid5(uuid.NAMESPACE_URL, f"chorus-cli:{args.company}"))
+    ledger = Ledger.open(args.dsn, company_id=company_uuid)
     sink = output if output is not None else _utf8_stdout()
     try:
-        beats = _beat_service_from_env(ledger, company_id=args.company)
+        beats = _beat_service_from_env(ledger, company_id=company_uuid)
         # ``input_func`` rides on the session too (not just ``run_repl``) so the modal ``chat``
         # sub-loop reads from the same source after a command hands off to it.
         session = CliSession(
             ledger=ledger,
             beats=beats,
-            db_path=db_path,
-            company_id=args.company,
+            db_path=args.dsn,
+            company_id=company_uuid,
             input_func=input_func,
             minimal_mode=True,
         )

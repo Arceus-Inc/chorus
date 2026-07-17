@@ -1,7 +1,7 @@
 """Per-aggregate repos (spec 01) — one focused module per table, composed by the facade.
 
 Repos speak intersection SQL over a DB-API connection so the same code runs on SQLite now and
-Postgres later (spec 12). The :class:`~chorus.ledger.SqliteLedger` facade wires one of each onto a
+the Postgres store (spec 12 §6). The :class:`~chorus.ledger.Ledger` facade wires one of each onto a
 shared connection.
 """
 

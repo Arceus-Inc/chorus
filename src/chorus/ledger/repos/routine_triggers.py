@@ -86,7 +86,7 @@ class RoutineTriggerRepo:
             (to_iso(new_next_run_at), utcnow_iso(), trigger_id, to_iso(expected_next_run_at)),
         )
         self._conn.commit()
-        return cur.rowcount == 1
+        return bool(cur.rowcount == 1)
 
 
 def _row_to_trigger(row: LedgerRow) -> RoutineTrigger:

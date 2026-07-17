@@ -118,7 +118,7 @@ class TaskRepo:
             (run_id, run_id, employee_id, now, now, task_id, *_CLAIMABLE),
         )
         self._conn.commit()
-        return cursor.rowcount == 1
+        return bool(cursor.rowcount == 1)
 
     def release_locks(self, task_id: str, *, run_id: str) -> None:
         """Compare-and-clear: only release locks still pointing at ``run_id`` (spec 01 invariant 4)."""
@@ -201,7 +201,7 @@ class TaskRepo:
             (employee_id, now, task_id),
         )
         self._conn.commit()
-        return cursor.rowcount == 1
+        return bool(cursor.rowcount == 1)
 
     def has_children(self, parent_id: str) -> bool:
         """True iff ``parent_id`` has at least one child task (it delegated — spec M3 §5)."""

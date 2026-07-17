@@ -1,51 +1,23 @@
 """Shared repo helpers (spec 01, Arceus-style per-aggregate repos).
 
-Repos speak the **SQLite ∩ Postgres intersection** over a DB-API connection (spec 12), so the same
-repo code runs on both — only the drivers (connection setup, type adaptation, migration DDL) are
-dialect-specific. Repos never import a driver: they are typed against the :class:`LedgerConnection`
-protocol below, and each driver's connection satisfies it (``test_repo_portability`` enforces the
-no-driver-import rule at the source level).
+Repos speak plain SQL over the one concrete :class:`~chorus.ledger._connection.LedgerConnection`
+(psycopg / Postgres — SQLite is retired). Timestamps travel as ISO text (the connection loads
+timestamptz back as canonical text), JSON as compact text into jsonb.
 """
 
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from datetime import UTC, datetime
-from typing import Any, Protocol, TypeVar
+from typing import Any, TypeVar
+
+from chorus.ledger._connection import LedgerConnection
 
 _T = TypeVar("_T")
 
-
-class LedgerRow(Protocol):
-    """One result row, readable by column name (sqlite3.Row / psycopg dict_row both satisfy it)."""
-
-    def __getitem__(self, key: str) -> Any: ...
-
-
-class LedgerCursor(Protocol):
-    """The slice of a DB-API cursor the repos actually use."""
-
-    @property
-    def rowcount(self) -> int: ...
-
-    def fetchone(self) -> Any: ...
-
-    def fetchall(self) -> list[Any]: ...
-
-
-class LedgerConnection(Protocol):
-    """The driver seam (spec 12 §3): what a ledger driver's connection must provide to the repos.
-
-    ``sqlite3.Connection`` satisfies it natively; the Postgres driver provides an adapter. ``commit``
-    may be deferred by the facade's ``transaction()`` batching — repos call it exactly as if each
-    write were its own unit.
-    """
-
-    def execute(self, sql: str, parameters: Any = (), /) -> LedgerCursor: ...
-
-    def commit(self) -> None: ...
-
-    def rollback(self) -> None: ...
+# One driver: the concrete psycopg connection. Rows are psycopg dict_row mappings.
+LedgerRow = Mapping[str, Any]
 
 
 class LedgerInvariantError(RuntimeError):
@@ -100,3 +72,18 @@ def require_persisted(value: _T | None, entity_id: str) -> _T:
     if value is None:
         raise LedgerInvariantError(f"row {entity_id!r} not found immediately after write")
     return value
+
+
+__all__ = [
+    "LedgerConnection",
+    "LedgerInvariantError",
+    "LedgerRow",
+    "dumps",
+    "from_iso",
+    "loads",
+    "loads_dict",
+    "loads_list",
+    "require_persisted",
+    "to_iso",
+    "utcnow_iso",
+]

@@ -12,8 +12,8 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
+from chorus._sqlite_migrations import MigrationRunner
 from chorus.ids import mint_id
-from chorus.ledger._migrations import MigrationRunner
 from chorus.skills._models import Skill, SkillOrigin, SkillRevision, SkillState
 from chorus.skills.migrations import MIGRATIONS
 from chorus.skills.repos import SkillRepo, SkillRevisionRepo

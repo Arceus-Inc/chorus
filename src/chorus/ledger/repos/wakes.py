@@ -153,7 +153,7 @@ class WakeRepo:
                 "DELETE FROM wake WHERE status = 'queued' AND employee_id = ?", (employee_id,)
             )
         self._conn.commit()
-        return cursor.rowcount
+        return int(cursor.rowcount)
 
     def get(self, wake_id: str) -> Wake | None:
         row = self._conn.execute("SELECT * FROM wake WHERE id = ?", (wake_id,)).fetchone()
