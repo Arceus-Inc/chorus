@@ -9,17 +9,23 @@ closes it when the task goes terminal or human-owned.
 
 from __future__ import annotations
 
-import sqlite3
 from datetime import datetime
 
 from chorus.ledger._models import Monitor, MonitorRecoveryPolicy, MonitorStatus
-from chorus.ledger.repos._base import from_iso, require_persisted, to_iso, utcnow_iso
+from chorus.ledger.repos._base import (
+    LedgerConnection,
+    LedgerRow,
+    from_iso,
+    require_persisted,
+    to_iso,
+    utcnow_iso,
+)
 
 
 class MonitorRepo:
     """Arm, scan, fire, re-arm, and clear ``monitor`` rows."""
 
-    def __init__(self, conn: sqlite3.Connection) -> None:
+    def __init__(self, conn: LedgerConnection) -> None:
         self._conn = conn
 
     def arm(self, monitor: Monitor) -> Monitor:
@@ -113,7 +119,7 @@ class MonitorRepo:
         return reloaded
 
 
-def _row_to_monitor(row: sqlite3.Row) -> Monitor:
+def _row_to_monitor(row: LedgerRow) -> Monitor:
     return Monitor(
         id=row["id"],
         task_id=row["task_id"],

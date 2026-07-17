@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import sqlite3
 from dataclasses import replace
 
 from chorus.ledger._models import (
@@ -12,13 +11,20 @@ from chorus.ledger._models import (
     WorkforcePlanDraft,
     WorkforcePlanStatus,
 )
-from chorus.ledger.repos._base import dumps, from_iso, require_persisted, utcnow_iso
+from chorus.ledger.repos._base import (
+    LedgerConnection,
+    LedgerRow,
+    dumps,
+    from_iso,
+    require_persisted,
+    utcnow_iso,
+)
 
 
 class WorkforcePlanRepo:
     """Store and retrieve complete normalized plan revisions."""
 
-    def __init__(self, conn: sqlite3.Connection) -> None:
+    def __init__(self, conn: LedgerConnection) -> None:
         self._conn = conn
 
     def create(self, plan: WorkforcePlan) -> WorkforcePlan:
@@ -42,11 +48,11 @@ class WorkforcePlanRepo:
                 plan.decided_at.isoformat() if plan.decided_at is not None else None,
             ),
         )
-        for employee in plan.draft.employees:
+        for position, employee in enumerate(plan.draft.employees):
             self._conn.execute(
                 "INSERT INTO workforce_plan_employee (plan_id, plan_revision, employee_ref, name, "
-                "profession, reports_to_ref, responsibilities, budget_cents) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                "profession, reports_to_ref, responsibilities, budget_cents, position) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     plan.id,
                     plan.revision,
@@ -56,23 +62,26 @@ class WorkforcePlanRepo:
                     employee.reports_to_ref,
                     dumps(list(employee.responsibilities)),
                     employee.budget_cents,
+                    position,
                 ),
             )
-        for grant in plan.draft.management_grants:
+        for position, grant in enumerate(plan.draft.management_grants):
             self._conn.execute(
                 "INSERT INTO workforce_plan_management_grant (plan_id, plan_revision, employee_ref, "
                 "can_lead, can_subdelegate, max_delegation_depth, max_team_size, "
-                "allowed_professions, spend_limit_cents) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "allowed_professions, spend_limit_cents, position) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     plan.id,
                     plan.revision,
                     grant.employee_ref,
-                    int(grant.can_lead),
-                    int(grant.can_subdelegate),
+                    grant.can_lead,
+                    grant.can_subdelegate,
                     grant.max_delegation_depth,
                     grant.max_team_size,
                     dumps(list(grant.allowed_professions)),
                     grant.spend_limit_cents,
+                    position,
                 ),
             )
         self._conn.commit()
@@ -114,17 +123,17 @@ class WorkforcePlanRepo:
         persisted = require_persisted(self.get(plan_id, revision=revision), plan_id)
         return replace(persisted, status=status)
 
-    def _row_to_plan(self, row: sqlite3.Row) -> WorkforcePlan:
+    def _row_to_plan(self, row: LedgerRow) -> WorkforcePlan:
         from chorus.ledger.repos._base import loads
 
         employee_rows = self._conn.execute(
             "SELECT * FROM workforce_plan_employee WHERE plan_id = ? AND plan_revision = ? "
-            "ORDER BY rowid",
+            "ORDER BY position",
             (row["id"], row["revision"]),
         ).fetchall()
         grant_rows = self._conn.execute(
             "SELECT * FROM workforce_plan_management_grant WHERE plan_id = ? AND plan_revision = ? "
-            "ORDER BY rowid",
+            "ORDER BY position",
             (row["id"], row["revision"]),
         ).fetchall()
         draft = WorkforcePlanDraft(

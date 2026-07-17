@@ -8,16 +8,15 @@ to the Workforce layer (spec 06 §3), not here — this is plain row I/O.
 from __future__ import annotations
 
 import builtins
-import sqlite3
 
-from chorus.ledger.repos._base import utcnow_iso
+from chorus.ledger.repos._base import LedgerConnection, LedgerRow, utcnow_iso
 from chorus.workforce import Employee, EmployeeStatus
 
 
 class EmployeeRepo:
     """Create + read ``employee`` rows."""
 
-    def __init__(self, conn: sqlite3.Connection) -> None:
+    def __init__(self, conn: LedgerConnection) -> None:
         self._conn = conn
 
     def create(self, employee: Employee) -> Employee:
@@ -88,7 +87,7 @@ class EmployeeRepo:
         return [(row["task_id"], row["team_id"]) for row in rows]
 
 
-def _row_to_employee(row: sqlite3.Row) -> Employee:
+def _row_to_employee(row: LedgerRow) -> Employee:
     return Employee(
         id=row["id"],
         name=row["name"],

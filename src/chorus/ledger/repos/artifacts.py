@@ -2,16 +2,14 @@
 
 from __future__ import annotations
 
-import sqlite3
-
 from chorus.ledger._models import Artifact, ArtifactType
-from chorus.ledger.repos._base import dumps, loads, utcnow_iso
+from chorus.ledger.repos._base import LedgerConnection, LedgerRow, dumps, loads, utcnow_iso
 
 
 class ArtifactRepo:
     """Create + list ``artifact`` rows."""
 
-    def __init__(self, conn: sqlite3.Connection) -> None:
+    def __init__(self, conn: LedgerConnection) -> None:
         self._conn = conn
 
     def create(self, artifact: Artifact) -> Artifact:
@@ -29,7 +27,7 @@ class ArtifactRepo:
                 artifact.url,
                 artifact.review_state,
                 artifact.health_status,
-                1 if artifact.is_primary else 0,
+                artifact.is_primary,
                 dumps(artifact.resource_ref) if artifact.resource_ref is not None else None,
                 now,
                 now,
@@ -49,7 +47,7 @@ class ArtifactRepo:
         return [_row_to_artifact(row) for row in rows]
 
 
-def _row_to_artifact(row: sqlite3.Row) -> Artifact:
+def _row_to_artifact(row: LedgerRow) -> Artifact:
     return Artifact(
         id=row["id"],
         task_id=row["task_id"],

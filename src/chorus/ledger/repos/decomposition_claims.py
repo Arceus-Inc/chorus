@@ -9,10 +9,10 @@ not duplicate the partial result); ``complete`` seals the claim.
 
 from __future__ import annotations
 
-import sqlite3
-
 from chorus.ledger._models import DecompositionClaim, DecompositionStatus
 from chorus.ledger.repos._base import (
+    LedgerConnection,
+    LedgerRow,
     dumps,
     from_iso,
     loads_list,
@@ -24,7 +24,7 @@ from chorus.ledger.repos._base import (
 class DecompositionClaimRepo:
     """Open, resume, accumulate, and complete ``decomposition_claim`` rows."""
 
-    def __init__(self, conn: sqlite3.Connection) -> None:
+    def __init__(self, conn: LedgerConnection) -> None:
         self._conn = conn
 
     def open(self, claim: DecompositionClaim) -> DecompositionClaim:
@@ -124,7 +124,7 @@ class DecompositionClaimRepo:
         return [_row_to_claim(row) for row in rows]
 
 
-def _row_to_claim(row: sqlite3.Row) -> DecompositionClaim:
+def _row_to_claim(row: LedgerRow) -> DecompositionClaim:
     return DecompositionClaim(
         id=row["id"],
         source_task_id=row["source_task_id"],

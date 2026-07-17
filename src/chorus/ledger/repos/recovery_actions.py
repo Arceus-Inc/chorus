@@ -8,8 +8,6 @@ source); ``record_attempt`` bumps the bounded attempt counter.
 
 from __future__ import annotations
 
-import sqlite3
-
 from chorus.ledger._models import (
     RecoveryAction,
     RecoveryKind,
@@ -17,6 +15,8 @@ from chorus.ledger._models import (
     RecoveryStatus,
 )
 from chorus.ledger.repos._base import (
+    LedgerConnection,
+    LedgerRow,
     dumps,
     from_iso,
     loads_dict,
@@ -29,7 +29,7 @@ from chorus.ledger.repos._base import (
 class RecoveryActionRepo:
     """Open, escalate, attempt, and resolve ``recovery_action`` rows."""
 
-    def __init__(self, conn: sqlite3.Connection) -> None:
+    def __init__(self, conn: LedgerConnection) -> None:
         self._conn = conn
 
     def open(self, action: RecoveryAction) -> RecoveryAction:
@@ -150,7 +150,7 @@ class RecoveryActionRepo:
         self._conn.commit()
 
 
-def _row_to_action(row: sqlite3.Row) -> RecoveryAction:
+def _row_to_action(row: LedgerRow) -> RecoveryAction:
     raw_outcome = row["outcome"]
     return RecoveryAction(
         id=row["id"],

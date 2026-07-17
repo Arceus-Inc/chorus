@@ -7,17 +7,23 @@ scopes the sum to the live budget window.
 
 from __future__ import annotations
 
-import sqlite3
 from datetime import datetime
 
 from chorus.ledger._models import CostEvent
-from chorus.ledger.repos._base import from_iso, require_persisted, to_iso, utcnow_iso
+from chorus.ledger.repos._base import (
+    LedgerConnection,
+    LedgerRow,
+    from_iso,
+    require_persisted,
+    to_iso,
+    utcnow_iso,
+)
 
 
 class CostEventRepo:
     """Append + aggregate ``cost_event`` rows."""
 
-    def __init__(self, conn: sqlite3.Connection) -> None:
+    def __init__(self, conn: LedgerConnection) -> None:
         self._conn = conn
 
     def record(self, event: CostEvent) -> CostEvent:
@@ -86,7 +92,7 @@ class CostEventRepo:
         return int(row["total"])
 
 
-def _row_to_event(row: sqlite3.Row) -> CostEvent:
+def _row_to_event(row: LedgerRow) -> CostEvent:
     return CostEvent(
         id=row["id"],
         employee_id=row["employee_id"],

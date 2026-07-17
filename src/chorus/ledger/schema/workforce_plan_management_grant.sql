@@ -8,6 +8,7 @@ CREATE TABLE workforce_plan_management_grant (
     max_team_size               INTEGER NOT NULL DEFAULT 1,
     allowed_professions         TEXT NOT NULL DEFAULT '[]',
     spend_limit_cents           INTEGER,
+    position                    INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (plan_id, plan_revision, employee_ref),
     FOREIGN KEY (plan_id, plan_revision) REFERENCES workforce_plan(id, revision)
 );

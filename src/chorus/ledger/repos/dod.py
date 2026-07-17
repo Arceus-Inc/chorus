@@ -7,13 +7,19 @@ is later derived from (spec 01 Cluster F invariant).
 
 from __future__ import annotations
 
-import sqlite3
 from dataclasses import asdict
 from typing import cast
 
 from chorus.ids import mint_id
 from chorus.ledger._models import Dod, DodStatus
-from chorus.ledger.repos._base import dumps, loads, loads_dict, utcnow_iso
+from chorus.ledger.repos._base import (
+    LedgerConnection,
+    LedgerRow,
+    dumps,
+    loads,
+    loads_dict,
+    utcnow_iso,
+)
 from chorus.outcomes import (
     AgentReview,
     Command,
@@ -28,7 +34,7 @@ from chorus.outcomes import (
 class DodRepo:
     """Create + read + verdict on ``dod`` rows."""
 
-    def __init__(self, conn: sqlite3.Connection) -> None:
+    def __init__(self, conn: LedgerConnection) -> None:
         self._conn = conn
 
     def create(self, task_id: str, verifier: Verifier, *, dod_id: str | None = None) -> Dod:
@@ -191,7 +197,7 @@ def _verifier_from_parts(kind_value: str, spec: dict[str, object], artifact_clas
     return Verifier(kind, HumanApproval(str(spec["approver"])), artifact_class)
 
 
-def _row_to_dod(row: sqlite3.Row) -> Dod:
+def _row_to_dod(row: LedgerRow) -> Dod:
     return Dod(
         id=row["id"],
         task_id=row["task_id"],

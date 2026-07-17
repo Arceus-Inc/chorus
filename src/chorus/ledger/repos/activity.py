@@ -7,10 +7,10 @@ row's history oldest-first; ``recent`` returns the global tail newest-first.
 
 from __future__ import annotations
 
-import sqlite3
-
 from chorus.ledger._models import Activity, ActivityVerb
 from chorus.ledger.repos._base import (
+    LedgerConnection,
+    LedgerRow,
     dumps,
     from_iso,
     loads_dict,
@@ -22,7 +22,7 @@ from chorus.ledger.repos._base import (
 class ActivityRepo:
     """Append + read ``activity`` rows."""
 
-    def __init__(self, conn: sqlite3.Connection) -> None:
+    def __init__(self, conn: LedgerConnection) -> None:
         self._conn = conn
 
     def append(self, activity: Activity) -> Activity:
@@ -57,14 +57,14 @@ class ActivityRepo:
         """One row's audit history, oldest first."""
         rows = self._conn.execute(
             "SELECT * FROM activity WHERE subject_kind = ? AND subject_id = ? "
-            "ORDER BY occurred_at, rowid",
+            "ORDER BY occurred_at, id",
             (subject_kind, subject_id),
         ).fetchall()
         return [_row_to_activity(row) for row in rows]
 
     def all(self) -> list[Activity]:
         """Every audit row, oldest first — for read-model rollups."""
-        rows = self._conn.execute("SELECT * FROM activity ORDER BY occurred_at, rowid").fetchall()
+        rows = self._conn.execute("SELECT * FROM activity ORDER BY occurred_at, id").fetchall()
         return [_row_to_activity(row) for row in rows]
 
     def recent(self, *, limit: int) -> list[Activity]:
@@ -76,12 +76,12 @@ class ActivityRepo:
         if limit <= 0:
             raise ValueError("limit must be positive")
         rows = self._conn.execute(
-            "SELECT * FROM activity ORDER BY occurred_at DESC, rowid DESC LIMIT ?", (limit,)
+            "SELECT * FROM activity ORDER BY occurred_at DESC, id DESC LIMIT ?", (limit,)
         ).fetchall()
         return [_row_to_activity(row) for row in rows]
 
 
-def _row_to_activity(row: sqlite3.Row) -> Activity:
+def _row_to_activity(row: LedgerRow) -> Activity:
     return Activity(
         id=row["id"],
         verb=ActivityVerb(row["verb"]),

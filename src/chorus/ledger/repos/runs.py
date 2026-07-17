@@ -2,17 +2,24 @@
 
 from __future__ import annotations
 
-import sqlite3
 from datetime import datetime
 
 from chorus.ledger._models import Run, RunStatus
-from chorus.ledger.repos._base import dumps, from_iso, loads_dict, to_iso, utcnow_iso
+from chorus.ledger.repos._base import (
+    LedgerConnection,
+    LedgerRow,
+    dumps,
+    from_iso,
+    loads_dict,
+    to_iso,
+    utcnow_iso,
+)
 
 
 class RunRepo:
     """Create + read + finish ``run`` rows."""
 
-    def __init__(self, conn: sqlite3.Connection) -> None:
+    def __init__(self, conn: LedgerConnection) -> None:
         self._conn = conn
 
     def create(self, run: Run) -> Run:
@@ -137,7 +144,7 @@ class RunRepo:
         self._conn.commit()
 
 
-def _row_to_run(row: sqlite3.Row) -> Run:
+def _row_to_run(row: LedgerRow) -> Run:
     return Run(
         id=row["id"],
         employee_id=row["employee_id"],

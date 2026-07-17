@@ -2,14 +2,18 @@
 
 from __future__ import annotations
 
-import sqlite3
-
 from chorus.ledger._models import Team, TeamMember, TeamMembershipRole, TeamStatus
-from chorus.ledger.repos._base import from_iso, require_persisted, utcnow_iso
+from chorus.ledger.repos._base import (
+    LedgerConnection,
+    LedgerRow,
+    from_iso,
+    require_persisted,
+    utcnow_iso,
+)
 
 
 class TeamRepo:
-    def __init__(self, conn: sqlite3.Connection) -> None:
+    def __init__(self, conn: LedgerConnection) -> None:
         self._conn = conn
 
     def create(self, team: Team) -> Team:
@@ -75,7 +79,7 @@ class TeamRepo:
 
 
 class TeamMemberRepo:
-    def __init__(self, conn: sqlite3.Connection) -> None:
+    def __init__(self, conn: LedgerConnection) -> None:
         self._conn = conn
 
     def add(self, member: TeamMember) -> TeamMember:
@@ -86,7 +90,7 @@ class TeamMemberRepo:
                 member.team_id,
                 member.employee_id,
                 member.membership_role.value,
-                int(member.can_subdelegate),
+                member.can_subdelegate,
                 member.source_manager_id,
                 utcnow_iso(),
                 None,
@@ -131,7 +135,7 @@ class TeamMemberRepo:
         return [_row_to_member(row) for row in rows]
 
 
-def _row_to_team(row: sqlite3.Row) -> Team:
+def _row_to_team(row: LedgerRow) -> Team:
     return Team(
         id=row["id"],
         name=row["name"],
@@ -147,7 +151,7 @@ def _row_to_team(row: sqlite3.Row) -> Team:
     )
 
 
-def _row_to_member(row: sqlite3.Row) -> TeamMember:
+def _row_to_member(row: LedgerRow) -> TeamMember:
     return TeamMember(
         team_id=row["team_id"],
         employee_id=row["employee_id"],

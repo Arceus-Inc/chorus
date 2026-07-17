@@ -9,10 +9,15 @@ enqueues fresh work.
 
 from __future__ import annotations
 
-import sqlite3
-
 from chorus.ledger._models import Wake, WakeReason, WakeStatus
-from chorus.ledger.repos._base import dumps, from_iso, loads_dict, utcnow_iso
+from chorus.ledger.repos._base import (
+    LedgerConnection,
+    LedgerRow,
+    dumps,
+    from_iso,
+    loads_dict,
+    utcnow_iso,
+)
 
 # The spec 03 §3 deterministic dispatch sort key, as a SQL ORDER BY fragment over aliases
 # ``w`` (wake) and ``t`` (its target task, LEFT JOINed — NULL for a task-less wake):
@@ -32,7 +37,7 @@ _DISPATCH_ORDER = (
 class WakeRepo:
     """Enqueue (coalescing), claim, and finish ``wake`` rows."""
 
-    def __init__(self, conn: sqlite3.Connection) -> None:
+    def __init__(self, conn: LedgerConnection) -> None:
         self._conn = conn
 
     def enqueue(self, wake: Wake) -> Wake:
@@ -40,16 +45,18 @@ class WakeRepo:
         now = utcnow_iso()
         key = wake.coalesce_key or _default_key(wake)
         self._conn.execute(
-            "INSERT INTO wake (id, employee_id, reason, payload, status, coalesce_key, "
+            "INSERT INTO wake (id, employee_id, reason, payload, task_id, status, coalesce_key, "
             "coalesced_count, idempotency_key, run_id, created_at, claimed_at, finished_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, 0, NULL, ?, ?, NULL, NULL) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, 0, NULL, ?, ?, NULL, NULL) "
             "ON CONFLICT (coalesce_key) WHERE status = 'queued' "
-            "DO UPDATE SET coalesced_count = coalesced_count + 1, payload = excluded.payload",
+            "DO UPDATE SET coalesced_count = coalesced_count + 1, payload = excluded.payload, "
+            "task_id = excluded.task_id",
             (
                 wake.id,
                 wake.employee_id,
                 wake.reason.value,
                 dumps(dict(wake.payload)),
+                wake.payload.get("task_id"),
                 WakeStatus.QUEUED.value,
                 key,
                 wake.run_id,
@@ -87,7 +94,7 @@ class WakeRepo:
         claimed = self._conn.execute(
             "UPDATE wake SET status = 'claimed', claimed_at = ? WHERE id IN ("
             "  SELECT w.id FROM wake w "
-            "  LEFT JOIN task t ON t.id = json_extract(w.payload, '$.task_id') "
+            "  LEFT JOIN task t ON t.id = w.task_id "
             f"  WHERE w.status = 'queued' ORDER BY {_DISPATCH_ORDER} LIMIT ?"
             ") AND status = 'queued' RETURNING id",
             (now, limit),
@@ -99,7 +106,7 @@ class WakeRepo:
         placeholders = ", ".join("?" for _ in ids)
         ordered = self._conn.execute(
             f"SELECT w.* FROM wake w "
-            f"LEFT JOIN task t ON t.id = json_extract(w.payload, '$.task_id') "
+            f"LEFT JOIN task t ON t.id = w.task_id "
             f"WHERE w.id IN ({placeholders}) ORDER BY {_DISPATCH_ORDER}",
             ids,
         ).fetchall()
@@ -196,7 +203,7 @@ def _default_key(wake: Wake) -> str:
     return f"{wake.employee_id}:{wake.reason.value}:{task}"
 
 
-def _row_to_wake(row: sqlite3.Row) -> Wake:
+def _row_to_wake(row: LedgerRow) -> Wake:
     return Wake(
         id=row["id"],
         employee_id=row["employee_id"],

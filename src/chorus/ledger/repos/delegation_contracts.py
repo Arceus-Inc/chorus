@@ -3,14 +3,19 @@
 from __future__ import annotations
 
 import builtins
-import sqlite3
 
 from chorus.ledger._models import DelegationContract, DelegationContractStatus
-from chorus.ledger.repos._base import from_iso, require_persisted, utcnow_iso
+from chorus.ledger.repos._base import (
+    LedgerConnection,
+    LedgerRow,
+    from_iso,
+    require_persisted,
+    utcnow_iso,
+)
 
 
 class DelegationContractRepo:
-    def __init__(self, conn: sqlite3.Connection) -> None:
+    def __init__(self, conn: LedgerConnection) -> None:
         self._conn = conn
 
     def create(self, contract: DelegationContract) -> DelegationContract:
@@ -27,7 +32,7 @@ class DelegationContractRepo:
                 contract.lead_employee_id,
                 contract.management_profile_version,
                 contract.parent_contract_task_id,
-                int(contract.can_subdelegate),
+                contract.can_subdelegate,
                 contract.max_depth,
                 contract.max_team_size,
                 contract.max_direct_children,
@@ -106,7 +111,7 @@ class DelegationContractRepo:
         return require_persisted(self.get(task_id), task_id)
 
 
-def _row_to_contract(row: sqlite3.Row) -> DelegationContract:
+def _row_to_contract(row: LedgerRow) -> DelegationContract:
     return DelegationContract(
         task_id=row["task_id"],
         team_id=row["team_id"],

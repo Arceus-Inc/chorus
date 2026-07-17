@@ -3,17 +3,24 @@
 from __future__ import annotations
 
 import builtins
-import sqlite3
 
 from chorus.errors import ActiveDelegationConflict
 from chorus.ledger._models import ManagementProfile
-from chorus.ledger.repos._base import dumps, from_iso, loads, require_persisted, utcnow_iso
+from chorus.ledger.repos._base import (
+    LedgerConnection,
+    LedgerRow,
+    dumps,
+    from_iso,
+    loads,
+    require_persisted,
+    utcnow_iso,
+)
 
 
 class ManagementProfileRepo:
     """Create revisions and query the current profile keyed by employee."""
 
-    def __init__(self, conn: sqlite3.Connection) -> None:
+    def __init__(self, conn: LedgerConnection) -> None:
         self._conn = conn
 
     def upsert(self, profile: ManagementProfile) -> ManagementProfile:
@@ -41,9 +48,9 @@ class ManagementProfileRepo:
             "granted_by_user_id = excluded.granted_by_user_id, updated_at = excluded.updated_at",
             (
                 profile.employee_id,
-                int(profile.active),
-                int(profile.can_lead),
-                int(profile.can_subdelegate),
+                profile.active,
+                profile.can_lead,
+                profile.can_subdelegate,
                 profile.max_delegation_depth,
                 profile.max_team_size,
                 dumps(list(profile.allowed_professions)),
@@ -102,7 +109,7 @@ class ManagementProfileRepo:
         return [(row["task_id"], row["team_id"]) for row in rows]
 
 
-def _row_to_profile(row: sqlite3.Row) -> ManagementProfile:
+def _row_to_profile(row: LedgerRow) -> ManagementProfile:
     return ManagementProfile(
         employee_id=row["employee_id"],
         active=bool(row["active"]),

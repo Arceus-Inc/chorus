@@ -7,16 +7,21 @@ incident per policy/window/threshold (a ``dismiss`` frees the window). A hard br
 
 from __future__ import annotations
 
-import sqlite3
-
 from chorus.ledger._models import BudgetIncident, BudgetIncidentStatus, BudgetThreshold
-from chorus.ledger.repos._base import from_iso, require_persisted, to_iso, utcnow_iso
+from chorus.ledger.repos._base import (
+    LedgerConnection,
+    LedgerRow,
+    from_iso,
+    require_persisted,
+    to_iso,
+    utcnow_iso,
+)
 
 
 class BudgetIncidentRepo:
     """Open, resolve, dismiss, and gate ``budget_incident`` rows."""
 
-    def __init__(self, conn: sqlite3.Connection) -> None:
+    def __init__(self, conn: LedgerConnection) -> None:
         self._conn = conn
 
     def open(self, incident: BudgetIncident) -> BudgetIncident:
@@ -105,7 +110,7 @@ class BudgetIncidentRepo:
         return [_row_to_incident(row) for row in rows]
 
 
-def _row_to_incident(row: sqlite3.Row) -> BudgetIncident:
+def _row_to_incident(row: LedgerRow) -> BudgetIncident:
     window_start = from_iso(row["window_start"])
     assert window_start is not None  # window_start is NOT NULL in the schema
     return BudgetIncident(

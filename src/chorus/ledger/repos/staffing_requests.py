@@ -2,16 +2,20 @@
 
 from __future__ import annotations
 
-import sqlite3
-
 from chorus.ledger._models import StaffingNeed, StaffingRequest, StaffingRequestStatus
-from chorus.ledger.repos._base import from_iso, require_persisted, utcnow_iso
+from chorus.ledger.repos._base import (
+    LedgerConnection,
+    LedgerRow,
+    from_iso,
+    require_persisted,
+    utcnow_iso,
+)
 
 
 class StaffingRequestRepo:
     """Store, link, and resolve staffing requests."""
 
-    def __init__(self, conn: sqlite3.Connection) -> None:
+    def __init__(self, conn: LedgerConnection) -> None:
         self._conn = conn
 
     def create(self, request: StaffingRequest) -> StaffingRequest:
@@ -82,7 +86,7 @@ class StaffingRequestRepo:
         self._conn.commit()
         return require_persisted(self.get(request_id), request_id)
 
-    def _row_to_request(self, row: sqlite3.Row) -> StaffingRequest:
+    def _row_to_request(self, row: LedgerRow) -> StaffingRequest:
         needs = self._conn.execute(
             "SELECT profession, count FROM staffing_request_need WHERE request_id = ? "
             "ORDER BY profession",

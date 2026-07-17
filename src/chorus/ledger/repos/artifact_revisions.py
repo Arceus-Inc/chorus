@@ -7,16 +7,22 @@ scoped to the artifact); rows are never mutated. A revision is the authorized sn
 
 from __future__ import annotations
 
-import sqlite3
-
 from chorus.ledger._models import ArtifactRevision
-from chorus.ledger.repos._base import dumps, from_iso, loads, require_persisted, utcnow_iso
+from chorus.ledger.repos._base import (
+    LedgerConnection,
+    LedgerRow,
+    dumps,
+    from_iso,
+    loads,
+    require_persisted,
+    utcnow_iso,
+)
 
 
 class ArtifactRevisionRepo:
     """Append + read ``artifact_revision`` rows."""
 
-    def __init__(self, conn: sqlite3.Connection) -> None:
+    def __init__(self, conn: LedgerConnection) -> None:
         self._conn = conn
 
     def record(self, revision: ArtifactRevision) -> ArtifactRevision:
@@ -70,7 +76,7 @@ class ArtifactRevisionRepo:
         return [_row_to_revision(row) for row in rows]
 
 
-def _row_to_revision(row: sqlite3.Row) -> ArtifactRevision:
+def _row_to_revision(row: LedgerRow) -> ArtifactRevision:
     return ArtifactRevision(
         id=row["id"],
         artifact_id=row["artifact_id"],

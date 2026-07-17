@@ -7,8 +7,6 @@ it exact-once — a second pending request for the same subject raises ``Integri
 
 from __future__ import annotations
 
-import sqlite3
-
 from chorus.ledger._models import (
     Approval,
     ApprovalAction,
@@ -16,13 +14,19 @@ from chorus.ledger._models import (
     ApprovalStatus,
     ApprovalSubjectKind,
 )
-from chorus.ledger.repos._base import from_iso, require_persisted, utcnow_iso
+from chorus.ledger.repos._base import (
+    LedgerConnection,
+    LedgerRow,
+    from_iso,
+    require_persisted,
+    utcnow_iso,
+)
 
 
 class ApprovalRepo:
     """Open, resolve, and read ``approval`` rows."""
 
-    def __init__(self, conn: sqlite3.Connection) -> None:
+    def __init__(self, conn: LedgerConnection) -> None:
         self._conn = conn
 
     def request(self, approval: Approval) -> Approval:
@@ -100,7 +104,7 @@ class ApprovalRepo:
         return [_row_to_approval(row) for row in rows]
 
 
-def _row_to_approval(row: sqlite3.Row) -> Approval:
+def _row_to_approval(row: LedgerRow) -> Approval:
     return Approval(
         id=row["id"],
         subject_kind=ApprovalSubjectKind(row["subject_kind"]),

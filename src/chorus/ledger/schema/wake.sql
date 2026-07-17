@@ -11,7 +11,8 @@ CREATE TABLE wake (
     run_id          TEXT REFERENCES run(id),
     created_at      TEXT NOT NULL,
     claimed_at      TEXT,
-    finished_at     TEXT
+    finished_at     TEXT,
+    task_id         TEXT
 );
 
 CREATE UNIQUE INDEX wake_queued_key_uq ON wake(coalesce_key) WHERE status = 'queued';

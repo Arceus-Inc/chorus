@@ -7,6 +7,7 @@ CREATE TABLE workforce_plan_employee (
     reports_to_ref              TEXT NOT NULL,
     responsibilities            TEXT NOT NULL DEFAULT '[]',
     budget_cents                INTEGER,
+    position                    INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (plan_id, plan_revision, employee_ref),
     FOREIGN KEY (plan_id, plan_revision) REFERENCES workforce_plan(id, revision)
 );

@@ -9,10 +9,16 @@ arrives with the M2 ``task_dependency`` table).
 
 from __future__ import annotations
 
-import sqlite3
-
 from chorus.ledger._models import ExecutionMode, OriginKind, Task, TaskPriority, TaskStatus
-from chorus.ledger.repos._base import dumps, from_iso, loads, to_iso, utcnow_iso
+from chorus.ledger.repos._base import (
+    LedgerConnection,
+    LedgerRow,
+    dumps,
+    from_iso,
+    loads,
+    to_iso,
+    utcnow_iso,
+)
 from chorus.lifecycle._transitions import assert_legal
 
 # Statuses from which a task may be checked out into agent-owned in_progress (spec 02 §2). Includes
@@ -32,7 +38,7 @@ _STATUS_STAMP: dict[str, str] = {
 class TaskRepo:
     """Durable operations on ``task`` rows."""
 
-    def __init__(self, conn: sqlite3.Connection) -> None:
+    def __init__(self, conn: LedgerConnection) -> None:
         self._conn = conn
 
     def submit(self, task: Task) -> Task:
@@ -292,7 +298,7 @@ class TaskRepo:
         return row is not None
 
 
-def _row_to_task(row: sqlite3.Row) -> Task:
+def _row_to_task(row: LedgerRow) -> Task:
     return Task(
         id=row["id"],
         intent=row["intent"],
