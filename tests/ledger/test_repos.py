@@ -424,3 +424,19 @@ def test_cost_events_grouped_spend(ledger: Ledger) -> None:
         raise AssertionError("unreachable")
     except ValueError:
         pass  # closed whitelist — never interpolate a caller string
+
+
+def test_artifacts_list_recent(ledger: Ledger) -> None:
+    from chorus.ledger import Artifact, ArtifactType
+
+    ledger.employees.create(Employee(id="ada", name="Ada", role="engineer"))
+    for n in range(3):
+        task_id = uid(f"ar-t{n}")
+        ledger.tasks.submit(Task(id=task_id, intent=f"work {n}", assignee_employee_id="ada"))
+        ledger.artifacts.create(
+            Artifact(id=uid(f"ar-a{n}"), task_id=task_id, type=ArtifactType.DOC)
+        )
+    recent = ledger.artifacts.list_recent(limit=2)
+    assert len(recent) == 2
+    assert recent[0].id == uid("ar-a2")  # newest first
+    assert ledger.artifacts.list_recent(limit=10)[-1].id == uid("ar-a0")
