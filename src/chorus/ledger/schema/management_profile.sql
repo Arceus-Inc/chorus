@@ -1,5 +1,5 @@
 CREATE TABLE management_profile (
-    employee_id             TEXT PRIMARY KEY REFERENCES employee(id),
+    employee_id             TEXT NOT NULL REFERENCES employee(id),
     active                  INTEGER NOT NULL DEFAULT 0,
     can_lead                INTEGER NOT NULL DEFAULT 0,
     can_subdelegate         INTEGER NOT NULL DEFAULT 0,
@@ -10,7 +10,9 @@ CREATE TABLE management_profile (
     version                 INTEGER NOT NULL DEFAULT 1,
     granted_by_user_id      TEXT NOT NULL,
     created_at              TEXT NOT NULL,
-    updated_at              TEXT NOT NULL
+    updated_at              TEXT NOT NULL,
+    company_id              TEXT NOT NULL DEFAULT '',
+    PRIMARY KEY (company_id, employee_id)
 );
 
 CREATE INDEX management_profile_active_idx ON management_profile(active);

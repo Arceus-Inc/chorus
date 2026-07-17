@@ -108,10 +108,14 @@ class PostgresLedgerConnection:
         try:
             cursor = self._pg.execute(query, parameters or None)
         except psycopg.errors.IntegrityError as exc:
+            # ROLLBACK TO resets the subtransaction but leaves it on the stack; RELEASE pops it so
+            # a retry-heavy batched transaction never crosses Postgres's 64-sub-XID snapshot cliff.
             self._pg.execute("ROLLBACK TO SAVEPOINT ledger_write")
+            self._pg.execute("RELEASE SAVEPOINT ledger_write")
             raise LedgerIntegrityError(str(exc)) from exc
         except Exception:
             self._pg.execute("ROLLBACK TO SAVEPOINT ledger_write")
+            self._pg.execute("RELEASE SAVEPOINT ledger_write")
             raise
         self._pg.execute("RELEASE SAVEPOINT ledger_write")
         return cursor

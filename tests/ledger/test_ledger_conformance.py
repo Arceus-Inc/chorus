@@ -793,3 +793,75 @@ def test_postgres_two_connections_share_one_company_concurrently(pg_conninfo: st
     finally:
         conductor_side.close()
         api_side.close()
+
+
+def test_management_profile_upsert_round_trips(any_ledger: Ledger) -> None:
+    """The upsert's ON CONFLICT target must match the (company_id, employee_id) PK on BOTH
+    engines — the exact class of bug the wake coalesce fix covered (found live on Postgres)."""
+    from chorus.ledger import ManagementProfile
+
+    lead = _employee(any_ledger)
+    first = ManagementProfile(
+        employee_id=lead.id,
+        active=True,
+        can_lead=True,
+        can_subdelegate=False,
+        max_delegation_depth=1,
+        max_team_size=3,
+        allowed_professions=("engineer",),
+        version=1,
+        granted_by_user_id="operator",
+    )
+    any_ledger.management_profiles.upsert(first)
+    second = ManagementProfile(
+        employee_id=lead.id,
+        active=True,
+        can_lead=True,
+        can_subdelegate=True,
+        max_delegation_depth=2,
+        max_team_size=5,
+        allowed_professions=("engineer", "designer"),
+        version=2,
+        granted_by_user_id="operator",
+    )
+    any_ledger.management_profiles.upsert(second)  # the conflict path — updates in place
+    got = any_ledger.management_profiles.get(lead.id)
+    assert got is not None
+    assert (got.version, got.max_team_size, got.can_subdelegate) == (2, 5, True)
+    assert [
+        profile.employee_id for profile in any_ledger.management_profiles.active_profiles()
+    ] == [lead.id]
+
+
+def test_every_global_unique_index_is_a_deliberate_decision() -> None:
+    """Guardrail for the company-scoping allowlist: a NEW unique index that is not company-scoped
+    must be added to this frozen set consciously — a silent global unique is exactly how the
+    management_profile ON CONFLICT bug slipped past the SQLite-only tests. Everything here is
+    anchored on a chorus-minted uuid, so global uniqueness is safe across companies."""
+    import re
+
+    from chorus.ledger.postgres import postgres_ddl
+
+    pattern = re.compile(r"CREATE UNIQUE INDEX (\w+)\s+ON\s+\w+\s*\(([^)]*)\)", re.S)
+    global_uniques = {
+        match.group(1)
+        for statement in postgres_ddl()
+        for match in [pattern.search(statement)]
+        if match is not None and not match.group(2).strip().startswith("company_id")
+    }
+    assert global_uniques == {
+        "approval_subject_pending_uq",  # subject_id = a minted task/artifact uuid
+        "artifact_revision_seq_uq",  # artifact_id
+        "budget_incident_window_uq",  # policy_id
+        "decomp_source_revision_uq",  # source_task_id + accepted_plan_revision_id
+        "dod_task_uq",  # task_id
+        "monitor_armed_task_uq",  # task_id
+        "recovery_active_fingerprint_uq",  # source_task_id
+        "recovery_active_source_uq",  # source_task_id
+        "routine_revision_no_uq",  # routine_id
+        "task_active_productivity_review_uq",  # origin_id = a minted id
+        "task_active_stale_run_eval_uq",  # origin_id
+        "task_active_stranded_recovery_uq",  # origin_id
+        "task_dependency_uq",  # task_id + depends_on_id
+        "task_open_routine_uq",  # origin_id = the routine uuid
+    }

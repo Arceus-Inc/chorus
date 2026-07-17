@@ -35,8 +35,16 @@ from importlib.resources import files
 _SEMANTIC_ID_TABLES: dict[str, str] = {
     "employee": "id",
     "system_principal": "id",
-    "management_profile": "employee_id",
+    # management_profile (keyed by the employee slug) declares its composite
+    # (company_id, employee_id) PK in the schema itself: its upsert names the PK as an ON CONFLICT
+    # target, so the conflict spec must match the same index columns on BOTH engines.
 }
+
+# NOTE on non-semantic table-level FKs (e.g. workforce_plan_employee -> workforce_plan
+# (id, revision)): these stay as declared — their targets are chorus-minted (unguessable) ids, RLS
+# WITH CHECK on the referencing table's own company_id is the cross-tenant write guard, and the
+# composite-scoping machinery below is only for SEMANTIC ids (slugs), which genuinely repeat across
+# companies. Do not "fix" them to company-scoped FKs without also changing the SQLite rendering.
 
 # Referenced-id targets whose ids are text (semantic), never uuid.
 _TEXT_ID_TABLES = set(_SEMANTIC_ID_TABLES)

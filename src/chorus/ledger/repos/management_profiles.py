@@ -39,7 +39,7 @@ class ManagementProfileRepo:
             "max_delegation_depth, max_team_size, allowed_professions, spend_limit_cents, version, "
             "granted_by_user_id, created_at, updated_at) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
-            "ON CONFLICT(employee_id) DO UPDATE SET active = excluded.active, "
+            "ON CONFLICT(company_id, employee_id) DO UPDATE SET active = excluded.active, "
             "can_lead = excluded.can_lead, can_subdelegate = excluded.can_subdelegate, "
             "max_delegation_depth = excluded.max_delegation_depth, "
             "max_team_size = excluded.max_team_size, "
