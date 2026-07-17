@@ -1,8 +1,15 @@
-"""SQLite applied-migration-set runner — NOW ONLY for the episodic-memory and skill stores.
+"""SQLite applied-migration-set runner — for the episodic-memory and skill stores, BY DESIGN.
 
-The ledger retired SQLite (spec 12 §6: Postgres-native, `chorus.ledger.Ledger`); this runner
-survives solely because the memory/skills storage engines still run on SQLite until their own
-Postgres port (M5-L). New code must not grow SQLite usage.
+The ledger retired SQLite (spec 12 §6: Postgres-native, `chorus.ledger.Ledger`) because it is
+shared operational truth: multi-tenant, RLS-walled, read by api + conductor + beats. The
+memory/skills stores are the opposite shape and STAY SQLite deliberately: single-writer,
+company-workdir-local files read only by that company's beat processes, riding a filesystem
+that is already host-bound (worktrees, org repo, lattice consolidation, horizon's JSON stores).
+Episodic capture is advisory learning telemetry — never correctness-bearing — and FTS5 gives
+BM25 + snippets natively. Porting them to Postgres would dissolve no constraint the workdir
+does not still impose. If a genuine cross-host need ever appears, port the skills store alone
+(2 tables, no FTS) as a delta in ``chorus.ledger.migrations``. New code outside these two
+stores must not grow SQLite usage.
 
 Versioning tracks the *set* of applied migrations (``id`` + ``checksum``), not a single
 integer — collision-safe under parallel development (two branches that each add a migration
