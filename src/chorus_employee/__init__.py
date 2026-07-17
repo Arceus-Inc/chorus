@@ -28,10 +28,10 @@ from chorus_employee.reviewer import reviewer_lander
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from chorus.ledger import SqliteLedger
+    from chorus.ledger import Ledger
 
 
-def default_landers(company_root: Path, *, ledger: SqliteLedger | None = None) -> LanderRegistry:
+def default_landers(company_root: Path, *, ledger: Ledger | None = None) -> LanderRegistry:
     """The default outcome landers, keyed by ``outcome_kind`` (spec 04 §2).
 
     The engineering ``pr`` lander, the PM's ``doc`` lander, and the Analyst's ``finding`` lander always

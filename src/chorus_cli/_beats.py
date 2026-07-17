@@ -17,7 +17,7 @@ from pathlib import Path
 from chorus.adapters import ModelRate, TokenPricing
 from chorus.budgets import BudgetEnforcer
 from chorus.heartbeat import Scheduler, TickReport
-from chorus.ledger import SqliteLedger
+from chorus.ledger import Ledger
 from chorus.memory import EpisodicStore
 from chorus.observability import EventBus
 from chorus.roles import (
@@ -125,7 +125,7 @@ class SchedulerTickRunner:
 
 
 def build_beat_service(
-    ledger: SqliteLedger,
+    ledger: Ledger,
     *,
     api_key: str,
     base_url: str,
@@ -176,7 +176,7 @@ def build_beat_service(
 
 
 def chat_service_from_env(
-    ledger: SqliteLedger,
+    ledger: Ledger,
     *,
     employee_id: str,
     render_bus: ChatRenderBus,

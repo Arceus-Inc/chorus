@@ -146,6 +146,14 @@ class TaskRepo:
         )
         self._conn.commit()
 
+    def set_priority(self, task_id: str, priority: TaskPriority) -> None:
+        """Reprioritise a task — a pure data write (no scheduling side effects)."""
+        self._conn.execute(
+            "UPDATE task SET priority = ?, updated_at = ? WHERE id = ?",
+            (priority.value, utcnow_iso(), task_id),
+        )
+        self._conn.commit()
+
     def set_status(self, task_id: str, status: TaskStatus) -> None:
         """Transition a task, stamping the matching ``*_at`` column (spec 02 §2)."""
         now = utcnow_iso()

@@ -11,7 +11,7 @@ from pydantic import BaseModel
 
 from chorus.heartbeat import BeatContext
 from chorus.heartbeat._invokability import invokability_block
-from chorus.ledger import ExecutionMode, SqliteLedger, TeamStatus
+from chorus.ledger import ExecutionMode, Ledger, TeamStatus
 from chorus.workforce._ledger import LedgerWorkforce
 
 _TERMINAL_TASK_STATUSES = {"cancelled", "done", "rejected"}
@@ -32,7 +32,7 @@ class TeamReadTool(BaseTool):
     declaration = ToolDeclaration(risk="safe", tier_required=0, timeout_seconds=10.0)
     input_model = TeamReadInput
 
-    def __init__(self, ledger: SqliteLedger) -> None:
+    def __init__(self, ledger: Ledger) -> None:
         self._ledger = ledger
         self._workforce = LedgerWorkforce(ledger.employees)
 

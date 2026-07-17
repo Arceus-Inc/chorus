@@ -21,7 +21,7 @@ from pydantic import BaseModel, Field, ValidationError, model_validator
 
 from chorus.governance import GovernanceError, GovernanceResolver
 from chorus.heartbeat import BeatContext
-from chorus.ledger import ApprovalAction, ApprovalGate, ApprovalStatus, SqliteLedger
+from chorus.ledger import ApprovalAction, ApprovalGate, ApprovalStatus, Ledger
 
 
 class GoLiveAction(StrEnum):
@@ -79,7 +79,7 @@ class GoLiveTool(BaseTool):
     declaration = ToolDeclaration(risk="mutating", tier_required=1, timeout_seconds=30.0)
     input_model = GoLiveInput
 
-    def __init__(self, ledger: SqliteLedger) -> None:
+    def __init__(self, ledger: Ledger) -> None:
         self._ledger = ledger
 
     async def execute(self, input: dict[str, object], ctx: ToolExecutionContext) -> ToolResult:

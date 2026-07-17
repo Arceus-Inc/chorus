@@ -7,7 +7,7 @@ from chorus.ledger import (
     Artifact,
     ArtifactRevision,
     ArtifactType,
-    SqliteLedger,
+    Ledger,
     Task,
     TaskPriority,
 )
@@ -141,7 +141,7 @@ def _eligible(ctx: CommandContext) -> LoopSignal:
     return LoopSignal.CONTINUE
 
 
-def _accepted_plan(ledger: SqliteLedger, parent_id: str) -> str:
+def _accepted_plan(ledger: Ledger, parent_id: str) -> str:
     """Record a minimal accepted plan revision the decomposition claim references (spec 02 §4)."""
     plan = Artifact(id=mint_id(), task_id=parent_id, type=ArtifactType.DOC)
     ledger.artifacts.create(plan)

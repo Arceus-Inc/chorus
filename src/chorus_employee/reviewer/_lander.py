@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, Any
 from chorus.outcomes import Artifact, ArtifactType
 
 if TYPE_CHECKING:
-    from chorus.ledger import SqliteLedger, Task
+    from chorus.ledger import Ledger, Task
 
 
 class ReviewerLander:
@@ -21,7 +21,7 @@ class ReviewerLander:
 
     outcome_kind = "verdict"
 
-    def __init__(self, ledger: SqliteLedger) -> None:
+    def __init__(self, ledger: Ledger) -> None:
         self._ledger = ledger
 
     async def land(self, task: Task, result: Any) -> Artifact:
@@ -37,7 +37,7 @@ class ReviewerLander:
         )
 
 
-def reviewer_lander(ledger: SqliteLedger) -> ReviewerLander:
+def reviewer_lander(ledger: Ledger) -> ReviewerLander:
     """The Reviewer's outcome lander, bound to the ledger it reads its verdict from."""
     return ReviewerLander(ledger)
 

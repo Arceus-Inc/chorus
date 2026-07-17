@@ -39,7 +39,8 @@ from chorus.workforce import Employee, EmployeeStatus
 
 pytestmark = pytest.mark.integration
 
-_PG_BIN = Path("/opt/homebrew/opt/postgresql@18/bin")
+# Overridable so CI (or a non-Homebrew machine) can point at its own PostgreSQL 18 install.
+_PG_BIN = Path(os.environ.get("CHORUS_PG_BIN", "/opt/homebrew/opt/postgresql@18/bin"))
 
 
 def _free_port() -> int:
@@ -459,6 +460,103 @@ def test_create_child_is_idempotent_on_retry(any_ledger: Ledger) -> None:
     first = any_ledger.create_child(claim.id, child)
     again = any_ledger.create_child(claim.id, child)  # a resumed fan-out — no duplicate insert
     assert list(first.child_task_ids) == list(again.child_task_ids) == [child.id]
+
+
+def test_approval_gate_is_exact_once_per_subject(any_ledger: Ledger) -> None:
+    from chorus.ledger import Approval, ApprovalAction, ApprovalStatus, ApprovalSubjectKind
+
+    task = _task(any_ledger)
+    opened = any_ledger.approvals.request(
+        Approval(
+            id=mint_id(),
+            subject_kind=ApprovalSubjectKind.TASK,
+            subject_id=task.id,
+            reason="hard stop",
+            action=ApprovalAction.BUDGET_OVERRIDE,
+        )
+    )
+    with pytest.raises(LedgerIntegrityError):  # a second PENDING gate for the same subject
+        any_ledger.approvals.request(
+            Approval(
+                id=mint_id(),
+                subject_kind=ApprovalSubjectKind.TASK,
+                subject_id=task.id,
+                reason="again",
+                action=ApprovalAction.BUDGET_OVERRIDE,
+            )
+        )
+    any_ledger.approvals.approve(opened.id, decided_by_user_id="operator")
+    decided = any_ledger.approvals.get(opened.id)
+    assert decided is not None and decided.status is ApprovalStatus.APPROVED
+
+
+def test_message_round_trip(any_ledger: Ledger) -> None:
+    from chorus.ledger import Message
+
+    sender, receiver = _employee(any_ledger), _employee(any_ledger)
+    sent = any_ledger.messages.send(
+        Message(
+            id=mint_id(),
+            to_employee_id=receiver.id,
+            body="ship it",
+            from_employee_id=sender.id,
+        )
+    )
+    got = any_ledger.messages.get(sent.id)
+    assert got is not None and got.body == "ship it"
+
+
+def test_workforce_plan_preserves_draft_order(any_ledger: Ledger) -> None:
+    """Plan employees round-trip in DRAFT order — the explicit position column, on both engines."""
+    from chorus.ledger import (
+        PlannedEmployee,
+        WorkforcePlan,
+        WorkforcePlanDraft,
+        WorkforcePlanStatus,
+    )
+
+    proposer = _employee(any_ledger)
+    goal_id = mint_id()
+    any_ledger.goals.create(Goal(id=goal_id, title="scale"))
+    draft = WorkforcePlanDraft(
+        rationale="scale the pod",
+        confidence=0.9,
+        source_goal_ids=(goal_id,),
+        management_grants=(),
+        employees=tuple(
+            PlannedEmployee(ref=ref, name=ref.title(), profession="engineer", reports_to_ref="ceo")
+            for ref in ("zulu", "alpha", "mike")  # deliberately not alphabetical
+        ),
+    )
+    plan = any_ledger.workforce_plans.create(
+        WorkforcePlan(
+            id=mint_id(),
+            revision=1,
+            status=WorkforcePlanStatus.PROPOSED,
+            proposed_by_employee_id=proposer.id,
+            draft=draft,
+        )
+    )
+    reread = any_ledger.workforce_plans.get(plan.id, revision=1)
+    assert reread is not None
+    assert [employee.ref for employee in reread.draft.employees] == ["zulu", "alpha", "mike"]
+
+
+def test_activity_stream_preserves_append_order(any_ledger: Ledger) -> None:
+    """The audit stream reads back oldest-first — append stamps occurred_at; ties break on the
+    time-ordered id (the portable replacement for SQLite's rowid)."""
+    from chorus.ledger import Activity, ActivityVerb
+
+    task = _task(any_ledger)
+    for verb in (ActivityVerb.LEAD_ACCEPTED, ActivityVerb.PARENT_VERIFIED):
+        any_ledger.activity.append(
+            Activity(id=mint_id(), verb=verb, subject_kind="task", subject_id=task.id)
+        )
+    history = any_ledger.activity.by_subject("task", task.id)
+    assert [activity.verb for activity in history] == [
+        ActivityVerb.LEAD_ACCEPTED,
+        ActivityVerb.PARENT_VERIFIED,
+    ]
 
 
 # --- cross-aggregate: the facade's atomic operations -------------------------------------------

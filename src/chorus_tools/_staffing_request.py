@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field, ValidationError
 
 from chorus.governance import StaffingRequestService
 from chorus.heartbeat import BeatContext
-from chorus.ledger import SqliteLedger, StaffingNeed
+from chorus.ledger import Ledger, StaffingNeed
 
 
 class StaffingNeedInput(BaseModel):
@@ -34,7 +34,7 @@ class StaffingRequestTool(BaseTool):
     declaration = ToolDeclaration(risk="mutating", tier_required=1, timeout_seconds=30.0)
     input_model = StaffingRequestInput
 
-    def __init__(self, ledger: SqliteLedger) -> None:
+    def __init__(self, ledger: Ledger) -> None:
         self._service = StaffingRequestService(ledger)
 
     async def execute(self, input: dict[str, object], ctx: ToolExecutionContext) -> ToolResult:

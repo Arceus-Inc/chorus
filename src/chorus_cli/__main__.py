@@ -25,7 +25,7 @@ from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import TextIO
 
-from chorus.ledger import SqliteLedger
+from chorus.ledger import Ledger, SqliteLedger
 from chorus_cli._commands import REGISTRY
 from chorus_cli._context import BeatService, CliSession
 from chorus_cli._env import load_env_file
@@ -57,7 +57,7 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _beat_service_from_env(ledger: SqliteLedger, *, company_id: str) -> BeatService | None:
+def _beat_service_from_env(ledger: Ledger, *, company_id: str) -> BeatService | None:
     """Wire a real, priced, budget-enforcing beat service from Azure creds, or ``None`` if unset.
 
     dream is imported **lazily** here — only when all three credentials are present — so the keys-free

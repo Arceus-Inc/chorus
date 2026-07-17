@@ -28,7 +28,7 @@ from chorus_employee.pm._decision import (
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from chorus.ledger import SqliteLedger, Task
+    from chorus.ledger import Ledger, Task
 
 _PACKET_DOC = "sources.json"
 
@@ -43,7 +43,7 @@ class PmLander:
 
     outcome_kind = "doc"
 
-    def __init__(self, company_root: Path, ledger: SqliteLedger | None = None) -> None:
+    def __init__(self, company_root: Path, ledger: Ledger | None = None) -> None:
         self._company_root = company_root
         self._ledger = ledger
 
@@ -109,7 +109,7 @@ class PmLander:
         return True
 
 
-def pm_lander(company_root: Path, ledger: SqliteLedger | None = None) -> PmLander:
+def pm_lander(company_root: Path, ledger: Ledger | None = None) -> PmLander:
     """The PM's :class:`~chorus.outcomes.OutcomeLander`, rooted at the org workspace.
 
     When a ``ledger`` is supplied it also renders the §10 decision packet (``sources.json``) from the
