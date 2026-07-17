@@ -147,3 +147,59 @@ class TestSubagentLifecycle:
         sink: list[Event] = []
         _bridge(sink).on_event({"kind": "planner.started", "detail": "x"})
         assert sink == []
+
+
+class TestMemoryRetrieved:
+    """Retrieval is instrumented at the moment of use (OBS P5) — synthesized from the recall
+    tool's structured result; a miss (zero hits) is signal, not silence."""
+
+    def test_recall_result_synthesizes_memory_retrieved(self) -> None:
+        sink: list[Event] = []
+        _bridge(sink).on_event(
+            {
+                "kind": "role.tool.result",
+                "tool": "recall",
+                "is_error": False,
+                "content_preview": "2 hits",
+                "structured": {
+                    "hits": [
+                        {"run_id": uid("r_a"), "score": 0.9},
+                        {"run_id": uid("r_b"), "score": 0.4},
+                    ],
+                    "mode": "keyword",
+                },
+            }
+        )
+        assert EventKind.MEMORY_RETRIEVED in _kinds(sink)
+        retrieved = next(e for e in sink if e.kind is EventKind.MEMORY_RETRIEVED)
+        assert retrieved.payload["tool"] == "recall"
+        assert retrieved.payload["hit_run_ids"] == [uid("r_a"), uid("r_b")]
+        assert retrieved.payload["empty"] is False
+
+    def test_empty_retrieval_is_still_an_event(self) -> None:
+        sink: list[Event] = []
+        _bridge(sink).on_event(
+            {
+                "kind": "role.tool.result",
+                "tool": "recall",
+                "is_error": False,
+                "content_preview": "no matches",
+                "structured": {"hits": [], "mode": "recency"},
+            }
+        )
+        retrieved = next(e for e in sink if e.kind is EventKind.MEMORY_RETRIEVED)
+        assert retrieved.payload["empty"] is True
+        assert retrieved.payload["hit_run_ids"] == []
+
+    def test_non_memory_tools_do_not_synthesize(self) -> None:
+        sink: list[Event] = []
+        _bridge(sink).on_event(
+            {
+                "kind": "role.tool.result",
+                "tool": "write_file",
+                "is_error": False,
+                "content_preview": "ok",
+                "structured": {"hits": [{"run_id": "x"}]},
+            }
+        )
+        assert EventKind.MEMORY_RETRIEVED not in _kinds(sink)
