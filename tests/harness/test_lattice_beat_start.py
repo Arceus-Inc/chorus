@@ -8,6 +8,7 @@ from typing import Any
 
 import pytest
 
+from chorus.ledger import Ledger
 from chorus.roles import RoleRegistry, default_roles
 from chorus.workforce import Employee
 from chorus_employee._lattice import LATTICE_BEAT_START_HEADER, read_lattice_consolidation_push
@@ -16,7 +17,9 @@ from chorus_harness import _factory as _factory_mod
 pytestmark = pytest.mark.integration
 
 
-def _factory(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> tuple[Any, dict[str, Any]]:
+def _factory(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, ledger: Ledger
+) -> tuple[Any, dict[str, Any]]:
     captured: dict[str, Any] = {}
     monkeypatch.setattr(
         _factory_mod.dream, "build_harness", lambda **kw: captured.update(kw) or object()
@@ -28,6 +31,7 @@ def _factory(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> tuple[Any, dict
         company_id="acme",
         roles=RoleRegistry.from_plugins(default_roles()),
         work_root=tmp_path,
+        ledger=ledger,
     )
     return factory, captured
 
@@ -52,9 +56,9 @@ def test_read_lattice_consolidation_push_from_beat_end_file(tmp_path: Path) -> N
 
 
 def test_materialize_injects_lattice_push_when_gate_file_present(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, ledger: Ledger
 ) -> None:
-    factory, _ = _factory(monkeypatch, tmp_path)
+    factory, _ = _factory(monkeypatch, tmp_path, ledger)
     mat = factory.materialize(Employee(id="bex", name="Bex", role="backend_engineer"))
 
     teaser_path = mat.working_dir / ".harness" / "lattice-beat-end.json"

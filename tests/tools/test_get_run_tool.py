@@ -10,6 +10,7 @@ import pytest
 from dream.tools._context import ToolExecutionContext
 
 from chorus.heartbeat import BeatContext
+from chorus.ledger import Ledger
 from chorus.memory import EpisodicRecallService, EpisodicStore, SprintDelta
 from chorus.testing import uid
 from chorus_tools._get_run import GetRunInput, GetRunTool
@@ -48,8 +49,8 @@ def _beat(working_dir: Path, *, employee_id: str = "bex", run_id: str = "r_now")
     BeatContext(task_id=uid("t_now"), run_id=run_id, employee_id=employee_id).write(working_dir)
 
 
-async def test_get_run_returns_full_prose(tmp_path: Path) -> None:
-    store = EpisodicStore(tmp_path / "memory")
+async def test_get_run_returns_full_prose(ledger: Ledger, tmp_path: Path) -> None:
+    store = EpisodicStore(ledger)
     store.append(_delta(run_id=uid("r_a"), body=_body("full beat narrative here")))
     svc = EpisodicRecallService(store)
     _beat(tmp_path)
@@ -66,8 +67,8 @@ async def test_get_run_returns_full_prose(tmp_path: Path) -> None:
     assert "run_id" in (structured.get("artifacts") or {})
 
 
-async def test_get_run_rejects_cross_employee(tmp_path: Path) -> None:
-    store = EpisodicStore(tmp_path / "memory")
+async def test_get_run_rejects_cross_employee(ledger: Ledger, tmp_path: Path) -> None:
+    store = EpisodicStore(ledger)
     store.append(_delta(run_id=uid("r_a"), employee_id="ada"))
     svc = EpisodicRecallService(store)
     _beat(tmp_path, employee_id="bex")
@@ -82,12 +83,12 @@ async def test_get_run_rejects_cross_employee(tmp_path: Path) -> None:
     assert structured["stop_condition"]
 
 
-async def test_get_run_missing_run_id(tmp_path: Path) -> None:
-    store = EpisodicStore(tmp_path / "memory")
+async def test_get_run_missing_run_id(ledger: Ledger, tmp_path: Path) -> None:
+    store = EpisodicStore(ledger)
     svc = EpisodicRecallService(store)
     _beat(tmp_path)
 
-    result = await GetRunTool(svc).execute({"run_id": "r_missing"}, _ctx(tmp_path))
+    result = await GetRunTool(svc).execute({"run_id": uid("r_missing")}, _ctx(tmp_path))
 
     assert result.is_error is True
     structured = result.structured or {}

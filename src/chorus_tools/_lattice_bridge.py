@@ -13,6 +13,7 @@ from lattice.compose import build_default
 from lattice.contracts.episodic import RawEpisode
 from lattice.facade import Lattice
 
+from chorus.ledger import Ledger
 from chorus.memory import EpisodicStore, SprintDelta
 
 
@@ -49,19 +50,20 @@ def _to_raw(delta: SprintDelta) -> RawEpisode:
 
 def build_lattice_for_chorus(
     company_root: str | Path,
+    ledger: Ledger,
     *,
     min_new_episodes: int | None = None,
     min_cluster_size: int | None = None,
     canonical_skills_root: str | Path | None = None,
 ) -> Lattice:
-    """Wire lattice to a chorus company directory (``memory/`` + ``lattice/``).
+    """Wire lattice to a company: episodes from the shared-schema store, files under ``lattice/``.
 
     Overlay patches stay off — procedural writes go through ``skill_manage``.
     ``canonical_skills_root`` is still passed so habit *validation* inside
     SkillManager can discover role skill slugs.
     """
     root = Path(company_root)
-    store = EpisodicStore(root / "memory")
+    store = EpisodicStore(ledger)
     kwargs: dict[str, object] = {
         "consolidated_root": root / "lattice",
         "episodes": ChorusEpisodicReader(store),

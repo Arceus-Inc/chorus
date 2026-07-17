@@ -1096,7 +1096,9 @@ class Scheduler:
         try:
             from chorus_tools._lattice_bridge import build_lattice_for_chorus
 
-            lattice = build_lattice_for_chorus(self._company_root)
+            if self._ledger is None:
+                return
+            lattice = build_lattice_for_chorus(self._company_root, self._ledger)
             if not lattice.gate_open(employee.id):
                 if path.exists():
                     path.unlink()

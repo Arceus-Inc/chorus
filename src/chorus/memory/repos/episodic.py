@@ -1,38 +1,39 @@
-"""EpisodicRepo — bounded reads, retention metadata, and FTS search (R0 + R2)."""
+"""EpisodicRepo — bounded reads, retention metadata, and tsvector search (R0 + R2)."""
 
 from __future__ import annotations
 
-import sqlite3
 from datetime import datetime
 
-from chorus.ledger.repos._base import dumps, loads, to_iso
-from chorus.memory.episodic.fts_query import sanitize_fts5_query
+from chorus.ledger.repos._base import LedgerConnection, LedgerRow, dumps, loads, to_iso
 from chorus.memory.episodic.models import SprintDelta
 from chorus.memory.episodic.narrative import narrative, normalize_for_fts
 from chorus.memory.episodic.recall_filters import EpisodicQueryFilters, filter_clause
 from chorus.memory.episodic.search_hit import EpisodicSearchHit
 
 _HOT_TIER = "hot"
-# record_fts columns: 0=run_id UNINDEXED, 1=intent, 2=body — prefer body prose window.
-_SNIPPET_BODY_COL = 2
-_SNIPPET_INTENT_COL = 1
-_SNIPPET_TOKENS = 40
+_MAX_QUERY_CHARS = 2_048
+_TSV = "to_tsvector('simple', search_text)"
+_HEADLINE_OPTS = "StartSel=>>>, StopSel=<<<, MaxWords=40, MinWords=20"
 
 
 class EpisodicRepo:
-    """Append-only episodic records + FTS5 search; retention columns are mutable metadata only."""
+    """Append-only episodic records + tsvector search; retention columns are mutable metadata only."""
 
-    def __init__(self, conn: sqlite3.Connection) -> None:
+    def __init__(self, conn: LedgerConnection) -> None:
         self._conn = conn
 
     def append(self, delta: SprintDelta) -> None:
         """Append one raw episodic record; a repeated ``run_id`` is a no-op (append-only, spec 07 §3)."""
         recorded = to_iso(delta.recorded_at or delta.created_at)
-        cur = self._conn.execute(
-            "INSERT OR IGNORE INTO episodic_record "
+        search_text = (
+            normalize_for_fts(delta.intent) + "\n" + normalize_for_fts(narrative(delta.body))
+        )
+        self._conn.execute(
+            "INSERT INTO episodic_record "
             "(run_id, task_id, employee_id, scope, role, intent, outcome, score, body, artifacts, "
-            " files_touched, created_at, recorded_at, pin_count, last_recalled_at, tier) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            " files_touched, created_at, recorded_at, pin_count, last_recalled_at, tier, "
+            " search_text) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT (run_id) DO NOTHING",
             (
                 delta.run_id,
                 delta.task_id,
@@ -50,16 +51,7 @@ class EpisodicRepo:
                 delta.pin_count,
                 to_iso(delta.last_recalled_at) if delta.last_recalled_at else None,
                 delta.tier,
-            ),
-        )
-        if cur.rowcount == 0:
-            return
-        self._conn.execute(
-            "INSERT INTO record_fts (run_id, intent, body) VALUES (?, ?, ?)",
-            (
-                delta.run_id,
-                normalize_for_fts(delta.intent),
-                normalize_for_fts(narrative(delta.body)),
+                search_text,
             ),
         )
         self._conn.commit()
@@ -101,38 +93,40 @@ class EpisodicRepo:
         tier: str = _HOT_TIER,
         filters: EpisodicQueryFilters | None = None,
     ) -> list[EpisodicSearchHit]:
-        """Keyword search over intent+body; each hit carries an FTS5 match snippet."""
-        match = sanitize_fts5_query(query)
-        if not match:
+        """Keyword search over intent+body; each hit carries a ``ts_headline`` match snippet.
+
+        ``websearch_to_tsquery`` parses free text safely (implicit AND, quoted phrases) — the
+        FTS5 sanitizer this replaces is unnecessary on Postgres.
+        """
+        if not query or not query.strip():
             return []
+        match = query.strip()[:_MAX_QUERY_CHARS]
         sql = (
             "SELECT r.*, "
-            f"snippet(record_fts, {_SNIPPET_BODY_COL}, '>>>', '<<<', '...', {_SNIPPET_TOKENS}) "
-            "AS body_snip, "
-            f"snippet(record_fts, {_SNIPPET_INTENT_COL}, '>>>', '<<<', '...', {_SNIPPET_TOKENS}) "
-            "AS intent_snip "
+            f"ts_headline('simple', r.search_text, websearch_to_tsquery('simple', ?), "
+            f"'{_HEADLINE_OPTS}') AS snip "
             "FROM episodic_record r "
-            "JOIN record_fts f ON f.run_id = r.run_id "
-            "WHERE record_fts MATCH ? AND r.tier = ?"
+            f"WHERE {_TSV.replace('search_text', 'r.search_text')} "
+            "      @@ websearch_to_tsquery('simple', ?) "
+            "AND r.tier = ?"
         )
-        params: list[object] = [match, tier]
+        params: list[object] = [match, match, tier]
         if employee_id is not None:
             sql += " AND r.employee_id = ?"
             params.append(employee_id)
         extra_sql, extra_params = filter_clause(filters, alias="r")
         sql += extra_sql
         params.extend(extra_params)
-        sql += " ORDER BY bm25(record_fts) LIMIT ?"
-        params.append(limit)
-        try:
-            rows = self._conn.execute(sql, params).fetchall()
-        except sqlite3.OperationalError:
-            # Bad FTS5 syntax despite sanitize — empty result, never raise to the agent.
-            return []
+        sql += (
+            f" ORDER BY ts_rank({_TSV.replace('search_text', 'r.search_text')}, "
+            "websearch_to_tsquery('simple', ?)) DESC LIMIT ?"
+        )
+        params.extend([match, limit])
+        rows = self._conn.execute(sql, params).fetchall()
         return [
             EpisodicSearchHit(
                 record=self._to_delta(row),
-                snippet=(row["body_snip"] or row["intent_snip"] or "").strip(),
+                snippet=(row["snip"] or "").strip(),
             )
             for row in rows
         ]
@@ -162,9 +156,10 @@ class EpisodicRepo:
 
     def count(self) -> int:
         """Total records held."""
-        return int(self._conn.execute("SELECT COUNT(*) FROM episodic_record").fetchone()[0])
+        row = self._conn.execute("SELECT COUNT(*) AS n FROM episodic_record").fetchone()
+        return int(row["n"])
 
-    def _to_delta(self, row: sqlite3.Row) -> SprintDelta:
+    def _to_delta(self, row: LedgerRow) -> SprintDelta:
         raw_files = loads(row["files_touched"]) if row["files_touched"] else []
         last_recalled_raw = row["last_recalled_at"]
         return SprintDelta(
