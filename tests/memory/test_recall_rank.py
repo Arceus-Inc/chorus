@@ -12,6 +12,7 @@ from chorus.memory import (
     rerank_keyword_hits,
     sort_recency_hits,
 )
+from chorus.testing import uid
 
 pytestmark = pytest.mark.unit
 
@@ -29,7 +30,7 @@ def _delta(
 ) -> SprintDelta:
     return SprintDelta(
         run_id=run_id,
-        task_id="t",
+        task_id=uid("t"),
         employee_id="ada",
         scope="project",
         intent=intent,

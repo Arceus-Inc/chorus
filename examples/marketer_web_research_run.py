@@ -20,6 +20,9 @@ from __future__ import annotations
 
 import asyncio
 import os
+import uuid
+
+_EXAMPLE_COMPANY = str(uuid.uuid5(uuid.NAMESPACE_URL, "chorus-example"))  # one stable demo org
 import subprocess
 import sys
 import tempfile
@@ -28,7 +31,7 @@ from pathlib import Path
 from chorus.budgets import BudgetEnforcer
 from chorus.events import Event, EventKind
 from chorus.heartbeat import Scheduler
-from chorus.ledger import SqliteLedger, Task, TaskStatus
+from chorus.ledger import Ledger, Task, TaskStatus
 from chorus.lifecycle import assign_task
 from chorus.observability import EventBus
 from chorus.roles import RoleRegistry, default_roles, role_beat_config
@@ -51,9 +54,9 @@ _BRAND_SPEC = """# Arceus Brand Voice Specification
 _TASK = (
     "Write a ~350-word blog post for a technical audience on what Anysphere/Cursor's recent funding "
     "signals about the AI coding-assistant market. FIRST get the facts: SPAWN the web_research "
-    "subagent with ONE focused question — call spawn_subagent(name=\"web_research\", prompt=\"What did "
+    'subagent with ONE focused question — call spawn_subagent(name="web_research", prompt="What did '
     "Anysphere (maker of Cursor) raise in its most recent 2024-2025 funding round, and at what "
-    "valuation? Give the figures and name the sources.\"). Use its cited findings (a JSON answer with a "
+    'valuation? Give the figures and name the sources."). Use its cited findings (a JSON answer with a '
     "citation_graph) to write an on-brand post to content_draft.md, citing sources inline. Then spawn "
     "brand_critic to check it against brand_spec.md and apply its fixes. Deliverable: content_draft.md."
 )
@@ -104,7 +107,9 @@ class _CaptureBus(EventBus):
             tag = "ERR" if p.get("is_error") or not p.get("success", True) else "ok"
             _log(f"    ✅ {name} completed [{tag}] ({len(content)} chars) err={p.get('error')}")
         elif event.kind is EventKind.RUN_EVALUATED:
-            _log(f"    ⚖ evaluated: passed={p.get('passed')} summary={str(p.get('summary',''))[:160]}")
+            _log(
+                f"    ⚖ evaluated: passed={p.get('passed')} summary={str(p.get('summary', ''))[:160]}"
+            )
         elif event.kind is EventKind.RUN_DONE:
             _log("    ▪ beat done")
         elif event.kind is EventKind.TASK_STATUS:
@@ -117,9 +122,20 @@ def _seed_repo(path: Path) -> None:
     (path / "brand_spec.md").write_text(_BRAND_SPEC, encoding="utf-8")
     subprocess.run(["git", "-C", str(path), "add", "-A"], check=True, capture_output=True)
     subprocess.run(
-        ["git", "-C", str(path), "-c", "user.name=s", "-c", "user.email=s@x",
-         "commit", "-m", "init: seed brand spec"],
-        check=True, capture_output=True,
+        [
+            "git",
+            "-C",
+            str(path),
+            "-c",
+            "user.name=s",
+            "-c",
+            "user.email=s@x",
+            "commit",
+            "-m",
+            "init: seed brand spec",
+        ],
+        check=True,
+        capture_output=True,
     )
 
 
@@ -157,14 +173,22 @@ def main() -> int:
     seed = base / "source"
     _seed_repo(seed)
 
-    ledger = SqliteLedger.open(":memory:")
+    ledger = Ledger.open(
+        os.environ.get("CHORUS_LEDGER_DSN", "postgresql://localhost/chorus"),
+        company_id=_EXAMPLE_COMPANY,
+    )
     bus = _CaptureBus()
     try:
         registry = RoleRegistry.from_plugins(default_roles())
         factory = EmployeeHarnessFactory(
-            api_key=api_key, base_url=base_url, deployment=deployment,
-            company_id="arceus", roles=registry, pricing=default_pricing_from_env(),
-            seed=seed, ledger=ledger,
+            api_key=api_key,
+            base_url=base_url,
+            deployment=deployment,
+            company_id="arceus",
+            roles=registry,
+            pricing=default_pricing_from_env(),
+            seed=seed,
+            ledger=ledger,
             # The marketer role carries its own beat_timeout_s / lease_ttl_s (research is turn-hungry),
             # so no factory/scheduler override is needed here — the role budget flows through.
         )
@@ -182,13 +206,19 @@ def main() -> int:
 
         ledger.tasks.submit(Task(id="ai-devtools-post", intent=_TASK))
         assign_task(ledger, "ai-devtools-post", "mira")
-        _log("\nTASK: spawn web_research on AI dev-tools startups, then write the post\n" + "-" * 72)
+        _log(
+            "\nTASK: spawn web_research on AI dev-tools startups, then write the post\n" + "-" * 72
+        )
 
         scheduler = Scheduler(
-            ledger=ledger, workforce=LedgerWorkforce(ledger.employees),
-            beat_runner_for=factory, budget_enforcer=BudgetEnforcer(ledger, company_id="arceus"),
-            roles=registry, landers=default_landers(factory.company_root),
-            event_bus=bus, max_concurrent_runs=1,
+            ledger=ledger,
+            workforce=LedgerWorkforce(ledger.employees),
+            beat_runner_for=factory,
+            budget_enforcer=BudgetEnforcer(ledger, company_id="arceus"),
+            roles=registry,
+            landers=default_landers(factory.company_root),
+            event_bus=bus,
+            max_concurrent_runs=1,
             # A research beat blocks for minutes inside one uninterrupted web_research sweep and can't
             # renew its lease meanwhile; the 300s default would reap it mid-research. Give it headroom.
             lease_ttl_s=900.0,

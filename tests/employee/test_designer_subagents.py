@@ -12,6 +12,7 @@ from __future__ import annotations
 import pytest
 
 from chorus.roles import role_beat_config
+from chorus.testing import open_test_ledger
 from chorus_employee.designer import (
     DESIGN_CRITIC_SUBAGENT,
     EXPLORER_SUBAGENT,
@@ -243,11 +244,10 @@ class TestDesignerProjection:
         from dream.tools._registry import ToolSource
 
         import chorus_harness._factory as factory
-        from chorus.ledger import SqliteLedger
         from chorus.roles import RoleRegistry
 
         config = role_beat_config(designer_plugin().manifest)
-        ledger = SqliteLedger.open(":memory:")
+        ledger = open_test_ledger()
         try:
             registry = factory._role_registry(factory.dream_tool_names(config.tools))
             for name in config.tools:

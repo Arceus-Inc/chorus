@@ -14,7 +14,8 @@ from typing import Any
 import pytest
 
 from chorus.heartbeat import BeatContext
-from chorus.ledger import Approval, ApprovalGate, ApprovalSubjectKind, SqliteLedger
+from chorus.ledger import Approval, ApprovalGate, ApprovalSubjectKind, Ledger
+from chorus.testing import uid
 from chorus_tools.cms import ContentType, DraftRef, EmailDraft, MarkdownCmsBackend
 from chorus_tools.cms._index import CmsDraftIndex
 from chorus_tools.delivery import DeliveryError, PublishedRef
@@ -34,7 +35,7 @@ class _FakeTransport:
     def send(self, message: EmailMessage, *, idempotency_key: str) -> PublishedRef:
         self.sent.append(message)
         self.idempotency_key = idempotency_key
-        return PublishedRef(backend="fake-esp", ref_id="msg_1", url="esp://msg_1")
+        return PublishedRef(backend="fake-esp", ref_id=uid("msg_1"), url="esp://msg_1")
 
 
 class _FakePublish:
@@ -47,7 +48,7 @@ def _ctx(working_dir: Path) -> Any:
 
     return ToolExecutionContext(
         working_dir=working_dir,
-        session_id="s",
+        session_id=uid("s"),
         metadata={},
         scratch_dir=working_dir,
         cancel_requested=False,
@@ -60,7 +61,7 @@ class TestEmailDelivery:
         staged = cms.create_draft(EmailDraft(subject="Launch news", body="Hello!", preheader="pre"))
         transport = _FakeTransport()
 
-        landed = EmailDelivery(cms, transport, _ROUTING).send(staged, idempotency_key="apr_1")
+        landed = EmailDelivery(cms, transport, _ROUTING).send(staged, idempotency_key=uid("apr_1"))
 
         assert transport.sent == [
             EmailMessage(
@@ -71,7 +72,7 @@ class TestEmailDelivery:
                 preheader="pre",
             )
         ]
-        assert landed.ref_id == "msg_1"
+        assert landed.ref_id == uid("msg_1")
 
     def test_missing_staged_draft_raises_delivery_error(self, tmp_path: Path) -> None:
         ghost = DraftRef(
@@ -79,7 +80,7 @@ class TestEmailDelivery:
         )
         with pytest.raises(DeliveryError, match="staged"):
             EmailDelivery(MarkdownCmsBackend(tmp_path), _FakeTransport(), _ROUTING).send(
-                ghost, idempotency_key="apr_1"
+                ghost, idempotency_key=uid("apr_1")
             )
 
     def test_non_email_draft_rejected(self, tmp_path: Path) -> None:
@@ -88,30 +89,30 @@ class TestEmailDelivery:
         )
         with pytest.raises(DeliveryError, match="email"):
             EmailDelivery(MarkdownCmsBackend(tmp_path), _FakeTransport(), _ROUTING).send(
-                blog, idempotency_key="apr_1"
+                blog, idempotency_key=uid("apr_1")
             )
 
 
-def _approved_email_stage(ledger: SqliteLedger, tmp: Path) -> DraftRef:
+def _approved_email_stage(ledger: Ledger, tmp: Path) -> DraftRef:
     """A staged email draft + an APPROVED gate for the beat's task."""
-    BeatContext(task_id=_TASK, run_id="r1", employee_id="mira").write(tmp)
+    BeatContext(task_id=_TASK, run_id=uid("r1"), employee_id="mira").write(tmp)
     staged = MarkdownCmsBackend(tmp).create_draft(EmailDraft(subject="Launch news", body="Hello!"))
     CmsDraftIndex(tmp / ".harness" / "cms-drafts.json").record(f"email:{_TASK}", staged)
     ledger.approvals.request(
         Approval(
-            id="apr_1",
+            id=uid("apr_1"),
             subject_kind=ApprovalSubjectKind.TASK,
             subject_id=_TASK,
             reason="go-live send to board",
             gate_kind=ApprovalGate.AUTHORIZATION,
         )
     )
-    ledger.approvals.approve("apr_1", decided_by_user_id="boss")
+    ledger.approvals.approve(uid("apr_1"), decided_by_user_id="boss")
     return staged
 
 
 class TestToolSendBranch:
-    def test_email_content_type_routes_to_send(self, ledger: SqliteLedger, tmp_path: Path) -> None:
+    def test_email_content_type_routes_to_send(self, ledger: Ledger, tmp_path: Path) -> None:
         _approved_email_stage(ledger, tmp_path)
         transport = _FakeTransport()
         delivery = EmailDelivery(MarkdownCmsBackend(tmp_path), transport, _ROUTING)
@@ -121,13 +122,13 @@ class TestToolSendBranch:
 
         assert res.is_error is False
         assert len(transport.sent) == 1
-        assert transport.idempotency_key == "apr_1"  # the tool keys the send on the gate id
+        assert transport.idempotency_key == uid("apr_1")  # the tool keys the send on the gate id
         record = res.metadata["delivery"]
         assert record["action"] == "send"
         assert record["backend"] == "fake-esp"
 
     def test_email_without_configured_delivery_rejected(
-        self, ledger: SqliteLedger, tmp_path: Path
+        self, ledger: Ledger, tmp_path: Path
     ) -> None:
         _approved_email_stage(ledger, tmp_path)
         tool = ExecuteGoLiveTool(ledger, _FakePublish())  # no email delivery wired
@@ -138,7 +139,7 @@ class TestToolSendBranch:
         assert "email" in res.content.lower()
 
     def test_send_failure_warns_about_the_at_most_once_window(
-        self, ledger: SqliteLedger, tmp_path: Path
+        self, ledger: Ledger, tmp_path: Path
     ) -> None:
         # A send has no idempotent record until it succeeds, so the transport may already have
         # accepted the message before failing. The recovery guidance must NOT say "retry once"
@@ -158,7 +159,7 @@ class TestToolSendBranch:
         assert "retry once" not in res.content
         assert "already" in res.content.lower()  # the send may already have been delivered
 
-    def test_send_is_idempotent_per_approval(self, ledger: SqliteLedger, tmp_path: Path) -> None:
+    def test_send_is_idempotent_per_approval(self, ledger: Ledger, tmp_path: Path) -> None:
         _approved_email_stage(ledger, tmp_path)
         transport = _FakeTransport()
         delivery = EmailDelivery(MarkdownCmsBackend(tmp_path), transport, _ROUTING)

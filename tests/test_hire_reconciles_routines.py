@@ -15,7 +15,7 @@ import pytest
 from chorus.facade import Caps, Chorus
 from chorus.heartbeat import Scheduler
 from chorus.heartbeat._beat import BeatOutcome
-from chorus.ledger import SqliteLedger, TaskStatus
+from chorus.ledger import Ledger, TaskStatus
 from chorus.observability import LedgerInspector
 from chorus.outcomes import Verifier
 from chorus.roles import (
@@ -26,6 +26,7 @@ from chorus.roles import (
     RoutineDeclaration,
     default_roles,
 )
+from chorus.testing import open_test_ledger
 from chorus.workforce import LedgerWorkforce
 
 pytestmark = pytest.mark.integration
@@ -48,7 +49,7 @@ class _FakeBeat:
         return BeatOutcome(passed=True, outcome={}, summary="brand-drift scan done")
 
 
-def _chorus(ledger: SqliteLedger, registry: RoleRegistry) -> Chorus:
+def _chorus(ledger: Ledger, registry: RoleRegistry) -> Chorus:
     return Chorus(
         ledger=ledger,
         workforce=LedgerWorkforce(ledger.employees),
@@ -63,7 +64,7 @@ def _chorus(ledger: SqliteLedger, registry: RoleRegistry) -> Chorus:
 
 
 def test_hiring_a_pm_provisions_its_weekly_routine() -> None:
-    ledger = SqliteLedger.open(":memory:")
+    ledger = open_test_ledger()
     try:
         chorus = _chorus(ledger, RoleRegistry.from_plugins(default_roles()))
         pm = chorus.hire(name="Ada", role="pm")
@@ -78,7 +79,7 @@ def test_hiring_a_pm_provisions_its_weekly_routine() -> None:
 
 
 def test_hiring_a_marketer_provisions_its_brand_drift_scan() -> None:
-    ledger = SqliteLedger.open(":memory:")
+    ledger = open_test_ledger()
     try:
         chorus = _chorus(ledger, RoleRegistry.from_plugins(default_roles()))
         mira = chorus.hire(name="Mira", role="marketer")
@@ -95,7 +96,7 @@ def test_hiring_a_marketer_provisions_its_brand_drift_scan() -> None:
 async def test_marketer_brand_drift_routine_fires_and_mints_a_scan_task() -> None:
     """The full e2e: hire → the trigger's due edge arrives → a tick fires it → a real scan task is
     minted for Mira with the brand-drift intent. Deterministic (a fake beat, injected clock)."""
-    ledger = SqliteLedger.open(":memory:")
+    ledger = open_test_ledger()
     try:
         chorus = _chorus(ledger, RoleRegistry.from_plugins(default_roles()))
         mira = chorus.hire(name="Mira", role="marketer")
@@ -127,7 +128,7 @@ async def test_marketer_brand_drift_routine_fires_and_mints_a_scan_task() -> Non
 
 
 def test_hiring_a_role_without_declarations_provisions_nothing() -> None:
-    ledger = SqliteLedger.open(":memory:")
+    ledger = open_test_ledger()
     try:
         chorus = _chorus(ledger, RoleRegistry.from_plugins(default_roles()))
         engineer = chorus.hire(name="Eli", role="frontend_engineer")
@@ -154,7 +155,7 @@ def test_a_fresh_plugin_schedules_with_no_kernel_change() -> None:
             ),
         ),
     )
-    ledger = SqliteLedger.open(":memory:")
+    ledger = open_test_ledger()
     try:
         chorus = _chorus(ledger, RoleRegistry.from_plugins([*default_roles(), widget]))
         wendy = chorus.hire(name="Wendy", role="widget")

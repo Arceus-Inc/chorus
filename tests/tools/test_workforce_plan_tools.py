@@ -10,8 +10,9 @@ from pathlib import Path
 import pytest
 
 from chorus.heartbeat import BeatContext
-from chorus.ledger import SqliteLedger, WorkforcePlanStatus
+from chorus.ledger import Ledger, WorkforcePlanStatus
 from chorus.roles import RoleRegistry, default_roles
+from chorus.testing import uid
 from chorus.workforce import Employee, EmployeeStatus
 from chorus_tools import WorkforceCatalogReadTool, WorkforcePlanProposeTool
 
@@ -79,7 +80,7 @@ def _payload() -> dict[str, object]:
 
 
 def test_catalog_exposes_analyst_and_excludes_legacy_professions(
-    ledger: SqliteLedger, tmp_path: Path
+    ledger: Ledger, tmp_path: Path
 ) -> None:
     ledger.employees.create(
         Employee(id="ceo", name="CEO", role="ceo", status=EmployeeStatus.ACTIVE)
@@ -111,11 +112,11 @@ def test_catalog_exposes_analyst_and_excludes_legacy_professions(
     assert "use existing ids directly" in result.content
 
 
-def test_ceo_tool_persists_proposal_without_hiring(ledger: SqliteLedger, tmp_path: Path) -> None:
+def test_ceo_tool_persists_proposal_without_hiring(ledger: Ledger, tmp_path: Path) -> None:
     ledger.employees.create(
         Employee(id="ceo", name="CEO", role="ceo", status=EmployeeStatus.ACTIVE)
     )
-    BeatContext(task_id="formation", run_id="run-1", employee_id="ceo").write(tmp_path)
+    BeatContext(task_id=uid("formation"), run_id=uid("run-1"), employee_id="ceo").write(tmp_path)
 
     result = asyncio.run(
         WorkforcePlanProposeTool(ledger, _roles()).execute(_payload(), _ctx(tmp_path))
@@ -143,12 +144,12 @@ def test_ceo_tool_persists_proposal_without_hiring(ledger: SqliteLedger, tmp_pat
 
 
 def test_ceo_tool_returns_refusal_for_deep_plan_without_partial_writes(
-    ledger: SqliteLedger, tmp_path: Path
+    ledger: Ledger, tmp_path: Path
 ) -> None:
     ledger.employees.create(
         Employee(id="ceo", name="CEO", role="ceo", status=EmployeeStatus.ACTIVE)
     )
-    BeatContext(task_id="formation", run_id="run-1", employee_id="ceo").write(tmp_path)
+    BeatContext(task_id=uid("formation"), run_id=uid("run-1"), employee_id="ceo").write(tmp_path)
     payload = _payload()
     payload["employees"] = [
         *payload["employees"],  # type: ignore[misc]
@@ -171,12 +172,12 @@ def test_ceo_tool_returns_refusal_for_deep_plan_without_partial_writes(
 
 
 def test_ceo_tool_refusal_explains_how_to_reference_existing_employees(
-    ledger: SqliteLedger, tmp_path: Path
+    ledger: Ledger, tmp_path: Path
 ) -> None:
     ledger.employees.create(
         Employee(id="ceo", name="CEO", role="ceo", status=EmployeeStatus.ACTIVE)
     )
-    BeatContext(task_id="formation", run_id="run-1", employee_id="ceo").write(tmp_path)
+    BeatContext(task_id=uid("formation"), run_id=uid("run-1"), employee_id="ceo").write(tmp_path)
     payload = _payload()
     payload["employees"] = [
         {

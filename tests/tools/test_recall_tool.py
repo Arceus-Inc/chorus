@@ -19,6 +19,7 @@ from dream.tools._context import ToolExecutionContext
 
 from chorus.heartbeat import BeatContext
 from chorus.memory import EpisodicRecallService, EpisodicStore, SprintDelta
+from chorus.testing import uid
 from chorus_tools import RecallTool
 
 pytestmark = pytest.mark.integration
@@ -39,8 +40,8 @@ def _role_text_body(text: str) -> str:
 
 def _delta(**over: object) -> SprintDelta:
     base: dict[str, object] = dict(
-        run_id="r_1",
-        task_id="t_1",
+        run_id=uid("r_1"),
+        task_id=uid("t_1"),
         employee_id="bex",
         scope="project",
         intent="add retry to the upload client",
@@ -56,28 +57,28 @@ def _delta(**over: object) -> SprintDelta:
     return SprintDelta(**base)  # type: ignore[arg-type]
 
 
-def _beat(working_dir: Path, *, employee_id: str = "bex", run_id: str = "r_now") -> None:
-    BeatContext(task_id="t_now", run_id=run_id, employee_id=employee_id).write(working_dir)
+def _beat(working_dir: Path, *, employee_id: str = "bex", run_id: str = uid("r_now")) -> None:
+    BeatContext(task_id=uid("t_now"), run_id=run_id, employee_id=employee_id).write(working_dir)
 
 
 async def test_recency_mode_returns_recent_records_for_this_employee(tmp_path: Path) -> None:
     store = EpisodicStore(tmp_path / "memory")
-    store.append(_delta(run_id="r_old", recorded_at=datetime(2026, 6, 1, tzinfo=UTC)))
-    store.append(_delta(run_id="r_new", recorded_at=datetime(2026, 6, 20, tzinfo=UTC)))
-    store.append(_delta(run_id="r_other_agent", employee_id="ada"))
+    store.append(_delta(run_id=uid("r_old"), recorded_at=datetime(2026, 6, 1, tzinfo=UTC)))
+    store.append(_delta(run_id=uid("r_new"), recorded_at=datetime(2026, 6, 20, tzinfo=UTC)))
+    store.append(_delta(run_id=uid("r_other_agent"), employee_id="ada"))
     _beat(tmp_path)
 
     result = await _tool(store).execute({}, _ctx(tmp_path))
 
     assert result.is_error is False
     ids = [hit["run_id"] for hit in (result.structured or {})["hits"]]
-    assert ids == ["r_new", "r_old"]  # newest first, other agent excluded
+    assert ids == [uid("r_new"), uid("r_old")]  # newest first, other agent excluded
 
 
 async def test_recency_mode_excludes_the_current_run(tmp_path: Path) -> None:
     store = EpisodicStore(tmp_path / "memory")
-    store.append(_delta(run_id="r_now"))
-    _beat(tmp_path, run_id="r_now")
+    store.append(_delta(run_id=uid("r_now")))
+    _beat(tmp_path, run_id=uid("r_now"))
 
     result = await _tool(store).execute({}, _ctx(tmp_path))
 
@@ -88,20 +89,22 @@ async def test_query_mode_keyword_search(tmp_path: Path) -> None:
     store = EpisodicStore(tmp_path / "memory")
     store.append(
         _delta(
-            run_id="r_a",
+            run_id=uid("r_a"),
             intent="scaffold",
             body=_role_text_body(
                 "Opened the form first. Later fixed retry timeout in the connection pool."
             ),
         )
     )
-    store.append(_delta(run_id="r_b", intent="unrelated", body=_role_text_body("something else")))
+    store.append(
+        _delta(run_id=uid("r_b"), intent="unrelated", body=_role_text_body("something else"))
+    )
     _beat(tmp_path)
 
     result = await _tool(store).execute({"query": "retry timeout"}, _ctx(tmp_path))
 
     hits = (result.structured or {})["hits"]
-    assert [hit["run_id"] for hit in hits] == ["r_a"]
+    assert [hit["run_id"] for hit in hits] == [uid("r_a")]
     snip = str(hits[0].get("snippet") or "")
     assert "retry" in snip.lower()
     assert ">>>" in snip
@@ -112,7 +115,7 @@ async def test_hits_carry_summary_not_full_prose(tmp_path: Path) -> None:
     store = EpisodicStore(tmp_path / "memory")
     store.append(
         _delta(
-            run_id="r_a",
+            run_id=uid("r_a"),
             outcome="needs_changes",
             body=_role_text_body("tried the pool bump, regressed"),
         )
@@ -136,7 +139,7 @@ async def test_render_filters_noise_paths_from_files_touched(tmp_path: Path) -> 
     store = EpisodicStore(tmp_path / "memory")
     store.append(
         _delta(
-            run_id="r_noisy",
+            run_id=uid("r_noisy"),
             files_touched=(
                 "auth/service.py",
                 "TODO.md",
@@ -162,7 +165,7 @@ async def test_incomplete_outcome_is_labelled_for_resume(tmp_path: Path) -> None
     store = EpisodicStore(tmp_path / "memory")
     store.append(
         _delta(
-            run_id="r_to",
+            run_id=uid("r_to"),
             outcome="incomplete",
             body=_role_text_body("mid-scaffold on auth register; tests not green yet"),
         )
@@ -207,7 +210,7 @@ async def test_malformed_input_is_refused(tmp_path: Path) -> None:
 
 async def test_success_and_empty_carry_observation_contract(tmp_path: Path) -> None:
     store = EpisodicStore(tmp_path / "memory")
-    store.append(_delta(run_id="r_a"))
+    store.append(_delta(run_id=uid("r_a")))
     _beat(tmp_path)
     filled = await _tool(store).execute({}, _ctx(tmp_path))
     structured = filled.structured or {}
@@ -229,58 +232,58 @@ async def test_recency_prefers_yesterday_over_old_failure(tmp_path: Path) -> Non
     store = EpisodicStore(tmp_path / "memory")
     store.append(
         _delta(
-            run_id="r_old_fail",
+            run_id=uid("r_old_fail"),
             outcome="needs_changes",
             recorded_at=datetime(2026, 6, 1, tzinfo=UTC),
         )
     )
     store.append(
         _delta(
-            run_id="r_recent_done",
+            run_id=uid("r_recent_done"),
             recorded_at=datetime(2026, 7, 8, tzinfo=UTC),
         )
     )
     _beat(tmp_path)
     result = await _tool(store).execute({}, _ctx(tmp_path))
     ids = [hit["run_id"] for hit in (result.structured or {})["hits"]]
-    assert ids[0] == "r_recent_done"
+    assert ids[0] == uid("r_recent_done")
 
 
 async def test_keyword_search_is_employee_scoped(tmp_path: Path) -> None:
     store = EpisodicStore(tmp_path / "memory")
-    store.append(_delta(run_id="r_ada", employee_id="ada", intent="retry timeout"))
-    store.append(_delta(run_id="r_bex", employee_id="bex", intent="retry timeout"))
+    store.append(_delta(run_id=uid("r_ada"), employee_id="ada", intent="retry timeout"))
+    store.append(_delta(run_id=uid("r_bex"), employee_id="bex", intent="retry timeout"))
     _beat(tmp_path, employee_id="ada")
     result = await _tool(store).execute({"query": "retry"}, _ctx(tmp_path))
     ids = [hit["run_id"] for hit in (result.structured or {})["hits"]]
-    assert ids == ["r_ada"]
+    assert ids == [uid("r_ada")]
 
 
 async def test_recall_bumps_last_recalled_at(tmp_path: Path) -> None:
     store = EpisodicStore(tmp_path / "memory")
-    store.append(_delta(run_id="r_a"))
+    store.append(_delta(run_id=uid("r_a")))
     _beat(tmp_path)
     await _tool(store).execute({}, _ctx(tmp_path))
-    got = store.get("r_a")
+    got = store.get(uid("r_a"))
     assert got is not None
     assert got.last_recalled_at is not None
 
 
 async def test_task_id_filter_on_recall(tmp_path: Path) -> None:
     store = EpisodicStore(tmp_path / "memory")
-    store.append(_delta(run_id="r_t1", task_id="t_1", intent="slugify"))
+    store.append(_delta(run_id=uid("r_t1"), task_id=uid("t_1"), intent="slugify"))
     store.append(
         _delta(
-            run_id="r_t2",
-            task_id="t_2",
+            run_id=uid("r_t2"),
+            task_id=uid("t_2"),
             intent="truncate",
             recorded_at=datetime(2026, 7, 9, tzinfo=UTC),
         )
     )
     _beat(tmp_path)
-    result = await _tool(store).execute({"task_id": "t_1"}, _ctx(tmp_path))
+    result = await _tool(store).execute({"task_id": uid("t_1")}, _ctx(tmp_path))
     ids = [hit["run_id"] for hit in (result.structured or {})["hits"]]
-    assert ids == ["r_t1"]
+    assert ids == [uid("r_t1")]
     assert (result.structured or {})["mode"] == "search"
 
 
@@ -288,30 +291,30 @@ async def test_since_filter_on_recall(tmp_path: Path) -> None:
     store = EpisodicStore(tmp_path / "memory")
     store.append(
         _delta(
-            run_id="r_old",
-            task_id="t_1",
+            run_id=uid("r_old"),
+            task_id=uid("t_1"),
             recorded_at=datetime(2026, 6, 1, tzinfo=UTC),
         )
     )
     store.append(
         _delta(
-            run_id="r_new",
-            task_id="t_1",
+            run_id=uid("r_new"),
+            task_id=uid("t_1"),
             recorded_at=datetime(2026, 7, 8, tzinfo=UTC),
         )
     )
     _beat(tmp_path)
     result = await _tool(store).execute(
-        {"task_id": "t_1", "since": "2026-07-01T00:00:00+00:00"},
+        {"task_id": uid("t_1"), "since": "2026-07-01T00:00:00+00:00"},
         _ctx(tmp_path),
     )
     ids = [hit["run_id"] for hit in (result.structured or {})["hits"]]
-    assert ids == ["r_new"]
+    assert ids == [uid("r_new")]
 
 
 async def test_structured_mode_field(tmp_path: Path) -> None:
     store = EpisodicStore(tmp_path / "memory")
-    store.append(_delta(run_id="r_a"))
+    store.append(_delta(run_id=uid("r_a")))
     _beat(tmp_path)
     result = await _tool(store).execute({}, _ctx(tmp_path))
     assert (result.structured or {})["mode"] == "recency"
@@ -330,7 +333,7 @@ async def test_debug_query_structured_profile_and_rank_note(tmp_path: Path) -> N
     store = EpisodicStore(tmp_path / "memory")
     store.append(
         _delta(
-            run_id="r_fail",
+            run_id=uid("r_fail"),
             outcome="needs_changes",
             intent="slugify regression",
             body=_role_text_body("slugify regression"),
@@ -339,7 +342,7 @@ async def test_debug_query_structured_profile_and_rank_note(tmp_path: Path) -> N
     )
     store.append(
         _delta(
-            run_id="r_ok",
+            run_id=uid("r_ok"),
             outcome="done",
             intent="slugify works",
             body=_role_text_body("slugify works"),

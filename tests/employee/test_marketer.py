@@ -7,9 +7,10 @@ from pathlib import Path
 
 import pytest
 
-from chorus.ledger import RoutineConcurrency, SqliteLedger, Task, TaskStatus
+from chorus.ledger import Ledger, RoutineConcurrency, Task, TaskStatus
 from chorus.outcomes import ArtifactType, DoDKind
 from chorus.roles._manifest import Isolation, MemoryScope, PermissionMode, SandboxTier
+from chorus.testing import uid
 from chorus.workspace import CompanyWorkspace
 from chorus_employee import default_landers
 from chorus_employee.marketer import (
@@ -25,7 +26,7 @@ pytestmark = pytest.mark.integration
 
 def _task(assignee: str | None) -> Task:
     return Task(
-        id="content-brief",
+        id=uid("content-brief"),
         intent="write a blog post about why chorus exists",
         status=TaskStatus.IN_PROGRESS,
         assignee_employee_id=assignee,
@@ -218,7 +219,7 @@ class TestMarketerLander:
             asyncio.run(marketer_lander(tmp_path / "acme").land(_task(None), None))
 
     def test_default_landers_registers_the_content_lander(
-        self, ledger: SqliteLedger, tmp_path: Path
+        self, ledger: Ledger, tmp_path: Path
     ) -> None:
         registry = default_landers(tmp_path, ledger=ledger)
         assert registry.get("content") is not None

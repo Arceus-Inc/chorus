@@ -13,8 +13,8 @@ from chorus.ledger import (
     DelegationContract,
     DelegationContractStatus,
     ExecutionMode,
+    Ledger,
     ManagementProfile,
-    SqliteLedger,
     Task,
     TaskStatus,
     Team,
@@ -22,6 +22,7 @@ from chorus.ledger import (
     TeamMembershipRole,
     TeamStatus,
 )
+from chorus.testing import uid
 from chorus.workforce import Employee, EmployeeStatus
 from chorus_tools import TeamReadTool
 
@@ -40,7 +41,7 @@ def _ctx(working_dir: Path) -> object:
     )
 
 
-def _seed_delegation(ledger: SqliteLedger) -> None:
+def _seed_delegation(ledger: Ledger) -> None:
     ledger.employees.create(Employee(id="lead", name="Lead", role="architect"))
     ledger.employees.create(Employee(id="ada", name="Ada", role="engineer", reports_to="lead"))
     ledger.employees.create(Employee(id="bob", name="Bob", role="designer", reports_to="lead"))
@@ -69,7 +70,7 @@ def _seed_delegation(ledger: SqliteLedger) -> None:
     )
     ledger.teams.create(
         Team(
-            id="team-1",
+            id=uid("team-1"),
             name="Mission: Ship",
             lead_employee_id="lead",
             created_by="lead",
@@ -78,7 +79,7 @@ def _seed_delegation(ledger: SqliteLedger) -> None:
     )
     ledger.team_members.add(
         TeamMember(
-            team_id="team-1",
+            team_id=uid("team-1"),
             employee_id="lead",
             source_manager_id="lead",
             membership_role=TeamMembershipRole.LEAD,
@@ -87,24 +88,24 @@ def _seed_delegation(ledger: SqliteLedger) -> None:
     )
     ledger.team_members.add(
         TeamMember(
-            team_id="team-1",
+            team_id=uid("team-1"),
             employee_id="ada",
             source_manager_id="lead",
         )
     )
     ledger.tasks.submit(
         Task(
-            id="root",
+            id=uid("root"),
             intent="Ship",
             status=TaskStatus.TODO,
             execution_mode=ExecutionMode.DELEGATION,
-            team_id="team-1",
+            team_id=uid("team-1"),
             assignee_employee_id="lead",
         )
     )
     ledger.tasks.submit(
         Task(
-            id="ada-existing",
+            id=uid("ada-existing"),
             intent="Existing work",
             status=TaskStatus.IN_PROGRESS,
             assignee_employee_id="ada",
@@ -112,8 +113,8 @@ def _seed_delegation(ledger: SqliteLedger) -> None:
     )
     ledger.delegation_contracts.create(
         DelegationContract(
-            task_id="root",
-            team_id="team-1",
+            task_id=uid("root"),
+            team_id=uid("team-1"),
             lead_employee_id="lead",
             management_profile_version=1,
             objective_rubric="Ship",
@@ -126,22 +127,20 @@ def _seed_delegation(ledger: SqliteLedger) -> None:
     )
 
 
-def test_team_read_returns_safe_contract_scoped_roster(
-    ledger: SqliteLedger, tmp_path: Path
-) -> None:
+def test_team_read_returns_safe_contract_scoped_roster(ledger: Ledger, tmp_path: Path) -> None:
     _seed_delegation(ledger)
-    BeatContext(task_id="root", run_id="run-1", employee_id="lead").write(tmp_path)
+    BeatContext(task_id=uid("root"), run_id=uid("run-1"), employee_id="lead").write(tmp_path)
 
     result = asyncio.run(TeamReadTool(ledger).execute({}, _ctx(tmp_path)))
 
     assert result.is_error is False
     assert result.structured["team"] == {
-        "id": "team-1",
+        "id": uid("team-1"),
         "name": "Mission: Ship",
         "status": "active",
         "lead_employee_id": "lead",
     }
-    assert result.structured["contract"]["task_id"] == "root"
+    assert result.structured["contract"]["task_id"] == uid("root")
     assert [member["employee_id"] for member in result.structured["current_members"]] == [
         "lead",
         "ada",
@@ -171,10 +170,10 @@ def test_team_read_returns_safe_contract_scoped_roster(
     assert "Use these exact employee_id values in decompose.assignee" in result.content
 
 
-def test_team_read_lists_legal_unassigned_candidate(ledger: SqliteLedger, tmp_path: Path) -> None:
+def test_team_read_lists_legal_unassigned_candidate(ledger: Ledger, tmp_path: Path) -> None:
     _seed_delegation(ledger)
-    ledger.team_members.remove("team-1", "ada")
-    BeatContext(task_id="root", run_id="run-1", employee_id="lead").write(tmp_path)
+    ledger.team_members.remove(uid("team-1"), "ada")
+    BeatContext(task_id=uid("root"), run_id=uid("run-1"), employee_id="lead").write(tmp_path)
 
     result = asyncio.run(TeamReadTool(ledger).execute({}, _ctx(tmp_path)))
 
@@ -185,9 +184,9 @@ def test_team_read_lists_legal_unassigned_candidate(ledger: SqliteLedger, tmp_pa
     assert "ada: profession=engineer, reports_to=lead, status=idle" in result.content
 
 
-def test_team_read_refuses_non_lead_actor(ledger: SqliteLedger, tmp_path: Path) -> None:
+def test_team_read_refuses_non_lead_actor(ledger: Ledger, tmp_path: Path) -> None:
     _seed_delegation(ledger)
-    BeatContext(task_id="root", run_id="run-1", employee_id="ada").write(tmp_path)
+    BeatContext(task_id=uid("root"), run_id=uid("run-1"), employee_id="ada").write(tmp_path)
 
     result = asyncio.run(TeamReadTool(ledger).execute({}, _ctx(tmp_path)))
 
@@ -195,12 +194,12 @@ def test_team_read_refuses_non_lead_actor(ledger: SqliteLedger, tmp_path: Path) 
     assert "not the delegation contract lead" in result.content
 
 
-def test_team_read_refuses_non_delegation_beat(ledger: SqliteLedger, tmp_path: Path) -> None:
+def test_team_read_refuses_non_delegation_beat(ledger: Ledger, tmp_path: Path) -> None:
     ledger.employees.create(Employee(id="ada", name="Ada", role="engineer"))
     ledger.tasks.submit(
-        Task(id="plain", intent="Plain", status=TaskStatus.TODO, assignee_employee_id="ada")
+        Task(id=uid("plain"), intent="Plain", status=TaskStatus.TODO, assignee_employee_id="ada")
     )
-    BeatContext(task_id="plain", run_id="run-1", employee_id="ada").write(tmp_path)
+    BeatContext(task_id=uid("plain"), run_id=uid("run-1"), employee_id="ada").write(tmp_path)
 
     result = asyncio.run(TeamReadTool(ledger).execute({}, _ctx(tmp_path)))
 

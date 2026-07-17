@@ -338,9 +338,9 @@ def test_db_rejects_senderless_message(ledger: Ledger) -> None:
 
 
 def test_send_with_one_sender_still_works(ledger: Ledger) -> None:
-    ledger.employees.create(Employee(id=uid("mgr"), name=uid("mgr"), role="engineer"))
+    ledger.employees.create(Employee(id="mgr", name="mgr", role="engineer"))
     ledger.employees.create(Employee(id=uid("rep"), name=uid("rep"), role="engineer"))
     sent = ledger.messages.send(
-        Message(id=uid("m1"), from_employee_id=uid("mgr"), to_employee_id=uid("rep"), body="do X")
+        Message(id=uid("m1"), from_employee_id="mgr", to_employee_id=uid("rep"), body="do X")
     )
-    assert sent.from_employee_id == uid("mgr")
+    assert sent.from_employee_id == "mgr"

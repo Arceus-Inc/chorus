@@ -15,11 +15,12 @@ from datetime import UTC, datetime
 
 from chorus.adapters._observer import DreamObserverBridge
 from chorus.events import Event, EventKind
+from chorus.testing import uid
 
 
 def _bridge(sink: list[Event]) -> DreamObserverBridge:
     return DreamObserverBridge(
-        sink.append, task_id="task-1", clock=lambda: datetime(2026, 7, 1, tzinfo=UTC)
+        sink.append, task_id=uid("task-1"), clock=lambda: datetime(2026, 7, 1, tzinfo=UTC)
     )
 
 

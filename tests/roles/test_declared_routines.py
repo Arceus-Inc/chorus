@@ -19,13 +19,14 @@ from chorus.roles import (
     RoleRegistry,
     RoutineDeclaration,
 )
+from chorus.testing import uid
 
 pytestmark = pytest.mark.unit
 
 
 def _plugin(*, declarations: tuple[RoutineDeclaration, ...] = ()) -> RolePlugin:
     return RolePlugin(
-        name="widget",
+        name=uid("widget"),
         manifest=RoleManifest(
             system_prompt="x", tools=("read_file",), memory_scope=MemoryScope.PROJECT
         ),
@@ -51,7 +52,7 @@ def test_plugin_defaults_to_no_declarations() -> None:
 def test_a_valid_declaration_registers_cleanly() -> None:
     decl = RoutineDeclaration(routine_key="weekly", intent_template="plan", schedule="0 9 * * 1")
     reg = RoleRegistry.from_plugins([_plugin(declarations=(decl,))])
-    assert reg.get("widget").declared_routines == (decl,)
+    assert reg.get(uid("widget")).declared_routines == (decl,)
 
 
 def test_a_bad_cron_in_a_declaration_is_rejected_at_registration() -> None:
@@ -79,4 +80,4 @@ def test_a_ref_env_in_a_declaration_is_allowed() -> None:
         env={"GITHUB_TOKEN": "ref:github_token"},
     )
     reg = RoleRegistry.from_plugins([_plugin(declarations=(ok,))])
-    assert reg.get("widget").declared_routines[0].env == {"GITHUB_TOKEN": "ref:github_token"}
+    assert reg.get(uid("widget")).declared_routines[0].env == {"GITHUB_TOKEN": "ref:github_token"}

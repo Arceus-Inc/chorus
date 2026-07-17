@@ -20,6 +20,9 @@ from __future__ import annotations
 
 import asyncio
 import os
+import uuid
+
+_EXAMPLE_COMPANY = str(uuid.uuid5(uuid.NAMESPACE_URL, "chorus-example"))  # one stable demo org
 import subprocess
 import sys
 import tempfile
@@ -28,7 +31,7 @@ from pathlib import Path
 from chorus.budgets import BudgetEnforcer
 from chorus.events import Event, EventKind
 from chorus.heartbeat import Scheduler
-from chorus.ledger import SqliteLedger, Task, TaskStatus
+from chorus.ledger import Ledger, Task, TaskStatus
 from chorus.lifecycle import assign_task
 from chorus.observability import EventBus
 from chorus.roles import RoleRegistry, default_roles, role_beat_config
@@ -53,10 +56,10 @@ _STRATEGY_DOC = "strategy_brief.md"
 _TASK = (
     "Plan and draft a launch blog post positioning Arceus (an AI company operating system) against "
     "the current AI coding-assistant market. This is a substantial campaign, so FRAME THE BET FIRST: "
-    "call spawn_subagent(name=\"strategist\", prompt=\"Frame the go-to-market bet for Arceus vs the "
+    'call spawn_subagent(name="strategist", prompt="Frame the go-to-market bet for Arceus vs the '
     "AI coding-assistant market. Research what Anysphere/Cursor recently raised and at what valuation "
     "(name sources), then write strategy_brief.md with the hypothesis, audience, channel, message "
-    "angle, success metric, and cited evidence.\"). The strategist will research the market itself and "
+    'angle, success metric, and cited evidence."). The strategist will research the market itself and '
     "write strategy_brief.md. Then READ strategy_brief.md and draft an on-brand content_draft.md TO "
     "that brief, citing the sources inline. Deliverable: content_draft.md."
 )
@@ -108,9 +111,20 @@ def _seed_repo(path: Path) -> None:
     (path / "brand_spec.md").write_text(_BRAND_SPEC, encoding="utf-8")
     subprocess.run(["git", "-C", str(path), "add", "-A"], check=True, capture_output=True)
     subprocess.run(
-        ["git", "-C", str(path), "-c", "user.name=s", "-c", "user.email=s@x",
-         "commit", "-m", "init: seed brand spec"],
-        check=True, capture_output=True,
+        [
+            "git",
+            "-C",
+            str(path),
+            "-c",
+            "user.name=s",
+            "-c",
+            "user.email=s@x",
+            "commit",
+            "-m",
+            "init: seed brand spec",
+        ],
+        check=True,
+        capture_output=True,
     )
 
 
@@ -128,14 +142,22 @@ def main() -> int:
     seed = base / "source"
     _seed_repo(seed)
 
-    ledger = SqliteLedger.open(":memory:")
+    ledger = Ledger.open(
+        os.environ.get("CHORUS_LEDGER_DSN", "postgresql://localhost/chorus"),
+        company_id=_EXAMPLE_COMPANY,
+    )
     bus = _DepthCaptureBus()
     try:
         registry = RoleRegistry.from_plugins(default_roles())
         factory = EmployeeHarnessFactory(
-            api_key=api_key, base_url=base_url, deployment=deployment,
-            company_id="arceus", roles=registry, pricing=default_pricing_from_env(),
-            seed=seed, ledger=ledger,
+            api_key=api_key,
+            base_url=base_url,
+            deployment=deployment,
+            company_id="arceus",
+            roles=registry,
+            pricing=default_pricing_from_env(),
+            seed=seed,
+            ledger=ledger,
         )
         ledger.employees.create(Employee(id="mira", name="Mira", role="marketer"))
         cfg = role_beat_config(registry.get("marketer").manifest)
@@ -147,7 +169,9 @@ def main() -> int:
         _log("MARKETER + STRATEGIST — depth-2 chain: Mira → strategist → web_research")
         _log("=" * 72)
         _log(f"   subagents on Mira : {[s.name for s in cfg.subagents]}")
-        _log(f"   strategist spawnable: {[c.name for c in strategist.spawnable] if strategist else '?'}")
+        _log(
+            f"   strategist spawnable: {[c.name for c in strategist.spawnable] if strategist else '?'}"
+        )
         _log(f"   worktree : {mat.working_dir}")
 
         ledger.tasks.submit(Task(id="arceus-launch-post", intent=_TASK))
@@ -155,10 +179,14 @@ def main() -> int:
         _log("\nTASK: frame the bet (strategist → web_research), then draft the post\n" + "-" * 72)
 
         scheduler = Scheduler(
-            ledger=ledger, workforce=LedgerWorkforce(ledger.employees),
-            beat_runner_for=factory, budget_enforcer=BudgetEnforcer(ledger, company_id="arceus"),
-            roles=registry, landers=default_landers(factory.company_root),
-            event_bus=bus, max_concurrent_runs=1,
+            ledger=ledger,
+            workforce=LedgerWorkforce(ledger.employees),
+            beat_runner_for=factory,
+            budget_enforcer=BudgetEnforcer(ledger, company_id="arceus"),
+            roles=registry,
+            landers=default_landers(factory.company_root),
+            event_bus=bus,
+            max_concurrent_runs=1,
             # Depth-2 research nests two turn-hungry sessions; widen the lease so the reaper
             # doesn't claim the beat mid-research.
             lease_ttl_s=1200.0,
@@ -185,10 +213,16 @@ def main() -> int:
         # bus — a live run cannot observe the depth-2 spawn here by construction. The authoritative
         # proof is deterministic: the wiring below + the dream integration test
         # (test_depth2_integration.py) + the runtime trace. This run exercises the chain live.
-        wiring = strategist is not None and [c.name for c in strategist.spawnable] == ["web_research"]
-        _log(f"   ★ DEPTH-2 WIRING (deterministic): {wiring}  "
-             f"— strategist holds spawn_subagent + scoped web_research; it CAN nest.")
-        _log("     (nested spawns are invisible to this bus — per-session tracers; see integration test.)")
+        wiring = strategist is not None and [c.name for c in strategist.spawnable] == [
+            "web_research"
+        ]
+        _log(
+            f"   ★ DEPTH-2 WIRING (deterministic): {wiring}  "
+            f"— strategist holds spawn_subagent + scoped web_research; it CAN nest."
+        )
+        _log(
+            "     (nested spawns are invisible to this bus — per-session tracers; see integration test.)"
+        )
 
         brief = mat.working_dir / _STRATEGY_DOC
         if brief.is_file():
@@ -201,8 +235,10 @@ def main() -> int:
             _log(f"   ⚠ no {_STRATEGY_DOC} written by the strategist")
 
         draft = mat.working_dir / MARKETER_CONTENT_DOC
-        _log(f"\n   {MARKETER_CONTENT_DOC} written: {draft.is_file()}"
-             f" ({len(draft.read_text(encoding='utf-8')) if draft.is_file() else 0} chars)")
+        _log(
+            f"\n   {MARKETER_CONTENT_DOC} written: {draft.is_file()}"
+            f" ({len(draft.read_text(encoding='utf-8')) if draft.is_file() else 0} chars)"
+        )
         task = ledger.tasks.get("arceus-launch-post")
         _log(f"   task status : {task.status.value if task else '?'}")
     finally:

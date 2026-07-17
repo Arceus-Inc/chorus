@@ -31,7 +31,7 @@ def _task(ledger: Ledger, tid: str = uid("t1")) -> str:
 
 def test_open_and_get(ledger: Ledger) -> None:
     _task(ledger)
-    ledger.employees.create(Employee(id=uid("mgr"), name=uid("mgr"), role="engineer"))
+    ledger.employees.create(Employee(id="mgr", name="mgr", role="engineer"))
     opened = ledger.recovery_actions.open(
         RecoveryAction(
             id=uid("rc1"),
@@ -39,7 +39,7 @@ def test_open_and_get(ledger: Ledger) -> None:
             kind=RecoveryKind.STRANDED,
             cause="lease_expired",
             fingerprint="fp1",
-            owner_employee_id=uid("mgr"),
+            owner_employee_id="mgr",
             evidence={"run": "run9"},
             max_attempts=3,
         )
@@ -50,7 +50,7 @@ def test_open_and_get(ledger: Ledger) -> None:
     assert got.kind is RecoveryKind.STRANDED
     assert got.source_task_id == uid("t1")
     assert got.cause == "lease_expired"
-    assert got.owner_employee_id == uid("mgr")
+    assert got.owner_employee_id == "mgr"
     assert got.evidence == {"run": "run9"}
     assert got.attempt_count == 0
     assert got.resolved_at is None

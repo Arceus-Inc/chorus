@@ -16,6 +16,9 @@ from __future__ import annotations
 
 import asyncio
 import os
+import uuid
+
+_EXAMPLE_COMPANY = str(uuid.uuid5(uuid.NAMESPACE_URL, "chorus-example"))  # one stable demo org
 import subprocess
 import sys
 import tempfile
@@ -26,7 +29,7 @@ import httpx
 from chorus.budgets import BudgetEnforcer
 from chorus.events import Event, EventKind
 from chorus.heartbeat import Scheduler
-from chorus.ledger import SqliteLedger, Task, TaskStatus
+from chorus.ledger import Ledger, Task, TaskStatus
 from chorus.lifecycle import assign_task
 from chorus.observability import EventBus
 from chorus.roles import RoleRegistry, default_roles, role_beat_config
@@ -55,7 +58,7 @@ _TASK = (
     "1. Write a short blog post (>= 300 words) to content_draft.md explaining what Arceus does and why "
     "technical founders should care. On-brand per brand_spec.md; hedge every performance claim.\n"
     "2. Self-review with the brand_critic subagent and apply its fixes until PASS.\n"
-    "3. THEN stage the finished post into the CMS: call cms_draft(content_type=\"blog\", title=<a "
+    '3. THEN stage the finished post into the CMS: call cms_draft(content_type="blog", title=<a '
     "title>, body=<the full post>). This creates a reversible, unpublished draft — do NOT publish.\n\n"
     "The deliverable is content_draft.md, on-voice, plus a CMS draft staged via cms_draft."
 )
@@ -104,8 +107,20 @@ def _seed_repo(path: Path) -> None:
     (path / "brand_spec.md").write_text(_BRAND_SPEC, encoding="utf-8")
     subprocess.run(["git", "-C", str(path), "add", "-A"], check=True, capture_output=True)
     subprocess.run(
-        ["git", "-C", str(path), "-c", "user.name=s", "-c", "user.email=s@x", "commit", "-m", "init"],
-        check=True, capture_output=True,
+        [
+            "git",
+            "-C",
+            str(path),
+            "-c",
+            "user.name=s",
+            "-c",
+            "user.email=s@x",
+            "commit",
+            "-m",
+            "init",
+        ],
+        check=True,
+        capture_output=True,
     )
 
 
@@ -113,7 +128,9 @@ def _verify_strapi(before_ids: set[str]) -> None:
     """Report the blog drafts Strapi holds now, flagging the one this run created (publishedAt null)."""
     base, token = os.environ.get("STRAPI_URL"), os.environ.get("STRAPI_TOKEN")
     if not (base and token):
-        _log("   (Strapi env unset — cms_draft used the Markdown backend; check the worktree cms_drafts/)")
+        _log(
+            "   (Strapi env unset — cms_draft used the Markdown backend; check the worktree cms_drafts/)"
+        )
         return
     resp = httpx.get(
         f"{base.rstrip('/')}/api/blog-posts",
@@ -125,7 +142,9 @@ def _verify_strapi(before_ids: set[str]) -> None:
     fresh = [r for r in rows if r.get("documentId") not in before_ids]
     _log(f"   Strapi blog-posts drafts: {len(rows)} total, {len(fresh)} created by this run")
     for r in fresh:
-        _log(f"     ★ documentId={r.get('documentId')} title={r.get('title')!r} publishedAt={r.get('publishedAt')}")
+        _log(
+            f"     ★ documentId={r.get('documentId')} title={r.get('title')!r} publishedAt={r.get('publishedAt')}"
+        )
 
 
 def _existing_draft_ids() -> set[str]:
@@ -157,12 +176,21 @@ def main() -> int:
     seed = base / "source"
     _seed_repo(seed)
 
-    ledger = SqliteLedger.open(":memory:")
+    ledger = Ledger.open(
+        os.environ.get("CHORUS_LEDGER_DSN", "postgresql://localhost/chorus"),
+        company_id=_EXAMPLE_COMPANY,
+    )
     try:
         registry = RoleRegistry.from_plugins(default_roles())
         factory = EmployeeHarnessFactory(
-            api_key=api_key, base_url=base_url, deployment=deployment, company_id="arceus",
-            roles=registry, pricing=default_pricing_from_env(), seed=seed, ledger=ledger,
+            api_key=api_key,
+            base_url=base_url,
+            deployment=deployment,
+            company_id="arceus",
+            roles=registry,
+            pricing=default_pricing_from_env(),
+            seed=seed,
+            ledger=ledger,
         )
         ledger.employees.create(Employee(id="mira", name="Mira", role="marketer"))
         cfg = role_beat_config(registry.get("marketer").manifest)
@@ -170,7 +198,11 @@ def main() -> int:
         _log("Marketer + cms_draft (§08 CMS reversible write)")
         _log("=" * 72)
         _log(f"   cms_draft in tools: {'cms_draft' in cfg.tools}")
-        backend = "strapi" if (os.environ.get("STRAPI_URL") and os.environ.get("STRAPI_TOKEN")) else "markdown"
+        backend = (
+            "strapi"
+            if (os.environ.get("STRAPI_URL") and os.environ.get("STRAPI_TOKEN"))
+            else "markdown"
+        )
         _log(f"   backend (by env)  : {backend}")
 
         ledger.tasks.submit(Task(id="arceus-blog", intent=_TASK))
@@ -180,9 +212,14 @@ def main() -> int:
         _log("-" * 72)
 
         scheduler = Scheduler(
-            ledger=ledger, workforce=LedgerWorkforce(ledger.employees), beat_runner_for=factory,
-            budget_enforcer=BudgetEnforcer(ledger, company_id="arceus"), roles=registry,
-            landers=default_landers(factory.company_root), event_bus=LoggingBus(), max_concurrent_runs=1,
+            ledger=ledger,
+            workforce=LedgerWorkforce(ledger.employees),
+            beat_runner_for=factory,
+            budget_enforcer=BudgetEnforcer(ledger, company_id="arceus"),
+            roles=registry,
+            landers=default_landers(factory.company_root),
+            event_bus=LoggingBus(),
+            max_concurrent_runs=1,
         )
         for n in range(1, 6):
             task = ledger.tasks.get("arceus-blog")

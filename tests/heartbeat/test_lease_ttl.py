@@ -11,7 +11,7 @@ import pytest
 
 from chorus.heartbeat import Scheduler
 from chorus.heartbeat._beat import BeatOutcome
-from chorus.ledger import SqliteLedger
+from chorus.ledger import Ledger
 from chorus.roles import RoleRegistry, default_roles
 from chorus.workforce import Employee
 
@@ -37,7 +37,7 @@ class _FakeWorkforce:
         raise KeyError(employee_id)
 
 
-def _scheduler(ledger: SqliteLedger) -> Scheduler:
+def _scheduler(ledger: Ledger) -> Scheduler:
     return Scheduler(
         ledger=ledger,
         workforce=_FakeWorkforce(),
@@ -48,19 +48,19 @@ def _scheduler(ledger: SqliteLedger) -> Scheduler:
     )
 
 
-def test_marketer_lease_uses_its_role_override(ledger: SqliteLedger) -> None:
+def test_marketer_lease_uses_its_role_override(ledger: Ledger) -> None:
     sched = _scheduler(ledger)
     ttl = sched._lease_seconds_for(Employee(id="mira", name="Mira", role="marketer"))
     assert ttl == 1200.0  # the marketer's widened, depth-2-research lease (marketer/_harness.py)
 
 
-def test_role_without_override_falls_back_to_default(ledger: SqliteLedger) -> None:
+def test_role_without_override_falls_back_to_default(ledger: Ledger) -> None:
     sched = _scheduler(ledger)
     ttl = sched._lease_seconds_for(Employee(id="ada", name="Ada", role="engineer"))
     assert ttl == 300.0  # the scheduler default
 
 
-def test_unknown_role_falls_back_to_default(ledger: SqliteLedger) -> None:
+def test_unknown_role_falls_back_to_default(ledger: Ledger) -> None:
     sched = _scheduler(ledger)
     ttl = sched._lease_seconds_for(Employee(id="x", name="X", role="nonexistent"))
     assert ttl == 300.0

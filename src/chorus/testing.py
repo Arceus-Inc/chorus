@@ -18,4 +18,30 @@ def uid(name: str) -> str:
     return str(uuid.uuid5(_NAMESPACE, name))
 
 
-__all__ = ["uid"]
+_db_counter = {"n": 0}
+
+
+def open_test_ledger(company_id: str | None = None) -> object:
+    """A standalone Ledger on the test cluster (root conftest exports CHORUS_TEST_PG): a fresh
+    template-copied database per call, scoped to a fresh company unless one is given. The
+    ephemeral cluster's teardown reclaims everything — no per-ledger cleanup needed."""
+    import os
+
+    import psycopg
+
+    from chorus.ledger import Ledger
+
+    conninfo = os.environ.get("CHORUS_TEST_PG")
+    if not conninfo:
+        raise RuntimeError("CHORUS_TEST_PG is unset — the test cluster fixture is not active")
+    _db_counter["n"] += 1
+    dbname = f"chorus_adhoc_{os.getpid()}_{_db_counter['n']}"
+    with psycopg.connect(conninfo, autocommit=True) as admin:
+        admin.execute(f"CREATE DATABASE {dbname} TEMPLATE chorus_template")
+    return Ledger.open(
+        conninfo.replace("dbname=postgres", f"dbname={dbname}"),
+        company_id=company_id or uid(f"adhoc-{_db_counter['n']}-{os.getpid()}"),
+    )
+
+
+__all__ = ["open_test_ledger", "uid"]

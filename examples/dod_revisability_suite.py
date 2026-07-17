@@ -9,15 +9,33 @@ before and after. Writes ``reports/m1-dod-revisability.html``.
 
 from __future__ import annotations
 
+from chorus.ids import derive_id
+
+_demo_salt = {"n": 0}  # bumped per ledger open — scenario reruns in one database can't collide
+
+
+def _bump_demo_salt() -> None:
+    _demo_salt["n"] += 1
+
+
+def _id(name: str) -> str:
+    """A readable per-scenario entity id (deterministic within a scenario, unique across them)."""
+    return derive_id("demo", str(_demo_salt["n"]), name)
+
+
+import os
+import uuid
+
+_EXAMPLE_COMPANY = str(uuid.uuid5(uuid.NAMESPACE_URL, "chorus-example"))  # one stable demo org
+
 import html
 import sys
-import tempfile
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
 from chorus.governance import ApprovalDecision, GovernanceResolver
-from chorus.ledger import SqliteLedger, Task, TaskStatus
+from chorus.ledger import Ledger, Task, TaskStatus
 from chorus.lifecycle import (
     NoRevision,
     RevisionAuthorityError,
@@ -42,17 +60,21 @@ class Scenario:
     note: str
 
 
-def _ledger() -> SqliteLedger:
-    lg = SqliteLedger.open(str(Path(tempfile.mkdtemp(prefix="dodrev-")) / "ledger.db"))
+def _ledger() -> Ledger:
+    _bump_demo_salt()
+    lg = Ledger.open(
+        os.environ.get("CHORUS_LEDGER_DSN", "postgresql://localhost/chorus"),
+        company_id=str(uuid.uuid4()),  # fresh org per open — slugs reset
+    )
     lg.employees.create(Employee(id="moe", name="moe", role="manager"))
     lg.employees.create(Employee(id="ada", name="ada", role="engineer", reports_to="moe"))
-    lg.tasks.submit(Task(id="t1", intent="ship", status=TaskStatus.IN_PROGRESS))
-    assign_task(lg, "t1", "ada")
+    lg.tasks.submit(Task(id=_id("t1"), intent="ship", status=TaskStatus.IN_PROGRESS))
+    assign_task(lg, _id("t1"), "ada")
     return lg
 
 
-def _dod(lg: SqliteLedger) -> str:
-    verifier = lg.dod.verifier_for_task("t1")
+def _dod(lg: Ledger) -> str:
+    verifier = lg.dod.verifier_for_task(_id("t1"))
     if verifier is None:
         return "(none)"
     steps = verifier.verification_steps()
@@ -61,62 +83,99 @@ def _dod(lg: SqliteLedger) -> str:
 
 def _tighten() -> Scenario:
     lg = _ledger()
-    lg.dod.create("t1", Verifier.command("pytest"))
+    lg.dod.create(_id("t1"), Verifier.command("pytest"))
     before = _dod(lg)
-    revise_dod(lg, task_id="t1", new_verifier=Verifier.command("pytest && ruff check"), revised_by="moe")
+    revise_dod(
+        lg,
+        task_id=_id("t1"),
+        new_verifier=Verifier.command("pytest && ruff check"),
+        revised_by="moe",
+    )
     after = _dod(lg)
     lg.close()
-    return Scenario("tighten (add a check)", "pytest -> pytest && ruff check", "manager",
-                    before, after, "a manager raises the bar — applied immediately, no approval.")
+    return Scenario(
+        "tighten (add a check)",
+        "pytest -> pytest && ruff check",
+        "manager",
+        before,
+        after,
+        "a manager raises the bar — applied immediately, no approval.",
+    )
 
 
 def _loosen(decision: ApprovalDecision, label: str, note: str) -> Scenario:
     lg = _ledger()
-    lg.dod.create("t1", Verifier.command("pytest && ruff check"))
+    lg.dod.create(_id("t1"), Verifier.command("pytest && ruff check"))
     before = _dod(lg)
-    outcome = revise_dod(lg, task_id="t1", new_verifier=Verifier.command("pytest"), revised_by="moe")
+    outcome = revise_dod(
+        lg, task_id=_id("t1"), new_verifier=Verifier.command("pytest"), revised_by="moe"
+    )
     assert outcome.approval_id is not None
     GovernanceResolver(lg).resolve(
         outcome.approval_id, decision=decision, decided_by_user_id=_USER, now=_NOW
     )
     after = _dod(lg)
     lg.close()
-    return Scenario(f"loosen ({label})", "pytest && ruff check -> pytest", "manager + sign-off",
-                    before, after, note)
+    return Scenario(
+        f"loosen ({label})",
+        "pytest && ruff check -> pytest",
+        "manager + sign-off",
+        before,
+        after,
+        note,
+    )
 
 
 def _authority_rejected() -> Scenario:
     lg = _ledger()
-    lg.dod.create("t1", Verifier.command("pytest"))
+    lg.dod.create(_id("t1"), Verifier.command("pytest"))
     before = _dod(lg)
     try:
-        revise_dod(lg, task_id="t1", new_verifier=Verifier.command("echo ok"), revised_by="ada")
+        revise_dod(
+            lg, task_id=_id("t1"), new_verifier=Verifier.command("echo ok"), revised_by="ada"
+        )
         after = "(unexpectedly applied)"
     except RevisionAuthorityError:
         after = before  # rejected — the worker cannot touch its own gate
     lg.close()
-    return Scenario("worker self-revise (blocked)", "pytest -> echo ok", "engineer (the worker)",
-                    before, after, "a worker cannot revise the gate that verifies its own work.")
+    return Scenario(
+        "worker self-revise (blocked)",
+        "pytest -> echo ok",
+        "engineer (the worker)",
+        before,
+        after,
+        "a worker cannot revise the gate that verifies its own work.",
+    )
 
 
 def _no_change_rejected() -> Scenario:
     lg = _ledger()
-    lg.dod.create("t1", Verifier.command("pytest"))
+    lg.dod.create(_id("t1"), Verifier.command("pytest"))
     before = _dod(lg)
     try:
-        revise_dod(lg, task_id="t1", new_verifier=Verifier.command("pytest"), revised_by="moe")
+        revise_dod(lg, task_id=_id("t1"), new_verifier=Verifier.command("pytest"), revised_by="moe")
         after = "(unexpectedly applied)"
     except NoRevision:
         after = before
     lg.close()
-    return Scenario("no-op edit (rejected)", "pytest -> pytest", "manager",
-                    before, after, "an identical DoD is not a revision.")
+    return Scenario(
+        "no-op edit (rejected)",
+        "pytest -> pytest",
+        "manager",
+        before,
+        after,
+        "an identical DoD is not a revision.",
+    )
 
 
 def _scenarios() -> list[Scenario]:
     return [
         _tighten(),
-        _loosen(ApprovalDecision.APPROVE, "approved", "lowering the bar needs sign-off; approved -> in force."),
+        _loosen(
+            ApprovalDecision.APPROVE,
+            "approved",
+            "lowering the bar needs sign-off; approved -> in force.",
+        ),
         _loosen(ApprovalDecision.DENY, "denied", "denied -> the stricter DoD is kept."),
         _authority_rejected(),
         _no_change_rejected(),

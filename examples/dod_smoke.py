@@ -10,13 +10,32 @@ repair budget is spent.
 
 from __future__ import annotations
 
+from chorus.ids import derive_id
+
+_demo_salt = {"n": 0}  # bumped per ledger open — scenario reruns in one database can't collide
+
+
+def _bump_demo_salt() -> None:
+    _demo_salt["n"] += 1
+
+
+def _id(name: str) -> str:
+    """A readable per-scenario entity id (deterministic within a scenario, unique across them)."""
+    return derive_id("demo", str(_demo_salt["n"]), name)
+
+
+import os
+import uuid
+
+_EXAMPLE_COMPANY = str(uuid.uuid5(uuid.NAMESPACE_URL, "chorus-example"))  # one stable demo org
+
 import asyncio
 from datetime import UTC, datetime
 
 from chorus.governance import ApprovalDecision, GovernanceResolver
 from chorus.heartbeat import Scheduler, Wake, WakeReason
 from chorus.heartbeat._beat import BeatOutcome
-from chorus.ledger import SqliteLedger, Task, TaskStatus
+from chorus.ledger import Ledger, Task, TaskStatus
 from chorus.outcomes import Verifier
 from chorus.workforce import Employee
 
@@ -29,8 +48,16 @@ class _FixedBeat:
     def __init__(self, *, passed: bool) -> None:
         self._passed = passed
 
-    async def run_task(self, *, task_id: str, intent: str, verification: object = (),
-                       rubric: object = "", observer: object = None, run_id: str | None = None) -> BeatOutcome:
+    async def run_task(
+        self,
+        *,
+        task_id: str,
+        intent: str,
+        verification: object = (),
+        rubric: object = "",
+        observer: object = None,
+        run_id: str | None = None,
+    ) -> BeatOutcome:
         return BeatOutcome(passed=self._passed, outcome={}, summary="fake")
 
 
@@ -42,14 +69,18 @@ class _Workforce:
         return self._employee
 
 
-def _assign(ledger: SqliteLedger, task_id: str, verifier: Verifier) -> None:
+def _assign(ledger: Ledger, task_id: str, verifier: Verifier) -> None:
     ledger.tasks.submit(
         Task(id=task_id, intent="do it", status=TaskStatus.TODO, assignee_employee_id="alice")
     )
     ledger.dod.create(task_id, verifier)
     ledger.wakes.enqueue(
-        Wake(id=f"w_{task_id}", employee_id="alice", reason=WakeReason.TASK_ASSIGNED,
-             payload={"task_id": task_id})
+        Wake(
+            id=derive_id("demo-wake", str(task_id)),
+            employee_id="alice",
+            reason=WakeReason.TASK_ASSIGNED,
+            payload={"task_id": task_id},
+        )
     )
 
 
@@ -59,40 +90,61 @@ async def _run_tick(scheduler: Scheduler) -> None:
 
 
 def main() -> int:
-    ledger = SqliteLedger.open(":memory:")
+    _bump_demo_salt()
+    ledger = Ledger.open(
+        os.environ.get("CHORUS_LEDGER_DSN", "postgresql://localhost/chorus"),
+        company_id=str(uuid.uuid4()),  # fresh org per open — slugs reset
+    )
     try:
         employee = ledger.employees.create(Employee(id="alice", name="Alice", role="engineer"))
 
         # 1) HumanApproval DoD: the beat passes, but a human must sign off → an approval opens.
-        _assign(ledger, "spec", Verifier.human_approval())
-        asyncio.run(_run_tick(Scheduler(
-            ledger=ledger, workforce=_Workforce(employee),
-            beat_runner=_FixedBeat(passed=True), max_concurrent_runs=1,
-        )))
+        _assign(ledger, _id("spec"), Verifier.human_approval())
+        asyncio.run(
+            _run_tick(
+                Scheduler(
+                    ledger=ledger,
+                    workforce=_Workforce(employee),
+                    beat_runner=_FixedBeat(passed=True),
+                    max_concurrent_runs=1,
+                )
+            )
+        )
         gate = ledger.approvals.pending()[0]
-        print(f"human-approval: beat ran → task 'spec' is "
-              f"{ledger.tasks.get('spec').status.value}, approval {gate.id} opened")  # type: ignore[union-attr]
-        GovernanceResolver(ledger).resolve(gate.id, decision=ApprovalDecision.APPROVE, decided_by_user_id="board", now=_NOW)
-        print(f"  board approved → 'spec' is {ledger.tasks.get('spec').status.value}")  # type: ignore[union-attr]
+        print(
+            f"human-approval: beat ran → task 'spec' is "
+            f"{ledger.tasks.get(_id('spec')).status.value}, approval {gate.id} opened"
+        )  # type: ignore[union-attr]
+        GovernanceResolver(ledger).resolve(
+            gate.id, decision=ApprovalDecision.APPROVE, decided_by_user_id="board", now=_NOW
+        )
+        print(f"  board approved → 'spec' is {ledger.tasks.get(_id('spec')).status.value}")  # type: ignore[union-attr]
 
         # 2) Command DoD that keeps failing: re-wake for self-repair, then escalate (budget = 1).
-        _assign(ledger, "build", Verifier.command("false"))
+        _assign(ledger, _id("build"), Verifier.command("false"))
         failing = Scheduler(
-            ledger=ledger, workforce=_Workforce(employee),
-            beat_runner=_FixedBeat(passed=False), max_concurrent_runs=1, max_repair_attempts=1,
+            ledger=ledger,
+            workforce=_Workforce(employee),
+            beat_runner=_FixedBeat(passed=False),
+            max_concurrent_runs=1,
+            max_repair_attempts=1,
         )
         asyncio.run(_run_tick(failing))  # 1st failure → re-wake (rung 1)
         retried = any(w.reason is WakeReason.RECOVERY for w in ledger.wakes.queued())
-        print(f"command-fail #1: 'build' is {ledger.tasks.get('build').status.value}, "  # type: ignore[union-attr]
-              f"self-repair re-wake queued = {retried}")
+        print(
+            f"command-fail #1: 'build' is {ledger.tasks.get(_id('build')).status.value}, "  # type: ignore[union-attr]
+            f"self-repair re-wake queued = {retried}"
+        )
         asyncio.run(_run_tick(failing))  # retry fails → escalate (rung 3)
-        recovery = ledger.recovery_actions.active_for_source("build")
-        print(f"command-fail #2: repair budget spent → recovery_action "
-              f"{recovery.id if recovery else None} opened, 'build' stays "
-              f"{ledger.tasks.get('build').status.value}")  # type: ignore[union-attr]
+        recovery = ledger.recovery_actions.active_for_source(_id("build"))
+        print(
+            f"command-fail #2: repair budget spent → recovery_action "
+            f"{recovery.id if recovery else None} opened, 'build' stays "
+            f"{ledger.tasks.get(_id('build')).status.value}"
+        )  # type: ignore[union-attr]
 
         ok = (
-            ledger.tasks.get("spec").status is TaskStatus.DONE  # type: ignore[union-attr]
+            ledger.tasks.get(_id("spec")).status is TaskStatus.DONE  # type: ignore[union-attr]
             and retried
             and recovery is not None
         )

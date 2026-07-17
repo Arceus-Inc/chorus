@@ -12,15 +12,23 @@ from pathlib import Path
 
 import pytest
 
-from chorus.ledger import SqliteLedger, Task, TaskStatus
+from chorus.ledger import Ledger, Task, TaskStatus
 from chorus.ledger._models import Claim, DecisionRecord
+from chorus.testing import open_test_ledger, uid
 from chorus.workspace import CompanyWorkspace
 from chorus_employee.pm import pm_lander, render_packet
 
 pytestmark = pytest.mark.integration
 
 
-def _seed_decision(ledger: SqliteLedger, *, decision_id: str = "d1", task_id: str = "t1") -> None:
+def _claim_id(decision_id: str, n: int) -> str:
+    """A deterministic uuid claim id per (decision, index) — claim ids are uuid columns."""
+    return uid(f"{decision_id}-c{n}")
+
+
+def _seed_decision(
+    ledger: Ledger, *, decision_id: str = uid("d1"), task_id: str = uid("t1")
+) -> None:
     ledger.decisions.create(
         DecisionRecord(
             id=decision_id,
@@ -34,7 +42,7 @@ def _seed_decision(ledger: SqliteLedger, *, decision_id: str = "d1", task_id: st
     )
     ledger.claims.create(
         Claim(
-            id=f"{decision_id}-c0",
+            id=_claim_id(decision_id, 0),
             decision_id=decision_id,
             text="a",
             source_url="https://a",
@@ -43,7 +51,7 @@ def _seed_decision(ledger: SqliteLedger, *, decision_id: str = "d1", task_id: st
     )
     ledger.claims.create(
         Claim(
-            id=f"{decision_id}-c1",
+            id=_claim_id(decision_id, 1),
             decision_id=decision_id,
             text="b",
             source_url="https://b",
@@ -53,61 +61,61 @@ def _seed_decision(ledger: SqliteLedger, *, decision_id: str = "d1", task_id: st
 
 
 class TestRenderPacket:
-    def test_projects_decisions_and_their_evidence(self, ledger: SqliteLedger) -> None:
+    def test_projects_decisions_and_their_evidence(self, ledger: Ledger) -> None:
         _seed_decision(ledger)
-        packet = render_packet(ledger, "t1")
+        packet = render_packet(ledger, uid("t1"))
 
         assert packet["exportScope"] == "team"
         assert len(packet["decisions"]) == 1
         decision = packet["decisions"][0]
-        assert decision["id"] == "d1"
+        assert decision["id"] == uid("d1")
         assert decision["option"] == "build presence indicators"
-        assert decision["evidenceIds"] == ["d1-c0", "d1-c1"]
+        assert decision["evidenceIds"] == sorted([_claim_id(uid("d1"), 0), _claim_id(uid("d1"), 1)])
         assert decision["supersededBy"] is None
 
-    def test_sources_group_by_uri_with_citing_decisions(self, ledger: SqliteLedger) -> None:
+    def test_sources_group_by_uri_with_citing_decisions(self, ledger: Ledger) -> None:
         _seed_decision(ledger)
-        packet = render_packet(ledger, "t1")
+        packet = render_packet(ledger, uid("t1"))
         uris = {s["uri"]: s for s in packet["sources"]}
         assert set(uris) == {"https://a", "https://b"}
-        assert uris["https://a"]["citedInDecisions"] == ["d1"]
+        assert uris["https://a"]["citedInDecisions"] == [uid("d1")]
 
-    def test_supersede_shows_forward_pointer(self, ledger: SqliteLedger) -> None:
-        _seed_decision(ledger, decision_id="d1")
-        _seed_decision(ledger, decision_id="d2")
-        ledger.decisions.set_superseded_by("d1", "d2")
-        packet = render_packet(ledger, "t1")
+    def test_supersede_shows_forward_pointer(self, ledger: Ledger) -> None:
+        _seed_decision(ledger, decision_id=uid("d1"))
+        _seed_decision(ledger, decision_id=uid("d2"))
+        ledger.decisions.set_superseded_by(uid("d1"), uid("d2"))
+        packet = render_packet(ledger, uid("t1"))
         by_id = {d["id"]: d for d in packet["decisions"]}
-        assert by_id["d1"]["supersededBy"] == "d2"
-        assert by_id["d2"]["supersededBy"] is None
+        assert by_id[uid("d1")]["supersededBy"] == uid("d2")
+        assert by_id[uid("d2")]["supersededBy"] is None
 
-    def test_empty_task_renders_an_empty_but_valid_packet(self, ledger: SqliteLedger) -> None:
-        packet = render_packet(ledger, "nothing-here")
+    def test_empty_task_renders_an_empty_but_valid_packet(self, ledger: Ledger) -> None:
+        packet = render_packet(ledger, uid("nothing-here"))
         assert packet == {"decisions": [], "sources": [], "exportScope": "team"}
 
 
 class TestLanderWritesThePacket:
     def test_lander_renders_sources_json_into_the_worktree(self, tmp_path: Path) -> None:
         company_root = tmp_path / "acme"
-        ledger = SqliteLedger.open(":memory:")
+        ledger = open_test_ledger()
         try:
-            _seed_decision(ledger, task_id="t1")
+            _seed_decision(ledger, task_id=uid("t1"))
             workspace = CompanyWorkspace(company_root)
-            worktree = workspace.worktree_for("piper")
+            worktree = workspace.worktree_for(uid("piper"))
             (worktree.path / "plan.md").write_text("# Plan\n", encoding="utf-8")
 
             task = Task(
-                id="t1",
+                id=uid("t1"),
                 intent="decide",
                 status=TaskStatus.IN_PROGRESS,
-                assignee_employee_id="piper",
+                assignee_employee_id=uid("piper"),
             )
             import asyncio
 
             asyncio.run(pm_lander(company_root, ledger=ledger).land(task, None))
 
             packet = json.loads((worktree.path / "sources.json").read_text(encoding="utf-8"))
-            assert packet["decisions"][0]["id"] == "d1"
+            assert packet["decisions"][0]["id"] == uid("d1")
             assert {s["uri"] for s in packet["sources"]} == {"https://a", "https://b"}
         finally:
             ledger.close()

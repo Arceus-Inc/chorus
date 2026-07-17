@@ -31,7 +31,7 @@ def _free_port() -> int:
         return int(s.getsockname()[1])
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="session", autouse=True)
 def pg_conninfo(tmp_path_factory: pytest.TempPathFactory) -> Iterator[str]:
     """A session-scoped throwaway PG18 cluster with the ledger schema baked into a template DB."""
     if not _PG_BIN.exists():
@@ -73,6 +73,7 @@ def pg_conninfo(tmp_path_factory: pytest.TempPathFactory) -> Iterator[str]:
         env=env,
     )
     conninfo = f"host=127.0.0.1 port={port} user=postgres dbname=postgres"
+    os.environ["CHORUS_TEST_PG"] = conninfo  # chorus.testing.open_test_ledger reads this
     import psycopg
 
     with psycopg.connect(conninfo, autocommit=True) as admin:

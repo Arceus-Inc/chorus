@@ -21,6 +21,7 @@ from dream.contracts import (
 from dream.tools._context import ToolExecutionContext
 
 from chorus.heartbeat import BeatContext
+from chorus.testing import uid
 from chorus_tools import (
     GOVERNANCE_TOOL_NAMES,
     GoalArchiveTool,
@@ -57,7 +58,7 @@ class FakeGovernance:
 
     def read_direction(self) -> GovernanceView:
         goal = GovGoal(
-            goal_id="g1",
+            goal_id=uid("g1"),
             title="lift activation",
             score=0.62,
             priority="high",
@@ -67,10 +68,12 @@ class FakeGovernance:
             target="40%",
         )
         return GovernanceView(
-            decisions=(GovDecision(decision_id="d1", statement="grow the core", goals=(goal,)),),
+            decisions=(
+                GovDecision(decision_id=uid("d1"), statement="grow the core", goals=(goal,)),
+            ),
             proposals=(
                 GovProposal(
-                    proposal_id="p1",
+                    proposal_id=uid("p1"),
                     statement="open a second market",
                     confidence=0.7,
                     evidence=3,
@@ -78,7 +81,7 @@ class FakeGovernance:
             ),
             decided=(
                 GovProposal(
-                    proposal_id="p0",
+                    proposal_id=uid("p0"),
                     statement="launch the loyalty program",
                     status="approved",
                 ),
@@ -119,13 +122,15 @@ def test_governance_read_renders_the_direction(tmp_path: Path) -> None:
 def test_proposal_approve_reaches_the_port_with_the_ceo_identity(tmp_path: Path) -> None:
     _beat(tmp_path)
     port = FakeGovernance()
-    result = asyncio.run(ProposalApproveTool(port).execute({"proposal_id": "p1"}, _ctx(tmp_path)))
+    result = asyncio.run(
+        ProposalApproveTool(port).execute({"proposal_id": uid("p1")}, _ctx(tmp_path))
+    )
     assert result.is_error is False
-    assert port.approved == [("p1", "ceo")]
-    assert result.structured == {"proposal_id": "p1", "decision_id": "d2"}
+    assert port.approved == [(uid("p1"), "ceo")]
+    assert result.structured == {"proposal_id": uid("p1"), "decision_id": "d2"}
     # the action is recorded to the worktree audit ledger so a reviewer can verify it from artifacts
     ledger = (tmp_path / "governance-ledger.md").read_text(encoding="utf-8")
-    assert "APPROVED proposal p1" in ledger and "decision d2" in ledger
+    assert f"APPROVED proposal {uid('p1')}" in ledger and "decision d2" in ledger
 
 
 def test_audit_lines_are_stamped_with_the_beat_run_id(tmp_path: Path) -> None:
@@ -134,12 +139,12 @@ def test_audit_lines_are_stamped_with_the_beat_run_id(tmp_path: Path) -> None:
     IS the chorus run_id, so the stamp is directly matchable from the evaluator's paths)."""
     _beat(tmp_path)
     port = FakeGovernance()
-    asyncio.run(ProposalApproveTool(port).execute({"proposal_id": "p1"}, _ctx(tmp_path)))
+    asyncio.run(ProposalApproveTool(port).execute({"proposal_id": uid("p1")}, _ctx(tmp_path)))
     BeatContext(task_id="C", run_id="run-next-beat", employee_id="ceo").write(tmp_path)
     asyncio.run(ProposalRejectTool(port).execute({"proposal_id": "p2"}, _ctx(tmp_path)))
 
     lines = (tmp_path / "governance-ledger.md").read_text(encoding="utf-8").splitlines()
-    approve = next(line for line in lines if "APPROVED proposal p1" in line)
+    approve = next(line for line in lines if f"APPROVED proposal {uid('p1')}" in line)
     reject = next(line for line in lines if "REJECTED proposal p2" in line)
     assert f"[run {REV}]" in approve
     assert "[run run-next-beat]" in reject
@@ -150,36 +155,40 @@ def test_proposal_reject_carries_the_reason(tmp_path: Path) -> None:
     port = FakeGovernance()
     result = asyncio.run(
         ProposalRejectTool(port).execute(
-            {"proposal_id": "p1", "reason": "too thin"}, _ctx(tmp_path)
+            {"proposal_id": uid("p1"), "reason": "too thin"}, _ctx(tmp_path)
         )
     )
     assert result.is_error is False
-    assert port.rejected == [("p1", "ceo", "too thin")]
+    assert port.rejected == [(uid("p1"), "ceo", "too thin")]
 
 
 def test_goal_set_priority_steers_the_goal(tmp_path: Path) -> None:
     port = FakeGovernance()
     result = asyncio.run(
-        GoalSetPriorityTool(port).execute({"goal_id": "g1", "priority": "high"}, _ctx(tmp_path))
+        GoalSetPriorityTool(port).execute(
+            {"goal_id": uid("g1"), "priority": "high"}, _ctx(tmp_path)
+        )
     )
     assert result.is_error is False
-    assert port.reprioritised == [("g1", "high")]
+    assert port.reprioritised == [(uid("g1"), "high")]
 
 
 def test_goal_set_priority_maps_a_synonym_to_a_band(tmp_path: Path) -> None:
     port = FakeGovernance()
     result = asyncio.run(
-        GoalSetPriorityTool(port).execute({"goal_id": "g1", "priority": "CRITICAL"}, _ctx(tmp_path))
+        GoalSetPriorityTool(port).execute(
+            {"goal_id": uid("g1"), "priority": "CRITICAL"}, _ctx(tmp_path)
+        )
     )
     assert result.is_error is False
-    assert port.reprioritised == [("g1", "high")]  # critical → high, not a raw error
+    assert port.reprioritised == [(uid("g1"), "high")]  # critical → high, not a raw error
 
 
 def test_goal_set_priority_refuses_an_unknown_band(tmp_path: Path) -> None:
     port = FakeGovernance()
     result = asyncio.run(
         GoalSetPriorityTool(port).execute(
-            {"goal_id": "g1", "priority": "yesterday"}, _ctx(tmp_path)
+            {"goal_id": uid("g1"), "priority": "yesterday"}, _ctx(tmp_path)
         )
     )
     assert result.is_error is True
@@ -203,9 +212,9 @@ def test_proposal_approve_wraps_a_port_error_cleanly(tmp_path: Path) -> None:
 
 def test_goal_archive_retires_the_goal(tmp_path: Path) -> None:
     port = FakeGovernance()
-    result = asyncio.run(GoalArchiveTool(port).execute({"goal_id": "g1"}, _ctx(tmp_path)))
+    result = asyncio.run(GoalArchiveTool(port).execute({"goal_id": uid("g1")}, _ctx(tmp_path)))
     assert result.is_error is False
-    assert port.archived == ["g1"]
+    assert port.archived == [uid("g1")]
 
 
 def test_governance_tool_maps_every_declared_name() -> None:

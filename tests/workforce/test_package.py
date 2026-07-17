@@ -14,7 +14,8 @@ from pathlib import Path
 import pytest
 
 from chorus.errors import OrgInvariantViolation
-from chorus.ledger import SqliteLedger
+from chorus.ledger import Ledger
+from chorus.testing import open_test_ledger
 from chorus.workforce import Employee, GitWorkforce, LedgerWorkforce, copy_org
 
 pytestmark = pytest.mark.integration
@@ -26,20 +27,18 @@ def _seed(wf: LedgerWorkforce) -> None:
     wf.hire(name="Bob", role="engineer", reports_to="boss")
 
 
-def test_export_ledger_to_markdown_writes_the_tree(ledger: SqliteLedger, tmp_path: Path) -> None:
+def test_export_ledger_to_markdown_writes_the_tree(ledger: Ledger, tmp_path: Path) -> None:
     _seed(LedgerWorkforce(ledger.employees))
     copied = copy_org(LedgerWorkforce(ledger.employees), GitWorkforce(str(tmp_path / "org")))
     assert copied == 3
     assert (tmp_path / "org" / "employees" / "alice" / "role.md").exists()
 
 
-def test_round_trip_ledger_to_markdown_to_fresh_ledger(
-    ledger: SqliteLedger, tmp_path: Path
-) -> None:
+def test_round_trip_ledger_to_markdown_to_fresh_ledger(ledger: Ledger, tmp_path: Path) -> None:
     _seed(LedgerWorkforce(ledger.employees))
     copy_org(LedgerWorkforce(ledger.employees), GitWorkforce(str(tmp_path / "org")))
 
-    fresh = SqliteLedger.open(":memory:")
+    fresh = open_test_ledger()
     try:
         copy_org(GitWorkforce(str(tmp_path / "org")), LedgerWorkforce(fresh.employees))
         wf = LedgerWorkforce(fresh.employees)
@@ -50,7 +49,7 @@ def test_round_trip_ledger_to_markdown_to_fresh_ledger(
         fresh.close()
 
 
-def test_copy_excludes_terminated(ledger: SqliteLedger, tmp_path: Path) -> None:
+def test_copy_excludes_terminated(ledger: Ledger, tmp_path: Path) -> None:
     source = LedgerWorkforce(ledger.employees)
     _seed(source)
     source.terminate("bob")
@@ -58,7 +57,7 @@ def test_copy_excludes_terminated(ledger: SqliteLedger, tmp_path: Path) -> None:
     assert {e.id for e in GitWorkforce(str(tmp_path / "org")).list()} == {"boss", "alice"}
 
 
-def test_copy_writes_parents_before_reports(ledger: SqliteLedger, tmp_path: Path) -> None:
+def test_copy_writes_parents_before_reports(ledger: Ledger, tmp_path: Path) -> None:
     # A report listed before its manager must still land — the codec orders parents first, so the
     # reports_to edge resolves when the report is hired (otherwise hire raises UnknownEmployee).
     source = LedgerWorkforce(ledger.employees)

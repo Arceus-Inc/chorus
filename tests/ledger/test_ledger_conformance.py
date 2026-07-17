@@ -2,7 +2,7 @@
 
 Each behavior here is a kernel-load-bearing contract (exact-once submit, checkout CAS,
 terminal-only lock release, eligibility gating, wake coalescing, transaction batching). The suite is
-parameterized over drivers: ``SqliteLedger`` and ``Ledger`` must pass identically — that is
+parameterized over drivers: ``Ledger`` and ``Ledger`` must pass identically — that is
 what makes the driver swap proven, not hoped. Ids are minted (uuidv7 text): Postgres's native
 ``uuid`` columns enforce the id contract; SQLite's TEXT accepts the same values.
 
@@ -512,8 +512,6 @@ def test_finalize_beat_fires_downstream_wakes(any_ledger: Ledger) -> None:
 
 def test_postgres_columns_are_native_types(pg_database: str) -> None:
     """uuid ids, timestamptz times, jsonb blobs, boolean flags — native, never intersection text."""
-    if pg_database is None:
-        pytest.skip(f"PostgreSQL 18 not found at {_PG_BIN}")
     import psycopg
 
     with psycopg.connect(pg_database, autocommit=True) as admin:
@@ -589,8 +587,6 @@ def test_postgres_isolates_companies_with_force_rls(pg_database: str) -> None:
     """Two companies, one database: A's rows are invisible to B, writes auto-stamp the session's
     company, and a session with no company context fails closed. Proven under a NON-superuser
     role (FORCE RLS bites; superusers bypass row security entirely)."""
-    if pg_database is None:
-        pytest.skip(f"PostgreSQL 18 not found at {_PG_BIN}")
     import psycopg
 
     with psycopg.connect(pg_database, autocommit=True) as admin:
@@ -632,8 +628,6 @@ def test_postgres_isolates_companies_with_force_rls(pg_database: str) -> None:
 def test_postgres_employee_slugs_are_company_scoped(pg_database: str) -> None:
     """Two companies may both employ "ace" (composite PK); within one company the slug is unique.
     This is the regression test for slug identity in the shared schema (spec 06 §3 slugs)."""
-    if pg_database is None:
-        pytest.skip(f"PostgreSQL 18 not found at {_PG_BIN}")
     import psycopg
 
     with psycopg.connect(pg_database, autocommit=True) as admin:
@@ -658,8 +652,6 @@ def test_postgres_employee_slugs_are_company_scoped(pg_database: str) -> None:
 def test_postgres_horizon_fingerprint_is_company_scoped(pg_database: str) -> None:
     """The one non-id-anchored exact-once index: two companies may carry the same intake
     fingerprint; within one company it stays exact-once."""
-    if pg_database is None:
-        pytest.skip(f"PostgreSQL 18 not found at {_PG_BIN}")
     import psycopg
 
     with psycopg.connect(pg_database, autocommit=True) as admin:
@@ -684,8 +676,6 @@ def test_postgres_two_connections_share_one_company_concurrently(pg_database: st
     """The M5/M4 unblock: the api process and the conductor process hold SEPARATE connections to
     the SAME company's ledger and interleave reads and writes consistently — the thing a
     SQLite-file-per-company could never do across processes."""
-    if pg_database is None:
-        pytest.skip(f"PostgreSQL 18 not found at {_PG_BIN}")
     import psycopg
 
     with psycopg.connect(pg_database, autocommit=True) as admin:

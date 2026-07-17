@@ -10,20 +10,21 @@ from chorus.ledger import (
     DelegationContract,
     DelegationContractStatus,
     ExecutionMode,
+    Ledger,
     ManagementProfile,
-    SqliteLedger,
     Task,
     Team,
     TeamMember,
     TeamMembershipRole,
     TeamStatus,
 )
+from chorus.testing import uid
 from chorus.workforce import EmployeeStatus, LedgerWorkforce
 
 pytestmark = pytest.mark.integration
 
 
-def _seed_active_contract(ledger: SqliteLedger) -> LedgerWorkforce:
+def _seed_active_contract(ledger: Ledger) -> LedgerWorkforce:
     workforce = LedgerWorkforce(ledger.employees)
     workforce.hire(name="Boss", role="pm")
     workforce.hire(name="Lead", role="engineer", reports_to="boss")
@@ -42,7 +43,7 @@ def _seed_active_contract(ledger: SqliteLedger) -> LedgerWorkforce:
     )
     ledger.teams.create(
         Team(
-            id="team-release",
+            id=uid("team-release"),
             name="Release",
             lead_employee_id="lead",
             status=TeamStatus.ACTIVE,
@@ -51,7 +52,7 @@ def _seed_active_contract(ledger: SqliteLedger) -> LedgerWorkforce:
     )
     ledger.team_members.add(
         TeamMember(
-            team_id="team-release",
+            team_id=uid("team-release"),
             employee_id="lead",
             membership_role=TeamMembershipRole.LEAD,
             source_manager_id="boss",
@@ -59,24 +60,24 @@ def _seed_active_contract(ledger: SqliteLedger) -> LedgerWorkforce:
     )
     ledger.team_members.add(
         TeamMember(
-            team_id="team-release",
+            team_id=uid("team-release"),
             employee_id="member",
             source_manager_id="lead",
         )
     )
     ledger.tasks.submit(
         Task(
-            id="task-release",
+            id=uid("task-release"),
             intent="lead the release",
             execution_mode=ExecutionMode.DELEGATION,
-            team_id="team-release",
+            team_id=uid("team-release"),
             assignee_employee_id="lead",
         )
     )
     ledger.delegation_contracts.create(
         DelegationContract(
-            task_id="task-release",
-            team_id="team-release",
+            task_id=uid("task-release"),
+            team_id=uid("team-release"),
             lead_employee_id="lead",
             management_profile_version=1,
             max_depth=1,
@@ -88,17 +89,17 @@ def _seed_active_contract(ledger: SqliteLedger) -> LedgerWorkforce:
     return workforce
 
 
-def test_active_contract_blocks_lead_termination_without_mutation(ledger: SqliteLedger) -> None:
+def test_active_contract_blocks_lead_termination_without_mutation(ledger: Ledger) -> None:
     workforce = _seed_active_contract(ledger)
 
     with pytest.raises(ActiveDelegationConflict) as conflict:
         workforce.terminate("lead")
 
-    assert conflict.value.task_ids == ("task-release",)
+    assert conflict.value.task_ids == (uid("task-release"),)
     assert workforce.get("lead").status is EmployeeStatus.IDLE
 
 
-def test_active_contract_blocks_member_reassignment_without_mutation(ledger: SqliteLedger) -> None:
+def test_active_contract_blocks_member_reassignment_without_mutation(ledger: Ledger) -> None:
     workforce = _seed_active_contract(ledger)
 
     with pytest.raises(ActiveDelegationConflict):
@@ -107,7 +108,7 @@ def test_active_contract_blocks_member_reassignment_without_mutation(ledger: Sql
     assert workforce.get("member").reports_to == "lead"
 
 
-def test_active_contract_blocks_profile_weakening_without_mutation(ledger: SqliteLedger) -> None:
+def test_active_contract_blocks_profile_weakening_without_mutation(ledger: Ledger) -> None:
     _seed_active_contract(ledger)
 
     with pytest.raises(ActiveDelegationConflict):
@@ -129,10 +130,10 @@ def test_active_contract_blocks_profile_weakening_without_mutation(ledger: Sqlit
 
 
 def test_terminal_contract_releases_reporting_termination_and_profile_guards(
-    ledger: SqliteLedger,
+    ledger: Ledger,
 ) -> None:
     workforce = _seed_active_contract(ledger)
-    ledger.delegation_contracts.update_status("task-release", DelegationContractStatus.DONE)
+    ledger.delegation_contracts.update_status(uid("task-release"), DelegationContractStatus.DONE)
 
     workforce.reassign("member", reports_to="other")
     workforce.terminate("lead")

@@ -180,11 +180,26 @@ def parse_log(text: str) -> tuple[str, list[Node], list[Eval], dict[str, str]]:
 # --- phase grouping ---------------------------------------------------------
 
 _PHASES = [
-    ("Understand &amp; size", "Read the intent and any existing code, load the craft <b>skill</b> that fits, <b>choose the stack</b> that suits the job, and pick the smallest slice that <em>actually works</em>."),
-    ("Build the slice", "Write the running app in the stack it chose — accessible by construction and wired end to end so the behaviour happens in the browser."),
-    ("Author the tests", "Write <b>unit</b> tests for the logic (in whatever runner the stack uses) and a real-browser <b>Playwright</b> e2e that drives the app the way a user does."),
-    ("Run &amp; capture the proof", "Install deps, run both suites, and tee the <em>real</em> output into the durable <code>test_evidence/</code> bundle."),
-    ("Review under pressure", "Spawn the read-only <b>code_reviewer</b> and <b>ui_tester</b>, self-check with <b>test_evidence</b>, address every blocker/major, and re-run until green."),
+    (
+        "Understand &amp; size",
+        "Read the intent and any existing code, load the craft <b>skill</b> that fits, <b>choose the stack</b> that suits the job, and pick the smallest slice that <em>actually works</em>.",
+    ),
+    (
+        "Build the slice",
+        "Write the running app in the stack it chose — accessible by construction and wired end to end so the behaviour happens in the browser.",
+    ),
+    (
+        "Author the tests",
+        "Write <b>unit</b> tests for the logic (in whatever runner the stack uses) and a real-browser <b>Playwright</b> e2e that drives the app the way a user does.",
+    ),
+    (
+        "Run &amp; capture the proof",
+        "Install deps, run both suites, and tee the <em>real</em> output into the durable <code>test_evidence/</code> bundle.",
+    ),
+    (
+        "Review under pressure",
+        "Spawn the read-only <b>code_reviewer</b> and <b>ui_tester</b>, self-check with <b>test_evidence</b>, address every blocker/major, and re-run until green.",
+    ),
 ]
 
 
@@ -198,18 +213,44 @@ def phase_for(node: Node, current: int) -> int:
         wanted = max(wanted, 4)
     elif node.tool in {"bash", "run_command"}:
         cmd = node.payload.lower()
-        if any(k in cmd for k in ("npm install", "npm test", "npm run", "playwright test", "vitest", "jest", "node --test", "npm ci")):
+        if any(
+            k in cmd
+            for k in (
+                "npm install",
+                "npm test",
+                "npm run",
+                "playwright test",
+                "vitest",
+                "jest",
+                "node --test",
+                "npm ci",
+            )
+        ):
             wanted = max(wanted, 3)
     elif node.tool == "write_file":
         p = node.payload
         low = p.lower()
-        if ".test." in low or "/spec" in low or ".spec." in low or "e2e" in low \
-                or "playwright.config" in low or low.endswith("package.json"):
+        if (
+            ".test." in low
+            or "/spec" in low
+            or ".spec." in low
+            or "e2e" in low
+            or "playwright.config" in low
+            or low.endswith("package.json")
+        ):
             wanted = max(wanted, 2)
-        elif low.startswith("test_evidence") or low.endswith("summary.md") \
-                or low.endswith("unit.txt") or low.endswith("e2e.txt"):
+        elif (
+            low.startswith("test_evidence")
+            or low.endswith("summary.md")
+            or low.endswith("unit.txt")
+            or low.endswith("e2e.txt")
+        ):
             wanted = max(wanted, 3)
-        elif low.endswith(".html") or low.endswith(".css") or (low.startswith("src/") and low.endswith(".js")):
+        elif (
+            low.endswith(".html")
+            or low.endswith(".css")
+            or (low.startswith("src/") and low.endswith(".js"))
+        ):
             wanted = max(wanted, 1)
     return max(current, wanted)
 
@@ -223,7 +264,11 @@ def _dot(tool: str) -> str:
 
 
 def _err_badge(node: Node) -> str:
-    return ' <span class="err" title="benign — usually a retry reading an offloaded scratch file or a Windows-only DoD floor probe">err</span>' if node.error else ""
+    return (
+        ' <span class="err" title="benign — usually a retry reading an offloaded scratch file or a Windows-only DoD floor probe">err</span>'
+        if node.error
+        else ""
+    )
 
 
 def render_node(node: Node) -> str:
@@ -235,7 +280,7 @@ def render_node(node: Node) -> str:
         err_note = f" · {n_err} benign err" if n_err else ""
         return (
             f'<details class="sub">'
-            f'<summary>{_dot("spawn_subagent")}<b>spawn_subagent</b> '
+            f"<summary>{_dot('spawn_subagent')}<b>spawn_subagent</b> "
             f'<span class="agent">{html.escape(node.subagent_name)}</span>'
             f'<span class="count">{n_calls} inner call{"s" if n_calls != 1 else ""}{err_note}</span>'
             f"{_err_badge(node)}</summary>"
@@ -258,11 +303,14 @@ def render_phases(nodes: list[Node]) -> str:
 
     cards = []
     for i, (title, desc) in enumerate(_PHASES):
-        body = "".join(render_node(n) for n in buckets[i]) or '<div class="empty">— no steps recorded —</div>'
+        body = (
+            "".join(render_node(n) for n in buckets[i])
+            or '<div class="empty">— no steps recorded —</div>'
+        )
         cards.append(
             f'<section class="phase">'
             f'<div class="phase-head"><span class="pnum">{i}</span>'
-            f'<div><h3>{title}</h3><p>{desc}</p></div></div>'
+            f"<div><h3>{title}</h3><p>{desc}</p></div></div>"
             f'<div class="phase-body">{body}</div>'
             f"</section>"
         )
@@ -316,7 +364,9 @@ def _artifact_block(task_dir: Path, rel: str, label: str, *, code: bool = True) 
 
 def _sorted_rel(task_dir: Path, pattern: str) -> list[str]:
     base = task_dir
-    return sorted(str(p.relative_to(base)).replace("\\", "/") for p in base.glob(pattern) if p.is_file())
+    return sorted(
+        str(p.relative_to(base)).replace("\\", "/") for p in base.glob(pattern) if p.is_file()
+    )
 
 
 def _verdict_row(label: str, value: str, ok: bool, detail: str = "") -> str:
@@ -349,11 +399,15 @@ def build_html(task_dir: Path) -> str:
     verdict_html = (
         _verdict_row("DoD floor (after-beat gate)", "pass" if dod_pass else "fail", dod_pass)
         + _verdict_row(
-            "Independent unit re-run", f"exit {unit_exit}", unit_ok,
+            "Independent unit re-run",
+            f"exit {unit_exit}",
+            unit_ok,
             "npm test, clean process, shipped worktree",
         )
         + _verdict_row(
-            "Independent e2e re-run", f"exit {e2e_exit}", e2e_ok,
+            "Independent e2e re-run",
+            f"exit {e2e_exit}",
+            e2e_ok,
             "npx playwright test, real browser",
         )
     )
@@ -397,7 +451,9 @@ def build_html(task_dir: Path) -> str:
     art_parts: list[str] = []
     # the manifest first — it reveals the chosen stack, its dependencies, and the wired scripts.
     art_parts.append(
-        _artifact_block(task_dir, "package.json", "package.json — the chosen stack + wired scripts", code=False)
+        _artifact_block(
+            task_dir, "package.json", "package.json — the chosen stack + wired scripts", code=False
+        )
     )
     # the app entry, if the stack has an HTML entry point.
     art_parts.append(_artifact_block(task_dir, "index.html", "index.html — the app entry"))
@@ -408,7 +464,13 @@ def build_html(task_dir: Path) -> str:
             src_rels += _sorted_rel(task_dir, pat)
     for rel in sorted(set(src_rels)):
         low = rel.lower()
-        if ".config." in low or ".test." in low or ".spec." in low or "/e2e/" in low or low.startswith("e2e/"):
+        if (
+            ".config." in low
+            or ".test." in low
+            or ".spec." in low
+            or "/e2e/" in low
+            or low.startswith("e2e/")
+        ):
             continue
         art_parts.append(_artifact_block(task_dir, rel, f"{rel} — source"))
     # test suites wherever they live (tests/, test/, e2e/, or co-located *.test.* / *.spec.* under
@@ -418,29 +480,42 @@ def build_html(task_dir: Path) -> str:
     test_rels: list[str] = []
     for ext in src_exts:
         for pat in (
-            f"tests/**/*.{ext}", f"test/**/*.{ext}", f"e2e/**/*.{ext}",
-            f"src/**/*.test.{ext}", f"src/**/*.spec.{ext}",
+            f"tests/**/*.{ext}",
+            f"test/**/*.{ext}",
+            f"e2e/**/*.{ext}",
+            f"src/**/*.test.{ext}",
+            f"src/**/*.spec.{ext}",
         ):
             test_rels += _sorted_rel(task_dir, pat)
     for rel in sorted(set(test_rels)):
         body, _ = _read(task_dir, rel)
-        is_e2e = "@playwright/test" in body or "/e2e/" in rel.lower() or rel.lower().startswith("e2e/")
+        is_e2e = (
+            "@playwright/test" in body or "/e2e/" in rel.lower() or rel.lower().startswith("e2e/")
+        )
         label = "e2e spec" if is_e2e else "unit test"
         art_parts.append(_artifact_block(task_dir, rel, f"{rel} — {label}"))
     # build + e2e config (any extension the stack uses).
-    for rel in _sorted_rel(task_dir, "vite.config.*") + _sorted_rel(task_dir, "playwright.config.*"):
+    for rel in _sorted_rel(task_dir, "vite.config.*") + _sorted_rel(
+        task_dir, "playwright.config.*"
+    ):
         art_parts.append(_artifact_block(task_dir, rel, f"{rel} — config"))
     art_parts.append(
         _artifact_block(
-            task_dir, "test_evidence/summary.md",
-            "test_evidence/summary.md — the written proof (incl. the stack decision)", code=False,
+            task_dir,
+            "test_evidence/summary.md",
+            "test_evidence/summary.md — the written proof (incl. the stack decision)",
+            code=False,
         )
     )
     art_parts.append(
-        _artifact_block(task_dir, "reverify_unit.txt", "reverify_unit.txt — the harness's OWN unit re-run")
+        _artifact_block(
+            task_dir, "reverify_unit.txt", "reverify_unit.txt — the harness's OWN unit re-run"
+        )
     )
     art_parts.append(
-        _artifact_block(task_dir, "reverify_e2e.txt", "reverify_e2e.txt — the harness's OWN e2e re-run")
+        _artifact_block(
+            task_dir, "reverify_e2e.txt", "reverify_e2e.txt — the harness's OWN e2e re-run"
+        )
     )
     artifacts_html = "".join(p for p in art_parts if p)
 
@@ -612,7 +687,10 @@ def main() -> int:
     dirs = sorted(d for d in _ART_ROOT.iterdir() if d.is_dir() and (d / "flow.log").is_file())
     dirs = [d for d in dirs if not wanted or d.name in wanted]
     if not dirs:
-        print(f"no task dirs with a flow.log under {_ART_ROOT}" + (f" matching {sorted(wanted)}" if wanted else ""))
+        print(
+            f"no task dirs with a flow.log under {_ART_ROOT}"
+            + (f" matching {sorted(wanted)}" if wanted else "")
+        )
         return 0
     for d in dirs:
         out = write_report_for_task(d)

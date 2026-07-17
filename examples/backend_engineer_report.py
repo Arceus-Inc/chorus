@@ -22,6 +22,9 @@ import asyncio
 import html
 import json
 import os
+import uuid
+
+_EXAMPLE_COMPANY = str(uuid.uuid5(uuid.NAMESPACE_URL, "chorus-example"))  # one stable demo org
 import shutil
 import subprocess
 import sys
@@ -32,7 +35,7 @@ from pathlib import Path
 from chorus.budgets import BudgetEnforcer
 from chorus.events import Event, EventKind
 from chorus.heartbeat import Scheduler
-from chorus.ledger import RunStatus, SqliteLedger, Task, TaskStatus
+from chorus.ledger import Ledger, RunStatus, Task, TaskStatus
 from chorus.lifecycle import assign_task
 from chorus.memory import EpisodicStore
 from chorus.observability import EventBus
@@ -723,7 +726,10 @@ def main() -> int:
     seed = base / "source"
     _seed(seed)
 
-    ledger = SqliteLedger.open(":memory:")
+    ledger = Ledger.open(
+        os.environ.get("CHORUS_LEDGER_DSN", "postgresql://localhost/chorus"),
+        company_id=_EXAMPLE_COMPANY,
+    )
     bus = _CaptureBus()
     try:
         registry = RoleRegistry.from_plugins(default_roles())

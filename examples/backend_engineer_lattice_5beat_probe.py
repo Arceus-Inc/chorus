@@ -15,6 +15,9 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import uuid
+
+_EXAMPLE_COMPANY = str(uuid.uuid5(uuid.NAMESPACE_URL, "chorus-example"))  # one stable demo org
 import subprocess
 import sys
 import tempfile
@@ -26,7 +29,7 @@ from lattice.domain.proposal import PatternDraft, Proposal
 from chorus.budgets import BudgetEnforcer
 from chorus.events import Event, EventKind
 from chorus.heartbeat import Scheduler
-from chorus.ledger import SqliteLedger, Task, TaskStatus
+from chorus.ledger import Ledger, Task, TaskStatus
 from chorus.lifecycle import assign_task
 from chorus.memory import EpisodicStore
 from chorus.observability import EventBus
@@ -230,7 +233,7 @@ def _worktree_path(company_root: Path, employee_id: str) -> Path:
 
 async def _run_task(
     scheduler: Scheduler,
-    ledger: SqliteLedger,
+    ledger: Ledger,
     bus: _LatticeBus,
     task_id: str,
 ) -> list[_BeatTrace]:
@@ -279,7 +282,9 @@ def _lattice_infra_checks(
         ),
         (
             "lattice gate opened or agent already consolidated",
-            gate_open or agent_applied or (semantic_dir.is_dir() and any(semantic_dir.glob("*.json"))),
+            gate_open
+            or agent_applied
+            or (semantic_dir.is_dir() and any(semantic_dir.glob("*.json"))),
             f"gate_open={gate_open} agent_applied={agent_applied}",
         ),
         (
@@ -518,7 +523,11 @@ def _programmatic_consolidation_checks(
     semantic = company_root / "lattice" / employee_id / "semantic" / "api__retry.json"
 
     return [
-        ("lattice_packet returns engrams", len(packet.engrams) >= 5, f"{len(packet.engrams)} engrams"),
+        (
+            "lattice_packet returns engrams",
+            len(packet.engrams) >= 5,
+            f"{len(packet.engrams)} engrams",
+        ),
         ("lattice_apply succeeds", result.ok, f"ok={result.ok} written={result.patterns_written}"),
         (
             "semantic atom on disk",
@@ -552,7 +561,10 @@ def main() -> int:
     seed = base / "source"
     _seed(seed)
 
-    ledger = SqliteLedger.open(":memory:")
+    ledger = Ledger.open(
+        os.environ.get("CHORUS_LEDGER_DSN", "postgresql://localhost/chorus"),
+        company_id=_EXAMPLE_COMPANY,
+    )
 
     registry = _registry_short_beats(_BEAT_TIMEOUT_S)
     factory = EmployeeHarnessFactory(
@@ -726,8 +738,7 @@ def main() -> int:
         "retrieval_checks": [{"name": n, "pass": ok, "detail": d} for n, ok, d in retrieval_checks],
         "retrieval_all_pass": retrieval_all_pass,
         "context_design_excludes_retry": any(
-            c[0] == "context(design) excludes the retry pattern" and c[1]
-            for c in retrieval_checks
+            c[0] == "context(design) excludes the retry pattern" and c[1] for c in retrieval_checks
         ),
         "all_pass": all_ok,
         "memory_md_path": str(memory_md_path),

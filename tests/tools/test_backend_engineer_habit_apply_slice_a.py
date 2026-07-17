@@ -13,6 +13,7 @@ from dream.tools._context import ToolExecutionContext
 from chorus.heartbeat import BeatContext
 from chorus.memory import EpisodicStore, SprintDelta
 from chorus.roles import RoleRegistry, default_roles
+from chorus.testing import uid
 from chorus.workforce import Employee
 from chorus_harness import _factory as _factory_mod
 from chorus_harness._skills import materialize_versioned_skills_into
@@ -35,7 +36,7 @@ def _delta(run_id: str, *, employee_id: str = "bex") -> SprintDelta:
     now = datetime.now(UTC)
     return SprintDelta(
         run_id=run_id,
-        task_id="t1",
+        task_id=uid("t1"),
         employee_id=employee_id,
         role="backend_engineer",
         scope="project",
@@ -83,9 +84,9 @@ def test_backend_engineer_habit_evolve_via_skill_manage(
     assert canonical.is_file()
 
     tool = next(t for t in captured["registry"].list_tools() if t.name == "skill_manage")
-    BeatContext(employee_id="bex", run_id="run_a", task_id="t6-lattice-consolidate").write(
-        mat.working_dir
-    )
+    BeatContext(
+        employee_id="bex", run_id=uid("run_a"), task_id=uid("t6-lattice-consolidate")
+    ).write(mat.working_dir)
 
     result = asyncio.run(
         tool.execute(
@@ -122,7 +123,7 @@ def test_lattice_apply_rejects_habits(monkeypatch: pytest.MonkeyPatch, tmp_path:
 
     mat = factory.materialize(Employee(id="bex", name="Bex", role="backend_engineer"))
     tool = next(t for t in captured["registry"].list_tools() if t.name == "lattice_apply")
-    BeatContext(employee_id="bex", run_id="run_a", task_id="t6").write(mat.working_dir)
+    BeatContext(employee_id="bex", run_id=uid("run_a"), task_id=uid("t6")).write(mat.working_dir)
 
     result = asyncio.run(
         tool.execute(

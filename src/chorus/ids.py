@@ -32,4 +32,10 @@ def mint_id() -> str:
     return str(_uuid7())
 
 
-__all__ = ["mint_id"]
+def derive_id(*parts: str) -> str:
+    """A DETERMINISTIC entity id from stable parts (uuid5) — for idempotent re-derivable rows
+    (e.g. the once-per-beat plan-revision artifact keyed on its run id). Same parts, same id."""
+    return str(uuid.uuid5(uuid.NAMESPACE_URL, "chorus-derived:" + "\x1f".join(parts)))
+
+
+__all__ = ["derive_id", "mint_id"]

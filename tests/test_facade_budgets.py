@@ -6,15 +6,16 @@ import pytest
 
 from chorus.budgets import BudgetWindow
 from chorus.facade import Caps, Chorus
-from chorus.ledger import BudgetScope, SqliteLedger
+from chorus.ledger import BudgetScope, Ledger
 from chorus.observability import EventBus, LedgerInspector
 from chorus.roles import RoleRegistry, default_roles
+from chorus.testing import open_test_ledger
 from chorus.workforce import Employee, LedgerWorkforce
 
 pytestmark = pytest.mark.integration
 
 
-def _chorus(ledger: SqliteLedger) -> Chorus:
+def _chorus(ledger: Ledger) -> Chorus:
     return Chorus(
         ledger=ledger,
         workforce=LedgerWorkforce(ledger.employees),
@@ -30,7 +31,7 @@ def _chorus(ledger: SqliteLedger) -> Chorus:
 
 
 def test_set_creates_an_employee_cap() -> None:
-    ledger = SqliteLedger.open(":memory:")
+    ledger = open_test_ledger()
     try:
         ledger.employees.create(Employee(id="moe", name="Moe", role="engineer"))
         policy = _chorus(ledger).budgets.set(BudgetScope.EMPLOYEE, "moe", 5000)
@@ -43,7 +44,7 @@ def test_set_creates_an_employee_cap() -> None:
 
 
 def test_set_twice_updates_the_same_policy() -> None:
-    ledger = SqliteLedger.open(":memory:")
+    ledger = open_test_ledger()
     try:
         budgets = _chorus(ledger).budgets
         first = budgets.set(BudgetScope.COMPANY, "acme", 1000)

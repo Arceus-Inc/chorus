@@ -26,6 +26,9 @@ from __future__ import annotations
 import asyncio
 import html
 import os
+import uuid
+
+_EXAMPLE_COMPANY = str(uuid.uuid5(uuid.NAMESPACE_URL, "chorus-example"))  # one stable demo org
 import subprocess
 import sys
 import tempfile
@@ -38,9 +41,9 @@ from chorus.ledger import (
     Artifact,
     ArtifactType,
     DodStatus,
+    Ledger,
     Run,
     RunStatus,
-    SqliteLedger,
     Task,
     TaskStatus,
 )
@@ -116,26 +119,52 @@ def _seed_repo(path: Path) -> None:
     (path / "README.md").write_text("# text utils\n", encoding="utf-8")
     subprocess.run(["git", "-C", str(path), "add", "-A"], check=True, capture_output=True)
     subprocess.run(
-        ["git", "-C", str(path), "-c", "user.name=s", "-c", "user.email=s@x", "commit", "-m", "seed"],
-        check=True, capture_output=True,
+        [
+            "git",
+            "-C",
+            str(path),
+            "-c",
+            "user.name=s",
+            "-c",
+            "user.email=s@x",
+            "commit",
+            "-m",
+            "seed",
+        ],
+        check=True,
+        capture_output=True,
     )
 
 
-def _mark_done_passing(ledger: SqliteLedger, task_id: str, *, by: str) -> None:
+def _mark_done_passing(ledger: Ledger, task_id: str, *, by: str) -> None:
     """Make a child read as a finished, green deliverable in the integrate packet."""
     run_id = f"run_{task_id}"
-    ledger.runs.create(Run(id=run_id, employee_id=by, task_id=task_id, status=RunStatus.SUCCEEDED,
-                           outcome={"summary": f"{task_id} landed"}))
+    ledger.runs.create(
+        Run(
+            id=run_id,
+            employee_id=by,
+            task_id=task_id,
+            status=RunStatus.SUCCEEDED,
+            outcome={"summary": f"{task_id} landed"},
+        )
+    )
     dod = ledger.dod.create(task_id, Verifier.command("pytest -q", artifact_class="file"))
     ledger.dod.record_verdict(dod.id, DodStatus.PASSED, verdict={"stdout": "ok"}, run_id=run_id)
-    ledger.artifacts.create(Artifact(id=f"art_{task_id}", task_id=task_id, type=ArtifactType.PR,
-                                     is_primary=True, resource_ref={"merged": True}))
+    ledger.artifacts.create(
+        Artifact(
+            id=f"art_{task_id}",
+            task_id=task_id,
+            type=ArtifactType.PR,
+            is_primary=True,
+            resource_ref={"merged": True},
+        )
+    )
     ledger.tasks.set_status(task_id, TaskStatus.DONE)
 
 
 async def _run_probe(
     factory: EmployeeHarnessFactory,
-    ledger: SqliteLedger,
+    ledger: Ledger,
     *,
     name: str,
     tool_under_test: str,
@@ -147,14 +176,25 @@ async def _run_probe(
 
     # The manager beat needs at least one prior run on the parent (the kickoff) so the packet's
     # iteration is well-defined, plus the live integrate run.
-    ledger.runs.create(Run(id=f"{parent_id}_kick", employee_id="moe", task_id=parent_id,
-                           status=RunStatus.SUCCEEDED, outcome={"summary": "delegated"}))
+    ledger.runs.create(
+        Run(
+            id=f"{parent_id}_kick",
+            employee_id="moe",
+            task_id=parent_id,
+            status=RunStatus.SUCCEEDED,
+            outcome={"summary": "delegated"},
+        )
+    )
     integrate_run = f"{parent_id}_integrate"
-    ledger.runs.create(Run(id=integrate_run, employee_id="moe", task_id=parent_id, status=RunStatus.RUNNING))
+    ledger.runs.create(
+        Run(id=integrate_run, employee_id="moe", task_id=parent_id, status=RunStatus.RUNNING)
+    )
 
     result.children_before = len(ledger.tasks.children(parent_id))
     recommend = IntegrateContextPacket.recommended_for(ledger, parent_id)
-    _log(f"\n{'═' * 72}\n{name}  (verifying {tool_under_test}) — recommended_action={recommend}\n{'═' * 72}")
+    _log(
+        f"\n{'═' * 72}\n{name}  (verifying {tool_under_test}) — recommended_action={recommend}\n{'═' * 72}"
+    )
 
     # Materialize the manager FOR THIS integrate beat: the factory drops `decompose`, and keeps
     # submit_task/assign_task because the subtree is not complete (recommend=react).
@@ -175,19 +215,20 @@ async def _run_probe(
     return result
 
 
-def _verify_submit(result: ProbeResult, ledger: SqliteLedger, parent_id: str) -> None:
+def _verify_submit(result: ProbeResult, ledger: Ledger, parent_id: str) -> None:
     new_children = result.children_after - result.children_before
     called = [c for c in result.tool_calls if c.tool == "submit_task" and not c.is_error]
     result.passed = bool(called) and new_children >= 1
     result.verdict_reason = (
         f"submit_task called {len(called)}x (ok); subtree grew {result.children_before}→"
-        f"{result.children_after}" if result.passed
+        f"{result.children_after}"
+        if result.passed
         else f"no successful submit_task (calls={[c.tool for c in result.tool_calls]}, "
-             f"children {result.children_before}→{result.children_after})"
+        f"children {result.children_before}→{result.children_after})"
     )
 
 
-def _verify_assign(result: ProbeResult, ledger: SqliteLedger, parent_id: str, *, child_id: str) -> None:
+def _verify_assign(result: ProbeResult, ledger: Ledger, parent_id: str, *, child_id: str) -> None:
     child = ledger.tasks.get(child_id)
     owner = child.assignee_employee_id if child is not None else None
     rerouted = owner == "bob"
@@ -208,12 +249,15 @@ def _render_html(results: list[ProbeResult], *, goal_headline: str) -> str:
     for r in results:
         badge = "PASS" if r.passed else "FAIL"
         badge_cls = "pass" if r.passed else "fail"
-        calls_rows = "".join(
-            f"<tr class='{'err' if c.is_error else 'okrow'}'><td><code>{esc(c.tool)}</code></td>"
-            f"<td><code>{esc(c.input)}</code></td><td>{'error' if c.is_error else 'ok'}</td>"
-            f"<td><code>{esc(c.result)}</code></td></tr>"
-            for c in r.tool_calls
-        ) or "<tr><td colspan='4' class='muted'>— no tool calls —</td></tr>"
+        calls_rows = (
+            "".join(
+                f"<tr class='{'err' if c.is_error else 'okrow'}'><td><code>{esc(c.tool)}</code></td>"
+                f"<td><code>{esc(c.input)}</code></td><td>{'error' if c.is_error else 'ok'}</td>"
+                f"<td><code>{esc(c.result)}</code></td></tr>"
+                for c in r.tool_calls
+            )
+            or "<tr><td colspan='4' class='muted'>— no tool calls —</td></tr>"
+        )
         staged = "".join(f"<li>{esc(s)}</li>" for s in r.staged)
         cards.append(f"""
         <section class="card">
@@ -279,7 +323,7 @@ def _render_html(results: list[ProbeResult], *, goal_headline: str) -> str:
   one live manager beat against it, then checks the ledger actually changed.</p>
   <div class="overall {overall_cls}">{overall}</div>
   <p class="lead"><strong>Scenario:</strong> {esc(goal_headline)}</p>
-  {''.join(cards)}
+  {"".join(cards)}
   <footer>Generated by examples/m3_submit_assign_verify.py · chorus M3 Slice 2</footer>
 </body></html>"""
 
@@ -297,13 +341,22 @@ def main() -> int:
     seed = base / "seed"
     _seed_repo(seed)
 
-    ledger = SqliteLedger.open(str(base / "ledger.db"))
+    ledger = Ledger.open(
+        os.environ.get("CHORUS_LEDGER_DSN", "postgresql://localhost/chorus"),
+        company_id=_EXAMPLE_COMPANY,
+    )
     try:
         registry = RoleRegistry.from_plugins(default_roles())
         factory = EmployeeHarnessFactory(
-            api_key=api_key, base_url=base_url, deployment=deployment, company_id="acme",
-            roles=registry, pricing=default_pricing_from_env(), seed=seed,
-            work_root=base / "work", ledger=ledger,
+            api_key=api_key,
+            base_url=base_url,
+            deployment=deployment,
+            company_id="acme",
+            roles=registry,
+            pricing=default_pricing_from_env(),
+            seed=seed,
+            work_root=base / "work",
+            ledger=ledger,
         )
         ledger.employees.create(Employee(id="moe", name="Moe", role="manager"))
         ledger.employees.create(Employee(id="ada", name="Ada", role="engineer", reports_to="moe"))
@@ -311,47 +364,80 @@ def main() -> int:
         svc = CapabilityService(ledger)
 
         # ── Probe SUBMIT ─────────────────────────────────────────────────────────────────────────
-        big_goal = ("Build a Python text-utilities library with four functions: slugify, shout, "
-                    "snake_case, and truncate — each in its own module with a unit test.")
-        ledger.tasks.submit(Task(id="lib", intent=big_goal, status=TaskStatus.BLOCKED, assignee_employee_id="moe"))
-        svc.decompose(parent_id="lib", revision="lib_kick", children=[
-            ChildPlan(label="slugify", intent="implement slugify + test", assignee="ada"),
-            ChildPlan(label="shout", intent="implement shout + test", assignee="bob"),
-            ChildPlan(label="snake_case", intent="implement snake_case + test", assignee="ada"),
-            ChildPlan(label="truncate", intent="implement truncate + test", assignee="bob"),
-        ])
+        big_goal = (
+            "Build a Python text-utilities library with four functions: slugify, shout, "
+            "snake_case, and truncate — each in its own module with a unit test."
+        )
+        ledger.tasks.submit(
+            Task(id="lib", intent=big_goal, status=TaskStatus.BLOCKED, assignee_employee_id="moe")
+        )
+        svc.decompose(
+            parent_id="lib",
+            revision="lib_kick",
+            children=[
+                ChildPlan(label="slugify", intent="implement slugify + test", assignee="ada"),
+                ChildPlan(label="shout", intent="implement shout + test", assignee="bob"),
+                ChildPlan(label="snake_case", intent="implement snake_case + test", assignee="ada"),
+                ChildPlan(label="truncate", intent="implement truncate + test", assignee="bob"),
+            ],
+        )
         kids = {c.origin_fingerprint: c.id for c in ledger.tasks.children("lib")}
         for label in ("slugify", "shout", "snake_case"):
             _mark_done_passing(ledger, kids[label], by="ada" if label != "shout" else "bob")
         ledger.tasks.set_status(kids["truncate"], TaskStatus.CANCELLED)  # bob couldn't finish it
-        submit_res = asyncio.run(_run_probe(
-            factory, ledger, name="Probe SUBMIT — patch a cancelled deliverable",
-            tool_under_test="submit_task", parent_id="lib", goal=big_goal,
-            stage=["slugify — done, DoD passed (ada)", "shout — done, DoD passed (bob)",
-                   "snake_case — done, DoD passed (ada)",
-                   "truncate — CANCELLED: the assigned report could not finish it"],
-        ))
+        submit_res = asyncio.run(
+            _run_probe(
+                factory,
+                ledger,
+                name="Probe SUBMIT — patch a cancelled deliverable",
+                tool_under_test="submit_task",
+                parent_id="lib",
+                goal=big_goal,
+                stage=[
+                    "slugify — done, DoD passed (ada)",
+                    "shout — done, DoD passed (bob)",
+                    "snake_case — done, DoD passed (ada)",
+                    "truncate — CANCELLED: the assigned report could not finish it",
+                ],
+            )
+        )
         _verify_submit(submit_res, ledger, "lib")
         _log(f"  ⇒ {submit_res.verdict_reason}")
 
         # ── Probe ASSIGN ─────────────────────────────────────────────────────────────────────────
-        goal2 = ("Build a config loader: a parser module and a validator module, each with a test. "
-                 "Your report ada is stuck on the existing validator child task and cannot finish it — "
-                 "route that existing task to your other report, bob.")
-        ledger.tasks.submit(Task(id="cfg", intent=goal2, status=TaskStatus.BLOCKED, assignee_employee_id="moe"))
-        svc.decompose(parent_id="cfg", revision="cfg_kick", children=[
-            ChildPlan(label="parser", intent="implement parser + test", assignee="ada"),
-            ChildPlan(label="validator", intent="implement validator + test", assignee="ada"),
-        ])
+        goal2 = (
+            "Build a config loader: a parser module and a validator module, each with a test. "
+            "Your report ada is stuck on the existing validator child task and cannot finish it — "
+            "route that existing task to your other report, bob."
+        )
+        ledger.tasks.submit(
+            Task(id="cfg", intent=goal2, status=TaskStatus.BLOCKED, assignee_employee_id="moe")
+        )
+        svc.decompose(
+            parent_id="cfg",
+            revision="cfg_kick",
+            children=[
+                ChildPlan(label="parser", intent="implement parser + test", assignee="ada"),
+                ChildPlan(label="validator", intent="implement validator + test", assignee="ada"),
+            ],
+        )
         kids2 = {c.origin_fingerprint: c.id for c in ledger.tasks.children("cfg")}
         _mark_done_passing(ledger, kids2["parser"], by="ada")
         ledger.tasks.set_status(kids2["validator"], TaskStatus.BLOCKED)  # ada stuck, still open
-        assign_res = asyncio.run(_run_probe(
-            factory, ledger, name="Probe ASSIGN — reroute a stuck child",
-            tool_under_test="assign_task", parent_id="cfg", goal=goal2,
-            stage=["parser — done, DoD passed (ada)",
-                   "validator — BLOCKED, still assigned to ada (the report is stuck)"],
-        ))
+        assign_res = asyncio.run(
+            _run_probe(
+                factory,
+                ledger,
+                name="Probe ASSIGN — reroute a stuck child",
+                tool_under_test="assign_task",
+                parent_id="cfg",
+                goal=goal2,
+                stage=[
+                    "parser — done, DoD passed (ada)",
+                    "validator — BLOCKED, still assigned to ada (the report is stuck)",
+                ],
+            )
+        )
         _verify_assign(assign_res, ledger, "cfg", child_id=kids2["validator"])
         _log(f"  ⇒ {assign_res.verdict_reason}")
 

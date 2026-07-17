@@ -15,6 +15,7 @@ from typing import Any
 import httpx
 import pytest
 
+from chorus.testing import uid
 from chorus_tools.cms import BlogDraft, ContentType, DraftRef, MarkdownCmsBackend
 from chorus_tools.delivery import DeliveryError, PublishedRef
 from chorus_tools.delivery._config import publish_backend_from_env
@@ -66,10 +67,10 @@ class TestStrapiPublish:
 
     def test_non_blog_publishes_to_the_admin_url(self) -> None:
         social = DraftRef(
-            backend="strapi", content_type=ContentType.SOCIAL, ref_id="s1", url="u://x"
+            backend="strapi", content_type=ContentType.SOCIAL, ref_id=uid("s1"), url="u://x"
         )
-        published = _backend(_ok("s1")).publish(social)
-        assert "content-manager" in published.url and "s1" in published.url
+        published = _backend(_ok(uid("s1"))).publish(social)
+        assert "content-manager" in published.url and uid("s1") in published.url
 
     def test_non_2xx_raises_delivery_error(self) -> None:
         def handler(request: httpx.Request) -> httpx.Response:

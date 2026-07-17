@@ -37,10 +37,20 @@ class _InferringStrDumper(StrDumper):
 
 
 class _TextLoader(Loader):
-    """Load a value as its canonical text (uuid, timestamptz, json…)."""
+    """Load a value as its canonical text (uuid, json…)."""
 
     def load(self, data: bytes | bytearray | memoryview) -> str:
         return bytes(data).decode("utf-8")
+
+
+class _IsoTimestampLoader(Loader):
+    """Load timestamptz as canonical ISO-8601 text ("T" separator, +00:00) — the ledger's
+    timestamp wire format since the SQLite era; repos' from_iso parses it unchanged."""
+
+    def load(self, data: bytes | bytearray | memoryview) -> str:
+        from datetime import datetime
+
+        return datetime.fromisoformat(bytes(data).decode("utf-8")).isoformat()
 
 
 def _qmark_to_percent(sql: str) -> str:
@@ -77,6 +87,7 @@ class LedgerConnection:
     @classmethod
     def connect(cls, conninfo: str, *, company_id: str | None = None) -> LedgerConnection:
         pg = psycopg.connect(conninfo, autocommit=True, row_factory=rows.dict_row)
+        pg.execute("SET TIME ZONE 'UTC'")  # timestamptz text out in +00, not the host's offset
         _register_ledger_types(pg)
         if company_id is not None:
             # A dedicated per-company connection: pin the tenancy GUC for the whole session so the
@@ -140,8 +151,9 @@ def _register_ledger_types(context: AdaptContext) -> None:
     """Text-out / inferred-in adaptation: native storage, SQLite-shaped wire values."""
     adapters = context.adapters
     adapters.register_dumper(str, _InferringStrDumper)
-    for type_name in ("uuid", "timestamptz", "json", "jsonb"):
+    for type_name in ("uuid", "json", "jsonb"):
         adapters.register_loader(type_name, _TextLoader)
+    adapters.register_loader("timestamptz", _IsoTimestampLoader)
 
 
 __all__ = ["LedgerConnection"]

@@ -16,9 +16,9 @@ from chorus.ledger import (
     DelegationContractStatus,
     ExecutionMode,
     Goal,
+    Ledger,
     ManagementProfile,
     OriginKind,
-    SqliteLedger,
     TaskPriority,
     TaskStatus,
     TeamStatus,
@@ -27,12 +27,13 @@ from chorus.ledger._models import WakeReason
 from chorus.observability import EventBus, LedgerInspector
 from chorus.outcomes import Verifier
 from chorus.roles import RoleRegistry, default_roles
+from chorus.testing import open_test_ledger, uid
 from chorus.workforce import Employee, LedgerWorkforce
 
 pytestmark = pytest.mark.integration
 
 
-def _chorus(ledger: SqliteLedger) -> Chorus:
+def _chorus(ledger: Ledger) -> Chorus:
     return Chorus(
         ledger=ledger,
         workforce=LedgerWorkforce(ledger.employees),
@@ -47,7 +48,7 @@ def _chorus(ledger: SqliteLedger) -> Chorus:
 
 
 def test_submit_creates_a_backlog_depth0_task() -> None:
-    ledger = SqliteLedger.open(":memory:")
+    ledger = open_test_ledger()
     try:
         task = _chorus(ledger).submit("build a login page")
         stored = ledger.tasks.get(task.id)
@@ -60,7 +61,7 @@ def test_submit_creates_a_backlog_depth0_task() -> None:
 
 
 def test_submit_with_assignee_assigns_and_wakes() -> None:
-    ledger = SqliteLedger.open(":memory:")
+    ledger = open_test_ledger()
     try:
         ledger.employees.create(Employee(id="moe", name="Moe", role="engineer"))
         task = _chorus(ledger).submit("build a login page", assignee="Moe")
@@ -75,7 +76,7 @@ def test_submit_with_assignee_assigns_and_wakes() -> None:
 
 
 def test_submit_unknown_assignee_is_fail_closed() -> None:
-    ledger = SqliteLedger.open(":memory:")
+    ledger = open_test_ledger()
     try:
         with pytest.raises(UnknownEmployee):
             _chorus(ledger).submit("x", assignee="ghost")
@@ -85,19 +86,19 @@ def test_submit_unknown_assignee_is_fail_closed() -> None:
 
 
 def test_submit_with_dod_sets_it() -> None:
-    ledger = SqliteLedger.open(":memory:")
+    ledger = open_test_ledger()
     try:
-        task = _chorus(ledger).submit("ship", dod=Verifier.command("pytest -q"))
+        task = _chorus(ledger).submit(uid("ship"), dod=Verifier.command("pytest -q"))
         assert ledger.dod.get_for_task(task.id) is not None
     finally:
         ledger.close()
 
 
 def test_submit_with_depends_on_adds_edges() -> None:
-    ledger = SqliteLedger.open(":memory:")
+    ledger = open_test_ledger()
     try:
         chorus = _chorus(ledger)
-        prereq = chorus.submit("prereq")
+        prereq = chorus.submit(uid("prereq"))
         task = chorus.submit("the work", depends_on=(prereq.id,))
         assert ledger.dependencies.unresolved_blockers(task.id) == [prereq.id]
     finally:
@@ -105,18 +106,18 @@ def test_submit_with_depends_on_adds_edges() -> None:
 
 
 def test_submit_honours_priority() -> None:
-    ledger = SqliteLedger.open(":memory:")
+    ledger = open_test_ledger()
     try:
-        task = _chorus(ledger).submit("urgent", priority=TaskPriority.HIGH)
+        task = _chorus(ledger).submit(uid("urgent"), priority=TaskPriority.HIGH)
         stored = ledger.tasks.get(task.id)
         assert stored is not None and stored.priority is TaskPriority.HIGH
     finally:
         ledger.close()
 
 
-def _seed_delegation_lead(ledger: SqliteLedger) -> None:
+def _seed_delegation_lead(ledger: Ledger) -> None:
     ledger.employees.create(Employee(id="lead", name="Lead", role="engineer"))
-    ledger.goals.create(Goal(id="goal-release", title="Release"))
+    ledger.goals.create(Goal(id=uid("goal-release"), title="Release"))
     ledger.management_profiles.upsert(
         ManagementProfile(
             employee_id="lead",
@@ -134,14 +135,14 @@ def _seed_delegation_lead(ledger: SqliteLedger) -> None:
 
 
 def test_submit_root_delegation_atomically_wires_active_team_and_contract() -> None:
-    ledger = SqliteLedger.open(":memory:")
+    ledger = open_test_ledger()
     try:
         _seed_delegation_lead(ledger)
 
         task = _chorus(ledger).submit(
             "coordinate the release",
             assignee="Lead",
-            goal_id="goal-release",
+            goal_id=uid("goal-release"),
             execution_mode=ExecutionMode.DELEGATION,
             delegation_max_direct_children=2,
         )
@@ -157,7 +158,7 @@ def test_submit_root_delegation_atomically_wires_active_team_and_contract() -> N
         team = ledger.teams.get(stored.team_id)
         assert team is not None
         assert (team.goal_id, team.lead_employee_id, team.status) == (
-            "goal-release",
+            uid("goal-release"),
             "lead",
             TeamStatus.ACTIVE,
         )
@@ -193,7 +194,7 @@ def test_submit_root_delegation_atomically_wires_active_team_and_contract() -> N
 
 
 def test_horizon_root_delegation_fingerprint_is_exact_once_at_facade_boundary() -> None:
-    ledger = SqliteLedger.open(":memory:")
+    ledger = open_test_ledger()
     try:
         _seed_delegation_lead(ledger)
         chorus = _chorus(ledger)
@@ -201,7 +202,7 @@ def test_horizon_root_delegation_fingerprint_is_exact_once_at_facade_boundary() 
         first = chorus.submit(
             "coordinate the release",
             assignee="Lead",
-            goal_id="goal-release",
+            goal_id=uid("goal-release"),
             origin_kind=OriginKind.HORIZON_INTAKE,
             origin_fingerprint="goal-release:v1",
             execution_mode=ExecutionMode.DELEGATION,
@@ -209,7 +210,7 @@ def test_horizon_root_delegation_fingerprint_is_exact_once_at_facade_boundary() 
         retry = chorus.submit(
             "coordinate the release",
             assignee="Lead",
-            goal_id="goal-release",
+            goal_id=uid("goal-release"),
             origin_kind=OriginKind.HORIZON_INTAKE,
             origin_fingerprint="goal-release:v1",
             execution_mode=ExecutionMode.DELEGATION,
@@ -228,7 +229,7 @@ def test_horizon_root_delegation_fingerprint_is_exact_once_at_facade_boundary() 
 def test_submit_root_delegation_rolls_back_the_whole_kickoff(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    ledger = SqliteLedger.open(":memory:")
+    ledger = open_test_ledger()
     try:
         _seed_delegation_lead(ledger)
 
@@ -241,12 +242,12 @@ def test_submit_root_delegation_rolls_back_the_whole_kickoff(
             _chorus(ledger).submit(
                 "coordinate the release",
                 assignee="Lead",
-                goal_id="goal-release",
+                goal_id=uid("goal-release"),
                 execution_mode=ExecutionMode.DELEGATION,
             )
 
         assert ledger.tasks.all() == []
-        assert ledger.teams.for_goal("goal-release") is None
+        assert ledger.teams.for_goal(uid("goal-release")) is None
         assert ledger.wakes.queued(employee_id="lead") == []
         assert ledger.activity.all() == []
 
@@ -254,11 +255,11 @@ def test_submit_root_delegation_rolls_back_the_whole_kickoff(
         task = _chorus(ledger).submit(
             "coordinate the release",
             assignee="Lead",
-            goal_id="goal-release",
+            goal_id=uid("goal-release"),
             execution_mode=ExecutionMode.DELEGATION,
         )
 
-        team = ledger.teams.for_goal("goal-release")
+        team = ledger.teams.for_goal(uid("goal-release"))
         assert team is not None
         assert len(ledger.tasks.all()) == 1
         assert ledger.delegation_contracts.get(task.id) is not None

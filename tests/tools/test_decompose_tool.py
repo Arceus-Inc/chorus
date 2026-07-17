@@ -20,20 +20,21 @@ from chorus.ledger import (
     DelegationContractStatus,
     ExecutionMode,
     Goal,
+    Ledger,
     ManagementProfile,
     Run,
     RunStatus,
-    SqliteLedger,
     Task,
     TaskStatus,
 )
 from chorus.lifecycle import CapabilityService, DecomposeResult, MissionTeamPolicy
+from chorus.testing import uid
 from chorus.workforce import Employee
 from chorus_tools import DecomposeTool
 
 pytestmark = pytest.mark.integration
 
-REV = "run_mgr_1"
+REV = uid("run_mgr_1")
 
 
 def _ctx(working_dir: Path) -> object:
@@ -48,7 +49,7 @@ def _ctx(working_dir: Path) -> object:
     )
 
 
-def _seed(ledger: SqliteLedger) -> None:
+def _seed(ledger: Ledger) -> None:
     lead = ledger.employees.create(Employee(id="mgr", name="Mgr", role="engineer"))
     ledger.employees.create(Employee(id="ada", name="Ada", role="engineer", reports_to="mgr"))
     ledger.employees.create(Employee(id="bob", name="Bob", role="engineer", reports_to="mgr"))
@@ -64,24 +65,24 @@ def _seed(ledger: SqliteLedger) -> None:
             granted_by_user_id="operator",
         )
     )
-    ledger.goals.create(Goal(id="goal-M", title="Ship it"))
+    ledger.goals.create(Goal(id=uid("goal-M"), title="Ship it"))
     team_policy = MissionTeamPolicy(ledger)
-    team = team_policy.create_for_root(lead, "goal-M")
+    team = team_policy.create_for_root(lead, uid("goal-M"))
     team_policy.activate(team.id)
     ledger.tasks.submit(
         Task(
-            id="M",
+            id=uid("M"),
             intent="ship it",
             status=TaskStatus.TODO,
             execution_mode=ExecutionMode.DELEGATION,
             team_id=team.id,
             assignee_employee_id="mgr",
-            goal_id="goal-M",
+            goal_id=uid("goal-M"),
         )
     )
     ledger.delegation_contracts.create(
         DelegationContract(
-            task_id="M",
+            task_id=uid("M"),
             team_id=team.id,
             lead_employee_id="mgr",
             management_profile_version=1,
@@ -92,12 +93,12 @@ def _seed(ledger: SqliteLedger) -> None:
             status=DelegationContractStatus.DELEGATED,
         )
     )
-    ledger.runs.create(Run(id=REV, employee_id="mgr", task_id="M", status=RunStatus.RUNNING))
+    ledger.runs.create(Run(id=REV, employee_id="mgr", task_id=uid("M"), status=RunStatus.RUNNING))
 
 
-def test_tool_fans_out_and_assigns(ledger: SqliteLedger, tmp_path: Path) -> None:
+def test_tool_fans_out_and_assigns(ledger: Ledger, tmp_path: Path) -> None:
     _seed(ledger)
-    BeatContext(task_id="M", run_id=REV, employee_id="mgr").write(tmp_path)
+    BeatContext(task_id=uid("M"), run_id=REV, employee_id="mgr").write(tmp_path)
     tool = DecomposeTool(ledger)
 
     result = asyncio.run(
@@ -122,27 +123,25 @@ def test_tool_fans_out_and_assigns(ledger: SqliteLedger, tmp_path: Path) -> None
     assert set(child_ids) == {"api", "tests"}
     # children are real, assigned, and the parent waits on its subtree
     assert ledger.tasks.get(child_ids["api"]).assignee_employee_id == "ada"  # type: ignore[union-attr]
-    assert set(ledger.dependencies.unresolved_blockers("M")) == set(child_ids.values())
+    assert set(ledger.dependencies.unresolved_blockers(uid("M"))) == set(child_ids.values())
     # the sibling edge is wired
     assert ledger.dependencies.unresolved_blockers(child_ids["tests"]) == [child_ids["api"]]
 
 
-def test_tool_declares_a_repo_write_trust_tier(ledger: SqliteLedger) -> None:
+def test_tool_declares_a_repo_write_trust_tier(ledger: Ledger) -> None:
     # A mutating tool is gated as a write effect; its declared tier must be REPO_WRITE (1) so dream
     # trusts it at the manager's session tier instead of denying it ("not trusted for write").
     assert DecomposeTool(ledger).declaration.tier_required == 1
 
 
-def test_tool_rejects_empty_children(ledger: SqliteLedger, tmp_path: Path) -> None:
+def test_tool_rejects_empty_children(ledger: Ledger, tmp_path: Path) -> None:
     _seed(ledger)
-    BeatContext(task_id="M", run_id=REV, employee_id="mgr").write(tmp_path)
+    BeatContext(task_id=uid("M"), run_id=REV, employee_id="mgr").write(tmp_path)
     result = asyncio.run(DecomposeTool(ledger).execute({"children": []}, _ctx(tmp_path)))
     assert result.is_error is True
 
 
-def test_tool_rejects_malformed_input_as_recovery_not_crash(
-    ledger: SqliteLedger, tmp_path: Path
-) -> None:
+def test_tool_rejects_malformed_input_as_recovery_not_crash(ledger: Ledger, tmp_path: Path) -> None:
     # A payload that fails schema validation must come back as the tool's recovery contract
     # (is_error result), never an unchained pydantic ValidationError that escapes the tool.
     _seed(ledger)
@@ -150,9 +149,9 @@ def test_tool_rejects_malformed_input_as_recovery_not_crash(
     assert result.is_error is True
 
 
-def test_tool_rejects_unknown_dependency_label(ledger: SqliteLedger, tmp_path: Path) -> None:
+def test_tool_rejects_unknown_dependency_label(ledger: Ledger, tmp_path: Path) -> None:
     _seed(ledger)
-    BeatContext(task_id="M", run_id=REV, employee_id="mgr").write(tmp_path)
+    BeatContext(task_id=uid("M"), run_id=REV, employee_id="mgr").write(tmp_path)
     result = asyncio.run(
         DecomposeTool(ledger).execute(
             {
@@ -164,25 +163,25 @@ def test_tool_rejects_unknown_dependency_label(ledger: SqliteLedger, tmp_path: P
         )
     )
     assert result.is_error is True
-    assert ledger.tasks.get("M") is not None  # nothing fanned out
+    assert ledger.tasks.get(uid("M")) is not None  # nothing fanned out
 
 
-def test_tool_is_idempotent_on_refire(ledger: SqliteLedger, tmp_path: Path) -> None:
+def test_tool_is_idempotent_on_refire(ledger: Ledger, tmp_path: Path) -> None:
     _seed(ledger)
-    BeatContext(task_id="M", run_id=REV, employee_id="mgr").write(tmp_path)
+    BeatContext(task_id=uid("M"), run_id=REV, employee_id="mgr").write(tmp_path)
     tool = DecomposeTool(ledger)
     payload = {"children": [{"label": "api", "intent": "build the api", "assignee": "ada"}]}
     first = asyncio.run(tool.execute(payload, _ctx(tmp_path)))
     second = asyncio.run(tool.execute(payload, _ctx(tmp_path)))  # the generator re-fired
     assert first.structured["children"] == second.structured["children"]
-    assert len(ledger.dependencies.unresolved_blockers("M")) == 1  # no duplicate child
+    assert len(ledger.dependencies.unresolved_blockers(uid("M"))) == 1  # no duplicate child
 
 
 def test_tool_forwards_actor_and_explicit_child_execution_mode(
-    ledger: SqliteLedger, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ledger: Ledger, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _seed(ledger)
-    BeatContext(task_id="M", run_id=REV, employee_id="mgr").write(tmp_path)
+    BeatContext(task_id=uid("M"), run_id=REV, employee_id="mgr").write(tmp_path)
     captured: dict[str, object] = {}
 
     def fake_decompose(self: CapabilityService, **kwargs: object) -> DecomposeResult:

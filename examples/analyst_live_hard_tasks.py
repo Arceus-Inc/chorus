@@ -37,18 +37,21 @@ from chorus_harness import EmployeeHarnessFactory
 
 # --- seeders -----------------------------------------------------------------
 
+
 def _seed_simpson(work: Path) -> None:
     """A textbook mix shift: every channel's CVR rises, the aggregate falls."""
     db = work / "warehouse.db"
     conn = sqlite3.connect(db)
-    conn.execute("CREATE TABLE sessions (week TEXT, channel TEXT, sessions INTEGER, conversions INTEGER)")
+    conn.execute(
+        "CREATE TABLE sessions (week TEXT, channel TEXT, sessions INTEGER, conversions INTEGER)"
+    )
     conn.executemany(
         "INSERT INTO sessions VALUES (?,?,?,?)",
         [
             ("2026-W1", "organic", 8000, 400),  # 5.00%
-            ("2026-W1", "paid", 2000, 40),      # 2.00%   aggregate W1 = 440/10000 = 4.40%
+            ("2026-W1", "paid", 2000, 40),  # 2.00%   aggregate W1 = 440/10000 = 4.40%
             ("2026-W2", "organic", 8000, 420),  # 5.25%  (up)
-            ("2026-W2", "paid", 12000, 252),    # 2.10%  (up)  aggregate W2 = 672/20000 = 3.36% (down)
+            ("2026-W2", "paid", 12000, 252),  # 2.10%  (up)  aggregate W2 = 672/20000 = 3.36% (down)
         ],
     )
     conn.commit()
@@ -61,8 +64,12 @@ def _seed_predict(work: Path) -> None:
     from sklearn.datasets import make_classification
 
     x, y = make_classification(
-        n_samples=700, n_features=8, n_informative=5, n_redundant=1,
-        class_sep=1.4, random_state=7,
+        n_samples=700,
+        n_features=8,
+        n_informative=5,
+        n_redundant=1,
+        class_sep=1.4,
+        random_state=7,
     )
     cols = [f"f{i}" for i in range(x.shape[1])]
     header = ",".join(cols) + ",y"
@@ -155,8 +162,12 @@ def _observer(ev: Event) -> None:
 async def _run_task(task: dict, key: str, base: str, dep: str) -> None:
     roles = RoleRegistry.from_plugins(default_roles())
     factory = EmployeeHarnessFactory(
-        api_key=key, base_url=base, deployment=dep, company_id=task["company"],
-        roles=roles, timeout_s=600.0,
+        api_key=key,
+        base_url=base,
+        deployment=dep,
+        company_id=task["company"],
+        roles=roles,
+        timeout_s=600.0,
     )
     # Clean slate so the planner doesn't collide with a prior run's artefacts.
     workroot = Path("chorus") if Path("chorus").is_dir() else Path(".")
@@ -171,13 +182,19 @@ async def _run_task(task: dict, key: str, base: str, dep: str) -> None:
 
     verifier = analyst_plugin().dod_generator(task["intent"])
     print("\n" + "=" * 78)
-    print(f"TASK [{task['key']}]  action={classify_action(task['intent']).value} -> DoD {verifier.kind.value}")
+    print(
+        f"TASK [{task['key']}]  action={classify_action(task['intent']).value} -> DoD {verifier.kind.value}"
+    )
     print(f"intent: {task['intent']}")
     print("=" * 78)
 
     outcome = await mat.runner.run_task(
-        task_id=task["run"], intent=task["intent"], run_id=task["run"],
-        verification=verifier.verification_steps(), rubric=verifier.rubric(), observer=_observer,
+        task_id=task["run"],
+        intent=task["intent"],
+        run_id=task["run"],
+        verification=verifier.verification_steps(),
+        rubric=verifier.rubric(),
+        observer=_observer,
     )
     print(f"\n[{task['key']}] passed = {outcome.passed}")
     print(f"[{task['key']}] summary = {outcome.summary}")
@@ -197,7 +214,9 @@ async def main() -> int:
     base = os.environ.get("AZURE_OPENAI_BASE_URL")
     dep = os.environ.get("AZURE_OPENAI_DEPLOYMENT")
     if not (key and base and dep):
-        print("skipping: set AZURE_OPENAI_API_KEY / AZURE_OPENAI_BASE_URL / AZURE_OPENAI_DEPLOYMENT")
+        print(
+            "skipping: set AZURE_OPENAI_API_KEY / AZURE_OPENAI_BASE_URL / AZURE_OPENAI_DEPLOYMENT"
+        )
         return 0
 
     which = sys.argv[1] if len(sys.argv) > 1 else None

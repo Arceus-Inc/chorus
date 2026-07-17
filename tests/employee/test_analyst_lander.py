@@ -7,8 +7,9 @@ from pathlib import Path
 
 import pytest
 
-from chorus.ledger import SqliteLedger, Task, TaskStatus
+from chorus.ledger import Ledger, Task, TaskStatus
 from chorus.outcomes import ArtifactType
+from chorus.testing import uid
 from chorus.workspace import CompanyWorkspace
 from chorus_employee import default_landers
 from chorus_employee.analyst import ANALYST_FINDINGS_DOC, analyst_lander, analyst_plugin
@@ -18,7 +19,7 @@ pytestmark = pytest.mark.integration
 
 def _task(assignee: str | None) -> Task:
     return Task(
-        id="research",
+        id=uid("research"),
         intent="analyse the churn data",
         status=TaskStatus.IN_PROGRESS,
         assignee_employee_id=assignee,
@@ -64,6 +65,6 @@ def test_analyst_plugin_is_a_doc_writing_role() -> None:
     assert "write_file" in plugin.manifest.tools
 
 
-def test_default_landers_registers_the_finding_lander(ledger: SqliteLedger, tmp_path: Path) -> None:
+def test_default_landers_registers_the_finding_lander(ledger: Ledger, tmp_path: Path) -> None:
     registry = default_landers(tmp_path, ledger=ledger)
     assert registry.get("finding") is not None  # the kernel can land an Analyst beat

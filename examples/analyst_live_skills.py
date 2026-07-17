@@ -78,13 +78,19 @@ async def main() -> int:
     base = os.environ.get("AZURE_OPENAI_BASE_URL")
     dep = os.environ.get("AZURE_OPENAI_DEPLOYMENT")
     if not (key and base and dep):
-        print("skipping: set AZURE_OPENAI_API_KEY / AZURE_OPENAI_BASE_URL / AZURE_OPENAI_DEPLOYMENT")
+        print(
+            "skipping: set AZURE_OPENAI_API_KEY / AZURE_OPENAI_BASE_URL / AZURE_OPENAI_DEPLOYMENT"
+        )
         return 0
 
     roles = RoleRegistry.from_plugins(default_roles())
     factory = EmployeeHarnessFactory(
-        api_key=key, base_url=base, deployment=dep, company_id="analyst-skills",
-        roles=roles, timeout_s=600.0,
+        api_key=key,
+        base_url=base,
+        deployment=dep,
+        company_id="analyst-skills",
+        roles=roles,
+        timeout_s=600.0,
     )
     mat = factory.materialize(Employee(id="vera", name="Vera", role="analyst"))
     (mat.working_dir / "weekly_activation.csv").write_text(_CSV, encoding="utf-8")
@@ -95,8 +101,12 @@ async def main() -> int:
 
     verifier = analyst_plugin().dod_generator(_INTENT)
     outcome = await mat.runner.run_task(
-        task_id="skills-1", intent=_INTENT, run_id="run-skills-1",
-        verification=verifier.verification_steps(), rubric=verifier.rubric(), observer=_print_event,
+        task_id="skills-1",
+        intent=_INTENT,
+        run_id="run-skills-1",
+        verification=verifier.verification_steps(),
+        rubric=verifier.rubric(),
+        observer=_print_event,
     )
 
     print(f"\npassed   = {outcome.passed}")

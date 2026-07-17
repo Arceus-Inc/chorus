@@ -23,7 +23,7 @@ def test_append_and_read_back(ledger: Ledger) -> None:
             verb=ActivityVerb.ASSIGNED,
             subject_kind="task",
             subject_id=uid("t1"),
-            actor_employee_id=uid("mgr"),
+            actor_employee_id="mgr",
             trace_id=uid("tr1"),
             payload={"to": "rep"},
         )
@@ -31,7 +31,7 @@ def test_append_and_read_back(ledger: Ledger) -> None:
     by_subject = ledger.activity.by_subject("task", uid("t1"))
     assert [a.id for a in by_subject] == [uid("ac1")]
     assert by_subject[0].verb is ActivityVerb.ASSIGNED
-    assert by_subject[0].actor_employee_id == uid("mgr")
+    assert by_subject[0].actor_employee_id == "mgr"
     assert by_subject[0].payload == {"to": "rep"}
     assert by_subject[0].occurred_at is not None
     assert rec.occurred_at is not None
@@ -70,7 +70,7 @@ def test_single_actor_xor_enforced(ledger: Ledger) -> None:
                 verb=ActivityVerb.GATED,
                 subject_kind="task",
                 subject_id=uid("t1"),
-                actor_employee_id=uid("mgr"),
+                actor_employee_id="mgr",
                 actor_user_id=uid("u1"),  # both actors set → CHECK violation
             )
         )

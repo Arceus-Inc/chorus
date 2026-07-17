@@ -18,7 +18,9 @@ class PrepareError(RuntimeError):
     """Cloning or exporting the base commit failed."""
 
 
-def _git(*args: str, cwd: Path | None = None, timeout_s: float = 600.0) -> subprocess.CompletedProcess:
+def _git(
+    *args: str, cwd: Path | None = None, timeout_s: float = 600.0
+) -> subprocess.CompletedProcess:
     proc = subprocess.run(
         ["git", *args],
         cwd=str(cwd) if cwd else None,
@@ -58,7 +60,9 @@ def _ensure_commit(clone: Path, base_commit: str) -> None:
         raise PrepareError(f"base_commit {base_commit[:12]} not found in clone after fetch")
 
 
-def export_base_state(clone_url: str, repo: str, base_commit: str, *, cache_root: Path, seed_dir: Path) -> Path:
+def export_base_state(
+    clone_url: str, repo: str, base_commit: str, *, cache_root: Path, seed_dir: Path
+) -> Path:
     """Export the repo's tree at ``base_commit`` into ``seed_dir`` (a clean, ``.git``-free directory).
 
     Returns ``seed_dir``, ready to hand to ``EmployeeHarnessFactory(seed=seed_dir)``.
@@ -71,7 +75,9 @@ def export_base_state(clone_url: str, repo: str, base_commit: str, *, cache_root
     seed_dir.mkdir(parents=True, exist_ok=True)
 
     tar_path = seed_dir.parent / f"{seed_dir.name}.tar"
-    res = _git("archive", "--format=tar", "-o", str(tar_path), base_commit, cwd=clone, timeout_s=600.0)
+    res = _git(
+        "archive", "--format=tar", "-o", str(tar_path), base_commit, cwd=clone, timeout_s=600.0
+    )
     if res.returncode != 0:
         raise PrepareError(f"git archive {base_commit[:12]} failed: {res.stderr.strip()[:400]}")
     try:
@@ -89,4 +95,4 @@ def _safe_extract(tf: tarfile.TarFile, dest: Path) -> None:
         target = (dest / member.name).resolve()
         if not str(target).startswith(str(dest)):
             raise PrepareError(f"unsafe path in archive: {member.name}")
-    tf.extractall(dest)  # noqa: S202 — members validated above
+    tf.extractall(dest)

@@ -24,7 +24,7 @@ from uuid import uuid4
 
 from chorus.events import Event, EventKind
 from chorus.governance import WorkforcePlanService
-from chorus.ledger import ActivityVerb, SqliteLedger, WorkforcePlan, WorkforcePlanStatus
+from chorus.ledger import ActivityVerb, Ledger, WorkforcePlan, WorkforcePlanStatus
 from chorus.outcomes import AgentReview
 from chorus.roles import RoleRegistry, default_roles
 from chorus.workforce import Employee, LedgerWorkforce
@@ -397,14 +397,14 @@ class _Recorder:
             self.log(f"[{event.at.isoformat()}] CEO beat done")
 
 
-def _employee_views(ledger: SqliteLedger) -> tuple[EmployeeView, ...]:
+def _employee_views(ledger: Ledger) -> tuple[EmployeeView, ...]:
     return tuple(
         EmployeeView(employee.id, employee.role, employee.reports_to)
         for employee in ledger.employees.list()
     )
 
 
-def _management_views(ledger: SqliteLedger) -> tuple[ManagementView, ...]:
+def _management_views(ledger: Ledger) -> tuple[ManagementView, ...]:
     return tuple(
         ManagementView(
             profile.employee_id,
@@ -724,7 +724,7 @@ def main() -> int:
     run_root.mkdir(parents=True)
     secrets = _secret_values()
     recorder = _Recorder(run_root / "events.jsonl", run_root / "console.log", secrets)
-    ledger = SqliteLedger.open(str(run_root / "company.db"))
+    ledger = Ledger.open(str(run_root / "company.db"))
     registry = RoleRegistry.from_plugins(default_roles())
     factory = EmployeeHarnessFactory(
         api_key=api_key,

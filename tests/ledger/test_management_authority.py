@@ -59,7 +59,7 @@ def test_delegation_task_execution_contract_round_trips(ledger: Ledger) -> None:
 )
 def test_management_profile_rejects_unbounded_authority(field: str, value: int) -> None:
     values: dict[str, object] = {
-        "employee_id": uid("lead"),
+        "employee_id": "lead",
         "granted_by_user_id": "user-admin",
         field: value,
     }
@@ -69,9 +69,9 @@ def test_management_profile_rejects_unbounded_authority(field: str, value: int) 
 
 
 def test_management_profile_revisions_are_monotonic_and_round_trip(ledger: Ledger) -> None:
-    ledger.employees.create(Employee(id=uid("lead"), name="Lead", role="engineer"))
+    ledger.employees.create(Employee(id="lead", name="Lead", role="engineer"))
     first = ManagementProfile(
-        employee_id=uid("lead"),
+        employee_id="lead",
         active=True,
         can_lead=True,
         can_subdelegate=True,
@@ -97,17 +97,17 @@ def test_management_profile_revisions_are_monotonic_and_round_trip(ledger: Ledge
         )
     )
 
-    assert second == ledger.management_profiles.get(uid("lead"))
+    assert second == ledger.management_profiles.get("lead")
 
 
 def test_authority_graph_round_trips_with_pinned_profile_version(ledger: Ledger) -> None:
-    ledger.employees.create(Employee(id=uid("lead"), name="Lead", role="engineer"))
+    ledger.employees.create(Employee(id="lead", name="Lead", role="engineer"))
     ledger.employees.create(
-        Employee(id=uid("member"), name="Member", role="designer", reports_to=uid("lead"))
+        Employee(id=uid("member"), name="Member", role="designer", reports_to="lead")
     )
     ledger.management_profiles.upsert(
         ManagementProfile(
-            employee_id=uid("lead"),
+            employee_id="lead",
             active=True,
             can_lead=True,
             max_team_size=3,
@@ -120,7 +120,7 @@ def test_authority_graph_round_trips_with_pinned_profile_version(ledger: Ledger)
         Team(
             id=uid("team-release"),
             name="Release",
-            lead_employee_id=uid("lead"),
+            lead_employee_id="lead",
             status=TeamStatus.ACTIVE,
             created_by="user-admin",
         )
@@ -128,16 +128,16 @@ def test_authority_graph_round_trips_with_pinned_profile_version(ledger: Ledger)
     ledger.team_members.add(
         TeamMember(
             team_id=uid("team-release"),
-            employee_id=uid("lead"),
+            employee_id="lead",
             membership_role=TeamMembershipRole.LEAD,
-            source_manager_id=uid("lead"),
+            source_manager_id="lead",
         )
     )
     ledger.team_members.add(
         TeamMember(
             team_id=uid("team-release"),
             employee_id=uid("member"),
-            source_manager_id=uid("lead"),
+            source_manager_id="lead",
         )
     )
     ledger.tasks.submit(
@@ -146,14 +146,14 @@ def test_authority_graph_round_trips_with_pinned_profile_version(ledger: Ledger)
             intent="lead the release",
             execution_mode=ExecutionMode.DELEGATION,
             team_id=uid("team-release"),
-            assignee_employee_id=uid("lead"),
+            assignee_employee_id="lead",
         )
     )
     created = ledger.delegation_contracts.create(
         DelegationContract(
             task_id=uid("task-release"),
             team_id=uid("team-release"),
-            lead_employee_id=uid("lead"),
+            lead_employee_id="lead",
             management_profile_version=1,
             can_subdelegate=False,
             max_depth=1,
@@ -168,7 +168,7 @@ def test_authority_graph_round_trips_with_pinned_profile_version(ledger: Ledger)
     persisted_members = ledger.team_members.members_of(uid("team-release"))
 
     assert ledger.teams.get(uid("team-release")) is not None
-    assert {member.employee_id for member in persisted_members} == {uid("lead"), uid("member")}
+    assert {member.employee_id for member in persisted_members} == {"lead", uid("member")}
     assert ledger.delegation_contracts.get(uid("task-release")) == created
     assert created.management_profile_version == 1
     assert created.max_direct_children == 2

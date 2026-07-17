@@ -17,113 +17,122 @@ from chorus.ledger import (
     Artifact,
     ArtifactRevision,
     ArtifactType,
+    Ledger,
     Run,
     RunStatus,
-    SqliteLedger,
     Task,
     TaskStatus,
 )
 from chorus.lifecycle import ChildSpec, DispositionAction, decompose, reconcile_disposition
 from chorus.recovery import reconcile
+from chorus.testing import uid
 from chorus.workforce import Employee
 
 NOW = datetime(2026, 6, 16, 12, 0, 0, tzinfo=UTC)
 
 
-def _verbs(ledger: SqliteLedger, task_id: str) -> list[ActivityVerb]:
+def _verbs(ledger: Ledger, task_id: str) -> list[ActivityVerb]:
     return [a.verb for a in ledger.activity.by_subject("task", task_id)]
 
 
 # -- decomposition audit --------------------------------------------------------------------------
 
 
-def test_decompose_emits_decomposed_activity(ledger: SqliteLedger) -> None:
+def test_decompose_emits_decomposed_activity(ledger: Ledger) -> None:
     ledger.employees.create(Employee(id="mgr", name="m", role="engineer"))
-    ledger.tasks.submit(Task(id="src", intent="big", assignee_employee_id="mgr"))
-    ledger.artifacts.create(Artifact(id="plan", task_id="src", type=ArtifactType.DOC))
-    ledger.artifact_revisions.record(ArtifactRevision(id="rev_1", artifact_id="plan"))
+    ledger.tasks.submit(Task(id=uid("src"), intent="big", assignee_employee_id="mgr"))
+    ledger.artifacts.create(Artifact(id=uid("plan"), task_id=uid("src"), type=ArtifactType.DOC))
+    ledger.artifact_revisions.record(ArtifactRevision(id=uid("rev_1"), artifact_id=uid("plan")))
 
     decompose(
         ledger,
-        source_task_id="src",
-        accepted_plan_revision_id="rev_1",
-        children=[ChildSpec(Task(id="c1", intent="part 1"))],
+        source_task_id=uid("src"),
+        accepted_plan_revision_id=uid("rev_1"),
+        children=[ChildSpec(Task(id=uid("c1"), intent="part 1"))],
     )
 
-    acts = ledger.activity.by_subject("task", "src")
+    acts = ledger.activity.by_subject("task", uid("src"))
     assert [a.verb for a in acts] == [ActivityVerb.DECOMPOSED]
     assert acts[0].actor_employee_id == "mgr"
-    assert acts[0].payload["children"] == ["c1"]
+    assert acts[0].payload["children"] == [uid("c1")]
 
 
 # -- recovery escalation: audit trail + escalate up the chain --------------------------------------
 
 
-def test_recovery_escalation_audits_and_wakes_manager(ledger: SqliteLedger) -> None:
+def test_recovery_escalation_audits_and_wakes_manager(ledger: Ledger) -> None:
     ledger.employees.create(Employee(id="mgr", name="boss", role="engineer"))
     ledger.employees.create(Employee(id="emp_1", name="alice", role="engineer", reports_to="mgr"))
     ledger.tasks.submit(
-        Task(id="t1", intent="x", status=TaskStatus.TODO, assignee_employee_id="emp_1")
+        Task(id=uid("t1"), intent="x", status=TaskStatus.TODO, assignee_employee_id="emp_1")
     )
-    ledger.runs.create(Run(id="r1", employee_id="emp_1", task_id="t1", status=RunStatus.FAILED))
+    ledger.runs.create(
+        Run(id=uid("r1"), employee_id="emp_1", task_id=uid("t1"), status=RunStatus.FAILED)
+    )
 
     reconcile(ledger, now=NOW)  # tier 1: enqueue one recovery wake
     [recovery_wake] = ledger.wakes.claim(limit=1)
     ledger.wakes.mark_done(recovery_wake.id)  # the employee ran it; still stranded
     reconcile(ledger, now=NOW)  # tier 2/3: escalate
 
-    assert ActivityVerb.RECOVERED in _verbs(ledger, "t1")
+    assert ActivityVerb.RECOVERED in _verbs(ledger, uid("t1"))
     manager_wakes = ledger.wakes.queued(employee_id="mgr")
     assert [w.payload.get("kind") for w in manager_wakes] == ["escalation"]
     assert manager_wakes[0].payload["stranded_owner"] == "emp_1"
 
 
-def test_recovery_escalation_without_manager_still_audits(ledger: SqliteLedger) -> None:
+def test_recovery_escalation_without_manager_still_audits(ledger: Ledger) -> None:
     # org-root owner has no manager: the activity trail is the visibility, no wake fabricated
-    ledger.employees.create(Employee(id="root", name="ceo", role="founder"))
+    ledger.employees.create(Employee(id=uid("root"), name="ceo", role="founder"))
     ledger.tasks.submit(
-        Task(id="t1", intent="x", status=TaskStatus.TODO, assignee_employee_id="root")
+        Task(id=uid("t1"), intent="x", status=TaskStatus.TODO, assignee_employee_id=uid("root"))
     )
-    ledger.runs.create(Run(id="r1", employee_id="root", task_id="t1", status=RunStatus.FAILED))
+    ledger.runs.create(
+        Run(id=uid("r1"), employee_id=uid("root"), task_id=uid("t1"), status=RunStatus.FAILED)
+    )
 
     reconcile(ledger, now=NOW)
     [w] = ledger.wakes.claim(limit=1)
     ledger.wakes.mark_done(w.id)
     reconcile(ledger, now=NOW)
 
-    assert ActivityVerb.RECOVERED in _verbs(ledger, "t1")
+    assert ActivityVerb.RECOVERED in _verbs(ledger, uid("t1"))
 
 
 # -- disposition: handoff menu + escalation audit --------------------------------------------------
 
 
-def _disposition_setup(ledger: SqliteLedger) -> Task:
+def _disposition_setup(ledger: Ledger) -> Task:
     ledger.employees.create(Employee(id="emp_1", name="alice", role="engineer"))
     task = ledger.tasks.submit(
-        Task(id="t1", intent="ship", status=TaskStatus.IN_PROGRESS, assignee_employee_id="emp_1")
+        Task(
+            id=uid("t1"), intent="ship", status=TaskStatus.IN_PROGRESS, assignee_employee_id="emp_1"
+        )
     )
-    ledger.runs.create(Run(id="r1", employee_id="emp_1", task_id="t1", status=RunStatus.SUCCEEDED))
+    ledger.runs.create(
+        Run(id=uid("r1"), employee_id="emp_1", task_id=uid("t1"), status=RunStatus.SUCCEEDED)
+    )
     return task
 
 
-def test_finish_handoff_wake_carries_choice_menu(ledger: SqliteLedger) -> None:
+def test_finish_handoff_wake_carries_choice_menu(ledger: Ledger) -> None:
     task = _disposition_setup(ledger)
     reconcile_disposition(task, ledger, now=NOW)
     [wake] = ledger.wakes.queued(employee_id="emp_1")
     assert wake.payload["choices"] == ["done", "cancelled", "in_review", "blocked", "delegate"]
 
 
-def test_disposition_escalation_emits_recovered_activity(ledger: SqliteLedger) -> None:
+def test_disposition_escalation_emits_recovered_activity(ledger: Ledger) -> None:
     task = _disposition_setup(ledger)
     reconcile_disposition(task, ledger, now=NOW)  # enqueue handoff
     [wake] = ledger.wakes.claim(limit=1)
     ledger.wakes.mark_done(wake.id)  # delivered, still stranded
-    again = ledger.tasks.get("t1")
+    again = ledger.tasks.get(uid("t1"))
     assert again is not None
     result = reconcile_disposition(again, ledger, now=NOW)  # escalate
 
     assert result.action is DispositionAction.ESCALATED
-    assert ActivityVerb.RECOVERED in _verbs(ledger, "t1")
+    assert ActivityVerb.RECOVERED in _verbs(ledger, uid("t1"))
 
 
 pytestmark = pytest.mark.integration

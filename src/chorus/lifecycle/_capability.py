@@ -18,6 +18,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+from chorus.ids import derive_id
 from chorus.ledger._models import (
     ActivityVerb,
     Artifact,
@@ -126,14 +127,12 @@ _REVIEWER_GATED_KINDS = frozenset({DoDKind.AGENT_REVIEW, DoDKind.REVIEWED_BUILD}
 
 def _child_id(parent_id: str, label: str) -> str:
     """A deterministic child id per ``(parent, label)`` so a re-fired decompose never duplicates."""
-    digest = hashlib.sha1(f"{parent_id}::{label}".encode()).hexdigest()[:12]
-    return f"task_{digest}"
+    return derive_id("child", parent_id, label)
 
 
 def _decision_id(task_id: str, revision: str) -> str:
     """A deterministic decision id per ``(task, revision)`` so a re-fired record is idempotent."""
-    digest = hashlib.sha1(f"{task_id}::{revision}".encode()).hexdigest()[:12]
-    return f"dec_{digest}"
+    return derive_id("decision", task_id, revision)
 
 
 @dataclass(frozen=True)
@@ -216,7 +215,7 @@ class CapabilityService:
         )
         written_claims = tuple(
             Claim(
-                id=f"{decision_id}-c{index}",
+                id=derive_id("claim", decision_id, str(index)),
                 decision_id=decision_id,
                 text=claim.text,
                 source_url=claim.source_url,
@@ -751,10 +750,10 @@ class CapabilityService:
         Idempotent: keyed on ``revision`` (the run_id), so a re-fired tool finds the existing revision
         and skips creation. The artifact anchors the claim's lineage guard to the parent task.
         """
-        plan_revision_id = f"planrev_{revision}"
+        plan_revision_id = derive_id("planrev", revision)
         if self._ledger.artifact_revisions.get(plan_revision_id) is not None:
             return plan_revision_id
-        artifact_id = f"plan_{parent_id}__{revision}"
+        artifact_id = derive_id("plan", parent_id, revision)
         self._ledger.artifacts.create(
             Artifact(id=artifact_id, task_id=parent_id, type=ArtifactType.DOC)
         )

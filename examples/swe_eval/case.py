@@ -27,14 +27,20 @@ class BenchCase:
     base_commit: str  # the commit the PR branched from — the repo state BEFORE the fix
     issue_text: str  # the issue / problem statement — submitted verbatim as the task intent
 
-    role: str = "engineer"  # which employee solves it (engineer / frontend_engineer / backend_engineer)
+    role: str = (
+        "engineer"  # which employee solves it (engineer / frontend_engineer / backend_engineer)
+    )
     language: str = "python"  # python | javascript | typescript — selects toolchain defaults
 
     # --- the human reference fix (for the objective oracle, the judge, and overlap signals) ---
     gold_patch: str = ""  # the PR's SOLUTION diff (never applied to the candidate; reference only)
-    test_patch: str = ""  # the PR's TEST diff — applied ON TOP of the candidate for objective scoring
+    test_patch: str = (
+        ""  # the PR's TEST diff — applied ON TOP of the candidate for objective scoring
+    )
     fail_to_pass: tuple[str, ...] = ()  # tests that were red before the fix and must be green after
-    pass_to_pass: tuple[str, ...] = ()  # tests that were green and must STAY green (regression guard)
+    pass_to_pass: tuple[
+        str, ...
+    ] = ()  # tests that were green and must STAY green (regression guard)
 
     # --- how to build + run the repo's tests (objective oracle); optional ---
     setup_cmd: str = ""  # e.g. "pip install -e ." / "npm ci" — run once in the prepared repo
@@ -73,7 +79,9 @@ class CandidateSolution:
     """What the employee produced for one case — its diff plus how the beat went."""
 
     case_id: str
-    beat_passed: bool  # did the employee's OWN Definition-of-Done floor pass (not the benchmark oracle)
+    beat_passed: (
+        bool  # did the employee's OWN Definition-of-Done floor pass (not the benchmark oracle)
+    )
     summary: str
     diff: str  # the candidate patch: `git add -A && git diff --cached <base>` in the worktree
     working_dir: str = ""

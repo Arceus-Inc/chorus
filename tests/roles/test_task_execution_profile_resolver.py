@@ -12,8 +12,8 @@ from chorus.ledger import (
     DelegationContract,
     DelegationContractStatus,
     ExecutionMode,
+    Ledger,
     ManagementProfile,
-    SqliteLedger,
     Task,
     Team,
     TeamMember,
@@ -21,21 +21,22 @@ from chorus.ledger import (
     TeamStatus,
 )
 from chorus.roles import RoleRegistry, default_roles, role_beat_config
+from chorus.testing import open_test_ledger, uid
 from chorus.workforce import Employee
 
 pytestmark = pytest.mark.unit
 
 
 @pytest.fixture
-def ledger() -> SqliteLedger:
-    opened = SqliteLedger.open(":memory:")
+def ledger() -> Ledger:
+    opened = open_test_ledger()
     try:
         yield opened
     finally:
         opened.close()
 
 
-def _seed_authorized_engineer(ledger: SqliteLedger) -> tuple[Employee, Task]:
+def _seed_authorized_engineer(ledger: Ledger) -> tuple[Employee, Task]:
     employee = Employee(id="lead", name="Lead", role="backend_engineer")
     ledger.employees.create(employee)
     ledger.management_profiles.upsert(
@@ -51,7 +52,7 @@ def _seed_authorized_engineer(ledger: SqliteLedger) -> tuple[Employee, Task]:
     )
     ledger.teams.create(
         Team(
-            id="team-release",
+            id=uid("team-release"),
             name="Release",
             lead_employee_id="lead",
             status=TeamStatus.ACTIVE,
@@ -60,24 +61,24 @@ def _seed_authorized_engineer(ledger: SqliteLedger) -> tuple[Employee, Task]:
     )
     ledger.team_members.add(
         TeamMember(
-            team_id="team-release",
+            team_id=uid("team-release"),
             employee_id="lead",
             membership_role=TeamMembershipRole.LEAD,
             source_manager_id="lead",
         )
     )
     task = Task(
-        id="task-release",
+        id=uid("task-release"),
         intent="coordinate the release",
         execution_mode=ExecutionMode.DELEGATION,
-        team_id="team-release",
+        team_id=uid("team-release"),
         assignee_employee_id="lead",
     )
     ledger.tasks.submit(task)
     ledger.delegation_contracts.create(
         DelegationContract(
             task_id=task.id,
-            team_id="team-release",
+            team_id=uid("team-release"),
             lead_employee_id="lead",
             management_profile_version=1,
             max_depth=1,
@@ -89,11 +90,11 @@ def _seed_authorized_engineer(ledger: SqliteLedger) -> tuple[Employee, Task]:
     return employee, task
 
 
-def test_delivery_mode_preserves_the_exact_profession_contract(ledger: SqliteLedger) -> None:
+def test_delivery_mode_preserves_the_exact_profession_contract(ledger: Ledger) -> None:
     roles = RoleRegistry.from_plugins(default_roles())
     employee = Employee(id="lead", name="Lead", role="backend_engineer")
     task = Task(
-        id="task-delivery",
+        id=uid("task-delivery"),
         intent="implement the API",
         assignee_employee_id="lead",
     )
@@ -121,7 +122,7 @@ def test_delivery_mode_preserves_the_exact_profession_contract(ledger: SqliteLed
     ],
 )
 def test_delegation_mode_returns_only_the_management_phase_contract(
-    ledger: SqliteLedger,
+    ledger: Ledger,
     status: DelegationContractStatus,
     expected_tools: tuple[str, ...],
 ) -> None:
@@ -142,7 +143,7 @@ def test_delegation_mode_returns_only_the_management_phase_contract(
     assert (resolved.verifier.artifact_class, resolved.outcome_kind) == ("subtree", "subtree")
 
 
-def test_delegation_mode_rejects_a_stale_pinned_profile(ledger: SqliteLedger) -> None:
+def test_delegation_mode_rejects_a_stale_pinned_profile(ledger: Ledger) -> None:
     employee, task = _seed_authorized_engineer(ledger)
     current = ledger.management_profiles.get(employee.id)
     assert current is not None
@@ -155,13 +156,13 @@ def test_delegation_mode_rejects_a_stale_pinned_profile(ledger: SqliteLedger) ->
 
 
 def test_delegation_mode_rejects_an_employee_without_a_management_profile(
-    ledger: SqliteLedger,
+    ledger: Ledger,
 ) -> None:
     employee = Employee(id="lead", name="Lead", role="backend_engineer")
     ledger.employees.create(employee)
     ledger.teams.create(
         Team(
-            id="team-release",
+            id=uid("team-release"),
             name="Release",
             lead_employee_id=employee.id,
             status=TeamStatus.ACTIVE,
@@ -170,7 +171,7 @@ def test_delegation_mode_rejects_an_employee_without_a_management_profile(
     )
     ledger.team_members.add(
         TeamMember(
-            team_id="team-release",
+            team_id=uid("team-release"),
             employee_id=employee.id,
             membership_role=TeamMembershipRole.LEAD,
             source_manager_id=employee.id,
@@ -178,17 +179,17 @@ def test_delegation_mode_rejects_an_employee_without_a_management_profile(
     )
     task = ledger.tasks.submit(
         Task(
-            id="task-release",
+            id=uid("task-release"),
             intent="coordinate the release",
             execution_mode=ExecutionMode.DELEGATION,
-            team_id="team-release",
+            team_id=uid("team-release"),
             assignee_employee_id=employee.id,
         )
     )
     ledger.delegation_contracts.create(
         DelegationContract(
             task_id=task.id,
-            team_id="team-release",
+            team_id=uid("team-release"),
             lead_employee_id=employee.id,
             management_profile_version=1,
             objective_rubric="integrate and verify the release",

@@ -8,6 +8,7 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from chorus.memory import EpisodicStore, SprintDelta
+from chorus.testing import uid
 
 pytestmark = pytest.mark.integration
 
@@ -18,8 +19,8 @@ def _role_text_body(text: str) -> str:
 
 def _delta(**over: object) -> SprintDelta:
     base: dict[str, object] = dict(
-        run_id="r_1",
-        task_id="t_1",
+        run_id=uid("r_1"),
+        task_id=uid("t_1"),
         employee_id="ada",
         scope="project",
         intent="add retry",
@@ -50,37 +51,37 @@ def test_for_employee_limit_returns_newest_only(tmp_path) -> None:
 
 def test_search_scoped_to_employee(tmp_path) -> None:
     store = EpisodicStore(tmp_path)
-    store.append(_delta(run_id="r_ada", employee_id="ada", intent="retry timeout"))
-    store.append(_delta(run_id="r_bex", employee_id="bex", intent="retry timeout"))
+    store.append(_delta(run_id=uid("r_ada"), employee_id="ada", intent="retry timeout"))
+    store.append(_delta(run_id=uid("r_bex"), employee_id="bex", intent="retry timeout"))
     ada_hits = store.search("retry", employee_id="ada", limit=5)
-    assert [h.record.run_id for h in ada_hits] == ["r_ada"]
+    assert [h.record.run_id for h in ada_hits] == [uid("r_ada")]
 
 
 def test_touch_recalled_sets_timestamp(tmp_path) -> None:
     store = EpisodicStore(tmp_path)
-    store.append(_delta(run_id="r_a"))
+    store.append(_delta(run_id=uid("r_a")))
     now = datetime(2026, 7, 9, 8, 0, tzinfo=UTC)
-    store.touch_recalled(("r_a",), now=now)
-    got = store.get("r_a")
+    store.touch_recalled((uid("r_a"),), now=now)
+    got = store.get(uid("r_a"))
     assert got is not None
     assert got.last_recalled_at == now
 
 
 def test_pin_run_ids_increments_for_employee(tmp_path) -> None:
     store = EpisodicStore(tmp_path)
-    store.append(_delta(run_id="r_a", employee_id="ada"))
-    store.append(_delta(run_id="r_b", employee_id="ada"))
-    store.pin_run_ids("ada", ("r_a", "r_b"))
-    store.pin_run_ids("ada", ("r_a",))
-    assert store.get("r_a") is not None and store.get("r_a").pin_count == 2
-    assert store.get("r_b") is not None and store.get("r_b").pin_count == 1
+    store.append(_delta(run_id=uid("r_a"), employee_id="ada"))
+    store.append(_delta(run_id=uid("r_b"), employee_id="ada"))
+    store.pin_run_ids("ada", (uid("r_a"), uid("r_b")))
+    store.pin_run_ids("ada", (uid("r_a"),))
+    assert store.get(uid("r_a")) is not None and store.get(uid("r_a")).pin_count == 2
+    assert store.get(uid("r_b")) is not None and store.get(uid("r_b")).pin_count == 1
 
 
 def test_pin_ignores_other_employees(tmp_path) -> None:
     store = EpisodicStore(tmp_path)
-    store.append(_delta(run_id="r_a", employee_id="ada"))
-    store.pin_run_ids("bex", ("r_a",))
-    got = store.get("r_a")
+    store.append(_delta(run_id=uid("r_a"), employee_id="ada"))
+    store.pin_run_ids("bex", (uid("r_a"),))
+    got = store.get(uid("r_a"))
     assert got is not None and got.pin_count == 0
 
 
@@ -90,21 +91,21 @@ def test_for_employee_since_filter(tmp_path) -> None:
     from chorus.memory import EpisodicQueryFilters
 
     store = EpisodicStore(tmp_path)
-    store.append(_delta(run_id="r_old", recorded_at=datetime(2026, 6, 1, tzinfo=UTC)))
-    store.append(_delta(run_id="r_new", recorded_at=datetime(2026, 7, 8, tzinfo=UTC)))
+    store.append(_delta(run_id=uid("r_old"), recorded_at=datetime(2026, 6, 1, tzinfo=UTC)))
+    store.append(_delta(run_id=uid("r_new"), recorded_at=datetime(2026, 7, 8, tzinfo=UTC)))
     hits = store.records_for(
         "ada",
         limit=5,
         filters=EpisodicQueryFilters(since=datetime(2026, 7, 1, tzinfo=UTC)),
     )
-    assert [d.run_id for d in hits] == ["r_new"]
+    assert [d.run_id for d in hits] == [uid("r_new")]
 
 
 def test_for_employee_task_id_filter(tmp_path) -> None:
     from chorus.memory import EpisodicQueryFilters
 
     store = EpisodicStore(tmp_path)
-    store.append(_delta(run_id="r_1", task_id="t_1"))
-    store.append(_delta(run_id="r_2", task_id="t_2"))
-    hits = store.records_for("ada", limit=5, filters=EpisodicQueryFilters(task_id="t_1"))
-    assert [d.run_id for d in hits] == ["r_1"]
+    store.append(_delta(run_id=uid("r_1"), task_id=uid("t_1")))
+    store.append(_delta(run_id=uid("r_2"), task_id=uid("t_2")))
+    hits = store.records_for("ada", limit=5, filters=EpisodicQueryFilters(task_id=uid("t_1")))
+    assert [d.run_id for d in hits] == [uid("r_1")]

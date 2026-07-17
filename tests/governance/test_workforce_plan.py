@@ -7,9 +7,9 @@ import pytest
 
 from chorus.governance import WorkforcePlanService
 from chorus.ledger import (
+    Ledger,
     ManagementGrantDraft,
     PlannedEmployee,
-    SqliteLedger,
     WorkforcePlanDraft,
     WorkforcePlanStatus,
 )
@@ -23,7 +23,7 @@ def _roles() -> RoleRegistry:
     return RoleRegistry.from_plugins(default_roles())
 
 
-def _service(ledger: SqliteLedger) -> WorkforcePlanService:
+def _service(ledger: Ledger) -> WorkforcePlanService:
     return WorkforcePlanService(
         ledger,
         workforce=LedgerWorkforce(ledger.employees),
@@ -32,7 +32,7 @@ def _service(ledger: SqliteLedger) -> WorkforcePlanService:
     )
 
 
-def _seed_ceo(ledger: SqliteLedger) -> None:
+def _seed_ceo(ledger: Ledger) -> None:
     ledger.employees.create(
         Employee(id="ceo", name="CEO", role="ceo", status=EmployeeStatus.ACTIVE)
     )
@@ -126,7 +126,7 @@ def _draft() -> WorkforcePlanDraft:
     )
 
 
-def test_ceo_proposal_is_typed_persisted_and_does_not_hire(ledger: SqliteLedger) -> None:
+def test_ceo_proposal_is_typed_persisted_and_does_not_hire(ledger: Ledger) -> None:
     _seed_ceo(ledger)
 
     proposed = _service(ledger).propose(_draft(), proposed_by_employee_id="ceo")
@@ -140,7 +140,7 @@ def test_ceo_proposal_is_typed_persisted_and_does_not_hire(ledger: SqliteLedger)
 
 
 def test_ceo_cannot_open_a_second_plan_while_one_awaits_human_decision(
-    ledger: SqliteLedger,
+    ledger: Ledger,
 ) -> None:
     _seed_ceo(ledger)
     service = _service(ledger)
@@ -159,7 +159,7 @@ def test_ceo_cannot_open_a_second_plan_while_one_awaits_human_decision(
 
 
 def test_human_rejection_closes_plan_without_materializing(
-    ledger: SqliteLedger,
+    ledger: Ledger,
 ) -> None:
     _seed_ceo(ledger)
     service = _service(ledger)
@@ -176,7 +176,7 @@ def test_human_rejection_closes_plan_without_materializing(
 
 
 def test_human_can_revise_fields_then_atomically_apply_the_latest_plan(
-    ledger: SqliteLedger,
+    ledger: Ledger,
 ) -> None:
     _seed_ceo(ledger)
     service = _service(ledger)
@@ -296,7 +296,7 @@ def test_human_can_revise_fields_then_atomically_apply_the_latest_plan(
     ],
 )
 def test_invalid_or_deep_plan_is_rejected_without_workforce_or_authority_writes(
-    ledger: SqliteLedger,
+    ledger: Ledger,
     mutate: object,
     message: str,
 ) -> None:
@@ -312,7 +312,7 @@ def test_invalid_or_deep_plan_is_rejected_without_workforce_or_authority_writes(
 
 
 def test_apply_rolls_back_every_hire_and_grant_when_audit_fails(
-    ledger: SqliteLedger, monkeypatch: pytest.MonkeyPatch
+    ledger: Ledger, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _seed_ceo(ledger)
     service = _service(ledger)

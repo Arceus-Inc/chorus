@@ -58,7 +58,11 @@ def write_html_report(
         method_detail = (
             f"FAIL_TO_PASS {r.fail_to_pass_passed}/{r.fail_to_pass_total}"
             if r.method == "objective"
-            else (f"{r.judge_verdict} · score {r.judge_score:.2f}" if r.judge_score is not None else r.judge_verdict)
+            else (
+                f"{r.judge_verdict} · score {r.judge_score:.2f}"
+                if r.judge_score is not None
+                else r.judge_verdict
+            )
         )
         rows.append(
             "<tr>"
@@ -75,7 +79,8 @@ def write_html_report(
         )
 
     method_chips = "".join(
-        f"<div class='chip'><span>{n}</span>{html.escape(m)}</div>" for m, n in sorted(by_method.items())
+        f"<div class='chip'><span>{n}</span>{html.escape(m)}</div>"
+        for m, n in sorted(by_method.items())
     )
     doc = f"""<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">

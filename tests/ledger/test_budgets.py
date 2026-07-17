@@ -277,9 +277,7 @@ def test_cost_event_record_and_spent(ledger: Ledger) -> None:
 def test_budget_policies_all_lists_every_policy(ledger: Ledger) -> None:
     _employee(ledger)
     ledger.budget_policies.create(
-        BudgetPolicy(
-            id=uid("bpc"), scope_type=BudgetScope.COMPANY, scope_id=uid("acme"), amount=1000
-        )
+        BudgetPolicy(id=uid("bpc"), scope_type=BudgetScope.COMPANY, scope_id="acme", amount=1000)
     )
     ledger.budget_policies.create(
         BudgetPolicy(id=uid("bpe"), scope_type=BudgetScope.EMPLOYEE, scope_id=uid("e1"), amount=100)

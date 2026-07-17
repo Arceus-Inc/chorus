@@ -14,9 +14,10 @@ import pytest
 from chorus.errors import OrgInvariantViolation
 from chorus.facade import Caps, Chorus
 from chorus.heartbeat import TickReport
-from chorus.ledger import Message, SqliteLedger, Task
+from chorus.ledger import Ledger, Message, Task
 from chorus.ledger._models import WakeReason
 from chorus.roles import RoleRegistry, default_roles
+from chorus.testing import open_test_ledger, uid
 from chorus.workforce import Employee, GitWorkforce, LedgerWorkforce
 
 pytestmark = pytest.mark.integration
@@ -97,7 +98,7 @@ async def test_start_is_idempotent_while_the_heartbeat_is_live() -> None:
     await chorus.stop()
 
 
-def _chorus_on(ledger: SqliteLedger) -> Chorus:
+def _chorus_on(ledger: Ledger) -> Chorus:
     return Chorus(
         ledger=ledger,
         workforce=None,  # type: ignore[arg-type]
@@ -112,27 +113,27 @@ def _chorus_on(ledger: SqliteLedger) -> Chorus:
 
 
 def test_assign_wakes_through_the_facade() -> None:
-    ledger = SqliteLedger.open(":memory:")
+    ledger = open_test_ledger()
     try:
-        ledger.employees.create(Employee(id="e1", name="a", role="engineer"))
-        ledger.tasks.submit(Task(id="t1", intent="ship"))
-        wake = _chorus_on(ledger).assign("t1", "e1")
+        ledger.employees.create(Employee(id=uid("e1"), name="a", role="engineer"))
+        ledger.tasks.submit(Task(id=uid("t1"), intent="ship"))
+        wake = _chorus_on(ledger).assign(uid("t1"), uid("e1"))
         assert wake is not None and wake.reason is WakeReason.TASK_ASSIGNED
-        assert [w.id for w in ledger.wakes.queued(employee_id="e1")] == [wake.id]
+        assert [w.id for w in ledger.wakes.queued(employee_id=uid("e1"))] == [wake.id]
     finally:
         ledger.close()
 
 
 def test_send_message_wakes_through_the_facade() -> None:
-    ledger = SqliteLedger.open(":memory:")
+    ledger = open_test_ledger()
     try:
         ledger.employees.create(Employee(id="mgr", name="m", role="engineer"))
-        ledger.employees.create(Employee(id="rep", name="r", role="engineer"))
+        ledger.employees.create(Employee(id=uid("rep"), name="r", role="engineer"))
         wake = _chorus_on(ledger).send_message(
-            Message(id="m1", from_employee_id="mgr", to_employee_id="rep", body="hi")
+            Message(id=uid("m1"), from_employee_id="mgr", to_employee_id=uid("rep"), body="hi")
         )
-        assert wake.reason is WakeReason.MESSAGE and wake.employee_id == "rep"
-        assert [m.id for m in ledger.messages.inbox("rep")] == ["m1"]
+        assert wake.reason is WakeReason.MESSAGE and wake.employee_id == uid("rep")
+        assert [m.id for m in ledger.messages.inbox(uid("rep"))] == [uid("m1")]
     finally:
         ledger.close()
 
@@ -202,7 +203,7 @@ def test_register_role_then_hire_into_it(tmp_path: Path) -> None:
     assert chorus.hire(name="Ada", role="engineer").role == "engineer"
 
 
-def _chorus_io(ledger: SqliteLedger) -> Chorus:
+def _chorus_io(ledger: Ledger) -> Chorus:
     """A facade over a real ledger whose live workforce is the ledger employee table."""
     return Chorus(
         ledger=ledger,
@@ -218,7 +219,7 @@ def _chorus_io(ledger: SqliteLedger) -> Chorus:
 
 
 def test_export_then_import_workforce_round_trips_through_the_ledger(tmp_path: Path) -> None:
-    ledger = SqliteLedger.open(":memory:")
+    ledger = open_test_ledger()
     try:
         chorus = _chorus_io(ledger)
         chorus.hire(name="Boss", role="frontend_engineer")
@@ -226,7 +227,7 @@ def test_export_then_import_workforce_round_trips_through_the_ledger(tmp_path: P
         org = str(tmp_path / "org")
         assert chorus.workforce.export(org) == 2
 
-        fresh = SqliteLedger.open(":memory:")
+        fresh = open_test_ledger()
         try:
             assert _chorus_io(fresh).workforce.import_(org) == 2
             alice = fresh.employees.get("alice")

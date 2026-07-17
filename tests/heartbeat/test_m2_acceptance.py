@@ -15,9 +15,10 @@ import pytest
 from chorus.budgets import BudgetEnforcer
 from chorus.heartbeat import Scheduler
 from chorus.heartbeat._beat import BeatOutcome
-from chorus.ledger import SqliteLedger, Task, TaskStatus, Wake, WakeReason
+from chorus.ledger import Ledger, Task, TaskStatus, Wake, WakeReason
 from chorus.ledger._models import BudgetPolicy, BudgetScope
 from chorus.lifecycle import assign_task
+from chorus.testing import uid
 from chorus.workforce import Employee, LedgerWorkforce
 
 pytestmark = pytest.mark.integration
@@ -46,13 +47,13 @@ class _Beat:
         return BeatOutcome(passed=True, outcome={}, summary="ok", cost_cents=self._cost, model="m")
 
 
-def _two_engineers(ledger: SqliteLedger) -> None:
-    ledger.employees.create(Employee(id="e1", name="E1", role="engineer"))
-    ledger.employees.create(Employee(id="e2", name="E2", role="engineer"))
+def _two_engineers(ledger: Ledger) -> None:
+    ledger.employees.create(Employee(id=uid("e1"), name="E1", role="engineer"))
+    ledger.employees.create(Employee(id=uid("e2"), name="E2", role="engineer"))
 
 
 def _sched(
-    ledger: SqliteLedger, beat: _Beat, *, cap: int = 4, enforcer: BudgetEnforcer | None = None
+    ledger: Ledger, beat: _Beat, *, cap: int = 4, enforcer: BudgetEnforcer | None = None
 ) -> Scheduler:
     return Scheduler(
         ledger=ledger,
@@ -64,46 +65,46 @@ def _sched(
     )
 
 
-async def test_dependent_is_withheld_then_dispatched_on_deps_resolved(ledger: SqliteLedger) -> None:
+async def test_dependent_is_withheld_then_dispatched_on_deps_resolved(ledger: Ledger) -> None:
     _two_engineers(ledger)
-    ledger.tasks.submit(Task(id="A", intent="ship A", status=TaskStatus.TODO))
-    ledger.tasks.submit(Task(id="B", intent="ship B", status=TaskStatus.TODO))
-    ledger.dependencies.add("B", "A")  # B depends on A
-    assign_task(ledger, "A", "e1")
-    assign_task(ledger, "B", "e2")  # B is assigned + woken, but blocked by A
+    ledger.tasks.submit(Task(id=uid("A"), intent="ship A", status=TaskStatus.TODO))
+    ledger.tasks.submit(Task(id=uid("B"), intent="ship B", status=TaskStatus.TODO))
+    ledger.dependencies.add(uid("B"), uid("A"))  # B depends on A
+    assign_task(ledger, uid("A"), uid("e1"))
+    assign_task(ledger, uid("B"), uid("e2"))  # B is assigned + woken, but blocked by A
     beat = _Beat()
     sched = _sched(ledger, beat)
 
     await sched.tick_once()  # pulse 1
     await sched.drain()
-    assert beat.ran == ["A"]  # A ran; B was WITHHELD (its blocker is unresolved)
-    assert ledger.tasks.get("A").status is TaskStatus.DONE  # type: ignore[union-attr]
+    assert beat.ran == [uid("A")]  # A ran; B was WITHHELD (its blocker is unresolved)
+    assert ledger.tasks.get(uid("A")).status is TaskStatus.DONE  # type: ignore[union-attr]
 
     await sched.tick_once()  # pulse 2: A's completion fired deps_resolved for B
     await sched.drain()
-    assert "B" in beat.ran  # now B dispatches — the dependency edge gated it as data
+    assert uid("B") in beat.ran  # now B dispatches — the dependency edge gated it as data
 
 
-async def test_two_employees_run_concurrently_under_the_cap(ledger: SqliteLedger) -> None:
+async def test_two_employees_run_concurrently_under_the_cap(ledger: Ledger) -> None:
     _two_engineers(ledger)
-    ledger.tasks.submit(Task(id="A", intent="a", status=TaskStatus.TODO))
-    ledger.tasks.submit(Task(id="B", intent="b", status=TaskStatus.TODO))  # independent
-    assign_task(ledger, "A", "e1")
-    assign_task(ledger, "B", "e2")
+    ledger.tasks.submit(Task(id=uid("A"), intent="a", status=TaskStatus.TODO))
+    ledger.tasks.submit(Task(id=uid("B"), intent="b", status=TaskStatus.TODO))  # independent
+    assign_task(ledger, uid("A"), uid("e1"))
+    assign_task(ledger, uid("B"), uid("e2"))
     beat = _Beat()
     sched = _sched(ledger, beat, cap=2)
 
     await sched.tick_once()  # cap=2 → both employees' beats dispatch in one pulse
     await sched.drain()
-    assert set(beat.ran) == {"A", "B"}
+    assert set(beat.ran) == {uid("A"), uid("B")}
 
 
-async def test_concurrency_cap_limits_dispatch(ledger: SqliteLedger) -> None:
+async def test_concurrency_cap_limits_dispatch(ledger: Ledger) -> None:
     _two_engineers(ledger)
-    ledger.tasks.submit(Task(id="A", intent="a", status=TaskStatus.TODO))
-    ledger.tasks.submit(Task(id="B", intent="b", status=TaskStatus.TODO))
-    assign_task(ledger, "A", "e1")
-    assign_task(ledger, "B", "e2")
+    ledger.tasks.submit(Task(id=uid("A"), intent="a", status=TaskStatus.TODO))
+    ledger.tasks.submit(Task(id=uid("B"), intent="b", status=TaskStatus.TODO))
+    assign_task(ledger, uid("A"), uid("e1"))
+    assign_task(ledger, uid("B"), uid("e2"))
     beat = _Beat()
     sched = _sched(ledger, beat, cap=1)
 
@@ -112,21 +113,26 @@ async def test_concurrency_cap_limits_dispatch(ledger: SqliteLedger) -> None:
     assert len(beat.ran) == 1
 
 
-async def test_stale_wake_for_a_done_task_is_drained_not_requeued(ledger: SqliteLedger) -> None:
+async def test_stale_wake_for_a_done_task_is_drained_not_requeued(ledger: Ledger) -> None:
     # A manager fans out several deps_resolved/children_done wakes per task; once one drives the
     # integrate the rest point at a now-done task. Left queued they fail checkout every tick and clog
     # the employee's one-beat-per-pulse slot, starving its other work. They must be DRAINED.
     _two_engineers(ledger)
-    ledger.tasks.submit(Task(id="D", intent="already integrated", assignee_employee_id="e1"))
-    ledger.tasks.set_status("D", TaskStatus.DONE)
-    ledger.tasks.submit(Task(id="T", intent="real pending work", status=TaskStatus.TODO))
+    ledger.tasks.submit(
+        Task(id=uid("D"), intent="already integrated", assignee_employee_id=uid("e1"))
+    )
+    ledger.tasks.set_status(uid("D"), TaskStatus.DONE)
+    ledger.tasks.submit(Task(id=uid("T"), intent="real pending work", status=TaskStatus.TODO))
     # The stale wake for the DONE task sits ahead of the live one in e1's queue.
     ledger.wakes.enqueue(
         Wake(
-            id="stale", employee_id="e1", reason=WakeReason.CHILDREN_DONE, payload={"task_id": "D"}
+            id=uid("stale"),
+            employee_id=uid("e1"),
+            reason=WakeReason.CHILDREN_DONE,
+            payload={"task_id": uid("D")},
         )
     )
-    assign_task(ledger, "T", "e1")  # the live wake
+    assign_task(ledger, uid("T"), uid("e1"))  # the live wake
     beat = _Beat()
     sched = _sched(ledger, beat)
 
@@ -134,26 +140,26 @@ async def test_stale_wake_for_a_done_task_is_drained_not_requeued(ledger: Sqlite
     await sched.drain()
 
     queued = {w.payload.get("task_id") for w in ledger.wakes.queued()}
-    assert "D" not in queued  # the stale wake was drained, not re-queued
+    assert uid("D") not in queued  # the stale wake was drained, not re-queued
     assert (
-        "T" in beat.ran
+        uid("T") in beat.ran
     )  # ...so the live work still dispatched despite the stale wake ahead of it
 
 
-async def test_hard_budget_breach_pauses_the_scope(ledger: SqliteLedger) -> None:
-    ledger.employees.create(Employee(id="e1", name="E1", role="engineer"))
+async def test_hard_budget_breach_pauses_the_scope(ledger: Ledger) -> None:
+    ledger.employees.create(Employee(id=uid("e1"), name="E1", role="engineer"))
     ledger.budget_policies.create(
-        BudgetPolicy(id="bp1", scope_type=BudgetScope.EMPLOYEE, scope_id="e1", amount=100)
+        BudgetPolicy(id=uid("bp1"), scope_type=BudgetScope.EMPLOYEE, scope_id=uid("e1"), amount=100)
     )
-    ledger.tasks.submit(Task(id="A", intent="a", status=TaskStatus.TODO))
-    assign_task(ledger, "A", "e1")
+    ledger.tasks.submit(Task(id=uid("A"), intent="a", status=TaskStatus.TODO))
+    assign_task(ledger, uid("A"), uid("e1"))
     enforcer = BudgetEnforcer(ledger, company_id="acme")
     beat = _Beat(cost_cents=150)  # one beat blows the cap
     sched = _sched(ledger, beat, enforcer=enforcer)
 
     await sched.tick_once()
     await sched.drain()
-    assert beat.ran == ["A"]  # the beat ran
+    assert beat.ran == [uid("A")]  # the beat ran
     assert (
-        enforcer.invocation_block("e1", now=_NOW) is not None
+        enforcer.invocation_block(uid("e1"), now=_NOW) is not None
     )  # ...and tripped the hard stop → scope paused

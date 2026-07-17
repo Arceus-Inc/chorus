@@ -19,7 +19,7 @@ from chorus import Chorus
 
 async def main() -> None:
     c = Chorus.build(
-        db_path="./chorus.db",
+        dsn="./chorus.db",
         org_repo="./org",
         memory_repo="./mem",
         dream=dream,

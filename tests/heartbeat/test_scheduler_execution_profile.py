@@ -16,8 +16,8 @@ from chorus.ledger import (
     DelegationContract,
     DelegationContractStatus,
     ExecutionMode,
+    Ledger,
     ManagementProfile,
-    SqliteLedger,
     Task,
     TaskStatus,
     Team,
@@ -29,6 +29,7 @@ from chorus.ledger import (
 from chorus.memory import SprintDelta
 from chorus.outcomes import Artifact, ArtifactType, LanderRegistry
 from chorus.roles import RoleRegistry, default_roles
+from chorus.testing import uid
 from chorus.workforce import Employee, LedgerWorkforce
 
 pytestmark = pytest.mark.integration
@@ -91,9 +92,7 @@ class _SubtreeLander:
         )
 
 
-def _seed_delegation(
-    ledger: SqliteLedger, *, child_status: TaskStatus = TaskStatus.DONE
-) -> Employee:
+def _seed_delegation(ledger: Ledger, *, child_status: TaskStatus = TaskStatus.DONE) -> Employee:
     lead = ledger.employees.create(Employee(id="lead", name="Lead", role="backend_engineer"))
     worker = ledger.employees.create(
         Employee(id="worker", name="Worker", role="backend_engineer", reports_to=lead.id)
@@ -112,7 +111,7 @@ def _seed_delegation(
     )
     ledger.teams.create(
         Team(
-            id="team-release",
+            id=uid("team-release"),
             name="Release",
             lead_employee_id=lead.id,
             created_by="user-admin",
@@ -125,7 +124,7 @@ def _seed_delegation(
     ):
         ledger.team_members.add(
             TeamMember(
-                team_id="team-release",
+                team_id=uid("team-release"),
                 employee_id=employee_id,
                 source_manager_id=lead.id,
                 membership_role=membership_role,
@@ -133,18 +132,18 @@ def _seed_delegation(
         )
     ledger.tasks.submit(
         Task(
-            id="task-release",
+            id=uid("task-release"),
             intent="coordinate the release",
             status=TaskStatus.TODO,
             execution_mode=ExecutionMode.DELEGATION,
-            team_id="team-release",
+            team_id=uid("team-release"),
             assignee_employee_id=lead.id,
         )
     )
     ledger.tasks.submit(
         Task(
-            id="task-child",
-            parent_id="task-release",
+            id=uid("task-child"),
+            parent_id=uid("task-release"),
             intent="implement the release endpoint",
             status=child_status,
             assignee_employee_id=worker.id,
@@ -152,8 +151,8 @@ def _seed_delegation(
     )
     ledger.delegation_contracts.create(
         DelegationContract(
-            task_id="task-release",
-            team_id="team-release",
+            task_id=uid("task-release"),
+            team_id=uid("team-release"),
             lead_employee_id=lead.id,
             management_profile_version=1,
             max_depth=1,
@@ -164,16 +163,16 @@ def _seed_delegation(
     )
     ledger.wakes.enqueue(
         Wake(
-            id="wake-release",
+            id=uid("wake-release"),
             employee_id=lead.id,
             reason=WakeReason.CHILDREN_DONE,
-            payload={"task_id": "task-release"},
+            payload={"task_id": uid("task-release")},
         )
     )
     return lead
 
 
-async def test_delegation_profile_drives_scheduler_contract(ledger: SqliteLedger) -> None:
+async def test_delegation_profile_drives_scheduler_contract(ledger: Ledger) -> None:
     lead = _seed_delegation(ledger)
     beat = _RecordingBeat()
     memory = _RecordingMemory()
@@ -191,21 +190,21 @@ async def test_delegation_profile_drives_scheduler_contract(ledger: SqliteLedger
     await scheduler.tick(_NOW)
     await scheduler.drain()
 
-    verifier = ledger.dod.verifier_for_task("task-release")
+    verifier = ledger.dod.verifier_for_task(uid("task-release"))
     assert verifier is not None
     assert (verifier.rubric(), verifier.artifact_class) == (_RUBRIC, "subtree")
     assert beat.rubrics == [_RUBRIC, _RUBRIC]
     assert beat.intents[1].startswith("Independently verify")
     assert len(memory.appended) == 1 and memory.appended[0].scope == "team"
-    assert lander.landed == ["task-release"]
-    assert ledger.tasks.get("task-release").status is TaskStatus.DONE  # type: ignore[union-attr]
-    contract = ledger.delegation_contracts.get("task-release")
+    assert lander.landed == [uid("task-release")]
+    assert ledger.tasks.get(uid("task-release")).status is TaskStatus.DONE  # type: ignore[union-attr]
+    contract = ledger.delegation_contracts.get(uid("task-release"))
     assert contract is not None
     assert contract.status is DelegationContractStatus.DONE
     assert contract.accepted_run_id is not None and contract.accepted_at is not None
-    team = ledger.teams.get("team-release")
+    team = ledger.teams.get(uid("team-release"))
     assert team is not None and team.status is TeamStatus.ARCHIVED
-    contract_events = ledger.activity.by_subject("delegation_contract", "task-release")
+    contract_events = ledger.activity.by_subject("delegation_contract", uid("task-release"))
     assert [event.verb for event in contract_events] == [
         ActivityVerb.LEAD_ACCEPTED,
         ActivityVerb.PARENT_VERIFIED,
@@ -215,7 +214,9 @@ async def test_delegation_profile_drives_scheduler_contract(ledger: SqliteLedger
     verification_run = ledger.runs.get(str(contract_events[-1].payload["verification_run_id"]))
     assert verification_run is not None and verification_run.principal_kind == "system"
     verification_runs = [
-        run for run in ledger.runs.for_task("task-release") if run.principal_id == "system-verifier"
+        run
+        for run in ledger.runs.for_task(uid("task-release"))
+        if run.principal_id == "system-verifier"
     ]
     assert len(verification_runs) == 1
     assert verification_runs[0].employee_id == lead.id
@@ -223,7 +224,7 @@ async def test_delegation_profile_drives_scheduler_contract(ledger: SqliteLedger
 
 
 async def test_failed_parent_verification_returns_contract_to_integrating(
-    ledger: SqliteLedger,
+    ledger: Ledger,
 ) -> None:
     _seed_delegation(ledger)
     beat = _RecordingBeat(review_passed=False)
@@ -241,17 +242,17 @@ async def test_failed_parent_verification_returns_contract_to_integrating(
     await scheduler.tick(_NOW)
     await scheduler.drain()
 
-    contract = ledger.delegation_contracts.get("task-release")
+    contract = ledger.delegation_contracts.get(uid("task-release"))
     assert contract is not None
     assert contract.status is DelegationContractStatus.INTEGRATING
     assert contract.accepted_run_id is not None and contract.accepted_at is not None
-    assert ledger.tasks.get("task-release").status is TaskStatus.BLOCKED  # type: ignore[union-attr]
-    assert ledger.teams.get("team-release").status is TeamStatus.ACTIVE  # type: ignore[union-attr]
+    assert ledger.tasks.get(uid("task-release")).status is TaskStatus.BLOCKED  # type: ignore[union-attr]
+    assert ledger.teams.get(uid("team-release")).status is TeamStatus.ACTIVE  # type: ignore[union-attr]
     assert lander.landed == []
     queued = ledger.wakes.queued(employee_id="lead")
     assert len(queued) == 1
     assert queued[0].reason is WakeReason.CHILDREN_DONE
-    contract_events = ledger.activity.by_subject("delegation_contract", "task-release")
+    contract_events = ledger.activity.by_subject("delegation_contract", uid("task-release"))
     assert [event.verb for event in contract_events] == [
         ActivityVerb.LEAD_ACCEPTED,
         ActivityVerb.PARENT_VERIFIED,
@@ -261,7 +262,7 @@ async def test_failed_parent_verification_returns_contract_to_integrating(
 
 
 async def test_rejected_required_child_cannot_reach_acceptance_or_verification(
-    ledger: SqliteLedger,
+    ledger: Ledger,
 ) -> None:
     _seed_delegation(ledger, child_status=TaskStatus.REJECTED)
     beat = _RecordingBeat()
@@ -278,22 +279,22 @@ async def test_rejected_required_child_cannot_reach_acceptance_or_verification(
     await scheduler.tick(_NOW)
     await scheduler.drain()
 
-    contract = ledger.delegation_contracts.get("task-release")
+    contract = ledger.delegation_contracts.get(uid("task-release"))
     assert contract is not None and contract.status is DelegationContractStatus.INTEGRATING
     assert contract.accepted_run_id is None
-    assert ledger.tasks.get("task-release").status is TaskStatus.BLOCKED  # type: ignore[union-attr]
+    assert ledger.tasks.get(uid("task-release")).status is TaskStatus.BLOCKED  # type: ignore[union-attr]
     assert not any(intent.startswith("Independently verify") for intent in beat.intents)
-    assert ledger.activity.by_subject("delegation_contract", "task-release") == []
+    assert ledger.activity.by_subject("delegation_contract", uid("task-release")) == []
 
 
 async def test_authority_denial_is_never_laundered_into_delegated_success(
-    ledger: SqliteLedger,
+    ledger: Ledger,
 ) -> None:
     """A profile denial refuses the beat BEFORE it runs — on a parent WITH children that must
     surface as a FAILED run + recovery, never as the 'success by delegating' branch (which would
     record SUCCEEDED and walk the denial into lead acceptance)."""
     _seed_delegation(ledger)
-    ledger.teams.archive("team-release")  # revoked mid-flight → ExecutionProfileDenied
+    ledger.teams.archive(uid("team-release"))  # revoked mid-flight → ExecutionProfileDenied
     beat = _RecordingBeat()
     scheduler = Scheduler(
         ledger=ledger,
@@ -309,23 +310,23 @@ async def test_authority_denial_is_never_laundered_into_delegated_success(
     await scheduler.drain()
 
     assert beat.rubrics == []  # the denied beat never reached the runner
-    runs = ledger.runs.for_task("task-release")
+    runs = ledger.runs.for_task(uid("task-release"))
     assert [run.status.value for run in runs] == ["failed"]
-    contract = ledger.delegation_contracts.get("task-release")
+    contract = ledger.delegation_contracts.get(uid("task-release"))
     assert contract is not None and contract.accepted_run_id is None
-    assert ledger.activity.by_subject("delegation_contract", "task-release") == []
-    assert ledger.recovery_actions.active_for_source("task-release") is not None
+    assert ledger.activity.by_subject("delegation_contract", uid("task-release")) == []
+    assert ledger.recovery_actions.active_for_source(uid("task-release")) is not None
 
 
 async def test_unmigrated_manager_is_blocked_before_dispatch(
-    ledger: SqliteLedger, caplog: pytest.LogCaptureFixture
+    ledger: Ledger, caplog: pytest.LogCaptureFixture
 ) -> None:
     manager = ledger.employees.create(
-        Employee(id="legacy-manager", name="Legacy Manager", role="manager")
+        Employee(id=uid("legacy-manager"), name="Legacy Manager", role="manager")
     )
     ledger.tasks.submit(
         Task(
-            id="legacy-task",
+            id=uid("legacy-task"),
             intent="ambiguous manager work",
             status=TaskStatus.TODO,
             assignee_employee_id=manager.id,
@@ -333,10 +334,10 @@ async def test_unmigrated_manager_is_blocked_before_dispatch(
     )
     ledger.wakes.enqueue(
         Wake(
-            id="wake-legacy",
+            id=uid("wake-legacy"),
             employee_id=manager.id,
             reason=WakeReason.TASK_ASSIGNED,
-            payload={"task_id": "legacy-task"},
+            payload={"task_id": uid("legacy-task")},
         )
     )
     beat = _RecordingBeat()
@@ -357,15 +358,15 @@ async def test_unmigrated_manager_is_blocked_before_dispatch(
     assert report.beats_started == 0
     assert beat.rubrics == []
     assert ledger.wakes.queued() == []
-    assert ledger.tasks.get("legacy-task").status is TaskStatus.BLOCKED  # type: ignore[union-attr]
-    recovery = ledger.recovery_actions.active_for_source("legacy-task")
+    assert ledger.tasks.get(uid("legacy-task")).status is TaskStatus.BLOCKED  # type: ignore[union-attr]
+    recovery = ledger.recovery_actions.active_for_source(uid("legacy-task"))
     assert recovery is not None and recovery.cause == "unmigrated_manager"
     assert recovery.owner_user_id == "operator"
-    assert "legacy-manager" in caplog.text and "specialize-manager" in caplog.text
+    assert uid("legacy-manager") in caplog.text and "specialize-manager" in caplog.text
 
 
 async def test_delegation_integrate_cap_escalates_without_force_acceptance(
-    ledger: SqliteLedger,
+    ledger: Ledger,
 ) -> None:
     _seed_delegation(ledger)
     beat = _RecordingBeat()
@@ -384,22 +385,22 @@ async def test_delegation_integrate_cap_escalates_without_force_acceptance(
     await scheduler.tick(_NOW)
     await scheduler.drain()
 
-    contract = ledger.delegation_contracts.get("task-release")
+    contract = ledger.delegation_contracts.get(uid("task-release"))
     assert contract is not None and contract.status is DelegationContractStatus.BLOCKED
     assert contract.accepted_run_id is None
-    assert ledger.tasks.get("task-release").status is TaskStatus.BLOCKED  # type: ignore[union-attr]
-    assert ledger.teams.get("team-release").status is TeamStatus.ACTIVE  # type: ignore[union-attr]
-    recovery = ledger.recovery_actions.active_for_source("task-release")
+    assert ledger.tasks.get(uid("task-release")).status is TaskStatus.BLOCKED  # type: ignore[union-attr]
+    assert ledger.teams.get(uid("team-release")).status is TeamStatus.ACTIVE  # type: ignore[union-attr]
+    recovery = ledger.recovery_actions.active_for_source(uid("task-release"))
     assert recovery is not None
     assert recovery.owner_employee_id == "lead"
     assert recovery.cause == "integrate_iteration_exhausted"
-    assert recovery.evidence == {"iteration": 1, "cap": 0, "contract_task_id": "task-release"}
+    assert recovery.evidence == {"iteration": 1, "cap": 0, "contract_task_id": uid("task-release")}
     assert beat.rubrics == []
     assert lander.landed == []
 
 
 async def test_restart_closes_landed_delegation_exactly_once(
-    ledger: SqliteLedger,
+    ledger: Ledger,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _seed_delegation(ledger)
@@ -426,11 +427,11 @@ async def test_restart_closes_landed_delegation_exactly_once(
     with pytest.raises(RuntimeError, match="injected crash"):
         await crashed_scheduler.drain()
 
-    contract = ledger.delegation_contracts.get("task-release")
+    contract = ledger.delegation_contracts.get(uid("task-release"))
     assert contract is not None and contract.status is DelegationContractStatus.VERIFYING
-    assert ledger.tasks.get("task-release").status is TaskStatus.DONE  # type: ignore[union-attr]
-    assert ledger.teams.get("team-release").status is TeamStatus.ACTIVE  # type: ignore[union-attr]
-    assert ledger.wakes.get("wake-release").status is WakeStatus.CLAIMED  # type: ignore[union-attr]
+    assert ledger.tasks.get(uid("task-release")).status is TaskStatus.DONE  # type: ignore[union-attr]
+    assert ledger.teams.get(uid("team-release")).status is TeamStatus.ACTIVE  # type: ignore[union-attr]
+    assert ledger.wakes.get(uid("wake-release")).status is WakeStatus.CLAIMED  # type: ignore[union-attr]
 
     restarted_scheduler = Scheduler(
         ledger=ledger,
@@ -445,12 +446,12 @@ async def test_restart_closes_landed_delegation_exactly_once(
     await restarted_scheduler.drain()
 
     assert report.recovered == 1
-    assert lander.landed == ["task-release"]
-    contract = ledger.delegation_contracts.get("task-release")
+    assert lander.landed == [uid("task-release")]
+    contract = ledger.delegation_contracts.get(uid("task-release"))
     assert contract is not None and contract.status is DelegationContractStatus.DONE
-    assert ledger.teams.get("team-release").status is TeamStatus.ARCHIVED  # type: ignore[union-attr]
-    assert ledger.wakes.get("wake-release").status is WakeStatus.DONE  # type: ignore[union-attr]
-    contract_events = ledger.activity.by_subject("delegation_contract", "task-release")
+    assert ledger.teams.get(uid("team-release")).status is TeamStatus.ARCHIVED  # type: ignore[union-attr]
+    assert ledger.wakes.get(uid("wake-release")).status is WakeStatus.DONE  # type: ignore[union-attr]
+    contract_events = ledger.activity.by_subject("delegation_contract", uid("task-release"))
     assert [event.verb for event in contract_events] == [
         ActivityVerb.LEAD_ACCEPTED,
         ActivityVerb.PARENT_VERIFIED,

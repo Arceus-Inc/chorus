@@ -44,14 +44,26 @@ _INTENT = (
 )
 
 _SALES = [
-    ("A", "Q1", 1000), ("A", "Q2", 1200), ("A", "Q3", 1500),
-    ("B", "Q1", 800), ("B", "Q2", 900), ("B", "Q3", 1100),
-    ("C", "Q1", 600), ("C", "Q2", 700), ("C", "Q3", 650),
+    ("A", "Q1", 1000),
+    ("A", "Q2", 1200),
+    ("A", "Q3", 1500),
+    ("B", "Q1", 800),
+    ("B", "Q2", 900),
+    ("B", "Q3", 1100),
+    ("C", "Q1", 600),
+    ("C", "Q2", 700),
+    ("C", "Q3", 650),
 ]
 _TARGETS = [
-    ("A", "Q1", 900), ("A", "Q2", 1100), ("A", "Q3", 1300),
-    ("B", "Q1", 850), ("B", "Q2", 950), ("B", "Q3", 1000),
-    ("C", "Q1", 700), ("C", "Q2", 700), ("C", "Q3", 800),
+    ("A", "Q1", 900),
+    ("A", "Q2", 1100),
+    ("A", "Q3", 1300),
+    ("B", "Q1", 850),
+    ("B", "Q2", 950),
+    ("B", "Q3", 1000),
+    ("C", "Q1", 700),
+    ("C", "Q2", 700),
+    ("C", "Q3", 800),
 ]
 
 
@@ -90,13 +102,19 @@ async def main() -> int:
     base = os.environ.get("AZURE_OPENAI_BASE_URL")
     dep = os.environ.get("AZURE_OPENAI_DEPLOYMENT")
     if not (key and base and dep):
-        print("skipping: set AZURE_OPENAI_API_KEY / AZURE_OPENAI_BASE_URL / AZURE_OPENAI_DEPLOYMENT")
+        print(
+            "skipping: set AZURE_OPENAI_API_KEY / AZURE_OPENAI_BASE_URL / AZURE_OPENAI_DEPLOYMENT"
+        )
         return 0
 
     roles = RoleRegistry.from_plugins(default_roles())
     factory = EmployeeHarnessFactory(
-        api_key=key, base_url=base, deployment=dep, company_id="analyst-subagent-tools",
-        roles=roles, timeout_s=900.0,
+        api_key=key,
+        base_url=base,
+        deployment=dep,
+        company_id="analyst-subagent-tools",
+        roles=roles,
+        timeout_s=900.0,
     )
     mat = factory.materialize(Employee(id="vera", name="Vera", role="analyst"))
     _seed(mat.working_dir / "warehouse.db")
@@ -107,8 +125,12 @@ async def main() -> int:
 
     verifier = analyst_plugin().dod_generator(_INTENT)
     outcome = await mat.runner.run_task(
-        task_id="subtools-1", intent=_INTENT, run_id="run-subtools-1",
-        verification=verifier.verification_steps(), rubric=verifier.rubric(), observer=_print_event,
+        task_id="subtools-1",
+        intent=_INTENT,
+        run_id="run-subtools-1",
+        verification=verifier.verification_steps(),
+        rubric=verifier.rubric(),
+        observer=_print_event,
     )
 
     print(f"\npassed   = {outcome.passed}")

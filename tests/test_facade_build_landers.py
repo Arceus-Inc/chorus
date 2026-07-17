@@ -12,13 +12,14 @@ import pytest
 
 from chorus.facade import Chorus
 from chorus.outcomes import LanderRegistry
+from chorus.testing import open_test_ledger
 
 pytestmark = pytest.mark.integration
 
 
 def _build(**over: object) -> Chorus:
     base: dict[str, object] = {
-        "db_path": ":memory:",
+        "ledger": open_test_ledger(),
         "org_repo": "/tmp/chorus-f7-org",
         "memory_repo": "/tmp/chorus-f7-mem",
         "dream": None,
@@ -50,9 +51,8 @@ def test_build_threads_the_memory_writer_into_the_scheduler(tmp_path) -> None:
 def test_build_shares_an_injected_ledger() -> None:
     """``ledger=`` lets the consumer hand build the *same* store the harness factory holds — so a
     reviewed-build reviewer (a capability tool) records its verdict into one ledger, not two."""
-    from chorus.ledger import SqliteLedger
 
-    store = SqliteLedger.open(":memory:")
+    store = open_test_ledger()
     try:
         org = Chorus.build(
             ledger=store,
@@ -65,14 +65,12 @@ def test_build_shares_an_injected_ledger() -> None:
         store.close()
 
 
-def test_build_rejects_both_db_path_and_ledger() -> None:
-    from chorus.ledger import SqliteLedger
-
-    store = SqliteLedger.open(":memory:")
+def test_build_rejects_both_dsn_and_ledger() -> None:
+    store = open_test_ledger()
     try:
-        with pytest.raises(ValueError, match="db_path"):
+        with pytest.raises(ValueError, match="dsn"):
             Chorus.build(
-                db_path=":memory:",
+                dsn="postgresql://ignored/ignored",
                 ledger=store,
                 org_repo="/tmp/o",
                 memory_repo="/tmp/m",
@@ -82,6 +80,6 @@ def test_build_rejects_both_db_path_and_ledger() -> None:
         store.close()
 
 
-def test_build_requires_db_path_or_ledger() -> None:
-    with pytest.raises(ValueError, match="db_path"):
+def test_build_requires_dsn_or_ledger() -> None:
+    with pytest.raises(ValueError, match="dsn"):
         Chorus.build(org_repo="/tmp/o", memory_repo="/tmp/m", dream=None)

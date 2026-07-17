@@ -17,6 +17,9 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import uuid
+
+_EXAMPLE_COMPANY = str(uuid.uuid5(uuid.NAMESPACE_URL, "chorus-example"))  # one stable demo org
 import subprocess
 import sys
 import tempfile
@@ -27,7 +30,7 @@ from pathlib import Path
 from chorus.budgets import BudgetEnforcer
 from chorus.events import Event, EventKind
 from chorus.heartbeat import Scheduler
-from chorus.ledger import SqliteLedger, Task, TaskStatus
+from chorus.ledger import Ledger, Task, TaskStatus
 from chorus.lifecycle import assign_task
 from chorus.memory import EpisodicStore, narrative
 from chorus.observability import EventBus
@@ -293,7 +296,7 @@ def _probe_tick(trace: _BeatTrace, worktree: Path) -> None:
 
 async def _run_task(
     scheduler: Scheduler,
-    ledger: SqliteLedger,
+    ledger: Ledger,
     bus: _ProbeBus,
     worktree: Path,
     task_id: str,
@@ -451,7 +454,10 @@ def main() -> int:
     seed = base / "source"
     _seed(seed)
 
-    ledger = SqliteLedger.open(":memory:")
+    ledger = Ledger.open(
+        os.environ.get("CHORUS_LEDGER_DSN", "postgresql://localhost/chorus"),
+        company_id=_EXAMPLE_COMPANY,
+    )
     bus = _ProbeBus()
     _reports = Path(__file__).resolve().parent.parent / "reports"
     _probe_slug = (

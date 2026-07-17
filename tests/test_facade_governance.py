@@ -13,21 +13,22 @@ from chorus.facade import Caps, Chorus
 from chorus.governance import ApprovalDecision, GovernancePolicy, WorkforcePlanService
 from chorus.ledger import (
     ApprovalGate,
+    Ledger,
     ManagementGrantDraft,
     PlannedEmployee,
-    SqliteLedger,
     Task,
     WorkforcePlanDraft,
     WorkforcePlanStatus,
 )
 from chorus.observability import EventBus, LedgerInspector
 from chorus.roles import RoleRegistry, default_roles
+from chorus.testing import open_test_ledger, uid
 from chorus.workforce import EmployeeStatus, LedgerWorkforce
 
 pytestmark = pytest.mark.integration
 
 
-def _chorus(ledger: SqliteLedger, policy: GovernancePolicy | None = None) -> Chorus:
+def _chorus(ledger: Ledger, policy: GovernancePolicy | None = None) -> Chorus:
     return Chorus(
         ledger=ledger,
         workforce=LedgerWorkforce(ledger.employees),
@@ -43,7 +44,7 @@ def _chorus(ledger: SqliteLedger, policy: GovernancePolicy | None = None) -> Cho
 
 
 def test_request_hire_gate_appears_in_approvals_then_resolve_activates() -> None:
-    ledger = SqliteLedger.open(":memory:")
+    ledger = open_test_ledger()
     try:
         chorus = _chorus(ledger, GovernancePolicy(require_hire_approval=True))
         req = chorus.governance.request_hire(name="Eve", role="backend_engineer")
@@ -60,7 +61,7 @@ def test_request_hire_gate_appears_in_approvals_then_resolve_activates() -> None
 
 
 def test_deny_a_hire_gate_terminates() -> None:
-    ledger = SqliteLedger.open(":memory:")
+    ledger = open_test_ledger()
     try:
         chorus = _chorus(ledger, GovernancePolicy(require_hire_approval=True))
         req = chorus.governance.request_hire(name="Bo", role="backend_engineer")
@@ -72,12 +73,12 @@ def test_deny_a_hire_gate_terminates() -> None:
 
 
 def test_open_task_gate_then_resolve_clears_the_inbox() -> None:
-    ledger = SqliteLedger.open(":memory:")
+    ledger = open_test_ledger()
     try:
         chorus = _chorus(ledger)
-        ledger.tasks.submit(Task(id="t1", intent="risky deploy"))
+        ledger.tasks.submit(Task(id=uid("t1"), intent="risky deploy"))
         approval = chorus.governance.open_gate(
-            "t1", gate_kind=ApprovalGate.ACCEPTANCE, reason="needs sign-off"
+            uid("t1"), gate_kind=ApprovalGate.ACCEPTANCE, reason="needs sign-off"
         )
         assert approval.id in {a.id for a in chorus.governance.approvals()}
         chorus.governance.resolve(approval.id, decision=ApprovalDecision.APPROVE, by="boss")
@@ -87,7 +88,7 @@ def test_open_task_gate_then_resolve_clears_the_inbox() -> None:
 
 
 def test_human_governance_facade_applies_a_ceo_workforce_proposal() -> None:
-    ledger = SqliteLedger.open(":memory:")
+    ledger = open_test_ledger()
     try:
         chorus = _chorus(ledger)
         chorus.hire(name="CEO", role="ceo")

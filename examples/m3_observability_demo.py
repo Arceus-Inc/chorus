@@ -19,12 +19,15 @@ Skips cleanly (exit 0) when the Azure env vars are unset.
 from __future__ import annotations
 
 import os
+import uuid
+
+_EXAMPLE_COMPANY = str(uuid.uuid5(uuid.NAMESPACE_URL, "chorus-example"))  # one stable demo org
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
 
-from chorus.ledger import SqliteLedger, Task, TaskStatus
+from chorus.ledger import Ledger, Task, TaskStatus
 from chorus.lifecycle import assign_task
 from chorus.observability import LedgerInspector
 from chorus.observability._views import OrgObservabilityReport, ScrumPacketView
@@ -47,8 +50,20 @@ def _seed_repo(path: Path) -> None:
     (path / "test_smoke.py").write_text("def test_smoke():\n    assert True\n", encoding="utf-8")
     subprocess.run(["git", "-C", str(path), "add", "-A"], check=True, capture_output=True)
     subprocess.run(
-        ["git", "-C", str(path), "-c", "user.name=s", "-c", "user.email=s@x", "commit", "-m", "seed"],
-        check=True, capture_output=True,
+        [
+            "git",
+            "-C",
+            str(path),
+            "-c",
+            "user.name=s",
+            "-c",
+            "user.email=s@x",
+            "commit",
+            "-m",
+            "seed",
+        ],
+        check=True,
+        capture_output=True,
     )
 
 
@@ -77,7 +92,7 @@ def _render_scrum(p: ScrumPacketView) -> str:
     return "\n".join(lines)
 
 
-def _snapshot(inspector: LedgerInspector, ledger: SqliteLedger, goal_id: str, *, n: int) -> None:
+def _snapshot(inspector: LedgerInspector, ledger: Ledger, goal_id: str, *, n: int) -> None:
     _log(f"\n{'─' * 70}\n📊 OBSERVABILITY SNAPSHOT {n}\n{'─' * 70}")
     _log("`check org`  →  org_report():")
     _log(_render_org(inspector.org_report()))
@@ -101,7 +116,10 @@ def main() -> int:
     seed = base / "seed"
     _seed_repo(seed)
 
-    ledger = SqliteLedger.open(str(base / "ledger.db"))
+    ledger = Ledger.open(
+        os.environ.get("CHORUS_LEDGER_DSN", "postgresql://localhost/chorus"),
+        company_id=_EXAMPLE_COMPANY,
+    )
     try:
         for emp, role in [("moe", "manager"), ("ada", "engineer"), ("bob", "engineer")]:
             LedgerWorkforce(ledger.employees).hire(
@@ -111,8 +129,15 @@ def main() -> int:
         assign_task(ledger, "goal", "moe")
 
         runner = build_beat_service(
-            ledger, api_key=api_key, base_url=base_url, deployment=deployment, company_id="acme",
-            pricing=default_pricing_from_env(), seed=seed, work_root=base / "work", max_concurrent_runs=2,
+            ledger,
+            api_key=api_key,
+            base_url=base_url,
+            deployment=deployment,
+            company_id="acme",
+            pricing=default_pricing_from_env(),
+            seed=seed,
+            work_root=base / "work",
+            max_concurrent_runs=2,
         )
         inspector = LedgerInspector(ledger)
 
@@ -148,11 +173,19 @@ def main() -> int:
         _log("\n" + "=" * 70)
         ok = goal is not None and goal.status is TaskStatus.DONE
         manager_beats = len([r for r in ledger.runs.for_task("goal")])
-        _log(f"goal status: {goal.status.value if goal else '?'}  |  manager beats on goal: {manager_beats} "
-             f"(1 kickoff + {manager_beats - 1} integrate)")
-        _log(f"children created: {len(ledger.tasks.children('goal'))} "
-             "(bounded — the integrate beat cannot re-decompose)")
-        _log("✅ loop closed + observability captured" if ok else "⚠️ loop did not fully close (see snapshots)")
+        _log(
+            f"goal status: {goal.status.value if goal else '?'}  |  manager beats on goal: {manager_beats} "
+            f"(1 kickoff + {manager_beats - 1} integrate)"
+        )
+        _log(
+            f"children created: {len(ledger.tasks.children('goal'))} "
+            "(bounded — the integrate beat cannot re-decompose)"
+        )
+        _log(
+            "✅ loop closed + observability captured"
+            if ok
+            else "⚠️ loop did not fully close (see snapshots)"
+        )
         return 0 if ok else 1
     finally:
         ledger.close()

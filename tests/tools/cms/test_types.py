@@ -11,6 +11,7 @@ import dataclasses
 
 import pytest
 
+from chorus.testing import uid
 from chorus_tools.cms import (
     BlogDraft,
     ContentType,
@@ -101,14 +102,14 @@ class TestDraftRef:
         ref = DraftRef(
             backend="strapi",
             content_type=ContentType.BLOG,
-            ref_id="abc123",
+            ref_id=uid("abc123"),
             url="http://localhost:1337/admin/...",
         )
         assert ref.status == "draft"
         assert ref.as_dict() == {
             "backend": "strapi",
             "content_type": "blog",
-            "ref_id": "abc123",
+            "ref_id": uid("abc123"),
             "url": "http://localhost:1337/admin/...",
             "status": "draft",
         }

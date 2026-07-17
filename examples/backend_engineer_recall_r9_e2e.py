@@ -13,6 +13,9 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import uuid
+
+_EXAMPLE_COMPANY = str(uuid.uuid5(uuid.NAMESPACE_URL, "chorus-example"))  # one stable demo org
 import subprocess
 import sys
 import tempfile
@@ -25,7 +28,7 @@ from dream.tools._context import ToolExecutionContext
 from chorus.budgets import BudgetEnforcer
 from chorus.events import Event, EventKind
 from chorus.heartbeat import BeatContext, Scheduler
-from chorus.ledger import SqliteLedger, Task, TaskStatus
+from chorus.ledger import Ledger, Task, TaskStatus
 from chorus.lifecycle import assign_task
 from chorus.memory import EpisodicRecallService, EpisodicStore, SprintDelta
 from chorus.observability import EventBus
@@ -165,7 +168,7 @@ class _RecallR9Bus(EventBus):
 
 async def _run_task(
     scheduler: Scheduler,
-    ledger: SqliteLedger,
+    ledger: Ledger,
     bus: _RecallR9Bus,
     task_id: str,
     *,
@@ -281,7 +284,10 @@ def main() -> int:
     seed = base / "source"
     _seed(seed)
 
-    ledger = SqliteLedger.open(":memory:")
+    ledger = Ledger.open(
+        os.environ.get("CHORUS_LEDGER_DSN", "postgresql://localhost/chorus"),
+        company_id=_EXAMPLE_COMPANY,
+    )
     bus = _RecallR9Bus()
     report_path = (
         Path(__file__).resolve().parent.parent / "reports" / "backend-engineer-recall-r9-e2e.json"

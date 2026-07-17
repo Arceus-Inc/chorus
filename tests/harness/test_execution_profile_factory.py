@@ -14,8 +14,8 @@ from chorus.ledger import (
     DelegationContract,
     DelegationContractStatus,
     ExecutionMode,
+    Ledger,
     ManagementProfile,
-    SqliteLedger,
     Task,
     Team,
     TeamMember,
@@ -23,6 +23,7 @@ from chorus.ledger import (
     TeamStatus,
 )
 from chorus.roles import RoleRegistry, default_roles
+from chorus.testing import open_test_ledger, uid
 from chorus.workforce import Employee
 from chorus_harness import _factory as _factory_mod
 
@@ -30,15 +31,15 @@ pytestmark = pytest.mark.integration
 
 
 @pytest.fixture
-def ledger() -> SqliteLedger:
-    opened = SqliteLedger.open(":memory:")
+def ledger() -> Ledger:
+    opened = open_test_ledger()
     try:
         yield opened
     finally:
         opened.close()
 
 
-def _seed_tasks(ledger: SqliteLedger) -> tuple[Employee, Task, Task]:
+def _seed_tasks(ledger: Ledger) -> tuple[Employee, Task, Task]:
     lead = Employee(id="lead", name="Lead", role="backend_engineer")
     worker = Employee(id="worker", name="Worker", role="backend_engineer", reports_to="lead")
     ledger.employees.create(lead)
@@ -57,7 +58,7 @@ def _seed_tasks(ledger: SqliteLedger) -> tuple[Employee, Task, Task]:
     )
     ledger.teams.create(
         Team(
-            id="team-release",
+            id=uid("team-release"),
             name="Release",
             lead_employee_id=lead.id,
             created_by="user-admin",
@@ -70,7 +71,7 @@ def _seed_tasks(ledger: SqliteLedger) -> tuple[Employee, Task, Task]:
     ):
         ledger.team_members.add(
             TeamMember(
-                team_id="team-release",
+                team_id=uid("team-release"),
                 employee_id=employee_id,
                 source_manager_id=lead.id,
                 membership_role=membership_role,
@@ -78,15 +79,15 @@ def _seed_tasks(ledger: SqliteLedger) -> tuple[Employee, Task, Task]:
         )
 
     delivery = Task(
-        id="task-code",
+        id=uid("task-code"),
         intent="implement the release endpoint",
         assignee_employee_id=lead.id,
     )
     delegation = Task(
-        id="task-release",
+        id=uid("task-release"),
         intent="coordinate the release",
         execution_mode=ExecutionMode.DELEGATION,
-        team_id="team-release",
+        team_id=uid("team-release"),
         assignee_employee_id=lead.id,
     )
     ledger.tasks.submit(delivery)
@@ -94,7 +95,7 @@ def _seed_tasks(ledger: SqliteLedger) -> tuple[Employee, Task, Task]:
     ledger.delegation_contracts.create(
         DelegationContract(
             task_id=delegation.id,
-            team_id="team-release",
+            team_id=uid("team-release"),
             lead_employee_id=lead.id,
             management_profile_version=1,
             max_depth=1,
@@ -109,7 +110,7 @@ def _seed_tasks(ledger: SqliteLedger) -> tuple[Employee, Task, Task]:
 def _factory(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
-    ledger: SqliteLedger,
+    ledger: Ledger,
 ) -> tuple[_factory_mod.EmployeeHarnessFactory, list[dict[str, Any]]]:
     calls: list[dict[str, Any]] = []
     monkeypatch.setattr(
@@ -132,7 +133,7 @@ def _factory(
 
 
 def test_same_backend_engineer_materializes_delivery_then_delegation_surface(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, ledger: SqliteLedger
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, ledger: Ledger
 ) -> None:
     lead, delivery, delegation = _seed_tasks(ledger)
     factory, calls = _factory(monkeypatch, tmp_path, ledger)
@@ -156,7 +157,7 @@ def test_same_backend_engineer_materializes_delivery_then_delegation_surface(
 
 
 def test_stale_profile_is_denied_before_harness_build(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, ledger: SqliteLedger
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, ledger: Ledger
 ) -> None:
     lead, _, delegation = _seed_tasks(ledger)
     profile = ledger.management_profiles.get(lead.id)
@@ -171,7 +172,7 @@ def test_stale_profile_is_denied_before_harness_build(
 
 
 def test_independent_verifier_uses_reviewer_read_only_surface_in_lead_worktree(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, ledger: SqliteLedger
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, ledger: Ledger
 ) -> None:
     lead, _, delegation = _seed_tasks(ledger)
     reviewer = ledger.employees.create(Employee(id="reviewer", name="Reviewer", role="reviewer"))

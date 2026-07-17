@@ -207,7 +207,28 @@ class Ledger:
         conn = LedgerConnection.connect(conninfo, company_id=company_id)
         ledger = cls(conn)
         ledger._bootstrap()
+        if company_id is not None:
+            ledger._seed_system_principals()
         return ledger
+
+    def _seed_system_principals(self) -> None:
+        """The built-in non-workforce actors, seeded once per company (idempotent).
+
+        Lived in a schema migration in the SQLite era; with company-scoped principals the seed
+        needs the session's company context, so it runs on the first company-scoped open.
+        """
+        self._conn.execute(
+            "INSERT INTO system_principal (id, kind, display_name, purpose, created_at) "
+            "VALUES (?, ?, ?, ?, ?) ON CONFLICT (company_id, id) DO NOTHING",
+            (
+                "system-verifier",
+                "verification",
+                "System Verifier",
+                "Independent read-only verification of employee-authored work",
+                "1970-01-01T00:00:00+00:00",
+            ),
+        )
+        self._conn.commit()
 
     def _bootstrap(self) -> None:
         import psycopg

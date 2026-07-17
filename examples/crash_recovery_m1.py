@@ -18,6 +18,9 @@ from __future__ import annotations
 
 import asyncio
 import os
+import uuid
+
+_EXAMPLE_COMPANY = str(uuid.uuid5(uuid.NAMESPACE_URL, "chorus-example"))  # one stable demo org
 import subprocess
 import sys
 import tempfile
@@ -26,7 +29,7 @@ from pathlib import Path
 
 from chorus.budgets import BudgetEnforcer
 from chorus.heartbeat import Scheduler
-from chorus.ledger import RunStatus, SqliteLedger, Task, TaskStatus
+from chorus.ledger import Ledger, RunStatus, Task, TaskStatus
 from chorus.ledger._models import Run
 from chorus.roles import RoleRegistry, default_roles
 from chorus.workforce import Employee, LedgerWorkforce
@@ -60,7 +63,18 @@ def _seed_repo(path: Path) -> None:
     )
     subprocess.run(["git", "-C", str(path), "add", "-A"], check=True, capture_output=True)
     subprocess.run(
-        ["git", "-C", str(path), "-c", "user.name=s", "-c", "user.email=s@x", "commit", "-m", "init"],
+        [
+            "git",
+            "-C",
+            str(path),
+            "-c",
+            "user.name=s",
+            "-c",
+            "user.email=s@x",
+            "commit",
+            "-m",
+            "init",
+        ],
         check=True,
         capture_output=True,
     )
@@ -79,12 +93,20 @@ def main() -> int:
     seed = base / "source"
     _seed_repo(seed)
 
-    ledger = SqliteLedger.open(":memory:")
+    ledger = Ledger.open(
+        os.environ.get("CHORUS_LEDGER_DSN", "postgresql://localhost/chorus"),
+        company_id=_EXAMPLE_COMPANY,
+    )
     try:
         registry = RoleRegistry.from_plugins(default_roles())
         factory = EmployeeHarnessFactory(
-            api_key=api_key, base_url=base_url, deployment=deployment,
-            company_id="acme", roles=registry, pricing=default_pricing_from_env(), seed=seed,
+            api_key=api_key,
+            base_url=base_url,
+            deployment=deployment,
+            company_id="acme",
+            roles=registry,
+            pricing=default_pricing_from_env(),
+            seed=seed,
         )
         ledger.employees.create(Employee(id="ada", name="Ada", role="engineer"))
 
@@ -93,24 +115,38 @@ def main() -> int:
         dead_lease = datetime.now(UTC) - timedelta(seconds=300)
         ledger.tasks.submit(
             Task(
-                id="t1", intent=_TASK, status=TaskStatus.IN_PROGRESS, assignee_employee_id="ada",
-                checkout_run_id="run_dead", execution_run_id="run_dead",
+                id="t1",
+                intent=_TASK,
+                status=TaskStatus.IN_PROGRESS,
+                assignee_employee_id="ada",
+                checkout_run_id="run_dead",
+                execution_run_id="run_dead",
             )
         )
         ledger.runs.create(
-            Run(id="run_dead", employee_id="ada", task_id="t1", status=RunStatus.RUNNING,
-                lease_expires_at=dead_lease)
+            Run(
+                id="run_dead",
+                employee_id="ada",
+                task_id="t1",
+                status=RunStatus.RUNNING,
+                lease_expires_at=dead_lease,
+            )
         )
         _log("=" * 72)
         _log("1. CRASH INJECTED")
         _log(f"   task t1: status={ledger.tasks.get('t1').status.value} locked-by=run_dead")  # type: ignore[union-attr]
-        _log(f"   run_dead: RUNNING, lease expired at {dead_lease.isoformat()} (the crash signature)")
+        _log(
+            f"   run_dead: RUNNING, lease expired at {dead_lease.isoformat()} (the crash signature)"
+        )
 
         # 2. The real kernel — same factory/scheduler the tick uses.
         scheduler = Scheduler(
-            ledger=ledger, workforce=LedgerWorkforce(ledger.employees),
-            beat_runner_for=factory, budget_enforcer=BudgetEnforcer(ledger, company_id="acme"),
-            roles=registry, landers=default_landers(factory.company_root),
+            ledger=ledger,
+            workforce=LedgerWorkforce(ledger.employees),
+            beat_runner_for=factory,
+            budget_enforcer=BudgetEnforcer(ledger, company_id="acme"),
+            roles=registry,
+            landers=default_landers(factory.company_root),
             max_concurrent_runs=1,
         )
 
@@ -143,13 +179,19 @@ def main() -> int:
         _log("=" * 72)
         _log("3. RESULT")
         _log(f"   run_dead reaped : {dead.status.value if dead else '?'}  (expect timed_out)")
-        _log(f"   retry run       : {retry.id[:12] if retry else None}/{retry.status.value if retry else '-'}")
+        _log(
+            f"   retry run       : {retry.id[:12] if retry else None}/{retry.status.value if retry else '-'}"
+        )
         _log(f"   task status     : {ledger.tasks.get('t1').status.value}")  # type: ignore[union-attr]
-        _log(f"   worktree subtract(): {'subtract' in (wt / 'calc.py').read_text(encoding='utf-8') if (wt / 'calc.py').exists() else False}")
+        _log(
+            f"   worktree subtract(): {'subtract' in (wt / 'calc.py').read_text(encoding='utf-8') if (wt / 'calc.py').exists() else False}"
+        )
         _log(f"   company main log:\n{_git(company_main, 'log', '--oneline', '-3')}")
         artifacts = ledger.artifacts.list_for_task("t1")
         if artifacts and ledger.tasks.get("t1").status is TaskStatus.DONE:  # type: ignore[union-attr]
-            _log("   ★ CRASH RECOVERED: orphan reaped → re-dispatched → DoD green → PR merged → done.")
+            _log(
+                "   ★ CRASH RECOVERED: orphan reaped → re-dispatched → DoD green → PR merged → done."
+            )
         else:
             _log("   recovery did not complete — inspect the tick log above.")
         return 0

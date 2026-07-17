@@ -11,8 +11,9 @@ from __future__ import annotations
 import pytest
 
 from chorus.cron import reconcile_declared_routines
-from chorus.ledger import SqliteLedger
+from chorus.ledger import Ledger
 from chorus.roles import RoutineDeclaration
+from chorus.testing import open_test_ledger, uid
 from chorus.workforce import Employee
 
 pytestmark = pytest.mark.integration
@@ -22,20 +23,20 @@ _DECL = RoutineDeclaration(
 )
 
 
-def _ledger() -> SqliteLedger:
-    ledger = SqliteLedger.open(":memory:")
-    ledger.employees.create(Employee(id="pm1", name="Ada", role="pm"))
+def _ledger() -> Ledger:
+    ledger = open_test_ledger()
+    ledger.employees.create(Employee(id=uid("pm1"), name="Ada", role="pm"))
     return ledger
 
 
 def test_absent_declaration_is_created() -> None:
     ledger = _ledger()
     try:
-        result = reconcile_declared_routines(ledger, employee_id="pm1", declarations=(_DECL,))
+        result = reconcile_declared_routines(ledger, employee_id=uid("pm1"), declarations=(_DECL,))
         assert result.created == ("weekly-planning",)
         assert result.revised == () and result.unchanged == ()
 
-        routine = ledger.routines.by_key("pm1", "weekly-planning")
+        routine = ledger.routines.by_key(uid("pm1"), "weekly-planning")
         assert routine is not None
         assert routine.latest_revision_no == 1
         assert routine.intent_template == "file a weekly plan"
@@ -48,15 +49,15 @@ def test_absent_declaration_is_created() -> None:
 def test_reconcile_is_idempotent() -> None:
     ledger = _ledger()
     try:
-        reconcile_declared_routines(ledger, employee_id="pm1", declarations=(_DECL,))
-        again = reconcile_declared_routines(ledger, employee_id="pm1", declarations=(_DECL,))
+        reconcile_declared_routines(ledger, employee_id=uid("pm1"), declarations=(_DECL,))
+        again = reconcile_declared_routines(ledger, employee_id=uid("pm1"), declarations=(_DECL,))
         assert again.created == () and again.revised == ()
         assert again.unchanged == ("weekly-planning",)
 
         # exactly one routine, still at revision 1 — no churn
-        routine = ledger.routines.by_key("pm1", "weekly-planning")
+        routine = ledger.routines.by_key(uid("pm1"), "weekly-planning")
         assert routine is not None and routine.latest_revision_no == 1
-        assert len(ledger.routines.list(employee_id="pm1")) == 1
+        assert len(ledger.routines.list(employee_id=uid("pm1"))) == 1
     finally:
         ledger.close()
 
@@ -64,16 +65,18 @@ def test_reconcile_is_idempotent() -> None:
 def test_a_changed_declaration_revises_in_place() -> None:
     ledger = _ledger()
     try:
-        reconcile_declared_routines(ledger, employee_id="pm1", declarations=(_DECL,))
+        reconcile_declared_routines(ledger, employee_id=uid("pm1"), declarations=(_DECL,))
         changed = RoutineDeclaration(
             routine_key="weekly-planning",
             intent_template="file a SHARPER weekly plan",
             schedule="0 9 * * 1",
         )
-        result = reconcile_declared_routines(ledger, employee_id="pm1", declarations=(changed,))
+        result = reconcile_declared_routines(
+            ledger, employee_id=uid("pm1"), declarations=(changed,)
+        )
         assert result.revised == ("weekly-planning",)
 
-        routine = ledger.routines.by_key("pm1", "weekly-planning")
+        routine = ledger.routines.by_key(uid("pm1"), "weekly-planning")
         assert routine is not None
         assert routine.latest_revision_no == 2  # a new head, same routine_key
         assert routine.intent_template == "file a SHARPER weekly plan"

@@ -12,9 +12,9 @@ from __future__ import annotations
 
 import pytest
 
-from chorus.ledger import SqliteLedger
 from chorus.outcomes import LanderRegistry
 from chorus.roles import RoleRegistry, default_roles
+from chorus.testing import open_test_ledger
 from chorus_harness import EmployeeHarnessFactory
 
 pytestmark = pytest.mark.integration
@@ -39,7 +39,7 @@ def test_landers_is_a_registry_with_the_engineer_pr_lander() -> None:
 
 
 def test_landers_adds_manager_and_reviewer_when_a_ledger_is_present() -> None:
-    ledger = SqliteLedger.open(":memory:")
+    ledger = open_test_ledger()
     try:
         landers = _factory(ledger=ledger).landers
         assert "pr" in landers  # engineer

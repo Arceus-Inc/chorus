@@ -156,7 +156,7 @@ def test_for_subject_lists_newest_first(ledger: Ledger) -> None:
             reason="first",
         )
     )
-    ledger.approvals.deny(uid("a1"), decided_by_user_id=uid("boss"))
+    ledger.approvals.deny(uid("a1"), decided_by_user_id="boss")
     ledger.approvals.request(
         Approval(
             id=uid("a2"),
@@ -165,7 +165,7 @@ def test_for_subject_lists_newest_first(ledger: Ledger) -> None:
             reason="second",
         )
     )
-    ledger.approvals.approve(uid("a2"), decided_by_user_id=uid("boss"))
+    ledger.approvals.approve(uid("a2"), decided_by_user_id="boss")
     ledger.approvals.request(
         Approval(
             id=uid("zz"), subject_kind=ApprovalSubjectKind.TASK, subject_id="OTHER", reason="x"

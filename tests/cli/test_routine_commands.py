@@ -12,7 +12,7 @@ import io
 
 import pytest
 
-from chorus.ledger import RoutineStatus, SqliteLedger
+from chorus.ledger import Ledger, RoutineStatus
 from chorus.workforce import Employee
 from chorus_cli import CliSession, Console, LoopSignal, dispatch
 from chorus_cli._commands import REGISTRY
@@ -20,7 +20,7 @@ from chorus_cli._commands import REGISTRY
 pytestmark = pytest.mark.integration
 
 
-def _session(ledger: SqliteLedger) -> CliSession:
+def _session(ledger: Ledger) -> CliSession:
     return CliSession(ledger=ledger)
 
 
@@ -32,12 +32,12 @@ def _run(line: str, session: CliSession) -> tuple[LoopSignal, str]:
     return signal, buffer.getvalue()
 
 
-def _with_moe(ledger: SqliteLedger) -> SqliteLedger:
+def _with_moe(ledger: Ledger) -> Ledger:
     ledger.employees.create(Employee(id="moe", name="Moe", role="engineer"))
     return ledger
 
 
-def test_add_creates_a_routine(ledger: SqliteLedger) -> None:
+def test_add_creates_a_routine(ledger: Ledger) -> None:
     _with_moe(ledger)
     sig, out = _run('routine add moe weekly review --schedule "0 9 * * 1"', _session(ledger))
     assert sig is LoopSignal.CONTINUE
@@ -50,27 +50,27 @@ def test_add_creates_a_routine(ledger: SqliteLedger) -> None:
     assert trigger.cron_expression == "0 9 * * 1"
 
 
-def test_add_without_a_schedule_is_a_usage_error(ledger: SqliteLedger) -> None:
+def test_add_without_a_schedule_is_a_usage_error(ledger: Ledger) -> None:
     _with_moe(ledger)
     _, out = _run("routine add moe weekly review", _session(ledger))
     assert "usage" in out.lower()
     assert ledger.routines.list() == []
 
 
-def test_add_for_an_unknown_employee_reports_an_error(ledger: SqliteLedger) -> None:
+def test_add_for_an_unknown_employee_reports_an_error(ledger: Ledger) -> None:
     _, out = _run('routine add ghost do thing --schedule "0 * * * *"', _session(ledger))
     assert "ghost" in out.lower() or "unknown" in out.lower()
     assert ledger.routines.list() == []
 
 
-def test_add_with_a_bad_concurrency_is_reported(ledger: SqliteLedger) -> None:
+def test_add_with_a_bad_concurrency_is_reported(ledger: Ledger) -> None:
     _with_moe(ledger)
     _, out = _run('routine add moe x --schedule "0 * * * *" --concurrency turbo', _session(ledger))
     assert "concurrency" in out.lower()
     assert ledger.routines.list() == []
 
 
-def test_list_shows_each_routine(ledger: SqliteLedger) -> None:
+def test_list_shows_each_routine(ledger: Ledger) -> None:
     _with_moe(ledger)
     _run('routine add moe weekly review --schedule "0 9 * * 1"', _session(ledger))
     _, out = _run("routine list", _session(ledger))
@@ -79,7 +79,7 @@ def test_list_shows_each_routine(ledger: SqliteLedger) -> None:
     assert "moe" in out
 
 
-def test_show_renders_definition_and_trigger(ledger: SqliteLedger) -> None:
+def test_show_renders_definition_and_trigger(ledger: Ledger) -> None:
     _with_moe(ledger)
     _run('routine add moe weekly review --schedule "0 9 * * 1"', _session(ledger))
     rid = ledger.routines.list()[0].id
@@ -88,7 +88,7 @@ def test_show_renders_definition_and_trigger(ledger: SqliteLedger) -> None:
     assert "coalesce" in out  # the safe default policy is visible
 
 
-def test_pause_then_resume_toggles_status(ledger: SqliteLedger) -> None:
+def test_pause_then_resume_toggles_status(ledger: Ledger) -> None:
     _with_moe(ledger)
     _run('routine add moe x --schedule "0 * * * *"', _session(ledger))
     rid = ledger.routines.list()[0].id
@@ -100,6 +100,6 @@ def test_pause_then_resume_toggles_status(ledger: SqliteLedger) -> None:
     assert ledger.routines.get(rid).status is RoutineStatus.ACTIVE  # type: ignore[union-attr]
 
 
-def test_show_unknown_routine_is_reported(ledger: SqliteLedger) -> None:
+def test_show_unknown_routine_is_reported(ledger: Ledger) -> None:
     _, out = _run("routine show nope", _session(ledger))
     assert "nope" in out.lower() or "no " in out.lower()

@@ -15,46 +15,48 @@ from chorus.ledger import (
     DelegationContractStatus,
     DodStatus,
     ExecutionMode,
+    Ledger,
     Run,
     RunStatus,
-    SqliteLedger,
     Task,
     TaskStatus,
     Team,
     TeamStatus,
 )
 from chorus.outcomes import Verifier
+from chorus.testing import uid
 from chorus.workforce import Employee
 
 pytestmark = pytest.mark.integration
 
 
-def test_integrate_context_packet_summarizes_child_feedback(
-    ledger: SqliteLedger, tmp_path: Path
-) -> None:
+def test_integrate_context_packet_summarizes_child_feedback(ledger: Ledger, tmp_path: Path) -> None:
     ledger.employees.create(Employee(id="mgr", name="Mgr", role="engineer"))
     ledger.employees.create(Employee(id="lead", name="Lead", role="designer", reports_to="mgr"))
     ledger.employees.create(Employee(id="ada", name="Ada", role="engineer", reports_to="lead"))
     ledger.tasks.submit(
         Task(
-            id="P", intent="ship the pantry", status=TaskStatus.BLOCKED, assignee_employee_id="mgr"
+            id=uid("P"),
+            intent="ship the pantry",
+            status=TaskStatus.BLOCKED,
+            assignee_employee_id="mgr",
         )
     )
     # The parent's own beats define the loop depth: 1 kickoff + 2 integrate beats → iteration == 2.
     for n, status in enumerate(("kickoff", "integrate1", "integrate2")):
         ledger.runs.create(
             Run(
-                id=f"run_p{n}",
+                id=uid(f"run_p{n}"),
                 employee_id="mgr",
-                task_id="P",
+                task_id=uid("P"),
                 status=RunStatus.SUCCEEDED,
                 outcome={"summary": status},
             )
         )
     ledger.tasks.submit(
         Task(
-            id="C1",
-            parent_id="P",
+            id=uid("C1"),
+            parent_id=uid("P"),
             intent="build storage",
             status=TaskStatus.DONE,
             assignee_employee_id="lead",
@@ -62,30 +64,32 @@ def test_integrate_context_packet_summarizes_child_feedback(
     )
     ledger.runs.create(
         Run(
-            id="run_c1",
+            id=uid("run_c1"),
             employee_id="lead",
-            task_id="C1",
+            task_id=uid("C1"),
             status=RunStatus.SUCCEEDED,
             outcome={"summary": "storage landed", "cost_cents": 4},
         )
     )
-    dod = ledger.dod.create("C1", Verifier.command("python -m pytest", artifact_class="file"))
-    ledger.dod.record_verdict(dod.id, DodStatus.PASSED, verdict={"stdout": "ok"}, run_id="run_c1")
+    dod = ledger.dod.create(uid("C1"), Verifier.command("python -m pytest", artifact_class="file"))
+    ledger.dod.record_verdict(
+        dod.id, DodStatus.PASSED, verdict={"stdout": "ok"}, run_id=uid("run_c1")
+    )
     ledger.artifacts.create(
         Artifact(
-            id="art_c1",
-            task_id="C1",
+            id=uid("art_c1"),
+            task_id=uid("C1"),
             type=ArtifactType.PR,
             is_primary=True,
             resource_ref={"merged": True, "commit": "abc123"},
         )
     )
 
-    packet = IntegrateContextPacket.build(ledger, parent_task_id="P")
+    packet = IntegrateContextPacket.build(ledger, parent_task_id=uid("P"))
     packet.write(tmp_path)
     loaded = IntegrateContextPacket.read(tmp_path)
 
-    assert loaded.parent_task_id == "P"
+    assert loaded.parent_task_id == uid("P")
     assert loaded.parent_intent == "ship the pantry"
     assert loaded.iteration == 2
     # every child is done with a passing DoD and no blockers → the kernel recommends ACCEPT
@@ -94,7 +98,7 @@ def test_integrate_context_packet_summarizes_child_feedback(
         ("lead", "designer")
     ]
     child = loaded.children[0]
-    assert child.task_id == "C1"
+    assert child.task_id == uid("C1")
     assert child.assignee == "lead"
     assert child.assignee_role == "designer"
     assert child.status == "done"
@@ -106,7 +110,7 @@ def test_integrate_context_packet_summarizes_child_feedback(
 
 
 def test_recommended_action_is_react_when_a_child_is_unresolved(
-    ledger: SqliteLedger, tmp_path: Path
+    ledger: Ledger, tmp_path: Path
 ) -> None:
     # A subtree with a still-blocked child is NOT complete — the kernel recommends the manager react
     # (submit/assign), not accept. This is the mechanism nudge that curbs gratuitous over-submitting:
@@ -114,15 +118,21 @@ def test_recommended_action_is_react_when_a_child_is_unresolved(
     ledger.employees.create(Employee(id="mgr", name="Mgr", role="engineer"))
     ledger.employees.create(Employee(id="ada", name="Ada", role="engineer", reports_to="mgr"))
     ledger.tasks.submit(
-        Task(id="P", intent="ship it", status=TaskStatus.BLOCKED, assignee_employee_id="mgr")
+        Task(id=uid("P"), intent="ship it", status=TaskStatus.BLOCKED, assignee_employee_id="mgr")
     )
     ledger.runs.create(
-        Run(id="run_p0", employee_id="mgr", task_id="P", status=RunStatus.SUCCEEDED, outcome={})
+        Run(
+            id=uid("run_p0"),
+            employee_id="mgr",
+            task_id=uid("P"),
+            status=RunStatus.SUCCEEDED,
+            outcome={},
+        )
     )
     ledger.tasks.submit(
         Task(
-            id="C_ok",
-            parent_id="P",
+            id=uid("C_ok"),
+            parent_id=uid("P"),
             intent="part a",
             status=TaskStatus.DONE,
             assignee_employee_id="ada",
@@ -130,29 +140,29 @@ def test_recommended_action_is_react_when_a_child_is_unresolved(
     )
     ledger.tasks.submit(
         Task(
-            id="C_bad",
-            parent_id="P",
+            id=uid("C_bad"),
+            parent_id=uid("P"),
             intent="part b",
             status=TaskStatus.BLOCKED,
             assignee_employee_id="ada",
         )
     )
 
-    packet = IntegrateContextPacket.build(ledger, parent_task_id="P")
+    packet = IntegrateContextPacket.build(ledger, parent_task_id=uid("P"))
 
     assert packet.recommended_action == "react"  # one child is blocked → not complete
 
 
 def test_delegation_packet_carries_pinned_contract_and_nested_subtree_context(
-    ledger: SqliteLedger, tmp_path: Path
+    ledger: Ledger, tmp_path: Path
 ) -> None:
     ledger.employees.create(Employee(id="lead", name="Lead", role="engineer"))
     ledger.employees.create(
-        Employee(id="nested", name="Nested", role="designer", reports_to="lead")
+        Employee(id=uid("nested"), name="Nested", role="designer", reports_to="lead")
     )
     ledger.teams.create(
         Team(
-            id="team-root",
+            id=uid("team-root"),
             name="Root",
             lead_employee_id="lead",
             created_by="test",
@@ -161,39 +171,39 @@ def test_delegation_packet_carries_pinned_contract_and_nested_subtree_context(
     )
     ledger.teams.create(
         Team(
-            id="team-nested",
+            id=uid("team-nested"),
             name="Nested",
-            lead_employee_id="nested",
-            parent_team_id="team-root",
+            lead_employee_id=uid("nested"),
+            parent_team_id=uid("team-root"),
             created_by="test",
             status=TeamStatus.ACTIVE,
         )
     )
     ledger.tasks.submit(
         Task(
-            id="P",
+            id=uid("P"),
             intent="coordinate release",
             status=TaskStatus.BLOCKED,
             execution_mode=ExecutionMode.DELEGATION,
-            team_id="team-root",
+            team_id=uid("team-root"),
             assignee_employee_id="lead",
         )
     )
     ledger.tasks.submit(
         Task(
-            id="C",
-            parent_id="P",
+            id=uid("C"),
+            parent_id=uid("P"),
             intent="coordinate design",
             status=TaskStatus.DONE,
             execution_mode=ExecutionMode.DELEGATION,
-            team_id="team-nested",
-            assignee_employee_id="nested",
+            team_id=uid("team-nested"),
+            assignee_employee_id=uid("nested"),
         )
     )
     ledger.delegation_contracts.create(
         DelegationContract(
-            task_id="P",
-            team_id="team-root",
+            task_id=uid("P"),
+            team_id=uid("team-root"),
             lead_employee_id="lead",
             management_profile_version=4,
             can_subdelegate=True,
@@ -206,11 +216,11 @@ def test_delegation_packet_carries_pinned_contract_and_nested_subtree_context(
     )
     ledger.delegation_contracts.create(
         DelegationContract(
-            task_id="C",
-            team_id="team-nested",
-            lead_employee_id="nested",
+            task_id=uid("C"),
+            team_id=uid("team-nested"),
+            lead_employee_id=uid("nested"),
             management_profile_version=2,
-            parent_contract_task_id="P",
+            parent_contract_task_id=uid("P"),
             max_depth=2,
             max_team_size=3,
             spend_limit_cents=8_000,
@@ -219,10 +229,10 @@ def test_delegation_packet_carries_pinned_contract_and_nested_subtree_context(
         )
     )
 
-    IntegrateContextPacket.build(ledger, parent_task_id="P").write(tmp_path)
+    IntegrateContextPacket.build(ledger, parent_task_id=uid("P")).write(tmp_path)
     packet = IntegrateContextPacket.read(tmp_path)
 
-    assert packet.team_id == "team-root"
+    assert packet.team_id == uid("team-root")
     assert packet.contract_status == "integrating"
     assert packet.delegation_depth == 0
     assert packet.management_limits == {
@@ -234,9 +244,9 @@ def test_delegation_packet_carries_pinned_contract_and_nested_subtree_context(
     }
     assert len(packet.nested_subtree_summaries) == 1
     nested = packet.nested_subtree_summaries[0]
-    assert nested.task_id == "C"
-    assert nested.team_id == "team-nested"
-    assert nested.lead_employee_id == "nested"
+    assert nested.task_id == uid("C")
+    assert nested.team_id == uid("team-nested")
+    assert nested.lead_employee_id == uid("nested")
     assert nested.contract_status == "integrating"
     assert nested.task_status == "done"
     assert nested.child_count == 0

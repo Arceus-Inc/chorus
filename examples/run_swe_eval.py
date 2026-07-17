@@ -44,7 +44,9 @@ async def _amain(args: argparse.Namespace) -> int:
     load_env()
     creds = model_creds()
     if creds is None:
-        print("skipping: set AZURE_OPENAI_API_KEY / AZURE_OPENAI_BASE_URL / AZURE_OPENAI_DEPLOYMENT")
+        print(
+            "skipping: set AZURE_OPENAI_API_KEY / AZURE_OPENAI_BASE_URL / AZURE_OPENAI_DEPLOYMENT"
+        )
         return 0
 
     # --- load cases -------------------------------------------------------------------------------
@@ -85,29 +87,42 @@ async def _amain(args: argparse.Namespace) -> int:
     for i, case in enumerate(runnable, 1):
         print("\n" + "=" * 92)
         print(f"[{i}/{len(runnable)}] {case.id}  (role={case.role}, lang={case.language})")
-        print(f"  repo={case.repo}  base={case.base_commit[:12]}  objective={case.has_objective_oracle}")
+        print(
+            f"  repo={case.repo}  base={case.base_commit[:12]}  objective={case.has_objective_oracle}"
+        )
         cases_by_id[case.id] = case
         # --- prepare the base state ---
         try:
             seed = export_base_state(
-                case.effective_clone_url, case.repo, case.base_commit,
-                cache_root=cache_root, seed_dir=seeds_root / _safe(case.id),
+                case.effective_clone_url,
+                case.repo,
+                case.base_commit,
+                cache_root=cache_root,
+                seed_dir=seeds_root / _safe(case.id),
             )
         except PrepareError as exc:
             print(f"  PREPARE FAILED: {exc}")
             continue
         # --- run the employee ---
         candidate = await run_case(
-            case, creds=creds, seed_dir=seed, workdir=workdir,
-            timeout_s=args.timeout, on_event=lambda ln: print(f"    {ln}"),
+            case,
+            creds=creds,
+            seed_dir=seed,
+            workdir=workdir,
+            timeout_s=args.timeout,
+            on_event=lambda ln: print(f"    {ln}"),
         )
         candidates[case.id] = candidate
-        print(f"  beat_passed={candidate.beat_passed}  produced_diff={candidate.produced_diff}"
-              + (f"  ERROR={candidate.error[:120]}" if candidate.error else ""))
+        print(
+            f"  beat_passed={candidate.beat_passed}  produced_diff={candidate.produced_diff}"
+            + (f"  ERROR={candidate.error[:120]}" if candidate.error else "")
+        )
         # --- evaluate ---
         result = evaluate(case, candidate, creds)
         results.append(result)
-        print(f"  -> {result.method}: {'RESOLVED' if result.resolved else 'unresolved'}  ({result.detail[:80]})")
+        print(
+            f"  -> {result.method}: {'RESOLVED' if result.resolved else 'unresolved'}  ({result.detail[:80]})"
+        )
 
     # --- reports ---------------------------------------------------------------------------------
     out = workdir / "reports" / "swe-eval"
@@ -129,10 +144,14 @@ def main() -> int:
     ap = argparse.ArgumentParser(description="Benchmark Chorus code employees on issue->fix cases.")
     src = ap.add_mutually_exclusive_group()
     src.add_argument("--dataset", help="path to a JSONL dataset of BenchCases")
-    src.add_argument("--import-swebench", type=int, metavar="N", help="import N cases from SWE-bench Lite")
+    src.add_argument(
+        "--import-swebench", type=int, metavar="N", help="import N cases from SWE-bench Lite"
+    )
     ap.add_argument("--ids", help="comma-separated case ids to run (subset)")
     ap.add_argument("--limit", type=int, help="cap the number of cases run")
-    ap.add_argument("--timeout", type=float, default=1800.0, help="per-case beat wall-clock (seconds)")
+    ap.add_argument(
+        "--timeout", type=float, default=1800.0, help="per-case beat wall-clock (seconds)"
+    )
     args = ap.parse_args()
     return asyncio.run(_amain(args))
 

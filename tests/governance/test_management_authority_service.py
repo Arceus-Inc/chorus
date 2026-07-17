@@ -11,8 +11,8 @@ from chorus.ledger import (
     ActivityVerb,
     DelegationContract,
     DelegationContractStatus,
+    Ledger,
     ManagementProfile,
-    SqliteLedger,
     Task,
     TaskStatus,
     Team,
@@ -20,6 +20,7 @@ from chorus.ledger import (
     TeamStatus,
 )
 from chorus.roles import RoleRegistry, default_roles
+from chorus.testing import uid
 from chorus.workforce import Employee
 
 pytestmark = pytest.mark.integration
@@ -38,7 +39,7 @@ def _profile(*, granted_by_user_id: str = "spoofed-user") -> ManagementProfile:
     )
 
 
-def test_profile_grant_rejects_blank_human_actor_without_writes(ledger: SqliteLedger) -> None:
+def test_profile_grant_rejects_blank_human_actor_without_writes(ledger: Ledger) -> None:
     ledger.employees.create(Employee(id="lead", name="Lead", role="engineer"))
     service = ManagementAuthorityService(ledger)
 
@@ -48,7 +49,7 @@ def test_profile_grant_rejects_blank_human_actor_without_writes(ledger: SqliteLe
     assert (ledger.management_profiles.get("lead"), ledger.activity.all()) == (None, [])
 
 
-def test_profile_grant_records_one_typed_human_audit(ledger: SqliteLedger) -> None:
+def test_profile_grant_records_one_typed_human_audit(ledger: Ledger) -> None:
     ledger.employees.create(Employee(id="lead", name="Lead", role="engineer"))
     service = ManagementAuthorityService(ledger)
 
@@ -63,7 +64,7 @@ def test_profile_grant_records_one_typed_human_audit(ledger: SqliteLedger) -> No
 
 
 def test_profile_grant_rolls_back_when_audit_fails(
-    ledger: SqliteLedger, monkeypatch: pytest.MonkeyPatch
+    ledger: Ledger, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     ledger.employees.create(Employee(id="lead", name="Lead", role="engineer"))
     service = ManagementAuthorityService(ledger)
@@ -79,12 +80,12 @@ def test_profile_grant_rolls_back_when_audit_fails(
     assert ledger.management_profiles.get("lead") is None
 
 
-def test_profile_deactivation_records_revocation_with_new_version(ledger: SqliteLedger) -> None:
+def test_profile_deactivation_records_revocation_with_new_version(ledger: Ledger) -> None:
     ledger.employees.create(Employee(id="lead", name="Lead", role="engineer"))
     service = ManagementAuthorityService(ledger)
     service.upsert_profile(_profile(), actor_user_id="user-admin")
 
-    deactivated = service.deactivate_profile("lead", actor_user_id="user-owner")
+    deactivated = service.deactivate_profile("lead", actor_user_id=uid("user-owner"))
 
     activity = ledger.activity.by_subject("management_profile", "lead")
     assert (deactivated.active, deactivated.version) == (False, 2)
@@ -92,22 +93,22 @@ def test_profile_deactivation_records_revocation_with_new_version(ledger: Sqlite
         ActivityVerb.PROFILE_GRANTED,
         ActivityVerb.PROFILE_REVOKED,
     ]
-    assert activity[-1].actor_user_id == "user-owner"
+    assert activity[-1].actor_user_id == uid("user-owner")
     assert activity[-1].payload == {"version": 2}
 
 
-def test_profile_deactivation_refusal_is_atomic_and_audited(ledger: SqliteLedger) -> None:
+def test_profile_deactivation_refusal_is_atomic_and_audited(ledger: Ledger) -> None:
     ledger.employees.create(Employee(id="lead", name="Lead", role="engineer"))
     service = ManagementAuthorityService(ledger)
     service.upsert_profile(_profile(), actor_user_id="user-admin")
-    ledger.tasks.submit(Task(id="task-release", intent="Lead the release"))
+    ledger.tasks.submit(Task(id=uid("task-release"), intent="Lead the release"))
     ledger.teams.create(
-        Team(id="team-release", name="Release", lead_employee_id="lead", created_by="seed")
+        Team(id=uid("team-release"), name="Release", lead_employee_id="lead", created_by="seed")
     )
     ledger.delegation_contracts.create(
         DelegationContract(
-            task_id="task-release",
-            team_id="team-release",
+            task_id=uid("task-release"),
+            team_id=uid("team-release"),
             lead_employee_id="lead",
             management_profile_version=1,
             max_depth=1,
@@ -118,56 +119,65 @@ def test_profile_deactivation_refusal_is_atomic_and_audited(ledger: SqliteLedger
     )
 
     with pytest.raises(ActiveDelegationConflict) as conflict:
-        service.deactivate_profile("lead", actor_user_id="user-owner")
+        service.deactivate_profile("lead", actor_user_id=uid("user-owner"))
 
     profile = ledger.management_profiles.get("lead")
     refusal = ledger.activity.by_subject("management_profile", "lead")[-1]
     assert profile is not None and (profile.active, profile.version) == (True, 1)
-    assert conflict.value.task_ids == ("task-release",)
+    assert conflict.value.task_ids == (uid("task-release"),)
     assert refusal.verb is ActivityVerb.REORG_REFUSED
-    assert refusal.actor_user_id == "user-owner"
+    assert refusal.actor_user_id == uid("user-owner")
     assert refusal.payload == {
         "operation": "deactivate_profile",
-        "contract_task_ids": ["task-release"],
-        "team_ids": ["team-release"],
+        "contract_task_ids": [uid("task-release")],
+        "team_ids": [uid("team-release")],
     }
 
 
-def test_team_create_and_archive_are_human_governed_and_audited(ledger: SqliteLedger) -> None:
+def test_team_create_and_archive_are_human_governed_and_audited(ledger: Ledger) -> None:
     ledger.employees.create(Employee(id="lead", name="Lead", role="engineer"))
     service = ManagementAuthorityService(ledger)
 
     created = service.create_team(
-        Team(id="team-release", name="Release", lead_employee_id="lead", created_by="spoofed"),
+        Team(
+            id=uid("team-release"),
+            name="Release",
+            lead_employee_id="lead",
+            created_by=uid("spoofed"),
+        ),
         actor_user_id="user-admin",
     )
-    archived = service.archive_team("team-release", actor_user_id="user-owner")
+    archived = service.archive_team(uid("team-release"), actor_user_id=uid("user-owner"))
 
-    activity = ledger.activity.by_subject("team", "team-release")
+    activity = ledger.activity.by_subject("team", uid("team-release"))
     assert created.created_by == "user-admin"
     assert archived.status is TeamStatus.ARCHIVED
     assert [event.verb for event in activity] == [
         ActivityVerb.TEAM_FORMED,
         ActivityVerb.TEAM_ARCHIVED,
     ]
-    assert [event.actor_user_id for event in activity] == ["user-admin", "user-owner"]
+    assert [event.actor_user_id for event in activity] == ["user-admin", uid("user-owner")]
 
 
-def test_team_membership_mutations_emit_typed_human_audits(ledger: SqliteLedger) -> None:
+def test_team_membership_mutations_emit_typed_human_audits(ledger: Ledger) -> None:
     ledger.employees.create(Employee(id="lead", name="Lead", role="engineer"))
-    ledger.employees.create(Employee(id="member", name="Member", role="designer"))
+    ledger.employees.create(Employee(id=uid("member"), name="Member", role="designer"))
     ledger.teams.create(
-        Team(id="team-release", name="Release", lead_employee_id="lead", created_by="seed")
+        Team(id=uid("team-release"), name="Release", lead_employee_id="lead", created_by="seed")
     )
     service = ManagementAuthorityService(ledger)
 
     service.add_team_member(
-        TeamMember(team_id="team-release", employee_id="member", source_manager_id="lead"),
+        TeamMember(
+            team_id=uid("team-release"), employee_id=uid("member"), source_manager_id="lead"
+        ),
         actor_user_id="user-admin",
     )
-    removed = service.remove_team_member("team-release", "member", actor_user_id="user-admin")
+    removed = service.remove_team_member(
+        uid("team-release"), uid("member"), actor_user_id="user-admin"
+    )
 
-    activity = ledger.activity.by_subject("team_member", "team-release/member")
+    activity = ledger.activity.by_subject("team_member", f"{uid('team-release')}/{uid('member')}")
     assert removed.left_at is not None
     assert [event.verb for event in activity] == [
         ActivityVerb.TEAM_MEMBER_ADDED,
@@ -176,18 +186,18 @@ def test_team_membership_mutations_emit_typed_human_audits(ledger: SqliteLedger)
     assert all(event.actor_user_id == "user-admin" for event in activity)
 
 
-def test_delegation_contract_mutations_emit_typed_human_audits(ledger: SqliteLedger) -> None:
+def test_delegation_contract_mutations_emit_typed_human_audits(ledger: Ledger) -> None:
     ledger.employees.create(Employee(id="lead", name="Lead", role="engineer"))
-    ledger.tasks.submit(Task(id="task-release", intent="Lead the release"))
+    ledger.tasks.submit(Task(id=uid("task-release"), intent="Lead the release"))
     ledger.teams.create(
-        Team(id="team-release", name="Release", lead_employee_id="lead", created_by="seed")
+        Team(id=uid("team-release"), name="Release", lead_employee_id="lead", created_by="seed")
     )
     service = ManagementAuthorityService(ledger)
 
     service.create_delegation_contract(
         DelegationContract(
-            task_id="task-release",
-            team_id="team-release",
+            task_id=uid("task-release"),
+            team_id=uid("team-release"),
             lead_employee_id="lead",
             management_profile_version=1,
             max_depth=1,
@@ -197,12 +207,12 @@ def test_delegation_contract_mutations_emit_typed_human_audits(ledger: SqliteLed
         actor_user_id="user-admin",
     )
     delegated = service.update_delegation_contract_status(
-        "task-release",
+        uid("task-release"),
         DelegationContractStatus.DELEGATED,
         actor_user_id="user-admin",
     )
 
-    activity = ledger.activity.by_subject("delegation_contract", "task-release")
+    activity = ledger.activity.by_subject("delegation_contract", uid("task-release"))
     assert delegated.status is DelegationContractStatus.DELEGATED
     assert [event.verb for event in activity] == [
         ActivityVerb.DELEGATION_CREATED,
@@ -213,8 +223,8 @@ def test_delegation_contract_mutations_emit_typed_human_audits(ledger: SqliteLed
 
 def _specialization_profile() -> ManagementProfile:
     return ManagementProfile(
-        employee_id="legacy-manager",
-        granted_by_user_id="spoofed",
+        employee_id=uid("legacy-manager"),
+        granted_by_user_id=uid("spoofed"),
         active=True,
         can_lead=True,
         can_subdelegate=True,
@@ -230,15 +240,15 @@ def _roles() -> RoleRegistry:
 
 
 def test_specialize_manager_preserves_identity_org_budget_memory_and_history(
-    ledger: SqliteLedger,
+    ledger: Ledger,
 ) -> None:
-    ledger.employees.create(Employee(id="root", name="Root", role="ceo"))
+    ledger.employees.create(Employee(id=uid("root"), name="Root", role="ceo"))
     ledger.employees.create(
         Employee(
-            id="legacy-manager",
+            id=uid("legacy-manager"),
             name="Legacy Manager",
             role="manager",
-            reports_to="root",
+            reports_to=uid("root"),
             memory_scope="organization",
             budget_monthly_cents=80_000,
             spent_monthly_cents=12_345,
@@ -246,28 +256,28 @@ def test_specialize_manager_preserves_identity_org_budget_memory_and_history(
         )
     )
     ledger.employees.create(
-        Employee(id="report", name="Report", role="designer", reports_to="legacy-manager")
+        Employee(id="report", name="Report", role="designer", reports_to=uid("legacy-manager"))
     )
     before_activity = tuple(ledger.activity.all())
 
     profile = ManagementAuthorityService(ledger).specialize_manager(
-        "legacy-manager",
+        uid("legacy-manager"),
         profession="backend_engineer",
         profile=_specialization_profile(),
         roles=_roles(),
-        actor_user_id="operator-1",
+        actor_user_id=uid("operator-1"),
     )
 
-    employee = ledger.employees.get("legacy-manager")
+    employee = ledger.employees.get(uid("legacy-manager"))
     report = ledger.employees.get("report")
     assert employee is not None and report is not None
-    assert employee.id == "legacy-manager" and employee.role == "backend_engineer"
-    assert employee.reports_to == "root" and report.reports_to == "legacy-manager"
+    assert employee.id == uid("legacy-manager") and employee.role == "backend_engineer"
+    assert employee.reports_to == uid("root") and report.reports_to == uid("legacy-manager")
     assert employee.memory_scope == "organization"
     assert (employee.budget_monthly_cents, employee.spent_monthly_cents) == (80_000, 12_345)
     assert employee.last_beat_at == "2026-07-13T12:00:00+00:00"
-    assert profile.active is True and profile.granted_by_user_id == "operator-1"
-    audit = ledger.activity.by_subject("management_profile", "legacy-manager")
+    assert profile.active is True and profile.granted_by_user_id == uid("operator-1")
+    audit = ledger.activity.by_subject("management_profile", uid("legacy-manager"))
     assert tuple(ledger.activity.all()[: len(before_activity)]) == before_activity
     assert len(audit) == 1 and audit[0].verb is ActivityVerb.PROFILE_GRANTED
     assert audit[0].payload == {"profession": "backend_engineer", "version": 1}
@@ -275,72 +285,72 @@ def test_specialize_manager_preserves_identity_org_budget_memory_and_history(
 
 @pytest.mark.parametrize("profession", ["missing-role", "manager"])
 def test_specialize_manager_rejects_unknown_or_ambiguous_profession_without_writes(
-    ledger: SqliteLedger, profession: str
+    ledger: Ledger, profession: str
 ) -> None:
-    ledger.employees.create(Employee(id="legacy-manager", name="Legacy", role="manager"))
+    ledger.employees.create(Employee(id=uid("legacy-manager"), name="Legacy", role="manager"))
 
     with pytest.raises(ValueError, match="profession"):
         ManagementAuthorityService(ledger).specialize_manager(
-            "legacy-manager",
+            uid("legacy-manager"),
             profession=profession,
             profile=_specialization_profile(),
             roles=_roles(),
-            actor_user_id="operator-1",
+            actor_user_id=uid("operator-1"),
         )
 
-    assert ledger.employees.get("legacy-manager").role == "manager"  # type: ignore[union-attr]
-    assert ledger.management_profiles.get("legacy-manager") is None
+    assert ledger.employees.get(uid("legacy-manager")).role == "manager"  # type: ignore[union-attr]
+    assert ledger.management_profiles.get(uid("legacy-manager")) is None
     assert ledger.activity.all() == []
 
 
-def test_specialize_manager_rejects_non_manager_without_writes(ledger: SqliteLedger) -> None:
-    ledger.employees.create(Employee(id="specialist", name="Specialist", role="designer"))
+def test_specialize_manager_rejects_non_manager_without_writes(ledger: Ledger) -> None:
+    ledger.employees.create(Employee(id=uid("specialist"), name="Specialist", role="designer"))
     profile = ManagementProfile(
-        **{**_specialization_profile().__dict__, "employee_id": "specialist"}
+        **{**_specialization_profile().__dict__, "employee_id": uid("specialist")}
     )
 
     with pytest.raises(ValueError, match="role='manager'"):
         ManagementAuthorityService(ledger).specialize_manager(
-            "specialist",
+            uid("specialist"),
             profession="backend_engineer",
             profile=profile,
             roles=_roles(),
-            actor_user_id="operator-1",
+            actor_user_id=uid("operator-1"),
         )
 
-    assert ledger.employees.get("specialist").role == "designer"  # type: ignore[union-attr]
-    assert ledger.management_profiles.get("specialist") is None
+    assert ledger.employees.get(uid("specialist")).role == "designer"  # type: ignore[union-attr]
+    assert ledger.management_profiles.get(uid("specialist")) is None
 
 
-def test_specialize_manager_rejects_all_nonterminal_assigned_work(ledger: SqliteLedger) -> None:
-    ledger.employees.create(Employee(id="legacy-manager", name="Legacy", role="manager"))
+def test_specialize_manager_rejects_all_nonterminal_assigned_work(ledger: Ledger) -> None:
+    ledger.employees.create(Employee(id=uid("legacy-manager"), name="Legacy", role="manager"))
     for status in (TaskStatus.BACKLOG, TaskStatus.TODO, TaskStatus.BLOCKED):
         ledger.tasks.submit(
             Task(
-                id=f"task-{status.value}",
+                id=uid(f"task-{status.value}"),
                 intent="Unresolved work",
                 status=status,
-                assignee_employee_id="legacy-manager",
+                assignee_employee_id=uid("legacy-manager"),
             )
         )
 
     with pytest.raises(ValueError, match="active work"):
         ManagementAuthorityService(ledger).specialize_manager(
-            "legacy-manager",
+            uid("legacy-manager"),
             profession="backend_engineer",
             profile=_specialization_profile(),
             roles=_roles(),
-            actor_user_id="operator-1",
+            actor_user_id=uid("operator-1"),
         )
 
-    assert ledger.employees.get("legacy-manager").role == "manager"  # type: ignore[union-attr]
-    assert ledger.management_profiles.get("legacy-manager") is None
+    assert ledger.employees.get(uid("legacy-manager")).role == "manager"  # type: ignore[union-attr]
+    assert ledger.management_profiles.get(uid("legacy-manager")) is None
 
 
 def test_specialize_manager_rolls_back_role_and_profile_when_audit_fails(
-    ledger: SqliteLedger, monkeypatch: pytest.MonkeyPatch
+    ledger: Ledger, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    ledger.employees.create(Employee(id="legacy-manager", name="Legacy", role="manager"))
+    ledger.employees.create(Employee(id=uid("legacy-manager"), name="Legacy", role="manager"))
 
     def fail_audit(_: object) -> None:
         raise RuntimeError("audit unavailable")
@@ -349,12 +359,12 @@ def test_specialize_manager_rolls_back_role_and_profile_when_audit_fails(
 
     with pytest.raises(RuntimeError, match="audit unavailable"):
         ManagementAuthorityService(ledger).specialize_manager(
-            "legacy-manager",
+            uid("legacy-manager"),
             profession="backend_engineer",
             profile=_specialization_profile(),
             roles=_roles(),
-            actor_user_id="operator-1",
+            actor_user_id=uid("operator-1"),
         )
 
-    assert ledger.employees.get("legacy-manager").role == "manager"  # type: ignore[union-attr]
-    assert ledger.management_profiles.get("legacy-manager") is None
+    assert ledger.employees.get(uid("legacy-manager")).role == "manager"  # type: ignore[union-attr]
+    assert ledger.management_profiles.get(uid("legacy-manager")) is None

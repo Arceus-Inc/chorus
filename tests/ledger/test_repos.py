@@ -209,19 +209,12 @@ def test_run_create_and_finish(ledger: Ledger) -> None:
 def test_run_records_a_system_principal_separately_from_its_employee_host(
     ledger: Ledger,
 ) -> None:
-    ledger.employees.create(Employee(id=uid("author"), name="Author", role="backend_engineer"))
+    ledger.employees.create(Employee(id="author", name="Author", role="backend_engineer"))
     ledger.tasks.submit(Task(id=uid("code"), intent="ship it"))
-    ledger._conn.execute(
-        "INSERT INTO system_principal (id, kind, display_name, purpose, created_at) "
-        "VALUES (?, ?, ?, ?, ?)",
-        ("system-verifier", "verifier", "System Verifier", "tests", "2026-01-01T00:00:00+00:00"),
-    )
-    ledger._conn.commit()
-
     ledger.runs.create(
         Run(
             id=uid("verify"),
-            employee_id=uid("author"),
+            employee_id="author",
             task_id=uid("code"),
             principal_kind="system",
             system_principal_id="system-verifier",
@@ -230,7 +223,7 @@ def test_run_records_a_system_principal_separately_from_its_employee_host(
 
     run = ledger.runs.get(uid("verify"))
     assert run is not None
-    assert run.employee_id == uid("author")
+    assert run.employee_id == "author"
     assert run.principal_kind == "system"
     assert run.system_principal_id == "system-verifier"
     assert run.principal_id == "system-verifier"
