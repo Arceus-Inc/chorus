@@ -564,6 +564,18 @@ class CapabilityService:
         )
 
     def _replacement_denial(self, parent: Task, child: ChildPlan) -> DecomposeResult | None:
+        correction_id = _child_id(parent.id, child.label)
+        existing = self._ledger.tasks.get(correction_id)
+        if existing is not None:
+            # Live T3 finding (2026-07-18): the lead reused the failed child's label and the
+            # deterministic (parent, label) id collided as a raw duplicate-key error. Refuse
+            # typed, with the fix, before the insert.
+            return DecomposeResult(
+                authority_denied=(
+                    f"label {child.label!r} already names an existing child "
+                    f"({correction_id}); pick a NEW label for the corrective task"
+                )
+            )
         replaced_id = child.replaces_task_id
         if replaced_id is None:
             failed = [
@@ -580,9 +592,11 @@ class CapabilityService:
                 return DecomposeResult(
                     authority_denied=(
                         f"failed direct child {failed[0]} must be named in replaces_task_id. "
-                        f"Correction: re-call submit_task with the SAME label/intent/assignee "
-                        f'plus replaces_task_id="{failed[0]}" — one corrective task per failed '
-                        f"child. Failed children gating this task: {listed}"
+                        f"Correction: re-call submit_task with a NEW label (child ids derive "
+                        f"from the label, so reusing the failed child's label collides), the "
+                        f'same intent/assignee, plus replaces_task_id="{failed[0]}" — one '
+                        f"corrective task per failed child. Failed children gating this task: "
+                        f"{listed}"
                     )
                 )
             return None
