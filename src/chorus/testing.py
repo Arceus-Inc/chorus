@@ -9,6 +9,10 @@ template-copied database, so identical ids across tests can never collide.
 from __future__ import annotations
 
 import uuid
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from chorus.ledger import Ledger
 
 _NAMESPACE = uuid.uuid5(uuid.NAMESPACE_URL, "chorus-test-ids")
 
@@ -21,7 +25,7 @@ def uid(name: str) -> str:
 _db_counter = {"n": 0}
 
 
-def open_test_ledger(company_id: str | None = None) -> object:
+def open_test_ledger(company_id: str | None = None) -> Ledger:
     """A standalone Ledger on the test cluster (root conftest exports CHORUS_TEST_PG): a fresh
     template-copied database per call, scoped to a fresh company unless one is given. The
     ephemeral cluster's teardown reclaims everything — no per-ledger cleanup needed."""

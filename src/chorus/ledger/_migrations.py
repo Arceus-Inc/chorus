@@ -28,11 +28,19 @@ from importlib.resources import files
 
 _CREATE_TABLE = re.compile(r"^CREATE TABLE (\w+)", re.I)
 
+
+def split_statements(sql: str) -> list[str]:
+    """``;``-separated statements with ``--`` comments stripped."""
+    without_comments = "\n".join(line.split("--", 1)[0] for line in sql.splitlines())
+    return [statement.strip() for statement in without_comments.split(";") if statement.strip()]
+
+
 __all__ = [
     "LedgerAheadError",
     "Migration",
     "MigrationDriftError",
     "load_migrations",
+    "split_statements",
 ]
 
 
@@ -49,17 +57,16 @@ class Migration:
     """One immutable delta: ``id`` orders it, ``checksum`` pins its exact bytes."""
 
     id: str
-    checksum: str
     sql: str = field(repr=False)
+    checksum: str = ""  # always derived from the sql bytes in __post_init__
 
     def __post_init__(self) -> None:
         digest = hashlib.sha256(self.sql.encode("utf-8")).hexdigest()
         object.__setattr__(self, "checksum", digest)
 
     def statements(self) -> list[str]:
-        """``;``-separated statements with ``--`` comments stripped (checksum covers raw bytes)."""
-        without_comments = "\n".join(line.split("--", 1)[0] for line in self.sql.splitlines())
-        return [part.strip() for part in without_comments.split(";") if part.strip()]
+        """The delta's statements (checksum covers the raw bytes, not this normalization)."""
+        return split_statements(self.sql)
 
     def table_names(self) -> list[str]:
         """Tables this delta creates, statement order — deployments grant their runtime role
@@ -72,7 +79,7 @@ def load_migrations() -> list[Migration]:
     """Every shipped ``migrations/*.sql`` delta, id order (empty while the baseline subsumes all)."""
     directory = files("chorus.ledger.migrations")
     shipped = [
-        Migration(id=entry.name.removesuffix(".sql"), checksum="", sql=entry.read_text())
+        Migration(id=entry.name.removesuffix(".sql"), sql=entry.read_text())
         for entry in directory.iterdir()
         if entry.name.endswith(".sql")
     ]

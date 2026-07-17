@@ -24,7 +24,13 @@ from typing import Any
 from chorus.ids import mint_id
 from chorus.ledger._connection import LedgerConnection
 from chorus.ledger._errors import LedgerIntegrityError
-from chorus.ledger._migrations import LedgerAheadError, MigrationDriftError, load_migrations
+from chorus.ledger._migrations import (
+    LedgerAheadError,
+    Migration,
+    MigrationDriftError,
+    load_migrations,
+    split_statements,
+)
 from chorus.ledger._models import (
     DecompositionClaim,
     DecompositionStatus,
@@ -85,12 +91,6 @@ class SchemaDriftError(RuntimeError):
     """The baseline schema changed after this database was baselined (checksum mismatch)."""
 
 
-def _split_statements(sql: str) -> list[str]:
-    """``;``-separated statements with ``--`` comments stripped."""
-    without_comments = "\n".join(line.split("--", 1)[0] for line in sql.splitlines())
-    return [statement.strip() for statement in without_comments.split(";") if statement.strip()]
-
-
 _CREATE_TABLE = re.compile(r"CREATE TABLE (\w+)", re.I)
 _REFERENCES = re.compile(r"REFERENCES\s+(\w+)\s*\(", re.I)
 
@@ -127,7 +127,7 @@ def postgres_ddl() -> list[str]:
     for entry in sorted(schema_dir.iterdir(), key=lambda item: item.name):
         if not entry.name.endswith(".sql"):
             continue
-        for statement in _split_statements(entry.read_text()):
+        for statement in split_statements(entry.read_text()):
             match = _CREATE_TABLE.match(statement)
             if match is not None:
                 tables[match.group(1)] = statement
@@ -272,19 +272,20 @@ class Ledger:
                     "VALUES (%s, %s, %s)",
                     (baseline_id, checksum, datetime.now(UTC)),
                 )
-            self._apply_pending_migrations(pg, baseline_id)
+            shipped = load_migrations()
+            self._apply_pending_migrations(pg, baseline_id, shipped)
         # The display version: the newest applied id (the baseline when no deltas shipped yet).
-        shipped = load_migrations()
         self._schema_version = shipped[-1].id if shipped else baseline_id
 
-    def _apply_pending_migrations(self, pg: Any, baseline_id: str) -> None:
+    def _apply_pending_migrations(
+        self, pg: Any, baseline_id: str, shipped: list[Migration]
+    ) -> None:
         """Apply the authored delta stream (applied-set model) inside the bootstrap transaction.
 
         Runs under the advisory lock, so concurrent opens serialise. Refuses a database that is
         AHEAD of the SDK (applied id we do not ship) and a shipped migration whose checksum
         DRIFTED from its applied row — both mean human intervention, never guessing.
         """
-        shipped = load_migrations()
         applied = {
             row["id"]: row["checksum"]
             for row in pg.execute("SELECT id, checksum FROM chorus_schema_migrations").fetchall()

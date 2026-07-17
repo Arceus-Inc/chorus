@@ -17,6 +17,7 @@ intermediate commits via the same ``_defer_depth`` latch the SQLite driver uses.
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 
 import psycopg
@@ -48,8 +49,6 @@ class _IsoTimestampLoader(Loader):
     timestamp wire format since the SQLite era; repos' from_iso parses it unchanged."""
 
     def load(self, data: bytes | bytearray | memoryview) -> str:
-        from datetime import datetime
-
         return datetime.fromisoformat(bytes(data).decode("utf-8")).isoformat()
 
 

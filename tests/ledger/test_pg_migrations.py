@@ -31,8 +31,7 @@ pytestmark = pytest.mark.integration
 
 _FIXTURE = Migration(
     id="0099_widget",
-    checksum="",  # computed by __post_init__ from the statements
-    sql=(
+    sql=(  # checksum derives from these bytes in __post_init__
         "CREATE TABLE widget (\n"
         "    company_id uuid NOT NULL DEFAULT "
         "(NULLIF(current_setting('app.company_id', true), ''))::uuid,\n"
@@ -135,7 +134,7 @@ def test_edited_migration_is_refused(pg_database: str, monkeypatch: pytest.Monke
 
     monkeypatch.setattr(ledger_mod, "load_migrations", lambda: [*_real_load(), _FIXTURE])
     Ledger.open(pg_database, company_id=str(uuid.uuid4())).close()
-    edited = Migration(id="0099_widget", checksum="", sql="SELECT 1")
+    edited = Migration(id="0099_widget", sql="SELECT 1")
     monkeypatch.setattr(ledger_mod, "load_migrations", lambda: [*_real_load(), edited])
     with pytest.raises(MigrationDriftError, match="0099_widget"):
         Ledger.open(pg_database, company_id=str(uuid.uuid4()))

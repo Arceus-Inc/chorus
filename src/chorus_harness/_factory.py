@@ -606,12 +606,6 @@ class EmployeeHarnessFactory:
         base = work_root if work_root is not None else default_work_root()
         self._company_root = base / company_id
 
-    def _require_ledger(self, feature: str) -> Ledger:
-        """The skills store lives in the company's Postgres schema — these features need the ledger."""
-        if self._ledger is None:
-            raise RuntimeError(f"{feature} requires the company ledger")
-        return self._ledger
-
     @property
     def company_root(self) -> Path:
         """The org's workspace root (``.chorus/work/{org}/``) — where landers find the worktrees."""
@@ -909,7 +903,7 @@ class EmployeeHarnessFactory:
             registry.register(
                 SkillManageTool(
                     company_root=self._company_root,
-                    ledger=self._require_ledger("skill_manage"),
+                    ledger=self._ledger,
                     canonical_skills_root=(
                         Path(config.skills_root) if config.skills_root else None
                     ),
@@ -975,7 +969,7 @@ class EmployeeHarnessFactory:
                 # the DB is the source of truth; this materialized copy is the per-beat cache.
                 materialize_versioned_skills_into(
                     skills_dir,
-                    ledger=self._require_ledger("versioned skills"),
+                    ledger=self._ledger,
                     company_root=self._company_root,
                     employee_id=employee.id,
                 )
