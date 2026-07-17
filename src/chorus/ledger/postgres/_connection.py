@@ -67,9 +67,14 @@ class PostgresLedgerConnection:
         self._in_txn = False
 
     @classmethod
-    def connect(cls, conninfo: str) -> PostgresLedgerConnection:
+    def connect(cls, conninfo: str, *, company_id: str | None = None) -> PostgresLedgerConnection:
         pg = psycopg.connect(conninfo, autocommit=True, row_factory=rows.dict_row)
         _register_ledger_types(pg)
+        if company_id is not None:
+            # A dedicated per-company connection: pin the tenancy GUC for the whole session so the
+            # RLS policies scope every statement and the DEFAULT stamps every insert. Bound as a
+            # parameter — never interpolated.
+            pg.execute("SELECT set_config('app.company_id', %s, false)", (company_id,))
         return cls(pg)
 
     def execute(self, sql: str, parameters: Any = (), /) -> Any:

@@ -53,14 +53,22 @@ class PostgresLedger(LedgerCore):
         super().__init__(conn)
 
     @classmethod
-    def open(cls, conninfo: str) -> PostgresLedger:
-        """Connect, bootstrap (idempotent, advisory-locked), and wire the repos."""
-        conn = PostgresLedgerConnection.connect(conninfo)
+    def open(cls, conninfo: str, *, company_id: str | None = None) -> PostgresLedger:
+        """Connect, bootstrap (idempotent, advisory-locked), and wire the repos.
+
+        ``company_id`` pins the session's tenancy context: FORCE RLS scopes every read/write to
+        that company and the ``company_id`` DEFAULT stamps every insert. Without it the ledger is
+        read-only-empty and write-refusing (fail closed) under a non-superuser role — pass it for
+        any real work; omit it only for bootstrap/administrative opens.
+        """
+        conn = PostgresLedgerConnection.connect(conninfo, company_id=company_id)
         ledger = cls(conn)
         ledger._bootstrap()
         return ledger
 
     def _bootstrap(self) -> None:
+        import psycopg
+
         statements = postgres_ddl()
         checksum = _baseline_checksum(statements)
         pg = self._pg_conn._pg
@@ -68,10 +76,18 @@ class PostgresLedger(LedgerCore):
         # so two processes opening together serialise and the loser sees the recorded baseline.
         with pg.transaction():
             pg.execute("SELECT pg_advisory_xact_lock(%s)", (_ADVISORY_LOCK_KEY,))
-            pg.execute(_SCHEMA_MIGRATIONS_DDL)
-            row = pg.execute(
-                "SELECT checksum FROM chorus_schema_migrations WHERE id = %s", (_BASELINE_ID,)
-            ).fetchone()
+            # Probe before creating: a non-owner runtime role (SELECT-granted, no schema CREATE)
+            # must be able to open an already-bootstrapped database. The savepoint contains the
+            # UndefinedTable error on a genuinely fresh database.
+            try:
+                with pg.transaction():
+                    row = pg.execute(
+                        "SELECT checksum FROM chorus_schema_migrations WHERE id = %s",
+                        (_BASELINE_ID,),
+                    ).fetchone()
+            except psycopg.errors.UndefinedTable:
+                row = None
+                pg.execute(_SCHEMA_MIGRATIONS_DDL)  # fresh database — needs an owner/DDL role
             if row is not None:
                 if row["checksum"] != checksum:
                     raise SchemaDriftError(

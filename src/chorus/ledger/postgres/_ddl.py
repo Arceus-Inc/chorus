@@ -202,9 +202,65 @@ def _dependency_order(tables: dict[str, str]) -> tuple[list[str], dict[str, str]
     return ordered, statements, deferred
 
 
+# --- tenancy: company_id + FORCE RLS (the M5 shared-schema shape) ------------------------------
+
+# The session's company travels as a transaction-/session-local GUC; the reset state on a pooled
+# connection is '' (not NULL), so NULLIF guards both. NULL company -> writes violate NOT NULL and
+# reads match zero rows: fail closed in both directions.
+_COMPANY_GUC = "(NULLIF(current_setting('app.company_id', true), ''))::uuid"
+
+# The company discriminator on every table. DEFAULT auto-stamps inserts from the session GUC, so
+# the kernel's SQL never mentions company_id; the RLS WITH CHECK below validates it anyway.
+_COMPANY_COLUMN = f"    company_id uuid NOT NULL DEFAULT {_COMPANY_GUC},"
+
+# Unique indexes whose key is NOT anchored on a chorus-minted (globally-unique) id — without the
+# company discriminator two companies would collide on equal fingerprints/keys/scopes. Indexes
+# anchored on minted ids stay as-declared (global uniqueness is a superset of per-company).
+# wake_queued_key_uq stays global: it is an ON CONFLICT target in repo SQL (the conflict spec must
+# match the index columns on both engines) and its default key embeds an employee uuid; a crafted
+# cross-company custom key fails loudly (RLS blocks the foreign DO UPDATE), never corrupts.
+_COMPANY_SCOPED_UNIQUES = {
+    "task_horizon_intake_fingerprint_uq",
+    "routine_run_idempotency_uq",
+    "budget_policy_scope_uq",
+}
+
+_UNIQUE_INDEX = re.compile(r"^(CREATE UNIQUE INDEX (\w+)\s+ON \w+)\s*\(", re.M)
+
+
+def _with_company_column(statement: str) -> str:
+    """Insert the company_id column as the first column of a CREATE TABLE statement."""
+    lines = statement.splitlines()
+    return "\n".join([lines[0], _COMPANY_COLUMN, *lines[1:]])
+
+
+def _scope_unique_to_company(statement: str) -> str:
+    match = _UNIQUE_INDEX.match(statement)
+    if match is None or match.group(2) not in _COMPANY_SCOPED_UNIQUES:
+        return statement
+    return f"{match.group(1)} (company_id, {statement[match.end() :]}"
+
+
+def _tenancy_statements(table: str) -> list[str]:
+    """FORCE RLS + the company-isolation policy for one table.
+
+    USING scopes reads, WITH CHECK scopes writes (a bug can't stamp a foreign company). The
+    predicate is wrapped in a scalar subquery so the GUC evaluates once per statement (InitPlan),
+    not per row. FORCE applies the policy to the table owner too; only superusers bypass it —
+    production connects as a non-superuser role.
+    """
+    predicate = f"company_id = (SELECT {_COMPANY_GUC})"
+    return [
+        f"ALTER TABLE {table} ENABLE ROW LEVEL SECURITY",
+        f"ALTER TABLE {table} FORCE ROW LEVEL SECURITY",
+        f"CREATE POLICY {table}_company_isolation ON {table} "
+        f"USING ({predicate}) WITH CHECK ({predicate})",
+    ]
+
+
 def postgres_ddl() -> list[str]:
-    """Every ledger DDL statement, Postgres dialect: tables in FK-dependency order, deferred FK
-    constraints for reference cycles, then indexes."""
+    """Every ledger DDL statement, Postgres dialect: tenant-scoped tables in FK-dependency order,
+    deferred FK constraints for reference cycles, RLS policies, then indexes."""
     schema_dir = files("chorus.ledger.schema")
     tables: dict[str, str] = {}
     indexes: list[str] = []
@@ -214,11 +270,12 @@ def postgres_ddl() -> list[str]:
         for statement in _split_statements(entry.read_text()):
             table_match = _CREATE_TABLE.search(statement)
             if table_match is not None:
-                tables[table_match.group(1)] = _translate_statement(statement)
+                tables[table_match.group(1)] = _with_company_column(_translate_statement(statement))
             else:
-                indexes.append(_translate_statement(statement))
+                indexes.append(_scope_unique_to_company(_translate_statement(statement)))
     ordered, statements, deferred = _dependency_order(tables)
-    return [statements[name] for name in ordered] + deferred + indexes
+    tenancy = [statement for name in ordered for statement in _tenancy_statements(name)]
+    return [statements[name] for name in ordered] + deferred + tenancy + indexes
 
 
 __all__ = ["postgres_ddl"]

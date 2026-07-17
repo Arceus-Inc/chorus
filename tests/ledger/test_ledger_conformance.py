@@ -111,7 +111,7 @@ def any_ledger(request: pytest.FixtureRequest, pg_conninfo: str | None) -> Itera
         with psycopg.connect(pg_conninfo, autocommit=True) as admin:
             admin.execute("DROP SCHEMA public CASCADE")
             admin.execute("CREATE SCHEMA public")
-        ledger = PostgresLedger.open(pg_conninfo)
+        ledger = PostgresLedger.open(pg_conninfo, company_id=mint_id())
     try:
         yield ledger
     finally:
@@ -319,6 +319,10 @@ def test_postgres_columns_are_native_types(pg_conninfo: str | None) -> None:
             ("delegation_contract", "spend_limit_cents"): "bigint",
             ("workforce_plan", "confidence"): "double precision",
             ("system_principal", "id"): "text",
+            # Tenancy: every table carries the company discriminator (M5 shared-schema shape).
+            ("task", "company_id"): "uuid",
+            ("wake", "company_id"): "uuid",
+            ("system_principal", "company_id"): "uuid",
         }
         with psycopg.connect(pg_conninfo) as conn:
             rows = conn.execute(
@@ -332,3 +336,92 @@ def test_postgres_columns_are_native_types(pg_conninfo: str | None) -> None:
         assert wrong == {}, f"(column): (actual, expected) -> {wrong}"
     finally:
         ledger.close()
+
+
+# --- Postgres tenancy: company_id + FORCE RLS (M5 shared-schema shape) --------------------------
+
+
+def _app_role_conninfo(pg_conninfo: str, admin_grants: bool = True) -> str:
+    """Create (once) a non-superuser NOBYPASSRLS role and grant it the ledger tables."""
+    import psycopg
+
+    with psycopg.connect(pg_conninfo, autocommit=True) as admin:
+        admin.execute(
+            "DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'chorus_app') "
+            "THEN CREATE ROLE chorus_app LOGIN NOSUPERUSER NOBYPASSRLS; END IF; END $$"
+        )
+        if admin_grants:
+            admin.execute("GRANT USAGE ON SCHEMA public TO chorus_app")
+            admin.execute(
+                "GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO chorus_app"
+            )
+    return pg_conninfo.replace("user=postgres", "user=chorus_app")
+
+
+def test_postgres_isolates_companies_with_force_rls(pg_conninfo: str | None) -> None:
+    """Two companies, one database: A's rows are invisible to B, writes auto-stamp the session's
+    company, and a session with no company context fails closed. Proven under a NON-superuser
+    role (FORCE RLS bites; superusers bypass row security entirely)."""
+    if pg_conninfo is None:
+        pytest.skip(f"PostgreSQL 18 not found at {_PG_BIN}")
+    import psycopg
+
+    with psycopg.connect(pg_conninfo, autocommit=True) as admin:
+        admin.execute("DROP SCHEMA public CASCADE")
+        admin.execute("CREATE SCHEMA public")
+    bootstrap = PostgresLedger.open(pg_conninfo, company_id=mint_id())  # owner applies DDL
+    bootstrap.close()
+    app_conninfo = _app_role_conninfo(pg_conninfo)
+
+    company_a, company_b = mint_id(), mint_id()
+    ledger_a = PostgresLedger.open(app_conninfo, company_id=company_a)
+    ledger_b = PostgresLedger.open(app_conninfo, company_id=company_b)
+    try:
+        task = _task(ledger_a, intent="secret work")
+        assert ledger_a.tasks.get(task.id) is not None  # A sees its own row
+        assert ledger_b.tasks.get(task.id) is None  # B sees nothing of A's
+        assert ledger_b.tasks.list_eligible(limit=10) == []
+        # B's write lands in B — visible to B, invisible to A (auto-stamped company_id).
+        b_task = _task(ledger_b, intent="b work")
+        assert ledger_b.tasks.get(b_task.id) is not None
+        assert ledger_a.tasks.get(b_task.id) is None
+        # (Cross-company reuse of a NON-id key is covered by the horizon-fingerprint test below;
+        # id-anchored uniques stay global on purpose — minted uuids never repeat across companies.)
+    finally:
+        ledger_a.close()
+        ledger_b.close()
+
+    # No company context at all -> inserts fail closed (NOT NULL company_id from a NULL GUC).
+    naked = PostgresLedger.open(app_conninfo)
+    try:
+        with pytest.raises(Exception):
+            _task(naked)
+        naked._pg_conn.rollback()
+        assert naked.tasks.list_eligible(limit=10) == []  # and reads see zero rows
+    finally:
+        naked.close()
+
+
+def test_postgres_horizon_fingerprint_is_company_scoped(pg_conninfo: str | None) -> None:
+    """The one non-id-anchored exact-once index: two companies may carry the same intake
+    fingerprint; within one company it stays exact-once."""
+    if pg_conninfo is None:
+        pytest.skip(f"PostgreSQL 18 not found at {_PG_BIN}")
+    import psycopg
+
+    with psycopg.connect(pg_conninfo, autocommit=True) as admin:
+        admin.execute("DROP SCHEMA public CASCADE")
+        admin.execute("CREATE SCHEMA public")
+    PostgresLedger.open(pg_conninfo, company_id=mint_id()).close()
+    app_conninfo = _app_role_conninfo(pg_conninfo)
+    ledger_a = PostgresLedger.open(app_conninfo, company_id=mint_id())
+    ledger_b = PostgresLedger.open(app_conninfo, company_id=mint_id())
+    try:
+        fingerprint = "sha256:same-directive"
+        _task(ledger_a, origin_kind=OriginKind.HORIZON_INTAKE, origin_fingerprint=fingerprint)
+        _task(ledger_b, origin_kind=OriginKind.HORIZON_INTAKE, origin_fingerprint=fingerprint)
+        with pytest.raises(Exception):
+            _task(ledger_a, origin_kind=OriginKind.HORIZON_INTAKE, origin_fingerprint=fingerprint)
+    finally:
+        ledger_a.close()
+        ledger_b.close()
