@@ -32,14 +32,15 @@ class CostEventRepo:
             raise ValueError("cost_cents must be non-negative")
         occurred = to_iso(event.occurred_at) or utcnow_iso()
         self._conn.execute(
-            "INSERT INTO cost_event (id, employee_id, task_id, run_id, provider, model, "
+            "INSERT INTO cost_event (id, employee_id, task_id, run_id, trace_id, provider, model, "
             "input_tokens, output_tokens, cost_cents, occurred_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 event.id,
                 event.employee_id,
                 event.task_id,
                 event.run_id,
+                event.trace_id,
                 event.provider,
                 event.model,
                 event.input_tokens,
@@ -101,6 +102,7 @@ def _row_to_event(row: LedgerRow) -> CostEvent:
         cost_cents=row["cost_cents"],
         task_id=row["task_id"],
         run_id=row["run_id"],
+        trace_id=row["trace_id"],
         input_tokens=row["input_tokens"],
         output_tokens=row["output_tokens"],
         occurred_at=from_iso(row["occurred_at"]),

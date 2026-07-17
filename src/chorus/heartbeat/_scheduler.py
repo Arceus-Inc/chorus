@@ -60,6 +60,7 @@ from chorus.ledger._models import (
 from chorus.lifecycle import TERMINAL, record_activity
 from chorus.lifecycle._team_policy import MissionTeamPolicy
 from chorus.memory import EpisodicStore, SprintDelta, beat_fingerprint
+from chorus.observability._trace import TraceStamper, trace_root
 from chorus.outcomes import (
     AgentReview,
     DoDKind,
@@ -869,7 +870,18 @@ class Scheduler:
         ):
             return
 
-        observer = self._event_bus.emit if self._event_bus is not None else None
+        trace_id = trace_root(ledger, task.id)  # the lineage root — the product's run anchor
+        observer = (
+            TraceStamper(
+                self._event_bus.emit,
+                trace_id=trace_id,
+                task_id=task.id,
+                employee_id=employee.id,
+                run_id=run_id,
+            )
+            if self._event_bus is not None
+            else None
+        )
         verifier = None
         beat_runner: BeatRunner | None = None
         # The fingerprint baseline: HEAD *before* the beat runs, so the beat-end diff spans exactly this
@@ -1040,7 +1052,14 @@ class Scheduler:
         )
         ledger.tasks.release_locks(task_id, run_id=run_id)
         ledger.wakes.mark_done(wake.id)
-        self._record_cost(employee.id, task_id=task_id, run_id=run_id, result=result, now=now)
+        self._record_cost(
+            employee.id,
+            task_id=task_id,
+            run_id=run_id,
+            trace_id=trace_id,
+            result=result,
+            now=now,
+        )
 
     async def _capture_memory(
         self,
@@ -1322,7 +1341,17 @@ class Scheduler:
                     "the objective is satisfied."
                 ),
                 rubric=rubric,
-                observer=self._event_bus.emit if self._event_bus is not None else None,
+                observer=(
+                    TraceStamper(
+                        self._event_bus.emit,
+                        trace_id=trace_root(ledger, task.id),
+                        task_id=task.id,
+                        employee_id=lead.id,
+                        run_id=verification_run_id,
+                    )
+                    if self._event_bus is not None
+                    else None
+                ),
             )
         except Exception as exc:
             review = failure_outcome(exc)
@@ -1587,7 +1616,17 @@ class Scheduler:
             BeatContext(task_id=task_id, run_id=review_run_id, employee_id=reviewer.id).write(
                 worktree
             )
-        observer = self._event_bus.emit if self._event_bus is not None else None
+        observer = (
+            TraceStamper(
+                self._event_bus.emit,
+                trace_id=trace_root(ledger, task_id),
+                task_id=task_id,
+                employee_id=reviewer.id,
+                run_id=review_run_id,
+            )
+            if self._event_bus is not None
+            else None
+        )
         try:
             result = await runner.run_task(
                 task_id=task_id,
@@ -2019,7 +2058,14 @@ class Scheduler:
         )
 
     def _record_cost(
-        self, employee_id: str, *, task_id: str, run_id: str, result: BeatOutcome, now: datetime
+        self,
+        employee_id: str,
+        *,
+        task_id: str,
+        run_id: str,
+        trace_id: str,
+        result: BeatOutcome,
+        now: datetime,
     ) -> None:
         """Record the beat's spend as a cost event and run Gate 2 against it (spec 04 §3).
 
@@ -2040,6 +2086,7 @@ class Scheduler:
                 cost_cents=result.cost_cents,
                 input_tokens=result.input_tokens,
                 output_tokens=result.output_tokens,
+                trace_id=trace_id,
                 occurred_at=now,
             )
         )
