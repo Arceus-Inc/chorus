@@ -6,6 +6,7 @@ worktree side-effects run on real git in a temp dir.
 
 from __future__ import annotations
 
+import json
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -20,6 +21,8 @@ from chorus.ledger import (
     ExecutionMode,
     Ledger,
     ManagementProfile,
+    Run,
+    RunStatus,
     Task,
     TaskStatus,
     Team,
@@ -511,6 +514,108 @@ def test_delegation_brief_is_rehydrated_with_its_team(
         assert "bob (backend_engineer)" in generator
         assert "eve (engineer)" not in generator
         assert "moe" not in generator.split("Your reports")[1]  # the manager isn't its own report
+    finally:
+        ledger.close()
+
+
+def test_corrective_child_inherits_failed_sibling_evidence(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Live T3 (2026-07-18): corrective children re-failed on findings they never saw. The
+    beat brief must machine-inject the failed same-scope attempts' run outcomes and the
+    evaluator notes recorded in the worktree, and authorize re-authoring implicated tests."""
+    ledger = open_test_ledger()
+    try:
+        ic = Employee(id="bex", name="Bex", role="backend_engineer")
+        ledger.employees.create(ic)
+        parent = ledger.tasks.submit(Task(id=uid("root"), intent="deliver links"))
+        failed = ledger.tasks.submit(
+            Task(
+                id=uid("attempt-1"),
+                intent="build links.py",
+                parent_id=parent.id,
+                assignee_employee_id=ic.id,
+                status=TaskStatus.REJECTED,
+            )
+        )
+        corrective = ledger.tasks.submit(
+            Task(
+                id=uid("attempt-2"),
+                intent="fix remaining review findings",
+                parent_id=parent.id,
+                assignee_employee_id=ic.id,
+                status=TaskStatus.TODO,
+            )
+        )
+        run_id = uid("failed-run")
+        ledger.runs.create(
+            Run(
+                id=run_id,
+                employee_id=ic.id,
+                task_id=failed.id,
+                status=RunStatus.FAILED,
+                outcome={
+                    "sprint_outcomes": ["needs-changes", "needs-changes"],
+                    "subagent_evidence_reason": (
+                        "code_reviewer evidence does not carry the required claim"
+                    ),
+                },
+            )
+        )
+        factory, _ = _factory(monkeypatch, tmp_path, ledger)
+        # The first materialize creates the worktree; drop the evaluator record where dream
+        # persists it (docs/evals/<run>/sprint-N.json), then materialize the corrective beat.
+        first = factory.materialize(ic, task_id=corrective.id)
+        evals = first.working_dir / "docs" / "evals" / run_id
+        evals.mkdir(parents=True, exist_ok=True)
+        (evals / "sprint-1.json").write_text(
+            json.dumps(
+                {
+                    "outcome": "needs-changes",
+                    "notes": (
+                        "base62 alphabet implementation contradicts the required 0-9,A-Z,a-z "
+                        "order and the tests themselves assert the wrong vectors"
+                    ),
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        mat = factory.materialize(ic, task_id=corrective.id)
+
+        generator = (mat.working_dir / ".harness" / "roles" / "generator.toml").read_text("utf-8")
+        assert "Inherited failure evidence" in generator
+        assert failed.id in generator
+        assert "contradicts the required 0-9,A-Z,a-z" in generator
+        assert "code_reviewer evidence does not carry the required claim" in generator
+        assert "AUTHORIZED to re-author" in generator
+    finally:
+        ledger.close()
+
+
+def test_first_attempt_child_gets_no_inheritance_block(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    ledger = open_test_ledger()
+    try:
+        ic = Employee(id="bex", name="Bex", role="backend_engineer")
+        ledger.employees.create(ic)
+        parent = ledger.tasks.submit(Task(id=uid("root"), intent="deliver links"))
+        child = ledger.tasks.submit(
+            Task(
+                id=uid("attempt-1"),
+                intent="build links.py",
+                parent_id=parent.id,
+                assignee_employee_id=ic.id,
+                status=TaskStatus.TODO,
+            )
+        )
+        factory, _ = _factory(monkeypatch, tmp_path, ledger)
+
+        mat = factory.materialize(ic, task_id=child.id)
+
+        generator = (mat.working_dir / ".harness" / "roles" / "generator.toml").read_text("utf-8")
+        assert "Inherited failure evidence" not in generator
     finally:
         ledger.close()
 

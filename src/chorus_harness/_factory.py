@@ -15,6 +15,7 @@ so the factory rebuilds the harness per call without a cache.
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
@@ -96,7 +97,7 @@ from chorus_tools.delivery import (
 if TYPE_CHECKING:
     from dream.contracts import GovernancePort
 
-    from chorus.ledger import Ledger
+    from chorus.ledger import Ledger, Task
 
 # dream runs these three intra-task roles per task; the employee's identity is overlaid onto each.
 _DREAM_ROLES: tuple[Literal["planner", "generator", "evaluator"], ...] = (
@@ -367,6 +368,67 @@ _LEDGER_FREE_CAPABILITY_TOOLS = frozenset(
 _DELEGATING_TOOLS = frozenset({"decompose", "submit_task", "assign_task"})
 # The manager's reactive tools on an integrate beat — withheld once the subtree is already complete.
 _REACTIVE_TOOLS = frozenset({"submit_task", "assign_task"})
+
+
+def _failure_inheritance(ledger: Ledger, task: Task, root: Path) -> str:
+    """The corrective beat's inherited defect list — machine-injected, never re-discovered.
+
+    Live T3 (2026-07-18): the lead re-dispatched rejected children correctly, but each
+    corrective child received only prose ("fix remaining review findings") while the
+    evaluator's exact defect ("base62 alphabet order…, tests assert the wrong vectors")
+    stayed in the failed attempt's records — so the corrective beat re-failed on it for two
+    full cycles. Lineage is derived structurally (same parent, same assignee, terminal
+    REJECTED/CANCELLED siblings), which also folds a whole corrective chain's history into
+    the newest attempt. Evidence comes from the ledger's run outcomes plus the evaluator
+    records dream persisted in this worktree (docs/evals/<run>/sprint-*.json).
+    """
+    from chorus.ledger import TaskStatus
+
+    parent_id = task.parent_id
+    assignee = task.assignee_employee_id
+    task_id = task.id
+    if parent_id is None or assignee is None:
+        return ""
+    failed = [
+        sibling
+        for sibling in ledger.tasks.children(parent_id)
+        if sibling.id != task_id
+        and sibling.assignee_employee_id == assignee
+        and sibling.status in {TaskStatus.REJECTED, TaskStatus.CANCELLED}
+    ]
+    if not failed:
+        return ""
+    lines = [
+        "\n\n## Inherited failure evidence — you are the corrective attempt",
+        "Prior attempts at this exact scope FAILED with the findings below. Fix these "
+        "findings FIRST; do not re-discover or re-litigate them.",
+    ]
+    for sibling in failed:
+        lines.append(f"\n### Failed attempt {sibling.id} ({sibling.status.value})")
+        for run in ledger.runs.for_task(sibling.id):
+            outcome = run.outcome or {}
+            fragments = []
+            if outcome.get("sprint_outcomes"):
+                fragments.append(f"sprint outcomes: {outcome['sprint_outcomes']}")
+            if outcome.get("subagent_evidence_reason"):
+                fragments.append(f"evidence gate: {outcome['subagent_evidence_reason']}")
+            if fragments:
+                lines.append(f"- run {run.id} ({run.status.value}): " + "; ".join(fragments))
+            for eval_path in sorted(root.glob(f"docs/evals/{run.id}/sprint-*.json")):
+                try:
+                    record = json.loads(eval_path.read_text(encoding="utf-8"))
+                except (OSError, json.JSONDecodeError, ValueError):
+                    continue
+                notes = str(record.get("notes", "")).strip() if isinstance(record, dict) else ""
+                if notes:
+                    lines.append(f"  - evaluator ({eval_path.name}): {notes}")
+    lines.append(
+        "\nWhere a finding implicates the TESTS themselves (wrong assertions or vectors), you "
+        "are AUTHORIZED to re-author those tests via the test_author subagent — correcting a "
+        "wrong assertion is a fix, not a weakening. Address every finding above, then run the "
+        "full verification gate."
+    )
+    return "\n".join(lines)
 
 
 def _team_roster(ledger: Ledger, *, exclude: str, team_id: str | None = None) -> str:
@@ -823,6 +885,17 @@ class EmployeeHarnessFactory:
                         + "\n"
                     ),
                 )
+        # Corrective replacement: a child whose same-assignee siblings already failed inherits
+        # their exact findings (never applied to verifier/borrowed-worktree materializations).
+        if (
+            self._ledger is not None
+            and task is not None
+            and config_override is None
+            and review_worktree_of is None
+        ):
+            inheritance = _failure_inheritance(self._ledger, task, root)
+            if inheritance:
+                config = replace(config, system_prompt=config.system_prompt + inheritance)
         write_role_overlays(root, config)  # the employee's identity overlays the whole harness
         write_sandbox_config(
             root, config.sandbox
