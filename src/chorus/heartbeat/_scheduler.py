@@ -19,7 +19,6 @@ import asyncio
 import json
 import logging
 import subprocess
-import uuid
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
@@ -661,7 +660,7 @@ class Scheduler:
                 budget_gated += 1
                 continue
             task_id = str(wake.payload["task_id"])
-            run_id = f"run_{uuid.uuid4().hex}"
+            run_id = mint_id()
             # Dispatch CAS (spec 03 §5): checkout flips the task to ``in_progress`` under ``run_id``.
             # A False is a 409 — a live owner already holds it — so we release the wake and skip.
             if not ledger.tasks.checkout(task_id, employee_id=wake.employee_id, run_id=run_id):
