@@ -79,6 +79,13 @@ class RunRepo:
         ).fetchall()
         return {row["employee_id"] for row in rows}
 
+    def running(self) -> list[Run]:
+        """Every live beat, oldest first — the allocation board's 'claimed' lane (OBS P6)."""
+        rows = self._conn.execute(
+            "SELECT * FROM run WHERE status = 'running' ORDER BY started_at, id"
+        ).fetchall()
+        return [_row_to_run(row) for row in rows]
+
     def running_with_expired_lease(self, now: datetime) -> list[Run]:
         """``running`` runs whose lease has passed (or was never set) - orphaned beats (spec 02 §7).
 

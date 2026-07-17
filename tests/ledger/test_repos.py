@@ -362,3 +362,23 @@ def test_list_eligible_excludes_human_owned(ledger: Ledger) -> None:
     )
     # human-owned t2 is excluded — checkout would always reject it (eligibility ⇔ claimability)
     assert [t.id for t in ledger.tasks.list_eligible(limit=10)] == [uid("t1")]
+
+
+def test_runs_running_lists_live_beats_oldest_first(ledger: Ledger) -> None:
+    from datetime import UTC, datetime
+
+    from chorus.ledger._models import Run, RunStatus
+
+    ledger.employees.create(Employee(id="ada", name="Ada", role="engineer"))
+    ledger.tasks.submit(Task(id=uid("rr-t1"), intent="a", assignee_employee_id="ada"))
+    for n, rid in enumerate((uid("rr-r1"), uid("rr-r2"))):
+        ledger.runs.create(
+            Run(
+                id=rid,
+                employee_id="ada",
+                task_id=uid("rr-t1"),
+                status=RunStatus.RUNNING,
+                started_at=datetime(2026, 6, 1, 12, n, tzinfo=UTC),
+            )
+        )
+    assert [run.id for run in ledger.runs.running()] == [uid("rr-r1"), uid("rr-r2")]
