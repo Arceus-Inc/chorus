@@ -22,7 +22,7 @@ from typing import Any
 
 from chorus.budgets import BudgetEnforcer
 from chorus.cron import reconcile_declared_routines
-from chorus.errors import OrgInvariantViolation
+from chorus.errors import OrgInvariantViolation, UnknownEmployee
 from chorus.events import Event, EventKind
 from chorus.governance import GovernancePolicy
 from chorus.groups import (
@@ -253,7 +253,15 @@ class Chorus:
         its OKR node (the alignment tree horizon authors); ``origin_kind`` / ``origin_fingerprint`` stamp
         provenance so horizon's idempotent intake (``horizon_intake`` + a fingerprint) can dedup.
         """
-        employee = self._workforce.get(slugify(assignee)) if assignee is not None else None
+        if assignee is None:
+            employee = None
+        else:
+            try:
+                # Exact id first: plan-materialized employees keep the CEO's refs
+                # (e.g. ``new_backend_lead_1``), which are not slugs.
+                employee = self._workforce.get(assignee)
+            except UnknownEmployee:
+                employee = self._workforce.get(slugify(assignee))
         if execution_mode is ExecutionMode.DELEGATION:
             if employee is None:
                 raise ValueError("root delegation requires an assignee lead")
