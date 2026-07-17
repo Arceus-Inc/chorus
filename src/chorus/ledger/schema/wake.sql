@@ -12,9 +12,10 @@ CREATE TABLE wake (
     created_at      TEXT NOT NULL,
     claimed_at      TEXT,
     finished_at     TEXT,
-    task_id         TEXT
+    task_id         TEXT,
+    company_id      TEXT NOT NULL DEFAULT ''
 );
 
-CREATE UNIQUE INDEX wake_queued_key_uq ON wake(coalesce_key) WHERE status = 'queued';
+CREATE UNIQUE INDEX wake_queued_key_uq ON wake(company_id, coalesce_key) WHERE status = 'queued';
 CREATE INDEX wake_employee_status_idx ON wake(employee_id, status);
 CREATE INDEX wake_queue_idx ON wake(status, created_at, id);

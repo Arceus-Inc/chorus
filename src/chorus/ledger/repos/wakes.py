@@ -48,7 +48,7 @@ class WakeRepo:
             "INSERT INTO wake (id, employee_id, reason, payload, task_id, status, coalesce_key, "
             "coalesced_count, idempotency_key, run_id, created_at, claimed_at, finished_at) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, 0, NULL, ?, ?, NULL, NULL) "
-            "ON CONFLICT (coalesce_key) WHERE status = 'queued' "
+            "ON CONFLICT (company_id, coalesce_key) WHERE status = 'queued' "
             "DO UPDATE SET coalesced_count = wake.coalesced_count + 1, payload = excluded.payload, "
             "task_id = excluded.task_id",
             (

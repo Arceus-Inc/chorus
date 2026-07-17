@@ -26,15 +26,27 @@ from importlib.resources import files
 
 # --- the explicit type decisions -------------------------------------------------------------
 
-# Entity-id PKs that are NOT uuids: semantic, human-authored ids.
-_TEXT_ID_TABLES = {"system_principal"}
+# Semantic-id tables: their ids are human-meaningful text, NOT minted uuids, and unique only
+# WITHIN a company — employee ids are name slugs by spec ("ace"; spec 06 §3 / 09 §3: the slug id
+# is what lets an org export → re-import), system principals are fixed ("system-verifier"), and
+# management_profile is keyed by the employee slug. In the shared-schema Postgres rendering their
+# identity is therefore composite: PRIMARY KEY (company_id, <id>), and every reference to them
+# becomes a composite FK (company_id, <col>) — the referencing table always has company_id.
+_SEMANTIC_ID_TABLES: dict[str, str] = {
+    "employee": "id",
+    "system_principal": "id",
+    "management_profile": "employee_id",
+}
+
+# Referenced-id targets whose ids are text (semantic), never uuid.
+_TEXT_ID_TABLES = set(_SEMANTIC_ID_TABLES)
 
 # Loose entity-id columns (no inline REFERENCES clause to derive them from). Everything here holds
-# a chorus-minted id and becomes uuid.
+# a chorus-minted id and becomes uuid. (Loose *employee* refs — e.g. task.created_by_employee_id —
+# are semantic slugs and stay text; they are deliberately NOT in this set.)
 _EXTRA_UUID_COLUMNS: set[tuple[str, str]] = {
     ("task", "checkout_run_id"),
     ("task", "execution_run_id"),
-    ("task", "created_by_employee_id"),
     ("decision_record", "superseded_by"),
     ("routine_run", "coalesced_into_run_id"),
     ("run", "wake_id"),
@@ -116,6 +128,11 @@ def _translate_column(table: str, line: str) -> str:
     if match is None:
         return line  # constraint / PRIMARY KEY / FOREIGN KEY / CHECK lines pass through
     indent, column, gap, sqlite_type, rest = match.groups()
+    if column == "company_id":
+        # A table that declares its own discriminator (wake, for the coalesce conflict target):
+        # SQLite renders DEFAULT '' (single-org degenerate); Postgres renders the tenancy GUC.
+        rest = rest.replace("DEFAULT ''", f"DEFAULT {_COMPANY_GUC}")
+        return f"{indent}{column}{gap}uuid{rest}"
     if sqlite_type == "TEXT":
         if _is_uuid_column(table, column, rest):
             pg_type = "uuid"
@@ -144,7 +161,51 @@ def _translate_statement(statement: str) -> str:
         return statement  # CREATE [UNIQUE] INDEX — identical syntax on both engines
     table = table_match.group(1)
     lines = statement.splitlines()
-    return "\n".join([lines[0], *(_translate_column(table, line) for line in lines[1:])])
+    translated = "\n".join([lines[0], *(_translate_column(table, line) for line in lines[1:])])
+    return _scope_semantic_identities(table, translated)
+
+
+_SEMANTIC_REFERENCE = re.compile(
+    rf"\s*REFERENCES\s+({'|'.join(_SEMANTIC_ID_TABLES)})\s*\(\s*(\w+)\s*\)", re.I
+)
+
+
+def _scope_semantic_identities(table: str, statement: str) -> str:
+    """Rewrite semantic-id identity to its composite (company-scoped) Postgres form.
+
+    - A semantic-id table's PK becomes ``PRIMARY KEY (company_id, <id>)`` — two companies may both
+      employ "ace".
+    - Every inline reference to a semantic-id table becomes a composite FK
+      ``FOREIGN KEY (company_id, <col>) REFERENCES <target> (company_id, <id>)`` (the referencing
+      table always carries company_id; a NULL ref column disables the constraint, same as inline).
+    """
+    lines = statement.splitlines()
+    constraints: list[str] = []
+    for index, line in enumerate(lines):
+        column_match = _COLUMN_LINE_ANY.match(line)
+        if column_match is None:
+            continue
+        column = column_match.group(2)
+        reference = _SEMANTIC_REFERENCE.search(line)
+        if reference is not None:
+            target = reference.group(1)
+            line = line[: reference.start()] + line[reference.end() :]
+            constraints.append(
+                f"    FOREIGN KEY (company_id, {column}) "
+                f"REFERENCES {target} (company_id, {_SEMANTIC_ID_TABLES[target]})"
+            )
+        if table in _SEMANTIC_ID_TABLES and column == _SEMANTIC_ID_TABLES[table]:
+            line = line.replace(" PRIMARY KEY", "", 1)
+            constraints.append(f"    PRIMARY KEY (company_id, {column})")
+        lines[index] = line
+    if not constraints:
+        return statement
+    # Append the table constraints before the closing paren, comma-joining onto the last column.
+    closing = lines.pop()  # ')' or ');'-shaped final line
+    lines[-1] = lines[-1].rstrip()
+    if not lines[-1].endswith(","):
+        lines[-1] += ","
+    return "\n".join([*lines, ",\n".join(constraints), closing])
 
 
 def _defer_references(statement: str, table: str, targets: set[str]) -> tuple[str, list[str]]:
@@ -223,13 +284,21 @@ _COMPANY_SCOPED_UNIQUES = {
     "task_horizon_intake_fingerprint_uq",
     "routine_run_idempotency_uq",
     "budget_policy_scope_uq",
+    # routine keys hang off the employee SLUG (semantic, company-scoped) — not globally unique.
+    "routine_employee_key_uq",
 }
 
 _UNIQUE_INDEX = re.compile(r"^(CREATE UNIQUE INDEX (\w+)\s+ON \w+)\s*\(", re.M)
 
 
 def _with_company_column(statement: str) -> str:
-    """Insert the company_id column as the first column of a CREATE TABLE statement."""
+    """Insert the company_id column as the first column of a CREATE TABLE statement.
+
+    A table that declares company_id itself (wake — the coalesce ON CONFLICT target needs the
+    column on both engines) keeps its declared one (`_translate_column` swaps in the GUC default).
+    """
+    if re.search(r"^\s*company_id\s", statement, re.M):
+        return statement
     lines = statement.splitlines()
     return "\n".join([lines[0], _COMPANY_COLUMN, *lines[1:]])
 

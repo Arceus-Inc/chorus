@@ -312,7 +312,8 @@ def test_postgres_columns_are_native_types(pg_conninfo: str | None) -> None:
             ("run", "system_principal_id"): "text",  # semantic id ('system-verifier')
             ("wake", "payload"): "jsonb",
             ("wake", "task_id"): "uuid",
-            ("employee", "id"): "uuid",
+            # Employee ids are semantic slugs ("ace") — text, company-scoped composite PK.
+            ("employee", "id"): "text",
             ("employee", "budget_monthly_cents"): "bigint",
             ("management_profile", "can_lead"): "boolean",
             ("delegation_contract", "can_subdelegate"): "boolean",
@@ -400,6 +401,32 @@ def test_postgres_isolates_companies_with_force_rls(pg_conninfo: str | None) -> 
         assert naked.tasks.list_eligible(limit=10) == []  # and reads see zero rows
     finally:
         naked.close()
+
+
+def test_postgres_employee_slugs_are_company_scoped(pg_conninfo: str | None) -> None:
+    """Two companies may both employ "ace" (composite PK); within one company the slug is unique.
+    This is the regression test for slug identity in the shared schema (spec 06 §3 slugs)."""
+    if pg_conninfo is None:
+        pytest.skip(f"PostgreSQL 18 not found at {_PG_BIN}")
+    import psycopg
+
+    with psycopg.connect(pg_conninfo, autocommit=True) as admin:
+        admin.execute("DROP SCHEMA public CASCADE")
+        admin.execute("CREATE SCHEMA public")
+    PostgresLedger.open(pg_conninfo, company_id=mint_id()).close()
+    app_conninfo = _app_role_conninfo(pg_conninfo)
+    ledger_a = PostgresLedger.open(app_conninfo, company_id=mint_id())
+    ledger_b = PostgresLedger.open(app_conninfo, company_id=mint_id())
+    try:
+        ledger_a.employees.create(Employee(id="ace", name="Ace", role="engineer"))
+        ledger_b.employees.create(Employee(id="ace", name="Ace", role="engineer"))  # no collision
+        got_b = ledger_b.employees.get("ace")
+        assert got_b is not None and got_b.name == "Ace"
+        with pytest.raises(Exception):  # noqa: B017 - within-company duplicate slug is rejected
+            ledger_a.employees.create(Employee(id="ace", name="Ace 2", role="pm"))
+    finally:
+        ledger_a.close()
+        ledger_b.close()
 
 
 def test_postgres_horizon_fingerprint_is_company_scoped(pg_conninfo: str | None) -> None:
