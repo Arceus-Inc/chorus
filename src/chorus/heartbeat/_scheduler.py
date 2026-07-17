@@ -543,6 +543,19 @@ class Scheduler:
         # (a) RECOVER — reap orphaned leases + reconcile stranded work before any new dispatch, so
         # a crashed beat's lock is freed and its slot returned to the budget this same pulse.
         swept = reconcile(ledger, now=now)
+        for (
+            reaped_run_id
+        ) in swept.reaped_runs:  # watchdog: a reaped lease is a red lane, not a counter
+            reaped = ledger.runs.get(reaped_run_id)
+            if reaped is not None:
+                self._emit_allocation(
+                    EventKind.RUN_STALLED,
+                    at=now,
+                    task_id=reaped.task_id,
+                    employee_id=reaped.employee_id,
+                    run_id=reaped.id,
+                    payload={"reason": "lease_expired"},
+                )
         recovered = len(swept.reaped_runs) + self._recover_landed_delegations(ledger)
 
         # (b) CRON — fire due routines (each firing double-fire-guarded; writes a task, never a beat).

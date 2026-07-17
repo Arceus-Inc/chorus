@@ -161,3 +161,44 @@ async def test_facade_submit_emits_intake_events(ledger: Ledger) -> None:
     assert created.trace_id == task.id  # intake tasks are lineage roots
     assigned = next(e for e in recorder.events if e.kind is EventKind.TASK_ASSIGNED)
     assert assigned.employee_id == "ada"
+
+
+async def test_reaped_stale_lease_emits_run_stalled(ledger: Ledger) -> None:
+    """The watchdog (OBS §5): a reaped orphan lease surfaces as run.stalled — a red lane,
+    not a silent recovery counter."""
+    from datetime import UTC, datetime, timedelta
+
+    from chorus.ledger._models import Run, RunStatus
+
+    ledger.employees.create(Employee(id="ada", name="Ada", role="engineer"))
+    task_id = uid("stall-t")
+    run_id = uid("stall-r")
+    ledger.tasks.submit(Task(id=task_id, intent="stuck work", assignee_employee_id="ada"))
+    ledger.tasks.set_status(task_id, TaskStatus.TODO)
+    assert ledger.tasks.checkout(task_id, employee_id="ada", run_id=run_id)
+    ledger.runs.create(
+        Run(
+            id=run_id,
+            employee_id="ada",
+            task_id=task_id,
+            status=RunStatus.RUNNING,
+            lease_expires_at=datetime.now(UTC) - timedelta(minutes=10),  # long dead
+            started_at=datetime.now(UTC) - timedelta(minutes=20),
+        )
+    )
+    recorder = _Recorder()
+    scheduler = Scheduler(
+        ledger=ledger,
+        workforce=_Workforce(),
+        beat_runner=_QuietBeat(),
+        event_bus=recorder,
+    )
+
+    await scheduler.tick(now=datetime.now(UTC))
+
+    stalled = [event for event in recorder.events if event.kind is EventKind.RUN_STALLED]
+    assert len(stalled) == 1
+    assert stalled[0].run_id == run_id
+    assert stalled[0].task_id == task_id
+    assert stalled[0].employee_id == "ada"
+    assert stalled[0].trace_id == task_id
