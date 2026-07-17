@@ -18,9 +18,8 @@ import pytest
 from dream.tools._context import ToolExecutionContext
 
 from chorus.heartbeat import BeatContext
-from chorus.ledger import Ledger
 from chorus.memory import EpisodicRecallService, EpisodicStore, SprintDelta
-from chorus.testing import open_test_ledger, uid
+from chorus.testing import uid
 from chorus_tools import RecallTool
 
 pytestmark = pytest.mark.integration
@@ -62,10 +61,8 @@ def _beat(working_dir: Path, *, employee_id: str = "bex", run_id: str = uid("r_n
     BeatContext(task_id=uid("t_now"), run_id=run_id, employee_id=employee_id).write(working_dir)
 
 
-async def test_recency_mode_returns_recent_records_for_this_employee(
-    ledger: Ledger, tmp_path: Path
-) -> None:
-    store = EpisodicStore(ledger)
+async def test_recency_mode_returns_recent_records_for_this_employee(tmp_path: Path) -> None:
+    store = EpisodicStore(tmp_path / "memory")
     store.append(_delta(run_id=uid("r_old"), recorded_at=datetime(2026, 6, 1, tzinfo=UTC)))
     store.append(_delta(run_id=uid("r_new"), recorded_at=datetime(2026, 6, 20, tzinfo=UTC)))
     store.append(_delta(run_id=uid("r_other_agent"), employee_id="ada"))
@@ -78,8 +75,8 @@ async def test_recency_mode_returns_recent_records_for_this_employee(
     assert ids == [uid("r_new"), uid("r_old")]  # newest first, other agent excluded
 
 
-async def test_recency_mode_excludes_the_current_run(ledger: Ledger, tmp_path: Path) -> None:
-    store = EpisodicStore(ledger)
+async def test_recency_mode_excludes_the_current_run(tmp_path: Path) -> None:
+    store = EpisodicStore(tmp_path / "memory")
     store.append(_delta(run_id=uid("r_now")))
     _beat(tmp_path, run_id=uid("r_now"))
 
@@ -88,8 +85,8 @@ async def test_recency_mode_excludes_the_current_run(ledger: Ledger, tmp_path: P
     assert (result.structured or {})["hits"] == []
 
 
-async def test_query_mode_keyword_search(ledger: Ledger, tmp_path: Path) -> None:
-    store = EpisodicStore(ledger)
+async def test_query_mode_keyword_search(tmp_path: Path) -> None:
+    store = EpisodicStore(tmp_path / "memory")
     store.append(
         _delta(
             run_id=uid("r_a"),
@@ -114,8 +111,8 @@ async def test_query_mode_keyword_search(ledger: Ledger, tmp_path: Path) -> None
     assert "snippet:" in result.content
 
 
-async def test_hits_carry_summary_not_full_prose(ledger: Ledger, tmp_path: Path) -> None:
-    store = EpisodicStore(ledger)
+async def test_hits_carry_summary_not_full_prose(tmp_path: Path) -> None:
+    store = EpisodicStore(tmp_path / "memory")
     store.append(
         _delta(
             run_id=uid("r_a"),
@@ -138,10 +135,8 @@ async def test_hits_carry_summary_not_full_prose(ledger: Ledger, tmp_path: Path)
     assert "get_run" in hit["drill_down"]
 
 
-async def test_render_filters_noise_paths_from_files_touched(
-    ledger: Ledger, tmp_path: Path
-) -> None:
-    store = EpisodicStore(ledger)
+async def test_render_filters_noise_paths_from_files_touched(tmp_path: Path) -> None:
+    store = EpisodicStore(tmp_path / "memory")
     store.append(
         _delta(
             run_id=uid("r_noisy"),
@@ -166,8 +161,8 @@ async def test_render_filters_noise_paths_from_files_touched(
     assert "auth/service.py" in result.content
 
 
-async def test_incomplete_outcome_is_labelled_for_resume(ledger: Ledger, tmp_path: Path) -> None:
-    store = EpisodicStore(ledger)
+async def test_incomplete_outcome_is_labelled_for_resume(tmp_path: Path) -> None:
+    store = EpisodicStore(tmp_path / "memory")
     store.append(
         _delta(
             run_id=uid("r_to"),
@@ -182,18 +177,18 @@ async def test_incomplete_outcome_is_labelled_for_resume(ledger: Ledger, tmp_pat
     assert "resume" in result.content.lower() or "continue" in result.content.lower()
 
 
-async def test_empty_result_is_not_an_error(ledger: Ledger, tmp_path: Path) -> None:
-    store = EpisodicStore(ledger)
+async def test_empty_result_is_not_an_error(tmp_path: Path) -> None:
+    store = EpisodicStore(tmp_path / "memory")
     _beat(tmp_path)
     result = await _tool(store).execute({}, _ctx(tmp_path))
     assert result.is_error is False
     assert (result.structured or {})["hits"] == []
 
 
-async def test_limit_is_honoured(ledger: Ledger, tmp_path: Path) -> None:
-    store = EpisodicStore(ledger)
+async def test_limit_is_honoured(tmp_path: Path) -> None:
+    store = EpisodicStore(tmp_path / "memory")
     for i in range(5):
-        store.append(_delta(run_id=uid(f"r_{i}"), recorded_at=datetime(2026, 6, 1 + i, tzinfo=UTC)))
+        store.append(_delta(run_id=f"r_{i}", recorded_at=datetime(2026, 6, 1 + i, tzinfo=UTC)))
     _beat(tmp_path)
 
     result = await _tool(store).execute({"limit": 2}, _ctx(tmp_path))
@@ -201,8 +196,8 @@ async def test_limit_is_honoured(ledger: Ledger, tmp_path: Path) -> None:
     assert len((result.structured or {})["hits"]) == 2
 
 
-async def test_malformed_input_is_refused(ledger: Ledger, tmp_path: Path) -> None:
-    store = EpisodicStore(ledger)
+async def test_malformed_input_is_refused(tmp_path: Path) -> None:
+    store = EpisodicStore(tmp_path / "memory")
     _beat(tmp_path)
     result = await _tool(store).execute({"limit": 0}, _ctx(tmp_path))  # ge=1
     assert result.is_error is True
@@ -213,8 +208,8 @@ async def test_malformed_input_is_refused(ledger: Ledger, tmp_path: Path) -> Non
     assert structured["stop_condition"]
 
 
-async def test_success_and_empty_carry_observation_contract(ledger: Ledger, tmp_path: Path) -> None:
-    store = EpisodicStore(ledger)
+async def test_success_and_empty_carry_observation_contract(tmp_path: Path) -> None:
+    store = EpisodicStore(tmp_path / "memory")
     store.append(_delta(run_id=uid("r_a")))
     _beat(tmp_path)
     filled = await _tool(store).execute({}, _ctx(tmp_path))
@@ -224,7 +219,7 @@ async def test_success_and_empty_carry_observation_contract(ledger: Ledger, tmp_
     assert structured["next_actions"]
     assert "run_ids" in (structured.get("artifacts") or {})
 
-    empty_store = EpisodicStore(open_test_ledger())
+    empty_store = EpisodicStore(tmp_path / "memory_empty")
     _beat(tmp_path)
     empty = await _tool(empty_store).execute({}, _ctx(tmp_path))
     empty_s = empty.structured or {}
@@ -233,8 +228,8 @@ async def test_success_and_empty_carry_observation_contract(ledger: Ledger, tmp_
     assert empty_s["next_actions"] == ["proceed without prior history"]
 
 
-async def test_recency_prefers_yesterday_over_old_failure(ledger: Ledger, tmp_path: Path) -> None:
-    store = EpisodicStore(ledger)
+async def test_recency_prefers_yesterday_over_old_failure(tmp_path: Path) -> None:
+    store = EpisodicStore(tmp_path / "memory")
     store.append(
         _delta(
             run_id=uid("r_old_fail"),
@@ -254,8 +249,8 @@ async def test_recency_prefers_yesterday_over_old_failure(ledger: Ledger, tmp_pa
     assert ids[0] == uid("r_recent_done")
 
 
-async def test_keyword_search_is_employee_scoped(ledger: Ledger, tmp_path: Path) -> None:
-    store = EpisodicStore(ledger)
+async def test_keyword_search_is_employee_scoped(tmp_path: Path) -> None:
+    store = EpisodicStore(tmp_path / "memory")
     store.append(_delta(run_id=uid("r_ada"), employee_id="ada", intent="retry timeout"))
     store.append(_delta(run_id=uid("r_bex"), employee_id="bex", intent="retry timeout"))
     _beat(tmp_path, employee_id="ada")
@@ -264,8 +259,8 @@ async def test_keyword_search_is_employee_scoped(ledger: Ledger, tmp_path: Path)
     assert ids == [uid("r_ada")]
 
 
-async def test_recall_bumps_last_recalled_at(ledger: Ledger, tmp_path: Path) -> None:
-    store = EpisodicStore(ledger)
+async def test_recall_bumps_last_recalled_at(tmp_path: Path) -> None:
+    store = EpisodicStore(tmp_path / "memory")
     store.append(_delta(run_id=uid("r_a")))
     _beat(tmp_path)
     await _tool(store).execute({}, _ctx(tmp_path))
@@ -274,8 +269,8 @@ async def test_recall_bumps_last_recalled_at(ledger: Ledger, tmp_path: Path) -> 
     assert got.last_recalled_at is not None
 
 
-async def test_task_id_filter_on_recall(ledger: Ledger, tmp_path: Path) -> None:
-    store = EpisodicStore(ledger)
+async def test_task_id_filter_on_recall(tmp_path: Path) -> None:
+    store = EpisodicStore(tmp_path / "memory")
     store.append(_delta(run_id=uid("r_t1"), task_id=uid("t_1"), intent="slugify"))
     store.append(
         _delta(
@@ -292,8 +287,8 @@ async def test_task_id_filter_on_recall(ledger: Ledger, tmp_path: Path) -> None:
     assert (result.structured or {})["mode"] == "search"
 
 
-async def test_since_filter_on_recall(ledger: Ledger, tmp_path: Path) -> None:
-    store = EpisodicStore(ledger)
+async def test_since_filter_on_recall(tmp_path: Path) -> None:
+    store = EpisodicStore(tmp_path / "memory")
     store.append(
         _delta(
             run_id=uid("r_old"),
@@ -317,8 +312,8 @@ async def test_since_filter_on_recall(ledger: Ledger, tmp_path: Path) -> None:
     assert ids == [uid("r_new")]
 
 
-async def test_structured_mode_field(ledger: Ledger, tmp_path: Path) -> None:
-    store = EpisodicStore(ledger)
+async def test_structured_mode_field(tmp_path: Path) -> None:
+    store = EpisodicStore(tmp_path / "memory")
     store.append(_delta(run_id=uid("r_a")))
     _beat(tmp_path)
     result = await _tool(store).execute({}, _ctx(tmp_path))
@@ -326,18 +321,16 @@ async def test_structured_mode_field(ledger: Ledger, tmp_path: Path) -> None:
     assert (result.structured or {})["profile"] == "general"
 
 
-async def test_debug_profile_refused_without_query_or_task_id(
-    ledger: Ledger, tmp_path: Path
-) -> None:
-    store = EpisodicStore(ledger)
+async def test_debug_profile_refused_without_query_or_task_id(tmp_path: Path) -> None:
+    store = EpisodicStore(tmp_path / "memory")
     _beat(tmp_path)
     result = await _tool(store).execute({"profile": "debug"}, _ctx(tmp_path))
     assert result.is_error is True
     assert "task_id" in result.content.lower()
 
 
-async def test_debug_query_structured_profile_and_rank_note(ledger: Ledger, tmp_path: Path) -> None:
-    store = EpisodicStore(ledger)
+async def test_debug_query_structured_profile_and_rank_note(tmp_path: Path) -> None:
+    store = EpisodicStore(tmp_path / "memory")
     store.append(
         _delta(
             run_id=uid("r_fail"),

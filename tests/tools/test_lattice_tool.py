@@ -8,7 +8,6 @@ import pytest
 from dream.tools._context import ToolExecutionContext
 
 from chorus.heartbeat import BeatContext
-from chorus.ledger import Ledger
 from chorus.memory import EpisodicStore, SprintDelta
 from chorus.testing import uid
 from chorus_tools._lattice import LatticeApplyTool
@@ -43,11 +42,11 @@ def _delta(run_id: str, *, employee_id: str = "bex") -> SprintDelta:
 
 
 @pytest.mark.asyncio
-async def test_lattice_apply_rejects_cross_employee_id(tmp_path: Path, ledger: Ledger) -> None:
+async def test_lattice_apply_rejects_cross_employee_id(tmp_path: Path) -> None:
     company = tmp_path / "acme"
-    store = EpisodicStore(ledger)
-    store.append(_delta(uid("r1")))
-    lattice = build_lattice_for_chorus(company, ledger, min_new_episodes=1, min_cluster_size=1)
+    store = EpisodicStore(company / "memory")
+    store.append(_delta("r1"))
+    lattice = build_lattice_for_chorus(company, min_new_episodes=1, min_cluster_size=1)
     tool = LatticeApplyTool(lattice)
 
     worktree = tmp_path / "worktree"
@@ -62,7 +61,7 @@ async def test_lattice_apply_rejects_cross_employee_id(tmp_path: Path, ledger: L
                     {
                         "key": "api.retry",
                         "claim": "HTTP retries use exponential backoff capped at 30s",
-                        "source_run_ids": [uid("r1")],
+                        "source_run_ids": ["r1"],
                     }
                 ],
             }
@@ -74,9 +73,7 @@ async def test_lattice_apply_rejects_cross_employee_id(tmp_path: Path, ledger: L
 
 
 @pytest.mark.asyncio
-async def test_lattice_context_repeat_call_returns_unchanged_note(
-    tmp_path: Path, ledger: Ledger
-) -> None:
+async def test_lattice_context_repeat_call_returns_unchanged_note(tmp_path: Path) -> None:
     """A second identical query whose patterns did not change returns a short cached note.
 
     The live 5+2 probe showed 5 identical lattice_context calls in one beat, each re-spending the
@@ -85,9 +82,9 @@ async def test_lattice_context_repeat_call_returns_unchanged_note(
     from chorus_tools._lattice import LatticeContextTool
 
     company = tmp_path / "acme"
-    store = EpisodicStore(ledger)
-    store.append(_delta(uid("r1")))
-    lattice = build_lattice_for_chorus(company, ledger, min_new_episodes=1, min_cluster_size=1)
+    store = EpisodicStore(company / "memory")
+    store.append(_delta("r1"))
+    lattice = build_lattice_for_chorus(company, min_new_episodes=1, min_cluster_size=1)
 
     worktree = tmp_path / "worktree"
     worktree.mkdir()
@@ -101,7 +98,7 @@ async def test_lattice_context_repeat_call_returns_unchanged_note(
                     {
                         "key": "api.retry",
                         "claim": "HTTP retries use exponential backoff capped at 30s",
-                        "source_run_ids": [uid("r1")],
+                        "source_run_ids": ["r1"],
                     }
                 ],
             }

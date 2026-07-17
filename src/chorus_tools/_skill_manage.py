@@ -11,7 +11,6 @@ from dream.tools._context import ToolExecutionContext
 from pydantic import BaseModel, Field, ValidationError
 
 from chorus.heartbeat import BeatContext
-from chorus.ledger import Ledger
 from chorus.memory import EpisodicStore, SprintDelta
 from chorus.skills import SkillManager, SkillStore
 
@@ -44,11 +43,9 @@ class SkillManageTool(BaseTool):
         self,
         *,
         company_root: Path,
-        ledger: Ledger,
         canonical_skills_root: Path | None = None,
     ) -> None:
         self._company_root = Path(company_root)
-        self._ledger = ledger
         self._canonical_skills_root = (
             Path(canonical_skills_root) if canonical_skills_root is not None else None
         )
@@ -74,12 +71,12 @@ class SkillManageTool(BaseTool):
             )
 
         beat = BeatContext.read(ctx.working_dir)
-        store = SkillStore(self._ledger)
+        store = SkillStore(self._company_root / "skills")
         # Habit validation reads recent episodes; read paths (view) skip the fetch.
         episodes: tuple[SprintDelta, ...] = ()
         if args.action in ("evolve", "create", "patch"):
             try:
-                episodic = EpisodicStore(self._ledger)
+                episodic = EpisodicStore(self._company_root / "memory")
                 try:
                     episodes = tuple(episodic.records_for(beat.employee_id, limit=50))
                 finally:

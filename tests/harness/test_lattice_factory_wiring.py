@@ -7,7 +7,6 @@ from typing import Any
 
 import pytest
 
-from chorus.ledger import Ledger
 from chorus.roles import RoleRegistry, default_roles
 from chorus.testing import uid
 from chorus.workforce import Employee
@@ -26,9 +25,7 @@ _LATTICE_ROLES = (
 )
 
 
-def _factory(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, ledger: Ledger
-) -> tuple[Any, dict[str, Any]]:
+def _factory(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> tuple[Any, dict[str, Any]]:
     captured: dict[str, Any] = {}
     monkeypatch.setattr(
         _factory_mod.dream, "build_harness", lambda **kw: captured.update(kw) or object()
@@ -40,16 +37,15 @@ def _factory(
         company_id="acme",
         roles=RoleRegistry.from_plugins(default_roles()),
         work_root=tmp_path,
-        ledger=ledger,
     )
     return factory, captured
 
 
 @pytest.mark.parametrize("role", _LATTICE_ROLES)
 def test_worker_role_materializes_lattice_skills(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, role: str, ledger: Ledger
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, role: str
 ) -> None:
-    factory, captured = _factory(monkeypatch, tmp_path, ledger)
+    factory, captured = _factory(monkeypatch, tmp_path)
     mat = factory.materialize(Employee(id=uid("emp"), name="Emp", role=role))
     for skill in ("lattice-context", "lattice-consolidate"):
         path = mat.working_dir / ".harness" / "skills" / skill / "SKILL.md"
@@ -59,23 +55,23 @@ def test_worker_role_materializes_lattice_skills(
 
 @pytest.mark.parametrize("role", _LATTICE_ROLES)
 def test_worker_role_materializes_with_lattice_tools(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, role: str, ledger: Ledger
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, role: str
 ) -> None:
-    factory, captured = _factory(monkeypatch, tmp_path, ledger)
+    factory, captured = _factory(monkeypatch, tmp_path)
     factory.materialize(Employee(id=uid("emp"), name="Emp", role=role))
     names = {t.name for t in captured["registry"].list_tools()}
     assert {"lattice_context", "lattice_packet", "lattice_apply", "skill_manage"}.issubset(names)
 
 
 def test_lattice_failure_leaves_observable_breadcrumb(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, ledger: Ledger
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """An advisory lattice failure never blocks the beat — but it must never be invisible either.
 
     A broken lattice (corrupt DB, refactored dep) previously meant consolidation silently stopped
     forever; now materialize leaves .harness/lattice-error.json as a greppable breadcrumb.
     """
-    factory, _ = _factory(monkeypatch, tmp_path, ledger)
+    factory, _ = _factory(monkeypatch, tmp_path)
     monkeypatch.setattr(
         _factory_mod,
         "build_lattice_for_chorus",

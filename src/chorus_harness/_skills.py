@@ -20,13 +20,9 @@ import shutil
 import stat
 from collections.abc import Sequence
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 # Under ``.harness/`` (git-excluded in every worktree), so the materialized bundle never lands.
 _SKILLS_SUBDIR = (".harness", "skills")
-
-if TYPE_CHECKING:
-    from chorus.ledger import Ledger
 
 _READ_ONLY_FILE = stat.S_IRUSR | stat.S_IRGRP | stat.S_IROTH  # 0o444
 _READ_ONLY_DIR = _READ_ONLY_FILE | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH  # 0o555 (traversable)
@@ -117,7 +113,6 @@ def _merge_evolved_into_canonical(canonical: str, evolved: str) -> str:
 def materialize_versioned_skills_into(
     skills_dir: Path,
     *,
-    ledger: Ledger,
     company_root: Path,
     employee_id: str,
 ) -> None:
@@ -129,7 +124,7 @@ def materialize_versioned_skills_into(
     """
     from chorus.skills import SkillOrigin, SkillStore
 
-    store = SkillStore(ledger)
+    store = SkillStore(Path(company_root) / "skills")
     try:
         active = store.list_active(employee_id)
         if not active:

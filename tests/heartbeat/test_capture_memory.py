@@ -126,7 +126,7 @@ async def test_capture_memory_writes_keyed_per_agent_record(tmp_path, ledger) ->
         _artifact(task_id=uid("t_1"), external_id="pr:org/repo#7", is_primary=True)
     )
 
-    store = EpisodicStore(ledger)
+    store = EpisodicStore(tmp_path / "memory")
     scheduler = Scheduler(ledger=ledger, memory_writer=store)
     await scheduler._capture_memory(
         ledger,

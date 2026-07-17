@@ -12,11 +12,10 @@ from datetime import UTC, datetime
 
 import pytest
 
-from chorus.ledger import Ledger
 from chorus.memory import EpisodicStore, SprintDelta
 from chorus.testing import uid
 
-pytestmark = pytest.mark.integration
+pytestmark = pytest.mark.integration  # touches sqlite on disk
 
 
 def _role_text_body(text: str) -> str:
@@ -44,8 +43,8 @@ def _delta(**over: object) -> SprintDelta:
     return SprintDelta(**base)  # type: ignore[arg-type]
 
 
-def test_append_then_get_round_trips_the_record(ledger: Ledger) -> None:
-    store = EpisodicStore(ledger)
+def test_append_then_get_round_trips_the_record(tmp_path) -> None:
+    store = EpisodicStore(tmp_path)
     store.append(_delta())
     got = store.get(uid("r_1"))
     assert got is not None
@@ -59,12 +58,12 @@ def test_append_then_get_round_trips_the_record(ledger: Ledger) -> None:
     assert "bumped the pool size" in got.body
 
 
-def test_get_missing_is_none(ledger: Ledger) -> None:
-    assert EpisodicStore(ledger).get(uid("nope")) is None
+def test_get_missing_is_none(tmp_path) -> None:
+    assert EpisodicStore(tmp_path).get(uid("nope")) is None
 
 
-def test_append_is_idempotent_first_write_wins(ledger: Ledger) -> None:
-    store = EpisodicStore(ledger)
+def test_append_is_idempotent_first_write_wins(tmp_path) -> None:
+    store = EpisodicStore(tmp_path)
     store.append(_delta(body="first"))
     store.append(_delta(body="second"))  # same run_id — append-only no-op
     got = store.get(uid("r_1"))
@@ -72,8 +71,8 @@ def test_append_is_idempotent_first_write_wins(ledger: Ledger) -> None:
     assert store.count() == 1
 
 
-def test_records_partitioned_and_listable_per_agent(ledger: Ledger) -> None:
-    store = EpisodicStore(ledger)
+def test_records_partitioned_and_listable_per_agent(tmp_path) -> None:
+    store = EpisodicStore(tmp_path)
     store.append(_delta(run_id=uid("r_a"), employee_id="ada"))
     store.append(_delta(run_id=uid("r_b"), employee_id="ada"))
     store.append(_delta(run_id=uid("r_c"), employee_id="bex"))
@@ -82,14 +81,14 @@ def test_records_partitioned_and_listable_per_agent(ledger: Ledger) -> None:
     assert {d.run_id for d in store.records_for("bex")} == {uid("r_c")}
 
 
-def test_persists_across_reopen(ledger: Ledger) -> None:
-    EpisodicStore(ledger).append(_delta())
-    reopened = EpisodicStore(ledger)  # same database + company → same rows
+def test_persists_across_reopen(tmp_path) -> None:
+    EpisodicStore(tmp_path).append(_delta())
+    reopened = EpisodicStore(tmp_path)  # same dir → same episodic.db
     assert reopened.get(uid("r_1")) is not None
 
 
-def test_search_matches_the_indexed_intent_and_body(ledger: Ledger) -> None:
-    store = EpisodicStore(ledger)
+def test_search_matches_the_indexed_intent_and_body(tmp_path) -> None:
+    store = EpisodicStore(tmp_path)
     store.append(
         _delta(
             run_id=uid("r_a"),
@@ -108,8 +107,8 @@ def test_search_matches_the_indexed_intent_and_body(ledger: Ledger) -> None:
     assert [h.record.run_id for h in hits] == [uid("r_a")]
 
 
-def test_search_ranks_the_stronger_match_first(ledger: Ledger) -> None:
-    store = EpisodicStore(ledger)
+def test_search_ranks_the_stronger_match_first(tmp_path) -> None:
+    store = EpisodicStore(tmp_path)
     store.append(
         _delta(run_id=uid("r_weak"), intent="x", body=_role_text_body("mentions retry once"))
     )
@@ -124,22 +123,22 @@ def test_search_ranks_the_stronger_match_first(ledger: Ledger) -> None:
     assert [h.record.run_id for h in hits] == [uid("r_strong"), uid("r_weak")]
 
 
-def test_search_respects_limit(ledger: Ledger) -> None:
-    store = EpisodicStore(ledger)
+def test_search_respects_limit(tmp_path) -> None:
+    store = EpisodicStore(tmp_path)
     for i in range(5):
-        store.append(_delta(run_id=uid(f"r_{i}"), intent="retry", body=_role_text_body("retry")))
+        store.append(_delta(run_id=f"r_{i}", intent="retry", body=_role_text_body("retry")))
     assert len(store.search("retry", limit=2)) == 2
 
 
-def test_search_no_match_is_empty(ledger: Ledger) -> None:
-    store = EpisodicStore(ledger)
+def test_search_no_match_is_empty(tmp_path) -> None:
+    store = EpisodicStore(tmp_path)
     store.append(_delta())
     assert store.search("xyzzy_nonexistent") == []
 
 
-def test_search_multi_word_requires_all_terms_and(ledger: Ledger) -> None:
+def test_search_multi_word_requires_all_terms_and(tmp_path) -> None:
     """Implicit AND: both tokens must appear — OR-soup used to match either term."""
-    store = EpisodicStore(ledger)
+    store = EpisodicStore(tmp_path)
     store.append(
         _delta(
             run_id=uid("r_both"),
@@ -158,8 +157,8 @@ def test_search_multi_word_requires_all_terms_and(ledger: Ledger) -> None:
     assert [h.record.run_id for h in hits] == [uid("r_both")]
 
 
-def test_search_indexes_normalized_narrative_without_tags(ledger: Ledger) -> None:
-    store = EpisodicStore(ledger)
+def test_search_indexes_normalized_narrative_without_tags(tmp_path) -> None:
+    store = EpisodicStore(tmp_path)
     store.append(
         _delta(
             run_id=uid("r_tagged"),
@@ -171,9 +170,9 @@ def test_search_indexes_normalized_narrative_without_tags(ledger: Ledger) -> Non
     assert [h.record.run_id for h in store.search("spec")] == []
 
 
-def test_search_snippet_marks_match_in_body_not_first_sentence(ledger: Ledger) -> None:
+def test_search_snippet_marks_match_in_body_not_first_sentence(tmp_path) -> None:
     """Query teaser is FTS5 snippet around the match, not beat opener."""
-    store = EpisodicStore(ledger)
+    store = EpisodicStore(tmp_path)
     opener = "Started the register form and sketched the empty layout."
     filler = " ".join(f"pad{i}" for i in range(40))
     match = "Much later fixed the retry on timeout in the pool."

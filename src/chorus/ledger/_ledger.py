@@ -271,11 +271,6 @@ class Ledger:
     def schema_version(self) -> str | None:
         return self._schema_version
 
-    @property
-    def connection(self) -> LedgerConnection:
-        """The one RLS-scoped connection — shared by the co-resident stores (episodic, skills)."""
-        return self._conn
-
     @contextmanager
     def transaction(self) -> Iterator[None]:
         """Batch every repo write in the block into one transaction (atomic commit / rollback).

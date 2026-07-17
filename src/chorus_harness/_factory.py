@@ -606,12 +606,6 @@ class EmployeeHarnessFactory:
         base = work_root if work_root is not None else default_work_root()
         self._company_root = base / company_id
 
-    def _require_ledger(self, feature: str) -> Ledger:
-        """The stores live in the company's Postgres schema — these features need the ledger."""
-        if self._ledger is None:
-            raise RuntimeError(f"{feature} requires the company ledger")
-        return self._ledger
-
     @property
     def company_root(self) -> Path:
         """The org's workspace root (``.chorus/work/{org}/``) — where landers find the worktrees."""
@@ -806,11 +800,10 @@ class EmployeeHarnessFactory:
         # inject the prior beat's gate-open consolidation teaser (if any) so the model consolidates
         # FIRST this beat. Best-effort: a lattice failure never blocks the beat.
         lattice = None
-        if _LATTICE_TOOLS.intersection(config.tools) and self._ledger is not None:
+        if _LATTICE_TOOLS.intersection(config.tools):
             try:
                 lattice = build_lattice_for_chorus(
                     self._company_root,
-                    self._require_ledger("lattice"),
                     canonical_skills_root=config.skills_root,
                 )
                 if lattice.has_fresh_episodes(employee.id):
@@ -882,21 +875,21 @@ class EmployeeHarnessFactory:
         # the durable code_quality/ report. No ledger — registers UNCONDITIONALLY, like the above.
         if "code_quality" in config.tools:
             registry.register(CodeQualityTool(), source=ToolSource.DEFAULT)
-        # recall (spec 07 §11): read your OWN past episodic beats — recency/keyword. Episodic
-        # capture lives in the company's shared Postgres schema, RLS-scoped with the ledger.
-        if "recall" in config.tools and self._ledger is not None:
-            episodic = EpisodicRecallService(EpisodicStore(self._require_ledger("recall")))
+        # recall (spec 07 §11): read your OWN past episodic beats — recency/keyword. No
+        # ledger; rooted at the ORG's memory dir (company_root/memory), not the per-employee worktree
+        # — episodic capture is one shared SQLite store for the whole company.
+        if "recall" in config.tools:
+            episodic = EpisodicRecallService(EpisodicStore(self._company_root / "memory"))
             registry.register(RecallTool(episodic), source=ToolSource.DEFAULT)
             registry.register(GetRunTool(episodic), source=ToolSource.DEFAULT)
         # lattice tools: read consolidated patterns (context), build the consolidation packet, apply
         # adjudicated proposals. Reuses the lattice built (or not) at beat start above. Advisory like
         # the adjudicate step: a broken lattice skips these tools (with a breadcrumb), never the beat.
-        if _LATTICE_TOOLS.intersection(config.tools) and self._ledger is not None:
+        if _LATTICE_TOOLS.intersection(config.tools):
             if lattice is None:
                 try:
                     lattice = build_lattice_for_chorus(
                         self._company_root,
-                        self._require_ledger("lattice"),
                         canonical_skills_root=config.skills_root,
                     )
                 except Exception as exc:
@@ -906,11 +899,10 @@ class EmployeeHarnessFactory:
                     tool = lattice_tool(name, lattice)
                     if tool is not None:
                         registry.register(tool, source=ToolSource.DEFAULT)
-        if "skill_manage" in config.tools and self._ledger is not None:
+        if "skill_manage" in config.tools:
             registry.register(
                 SkillManageTool(
                     company_root=self._company_root,
-                    ledger=self._require_ledger("skill_manage"),
                     canonical_skills_root=(
                         Path(config.skills_root) if config.skills_root else None
                     ),
@@ -971,12 +963,11 @@ class EmployeeHarnessFactory:
                 config.skills_root,
                 extra_roots=extra_roots,
             )
-            if has_lattice and self._ledger is not None:
+            if has_lattice:
                 # SkillStore HEAD (evolved/created procedural skills) overlays the canonical bundle —
                 # the DB is the source of truth; this materialized copy is the per-beat cache.
                 materialize_versioned_skills_into(
                     skills_dir,
-                    ledger=self._require_ledger("versioned skills"),
                     company_root=self._company_root,
                     employee_id=employee.id,
                 )

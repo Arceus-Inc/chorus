@@ -2,18 +2,14 @@
 
 from __future__ import annotations
 
-from chorus.ledger.repos._base import (
-    LedgerConnection,
-    LedgerRow,
-    from_iso,
-    require_persisted,
-    utcnow_iso,
-)
+import sqlite3
+
+from chorus.ledger.repos._base import from_iso, require_persisted, utcnow_iso
 from chorus.skills._models import Skill, SkillOrigin, SkillState
 
 
 class SkillRepo:
-    def __init__(self, conn: LedgerConnection) -> None:
+    def __init__(self, conn: sqlite3.Connection) -> None:
         self._conn = conn
 
     def insert(self, skill: Skill) -> Skill:
@@ -92,7 +88,7 @@ class SkillRepo:
         return require_persisted(self.get(skill_id), skill_id)
 
 
-def _row_to_skill(row: LedgerRow) -> Skill:
+def _row_to_skill(row: sqlite3.Row) -> Skill:
     return Skill(
         id=row["id"],
         employee_id=row["employee_id"],

@@ -166,7 +166,9 @@ def build_beat_service(
         landers=default_landers(
             factory.company_root, ledger=ledger
         ),  # a passed beat lands its role artifact (§2)
-        memory_writer=EpisodicStore(ledger),  # one episodic delta/beat (§7)
+        memory_writer=EpisodicStore(
+            factory.company_root / "memory"
+        ),  # one episodic delta/beat (§7)
         event_bus=EventBus(log_path=factory.company_root / "events.jsonl"),
         max_concurrent_runs=max_concurrent_runs,
     )

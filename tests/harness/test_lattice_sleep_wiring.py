@@ -11,7 +11,6 @@ import pytest
 from dream.tools._context import ToolExecutionContext
 
 from chorus.heartbeat import BeatContext
-from chorus.ledger import Ledger
 from chorus.memory import EpisodicStore, SprintDelta
 from chorus.roles import RoleRegistry, default_roles
 from chorus.testing import uid
@@ -47,9 +46,7 @@ class _RecordingLattice:
         return MagicMock(ok=True, errors=())
 
 
-def _factory(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, lattice: _RecordingLattice, ledger: Ledger
-) -> Any:
+def _factory(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, lattice: _RecordingLattice) -> Any:
     captured: dict[str, Any] = {}
     monkeypatch.setattr(
         _factory_mod.dream, "build_harness", lambda **kw: captured.update(kw) or object()
@@ -66,15 +63,14 @@ def _factory(
         company_id="acme",
         roles=RoleRegistry.from_plugins(default_roles()),
         work_root=tmp_path,
-        ledger=ledger,
     )
 
 
 def test_materialize_calls_adjudicate_when_fresh_episodes(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, ledger: Ledger
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     lattice = _RecordingLattice()
-    factory = _factory(monkeypatch, tmp_path, lattice, ledger)
+    factory = _factory(monkeypatch, tmp_path, lattice)
     factory.materialize(Employee(id="bex", name="Bex", role="backend_engineer"))
     assert lattice.adjudicate_calls == ["bex"]
 
@@ -84,11 +80,11 @@ def _ctx(working_dir: Path) -> ToolExecutionContext:
 
 
 @pytest.mark.asyncio
-async def test_apply_calls_forget_after_success(tmp_path: Path, ledger: Ledger) -> None:
+async def test_apply_calls_forget_after_success(tmp_path: Path) -> None:
     from datetime import UTC, datetime
 
     company = tmp_path / "acme"
-    store = EpisodicStore(ledger)
+    store = EpisodicStore(company / "memory")
     now = datetime.now(UTC)
     store.append(
         SprintDelta(
@@ -107,7 +103,7 @@ async def test_apply_calls_forget_after_success(tmp_path: Path, ledger: Ledger) 
             body="beat",
         )
     )
-    lattice = build_lattice_for_chorus(company, ledger, min_new_episodes=1, min_cluster_size=1)
+    lattice = build_lattice_for_chorus(company, min_new_episodes=1, min_cluster_size=1)
     tool = LatticeApplyTool(lattice)
 
     worktree = tmp_path / "worktree"

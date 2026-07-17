@@ -2,20 +2,14 @@
 
 from __future__ import annotations
 
-from chorus.ledger.repos._base import (
-    LedgerConnection,
-    LedgerRow,
-    dumps,
-    from_iso,
-    loads,
-    require_persisted,
-    utcnow_iso,
-)
+import sqlite3
+
+from chorus.ledger.repos._base import dumps, from_iso, loads, require_persisted, utcnow_iso
 from chorus.skills._models import SkillRevision
 
 
 class SkillRevisionRepo:
-    def __init__(self, conn: LedgerConnection) -> None:
+    def __init__(self, conn: sqlite3.Connection) -> None:
         self._conn = conn
 
     def append(self, revision: SkillRevision) -> SkillRevision:
@@ -62,7 +56,7 @@ class SkillRevisionRepo:
         return [_row_to_revision(r) for r in rows]
 
 
-def _row_to_revision(row: LedgerRow) -> SkillRevision:
+def _row_to_revision(row: sqlite3.Row) -> SkillRevision:
     raw_ids = loads(row["source_run_ids"]) or []
     return SkillRevision(
         id=row["id"],

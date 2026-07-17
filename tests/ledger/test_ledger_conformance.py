@@ -767,7 +767,6 @@ def test_every_global_unique_index_is_a_deliberate_decision() -> None:
         "recovery_active_fingerprint_uq",  # source_task_id
         "recovery_active_source_uq",  # source_task_id
         "routine_revision_no_uq",  # routine_id
-        "skill_revision_no_uq",  # skill_id = a minted uuid (globally unique)
         "task_active_productivity_review_uq",  # origin_id = a minted id
         "task_active_stale_run_eval_uq",  # origin_id
         "task_active_stranded_recovery_uq",  # origin_id

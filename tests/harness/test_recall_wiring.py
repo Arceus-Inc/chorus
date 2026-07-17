@@ -13,7 +13,6 @@ from typing import Any
 
 import pytest
 
-from chorus.ledger import Ledger
 from chorus.memory import EpisodicStore, SprintDelta
 from chorus.roles import RoleRegistry, default_roles
 from chorus.testing import uid
@@ -23,9 +22,7 @@ from chorus_harness import _factory as _factory_mod
 pytestmark = pytest.mark.integration
 
 
-def _factory(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, ledger: Ledger
-) -> tuple[Any, dict[str, Any]]:
+def _factory(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> tuple[Any, dict[str, Any]]:
     captured: dict[str, Any] = {}
     monkeypatch.setattr(
         _factory_mod.dream, "build_harness", lambda **kw: captured.update(kw) or object()
@@ -37,7 +34,6 @@ def _factory(
         company_id="acme",
         roles=RoleRegistry.from_plugins(default_roles()),
         work_root=tmp_path,
-        ledger=ledger,
     )
     return factory, captured
 
@@ -54,22 +50,20 @@ _RECALL_ROLES = (
 
 @pytest.mark.parametrize("role", _RECALL_ROLES)
 def test_worker_role_materializes_with_recall(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, role: str, ledger: Ledger
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, role: str
 ) -> None:
-    factory, captured = _factory(monkeypatch, tmp_path, ledger)
+    factory, captured = _factory(monkeypatch, tmp_path)
     factory.materialize(Employee(id=uid("emp"), name="Emp", role=role))
     names = {t.name for t in captured["registry"].list_tools()}
     assert {"recall", "get_run"}.issubset(names)
 
 
-def test_recall_rides_the_company_ledger_not_a_local_db_file(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, ledger: Ledger
+def test_recall_is_rooted_at_the_company_memory_dir_not_the_worktree(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """Episodic capture lives in the shared Postgres schema — materialize must not mint db files."""
-    factory, _ = _factory(monkeypatch, tmp_path, ledger)
+    factory, _ = _factory(monkeypatch, tmp_path)
     factory.materialize(Employee(id="bex", name="Bex", role="backend_engineer"))
-    assert not (tmp_path / "acme" / "memory" / "episodic.db").exists()
-    EpisodicStore(ledger).count()  # the store opens on the same schema the factory wired
+    assert (tmp_path / "acme" / "memory" / "episodic.db").is_file()
 
 
 def _tools_line(overlay_toml: str) -> str:
@@ -77,12 +71,12 @@ def _tools_line(overlay_toml: str) -> str:
 
 
 def test_recall_is_admitted_to_the_read_only_evaluator_head(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, ledger: Ledger
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     # recall is safe/read-only (like memory_search), so the evaluator head — which keeps a narrowed
     # read-only toolset to verify with — must see it in its `tools = [...]` LIST, not just have the
     # word appear somewhere in the overlay's copied-in brief prose.
-    factory, _ = _factory(monkeypatch, tmp_path, ledger)
+    factory, _ = _factory(monkeypatch, tmp_path)
     mat = factory.materialize(Employee(id="bex", name="Bex", role="backend_engineer"))
     evaluator = (mat.working_dir / ".harness" / "roles" / "evaluator.toml").read_text(
         encoding="utf-8"
@@ -92,11 +86,12 @@ def test_recall_is_admitted_to_the_read_only_evaluator_head(
 
 
 def test_materialize_does_not_inject_episodic_teaser(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, ledger: Ledger
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """No prompt teaser / resume-nudge file — recall + TODO.md + skills carry orientation."""
-    factory, _ = _factory(monkeypatch, tmp_path, ledger)
-    store = EpisodicStore(ledger)
+    factory, _ = _factory(monkeypatch, tmp_path)
+    memory_root = tmp_path / "acme" / "memory"
+    store = EpisodicStore(memory_root)
     ts = datetime(2026, 7, 8, 12, 0, tzinfo=UTC)
     store.append(
         SprintDelta(
@@ -131,9 +126,9 @@ def test_materialize_does_not_inject_episodic_teaser(
 
 
 def test_backend_engineer_gets_todo_write_and_shared_cross_beat_skills(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, ledger: Ledger
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    factory, captured = _factory(monkeypatch, tmp_path, ledger)
+    factory, captured = _factory(monkeypatch, tmp_path)
     mat = factory.materialize(Employee(id=uid("eng"), name="Eng", role="backend_engineer"))
     names = {t.name for t in captured["registry"].list_tools()}
     assert {"recall", "get_run", "todo_write", "skill"}.issubset(names)

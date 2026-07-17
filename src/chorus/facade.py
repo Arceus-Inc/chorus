@@ -192,7 +192,7 @@ class Chorus:
         # export/import location (spec 09 §3, the GitWorkforce codec), not a second live store.
         workforce = LedgerWorkforce(store.employees)
         event_bus = EventBus()
-        memory_writer = EpisodicStore(store)
+        memory_writer = EpisodicStore(memory_repo)
         scheduler = Scheduler(
             tick_interval_s=the_caps.tick_interval_s,
             max_concurrent_runs=the_caps.max_concurrent_runs,

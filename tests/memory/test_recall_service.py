@@ -7,7 +7,6 @@ from datetime import UTC, datetime
 
 import pytest
 
-from chorus.ledger import Ledger
 from chorus.memory import EpisodicQueryFilters, EpisodicRecallService, EpisodicStore, SprintDelta
 from chorus.testing import uid
 
@@ -36,8 +35,8 @@ def _delta(**over: object) -> SprintDelta:
     return SprintDelta(**base)  # type: ignore[arg-type]
 
 
-def test_recency_mode_without_filters(ledger: Ledger) -> None:
-    store = EpisodicStore(ledger)
+def test_recency_mode_without_filters(tmp_path) -> None:
+    store = EpisodicStore(tmp_path)
     store.append(_delta(run_id=uid("r_old"), recorded_at=datetime(2026, 6, 1, tzinfo=UTC)))
     store.append(_delta(run_id=uid("r_new"), recorded_at=datetime(2026, 6, 20, tzinfo=UTC)))
     svc = EpisodicRecallService(store)
@@ -48,8 +47,8 @@ def test_recency_mode_without_filters(ledger: Ledger) -> None:
     assert [d.run_id for d in result.hits] == [uid("r_new"), uid("r_old")]
 
 
-def test_since_filter_scopes_task_thread(ledger: Ledger) -> None:
-    store = EpisodicStore(ledger)
+def test_since_filter_scopes_task_thread(tmp_path) -> None:
+    store = EpisodicStore(tmp_path)
     store.append(
         _delta(
             run_id=uid("r_old"),
@@ -79,8 +78,8 @@ def test_since_filter_scopes_task_thread(ledger: Ledger) -> None:
     assert [d.run_id for d in result.hits] == [uid("r_new")]
 
 
-def test_task_id_filter_scopes_recency(ledger: Ledger) -> None:
-    store = EpisodicStore(ledger)
+def test_task_id_filter_scopes_recency(tmp_path) -> None:
+    store = EpisodicStore(tmp_path)
     store.append(
         _delta(
             run_id=uid("r_t2"),
@@ -108,8 +107,8 @@ def test_task_id_filter_scopes_recency(ledger: Ledger) -> None:
     assert [d.run_id for d in result.hits] == [uid("r_t1")]
 
 
-def test_debug_query_promotes_failure(ledger: Ledger) -> None:
-    store = EpisodicStore(ledger)
+def test_debug_query_promotes_failure(tmp_path) -> None:
+    store = EpisodicStore(tmp_path)
     store.append(
         _delta(
             run_id=uid("r_ok"),
@@ -142,8 +141,8 @@ def test_debug_query_promotes_failure(ledger: Ledger) -> None:
     assert result.hits[0].run_id == uid("r_fail")
 
 
-def test_debug_task_thread_promotes_failure(ledger: Ledger) -> None:
-    store = EpisodicStore(ledger)
+def test_debug_task_thread_promotes_failure(tmp_path) -> None:
+    store = EpisodicStore(tmp_path)
     store.append(
         _delta(
             run_id=uid("r_ok"),
@@ -173,15 +172,15 @@ def test_debug_task_thread_promotes_failure(ledger: Ledger) -> None:
     assert [d.run_id for d in result.hits] == [uid("r_fail"), uid("r_ok")]
 
 
-def test_get_run_rejects_cross_employee(ledger: Ledger) -> None:
-    store = EpisodicStore(ledger)
+def test_get_run_rejects_cross_employee(tmp_path) -> None:
+    store = EpisodicStore(tmp_path)
     store.append(_delta(run_id=uid("r_a"), employee_id="ada"))
     svc = EpisodicRecallService(store)
     assert svc.get_run("bex", uid("r_a")) is None
 
 
-def test_get_run_returns_full_record(ledger: Ledger) -> None:
-    store = EpisodicStore(ledger)
+def test_get_run_returns_full_record(tmp_path) -> None:
+    store = EpisodicStore(tmp_path)
     store.append(_delta(run_id=uid("r_a"), body=_body("full narrative prose here")))
     svc = EpisodicRecallService(store)
     got = svc.get_run("bex", uid("r_a"))

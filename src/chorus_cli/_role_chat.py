@@ -74,7 +74,9 @@ def build_role_chat_service(
         landers=default_landers(
             factory.company_root, ledger=ledger
         ),  # a passed beat lands its role artifact (§2)
-        memory_writer=EpisodicStore(ledger),  # one episodic delta/beat (§7)
+        memory_writer=EpisodicStore(
+            factory.company_root / "memory"
+        ),  # one episodic delta/beat (§7)
         max_concurrent_runs=1,
     )
     return ChatBeatService(

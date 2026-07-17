@@ -10,7 +10,7 @@ import pytest
 
 from chorus.heartbeat._beat import BeatDisposition, BeatOutcome
 from chorus.heartbeat._scheduler import Scheduler
-from chorus.ledger import Ledger, Task, TaskPriority, TaskStatus
+from chorus.ledger import Task, TaskPriority, TaskStatus
 from chorus.memory import EpisodicStore, SprintDelta
 from chorus.testing import uid
 from chorus.workforce import Employee
@@ -42,7 +42,7 @@ def _append_cluster(store: EpisodicStore, *, n: int = 5) -> None:
     for i in range(n):
         store.append(
             SprintDelta(
-                run_id=uid(f"r_{i}"),
+                run_id=f"r_{i}",
                 task_id=uid("t1"),
                 employee_id="bex",
                 role="backend_engineer",
@@ -59,16 +59,16 @@ def _append_cluster(store: EpisodicStore, *, n: int = 5) -> None:
         )
 
 
-def test_write_lattice_beat_end_when_gate_open(tmp_path: Path, ledger: Ledger) -> None:
+def test_write_lattice_beat_end_when_gate_open(tmp_path: Path) -> None:
     company = tmp_path / "acme"
-    memory = EpisodicStore(ledger)
+    memory = EpisodicStore(company / "memory")
     _append_cluster(memory)
 
     worktree = tmp_path / "worktree"
     worktree.mkdir()
     (worktree / ".harness").mkdir()
 
-    scheduler = Scheduler(company_root=company, ledger=ledger)
+    scheduler = Scheduler(company_root=company)
     scheduler._write_lattice_beat_end(
         employee=_employee(),
         run_id=uid("run_1"),
@@ -83,14 +83,14 @@ def test_write_lattice_beat_end_when_gate_open(tmp_path: Path, ledger: Ledger) -
     assert "gate open" in payload["teaser"].lower()
 
 
-def test_no_teaser_file_when_gate_closed(tmp_path: Path, ledger: Ledger) -> None:
+def test_no_teaser_file_when_gate_closed(tmp_path: Path) -> None:
     company = tmp_path / "acme"
-    EpisodicStore(ledger)
+    EpisodicStore(company / "memory")
 
     worktree = tmp_path / "worktree"
     worktree.mkdir()
 
-    scheduler = Scheduler(company_root=company, ledger=ledger)
+    scheduler = Scheduler(company_root=company)
     scheduler._write_lattice_beat_end(
         employee=_employee(),
         run_id=uid("run_1"),
@@ -100,10 +100,10 @@ def test_no_teaser_file_when_gate_closed(tmp_path: Path, ledger: Ledger) -> None
     assert not (worktree / ".harness" / "lattice-beat-end.json").exists()
 
 
-def test_lattice_teaser_never_raises_on_bad_company_root(tmp_path: Path, ledger: Ledger) -> None:
+def test_lattice_teaser_never_raises_on_bad_company_root(tmp_path: Path) -> None:
     worktree = tmp_path / "worktree"
     worktree.mkdir()
-    scheduler = Scheduler(company_root=tmp_path / "missing" / "structure", ledger=ledger)
+    scheduler = Scheduler(company_root=tmp_path / "missing" / "structure")
     scheduler._write_lattice_beat_end(
         employee=_employee(),
         run_id=uid("run_1"),
