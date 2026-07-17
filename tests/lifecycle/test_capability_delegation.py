@@ -776,9 +776,13 @@ def test_submit_one_requires_replacement_lineage_while_a_direct_child_failed(
     )
 
     assert result.child_id is None
-    assert result.authority_denied == (
+    assert result.authority_denied is not None
+    assert result.authority_denied.startswith(
         f"failed direct child {rejected} must be named in replaces_task_id"
     )
+    # The refusal teaches the exact corrective call (live T3: the lead exhausted its
+    # integrate budget re-sending the same refused submit without this).
+    assert f'replaces_task_id="{rejected}"' in result.authority_denied
     assert [child.id for child in ledger.tasks.children(parent.id)] == [rejected]
 
 

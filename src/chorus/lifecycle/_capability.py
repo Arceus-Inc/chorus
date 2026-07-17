@@ -566,17 +566,25 @@ class CapabilityService:
     def _replacement_denial(self, parent: Task, child: ChildPlan) -> DecomposeResult | None:
         replaced_id = child.replaces_task_id
         if replaced_id is None:
-            for blocker_id in self._ledger.dependencies.blockers(parent.id):
-                blocker = self._ledger.tasks.get(blocker_id)
-                if blocker is not None and blocker.status in {
-                    TaskStatus.REJECTED,
-                    TaskStatus.CANCELLED,
-                }:
-                    return DecomposeResult(
-                        authority_denied=(
-                            f"failed direct child {blocker_id} must be named in replaces_task_id"
-                        )
+            failed = [
+                blocker_id
+                for blocker_id in self._ledger.dependencies.blockers(parent.id)
+                if (blocker := self._ledger.tasks.get(blocker_id)) is not None
+                and blocker.status in {TaskStatus.REJECTED, TaskStatus.CANCELLED}
+            ]
+            if failed:
+                # Live T3 finding (2026-07-18): a lead burned every integrate iteration on this
+                # refusal because it never learned the exact corrective call. Name every failed
+                # child and the exact field so ONE refusal is enough to self-correct.
+                listed = ", ".join(failed)
+                return DecomposeResult(
+                    authority_denied=(
+                        f"failed direct child {failed[0]} must be named in replaces_task_id. "
+                        f"Correction: re-call submit_task with the SAME label/intent/assignee "
+                        f'plus replaces_task_id="{failed[0]}" — one corrective task per failed '
+                        f"child. Failed children gating this task: {listed}"
                     )
+                )
             return None
         replaced = self._ledger.tasks.get(replaced_id)
         correction_id = _child_id(parent.id, child.label)
