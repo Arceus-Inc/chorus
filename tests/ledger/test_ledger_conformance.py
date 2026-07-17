@@ -760,3 +760,36 @@ def test_postgres_horizon_fingerprint_is_company_scoped(pg_conninfo: str | None)
     finally:
         ledger_a.close()
         ledger_b.close()
+
+
+def test_postgres_two_connections_share_one_company_concurrently(pg_conninfo: str | None) -> None:
+    """The M5/M4 unblock: the api process and the conductor process hold SEPARATE connections to
+    the SAME company's ledger and interleave reads and writes consistently — the thing a
+    SQLite-file-per-company could never do across processes."""
+    if pg_conninfo is None:
+        pytest.skip(f"PostgreSQL 18 not found at {_PG_BIN}")
+    import psycopg
+
+    with psycopg.connect(pg_conninfo, autocommit=True) as admin:
+        admin.execute("DROP SCHEMA public CASCADE")
+        admin.execute("CREATE SCHEMA public")
+    PostgresLedger.open(pg_conninfo, company_id=mint_id()).close()
+    app_conninfo = _app_role_conninfo(pg_conninfo)
+    company_id = mint_id()
+    conductor_side = PostgresLedger.open(app_conninfo, company_id=company_id)
+    api_side = PostgresLedger.open(app_conninfo, company_id=company_id)
+    try:
+        employee = _employee(conductor_side)  # the conductor hires...
+        task = _task(api_side, intent="from the api")  # ...the api submits...
+        run_id = mint_id()
+        assert (
+            conductor_side.tasks.checkout(task.id, employee_id=employee.id, run_id=run_id) is True
+        )
+        seen = api_side.tasks.get(task.id)  # ...and each sees the other's committed writes.
+        assert seen is not None and seen.status is TaskStatus.IN_PROGRESS
+        assert seen.checkout_run_id == run_id
+        # The CAS still arbitrates across connections: the api's competing checkout loses cleanly.
+        assert api_side.tasks.checkout(task.id, employee_id=employee.id, run_id=mint_id()) is False
+    finally:
+        conductor_side.close()
+        api_side.close()
