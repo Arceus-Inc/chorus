@@ -23,10 +23,11 @@ from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 from pathlib import Path
-from typing import TYPE_CHECKING, Protocol, TypeVar, runtime_checkable
+from typing import TYPE_CHECKING, Any, Protocol, TypeVar, runtime_checkable
 
 from chorus.adapters._failure import failure_outcome
 from chorus.cron._fire import fire_routine
+from chorus.events import Event, EventKind
 from chorus.governance import GovernanceResolver
 from chorus.heartbeat._beat import BeatDisposition, BeatOutcome
 from chorus.heartbeat._beat_context import BeatContext, IntegrateContextPacket
@@ -73,7 +74,6 @@ from chorus.verification import SYSTEM_VERIFIER, VerificationPrincipal
 
 if TYPE_CHECKING:
     from chorus.budgets import BudgetEnforcer
-    from chorus.events import Event
     from chorus.heartbeat._beat import BeatRunner
     from chorus.heartbeat._runner_for import BeatRunnerFor
     from chorus.ledger import Ledger, Task
@@ -659,6 +659,13 @@ class Scheduler:
             ):
                 ledger.wakes.release(wake.id)
                 budget_gated += 1
+                self._emit_allocation(
+                    EventKind.BUDGET_HARD_STOP,
+                    at=now,
+                    task_id=str(wake.payload["task_id"]),
+                    employee_id=wake.employee_id,
+                    payload={"gate": "dispatch"},
+                )
                 continue
             task_id = str(wake.payload["task_id"])
             run_id = mint_id()
@@ -668,6 +675,22 @@ class Scheduler:
                 ledger.wakes.release(wake.id)
                 continue
             busy.add(wake.employee_id)
+            self._emit_allocation(
+                EventKind.WAKE_CLAIMED,
+                at=now,
+                task_id=task_id,
+                employee_id=wake.employee_id,
+                run_id=run_id,
+                payload={"reason": wake.reason.value, "coalesced": wake.coalesced_count},
+            )
+            self._emit_allocation(
+                EventKind.TASK_STATUS,
+                at=now,
+                task_id=task_id,
+                employee_id=wake.employee_id,
+                run_id=run_id,
+                payload={"from": "todo", "to": "in_progress"},
+            )
             self._dispatch_beat(wake, run_id=run_id, now=now)
             dispatched += 1
 
@@ -2054,6 +2077,31 @@ class Scheduler:
                 fingerprint=str(phase) if phase else "engine",
                 evidence={"phase": phase, "error": result.outcome.get("error")},
                 next_action="inspect the engine fault and resume or hand off the task",
+            )
+        )
+
+    def _emit_allocation(
+        self,
+        kind: EventKind,
+        *,
+        at: datetime,
+        task_id: str,
+        employee_id: str,
+        run_id: str | None = None,
+        payload: dict[str, Any] | None = None,
+    ) -> None:
+        """Mirror one allocation transition onto the bus (OBS P6) — no bus, no-op."""
+        if self._event_bus is None:
+            return
+        self._event_bus.emit(
+            Event(
+                kind=kind,
+                at=at,
+                trace_id=trace_root(self._require_ledger(), task_id),
+                task_id=task_id,
+                employee_id=employee_id,
+                run_id=run_id,
+                payload=payload or {},
             )
         )
 
