@@ -508,90 +508,51 @@ class DreamBeatRunner:
             provenance_path = self._working_dir / ".harness" / "subagent-evidence" / f"{name}.json"
             fresh = fresh_results.get(name)
             if fresh is not None:
-                content, is_error, before_worktree_hash, reviewed_worktree_hash = fresh
-                if is_error:
-                    return self._subagent_evidence_failure(
-                        outcome, f"{name} subagent execution failed"
-                    )
-                if evidence_read_only and before_worktree_hash != reviewed_worktree_hash:
-                    return self._subagent_evidence_failure(
-                        outcome, f"{name} changed the worktree during independent review"
-                    )
-                try:
-                    returned = json.loads(content)
-                except (json.JSONDecodeError, ValueError):
-                    return self._subagent_evidence_failure(
-                        outcome, f"{name} typed output was invalid or fail-open"
-                    )
-                if not isinstance(returned, dict):
-                    return self._subagent_evidence_failure(
-                        outcome, f"{name} typed output was invalid or fail-open"
-                    )
-                current_worktree_hash = _worktree_fingerprint(self._working_dir)
-                if evidence_read_only and current_worktree_hash != reviewed_worktree_hash:
-                    return self._subagent_evidence_failure(
-                        outcome, f"{name} worktree changed after independent review"
-                    )
-                _write_json_atomic(artifact_path, returned)
-                artifact = returned
-            else:
-                if not artifact_path.is_file():
-                    return self._subagent_evidence_failure(
-                        outcome, f"{name} evidence artifact is missing: {relative_path}"
-                    )
-                try:
-                    artifact = json.loads(artifact_path.read_text(encoding="utf-8"))
-                except (OSError, json.JSONDecodeError, ValueError):
-                    return self._subagent_evidence_failure(
-                        outcome, f"{name} evidence artifact is not valid JSON"
-                    )
-
-            if not isinstance(artifact, dict) or any(
-                artifact.get(field) != expected for field, expected in required_claim.items()
-            ):
-                return self._subagent_evidence_failure(
-                    outcome, f"{name} evidence does not carry the required claim"
+                fresh_reason, fresh_artifact = self._validate_fresh_evidence(
+                    name=name,
+                    fresh=fresh,
+                    relative_path=relative_path,
+                    required_claim=required_claim,
+                    evidence_read_only=evidence_read_only,
+                    artifact_path=artifact_path,
+                    provenance_path=provenance_path,
+                    provenance_to_write=provenance_to_write,
                 )
-
-            artifact_hash = sha256(artifact_path.read_bytes()).hexdigest()
-            if fresh is not None:
-                _content, _is_error, _before_worktree_hash, reviewed_worktree_hash = fresh
-                provenance_to_write.append(
-                    (
-                        provenance_path,
-                        {
-                            "subagent_name": name,
-                            "artifact_path": relative_path,
-                            "artifact_sha256": artifact_hash,
-                            "worktree_sha256": reviewed_worktree_hash,
-                            "required_claim": required_claim,
-                            "evidence_read_only": evidence_read_only,
-                        },
+                if fresh_reason is None:
+                    continue
+                # A failed re-attempt must not erase what a prior beat already proved (live
+                # 2026-07-17: an integrate re-beat over an already-green worktree spawned
+                # test_author again, it honestly declined to re-author RED-first, and the
+                # beat was demoted despite beat-1's validated provenance). The stored record
+                # is the durable proof; the ratchet still binds first-time work below.
+                if (
+                    self._validate_stored_evidence(
+                        name=name,
+                        relative_path=relative_path,
+                        required_claim=required_claim,
+                        evidence_read_only=evidence_read_only,
+                        artifact_path=artifact_path,
+                        provenance_path=provenance_path,
                     )
-                )
-                continue
-
-            try:
-                provenance = json.loads(provenance_path.read_text(encoding="utf-8"))
-            except (OSError, json.JSONDecodeError, ValueError):
-                return self._subagent_evidence_failure(
-                    outcome, f"{name} has no machine provenance from an independent run"
-                )
-            if (
-                not isinstance(provenance, dict)
-                or provenance.get("artifact_path") != relative_path
-                or provenance.get("artifact_sha256") != artifact_hash
-                or provenance.get("required_claim") != required_claim
-                or provenance.get("evidence_read_only", True) is not evidence_read_only
-                or (
-                    evidence_read_only
-                    and provenance.get("worktree_sha256")
-                    != _worktree_fingerprint(self._working_dir)
-                )
-            ):
-                return self._subagent_evidence_failure(
-                    outcome, f"{name} artifact changed after independent review"
-                )
+                    is None
+                ):
+                    continue
+                if fresh_artifact is not None:
+                    # No validated prior evidence to protect: land the honest failing verdict
+                    # on disk so it displaces any parent-forged artifact and documents the
+                    # refusal for the repair beat.
+                    _write_json_atomic(artifact_path, fresh_artifact)
+                return self._subagent_evidence_failure(outcome, fresh_reason)
+            stored_reason = self._validate_stored_evidence(
+                name=name,
+                relative_path=relative_path,
+                required_claim=required_claim,
+                evidence_read_only=evidence_read_only,
+                artifact_path=artifact_path,
+                provenance_path=provenance_path,
+            )
+            if stored_reason is not None:
+                return self._subagent_evidence_failure(outcome, stored_reason)
 
         for provenance_path, provenance in provenance_to_write:
             provenance_path.parent.mkdir(parents=True, exist_ok=True)
@@ -602,6 +563,109 @@ class DreamBeatRunner:
             outcome,
             outcome={**outcome.outcome, "subagent_evidence": "passed"},
         )
+
+    def _validate_fresh_evidence(
+        self,
+        *,
+        name: str,
+        fresh: tuple[str, bool, str, str],
+        relative_path: str,
+        required_claim: dict[str, object],
+        evidence_read_only: bool,
+        artifact_path: Path,
+        provenance_path: Path,
+        provenance_to_write: list[tuple[Path, dict[str, object]]],
+    ) -> tuple[str | None, dict[str, object] | None]:
+        """Validate this beat's subagent output; persist artifact+provenance only when it holds.
+
+        The claim is checked BEFORE the artifact is written: a failing re-attempt must never
+        clobber evidence a prior beat validated (the caller falls back to the stored record).
+        Returns ``(failure_reason, parsed_artifact)`` — the artifact rides along so the caller
+        can still land an honest failing verdict when there is no prior evidence to protect.
+        """
+        assert self._working_dir is not None
+        content, is_error, before_worktree_hash, reviewed_worktree_hash = fresh
+        if is_error:
+            return f"{name} subagent execution failed", None
+        if evidence_read_only and before_worktree_hash != reviewed_worktree_hash:
+            return f"{name} changed the worktree during independent review", None
+        try:
+            returned = json.loads(content)
+        except (json.JSONDecodeError, ValueError):
+            return f"{name} typed output was invalid or fail-open", None
+        if not isinstance(returned, dict):
+            return f"{name} typed output was invalid or fail-open", None
+        if any(returned.get(field) != expected for field, expected in required_claim.items()):
+            return f"{name} evidence does not carry the required claim", returned
+        if (
+            evidence_read_only
+            and _worktree_fingerprint(self._working_dir) != reviewed_worktree_hash
+        ):
+            return f"{name} worktree changed after independent review", returned
+        _write_json_atomic(artifact_path, returned)
+        provenance_to_write.append(
+            (
+                provenance_path,
+                {
+                    "subagent_name": name,
+                    "artifact_path": relative_path,
+                    "artifact_sha256": sha256(artifact_path.read_bytes()).hexdigest(),
+                    "worktree_sha256": reviewed_worktree_hash,
+                    "required_claim": required_claim,
+                    "evidence_read_only": evidence_read_only,
+                },
+            )
+        )
+        return None, returned
+
+    def _validate_stored_evidence(
+        self,
+        *,
+        name: str,
+        relative_path: str,
+        required_claim: dict[str, object],
+        evidence_read_only: bool,
+        artifact_path: Path,
+        provenance_path: Path,
+    ) -> str | None:
+        """Validate evidence a prior beat recorded (resume / re-beat path).
+
+        Read-only evidence pins the artifact bytes AND the worktree the reviewer saw. A
+        non-read-only producer's artifact lives in a worktree later beats legitimately mutate
+        (its own re-run rewrites it), so there the machine-validated provenance record is the
+        durable proof and the mutable file is not re-pinned.
+        """
+        assert self._working_dir is not None
+        try:
+            provenance = json.loads(provenance_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError, ValueError):
+            return f"{name} has no machine provenance from an independent run"
+        if (
+            not isinstance(provenance, dict)
+            or provenance.get("artifact_path") != relative_path
+            or provenance.get("required_claim") != required_claim
+            or provenance.get("evidence_read_only", True) is not evidence_read_only
+        ):
+            return f"{name} artifact changed after independent review"
+        if not evidence_read_only:
+            return None
+        if not artifact_path.is_file():
+            return f"{name} evidence artifact is missing: {relative_path}"
+        try:
+            artifact = json.loads(artifact_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError, ValueError):
+            return f"{name} evidence artifact is not valid JSON"
+        if not isinstance(artifact, dict) or any(
+            artifact.get(field) != expected for field, expected in required_claim.items()
+        ):
+            return f"{name} evidence does not carry the required claim"
+        if provenance.get("artifact_sha256") != sha256(
+            artifact_path.read_bytes()
+        ).hexdigest() or provenance.get("worktree_sha256") != _worktree_fingerprint(
+            self._working_dir
+        ):
+            return f"{name} artifact changed after independent review"
+        return None
 
     @staticmethod
     def _subagent_evidence_failure(outcome: BeatOutcome, reason: str) -> BeatOutcome:

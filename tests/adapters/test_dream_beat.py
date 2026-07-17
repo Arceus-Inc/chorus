@@ -663,6 +663,99 @@ async def test_run_task_accepts_mutating_test_author_provenance(tmp_path: Path) 
     assert json.loads((tmp_path / "test_plan.json").read_text()) == author_output
 
 
+async def test_rebeat_keeps_validated_test_author_evidence(tmp_path: Path) -> None:
+    """Live 2026-07-17: an integrate re-beat over an already-green worktree spawned test_author
+    again; it honestly reported authored=false ("RED impossible: production already present") and
+    clobbered test_plan.json — demoting a passing beat to failed despite beat-1's validated
+    provenance. A failed re-attempt must not erase evidence a prior beat already proved."""
+    requirement = {"test_author": ("test_plan.json", {"authored": True}, False)}
+    authored = {
+        "authored": True,
+        "files": ["tests/test_links.py"],
+        "covers": ["create and resolve"],
+        "red_evidence": "red-confirmed",
+        "evidence": "python -m pytest -q",
+    }
+    declined = {
+        "authored": False,
+        "files": ["tests/test_links.py"],
+        "covers": ["create and resolve"],
+        "red_evidence": "RED-first could not be satisfied: suite already green",
+        "evidence": "python -m pytest -q -> 9 passed",
+    }
+
+    def _events(output: dict[str, object]) -> tuple[dict[str, Any], ...]:
+        return (
+            {
+                "kind": "role.tool.start",
+                "role": "generator",
+                "tool": "spawn_subagent",
+                "input": {"name": "test_author", "prompt": "Author tests"},
+            },
+            {
+                "kind": "role.tool.result",
+                "role": "generator",
+                "tool": "spawn_subagent",
+                "is_error": False,
+                "content": json.dumps(output),
+                "content_preview": json.dumps(output)[:60],
+            },
+        )
+
+    first = await DreamBeatRunner(
+        _FakeHarness(result=_result("done"), events=_events(authored)),
+        working_dir=tmp_path,
+        subagent_evidence=requirement,
+    ).run_task(task_id=uid("t1"), intent="x")
+    assert first.passed is True
+
+    # The re-beat's subagent rewrites the worktree artifact itself (as the real one does)...
+    (tmp_path / "test_plan.json").write_text(json.dumps(declined))
+    rebeat = await DreamBeatRunner(
+        _FakeHarness(result=_result("done"), events=_events(declined)),
+        working_dir=tmp_path,
+        subagent_evidence=requirement,
+    ).run_task(task_id=uid("t1"), intent="integrate")
+
+    assert rebeat.passed is True  # beat-1's validated provenance is the durable proof
+    assert rebeat.outcome["subagent_evidence"] == "passed"
+
+
+async def test_first_beat_still_fails_without_authored_evidence(tmp_path: Path) -> None:
+    """The RED-first ratchet binds first-time work: no prior provenance, authored=false fails."""
+    declined = {
+        "authored": False,
+        "files": [],
+        "covers": [],
+        "red_evidence": "did not author",
+        "evidence": "",
+    }
+    events = (
+        {
+            "kind": "role.tool.start",
+            "role": "generator",
+            "tool": "spawn_subagent",
+            "input": {"name": "test_author", "prompt": "Author tests"},
+        },
+        {
+            "kind": "role.tool.result",
+            "role": "generator",
+            "tool": "spawn_subagent",
+            "is_error": False,
+            "content": json.dumps(declined),
+            "content_preview": json.dumps(declined)[:60],
+        },
+    )
+    outcome = await DreamBeatRunner(
+        _FakeHarness(result=_result("done"), events=events),
+        working_dir=tmp_path,
+        subagent_evidence={"test_author": ("test_plan.json", {"authored": True}, False)},
+    ).run_task(task_id=uid("t1"), intent="x")
+
+    assert outcome.passed is False
+    assert "required claim" in outcome.summary
+
+
 async def test_review_provenance_ignores_post_review_machine_bookkeeping(tmp_path: Path) -> None:
     reviewer_output = {"cleared": True, "findings": [], "evidence": "reviewed links.py"}
     (tmp_path / "links.py").write_text("VALUE = 1\n")
