@@ -6,7 +6,7 @@ has no Postgres dependency.
 
 from __future__ import annotations
 
-from chorus.ledger.postgres._ddl import postgres_ddl
+from chorus.ledger.postgres._ddl import ledger_table_names, postgres_ddl
 from chorus.ledger.postgres._ledger import PostgresLedger, SchemaDriftError
 
-__all__ = ["PostgresLedger", "SchemaDriftError", "postgres_ddl"]
+__all__ = ["PostgresLedger", "SchemaDriftError", "ledger_table_names", "postgres_ddl"]

@@ -278,4 +278,18 @@ def postgres_ddl() -> list[str]:
     return [statements[name] for name in ordered] + deferred + tenancy + indexes
 
 
-__all__ = ["postgres_ddl"]
+__all__ = ["ledger_table_names", "postgres_ddl"]
+
+
+def ledger_table_names() -> list[str]:
+    """Every ledger table name, creation order — for deployments that grant a runtime role."""
+    schema_dir = files("chorus.ledger.schema")
+    tables: dict[str, str] = {}
+    for entry in sorted(schema_dir.iterdir(), key=lambda item: item.name):
+        if entry.name.endswith(".sql"):
+            for statement in _split_statements(entry.read_text()):
+                table_match = _CREATE_TABLE.search(statement)
+                if table_match is not None:
+                    tables[table_match.group(1)] = statement
+    ordered, _, _ = _dependency_order(tables)
+    return ordered
