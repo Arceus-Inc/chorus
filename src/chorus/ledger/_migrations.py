@@ -22,8 +22,11 @@ types, ``company_id`` + FORCE RLS on every new table (copy the house pattern fro
 from __future__ import annotations
 
 import hashlib
+import re
 from dataclasses import dataclass, field
 from importlib.resources import files
+
+_CREATE_TABLE = re.compile(r"^CREATE TABLE (\w+)", re.I)
 
 __all__ = [
     "LedgerAheadError",
@@ -57,6 +60,12 @@ class Migration:
         """``;``-separated statements with ``--`` comments stripped (checksum covers raw bytes)."""
         without_comments = "\n".join(line.split("--", 1)[0] for line in self.sql.splitlines())
         return [part.strip() for part in without_comments.split(";") if part.strip()]
+
+    def table_names(self) -> list[str]:
+        """Tables this delta creates, statement order — deployments grant their runtime role
+        exactly these (never a blanket schema grant)."""
+        matches = (_CREATE_TABLE.match(statement) for statement in self.statements())
+        return [match.group(1) for match in matches if match is not None]
 
 
 def load_migrations() -> list[Migration]:

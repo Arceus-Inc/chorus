@@ -62,6 +62,13 @@ def _table_exists(conninfo: str, table: str) -> bool:
         return db.execute("SELECT to_regclass(%s)", (table,)).fetchone()[0] is not None
 
 
+def test_migration_reports_the_tables_it_creates() -> None:
+    """Deployments grant their runtime role per migration — the table list comes from the SQL."""
+    assert _FIXTURE.table_names() == ["widget"]
+    skills = next(m for m in load_migrations() if m.id == "0002_skills")
+    assert skills.table_names() == ["skill", "skill_revision"]
+
+
 def test_shipped_migrations_load_in_id_order() -> None:
     """The real shipped stream loads cleanly, id-ordered (0002_skills is the first delta)."""
     shipped = load_migrations()
