@@ -203,3 +203,35 @@ class TestMemoryRetrieved:
             }
         )
         assert EventKind.MEMORY_RETRIEVED not in _kinds(sink)
+
+
+class TestLlmCall:
+    """dream's per-role-session usage frame becomes the llm.call event (OBS §4) — model,
+    tokens, cache reads, cost — instead of being dropped by the closed vocabulary."""
+
+    def test_session_closed_maps_to_llm_call(self) -> None:
+        sink: list[Event] = []
+        _bridge(sink).on_event(
+            {
+                "kind": "role.session.closed",
+                "role": "generator",
+                "session_id": "s1",
+                "model": "gpt-x",
+                "usage": {
+                    "input_tokens": 1200,
+                    "output_tokens": 340,
+                    "cache_read_tokens": 800,
+                    "cache_write_tokens": 0,
+                },
+                "cost_usd": 0.0123,
+            }
+        )
+        assert _kinds(sink) == [EventKind.LLM_CALL]
+        call = sink[0]
+        assert call.payload["source"] == "dream"
+        assert call.payload["role"] == "generator"
+        assert call.payload["model"] == "gpt-x"
+        assert call.payload["input_tokens"] == 1200
+        assert call.payload["output_tokens"] == 340
+        assert call.payload["cache_read_tokens"] == 800
+        assert call.payload["cost_usd"] == 0.0123

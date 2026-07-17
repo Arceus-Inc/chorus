@@ -61,6 +61,9 @@ class DreamObserverBridge:
 
     def on_event(self, event: dict[str, Any]) -> None:
         dream_kind = str(event.get("kind", ""))
+        if dream_kind == "role.session.closed":
+            self._emit_llm_call(event)
+            return
         kind = _DREAM_TO_CHORUS_KIND.get(dream_kind)
         if kind is None:
             return
@@ -72,6 +75,26 @@ class DreamObserverBridge:
         self._emit(Event(kind=kind, at=self._clock(), task_id=self._task_id, payload=payload))
         self._maybe_emit_subagent(dream_kind, event)
         self._maybe_emit_memory(dream_kind, event)
+
+    def _emit_llm_call(self, event: dict[str, Any]) -> None:
+        """One role session's spend as a first-class llm.call event (OBS §4)."""
+        usage = dict(event.get("usage") or {})
+        self._emit(
+            Event(
+                kind=EventKind.LLM_CALL,
+                at=self._clock(),
+                task_id=self._task_id,
+                payload={
+                    "source": "dream",
+                    "role": str(event.get("role", "")),
+                    "model": str(event.get("model", "")),
+                    "input_tokens": int(usage.get("input_tokens", 0)),
+                    "output_tokens": int(usage.get("output_tokens", 0)),
+                    "cache_read_tokens": int(usage.get("cache_read_tokens", 0)),
+                    "cost_usd": float(event.get("cost_usd", 0.0)),
+                },
+            )
+        )
 
     def _maybe_emit_subagent(self, dream_kind: str, event: dict[str, Any]) -> None:
         """Surface the ``spawn_subagent`` lifecycle as first-class SUBAGENT_* events."""

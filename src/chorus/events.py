@@ -50,6 +50,8 @@ class EventKind(StrEnum):
     SUBAGENT_COMPLETED = "run.subagent_completed"
     # memory — retrieval at the moment of use (OBS P5); learning events come with their taps
     MEMORY_RETRIEVED = "memory.retrieved"
+    # model calls — one role session's spend (model, tokens, cache, cost)
+    LLM_CALL = "llm.call"
     # cron — tick
     ROUTINE_FIRED = "routine.fired"
     ROUTINE_SUPPRESSED = "routine.suppressed"
