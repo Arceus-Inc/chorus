@@ -79,6 +79,19 @@ on clean-architecture ceremony for exactly this reason. Match the structure to t
 seams to isolate what changes, no ritual for its own sake. When in doubt, start with router/service/
 repository and split further only when a file grows a second reason to change.
 
+## 6. Clean code inside the layers
+
+(Moved here from the operating brief per docs/plans/2026-07-18-hooks-and-briefs-research.md §B —
+the brief keeps the judgment, this skill keeps the craft.)
+
+The dependency arrow runs transport/HTTP → service → data-access → domain model; keep tests in
+their own place, and give each module **one reason to change**. Write native, idiomatic code for
+the stack: fully **type every function signature**, keep functions small and single-purpose (split
+anything past ~50 lines), name things well, and state each piece of knowledge once. Catch SPECIFIC
+exceptions — never a bare `except` or `except Exception`; a handler that swallows everything hides
+the failure you needed to see. Never silence a linter or type-checker finding with an ignore/noqa
+comment or by relaxing the config — fix the code.
+
 ## Why this is a skill, not a hardcoded template
 
 The rules are invariant; the bindings (which filename, which framework) are per-ecosystem data — the
