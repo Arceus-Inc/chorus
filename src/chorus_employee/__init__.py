@@ -23,7 +23,6 @@ from chorus_employee.engineer import engineer_lander, engineer_plugin
 from chorus_employee.manager import manager_lander
 from chorus_employee.marketer import marketer_lander
 from chorus_employee.pm import pm_lander
-from chorus_employee.reviewer import reviewer_lander
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -52,7 +51,6 @@ def default_landers(company_root: Path, *, ledger: Ledger | None = None) -> Land
     ]
     if ledger is not None:
         landers.append(manager_lander(ledger))
-        landers.append(reviewer_lander(ledger))  # the `verdict` lander reads the recorded verdict
     return LanderRegistry.from_landers(landers)
 
 
