@@ -213,6 +213,12 @@ class WorkforcePlanService:
                         )
                     )
             for grant in plan.draft.management_grants:
+                # A grant may re-affirm an employee who already holds a profile (the CEO always
+                # does; so do leads carried across an amendment). The profile is versioned and the
+                # store requires the version to strictly increase, so bump past the current one —
+                # a fresh grant starts at 1.
+                current = self._ledger.management_profiles.get(grant.employee_ref)
+                next_version = current.version + 1 if current is not None else 1
                 self._ledger.management_profiles.upsert(
                     ManagementProfile(
                         employee_id=grant.employee_ref,
@@ -224,6 +230,7 @@ class WorkforcePlanService:
                         max_team_size=grant.max_team_size,
                         allowed_professions=grant.allowed_professions,
                         spend_limit_cents=grant.spend_limit_cents,
+                        version=next_version,
                     )
                 )
             persisted = self._ledger.workforce_plans.update_status(
