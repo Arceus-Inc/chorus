@@ -16,7 +16,7 @@ from chorus.ledger._models import (
 from chorus.workforce import Employee, EmployeeStatus
 
 if TYPE_CHECKING:
-    from chorus.ledger import SqliteLedger
+    from chorus.ledger import Ledger
 
 
 @dataclass(frozen=True)
@@ -55,7 +55,7 @@ class AuthorityIntersection:
 
     def __init__(
         self,
-        ledger: SqliteLedger | None = None,
+        ledger: Ledger | None = None,
         *,
         global_limits: AuthorityLimits | None = None,
     ) -> None:
@@ -70,17 +70,13 @@ class AuthorityIntersection:
         if not layers:
             raise ValueError("at least one authority layer is required")
         bounded_spend = [
-            layer.spend_limit_cents
-            for layer in layers
-            if layer.spend_limit_cents is not None
+            layer.spend_limit_cents for layer in layers if layer.spend_limit_cents is not None
         ]
         bounded_professions = [
             layer.allowed_professions for layer in layers if layer.allowed_professions
         ]
         allowed_professions = (
-            frozenset.intersection(*bounded_professions)
-            if bounded_professions
-            else frozenset()
+            frozenset.intersection(*bounded_professions) if bounded_professions else frozenset()
         )
         return AuthorityLimits(
             max_depth=min(layer.max_depth for layer in layers),

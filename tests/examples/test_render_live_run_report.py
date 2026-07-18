@@ -5,6 +5,8 @@ from pathlib import Path
 
 from examples.render_live_run_report import parse_report, render
 
+from chorus.testing import uid
+
 
 def _report(path: Path, label: str, result: str) -> Path:
     path.write_text(
@@ -38,7 +40,7 @@ def _events(path: Path) -> Path:
             "kind": "run.text",
             "payload": {"role": "generator", "text": "Hel"},
             "run_id": "run-1",
-            "task_id": "task-1",
+            "task_id": uid("task-1"),
             "trace_id": "trace-1",
         },
         {
@@ -47,7 +49,7 @@ def _events(path: Path) -> Path:
             "kind": "run.text",
             "payload": {"role": "generator", "text": "lo"},
             "run_id": "run-1",
-            "task_id": "task-1",
+            "task_id": uid("task-1"),
             "trace_id": "trace-1",
         },
         {
@@ -60,7 +62,7 @@ def _events(path: Path) -> Path:
                 "input": {"command": "python gate_check.py"},
             },
             "run_id": "run-1",
-            "task_id": "task-1",
+            "task_id": uid("task-1"),
             "trace_id": "trace-1",
         },
         {
@@ -74,7 +76,7 @@ def _events(path: Path) -> Path:
                 "content": "gate failed <unsafe>",
             },
             "run_id": "run-1",
-            "task_id": "task-1",
+            "task_id": uid("task-1"),
             "trace_id": "trace-1",
         },
     )
@@ -92,7 +94,7 @@ def _artifact_events(path: Path) -> Path:
                 "tool": "write_file",
                 "input": {"path": "links.py", "content": "old body"},
             },
-            "task_id": "links-task",
+            "task_id": uid("links-task"),
         },
         {
             "at": "2026-07-15T01:00:01+00:00",
@@ -103,7 +105,7 @@ def _artifact_events(path: Path) -> Path:
                 "is_error": False,
                 "content": "Wrote links.py",
             },
-            "task_id": "links-task",
+            "task_id": uid("links-task"),
         },
         {
             "at": "2026-07-15T01:00:02+00:00",
@@ -113,7 +115,7 @@ def _artifact_events(path: Path) -> Path:
                 "tool": "write_file",
                 "input": {"path": "links.py", "content": "final <body>"},
             },
-            "task_id": "links-task",
+            "task_id": uid("links-task"),
         },
         {
             "at": "2026-07-15T01:00:03+00:00",
@@ -124,7 +126,7 @@ def _artifact_events(path: Path) -> Path:
                 "is_error": False,
                 "content": "Wrote links.py",
             },
-            "task_id": "links-task",
+            "task_id": uid("links-task"),
         },
         {
             "at": "2026-07-15T01:00:04+00:00",
@@ -134,7 +136,7 @@ def _artifact_events(path: Path) -> Path:
                 "tool": "write_file",
                 "input": {"path": "scratch.py", "content": "must not appear"},
             },
-            "task_id": "links-task",
+            "task_id": uid("links-task"),
         },
         {
             "at": "2026-07-15T01:00:05+00:00",
@@ -145,7 +147,7 @@ def _artifact_events(path: Path) -> Path:
                 "is_error": True,
                 "content": "write denied",
             },
-            "task_id": "links-task",
+            "task_id": uid("links-task"),
         },
         {
             "at": "2026-07-15T01:00:06+00:00",
@@ -155,7 +157,7 @@ def _artifact_events(path: Path) -> Path:
                 "tool": "write_file",
                 "input": {"path": "review.json", "content": '{"cleared": true}'},
             },
-            "task_id": "review-task",
+            "task_id": uid("review-task"),
         },
         {
             "at": "2026-07-15T01:00:07+00:00",
@@ -166,7 +168,7 @@ def _artifact_events(path: Path) -> Path:
                 "is_error": False,
                 "content": "Wrote review.json",
             },
-            "task_id": "review-task",
+            "task_id": uid("review-task"),
         },
     )
     path.write_text("".join(json.dumps(event) + "\n" for event in events), encoding="utf-8")
@@ -284,14 +286,14 @@ generated/report.json
 
     artifacts = {(item.task_id, item.path): item for item in report.artifacts}
     assert set(artifacts) == {
-        ("links-task", "links.py"),
-        ("review-task", "review.json"),
+        (uid("links-task"), "links.py"),
+        (uid("review-task"), "review.json"),
         ("final-workspace", "generated/report.json"),
     }
-    assert artifacts[("links-task", "links.py")].content == "final <body>"
-    assert artifacts[("links-task", "links.py")].write_count == 2
-    assert artifacts[("links-task", "links.py")].state == "landed"
-    assert artifacts[("review-task", "review.json")].state == "transient"
+    assert artifacts[(uid("links-task"), "links.py")].content == "final <body>"
+    assert artifacts[(uid("links-task"), "links.py")].write_count == 2
+    assert artifacts[(uid("links-task"), "links.py")].state == "landed"
+    assert artifacts[(uid("review-task"), "review.json")].state == "transient"
     assert artifacts[("final-workspace", "generated/report.json")].content is None
     artifact_output = output.split('<section class="event-explorer"', 1)[0]
     assert "must not appear" not in artifact_output

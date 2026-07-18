@@ -11,8 +11,10 @@ import pytest
 from dream.tools._context import ToolExecutionContext
 
 from chorus.heartbeat import BeatContext
+from chorus.ledger import Ledger
 from chorus.memory import EpisodicStore, SprintDelta
 from chorus.roles import RoleRegistry, default_roles
+from chorus.testing import uid
 from chorus.workforce import Employee
 from chorus_harness import _factory as _factory_mod
 from chorus_harness._skills import materialize_versioned_skills_into
@@ -35,7 +37,7 @@ def _delta(run_id: str, *, employee_id: str = "bex") -> SprintDelta:
     now = datetime.now(UTC)
     return SprintDelta(
         run_id=run_id,
-        task_id="t1",
+        task_id=uid("t1"),
         employee_id=employee_id,
         role="backend_engineer",
         scope="project",
@@ -54,7 +56,9 @@ def _ctx(working_dir: Path) -> ToolExecutionContext:
     return ToolExecutionContext(working_dir=working_dir, session_id="sess")
 
 
-def _factory(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> tuple[Any, dict[str, Any]]:
+def _factory(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, ledger: Ledger
+) -> tuple[Any, dict[str, Any]]:
     captured: dict[str, Any] = {}
     monkeypatch.setattr(
         _factory_mod.dream, "build_harness", lambda **kw: captured.update(kw) or object()
@@ -66,14 +70,15 @@ def _factory(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> tuple[Any, dict
         company_id="acme",
         roles=RoleRegistry.from_plugins(default_roles()),
         work_root=tmp_path,
+        ledger=ledger,
     )
     return factory, captured
 
 
 def test_backend_engineer_habit_evolve_via_skill_manage(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, ledger: Ledger
 ) -> None:
-    factory, captured = _factory(monkeypatch, tmp_path)
+    factory, captured = _factory(monkeypatch, tmp_path, ledger)
     store = EpisodicStore(factory.company_root / "memory")
     store.append(_delta("r0"))
     store.append(_delta("r1"))
@@ -83,9 +88,9 @@ def test_backend_engineer_habit_evolve_via_skill_manage(
     assert canonical.is_file()
 
     tool = next(t for t in captured["registry"].list_tools() if t.name == "skill_manage")
-    BeatContext(employee_id="bex", run_id="run_a", task_id="t6-lattice-consolidate").write(
-        mat.working_dir
-    )
+    BeatContext(
+        employee_id="bex", run_id=uid("run_a"), task_id=uid("t6-lattice-consolidate")
+    ).write(mat.working_dir)
 
     result = asyncio.run(
         tool.execute(
@@ -106,6 +111,7 @@ def test_backend_engineer_habit_evolve_via_skill_manage(
     skills_dir = mat.working_dir / ".harness" / "skills"
     materialize_versioned_skills_into(
         skills_dir,
+        ledger=ledger,
         company_root=factory.company_root,
         employee_id="bex",
     )
@@ -115,14 +121,16 @@ def test_backend_engineer_habit_evolve_via_skill_manage(
     assert "when_to_use" in text
 
 
-def test_lattice_apply_rejects_habits(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    factory, captured = _factory(monkeypatch, tmp_path)
+def test_lattice_apply_rejects_habits(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, ledger: Ledger
+) -> None:
+    factory, captured = _factory(monkeypatch, tmp_path, ledger)
     store = EpisodicStore(factory.company_root / "memory")
     store.append(_delta("r0"))
 
     mat = factory.materialize(Employee(id="bex", name="Bex", role="backend_engineer"))
     tool = next(t for t in captured["registry"].list_tools() if t.name == "lattice_apply")
-    BeatContext(employee_id="bex", run_id="run_a", task_id="t6").write(mat.working_dir)
+    BeatContext(employee_id="bex", run_id=uid("run_a"), task_id=uid("t6")).write(mat.working_dir)
 
     result = asyncio.run(
         tool.execute(
@@ -148,7 +156,7 @@ def test_lattice_apply_rejects_habits(monkeypatch: pytest.MonkeyPatch, tmp_path:
     assert any("skill_manage" in a for a in result.structured.get("next_actions", []))
 
 
-def test_materialize_versioned_skills_into_worktree(tmp_path: Path) -> None:
+def test_materialize_versioned_skills_into_worktree(tmp_path: Path, ledger: Ledger) -> None:
     from chorus.skills import SkillManager, SkillStore
 
     company = tmp_path / "acme"
@@ -163,7 +171,7 @@ def test_materialize_versioned_skills_into_worktree(tmp_path: Path) -> None:
         encoding="utf-8",
     )
 
-    store = SkillStore(company / "skills")
+    store = SkillStore(ledger)
     mgr = SkillManager(
         store,
         employee_id="bex",
@@ -193,6 +201,7 @@ def test_materialize_versioned_skills_into_worktree(tmp_path: Path) -> None:
 
     materialize_versioned_skills_into(
         skills_dir,
+        ledger=ledger,
         company_root=company,
         employee_id="bex",
     )

@@ -15,6 +15,7 @@ import pytest
 
 from chorus.memory import EpisodicStore, SprintDelta
 from chorus.roles import RoleRegistry, default_roles
+from chorus.testing import uid
 from chorus.workforce import Employee
 from chorus_harness import _factory as _factory_mod
 
@@ -52,7 +53,7 @@ def test_worker_role_materializes_with_recall(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, role: str
 ) -> None:
     factory, captured = _factory(monkeypatch, tmp_path)
-    factory.materialize(Employee(id="emp", name="Emp", role=role))
+    factory.materialize(Employee(id=uid("emp"), name="Emp", role=role))
     names = {t.name for t in captured["registry"].list_tools()}
     assert {"recall", "get_run"}.issubset(names)
 
@@ -94,8 +95,8 @@ def test_materialize_does_not_inject_episodic_teaser(
     ts = datetime(2026, 7, 8, 12, 0, tzinfo=UTC)
     store.append(
         SprintDelta(
-            run_id="r_slug",
-            task_id="t1",
+            run_id=uid("r_slug"),
+            task_id=uid("t1"),
             employee_id="bex",
             scope="project",
             intent="add slugify to textutil",
@@ -109,7 +110,7 @@ def test_materialize_does_not_inject_episodic_teaser(
 
     mat = factory.materialize(
         Employee(id="bex", name="Bex", role="backend_engineer"),
-        task_id="t2",
+        task_id=uid("t2"),
     )
     teaser_path = mat.working_dir / ".harness" / "episodic-beat-start.json"
     assert not teaser_path.is_file()
@@ -128,7 +129,7 @@ def test_backend_engineer_gets_todo_write_and_shared_cross_beat_skills(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     factory, captured = _factory(monkeypatch, tmp_path)
-    mat = factory.materialize(Employee(id="eng", name="Eng", role="backend_engineer"))
+    mat = factory.materialize(Employee(id=uid("eng"), name="Eng", role="backend_engineer"))
     names = {t.name for t in captured["registry"].list_tools()}
     assert {"recall", "get_run", "todo_write", "skill"}.issubset(names)
     skills = mat.working_dir / ".harness" / "skills"

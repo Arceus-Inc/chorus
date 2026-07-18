@@ -9,6 +9,7 @@ from dream.tools._context import ToolExecutionContext
 
 from chorus.heartbeat import BeatContext
 from chorus.memory import EpisodicStore, SprintDelta
+from chorus.testing import uid
 from chorus_tools._lattice import LatticeApplyTool
 from chorus_tools._lattice_bridge import build_lattice_for_chorus
 
@@ -25,7 +26,7 @@ def _delta(run_id: str, *, employee_id: str = "bex") -> SprintDelta:
     now = datetime.now(UTC)
     return SprintDelta(
         run_id=run_id,
-        task_id="t1",
+        task_id=uid("t1"),
         employee_id=employee_id,
         role="backend_engineer",
         scope="project",
@@ -50,12 +51,12 @@ async def test_lattice_apply_rejects_cross_employee_id(tmp_path: Path) -> None:
 
     worktree = tmp_path / "worktree"
     worktree.mkdir()
-    BeatContext(employee_id="bex", run_id="run_a", task_id="t1").write(worktree)
+    BeatContext(employee_id="bex", run_id=uid("run_a"), task_id=uid("t1")).write(worktree)
 
     result = await tool.execute(
         {
             "proposal": {
-                "employee_id": "other_emp",
+                "employee_id": uid("other_emp"),
                 "patterns": [
                     {
                         "key": "api.retry",
@@ -87,7 +88,7 @@ async def test_lattice_context_repeat_call_returns_unchanged_note(tmp_path: Path
 
     worktree = tmp_path / "worktree"
     worktree.mkdir()
-    BeatContext(employee_id="bex", run_id="run_a", task_id="t1").write(worktree)
+    BeatContext(employee_id="bex", run_id=uid("run_a"), task_id=uid("t1")).write(worktree)
 
     apply_result = await LatticeApplyTool(lattice).execute(
         {

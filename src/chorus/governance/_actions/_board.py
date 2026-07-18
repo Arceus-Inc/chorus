@@ -17,7 +17,7 @@ from chorus.ids import mint_id
 from chorus.ledger import Activity, ActivityVerb, Approval, ApprovalAction, Wake, WakeReason
 
 if TYPE_CHECKING:
-    from chorus.ledger import SqliteLedger
+    from chorus.ledger import Ledger
 
 _PROMOTED = "promoted"
 _DENIED = "denied"
@@ -29,7 +29,7 @@ class BoardApprovalAction:
 
     action = ApprovalAction.BOARD_APPROVAL
 
-    def __init__(self, ledger: SqliteLedger) -> None:
+    def __init__(self, ledger: Ledger) -> None:
         self._ledger = ledger
 
     def on_open(self, approval: Approval) -> None:
@@ -38,7 +38,7 @@ class BoardApprovalAction:
     def on_approve(self, approval: Approval) -> ActionOutcome:
         self._ledger.activity.append(
             Activity(
-                id=mint_id("act"),
+                id=mint_id(),
                 verb=ActivityVerb.PROMOTED,
                 subject_kind="artifact",
                 subject_id=approval.subject_id,
@@ -62,7 +62,7 @@ class BoardApprovalAction:
             return 0
         self._ledger.wakes.enqueue(
             Wake(
-                id=mint_id("wake"),
+                id=mint_id(),
                 employee_id=employee_id,
                 reason=WakeReason.RECOVERY,
                 payload={"task_id": task_id},

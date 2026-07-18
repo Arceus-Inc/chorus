@@ -15,7 +15,7 @@ from chorus.adapters import TokenPricing
 from chorus.budgets import BudgetEnforcer
 from chorus.errors import UnknownEmployee
 from chorus.heartbeat import Scheduler
-from chorus.ledger import SqliteLedger
+from chorus.ledger import Ledger
 from chorus.memory import EpisodicStore
 from chorus.observability import EventBus, FanoutBus
 from chorus.roles import RoleRegistry, default_roles
@@ -26,7 +26,7 @@ from chorus_harness import EmployeeHarnessFactory
 
 
 def build_role_chat_service(
-    ledger: SqliteLedger,
+    ledger: Ledger,
     *,
     employee_id: str,
     api_key: str,

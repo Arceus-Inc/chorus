@@ -1,18 +1,23 @@
 """Shared repo helpers (spec 01, Arceus-style per-aggregate repos).
 
-Repos speak the **SQLite ∩ Postgres intersection** over a DB-API connection (spec 12), so the same
-repo code runs on Postgres later — only the connection setup + migration DDL are dialect-specific.
-Timestamps are ISO-8601 text; JSON columns are compact text. The facade sets ``sqlite3.Row`` so
-repos read columns by name.
+Repos speak plain SQL over the one concrete :class:`~chorus.ledger._connection.LedgerConnection`
+(psycopg / Postgres — SQLite is retired). Timestamps travel as ISO text (the connection loads
+timestamptz back as canonical text), JSON as compact text into jsonb.
 """
 
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from datetime import UTC, datetime
 from typing import Any, TypeVar
 
+from chorus.ledger._connection import LedgerConnection
+
 _T = TypeVar("_T")
+
+# One driver: the concrete psycopg connection. Rows are psycopg dict_row mappings.
+LedgerRow = Mapping[str, Any]
 
 
 class LedgerInvariantError(RuntimeError):
@@ -67,3 +72,18 @@ def require_persisted(value: _T | None, entity_id: str) -> _T:
     if value is None:
         raise LedgerInvariantError(f"row {entity_id!r} not found immediately after write")
     return value
+
+
+__all__ = [
+    "LedgerConnection",
+    "LedgerInvariantError",
+    "LedgerRow",
+    "dumps",
+    "from_iso",
+    "loads",
+    "loads_dict",
+    "loads_list",
+    "require_persisted",
+    "to_iso",
+    "utcnow_iso",
+]

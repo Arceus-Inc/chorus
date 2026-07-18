@@ -14,9 +14,9 @@ from chorus.ledger import (
     DelegationContractStatus,
     ExecutionMode,
     Goal,
+    Ledger,
     ManagementProfile,
     PlannedEmployee,
-    SqliteLedger,
     StaffingNeed,
     StaffingRequestStatus,
     Task,
@@ -28,6 +28,7 @@ from chorus.ledger import (
     WorkforcePlanStatus,
 )
 from chorus.roles import RoleRegistry, default_roles
+from chorus.testing import uid
 from chorus.workforce import Employee, EmployeeStatus, LedgerWorkforce
 from chorus_tools import StaffingRequestTool, WorkforceCatalogReadTool
 
@@ -38,13 +39,13 @@ def _roles() -> RoleRegistry:
     return RoleRegistry.from_plugins(default_roles())
 
 
-def _seed(ledger: SqliteLedger) -> None:
+def _seed(ledger: Ledger) -> None:
     ledger.employees.create(
         Employee(id="ceo", name="CEO", role="ceo", status=EmployeeStatus.ACTIVE)
     )
     ledger.employees.create(
         Employee(
-            id="engineering-lead",
+            id=uid("engineering-lead"),
             name="Engineering Lead",
             role="backend_engineer",
             reports_to="ceo",
@@ -53,7 +54,7 @@ def _seed(ledger: SqliteLedger) -> None:
     )
     ledger.management_profiles.upsert(
         ManagementProfile(
-            employee_id="engineering-lead",
+            employee_id=uid("engineering-lead"),
             granted_by_user_id="founder",
             active=True,
             can_lead=True,
@@ -66,37 +67,37 @@ def _seed(ledger: SqliteLedger) -> None:
     )
     ledger.teams.create(
         Team(
-            id="team-engineering",
+            id=uid("team-engineering"),
             name="Mission: Feedback Triage",
-            lead_employee_id="engineering-lead",
+            lead_employee_id=uid("engineering-lead"),
             created_by="ceo",
             status=TeamStatus.ACTIVE,
         )
     )
     ledger.team_members.add(
         TeamMember(
-            team_id="team-engineering",
-            employee_id="engineering-lead",
+            team_id=uid("team-engineering"),
+            employee_id=uid("engineering-lead"),
             source_manager_id="ceo",
             membership_role=TeamMembershipRole.LEAD,
         )
     )
-    ledger.goals.create(Goal(id="goal-feedback", title="Ship feedback triage"))
+    ledger.goals.create(Goal(id=uid("goal-feedback"), title="Ship feedback triage"))
     ledger.tasks.submit(
         Task(
-            id="root-engineering",
+            id=uid("root-engineering"),
             intent="Build feedback triage",
-            goal_id="goal-feedback",
+            goal_id=uid("goal-feedback"),
             execution_mode=ExecutionMode.DELEGATION,
-            team_id="team-engineering",
-            assignee_employee_id="engineering-lead",
+            team_id=uid("team-engineering"),
+            assignee_employee_id=uid("engineering-lead"),
         )
     )
     ledger.delegation_contracts.create(
         DelegationContract(
-            task_id="root-engineering",
-            team_id="team-engineering",
-            lead_employee_id="engineering-lead",
+            task_id=uid("root-engineering"),
+            team_id=uid("team-engineering"),
+            lead_employee_id=uid("engineering-lead"),
             management_profile_version=1,
             can_subdelegate=False,
             max_depth=1,
@@ -107,10 +108,10 @@ def _seed(ledger: SqliteLedger) -> None:
     )
 
 
-def _request(ledger: SqliteLedger):
+def _request(ledger: Ledger):
     return StaffingRequestService(ledger).request(
-        task_id="root-engineering",
-        requested_by_employee_id="engineering-lead",
+        task_id=uid("root-engineering"),
+        requested_by_employee_id=uid("engineering-lead"),
         rationale="No frontend specialist exists for the interface deliverable.",
         needs=(StaffingNeed(profession="frontend_engineer", count=1),),
     )
@@ -128,37 +129,37 @@ def _ctx(working_dir):
     )
 
 
-def test_lead_request_is_durable_and_does_not_hire(ledger: SqliteLedger) -> None:
+def test_lead_request_is_durable_and_does_not_hire(ledger: Ledger) -> None:
     _seed(ledger)
 
     request = _request(ledger)
 
     assert request.status is StaffingRequestStatus.OPEN
-    assert request.goal_id == "goal-feedback"
-    assert request.team_id == "team-engineering"
+    assert request.goal_id == uid("goal-feedback")
+    assert request.team_id == uid("team-engineering")
     assert ledger.staffing_requests.get(request.id) == request
     assert [employee.id for employee in ledger.employees.list()] == [
         "ceo",
-        "engineering-lead",
+        uid("engineering-lead"),
     ]
 
 
 def test_non_lead_and_authority_expanding_requests_are_rejected(
-    ledger: SqliteLedger,
+    ledger: Ledger,
 ) -> None:
     _seed(ledger)
 
     with pytest.raises(ValueError, match="contract lead"):
         StaffingRequestService(ledger).request(
-            task_id="root-engineering",
+            task_id=uid("root-engineering"),
             requested_by_employee_id="ceo",
             rationale="Wrong actor",
             needs=(StaffingNeed("frontend_engineer"),),
         )
     with pytest.raises(ValueError, match="approved profession"):
         StaffingRequestService(ledger).request(
-            task_id="root-engineering",
-            requested_by_employee_id="engineering-lead",
+            task_id=uid("root-engineering"),
+            requested_by_employee_id=uid("engineering-lead"),
             rationale="Would widen authority",
             needs=(StaffingNeed("designer"),),
         )
@@ -166,7 +167,7 @@ def test_non_lead_and_authority_expanding_requests_are_rejected(
 
 
 def test_human_approval_atomically_fulfils_request_with_no_contract_rebind(
-    ledger: SqliteLedger,
+    ledger: Ledger,
 ) -> None:
     _seed(ledger)
     request = _request(ledger)
@@ -180,13 +181,13 @@ def test_human_approval_atomically_fulfils_request_with_no_contract_rebind(
         WorkforcePlanDraft(
             rationale="Fill the one approved frontend gap for the active goal.",
             confidence=0.9,
-            source_goal_ids=("goal-feedback",),
+            source_goal_ids=(uid("goal-feedback"),),
             employees=(
                 PlannedEmployee(
                     ref="frontend",
                     name="Frontend Engineer",
                     profession="frontend_engineer",
-                    reports_to_ref="engineering-lead",
+                    reports_to_ref=uid("engineering-lead"),
                 ),
             ),
             management_grants=(),
@@ -198,20 +199,22 @@ def test_human_approval_atomically_fulfils_request_with_no_contract_rebind(
     applied = service.approve(plan.id, approved_by_user_id="founder")
 
     assert applied.status is WorkforcePlanStatus.APPLIED
-    assert ledger.employees.get("frontend").reports_to == "engineering-lead"  # type: ignore[union-attr]
+    assert ledger.employees.get("frontend").reports_to == uid("engineering-lead")  # type: ignore[union-attr]
     resolved = ledger.staffing_requests.get(request.id)
     assert resolved is not None and (
         resolved.status,
         resolved.workforce_plan_id,
     ) == (StaffingRequestStatus.FULFILLED, plan.id)
-    profile = ledger.management_profiles.get("engineering-lead")
-    contract = ledger.delegation_contracts.get("root-engineering")
+    profile = ledger.management_profiles.get(uid("engineering-lead"))
+    contract = ledger.delegation_contracts.get(uid("root-engineering"))
     assert profile is not None and profile.version == 1
     assert contract is not None and contract.management_profile_version == 1
-    assert ledger.team_members.members_of("team-engineering")[0].employee_id == "engineering-lead"
+    assert ledger.team_members.members_of(uid("team-engineering"))[0].employee_id == uid(
+        "engineering-lead"
+    )
 
 
-def test_amendment_must_exactly_cover_the_linked_request(ledger: SqliteLedger) -> None:
+def test_amendment_must_exactly_cover_the_linked_request(ledger: Ledger) -> None:
     _seed(ledger)
     request = _request(ledger)
     service = WorkforcePlanService(
@@ -222,7 +225,7 @@ def test_amendment_must_exactly_cover_the_linked_request(ledger: SqliteLedger) -
     draft = WorkforcePlanDraft(
         rationale="Wrong profession and manager.",
         confidence=0.9,
-        source_goal_ids=("goal-feedback",),
+        source_goal_ids=(uid("goal-feedback"),),
         employees=(
             PlannedEmployee(
                 ref="marketer",
@@ -246,14 +249,14 @@ def test_amendment_must_exactly_cover_the_linked_request(ledger: SqliteLedger) -
 
 
 def test_lead_tool_opens_request_and_ceo_catalog_surfaces_it(
-    ledger: SqliteLedger,
+    ledger: Ledger,
     tmp_path,
 ) -> None:
     _seed(ledger)
     BeatContext(
-        task_id="root-engineering",
-        run_id="run-1",
-        employee_id="engineering-lead",
+        task_id=uid("root-engineering"),
+        run_id=uid("run-1"),
+        employee_id=uid("engineering-lead"),
     ).write(tmp_path)
 
     result = asyncio.run(
@@ -265,24 +268,22 @@ def test_lead_tool_opens_request_and_ceo_catalog_surfaces_it(
             _ctx(tmp_path),
         )
     )
-    catalog = asyncio.run(
-        WorkforceCatalogReadTool(ledger, _roles()).execute({}, _ctx(tmp_path))
-    )
+    catalog = asyncio.run(WorkforceCatalogReadTool(ledger, _roles()).execute({}, _ctx(tmp_path)))
 
     assert result.is_error is False
     assert result.structured["status"] == "open"
     assert catalog.structured["open_staffing_requests"] == [
         {
             "request_id": result.structured["staffing_request_id"],
-            "task_id": "root-engineering",
-            "goal_id": "goal-feedback",
-            "team_id": "team-engineering",
-            "requested_by_employee_id": "engineering-lead",
+            "task_id": uid("root-engineering"),
+            "goal_id": uid("goal-feedback"),
+            "team_id": uid("team-engineering"),
+            "requested_by_employee_id": uid("engineering-lead"),
             "rationale": "The active Team has no frontend specialist.",
             "needs": [{"profession": "frontend_engineer", "count": 1}],
         }
     ]
     assert [employee.id for employee in ledger.employees.list()] == [
         "ceo",
-        "engineering-lead",
+        uid("engineering-lead"),
     ]

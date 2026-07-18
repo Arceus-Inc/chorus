@@ -66,6 +66,7 @@ class CostEvent:
     cost_cents: int
     task_id: str | None = None
     run_id: str | None = None
+    trace_id: str | None = None  # the lineage root — one trace threads run → beats → spend
     input_tokens: int = 0
     output_tokens: int = 0
     occurred_at: datetime | None = None

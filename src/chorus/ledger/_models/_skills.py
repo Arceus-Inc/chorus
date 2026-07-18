@@ -1,4 +1,7 @@
-"""Procedural skill row models — Chorus-owned (Paperclip company_skills + routine_revision)."""
+"""Procedural skill row models — skill HEAD + immutable revisions (Paperclip lineage).
+
+Live in the shared engine schema (``0002_skills`` migration): company_id + FORCE RLS like every
+ledger table. The domain logic (SkillManager, patches) stays in ``chorus.skills``."""
 
 from __future__ import annotations
 

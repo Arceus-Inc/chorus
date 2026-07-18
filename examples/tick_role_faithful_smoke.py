@@ -15,11 +15,17 @@ Skips cleanly (exit 0) when those env vars are unset.
 from __future__ import annotations
 
 import os
+import uuid
+
+_EXAMPLE_COMPANY = str(uuid.uuid4())  # fresh org per run — slugs reset
 import sys
 import tempfile
 from pathlib import Path
 
-from chorus.ledger import SqliteLedger, Task
+from chorus.ids import derive_id
+from chorus.ledger import Ledger, Task
+
+_T1 = derive_id("demo", "tick-role-t1")
 from chorus.lifecycle import assign_task
 from chorus.workforce import Employee
 from chorus_cli._beats import build_beat_service, default_pricing_from_env
@@ -39,11 +45,14 @@ def main() -> int:
     base = Path(tempfile.mkdtemp(prefix="chorus-tick-"))
     os.chdir(base)  # .chorus/work/... lands under the tmp dir
 
-    ledger = SqliteLedger.open(":memory:")
+    ledger = Ledger.open(
+        os.environ.get("CHORUS_LEDGER_DSN", "postgresql://localhost/chorus"),
+        company_id=_EXAMPLE_COMPANY,
+    )
     try:
         ledger.employees.create(Employee(id="ada", name="Ada", role="engineer"))
-        ledger.tasks.submit(Task(id="t1", intent=_INSTRUCTION))
-        assign_task(ledger, "t1", "ada")  # → todo + a task-assigned wake the tick will claim
+        ledger.tasks.submit(Task(id=_T1, intent=_INSTRUCTION))
+        assign_task(ledger, _T1, "ada")  # → todo + a task-assigned wake the tick will claim
 
         service = build_beat_service(
             ledger,
@@ -56,7 +65,7 @@ def main() -> int:
         print(f"[tick | model {service.model} | engineer 'ada']")
         report = service.run_tick()  # one kernel pulse: dispatch + await the beat
 
-        task = ledger.tasks.get("t1")
+        task = ledger.tasks.get(_T1)
         worktree = base / ".chorus" / "work" / "acme" / "worktrees" / "ada"
         print(f"[tick report] dispatched={report.wakes_dispatched}")
         print(f"[task t1] status={task.status.value if task else '?'}")
@@ -64,14 +73,18 @@ def main() -> int:
 
         hits = sorted(worktree.rglob("hello.txt")) if worktree.is_dir() else []
         if hits:
-            print(f"\nOK: the engineer (via tick) wrote {hits[0].name} in its own worktree, role-faithful.")
+            print(
+                f"\nOK: the engineer (via tick) wrote {hits[0].name} in its own worktree, role-faithful."
+            )
         else:
             files = (
                 sorted(str(p.relative_to(worktree)) for p in worktree.rglob("*") if p.is_file())
                 if worktree.is_dir()
                 else []
             )
-            print(f"\nprobe: no hello.txt this run (model non-determinism). worktree files: {files}")
+            print(
+                f"\nprobe: no hello.txt this run (model non-determinism). worktree files: {files}"
+            )
         return 0
     finally:
         ledger.close()

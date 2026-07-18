@@ -92,7 +92,7 @@ def _assign_task_minimal(ctx: CommandContext) -> LoopSignal:
     if employee_id is None:
         ctx.out.error(f"no such employee or role: {employee_ref!r}")
         return LoopSignal.CONTINUE
-    task_id = mint_id("task")
+    task_id = mint_id()
     created = ctx.session.ledger.tasks.submit(Task(id=task_id, intent=prompt))
     dod = _minimal_file_dod(prompt)
     if dod is not None:

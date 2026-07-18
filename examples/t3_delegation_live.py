@@ -27,8 +27,8 @@ from chorus.ledger import (
     DelegationContractStatus,
     ExecutionMode,
     Goal,
+    Ledger,
     ManagementProfile,
-    SqliteLedger,
     Task,
     TaskStatus,
 )
@@ -363,7 +363,7 @@ def _log(console_path: Path, message: str = "") -> None:
 class _Monitor:
     """Lossless runtime observer plus concise console and contract-transition sampling."""
 
-    def __init__(self, ledger: SqliteLedger, console_path: Path) -> None:
+    def __init__(self, ledger: Ledger, console_path: Path) -> None:
         self._ledger = ledger
         self._console_path = console_path
         self.events: list[Event] = []
@@ -411,7 +411,7 @@ class _Monitor:
             _log(self._console_path, f"[{event.at.isoformat()}] run done task={event.task_id}")
 
 
-def _seed_org(ledger: SqliteLedger) -> tuple[Employee, ...]:
+def _seed_org(ledger: Ledger) -> tuple[Employee, ...]:
     employees = (
         Employee(id=_LEAD_ID, name="Backend Lead", role="backend_engineer"),
         Employee(
@@ -480,7 +480,7 @@ def _seed_org(ledger: SqliteLedger) -> tuple[Employee, ...]:
 
 async def _drive(
     scheduler: Scheduler,
-    ledger: SqliteLedger,
+    ledger: Ledger,
     monitor: _Monitor,
     console_path: Path,
 ) -> None:
@@ -980,7 +980,7 @@ def main() -> int:
     console_path.touch()
     seed = run_root / "seed"
     _seed_repo(seed)
-    ledger = SqliteLedger.open(str(run_root / "company.db"))
+    ledger = Ledger.open(str(run_root / "company.db"))
     events_path = run_root / "events.jsonl"
     secrets = _secret_values()
     registry = RoleRegistry.from_plugins(default_roles())

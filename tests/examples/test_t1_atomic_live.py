@@ -8,6 +8,8 @@ import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
+from chorus.testing import uid
+
 _EXAMPLE = Path(__file__).resolve().parents[2] / "examples" / "t1_atomic_live.py"
 
 
@@ -142,13 +144,13 @@ def test_tdd_audit_requires_behavior_specific_red_before_production_write(
         module.Event(
             kind=module.EventKind.RUN_TOOL_RESULT,
             at=now,
-            task_id="t1-links",
+            task_id=uid("t1-links"),
             payload={"tool": "test_red", "is_error": False, "content": "red-confirmed"},
         ),
         module.Event(
             kind=module.EventKind.RUN_TOOL_USE,
             at=now,
-            task_id="t1-links",
+            task_id=uid("t1-links"),
             payload={
                 "tool": "write_file",
                 "role": "generator",
@@ -175,13 +177,13 @@ def test_evaluator_offload_audit_requires_later_retrieval() -> None:
     result = module.Event(
         kind=module.EventKind.RUN_TOOL_RESULT,
         at=now,
-        task_id="t1-links",
+        task_id=uid("t1-links"),
         payload={"tool": "read_file", "role": "evaluator", "content": pointer},
     )
     retrieval = module.Event(
         kind=module.EventKind.RUN_TOOL_USE,
         at=now,
-        task_id="t1-links",
+        task_id=uid("t1-links"),
         payload={
             "tool": "read_offloaded",
             "role": "evaluator",

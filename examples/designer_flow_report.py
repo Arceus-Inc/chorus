@@ -48,7 +48,7 @@ _TOOL_META: dict[str, tuple[str, str]] = {
 class Node:
     tool: str
     payload: str
-    children: list["Node"] = field(default_factory=list)
+    children: list[Node] = field(default_factory=list)
     error: bool = False
     is_subagent: bool = False
     subagent_name: str = ""
@@ -161,11 +161,26 @@ def parse_log(text: str) -> tuple[str, list[Node], list[Eval], dict[str, str]]:
 # --- phase grouping ---------------------------------------------------------
 
 _PHASES = [
-    ("Research the bet", "The <b>ux_researcher</b> subagent frames the design bet from real UX evidence <em>before</em> anything is drawn — it dispatches <b>web_research</b> and writes <code>ux_brief.md</code>."),
-    ("Ground &amp; author the system", "Study real-world exemplars with the <b>design_exemplar</b> tool, then author <code>DESIGN.md</code> — the token/component system — from the brief."),
-    ("Explore on-system variants", "Seed the direction (<code>design_seed.md</code>), then spawn the <b>explorer</b> to draft 3 self-linted variants and vary layout without touching the token system."),
-    ("Draft the spec", "Write <code>design_spec.md</code> to the chosen direction and run the deterministic <b>design_lint</b> mechanical pass."),
-    ("Red-team &amp; converge", "Loop the <b>design_critic</b> subagent + <b>design_lint</b>, revising the spec each round until the design is on-system and accessible."),
+    (
+        "Research the bet",
+        "The <b>ux_researcher</b> subagent frames the design bet from real UX evidence <em>before</em> anything is drawn — it dispatches <b>web_research</b> and writes <code>ux_brief.md</code>.",
+    ),
+    (
+        "Ground &amp; author the system",
+        "Study real-world exemplars with the <b>design_exemplar</b> tool, then author <code>DESIGN.md</code> — the token/component system — from the brief.",
+    ),
+    (
+        "Explore on-system variants",
+        "Seed the direction (<code>design_seed.md</code>), then spawn the <b>explorer</b> to draft 3 self-linted variants and vary layout without touching the token system.",
+    ),
+    (
+        "Draft the spec",
+        "Write <code>design_spec.md</code> to the chosen direction and run the deterministic <b>design_lint</b> mechanical pass.",
+    ),
+    (
+        "Red-team &amp; converge",
+        "Loop the <b>design_critic</b> subagent + <b>design_lint</b>, revising the spec each round until the design is on-system and accessible.",
+    ),
 ]
 
 
@@ -200,7 +215,11 @@ def _dot(tool: str) -> str:
 
 
 def _err_badge(node: Node) -> str:
-    return ' <span class="err" title="benign — usually a retry reading an offloaded scratch file">err</span>' if node.error else ""
+    return (
+        ' <span class="err" title="benign — usually a retry reading an offloaded scratch file">err</span>'
+        if node.error
+        else ""
+    )
 
 
 def render_node(node: Node) -> str:
@@ -210,10 +229,10 @@ def render_node(node: Node) -> str:
         inner = "".join(render_node(c) for c in node.children)
         n_calls = len(node.children)
         n_err = sum(1 for c in node.children if c.error)
-        err_note = f' · {n_err} benign err' if n_err else ""
+        err_note = f" · {n_err} benign err" if n_err else ""
         return (
             f'<details class="sub">'
-            f'<summary>{_dot("spawn_subagent")}<b>spawn_subagent</b> '
+            f"<summary>{_dot('spawn_subagent')}<b>spawn_subagent</b> "
             f'<span class="agent">{html.escape(node.subagent_name)}</span>'
             f'<span class="count">{n_calls} inner call{"s" if n_calls != 1 else ""}{err_note}</span>'
             f"{_err_badge(node)}</summary>"
@@ -237,11 +256,14 @@ def render_phases(nodes: list[Node]) -> str:
 
     cards = []
     for i, (title, desc) in enumerate(_PHASES):
-        body = "".join(render_node(n) for n in buckets[i]) or '<div class="empty">— no steps recorded —</div>'
+        body = (
+            "".join(render_node(n) for n in buckets[i])
+            or '<div class="empty">— no steps recorded —</div>'
+        )
         cards.append(
             f'<section class="phase">'
             f'<div class="phase-head"><span class="pnum">{i}</span>'
-            f'<div><h3>{title}</h3><p>{desc}</p></div></div>'
+            f"<div><h3>{title}</h3><p>{desc}</p></div></div>"
             f'<div class="phase-body">{body}</div>'
             f"</section>"
         )
@@ -306,7 +328,10 @@ def build_html() -> str:
     chips = [
         ("Total tool calls", str(total_calls)),
         ("Subagents spawned", str(sum(subs.values()))),
-        ("web_search / web_extract", str(counts.get("web_search", 0) + counts.get("web_extract", 0))),
+        (
+            "web_search / web_extract",
+            str(counts.get("web_search", 0) + counts.get("web_extract", 0)),
+        ),
         ("design_lint runs", str(counts.get("design_lint", 0))),
         ("Sprints", str(len(evals))),
     ]

@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
 
-from chorus.skills._models import SkillOrigin
+from chorus.ledger import SkillOrigin
 from chorus.skills._observation import SkillObservation
 from chorus.skills._patch import find_and_replace
 from chorus.skills._store import SkillConflictError, SkillStore

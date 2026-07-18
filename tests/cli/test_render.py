@@ -6,6 +6,7 @@ import io
 
 import pytest
 
+from chorus.testing import uid
 from chorus_cli import Console
 
 pytestmark = pytest.mark.unit
@@ -30,8 +31,8 @@ def test_error_is_prefixed() -> None:
 
 def test_kv_renders_right_aligned_keys() -> None:
     console, buffer = _console()
-    console.kv({"id": "t1", "status": "todo"})
-    assert buffer.getvalue() == "    id  t1\nstatus  todo\n"
+    console.kv({"id": uid("t1"), "status": "todo"})
+    assert buffer.getvalue() == f"    id  {uid('t1')}\nstatus  todo\n"
 
 
 def test_kv_with_no_pairs_writes_nothing() -> None:

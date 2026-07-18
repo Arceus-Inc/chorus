@@ -8,21 +8,22 @@ import pytest
 from chorus.ledger import (
     ActivityVerb,
     Goal,
+    Ledger,
     ManagementProfile,
-    SqliteLedger,
     TeamMembershipRole,
     TeamStatus,
 )
 from chorus.lifecycle import MissionTeamPolicy, MissionTeamPolicyDenied
+from chorus.testing import uid
 from chorus.workforce import Employee, EmployeeStatus
 
 pytestmark = pytest.mark.integration
 
 
-def _seed_lead(ledger: SqliteLedger) -> Employee:
+def _seed_lead(ledger: Ledger) -> Employee:
     lead = Employee(id="lead", name="Lead", role="engineer")
     ledger.employees.create(lead)
-    ledger.goals.create(Goal(id="goal-release", title="Release"))
+    ledger.goals.create(Goal(id=uid("goal-release"), title="Release"))
     ledger.management_profiles.upsert(
         ManagementProfile(
             employee_id=lead.id,
@@ -38,18 +39,18 @@ def _seed_lead(ledger: SqliteLedger) -> Employee:
     return lead
 
 
-def test_create_for_root_forms_one_audited_team_with_lead(ledger: SqliteLedger) -> None:
+def test_create_for_root_forms_one_audited_team_with_lead(ledger: Ledger) -> None:
     lead = _seed_lead(ledger)
     policy = MissionTeamPolicy(ledger)
 
-    first = policy.create_for_root(lead, "goal-release")
-    repeated = policy.create_for_root(lead, "goal-release")
+    first = policy.create_for_root(lead, uid("goal-release"))
+    repeated = policy.create_for_root(lead, uid("goal-release"))
 
     members = ledger.team_members.members_of(first.id)
     team_activity = ledger.activity.by_subject("team", first.id)
     lead_activity = ledger.activity.by_subject("team_member", f"{first.id}/{lead.id}")
     assert repeated == first
-    assert (first.goal_id, first.status) == ("goal-release", TeamStatus.FORMING)
+    assert (first.goal_id, first.status) == (uid("goal-release"), TeamStatus.FORMING)
     assert [(member.employee_id, member.membership_role) for member in members] == [
         (lead.id, TeamMembershipRole.LEAD)
     ]
@@ -59,13 +60,13 @@ def test_create_for_root_forms_one_audited_team_with_lead(ledger: SqliteLedger) 
     assert team_activity[0].actor_user_id is None
 
 
-def test_create_for_root_rejects_lead_without_active_lead_profile(ledger: SqliteLedger) -> None:
+def test_create_for_root_rejects_lead_without_active_lead_profile(ledger: Ledger) -> None:
     lead = Employee(id="lead", name="Lead", role="engineer")
     ledger.employees.create(lead)
     policy = MissionTeamPolicy(ledger)
 
     with pytest.raises(MissionTeamPolicyDenied, match="active lead profile"):
-        policy.create_for_root(lead, "goal-release")
+        policy.create_for_root(lead, uid("goal-release"))
 
     assert (ledger.teams.list_active(), ledger.activity.all()) == ([], [])
 
@@ -73,10 +74,10 @@ def test_create_for_root_rejects_lead_without_active_lead_profile(ledger: Sqlite
 @pytest.mark.parametrize(
     "candidate",
     [
-        Employee(id="cross-line", name="Cross Line", role="designer"),
-        Employee(id="wrong-craft", name="Wrong Craft", role="pm", reports_to="lead"),
+        Employee(id=uid("cross-line"), name="Cross Line", role="designer"),
+        Employee(id=uid("wrong-craft"), name="Wrong Craft", role="pm", reports_to="lead"),
         Employee(
-            id="pending",
+            id=uid("pending"),
             name="Pending",
             role="designer",
             reports_to="lead",
@@ -85,24 +86,22 @@ def test_create_for_root_rejects_lead_without_active_lead_profile(ledger: Sqlite
     ],
 )
 def test_validate_membership_rejects_out_of_policy_candidates(
-    ledger: SqliteLedger, candidate: Employee
+    ledger: Ledger, candidate: Employee
 ) -> None:
     lead = _seed_lead(ledger)
     ledger.employees.create(candidate)
     policy = MissionTeamPolicy(ledger)
-    team = policy.create_for_root(lead, "goal-release")
+    team = policy.create_for_root(lead, uid("goal-release"))
 
     assert policy.validate_membership(team.id, candidate.id) is False
 
 
-def test_add_member_accepts_active_allowed_direct_report_and_audits(ledger: SqliteLedger) -> None:
+def test_add_member_accepts_active_allowed_direct_report_and_audits(ledger: Ledger) -> None:
     lead = _seed_lead(ledger)
-    member = Employee(
-        id="member", name="Member", role="designer", reports_to=lead.id
-    )
+    member = Employee(id=uid("member"), name="Member", role="designer", reports_to=lead.id)
     ledger.employees.create(member)
     policy = MissionTeamPolicy(ledger)
-    team = policy.create_for_root(lead, "goal-release")
+    team = policy.create_for_root(lead, uid("goal-release"))
 
     added = policy.add_member(team.id, member.id)
 
@@ -111,12 +110,12 @@ def test_add_member_accepts_active_allowed_direct_report_and_audits(ledger: Sqli
     assert [event.verb for event in activity] == [ActivityVerb.TEAM_MEMBER_ADDED]
 
 
-def test_add_member_rejection_has_no_partial_membership_or_audit(ledger: SqliteLedger) -> None:
+def test_add_member_rejection_has_no_partial_membership_or_audit(ledger: Ledger) -> None:
     lead = _seed_lead(ledger)
-    outsider = Employee(id="outsider", name="Outsider", role="designer")
+    outsider = Employee(id=uid("outsider"), name="Outsider", role="designer")
     ledger.employees.create(outsider)
     policy = MissionTeamPolicy(ledger)
-    team = policy.create_for_root(lead, "goal-release")
+    team = policy.create_for_root(lead, uid("goal-release"))
 
     with pytest.raises(MissionTeamPolicyDenied, match="membership"):
         policy.add_member(team.id, outsider.id)
@@ -125,10 +124,10 @@ def test_add_member_rejection_has_no_partial_membership_or_audit(ledger: SqliteL
     assert ledger.activity.by_subject("team_member", f"{team.id}/{outsider.id}") == []
 
 
-def test_activate_and_archive_are_audited_and_idempotent(ledger: SqliteLedger) -> None:
+def test_activate_and_archive_are_audited_and_idempotent(ledger: Ledger) -> None:
     lead = _seed_lead(ledger)
     policy = MissionTeamPolicy(ledger)
-    team = policy.create_for_root(lead, "goal-release")
+    team = policy.create_for_root(lead, uid("goal-release"))
 
     active = policy.activate(team.id)
     repeated_active = policy.activate(team.id)

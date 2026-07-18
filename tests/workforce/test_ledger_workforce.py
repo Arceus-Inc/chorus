@@ -12,14 +12,14 @@ from __future__ import annotations
 import pytest
 
 from chorus.errors import OrgInvariantViolation, UnknownEmployee
-from chorus.ledger import SqliteLedger
+from chorus.ledger import Ledger
 from chorus.workforce import EmployeeStatus, LedgerWorkforce
 
 pytestmark = pytest.mark.integration
 
 
 @pytest.fixture
-def wf(ledger: SqliteLedger) -> LedgerWorkforce:
+def wf(ledger: Ledger) -> LedgerWorkforce:
     return LedgerWorkforce(ledger.employees)
 
 
@@ -34,7 +34,7 @@ def test_hire_then_get_roundtrips(wf: LedgerWorkforce) -> None:
 
 
 def test_hired_employee_is_a_real_assignable_ledger_row(
-    ledger: SqliteLedger, wf: LedgerWorkforce
+    ledger: Ledger, wf: LedgerWorkforce
 ) -> None:
     # The point of the fix: hire writes the ledger employee table the FKs point at.
     wf.hire(name="Alice", role="engineer")

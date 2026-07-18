@@ -12,11 +12,9 @@ restarts, never double-fans-out.
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 
-from chorus.ledger import SqliteLedger, Task, TaskStatus
+from chorus.ledger import Ledger, Task, TaskStatus
 from chorus.ledger._models import (
     ActivityVerb,
     Artifact,
@@ -29,38 +27,41 @@ from chorus.ledger._models import (
     WakeReason,
 )
 from chorus.lifecycle import ChildSpec, Fanned, decompose
+from chorus.testing import uid
 from chorus.workforce import Employee
 
-REV = "rev_1"  # the accepted-plan-revision id, backed by a real artifact revision on the source
+REV = uid(
+    "rev_1"
+)  # the accepted-plan-revision id, backed by a real artifact revision on the source
 
 
 @pytest.fixture
-def emp(ledger: SqliteLedger) -> Employee:
+def emp(ledger: Ledger) -> Employee:
     return ledger.employees.create(Employee(id="emp_1", name="alice", role="engineer"))
 
 
 @pytest.fixture
-def goal(ledger: SqliteLedger) -> Goal:
-    return ledger.goals.create(Goal(id="g1", title="ship the thing"))
+def goal(ledger: Ledger) -> Goal:
+    return ledger.goals.create(Goal(id=uid("g1"), title="ship the thing"))
 
 
 @pytest.fixture
-def source(ledger: SqliteLedger, emp: Employee, goal: Goal) -> Task:
+def source(ledger: Ledger, emp: Employee, goal: Goal) -> Task:
     """The task being split, plus its accepted plan revision (``REV``) for the claim FK."""
     task = ledger.tasks.submit(
         Task(
-            id="src",
+            id=uid("src"),
             intent="big thing",
             status=TaskStatus.IN_PROGRESS,
             assignee_employee_id="emp_1",
-            goal_id="g1",
+            goal_id=uid("g1"),
             depth=1,
             request_depth=2,
         )
     )
-    ledger.artifacts.create(Artifact(id="art_src", task_id="src", type=ArtifactType.DOC))
+    ledger.artifacts.create(Artifact(id=uid("art_src"), task_id=uid("src"), type=ArtifactType.DOC))
     ledger.artifact_revisions.record(
-        ArtifactRevision(id=REV, artifact_id="art_src", resource_ref={"plan": "v1"})
+        ArtifactRevision(id=REV, artifact_id=uid("art_src"), resource_ref={"plan": "v1"})
     )
     return task
 
@@ -75,53 +76,49 @@ def _child(task_id: str) -> Task:
     )
 
 
-def test_decompose_creates_children_with_inherited_structure(
-    ledger: SqliteLedger, source: Task
-) -> None:
+def test_decompose_creates_children_with_inherited_structure(ledger: Ledger, source: Task) -> None:
     decompose(
         ledger,
         source_task_id=source.id,
         accepted_plan_revision_id=REV,
-        children=[ChildSpec(_child("c1")), ChildSpec(_child("c2"))],
+        children=[ChildSpec(_child(uid("c1"))), ChildSpec(_child(uid("c2")))],
     )
-    c1 = ledger.tasks.get("c1")
-    c2 = ledger.tasks.get("c2")
+    c1 = ledger.tasks.get(uid("c1"))
+    c2 = ledger.tasks.get(uid("c2"))
     assert c1 is not None and c2 is not None
     for child in (c1, c2):
-        assert child.parent_id == "src"  # structure
-        assert child.goal_id == "g1"  # inherited goal
+        assert child.parent_id == uid("src")  # structure
+        assert child.goal_id == uid("g1")  # inherited goal
         assert child.request_depth == 3  # bumped from source's 2
         assert child.depth == 2  # bumped from source's 1
 
 
-def test_gating_child_becomes_a_first_class_dependency(ledger: SqliteLedger, source: Task) -> None:
+def test_gating_child_becomes_a_first_class_dependency(ledger: Ledger, source: Task) -> None:
     decompose(
         ledger,
         source_task_id=source.id,
         accepted_plan_revision_id=REV,
-        children=[ChildSpec(_child("c1"), gates_parent=True), ChildSpec(_child("c2"))],
+        children=[ChildSpec(_child(uid("c1")), gates_parent=True), ChildSpec(_child(uid("c2")))],
     )
     # parent-waits-on-child is a blocker, not parent_id (spec 02 §4.3).
-    assert ledger.dependencies.blockers("src") == ["c1"]
-    assert ledger.dependencies.unresolved_blockers("src") == ["c1"]
+    assert ledger.dependencies.blockers(uid("src")) == [uid("c1")]
+    assert ledger.dependencies.unresolved_blockers(uid("src")) == [uid("c1")]
 
 
-def test_claim_completes_after_fan_out(ledger: SqliteLedger, source: Task) -> None:
+def test_claim_completes_after_fan_out(ledger: Ledger, source: Task) -> None:
     outcome = decompose(
         ledger,
         source_task_id=source.id,
         accepted_plan_revision_id=REV,
-        children=[ChildSpec(_child("c1")), ChildSpec(_child("c2"))],
+        children=[ChildSpec(_child(uid("c1"))), ChildSpec(_child(uid("c2")))],
     )
     assert isinstance(outcome, Fanned)
     assert outcome.claim.status is DecompositionStatus.COMPLETED
-    assert outcome.claim.child_task_ids == ["c1", "c2"]
+    assert outcome.claim.child_task_ids == [uid("c1"), uid("c2")]
 
 
-def test_resume_reuses_partial_result_no_duplicate_children(
-    ledger: SqliteLedger, source: Task
-) -> None:
-    specs = [ChildSpec(_child("c1"), gates_parent=True), ChildSpec(_child("c2"))]
+def test_resume_reuses_partial_result_no_duplicate_children(ledger: Ledger, source: Task) -> None:
+    specs = [ChildSpec(_child(uid("c1")), gates_parent=True), ChildSpec(_child(uid("c2")))]
     first = decompose(
         ledger, source_task_id=source.id, accepted_plan_revision_id=REV, children=specs
     )
@@ -131,35 +128,35 @@ def test_resume_reuses_partial_result_no_duplicate_children(
     )
     assert isinstance(first, Fanned) and isinstance(second, Fanned)
     assert second.claim.id == first.claim.id  # exact-once: one claim per (source, revision)
-    assert second.claim.child_task_ids == ["c1", "c2"]  # not duplicated
-    assert ledger.dependencies.blockers("src") == ["c1"]  # dependency add is idempotent
+    assert second.claim.child_task_ids == [uid("c1"), uid("c2")]  # not duplicated
+    assert ledger.dependencies.blockers(uid("src")) == [uid("c1")]  # dependency add is idempotent
 
 
-def test_unknown_source_raises(ledger: SqliteLedger, source: Task) -> None:
+def test_unknown_source_raises(ledger: Ledger, source: Task) -> None:
     with pytest.raises(KeyError):
         decompose(
             ledger,
-            source_task_id="nope",
+            source_task_id=uid("nope"),
             accepted_plan_revision_id=REV,
-            children=[ChildSpec(_child("c1"))],
+            children=[ChildSpec(_child(uid("c1")))],
         )
 
 
 def test_completing_gating_children_fires_children_done_to_parent(
-    ledger: SqliteLedger, source: Task
+    ledger: Ledger, source: Task
 ) -> None:
     # End-to-end wiring: decompose sets parent_id so finalize_beat's last-child rollup fires.
     decompose(
         ledger,
         source_task_id=source.id,
         accepted_plan_revision_id=REV,
-        children=[ChildSpec(_child("c1")), ChildSpec(_child("c2"))],
+        children=[ChildSpec(_child(uid("c1"))), ChildSpec(_child(uid("c2")))],
     )
-    ledger.finalize_beat(task_id="c1", run_id="r1", dod_status=DodStatus.PASSED)
-    fired = ledger.finalize_beat(task_id="c2", run_id="r2", dod_status=DodStatus.PASSED)
+    ledger.finalize_beat(task_id=uid("c1"), run_id=uid("r1"), dod_status=DodStatus.PASSED)
+    fired = ledger.finalize_beat(task_id=uid("c2"), run_id=uid("r2"), dod_status=DodStatus.PASSED)
     reasons = {w.reason for w in fired}
     assert WakeReason.CHILDREN_DONE in reasons
-    parent_wakes = [w for w in fired if w.payload.get("task_id") == "src"]
+    parent_wakes = [w for w in fired if w.payload.get("task_id") == uid("src")]
     assert parent_wakes  # the parent's assignee is woken
 
 
@@ -168,45 +165,48 @@ def test_completing_gating_children_fires_children_done_to_parent(
 # ---------------------------------------------------------------------------
 
 
-def _seed_source(ledger: SqliteLedger) -> Task:
+def _seed_source(ledger: Ledger) -> Task:
     """Insert the employee, goal, source task, and plan revision needed by ``decompose``."""
     ledger.employees.create(Employee(id="emp_1", name="alice", role="engineer"))
-    ledger.goals.create(Goal(id="g1", title="ship the thing"))
+    ledger.goals.create(Goal(id=uid("g1"), title="ship the thing"))
     task = ledger.tasks.submit(
         Task(
-            id="src",
+            id=uid("src"),
             intent="big thing",
             status=TaskStatus.IN_PROGRESS,
             assignee_employee_id="emp_1",
-            goal_id="g1",
+            goal_id=uid("g1"),
             depth=1,
             request_depth=2,
         )
     )
-    ledger.artifacts.create(Artifact(id="art_src", task_id="src", type=ArtifactType.DOC))
+    ledger.artifacts.create(Artifact(id=uid("art_src"), task_id=uid("src"), type=ArtifactType.DOC))
     ledger.artifact_revisions.record(
-        ArtifactRevision(id=REV, artifact_id="art_src", resource_ref={"plan": "v1"})
+        ArtifactRevision(id=REV, artifact_id=uid("art_src"), resource_ref={"plan": "v1"})
     )
     return task
 
 
 def test_restart_after_claim_open_failure_resumes_fan_out(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    pg_database: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    db = str(tmp_path / "ledger.db")
-    specs = [ChildSpec(_child("c1"), gates_parent=True), ChildSpec(_child("c2"))]
+    db = pg_database
+    company = uid("resume-co")
+    specs = [ChildSpec(_child(uid("c1")), gates_parent=True), ChildSpec(_child(uid("c2")))]
 
-    lg1 = SqliteLedger.open(db)
+    lg1 = Ledger.open(db, company_id=company)
     _seed_source(lg1)
-    monkeypatch.setattr(lg1, "create_child", lambda *_args: (_ for _ in ()).throw(RuntimeError("crash")))
+    monkeypatch.setattr(
+        lg1, "create_child", lambda *_args: (_ for _ in ()).throw(RuntimeError("crash"))
+    )
     with pytest.raises(RuntimeError, match="crash"):
         decompose(
             lg1,
-            source_task_id="src",
+            source_task_id=uid("src"),
             accepted_plan_revision_id=REV,
             children=specs,
         )
-    claim = lg1.decomposition_claims.by_source_revision("src", REV)
+    claim = lg1.decomposition_claims.by_source_revision(uid("src"), REV)
     assert claim is not None
     assert claim.status is DecompositionStatus.IN_FLIGHT
     assert claim.child_task_ids == []
@@ -214,32 +214,36 @@ def test_restart_after_claim_open_failure_resumes_fan_out(
     lg1.close()
     monkeypatch.undo()
 
-    lg2 = SqliteLedger.open(db)
+    lg2 = Ledger.open(db, company_id=company)
     outcome = decompose(
         lg2,
-        source_task_id="src",
+        source_task_id=uid("src"),
         accepted_plan_revision_id=REV,
         children=specs,
     )
     assert isinstance(outcome, Fanned)
     assert outcome.claim.id == claim_id
     assert outcome.claim.status is DecompositionStatus.COMPLETED
-    assert outcome.claim.child_task_ids == ["c1", "c2"]
-    assert [task.id for task in lg2.tasks.all() if task.parent_id == "src"] == ["c1", "c2"]
-    assert lg2.dependencies.blockers("src") == ["c1"]
-    assert [event.verb for event in lg2.activity.by_subject("task", "src")] == [
+    assert outcome.claim.child_task_ids == [uid("c1"), uid("c2")]
+    assert [task.id for task in lg2.tasks.all() if task.parent_id == uid("src")] == [
+        uid("c1"),
+        uid("c2"),
+    ]
+    assert lg2.dependencies.blockers(uid("src")) == [uid("c1")]
+    assert [event.verb for event in lg2.activity.by_subject("task", uid("src"))] == [
         ActivityVerb.DECOMPOSED
     ]
     lg2.close()
 
 
 def test_restart_after_first_child_persisted_before_dependency(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    pg_database: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    db = str(tmp_path / "ledger.db")
-    specs = [ChildSpec(_child("c1"), gates_parent=True), ChildSpec(_child("c2"))]
+    db = pg_database
+    company = uid("resume-co-2")
+    specs = [ChildSpec(_child(uid("c1")), gates_parent=True), ChildSpec(_child(uid("c2")))]
 
-    lg1 = SqliteLedger.open(db)
+    lg1 = Ledger.open(db, company_id=company)
     _seed_source(lg1)
     original_create_child = lg1.create_child
 
@@ -251,32 +255,35 @@ def test_restart_after_first_child_persisted_before_dependency(
     with pytest.raises(RuntimeError, match="crash before dependency"):
         decompose(
             lg1,
-            source_task_id="src",
+            source_task_id=uid("src"),
             accepted_plan_revision_id=REV,
             children=specs,
         )
-    claim = lg1.decomposition_claims.by_source_revision("src", REV)
+    claim = lg1.decomposition_claims.by_source_revision(uid("src"), REV)
     assert claim is not None
-    assert claim.child_task_ids == ["c1"]
-    assert lg1.dependencies.blockers("src") == []
+    assert claim.child_task_ids == [uid("c1")]
+    assert lg1.dependencies.blockers(uid("src")) == []
     claim_id = claim.id
     lg1.close()
     monkeypatch.undo()
 
-    lg2 = SqliteLedger.open(db)
+    lg2 = Ledger.open(db, company_id=company)
     outcome = decompose(
         lg2,
-        source_task_id="src",
+        source_task_id=uid("src"),
         accepted_plan_revision_id=REV,
         children=specs,
     )
     assert isinstance(outcome, Fanned)
     assert outcome.claim.id == claim_id
     assert outcome.claim.status is DecompositionStatus.COMPLETED
-    assert outcome.claim.child_task_ids == ["c1", "c2"]
-    assert [task.id for task in lg2.tasks.all() if task.parent_id == "src"] == ["c1", "c2"]
-    assert lg2.dependencies.blockers("src") == ["c1"]
-    assert [event.verb for event in lg2.activity.by_subject("task", "src")] == [
+    assert outcome.claim.child_task_ids == [uid("c1"), uid("c2")]
+    assert [task.id for task in lg2.tasks.all() if task.parent_id == uid("src")] == [
+        uid("c1"),
+        uid("c2"),
+    ]
+    assert lg2.dependencies.blockers(uid("src")) == [uid("c1")]
+    assert [event.verb for event in lg2.activity.by_subject("task", uid("src"))] == [
         ActivityVerb.DECOMPOSED
     ]
     lg2.close()

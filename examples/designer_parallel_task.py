@@ -71,7 +71,9 @@ async def main() -> int:
     base = os.environ.get("AZURE_OPENAI_BASE_URL")
     dep = os.environ.get("AZURE_OPENAI_DEPLOYMENT")
     if not (key and base and dep):
-        print("skipping: set AZURE_OPENAI_API_KEY / AZURE_OPENAI_BASE_URL / AZURE_OPENAI_DEPLOYMENT")
+        print(
+            "skipping: set AZURE_OPENAI_API_KEY / AZURE_OPENAI_BASE_URL / AZURE_OPENAI_DEPLOYMENT"
+        )
         return 0
 
     workroot = Path("chorus") if Path("chorus").is_dir() else Path(".")
@@ -82,8 +84,12 @@ async def main() -> int:
 
     roles = RoleRegistry.from_plugins(default_roles())
     factory = EmployeeHarnessFactory(
-        api_key=key, base_url=base, deployment=dep, company_id=_COMPANY,
-        roles=roles, timeout_s=900.0,
+        api_key=key,
+        base_url=base,
+        deployment=dep,
+        company_id=_COMPANY,
+        roles=roles,
+        timeout_s=900.0,
     )
     mat = factory.materialize(Employee(id="dara", name="Dara", role="designer"))
 
@@ -94,8 +100,12 @@ async def main() -> int:
     print("=" * 78)
 
     outcome = await mat.runner.run_task(
-        task_id=_RUN, intent=_INTENT, run_id=_RUN,
-        verification=verifier.verification_steps(), rubric=verifier.rubric(), observer=_observer,
+        task_id=_RUN,
+        intent=_INTENT,
+        run_id=_RUN,
+        verification=verifier.verification_steps(),
+        rubric=verifier.rubric(),
+        observer=_observer,
     )
     print(f"\n[parallel] passed = {outcome.passed}")
     print(f"[parallel] summary = {outcome.summary}")
@@ -106,7 +116,9 @@ async def main() -> int:
         f = mat.working_dir / name
         if f.is_file():
             shutil.copy2(f, out / name)
-            saved.append(f"{name} ({f.stat().st_size} B, {len(f.read_text(encoding='utf-8').split())} words)")
+            saved.append(
+                f"{name} ({f.stat().st_size} B, {len(f.read_text(encoding='utf-8').split())} words)"
+            )
     (out / "_meta.txt").write_text(
         f"key=parallel\npassed={outcome.passed}\nsummary={outcome.summary}\n"
         f"intent={_INTENT}\nworking_dir={mat.working_dir}\n",

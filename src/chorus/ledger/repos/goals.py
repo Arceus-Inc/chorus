@@ -2,16 +2,14 @@
 
 from __future__ import annotations
 
-import sqlite3
-
 from chorus.ledger._models import Goal, GoalLevel
-from chorus.ledger.repos._base import utcnow_iso
+from chorus.ledger.repos._base import LedgerConnection, LedgerRow, utcnow_iso
 
 
 class GoalRepo:
     """Create + read ``goal`` rows."""
 
-    def __init__(self, conn: sqlite3.Connection) -> None:
+    def __init__(self, conn: LedgerConnection) -> None:
         self._conn = conn
 
     def create(self, goal: Goal) -> Goal:
@@ -70,7 +68,7 @@ class GoalRepo:
         return goal
 
     @staticmethod
-    def _row_to_goal(row: sqlite3.Row) -> Goal:
+    def _row_to_goal(row: LedgerRow) -> Goal:
         return Goal(
             id=row["id"],
             title=row["title"],

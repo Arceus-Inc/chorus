@@ -12,8 +12,9 @@ from datetime import datetime
 import pytest
 
 from chorus.heartbeat import TickReport
-from chorus.ledger import SqliteLedger, Task, TaskStatus
+from chorus.ledger import Ledger, Task, TaskStatus
 from chorus.outcomes import DoDKind, Verifier
+from chorus.testing import uid
 from chorus.workforce import Employee
 from chorus_cli import CliSession, Console, LoopSignal, dispatch
 from chorus_cli._commands import REGISTRY
@@ -83,8 +84,8 @@ def test_employee_shows_a_record(session: CliSession) -> None:
 
 
 def test_employee_unknown_errors(session: CliSession) -> None:
-    _, out = _run("employee ghost", session)
-    assert "error:" in out and "ghost" in out
+    _, out = _run(f"employee {uid('ghost')}", session)
+    assert "error:" in out and uid("ghost") in out
 
 
 def test_employee_wrong_arity_reports_usage(session: CliSession) -> None:
@@ -95,93 +96,93 @@ def test_employee_wrong_arity_reports_usage(session: CliSession) -> None:
 # -- tasks ------------------------------------------------------------------------------------------
 
 
-def test_submit_creates_a_backlog_task(session: CliSession, ledger: SqliteLedger) -> None:
-    _, out = _run("submit t1 ship the docs", session)
-    assert "submitted t1" in out
-    task = ledger.tasks.get("t1")
+def test_submit_creates_a_backlog_task(session: CliSession, ledger: Ledger) -> None:
+    _, out = _run(f"submit {uid('t1')} ship the docs", session)
+    assert f"submitted {uid('t1')}" in out
+    task = ledger.tasks.get(uid("t1"))
     assert task is not None
     assert task.intent == "ship the docs"
     assert task.status is TaskStatus.BACKLOG
 
 
-def test_submit_with_priority_flag(session: CliSession, ledger: SqliteLedger) -> None:
-    _run("submit t1 --priority=high ship it", session)
-    task = ledger.tasks.get("t1")
+def test_submit_with_priority_flag(session: CliSession, ledger: Ledger) -> None:
+    _run(f"submit {uid('t1')} --priority=high ship it", session)
+    task = ledger.tasks.get(uid("t1"))
     assert task is not None and task.priority.value == "high" and task.intent == "ship it"
 
 
-def test_submit_priority_space_separated(session: CliSession, ledger: SqliteLedger) -> None:
-    _run("submit t1 --priority high ship it", session)
-    task = ledger.tasks.get("t1")
+def test_submit_priority_space_separated(session: CliSession, ledger: Ledger) -> None:
+    _run(f"submit {uid('t1')} --priority high ship it", session)
+    task = ledger.tasks.get(uid("t1"))
     assert task is not None and task.priority.value == "high" and task.intent == "ship it"
 
 
 def test_submit_with_bad_priority_errors_and_writes_nothing(
-    session: CliSession, ledger: SqliteLedger
+    session: CliSession, ledger: Ledger
 ) -> None:
-    _, out = _run("submit t1 --priority=urgent do it", session)
+    _, out = _run(f"submit {uid('t1')} --priority=urgent do it", session)
     assert "error:" in out and "urgent" in out
-    assert ledger.tasks.get("t1") is None
+    assert ledger.tasks.get(uid("t1")) is None
 
 
-def test_submit_missing_intent_reports_usage(session: CliSession, ledger: SqliteLedger) -> None:
-    _, out = _run("submit t1", session)
+def test_submit_missing_intent_reports_usage(session: CliSession, ledger: Ledger) -> None:
+    _, out = _run(f"submit {uid('t1')}", session)
     assert "usage: submit" in out
-    assert ledger.tasks.get("t1") is None
+    assert ledger.tasks.get(uid("t1")) is None
 
 
 def test_submit_duplicate_id_errors_cleanly(session: CliSession) -> None:
-    _run("submit t1 ship it", session)
-    _, out = _run("submit t1 ship it again", session)
-    assert "error:" in out and "already exists" in out and "t1" in out
+    _run(f"submit {uid('t1')} ship it", session)
+    _, out = _run(f"submit {uid('t1')} ship it again", session)
+    assert "error:" in out and "already exists" in out and uid("t1") in out
 
 
-def test_task_shows_task_runs_and_dod(session: CliSession, ledger: SqliteLedger) -> None:
-    ledger.tasks.submit(Task(id="t1", intent="ship"))
-    _, out = _run("task t1", session)
-    assert "t1" in out and "ship" in out and "runs:" in out
+def test_task_shows_task_runs_and_dod(session: CliSession, ledger: Ledger) -> None:
+    ledger.tasks.submit(Task(id=uid("t1"), intent="ship"))
+    _, out = _run(f"task {uid('t1')}", session)
+    assert uid("t1") in out and "ship" in out and "runs:" in out
 
 
 def test_task_unknown_errors(session: CliSession) -> None:
-    _, out = _run("task ghost", session)
+    _, out = _run(f"task {uid('ghost')}", session)
     assert "error:" in out
 
 
-def test_task_shows_its_dod_when_present(session: CliSession, ledger: SqliteLedger) -> None:
-    ledger.tasks.submit(Task(id="t1", intent="ship"))
-    ledger.dod.create("t1", Verifier.command("pytest -q"))
-    _, out = _run("task t1", session)
+def test_task_shows_its_dod_when_present(session: CliSession, ledger: Ledger) -> None:
+    ledger.tasks.submit(Task(id=uid("t1"), intent="ship"))
+    ledger.dod.create(uid("t1"), Verifier.command("pytest -q"))
+    _, out = _run(f"task {uid('t1')}", session)
     assert "dod:" in out and "command" in out
 
 
-def test_assign_moves_backlog_to_todo_and_wakes(session: CliSession, ledger: SqliteLedger) -> None:
+def test_assign_moves_backlog_to_todo_and_wakes(session: CliSession, ledger: Ledger) -> None:
     ledger.employees.create(Employee(id="alice", name="Alice", role="engineer"))
-    ledger.tasks.submit(Task(id="t1", intent="ship"))
-    _, out = _run("assign t1 alice", session)
-    assert "assigned t1" in out and "woke" in out
-    assert ledger.tasks.get("t1").status is TaskStatus.TODO
+    ledger.tasks.submit(Task(id=uid("t1"), intent="ship"))
+    _, out = _run(f"assign {uid('t1')} alice", session)
+    assert f"assigned {uid('t1')}" in out and "woke" in out
+    assert ledger.tasks.get(uid("t1")).status is TaskStatus.TODO
     assert any(w.employee_id == "alice" for w in ledger.wakes.queued())
 
 
-def test_assign_unknown_task_errors(session: CliSession, ledger: SqliteLedger) -> None:
+def test_assign_unknown_task_errors(session: CliSession, ledger: Ledger) -> None:
     ledger.employees.create(Employee(id="alice", name="Alice", role="engineer"))
-    _, out = _run("assign ghost alice", session)  # employee exists, task does not
-    assert "error:" in out and "ghost" in out
+    _, out = _run(f"assign {uid('ghost')} alice", session)  # employee exists, task does not
+    assert "error:" in out and uid("ghost") in out
 
 
-def test_assign_unknown_employee_errors_cleanly(session: CliSession, ledger: SqliteLedger) -> None:
-    ledger.tasks.submit(Task(id="t1", intent="ship"))
-    _, out = _run("assign t1 ghost", session)
-    assert "error:" in out and "ghost" in out
-    assert ledger.tasks.get("t1").status is TaskStatus.BACKLOG  # not left half-assigned
+def test_assign_unknown_employee_errors_cleanly(session: CliSession, ledger: Ledger) -> None:
+    ledger.tasks.submit(Task(id=uid("t1"), intent="ship"))
+    _, out = _run(f"assign t1 {uid('ghost')}", session)
+    assert "error:" in out and uid("ghost") in out
+    assert ledger.tasks.get(uid("t1")).status is TaskStatus.BACKLOG  # not left half-assigned
 
 
-def test_eligible_lists_assigned_unblocked_tasks(session: CliSession, ledger: SqliteLedger) -> None:
+def test_eligible_lists_assigned_unblocked_tasks(session: CliSession, ledger: Ledger) -> None:
     ledger.employees.create(Employee(id="alice", name="Alice", role="engineer"))
-    ledger.tasks.submit(Task(id="t1", intent="ship the thing"))
-    _run("assign t1 alice", session)
+    ledger.tasks.submit(Task(id=uid("t1"), intent="ship the thing"))
+    _run(f"assign {uid('t1')} alice", session)
     _, out = _run("eligible", session)
-    assert "t1" in out
+    assert uid("t1") in out
 
 
 def test_eligible_bad_limit_errors(session: CliSession) -> None:
@@ -205,7 +206,7 @@ def test_task_wrong_arity_reports_usage(session: CliSession) -> None:
 
 
 def test_assign_wrong_arity_reports_usage(session: CliSession) -> None:
-    _, out = _run("assign t1", session)
+    _, out = _run(f"assign {uid('t1')}", session)
     assert "usage: assign" in out
 
 
@@ -217,15 +218,15 @@ def test_wakes_empty_prints_placeholder(session: CliSession) -> None:
     assert "(none)" in out
 
 
-def test_wakes_lists_queued(session: CliSession, ledger: SqliteLedger) -> None:
+def test_wakes_lists_queued(session: CliSession, ledger: Ledger) -> None:
     ledger.employees.create(Employee(id="alice", name="Alice", role="engineer"))
-    ledger.tasks.submit(Task(id="t1", intent="ship"))
-    _run("assign t1 alice", session)
+    ledger.tasks.submit(Task(id=uid("t1"), intent="ship"))
+    _run(f"assign {uid('t1')} alice", session)
     _, out = _run("wakes", session)
     assert "alice" in out and "task_assigned" in out
 
 
-def test_message_delivers_and_shows_in_inbox(session: CliSession, ledger: SqliteLedger) -> None:
+def test_message_delivers_and_shows_in_inbox(session: CliSession, ledger: Ledger) -> None:
     ledger.employees.create(Employee(id="alice", name="Alice", role="engineer"))
     _, out = _run("message alice please review the PR", session)
     assert "delivered to alice" in out
@@ -239,8 +240,8 @@ def test_message_missing_body_reports_usage(session: CliSession) -> None:
 
 
 def test_message_to_unknown_employee_errors_cleanly(session: CliSession) -> None:
-    _, out = _run("message ghost hello there", session)
-    assert "error:" in out and "ghost" in out
+    _, out = _run(f"message {uid('ghost')} hello there", session)
+    assert "error:" in out and uid("ghost") in out
 
 
 def test_inbox_shows_delivered_messages(session: CliSession) -> None:
@@ -282,7 +283,7 @@ def test_tick_without_a_beat_service_explains_how_to_enable_it(session: CliSessi
     assert "error:" in out and "AZURE_OPENAI_API_KEY" in out
 
 
-def test_tick_runs_the_kernel_and_reports(ledger: SqliteLedger) -> None:
+def test_tick_runs_the_kernel_and_reports(ledger: Ledger) -> None:
     report = TickReport(
         at=datetime.fromisoformat("2026-06-16T12:00:00+00:00"), wakes_dispatched=1, beats_started=1
     )
@@ -296,7 +297,7 @@ def test_tick_runs_the_kernel_and_reports(ledger: SqliteLedger) -> None:
     assert "task <id>" in out  # points the user at the result
 
 
-def test_tick_in_minimal_mode_defers_to_background_heartbeat(ledger: SqliteLedger) -> None:
+def test_tick_in_minimal_mode_defers_to_background_heartbeat(ledger: Ledger) -> None:
     report = TickReport(at=datetime.fromisoformat("2026-06-16T12:00:00+00:00"), beats_started=1)
     beats = _FakeBeatService(report)
     session = CliSession(ledger=ledger, beats=beats, minimal_mode=True)
@@ -307,7 +308,7 @@ def test_tick_in_minimal_mode_defers_to_background_heartbeat(ledger: SqliteLedge
     assert "heartbeat is already live" in out
 
 
-def test_minimal_assign_task_uses_file_exists_dod(ledger: SqliteLedger) -> None:
+def test_minimal_assign_task_uses_file_exists_dod(ledger: Ledger) -> None:
     session = CliSession(ledger=ledger, minimal_mode=True)
 
     _, out = _run(
@@ -329,21 +330,21 @@ def test_minimal_assign_task_uses_file_exists_dod(ledger: SqliteLedger) -> None:
     assert "pytest" not in steps[0].command
 
 
-def test_tick_with_nothing_to_dispatch_says_so(ledger: SqliteLedger) -> None:
+def test_tick_with_nothing_to_dispatch_says_so(ledger: Ledger) -> None:
     report = TickReport(at=datetime.fromisoformat("2026-06-16T12:00:00+00:00"))
     session = CliSession(ledger=ledger, beats=_FakeBeatService(report))
     _, out = _run("tick", session)
     assert "nothing to dispatch" in out
 
 
-def test_tick_reports_a_budget_gated_dispatch(ledger: SqliteLedger) -> None:
+def test_tick_reports_a_budget_gated_dispatch(ledger: Ledger) -> None:
     report = TickReport(at=datetime.fromisoformat("2026-06-16T12:00:00+00:00"), budget_gated=1)
     session = CliSession(ledger=ledger, beats=_FakeBeatService(report))
     _, out = _run("tick", session)
     assert "gated by a budget" in out
 
 
-def test_tick_rejects_arguments(ledger: SqliteLedger) -> None:
+def test_tick_rejects_arguments(ledger: Ledger) -> None:
     session = CliSession(ledger=ledger, beats=_FakeBeatService(TickReport(at=datetime.now())))
     _, out = _run("tick now", session)
     assert "usage: tick" in out

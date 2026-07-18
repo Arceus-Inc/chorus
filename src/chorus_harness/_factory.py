@@ -96,7 +96,7 @@ from chorus_tools.delivery import (
 if TYPE_CHECKING:
     from dream.contracts import GovernancePort
 
-    from chorus.ledger import SqliteLedger
+    from chorus.ledger import Ledger
 
 # dream runs these three intra-task roles per task; the employee's identity is overlaid onto each.
 _DREAM_ROLES: tuple[Literal["planner", "generator", "evaluator"], ...] = (
@@ -308,7 +308,7 @@ def _role_registry(dream_names: tuple[str, ...]) -> ToolRegistry:
 
 def _capability_tool(
     name: str,
-    ledger: SqliteLedger | None,
+    ledger: Ledger | None,
     roles: RoleRegistry,
 ) -> BaseTool | None:
     """Build the chorus capability tool for ``name``, or ``None`` if it isn't one.
@@ -369,7 +369,7 @@ _DELEGATING_TOOLS = frozenset({"decompose", "submit_task", "assign_task"})
 _REACTIVE_TOOLS = frozenset({"submit_task", "assign_task"})
 
 
-def _team_roster(ledger: SqliteLedger, *, exclude: str, team_id: str | None = None) -> str:
+def _team_roster(ledger: Ledger, *, exclude: str, team_id: str | None = None) -> str:
     """The employee's direct reports (id + role), so a delegator names valid assignees.
 
     When any report has active authority to lead, the delegator is a director: it must hand each lead a
@@ -580,7 +580,7 @@ class EmployeeHarnessFactory:
         seed: str | Path | None = None,
         work_root: Path | None = None,
         timeout_s: float | None = 90.0,
-        ledger: SqliteLedger | None = None,
+        ledger: Ledger | None = None,
         trust_policy: TrustPolicy | None = None,
         governance: GovernancePort | None = None,
     ) -> None:
@@ -899,10 +899,11 @@ class EmployeeHarnessFactory:
                     tool = lattice_tool(name, lattice)
                     if tool is not None:
                         registry.register(tool, source=ToolSource.DEFAULT)
-        if "skill_manage" in config.tools:
+        if "skill_manage" in config.tools and self._ledger is not None:
             registry.register(
                 SkillManageTool(
                     company_root=self._company_root,
+                    ledger=self._ledger,
                     canonical_skills_root=(
                         Path(config.skills_root) if config.skills_root else None
                     ),
@@ -963,11 +964,12 @@ class EmployeeHarnessFactory:
                 config.skills_root,
                 extra_roots=extra_roots,
             )
-            if has_lattice:
+            if has_lattice and self._ledger is not None:
                 # SkillStore HEAD (evolved/created procedural skills) overlays the canonical bundle —
                 # the DB is the source of truth; this materialized copy is the per-beat cache.
                 materialize_versioned_skills_into(
                     skills_dir,
+                    ledger=self._ledger,
                     company_root=self._company_root,
                     employee_id=employee.id,
                 )

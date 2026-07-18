@@ -13,22 +13,23 @@ from chorus.ledger import (
     BudgetPolicy,
     BudgetScope,
     CostEvent,
+    Ledger,
     Run,
     RunStatus,
-    SqliteLedger,
     Task,
     TaskStatus,
     Wake,
     WakeReason,
 )
+from chorus.testing import open_test_ledger, uid
 from chorus.workforce import Employee, EmployeeStatus
 
 _NOW = datetime(2026, 7, 13, 12, tzinfo=UTC)
 
 
 @pytest.fixture
-def ledger() -> Iterator[SqliteLedger]:
-    store = SqliteLedger.open(":memory:")
+def ledger() -> Iterator[Ledger]:
+    store = open_test_ledger()
     try:
         yield store
     finally:
@@ -36,7 +37,7 @@ def ledger() -> Iterator[SqliteLedger]:
 
 
 def _employee(
-    ledger: SqliteLedger,
+    ledger: Ledger,
     employee_id: str,
     profession: str,
     *,
@@ -47,10 +48,10 @@ def _employee(
     )
 
 
-def _budget(ledger: SqliteLedger, employee_id: str, *, amount: int, spent: int = 0) -> None:
+def _budget(ledger: Ledger, employee_id: str, *, amount: int, spent: int = 0) -> None:
     ledger.budget_policies.create(
         BudgetPolicy(
-            id=f"budget-{employee_id}",
+            id=uid(f"budget-{employee_id}"),
             scope_type=BudgetScope.EMPLOYEE,
             scope_id=employee_id,
             amount=amount,
@@ -59,7 +60,7 @@ def _budget(ledger: SqliteLedger, employee_id: str, *, amount: int, spent: int =
     if spent:
         ledger.cost_events.record(
             CostEvent(
-                id=f"spend-{employee_id}",
+                id=uid(f"spend-{employee_id}"),
                 employee_id=employee_id,
                 provider="test",
                 model="test",
@@ -69,51 +70,47 @@ def _budget(ledger: SqliteLedger, employee_id: str, *, amount: int, spent: int =
         )
 
 
-def test_snapshot_matches_manual_profession_counts(ledger: SqliteLedger) -> None:
-    _employee(ledger, "eng-a", "engineer")
-    _employee(ledger, "eng-b", "engineer")
+def test_snapshot_matches_manual_profession_counts(ledger: Ledger) -> None:
+    _employee(ledger, uid("eng-a"), "engineer")
+    _employee(ledger, uid("eng-b"), "engineer")
     _employee(ledger, "design-a", "designer", status=EmployeeStatus.PAUSED)
-    _budget(ledger, "eng-a", amount=1_000, spent=200)
-    _budget(ledger, "eng-b", amount=500, spent=500)
+    _budget(ledger, uid("eng-a"), amount=1_000, spent=200)
+    _budget(ledger, uid("eng-b"), amount=500, spent=500)
 
     ledger.tasks.submit(
         Task(
-            id="task-running",
+            id=uid("task-running"),
             intent="Run",
             status=TaskStatus.IN_PROGRESS,
-            assignee_employee_id="eng-a",
+            assignee_employee_id=uid("eng-a"),
         )
     )
     ledger.tasks.submit(
         Task(
-            id="task-blocked",
+            id=uid("task-blocked"),
             intent="Blocked",
             status=TaskStatus.BLOCKED,
-            assignee_employee_id="eng-b",
+            assignee_employee_id=uid("eng-b"),
         )
     )
     ledger.tasks.submit(
         Task(
-            id="task-done",
+            id=uid("task-done"),
             intent="Done",
             status=TaskStatus.DONE,
-            assignee_employee_id="eng-a",
+            assignee_employee_id=uid("eng-a"),
         )
     )
     ledger.runs.create(
         Run(
-            id="run-a",
-            employee_id="eng-a",
-            task_id="task-running",
+            id=uid("run-a"),
+            employee_id=uid("eng-a"),
+            task_id=uid("task-running"),
             status=RunStatus.RUNNING,
         )
     )
-    ledger.wakes.enqueue(
-        Wake(id="wake-a", employee_id="eng-a", reason=WakeReason.MANUAL)
-    )
-    ledger.wakes.enqueue(
-        Wake(id="wake-b", employee_id="eng-b", reason=WakeReason.MANUAL)
-    )
+    ledger.wakes.enqueue(Wake(id=uid("wake-a"), employee_id=uid("eng-a"), reason=WakeReason.MANUAL))
+    ledger.wakes.enqueue(Wake(id=uid("wake-b"), employee_id=uid("eng-b"), reason=WakeReason.MANUAL))
 
     adapter = CapacityAdapter(ledger, company_id="company", clock=lambda: _NOW)
 
@@ -141,43 +138,39 @@ def test_snapshot_matches_manual_profession_counts(ledger: SqliteLedger) -> None
 
 
 def test_unbounded_employee_makes_profession_headroom_unbounded(
-    ledger: SqliteLedger,
+    ledger: Ledger,
 ) -> None:
-    _employee(ledger, "eng-a", "engineer")
-    _employee(ledger, "eng-b", "engineer")
-    _budget(ledger, "eng-a", amount=1_000)
+    _employee(ledger, uid("eng-a"), "engineer")
+    _employee(ledger, uid("eng-b"), "engineer")
+    _budget(ledger, uid("eng-a"), amount=1_000)
 
-    snapshot = CapacityAdapter(
-        ledger, company_id="company", clock=lambda: _NOW
-    ).snapshot()
+    snapshot = CapacityAdapter(ledger, company_id="company", clock=lambda: _NOW).snapshot()
 
     assert snapshot[0].budget_headroom_cents is None
 
 
 def test_terminal_tasks_and_finished_runs_are_not_live_capacity(
-    ledger: SqliteLedger,
+    ledger: Ledger,
 ) -> None:
-    _employee(ledger, "eng-a", "engineer")
+    _employee(ledger, uid("eng-a"), "engineer")
     ledger.tasks.submit(
         Task(
-            id="task-done",
+            id=uid("task-done"),
             intent="Done",
             status=TaskStatus.DONE,
-            assignee_employee_id="eng-a",
+            assignee_employee_id=uid("eng-a"),
         )
     )
     ledger.runs.create(
         Run(
-            id="run-done",
-            employee_id="eng-a",
-            task_id="task-done",
+            id=uid("run-done"),
+            employee_id=uid("eng-a"),
+            task_id=uid("task-done"),
             status=RunStatus.SUCCEEDED,
         )
     )
 
-    capacity = CapacityAdapter(
-        ledger, company_id="company", clock=lambda: _NOW
-    ).snapshot()[0]
+    capacity = CapacityAdapter(ledger, company_id="company", clock=lambda: _NOW).snapshot()[0]
 
     assert capacity.running == 0
     assert capacity.assigned_nonterminal == 0

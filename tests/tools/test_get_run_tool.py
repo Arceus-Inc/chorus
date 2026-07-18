@@ -11,6 +11,7 @@ from dream.tools._context import ToolExecutionContext
 
 from chorus.heartbeat import BeatContext
 from chorus.memory import EpisodicRecallService, EpisodicStore, SprintDelta
+from chorus.testing import uid
 from chorus_tools._get_run import GetRunInput, GetRunTool
 
 pytestmark = pytest.mark.integration
@@ -26,8 +27,8 @@ def _body(text: str) -> str:
 
 def _delta(**over: object) -> SprintDelta:
     base: dict[str, object] = dict(
-        run_id="r_1",
-        task_id="t_1",
+        run_id=uid("r_1"),
+        task_id=uid("t_1"),
         employee_id="bex",
         scope="project",
         intent="add retry to the upload client",
@@ -44,22 +45,22 @@ def _delta(**over: object) -> SprintDelta:
 
 
 def _beat(working_dir: Path, *, employee_id: str = "bex", run_id: str = "r_now") -> None:
-    BeatContext(task_id="t_now", run_id=run_id, employee_id=employee_id).write(working_dir)
+    BeatContext(task_id=uid("t_now"), run_id=run_id, employee_id=employee_id).write(working_dir)
 
 
 async def test_get_run_returns_full_prose(tmp_path: Path) -> None:
     store = EpisodicStore(tmp_path / "memory")
-    store.append(_delta(run_id="r_a", body=_body("full beat narrative here")))
+    store.append(_delta(run_id=uid("r_a"), body=_body("full beat narrative here")))
     svc = EpisodicRecallService(store)
     _beat(tmp_path)
 
-    result = await GetRunTool(svc).execute({"run_id": "r_a"}, _ctx(tmp_path))
+    result = await GetRunTool(svc).execute({"run_id": uid("r_a")}, _ctx(tmp_path))
 
     assert result.is_error is False
     assert "full beat narrative here" in result.content
     structured = result.structured or {}
     assert structured["status"] == "success"
-    assert structured["run_id"] == "r_a"
+    assert structured["run_id"] == uid("r_a")
     assert "summary" in structured
     assert structured["next_actions"]
     assert "run_id" in (structured.get("artifacts") or {})
@@ -67,11 +68,11 @@ async def test_get_run_returns_full_prose(tmp_path: Path) -> None:
 
 async def test_get_run_rejects_cross_employee(tmp_path: Path) -> None:
     store = EpisodicStore(tmp_path / "memory")
-    store.append(_delta(run_id="r_a", employee_id="ada"))
+    store.append(_delta(run_id=uid("r_a"), employee_id="ada"))
     svc = EpisodicRecallService(store)
     _beat(tmp_path, employee_id="bex")
 
-    result = await GetRunTool(svc).execute({"run_id": "r_a"}, _ctx(tmp_path))
+    result = await GetRunTool(svc).execute({"run_id": uid("r_a")}, _ctx(tmp_path))
 
     assert result.is_error is True
     assert "refused" in result.content

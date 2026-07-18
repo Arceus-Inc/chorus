@@ -112,7 +112,12 @@ def _run_tests(case: BenchCase, wt: Path, test_ids: tuple[str, ...]) -> dict[str
         for tid in test_ids:
             res = _run(["python", "-m", "pytest", "-q", "-p", "no:cacheprovider", tid], wt, 600)
             combined = (res.stdout or "") + (res.stderr or "")
-            if "no tests ran" in combined.lower() and "error" in combined.lower() and res.returncode != 0 and not ran_any:
+            if (
+                "no tests ran" in combined.lower()
+                and "error" in combined.lower()
+                and res.returncode != 0
+                and not ran_any
+            ):
                 # first test can't even be collected — likely a broken env
                 if "ModuleNotFoundError" in combined or "ImportError" in combined:
                     return None
@@ -151,8 +156,13 @@ def judge_candidate(case: BenchCase, candidate: CandidateSolution, creds: ModelC
     overlap = files_overlap(case.gold_patch, candidate.diff)
     if not candidate.produced_diff:
         return EvalResult(
-            case_id=case.id, resolved=False, method="judge", produced_diff=False,
-            judge_score=0.0, judge_verdict="UNRESOLVED", files_overlap=overlap,
+            case_id=case.id,
+            resolved=False,
+            method="judge",
+            produced_diff=False,
+            judge_score=0.0,
+            judge_verdict="UNRESOLVED",
+            files_overlap=overlap,
             detail="empty candidate diff — nothing to judge",
         )
     url = creds.base_url.rstrip("/") + "/chat/completions"
@@ -172,8 +182,13 @@ def judge_candidate(case: BenchCase, candidate: CandidateSolution, creds: ModelC
             content = resp.json()["choices"][0]["message"]["content"]
     except Exception as exc:
         return EvalResult(
-            case_id=case.id, resolved=False, method="judge", produced_diff=True,
-            judge_verdict="ERROR", files_overlap=overlap, detail=f"judge call failed: {exc!r}"[:300],
+            case_id=case.id,
+            resolved=False,
+            method="judge",
+            produced_diff=True,
+            judge_verdict="ERROR",
+            files_overlap=overlap,
+            detail=f"judge call failed: {exc!r}"[:300],
         )
     verdict, score, reason = _parse_judge(content)
     return EvalResult(
@@ -200,7 +215,11 @@ def _parse_judge(content: str) -> tuple[str, float, str]:
                 verdict = "UNRESOLVED"
             score = obj.get("score")
             score = float(score) if isinstance(score, (int, float)) else None
-            return verdict, score if score is not None else (1.0 if verdict == "RESOLVED" else 0.0), str(obj.get("reason", ""))
+            return (
+                verdict,
+                score if score is not None else (1.0 if verdict == "RESOLVED" else 0.0),
+                str(obj.get("reason", "")),
+            )
         except (json.JSONDecodeError, ValueError):
             pass
     upper = text.upper()

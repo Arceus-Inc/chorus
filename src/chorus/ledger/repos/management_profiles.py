@@ -3,17 +3,24 @@
 from __future__ import annotations
 
 import builtins
-import sqlite3
 
 from chorus.errors import ActiveDelegationConflict
 from chorus.ledger._models import ManagementProfile
-from chorus.ledger.repos._base import dumps, from_iso, loads, require_persisted, utcnow_iso
+from chorus.ledger.repos._base import (
+    LedgerConnection,
+    LedgerRow,
+    dumps,
+    from_iso,
+    loads,
+    require_persisted,
+    utcnow_iso,
+)
 
 
 class ManagementProfileRepo:
     """Create revisions and query the current profile keyed by employee."""
 
-    def __init__(self, conn: sqlite3.Connection) -> None:
+    def __init__(self, conn: LedgerConnection) -> None:
         self._conn = conn
 
     def upsert(self, profile: ManagementProfile) -> ManagementProfile:
@@ -21,9 +28,7 @@ class ManagementProfileRepo:
         if current is None and profile.version != 1:
             raise ValueError("a new management profile must start at version 1")
         if current is not None and profile.version <= current.version:
-            raise ValueError(
-                f"management profile version must increase beyond {current.version}"
-            )
+            raise ValueError(f"management profile version must increase beyond {current.version}")
         if current is not None and _weakens(current, profile):
             refs = self._active_contract_refs(profile.employee_id)
             if refs:
@@ -34,7 +39,7 @@ class ManagementProfileRepo:
             "max_delegation_depth, max_team_size, allowed_professions, spend_limit_cents, version, "
             "granted_by_user_id, created_at, updated_at) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
-            "ON CONFLICT(employee_id) DO UPDATE SET active = excluded.active, "
+            "ON CONFLICT(company_id, employee_id) DO UPDATE SET active = excluded.active, "
             "can_lead = excluded.can_lead, can_subdelegate = excluded.can_subdelegate, "
             "max_delegation_depth = excluded.max_delegation_depth, "
             "max_team_size = excluded.max_team_size, "
@@ -43,9 +48,9 @@ class ManagementProfileRepo:
             "granted_by_user_id = excluded.granted_by_user_id, updated_at = excluded.updated_at",
             (
                 profile.employee_id,
-                int(profile.active),
-                int(profile.can_lead),
-                int(profile.can_subdelegate),
+                profile.active,
+                profile.can_lead,
+                profile.can_subdelegate,
                 profile.max_delegation_depth,
                 profile.max_team_size,
                 dumps(list(profile.allowed_professions)),
@@ -70,7 +75,7 @@ class ManagementProfileRepo:
 
     def active_profiles(self) -> builtins.list[ManagementProfile]:
         rows = self._conn.execute(
-            "SELECT * FROM management_profile WHERE active = 1 ORDER BY employee_id"
+            "SELECT * FROM management_profile WHERE active ORDER BY employee_id"
         ).fetchall()
         return [_row_to_profile(row) for row in rows]
 
@@ -104,7 +109,7 @@ class ManagementProfileRepo:
         return [(row["task_id"], row["team_id"]) for row in rows]
 
 
-def _row_to_profile(row: sqlite3.Row) -> ManagementProfile:
+def _row_to_profile(row: LedgerRow) -> ManagementProfile:
     return ManagementProfile(
         employee_id=row["employee_id"],
         active=bool(row["active"]),
@@ -123,20 +128,18 @@ def _row_to_profile(row: sqlite3.Row) -> ManagementProfile:
 
 def _weakens(current: ManagementProfile, candidate: ManagementProfile) -> bool:
     professions_narrowed = (
-        (not current.allowed_professions and bool(candidate.allowed_professions))
-        or (
-            bool(current.allowed_professions)
-            and bool(candidate.allowed_professions)
-            and not set(current.allowed_professions).issubset(candidate.allowed_professions)
-        )
+        not current.allowed_professions and bool(candidate.allowed_professions)
+    ) or (
+        bool(current.allowed_professions)
+        and bool(candidate.allowed_professions)
+        and not set(current.allowed_professions).issubset(candidate.allowed_professions)
     )
     spend_narrowed = (
-        (current.spend_limit_cents is None and candidate.spend_limit_cents is not None)
-        or (
-            current.spend_limit_cents is not None
-            and candidate.spend_limit_cents is not None
-            and candidate.spend_limit_cents < current.spend_limit_cents
-        )
+        current.spend_limit_cents is None and candidate.spend_limit_cents is not None
+    ) or (
+        current.spend_limit_cents is not None
+        and candidate.spend_limit_cents is not None
+        and candidate.spend_limit_cents < current.spend_limit_cents
     )
     return (
         (current.active and not candidate.active)

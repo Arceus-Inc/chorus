@@ -14,12 +14,15 @@ Skips cleanly (exit 0) when the Azure env vars are unset.
 from __future__ import annotations
 
 import os
+import uuid
+
+_EXAMPLE_COMPANY = str(uuid.uuid5(uuid.NAMESPACE_URL, "chorus-example"))  # one stable demo org
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
 
-from chorus.ledger import SqliteLedger, Task, TaskStatus
+from chorus.ledger import Ledger, Task, TaskStatus
 from chorus.lifecycle import assign_task
 from chorus.workforce import LedgerWorkforce
 from chorus_cli._beats import build_beat_service, default_pricing_from_env
@@ -43,8 +46,20 @@ def _seed_repo(path: Path) -> None:
     (path / "README.md").write_text("# specs\n", encoding="utf-8")
     subprocess.run(["git", "-C", str(path), "add", "-A"], check=True, capture_output=True)
     subprocess.run(
-        ["git", "-C", str(path), "-c", "user.name=s", "-c", "user.email=s@x", "commit", "-m", "seed"],
-        check=True, capture_output=True,
+        [
+            "git",
+            "-C",
+            str(path),
+            "-c",
+            "user.name=s",
+            "-c",
+            "user.email=s@x",
+            "commit",
+            "-m",
+            "seed",
+        ],
+        check=True,
+        capture_output=True,
     )
 
 
@@ -61,7 +76,10 @@ def main() -> int:
     seed = base / "seed"
     _seed_repo(seed)
 
-    ledger = SqliteLedger.open(str(base / "ledger.db"))
+    ledger = Ledger.open(
+        os.environ.get("CHORUS_LEDGER_DSN", "postgresql://localhost/chorus"),
+        company_id=_EXAMPLE_COMPANY,
+    )
     try:
         LedgerWorkforce(ledger.employees).hire(name="pen", role="pm")
         LedgerWorkforce(ledger.employees).hire(name="rob", role="reviewer")
@@ -69,8 +87,15 @@ def main() -> int:
         assign_task(ledger, "spec", "pen")
 
         runner = build_beat_service(
-            ledger, api_key=api_key, base_url=base_url, deployment=deployment, company_id="acme",
-            pricing=default_pricing_from_env(), seed=seed, work_root=base / "work", max_concurrent_runs=2,
+            ledger,
+            api_key=api_key,
+            base_url=base_url,
+            deployment=deployment,
+            company_id="acme",
+            pricing=default_pricing_from_env(),
+            seed=seed,
+            work_root=base / "work",
+            max_concurrent_runs=2,
         )
 
         _log("=" * 72)
@@ -84,10 +109,15 @@ def main() -> int:
                 break
             runner.run_tick()
             task = ledger.tasks.get("spec")
-            verdicts = [a for a in ledger.activity.by_subject("task", "spec")
-                        if a.verb.value == "review_verdict"]
-            _log(f"tick {n}: spec={task.status.value if task else '?'}  "
-                 f"review_verdicts={[v.payload.get('approve') for v in verdicts]}")
+            verdicts = [
+                a
+                for a in ledger.activity.by_subject("task", "spec")
+                if a.verb.value == "review_verdict"
+            ]
+            _log(
+                f"tick {n}: spec={task.status.value if task else '?'}  "
+                f"review_verdicts={[v.payload.get('approve') for v in verdicts]}"
+            )
 
         task = ledger.tasks.get("spec")
         status = task.status.value if task else "?"
@@ -99,10 +129,14 @@ def main() -> int:
         _log(f"reviewer beats run: {len(review_runs)}   verdict artifacts: {len(artifacts)}")
         for art in artifacts:
             ref = art.resource_ref or {}
-            _log(f"   verdict: approve={ref.get('approve')}  reviewer={ref.get('reviewer')}  "
-                 f"feedback={str(ref.get('feedback'))[:120]}")
+            _log(
+                f"   verdict: approve={ref.get('approve')}  reviewer={ref.get('reviewer')}  "
+                f"feedback={str(ref.get('feedback'))[:120]}"
+            )
         if recovery is not None:
-            _log(f"recovery card open: cause={recovery.cause}  (a human now owns the rejected/unverified work)")
+            _log(
+                f"recovery card open: cause={recovery.cause}  (a human now owns the rejected/unverified work)"
+            )
 
         # The load-bearing guarantee: a leaf agent_review deliverable is GATED by the reviewer — it can
         # never reach `done` without a recorded approve verdict. So either:
@@ -112,11 +146,15 @@ def main() -> int:
         # the work, but the model does not always emit the `submit_verdict` tool call; when it doesn't,
         # the kernel correctly blocks + opens a recovery card rather than passing unverified. The kernel
         # orchestration + every branch is proven deterministically in tests/heartbeat/test_m3_review.py.
-        gated = (status == "done" and any(a.resource_ref and a.resource_ref.get("approve") for a in artifacts)) or (
-            status != "done" and len(review_runs) >= 1
+        gated = (
+            status == "done"
+            and any(a.resource_ref and a.resource_ref.get("approve") for a in artifacts)
+        ) or (status != "done" and len(review_runs) >= 1)
+        _log(
+            "\n✅ the deliverable was GATED by the Reviewer (never a silent pass)"
+            if gated
+            else "❌ the deliverable was not gated — investigate"
         )
-        _log("\n✅ the deliverable was GATED by the Reviewer (never a silent pass)" if gated
-             else "❌ the deliverable was not gated — investigate")
         return 0 if gated else 1
     finally:
         ledger.close()

@@ -9,9 +9,9 @@ from chorus.ledger import (
     ActivityVerb,
     BudgetPolicy,
     BudgetScope,
+    Ledger,
     ManagementProfile,
     PlannedEmployee,
-    SqliteLedger,
     StaffingRequest,
     StaffingRequestStatus,
     WorkforcePlan,
@@ -39,7 +39,7 @@ class WorkforcePlanService:
 
     def __init__(
         self,
-        ledger: SqliteLedger,
+        ledger: Ledger,
         *,
         workforce: Workforce,
         roles: RoleRegistry,
@@ -86,7 +86,7 @@ class WorkforcePlanService:
         )
         self._validate(draft, root_employee_id=proposer.id)
         plan = WorkforcePlan(
-            id=mint_id("workforce-plan"),
+            id=mint_id(),
             revision=1,
             status=WorkforcePlanStatus.PROPOSED,
             proposed_by_employee_id=proposer.id,
@@ -191,7 +191,7 @@ class WorkforcePlanService:
                 if planned.budget_cents is not None:
                     self._ledger.budget_policies.create(
                         BudgetPolicy(
-                            id=mint_id("bp"),
+                            id=mint_id(),
                             scope_type=BudgetScope.EMPLOYEE,
                             scope_id=planned.ref,
                             amount=planned.budget_cents,

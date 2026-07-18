@@ -211,8 +211,12 @@ async def _run_task(task: dict, key: str, base: str, dep: str) -> None:
 
     roles = RoleRegistry.from_plugins(default_roles())
     factory = EmployeeHarnessFactory(
-        api_key=key, base_url=base, deployment=dep, company_id=task["company"],
-        roles=roles, timeout_s=900.0,
+        api_key=key,
+        base_url=base,
+        deployment=dep,
+        company_id=task["company"],
+        roles=roles,
+        timeout_s=900.0,
     )
 
     mat = factory.materialize(Employee(id="dara", name="Dara", role="designer"))
@@ -226,8 +230,12 @@ async def _run_task(task: dict, key: str, base: str, dep: str) -> None:
     print("=" * 78)
 
     outcome = await mat.runner.run_task(
-        task_id=task["run"], intent=task["intent"], run_id=task["run"],
-        verification=verifier.verification_steps(), rubric=verifier.rubric(), observer=_observer,
+        task_id=task["run"],
+        intent=task["intent"],
+        run_id=task["run"],
+        verification=verifier.verification_steps(),
+        rubric=verifier.rubric(),
+        observer=_observer,
     )
     print(f"\n[{task['key']}] passed = {outcome.passed}")
     print(f"[{task['key']}] summary = {outcome.summary}")
@@ -238,7 +246,9 @@ async def _run_task(task: dict, key: str, base: str, dep: str) -> None:
         f = mat.working_dir / name
         if f.is_file():
             shutil.copy2(f, out / name)
-            saved.append(f"{name} ({f.stat().st_size} B, {len(f.read_text(encoding='utf-8').split())} words)")
+            saved.append(
+                f"{name} ({f.stat().st_size} B, {len(f.read_text(encoding='utf-8').split())} words)"
+            )
     (out / "_meta.txt").write_text(
         f"key={task['key']}\npassed={outcome.passed}\nsummary={outcome.summary}\n"
         f"intent={task['intent']}\nworking_dir={mat.working_dir}\n",
@@ -252,7 +262,9 @@ async def main() -> int:
     base = os.environ.get("AZURE_OPENAI_BASE_URL")
     dep = os.environ.get("AZURE_OPENAI_DEPLOYMENT")
     if not (key and base and dep):
-        print("skipping: set AZURE_OPENAI_API_KEY / AZURE_OPENAI_BASE_URL / AZURE_OPENAI_DEPLOYMENT")
+        print(
+            "skipping: set AZURE_OPENAI_API_KEY / AZURE_OPENAI_BASE_URL / AZURE_OPENAI_DEPLOYMENT"
+        )
         return 0
 
     which = sys.argv[1] if len(sys.argv) > 1 else None

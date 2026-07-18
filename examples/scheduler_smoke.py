@@ -16,6 +16,9 @@ from __future__ import annotations
 
 import asyncio
 import os
+import uuid
+
+_EXAMPLE_COMPANY = str(uuid.uuid5(uuid.NAMESPACE_URL, "chorus-example"))  # one stable demo org
 import tempfile
 from pathlib import Path
 
@@ -23,7 +26,7 @@ import dream  # type: ignore[import-not-found]
 
 from chorus.adapters import DreamBeatRunner
 from chorus.heartbeat import Scheduler
-from chorus.ledger import SqliteLedger, Task, TaskStatus
+from chorus.ledger import Ledger, Task, TaskStatus
 from chorus.lifecycle import assign_task
 from chorus.workforce import Employee
 
@@ -41,7 +44,7 @@ class _LedgerWorkforce:
     one is the productization step.
     """
 
-    def __init__(self, ledger: SqliteLedger) -> None:
+    def __init__(self, ledger: Ledger) -> None:
         self._ledger = ledger
 
     def get(self, employee_id: str) -> Employee:
@@ -59,7 +62,10 @@ async def main() -> int:
         print("skipping: set AZURE_OPENAI_API_KEY, AZURE_OPENAI_BASE_URL, AZURE_OPENAI_DEPLOYMENT")
         return 0
 
-    ledger = SqliteLedger.open(":memory:")
+    ledger = Ledger.open(
+        os.environ.get("CHORUS_LEDGER_DSN", "postgresql://localhost/chorus"),
+        company_id=_EXAMPLE_COMPANY,
+    )
     last_status = ""
     try:
         with tempfile.TemporaryDirectory() as work_dir:
@@ -83,7 +89,9 @@ async def main() -> int:
             # seed the work, then let the loop dispatch it
             ledger.employees.create(Employee(id=_EMPLOYEE, name="alice", role="engineer"))
             ledger.tasks.submit(Task(id=_TASK, intent=_INTENT))
-            assign_task(ledger, _TASK, _EMPLOYEE)  # -> todo + the task_assigned wake the tick drains
+            assign_task(
+                ledger, _TASK, _EMPLOYEE
+            )  # -> todo + the task_assigned wake the tick drains
 
             print(f"running the kernel — watching task {_TASK!r} flow through the loop")
             loop = asyncio.create_task(scheduler.run())
@@ -105,8 +113,10 @@ async def main() -> int:
         runs = ledger.runs.for_task(_TASK)
         if runs:
             run = runs[-1]
-            print(f"run: status={run.status.value} liveness={run.liveness_state} "
-                  f"outcome={run.outcome}")
+            print(
+                f"run: status={run.status.value} liveness={run.liveness_state} "
+                f"outcome={run.outcome}"
+            )
         dod = ledger.dod.get_for_task(_TASK)
         if dod is not None:
             print(f"dod: status={dod.status.value} verdict={dod.verdict}")

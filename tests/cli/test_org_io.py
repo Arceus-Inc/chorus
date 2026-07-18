@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from chorus.ledger import SqliteLedger
+from chorus.testing import open_test_ledger
 from chorus_cli import CliSession, Console, LoopSignal, dispatch
 from chorus_cli._commands import REGISTRY
 
@@ -46,7 +46,7 @@ def test_export_then_import_round_trips_into_a_fresh_ledger(
     org = str(tmp_path / "org")
     _run(f"export {org}", session)
 
-    fresh_ledger = SqliteLedger.open(":memory:")
+    fresh_ledger = open_test_ledger()
     try:
         fresh = CliSession(ledger=fresh_ledger)
         _, out = _run(f"import {org}", fresh)

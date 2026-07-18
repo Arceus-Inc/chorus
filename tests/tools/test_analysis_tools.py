@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 from dream.tools._context import ToolExecutionContext
 
+from chorus.testing import uid
 from chorus_tools import (
     ChartRenderTool,
     NotebookRunTool,
@@ -21,7 +22,7 @@ pytestmark = pytest.mark.unit
 
 
 def _ctx(tmp_path: Path) -> ToolExecutionContext:
-    return ToolExecutionContext(working_dir=tmp_path, session_id="s-test")
+    return ToolExecutionContext(working_dir=tmp_path, session_id=uid("s-test"))
 
 
 def _run(coro):

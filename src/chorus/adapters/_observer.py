@@ -31,6 +31,10 @@ _DREAM_TO_CHORUS_KIND: dict[str, EventKind] = {
 # without pattern-matching tool names.
 _SPAWN_TOOL = "spawn_subagent"
 
+# In-beat memory readers: their structured hits become first-class memory.retrieved events
+# (OBS P5 — silent memory feeding a beat is invisible work; an empty result is signal too).
+_MEMORY_TOOLS = frozenset({"recall", "lattice_context"})
+
 
 class DreamObserverBridge:
     """Adapt a chorus ``emit`` callable to dream's ``on_event(dict)`` observer (spec 05 §4).
@@ -57,6 +61,9 @@ class DreamObserverBridge:
 
     def on_event(self, event: dict[str, Any]) -> None:
         dream_kind = str(event.get("kind", ""))
+        if dream_kind == "role.session.closed":
+            self._emit_llm_call(event)
+            return
         kind = _DREAM_TO_CHORUS_KIND.get(dream_kind)
         if kind is None:
             return
@@ -67,6 +74,27 @@ class DreamObserverBridge:
             payload["content"] = payload.get("content_preview", "")
         self._emit(Event(kind=kind, at=self._clock(), task_id=self._task_id, payload=payload))
         self._maybe_emit_subagent(dream_kind, event)
+        self._maybe_emit_memory(dream_kind, event)
+
+    def _emit_llm_call(self, event: dict[str, Any]) -> None:
+        """One role session's spend as a first-class llm.call event (OBS §4)."""
+        usage = dict(event.get("usage") or {})
+        self._emit(
+            Event(
+                kind=EventKind.LLM_CALL,
+                at=self._clock(),
+                task_id=self._task_id,
+                payload={
+                    "source": "dream",
+                    "role": str(event.get("role", "")),
+                    "model": str(event.get("model", "")),
+                    "input_tokens": int(usage.get("input_tokens", 0)),
+                    "output_tokens": int(usage.get("output_tokens", 0)),
+                    "cache_read_tokens": int(usage.get("cache_read_tokens", 0)),
+                    "cost_usd": float(event.get("cost_usd", 0.0)),
+                },
+            )
+        )
 
     def _maybe_emit_subagent(self, dream_kind: str, event: dict[str, Any]) -> None:
         """Surface the ``spawn_subagent`` lifecycle as first-class SUBAGENT_* events."""
@@ -89,6 +117,30 @@ class DreamObserverBridge:
                     "is_error": bool(event.get("is_error", False)),
                 },
             )
+
+    def _maybe_emit_memory(self, dream_kind: str, event: dict[str, Any]) -> None:
+        """Lift a memory tool's structured result to a first-class MEMORY_RETRIEVED event."""
+        if dream_kind != "role.tool.result" or event.get("tool") not in _MEMORY_TOOLS:
+            return
+        structured = event.get("structured")
+        hits = list(structured.get("hits") or []) if isinstance(structured, dict) else []
+        self._emit(
+            Event(
+                kind=EventKind.MEMORY_RETRIEVED,
+                at=self._clock(),
+                task_id=self._task_id,
+                payload={
+                    "tool": str(event.get("tool")),
+                    "hit_run_ids": [
+                        str(hit["run_id"])
+                        for hit in hits
+                        if isinstance(hit, dict) and "run_id" in hit
+                    ],
+                    "empty": not hits,
+                    "is_error": bool(event.get("is_error", False)),
+                },
+            )
+        )
 
     def _emit_subagent(self, kind: EventKind, payload: dict[str, Any]) -> None:
         self._emit(Event(kind=kind, at=self._clock(), task_id=self._task_id, payload=payload))

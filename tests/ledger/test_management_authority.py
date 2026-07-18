@@ -9,41 +9,42 @@ from chorus.ledger import (
     DelegationContract,
     DelegationContractStatus,
     ExecutionMode,
+    Ledger,
     ManagementProfile,
-    SqliteLedger,
     Task,
     Team,
     TeamMember,
     TeamMembershipRole,
     TeamStatus,
 )
+from chorus.testing import uid
 from chorus.workforce import Employee
 
 pytestmark = pytest.mark.integration
 
 
 def test_task_defaults_to_delivery_without_a_team() -> None:
-    task = Task(id="task-delivery", intent="ship the feature")
+    task = Task(id=uid("task-delivery"), intent="ship the feature")
 
     assert (task.execution_mode, task.team_id) == (ExecutionMode.DELIVERY, None)
 
 
-def test_delegation_task_execution_contract_round_trips(ledger: SqliteLedger) -> None:
+def test_delegation_task_execution_contract_round_trips(ledger: Ledger) -> None:
     ledger.tasks.submit(
         Task(
-            id="task-delegation",
+            id=uid("task-delegation"),
             intent="lead the release",
             execution_mode=ExecutionMode.DELEGATION,
-            team_id="team-release",
+            team_id=uid("team-release"),
         )
     )
 
-    persisted = ledger.tasks.get("task-delegation")
+    persisted = ledger.tasks.get(uid("task-delegation"))
 
     assert persisted is not None
     assert (persisted.execution_mode, persisted.team_id) == (
         ExecutionMode.DELEGATION,
-        "team-release",
+        uid("team-release"),
     )
 
 
@@ -67,7 +68,7 @@ def test_management_profile_rejects_unbounded_authority(field: str, value: int) 
         ManagementProfile(**values)  # type: ignore[arg-type]
 
 
-def test_management_profile_revisions_are_monotonic_and_round_trip(ledger: SqliteLedger) -> None:
+def test_management_profile_revisions_are_monotonic_and_round_trip(ledger: Ledger) -> None:
     ledger.employees.create(Employee(id="lead", name="Lead", role="engineer"))
     first = ManagementProfile(
         employee_id="lead",
@@ -99,10 +100,10 @@ def test_management_profile_revisions_are_monotonic_and_round_trip(ledger: Sqlit
     assert second == ledger.management_profiles.get("lead")
 
 
-def test_authority_graph_round_trips_with_pinned_profile_version(ledger: SqliteLedger) -> None:
+def test_authority_graph_round_trips_with_pinned_profile_version(ledger: Ledger) -> None:
     ledger.employees.create(Employee(id="lead", name="Lead", role="engineer"))
     ledger.employees.create(
-        Employee(id="member", name="Member", role="designer", reports_to="lead")
+        Employee(id=uid("member"), name="Member", role="designer", reports_to="lead")
     )
     ledger.management_profiles.upsert(
         ManagementProfile(
@@ -117,7 +118,7 @@ def test_authority_graph_round_trips_with_pinned_profile_version(ledger: SqliteL
     )
     ledger.teams.create(
         Team(
-            id="team-release",
+            id=uid("team-release"),
             name="Release",
             lead_employee_id="lead",
             status=TeamStatus.ACTIVE,
@@ -126,7 +127,7 @@ def test_authority_graph_round_trips_with_pinned_profile_version(ledger: SqliteL
     )
     ledger.team_members.add(
         TeamMember(
-            team_id="team-release",
+            team_id=uid("team-release"),
             employee_id="lead",
             membership_role=TeamMembershipRole.LEAD,
             source_manager_id="lead",
@@ -134,24 +135,24 @@ def test_authority_graph_round_trips_with_pinned_profile_version(ledger: SqliteL
     )
     ledger.team_members.add(
         TeamMember(
-            team_id="team-release",
-            employee_id="member",
+            team_id=uid("team-release"),
+            employee_id=uid("member"),
             source_manager_id="lead",
         )
     )
     ledger.tasks.submit(
         Task(
-            id="task-release",
+            id=uid("task-release"),
             intent="lead the release",
             execution_mode=ExecutionMode.DELEGATION,
-            team_id="team-release",
+            team_id=uid("team-release"),
             assignee_employee_id="lead",
         )
     )
     created = ledger.delegation_contracts.create(
         DelegationContract(
-            task_id="task-release",
-            team_id="team-release",
+            task_id=uid("task-release"),
+            team_id=uid("team-release"),
             lead_employee_id="lead",
             management_profile_version=1,
             can_subdelegate=False,
@@ -164,10 +165,10 @@ def test_authority_graph_round_trips_with_pinned_profile_version(ledger: SqliteL
         )
     )
 
-    persisted_members = ledger.team_members.members_of("team-release")
+    persisted_members = ledger.team_members.members_of(uid("team-release"))
 
-    assert ledger.teams.get("team-release") is not None
-    assert {member.employee_id for member in persisted_members} == {"lead", "member"}
-    assert ledger.delegation_contracts.get("task-release") == created
+    assert ledger.teams.get(uid("team-release")) is not None
+    assert {member.employee_id for member in persisted_members} == {"lead", uid("member")}
+    assert ledger.delegation_contracts.get(uid("task-release")) == created
     assert created.management_profile_version == 1
     assert created.max_direct_children == 2

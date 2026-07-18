@@ -142,9 +142,7 @@ def _management_profile(employee_id: str, raw_policy: str) -> ManagementProfile:
         return value
 
     professions = decoded.get("allowed_professions", [])
-    if not isinstance(professions, list) or not all(
-        isinstance(item, str) for item in professions
-    ):
+    if not isinstance(professions, list) or not all(isinstance(item, str) for item in professions):
         raise ValueError("management policy field 'allowed_professions' must be a string list")
     spend_limit = decoded.get("spend_limit_cents")
     if spend_limit is not None and (

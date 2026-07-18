@@ -11,7 +11,7 @@ from importlib.resources import files
 
 import pytest
 
-from chorus.ledger._migrations import MigrationRunner
+from chorus._sqlite_migrations import MigrationRunner
 from chorus.memory.migrations import MIGRATIONS
 
 pytestmark = pytest.mark.unit

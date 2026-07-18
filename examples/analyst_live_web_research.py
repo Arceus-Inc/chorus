@@ -79,7 +79,9 @@ async def main() -> int:
     base = os.environ.get("AZURE_OPENAI_BASE_URL")
     dep = os.environ.get("AZURE_OPENAI_DEPLOYMENT")
     if not (key and base and dep):
-        print("skipping: set AZURE_OPENAI_API_KEY / AZURE_OPENAI_BASE_URL / AZURE_OPENAI_DEPLOYMENT")
+        print(
+            "skipping: set AZURE_OPENAI_API_KEY / AZURE_OPENAI_BASE_URL / AZURE_OPENAI_DEPLOYMENT"
+        )
         return 0
     if not (os.environ.get("TAVILY_API_KEY") or os.environ.get("DREAM_TAVILY_API_KEY")):
         print("skipping: set TAVILY_API_KEY (or DREAM_TAVILY_API_KEY) for the web tools")
@@ -87,8 +89,12 @@ async def main() -> int:
 
     roles = RoleRegistry.from_plugins(default_roles())
     factory = EmployeeHarnessFactory(
-        api_key=key, base_url=base, deployment=dep, company_id="analyst-web-research",
-        roles=roles, timeout_s=600.0,
+        api_key=key,
+        base_url=base,
+        deployment=dep,
+        company_id="analyst-web-research",
+        roles=roles,
+        timeout_s=600.0,
     )
     mat = factory.materialize(Employee(id="vera", name="Vera", role="analyst"))
 

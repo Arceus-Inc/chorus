@@ -2,16 +2,20 @@
 
 from __future__ import annotations
 
-import sqlite3
-
 from chorus.ledger._models import BudgetPolicy, BudgetScope
-from chorus.ledger.repos._base import from_iso, require_persisted, utcnow_iso
+from chorus.ledger.repos._base import (
+    LedgerConnection,
+    LedgerRow,
+    from_iso,
+    require_persisted,
+    utcnow_iso,
+)
 
 
 class BudgetPolicyRepo:
     """Create + look up ``budget_policy`` rows (one per scope/metric/window)."""
 
-    def __init__(self, conn: sqlite3.Connection) -> None:
+    def __init__(self, conn: LedgerConnection) -> None:
         self._conn = conn
 
     def create(self, policy: BudgetPolicy) -> BudgetPolicy:
@@ -28,7 +32,7 @@ class BudgetPolicyRepo:
                 policy.amount,
                 policy.metric,
                 policy.warn_percent,
-                1 if policy.hard_stop_enabled else 0,
+                policy.hard_stop_enabled,
                 policy.window_kind,
                 now,
                 now,
@@ -85,7 +89,7 @@ class BudgetPolicyRepo:
         return [_row_to_policy(row) for row in rows]
 
 
-def _row_to_policy(row: sqlite3.Row) -> BudgetPolicy:
+def _row_to_policy(row: LedgerRow) -> BudgetPolicy:
     return BudgetPolicy(
         id=row["id"],
         scope_type=BudgetScope(row["scope_type"]),

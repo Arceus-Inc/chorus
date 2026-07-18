@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 from dream.contracts.delegation import ProfessionCapacity
 
 if TYPE_CHECKING:
-    from chorus.ledger import SqliteLedger
+    from chorus.ledger import Ledger
 
 _TERMINAL_TASK_STATUSES = {"cancelled", "done", "rejected"}
 
@@ -20,7 +20,7 @@ class CapacityAdapter:
 
     def __init__(
         self,
-        ledger: SqliteLedger,
+        ledger: Ledger,
         *,
         company_id: str,
         clock: Callable[[], datetime] | None = None,
@@ -93,9 +93,7 @@ class CapacityAdapter:
 
         policies = [
             policy
-            for policy in self._ledger.budget_policies.by_scope(
-                BudgetScope.EMPLOYEE, employee_id
-            )
+            for policy in self._ledger.budget_policies.by_scope(BudgetScope.EMPLOYEE, employee_id)
             if policy.metric == "cost_cents"
         ]
         if not policies:

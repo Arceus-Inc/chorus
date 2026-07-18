@@ -71,13 +71,19 @@ async def main() -> int:
     base = os.environ.get("AZURE_OPENAI_BASE_URL")
     dep = os.environ.get("AZURE_OPENAI_DEPLOYMENT")
     if not (key and base and dep):
-        print("skipping: set AZURE_OPENAI_API_KEY / AZURE_OPENAI_BASE_URL / AZURE_OPENAI_DEPLOYMENT")
+        print(
+            "skipping: set AZURE_OPENAI_API_KEY / AZURE_OPENAI_BASE_URL / AZURE_OPENAI_DEPLOYMENT"
+        )
         return 0
 
     roles = RoleRegistry.from_plugins(default_roles())
     factory = EmployeeHarnessFactory(
-        api_key=key, base_url=base, deployment=dep, company_id="analyst-command-dod",
-        roles=roles, timeout_s=600.0,
+        api_key=key,
+        base_url=base,
+        deployment=dep,
+        company_id="analyst-command-dod",
+        roles=roles,
+        timeout_s=600.0,
     )
     mat = factory.materialize(Employee(id="vera", name="Vera", role="analyst"))
     (mat.working_dir / "numbers.csv").write_text(
@@ -89,12 +95,18 @@ async def main() -> int:
     verifier = Verifier.command("python check.py", artifact_class="finding")
     print(f"worktree : {mat.working_dir}")
     print(f"DoD      : Command -> {verifier.verification_steps()[0].command!r}")
-    print(f"expected : mean={statistics.mean(_VALUES)}, median={statistics.median(_VALUES)}, "
-          f"std={statistics.pstdev(_VALUES):.4f} (sample std {statistics.stdev(_VALUES):.4f})\n")
+    print(
+        f"expected : mean={statistics.mean(_VALUES)}, median={statistics.median(_VALUES)}, "
+        f"std={statistics.pstdev(_VALUES):.4f} (sample std {statistics.stdev(_VALUES):.4f})\n"
+    )
 
     outcome = await mat.runner.run_task(
-        task_id="cmddod-1", intent=_INTENT, run_id="run-cmddod-1",
-        verification=verifier.verification_steps(), rubric=verifier.rubric(), observer=_print_event,
+        task_id="cmddod-1",
+        intent=_INTENT,
+        run_id="run-cmddod-1",
+        verification=verifier.verification_steps(),
+        rubric=verifier.rubric(),
+        observer=_print_event,
     )
 
     print(f"\npassed   = {outcome.passed}")

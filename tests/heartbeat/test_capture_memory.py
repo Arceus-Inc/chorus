@@ -16,6 +16,7 @@ import pytest
 from chorus.heartbeat._beat import BeatDisposition, BeatOutcome
 from chorus.heartbeat._scheduler import _artifact_ref, _baseline_sha, _sprint_delta
 from chorus.ledger import Artifact, ArtifactType, Task
+from chorus.testing import uid
 from chorus.workforce._models import Employee
 
 pytestmark = pytest.mark.unit
@@ -28,7 +29,7 @@ def _employee() -> Employee:
 
 
 def _task() -> Task:
-    return Task(id="t_1", intent="add retry to the upload client")
+    return Task(id=uid("t_1"), intent="add retry to the upload client")
 
 
 def _outcome() -> BeatOutcome:
@@ -41,7 +42,7 @@ def _outcome() -> BeatOutcome:
 
 def test_sprint_delta_sets_role_recorded_at_and_raw_body() -> None:
     delta = _sprint_delta(
-        run_id="r_1",
+        run_id=uid("r_1"),
         employee=_employee(),
         task=_task(),
         result=_outcome(),
@@ -61,7 +62,12 @@ def test_sprint_delta_sets_role_recorded_at_and_raw_body() -> None:
 def test_sprint_delta_falls_back_to_summary_without_raw_record() -> None:
     result = BeatOutcome(passed=True, summary="plan complete", disposition=BeatDisposition.PASSED)
     delta = _sprint_delta(
-        run_id="r_1", employee=_employee(), task=_task(), result=result, scope="project", now=_NOW
+        run_id=uid("r_1"),
+        employee=_employee(),
+        task=_task(),
+        result=result,
+        scope="project",
+        now=_NOW,
     )
     assert delta.body == "plan complete"
 
@@ -75,7 +81,7 @@ def test_artifact_ref_prefers_string_ids_then_json_dumps_resource_ref() -> None:
 
 
 def _artifact(**over: object) -> Artifact:
-    base: dict[str, object] = dict(id="art_1", task_id="t_1", type=ArtifactType.PR)
+    base: dict[str, object] = dict(id=uid("art_1"), task_id=uid("t_1"), type=ArtifactType.PR)
     base.update(over)
     return Artifact(**base)  # type: ignore[arg-type]
 
@@ -116,13 +122,15 @@ async def test_capture_memory_writes_keyed_per_agent_record(tmp_path, ledger) ->
     (worktree / "feature.py").write_text("y = 2\n", encoding="utf-8")  # this beat's work
 
     ledger.tasks.submit(_task())
-    ledger.artifacts.create(_artifact(task_id="t_1", external_id="pr:org/repo#7", is_primary=True))
+    ledger.artifacts.create(
+        _artifact(task_id=uid("t_1"), external_id="pr:org/repo#7", is_primary=True)
+    )
 
     store = EpisodicStore(tmp_path / "memory")
     scheduler = Scheduler(ledger=ledger, memory_writer=store)
     await scheduler._capture_memory(
         ledger,
-        run_id="r_1",
+        run_id=uid("r_1"),
         employee=_employee(),
         task=_task(),
         result=_outcome(),
@@ -131,7 +139,7 @@ async def test_capture_memory_writes_keyed_per_agent_record(tmp_path, ledger) ->
         base_sha=base_sha,
     )
 
-    record = store.get("r_1")
+    record = store.get(uid("r_1"))
     assert record is not None
     assert record.employee_id == "ada"  # per-agent attribution
     assert "feature.py" in record.files_touched  # the fingerprint of this beat
@@ -148,7 +156,7 @@ def test_sprint_delta_timeout_is_incomplete_not_blocked() -> None:
         outcome={"error": "TimeoutError()", "phase": None},
     )
     delta = _sprint_delta(
-        run_id="r_to",
+        run_id=uid("r_to"),
         employee=_employee(),
         task=_task(),
         result=result,
@@ -166,7 +174,7 @@ def test_sprint_delta_non_timeout_error_is_blocked() -> None:
         outcome={"error": "RuntimeError('boom')", "phase": None},
     )
     delta = _sprint_delta(
-        run_id="r_err",
+        run_id=uid("r_err"),
         employee=_employee(),
         task=_task(),
         result=result,

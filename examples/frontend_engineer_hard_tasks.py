@@ -239,7 +239,9 @@ def _force_rmtree(path: Path) -> None:
         shutil.rmtree(path, onerror=_onerror)
 
 
-async def _rerun(cmd: str, cwd: Path, timeout_s: float, *, env: dict[str, str] | None = None) -> tuple[int | None, str]:
+async def _rerun(
+    cmd: str, cwd: Path, timeout_s: float, *, env: dict[str, str] | None = None
+) -> tuple[int | None, str]:
     """Independently run a command in the shipped worktree and capture combined output + exit code.
 
     Uses the same shell dream's oracle uses (cmd.exe on Windows, /bin/sh on POSIX), so this re-run is a
@@ -272,12 +274,24 @@ def _copy_worktree_artifacts(working_dir: Path, dest: Path) -> list[str]:
     saved: list[str] = []
 
     def _ignore(_dir: str, names: list[str]) -> set[str]:
-        return {n for n in names if n in {"node_modules", ".git", "test-results", "playwright-report"}}
+        return {
+            n for n in names if n in {"node_modules", ".git", "test-results", "playwright-report"}
+        }
 
     # top-level source files (any stack: vanilla, TS, JSX/TSX, Vue SFC, Svelte, + config/manifests)
     for pat in (
-        "*.html", "*.js", "*.mjs", "*.cjs", "*.ts", "*.mts", "*.jsx", "*.tsx",
-        "*.vue", "*.svelte", "*.css", "*.json",
+        "*.html",
+        "*.js",
+        "*.mjs",
+        "*.cjs",
+        "*.ts",
+        "*.mts",
+        "*.jsx",
+        "*.tsx",
+        "*.vue",
+        "*.svelte",
+        "*.css",
+        "*.json",
     ):
         for f in working_dir.glob(pat):
             if f.is_file():
@@ -320,8 +334,12 @@ async def _run_one(task: _Task, key: str, base: str, dep: str, api_key: str) -> 
 
     roles = RoleRegistry.from_plugins(default_roles())
     factory = EmployeeHarnessFactory(
-        api_key=api_key, base_url=base, deployment=dep, company_id=company,
-        roles=roles, timeout_s=1800.0,
+        api_key=api_key,
+        base_url=base,
+        deployment=dep,
+        company_id=company,
+        roles=roles,
+        timeout_s=1800.0,
     )
     mat = factory.materialize(Employee(id="finn", name="Finn", role="frontend_engineer"))
 
@@ -334,8 +352,12 @@ async def _run_one(task: _Task, key: str, base: str, dep: str, api_key: str) -> 
     _captured.clear()
     run_id = f"run-{task.key}"
     outcome = await mat.runner.run_task(
-        task_id=run_id, intent=task.intent, run_id=run_id,
-        verification=verifier.verification_steps(), rubric=verifier.rubric(), observer=_observer,
+        task_id=run_id,
+        intent=task.intent,
+        run_id=run_id,
+        verification=verifier.verification_steps(),
+        rubric=verifier.rubric(),
+        observer=_observer,
     )
     print(f"\n[{task.key}] beat passed (DoD floor) = {outcome.passed}")
     print(f"[{task.key}] summary = {_short(outcome.summary, 400)}")
@@ -414,7 +436,9 @@ async def main() -> int:
     base = os.environ.get("AZURE_OPENAI_BASE_URL")
     dep = os.environ.get("AZURE_OPENAI_DEPLOYMENT")
     if not (api_key and base and dep):
-        print("skipping: set AZURE_OPENAI_API_KEY / AZURE_OPENAI_BASE_URL / AZURE_OPENAI_DEPLOYMENT")
+        print(
+            "skipping: set AZURE_OPENAI_API_KEY / AZURE_OPENAI_BASE_URL / AZURE_OPENAI_DEPLOYMENT"
+        )
         return 0
 
     wanted = {a.strip() for a in sys.argv[1:] if a.strip()}
@@ -443,7 +467,9 @@ async def main() -> int:
         )
     all_true = all(r.truly_passed for r in results)
     print("-" * 90)
-    print(f"overall: {'ALL TRULY PASSED' if all_true else 'SOME NOT PROVEN'}  ({len(results)} task(s))")
+    print(
+        f"overall: {'ALL TRULY PASSED' if all_true else 'SOME NOT PROVEN'}  ({len(results)} task(s))"
+    )
     # Non-zero exit if any task failed independent re-verification, so CI/humans notice.
     return 0 if all_true else 1
 

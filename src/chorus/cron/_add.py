@@ -25,11 +25,11 @@ from chorus.ledger import (
 from chorus.trust import assert_no_inline_secrets
 
 if TYPE_CHECKING:
-    from chorus.ledger import SqliteLedger
+    from chorus.ledger import Ledger
 
 
 def add_routine(
-    ledger: SqliteLedger,
+    ledger: Ledger,
     *,
     employee_id: str,
     intent_template: str,
@@ -50,7 +50,7 @@ def add_routine(
 
     routine = ledger.routines.create(
         Routine(
-            id=mint_id("routine"),
+            id=mint_id(),
             employee_id=employee_id,
             intent_template=intent_template,
             target=target,
@@ -62,7 +62,7 @@ def add_routine(
     )
     rev1 = ledger.routine_revisions.append(
         RoutineRevision(
-            id=mint_id("rrev"),
+            id=mint_id(),
             routine_id=routine.id,
             revision_no=1,
             intent_template=intent_template,
@@ -76,7 +76,7 @@ def add_routine(
     ledger.routines.set_head(routine.id, rev1)
     ledger.routine_triggers.create(
         RoutineTrigger(
-            id=mint_id("trig"),
+            id=mint_id(),
             routine_id=routine.id,
             kind=TriggerKind.CRON,
             cron_expression=schedule,

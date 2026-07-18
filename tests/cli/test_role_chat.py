@@ -15,7 +15,8 @@ from typing import Any
 import pytest
 
 from chorus.errors import UnknownEmployee
-from chorus.ledger import SqliteLedger
+from chorus.ledger import Ledger
+from chorus.testing import open_test_ledger, uid
 from chorus.workforce import Employee
 from chorus_cli import _role_chat
 from chorus_cli._chat import ChatBeatService
@@ -29,7 +30,7 @@ def _stub_build_harness(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(_factory_mod.dream, "build_harness", lambda **kw: object())
 
 
-def _service(ledger: SqliteLedger, *, employee_id: str = "ada", **kwargs: Any) -> ChatBeatService:
+def _service(ledger: Ledger, *, employee_id: str = "ada", **kwargs: Any) -> ChatBeatService:
     return _role_chat.build_role_chat_service(
         ledger,
         employee_id=employee_id,
@@ -44,10 +45,10 @@ def _service(ledger: SqliteLedger, *, employee_id: str = "ada", **kwargs: Any) -
 
 def test_unknown_employee_raises(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     _stub_build_harness(monkeypatch)
-    ledger = SqliteLedger.open(":memory:")
+    ledger = open_test_ledger()
     try:
         with pytest.raises(UnknownEmployee):
-            _service(ledger, employee_id="ghost", work_root=tmp_path)
+            _service(ledger, employee_id=uid("ghost"), work_root=tmp_path)
     finally:
         ledger.close()
 
@@ -56,7 +57,7 @@ def test_service_surfaces_the_materialized_worktree_and_config(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     _stub_build_harness(monkeypatch)
-    ledger = SqliteLedger.open(":memory:")
+    ledger = open_test_ledger()
     try:
         ledger.employees.create(Employee(id="ada", name="Ada", role="backend_engineer"))
         service = _service(ledger, work_root=tmp_path)
@@ -76,7 +77,7 @@ def test_chat_wires_the_role_registry_so_tasks_inherit_the_role_dod(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     _stub_build_harness(monkeypatch)
-    ledger = SqliteLedger.open(":memory:")
+    ledger = open_test_ledger()
     try:
         ledger.employees.create(Employee(id="ada", name="Ada", role="backend_engineer"))
         captured: dict[str, Any] = {}
@@ -123,7 +124,7 @@ def test_seed_makes_the_employee_branch_off_real_code(
         capture_output=True,
     )
 
-    ledger = SqliteLedger.open(":memory:")
+    ledger = open_test_ledger()
     try:
         ledger.employees.create(Employee(id="ada", name="Ada", role="backend_engineer"))
         service = _service(ledger, work_root=tmp_path / "ws", seed=source)

@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from importlib.resources import files
 
-from chorus.ledger._migrations import Migration, load_migrations
+from chorus._sqlite_migrations import Migration, load_migrations
 
 MIGRATIONS: tuple[Migration, ...] = load_migrations(files(__name__))
 

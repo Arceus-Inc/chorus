@@ -12,16 +12,17 @@ import pytest
 
 from chorus.errors import UnknownEmployee
 from chorus.facade import Caps, Chorus
-from chorus.ledger import SqliteLedger
+from chorus.ledger import Ledger
 from chorus.ledger._models import RoutineConcurrency, RoutineStatus, TriggerKind
 from chorus.observability import LedgerInspector
 from chorus.roles import RoleRegistry, default_roles
+from chorus.testing import open_test_ledger
 from chorus.workforce import LedgerWorkforce
 
 pytestmark = pytest.mark.integration
 
 
-def _chorus(ledger: SqliteLedger) -> Chorus:
+def _chorus(ledger: Ledger) -> Chorus:
     """A facade over a real ledger with a live workforce + inspector (the routine surface needs both)."""
     return Chorus(
         ledger=ledger,
@@ -37,7 +38,7 @@ def _chorus(ledger: SqliteLedger) -> Chorus:
 
 
 def test_add_routine_persists_a_routine_and_its_cron_trigger() -> None:
-    ledger = SqliteLedger.open(":memory:")
+    ledger = open_test_ledger()
     try:
         chorus = _chorus(ledger)
         chorus.hire(name="Moe", role="frontend_engineer")
@@ -60,7 +61,7 @@ def test_add_routine_persists_a_routine_and_its_cron_trigger() -> None:
 
 
 def test_add_routine_resolves_a_name_to_its_slug() -> None:
-    ledger = SqliteLedger.open(":memory:")
+    ledger = open_test_ledger()
     try:
         chorus = _chorus(ledger)
         chorus.hire(name="Big Moe", role="frontend_engineer")
@@ -71,7 +72,7 @@ def test_add_routine_resolves_a_name_to_its_slug() -> None:
 
 
 def test_add_routine_for_an_unknown_employee_is_fail_closed() -> None:
-    ledger = SqliteLedger.open(":memory:")
+    ledger = open_test_ledger()
     try:
         with pytest.raises(UnknownEmployee):
             _chorus(ledger).routines.add(
@@ -84,7 +85,7 @@ def test_add_routine_for_an_unknown_employee_is_fail_closed() -> None:
 
 
 def test_add_routine_honours_an_explicit_concurrency_enum() -> None:
-    ledger = SqliteLedger.open(":memory:")
+    ledger = open_test_ledger()
     try:
         chorus = _chorus(ledger)
         chorus.hire(name="Moe", role="frontend_engineer")
@@ -100,7 +101,7 @@ def test_add_routine_honours_an_explicit_concurrency_enum() -> None:
 
 
 def test_list_routines_filters_by_employee() -> None:
-    ledger = SqliteLedger.open(":memory:")
+    ledger = open_test_ledger()
     try:
         chorus = _chorus(ledger)
         chorus.hire(name="Moe", role="frontend_engineer")
@@ -114,7 +115,7 @@ def test_list_routines_filters_by_employee() -> None:
 
 
 def test_routine_view_carries_triggers_and_recent_runs() -> None:
-    ledger = SqliteLedger.open(":memory:")
+    ledger = open_test_ledger()
     try:
         chorus = _chorus(ledger)
         chorus.hire(name="Moe", role="frontend_engineer")
@@ -127,7 +128,7 @@ def test_routine_view_carries_triggers_and_recent_runs() -> None:
 
 
 def test_pause_then_resume_toggles_the_firing_status() -> None:
-    ledger = SqliteLedger.open(":memory:")
+    ledger = open_test_ledger()
     try:
         chorus = _chorus(ledger)
         chorus.hire(name="Moe", role="frontend_engineer")

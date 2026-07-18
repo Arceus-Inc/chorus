@@ -15,8 +15,9 @@ import pytest
 
 from chorus.heartbeat import Scheduler, Wake, WakeReason
 from chorus.heartbeat._beat import BeatDisposition, BeatOutcome, BeatRunner
-from chorus.ledger import SqliteLedger, Task
+from chorus.ledger import Ledger, Task
 from chorus.ledger._models import DodStatus, RecoveryKind, RunStatus, TaskStatus
+from chorus.testing import uid
 from chorus.workforce import Employee
 
 pytestmark = pytest.mark.integration
@@ -75,7 +76,7 @@ class _FakeWorkforce:
         return self._by_id[employee_id]
 
 
-def _wired(ledger: SqliteLedger, beat: BeatRunner, *, eid: str = "e1") -> Scheduler:
+def _wired(ledger: Ledger, beat: BeatRunner, *, eid: str = uid("e1")) -> Scheduler:
     return Scheduler(
         ledger=ledger,
         workforce=_FakeWorkforce(Employee(id=eid, name=eid, role="engineer")),
@@ -84,7 +85,7 @@ def _wired(ledger: SqliteLedger, beat: BeatRunner, *, eid: str = "e1") -> Schedu
 
 
 def _setup_task(
-    ledger: SqliteLedger, *, tid: str = "t1", eid: str = "e1", run_id: str = "r1"
+    ledger: Ledger, *, tid: str = uid("t1"), eid: str = uid("e1"), run_id: str = uid("r1")
 ) -> Wake:
     """Mirror what the tick does before a beat: employee + assigned todo, checked out, wake claimed."""
     ledger.employees.create(Employee(id=eid, name=eid, role="engineer"))
@@ -92,151 +93,157 @@ def _setup_task(
     ledger.tasks.set_status(tid, TaskStatus.TODO)
     assert ledger.tasks.checkout(tid, employee_id=eid, run_id=run_id)
     ledger.wakes.enqueue(
-        Wake(id="w1", employee_id=eid, reason=WakeReason.TASK_ASSIGNED, payload={"task_id": tid})
+        Wake(
+            id=uid("w1"), employee_id=eid, reason=WakeReason.TASK_ASSIGNED, payload={"task_id": tid}
+        )
     )
     (claimed,) = ledger.wakes.claim(limit=1)
     return claimed
 
 
-async def test_passed_beat_marks_task_done(ledger: SqliteLedger) -> None:
+async def test_passed_beat_marks_task_done(ledger: Ledger) -> None:
     wake = _setup_task(ledger)
     sched = _wired(ledger, _FakeBeat(passed=True))
-    await sched.run_beat(wake, run_id="r1", now=_NOW)
-    task = ledger.tasks.get("t1")
+    await sched.run_beat(wake, run_id=uid("r1"), now=_NOW)
+    task = ledger.tasks.get(uid("t1"))
     assert task is not None
     assert task.status is TaskStatus.DONE
 
 
-async def test_failed_beat_blocks_task(ledger: SqliteLedger) -> None:
+async def test_failed_beat_blocks_task(ledger: Ledger) -> None:
     wake = _setup_task(ledger)
     sched = _wired(ledger, _FakeBeat(passed=False))
-    await sched.run_beat(wake, run_id="r1", now=_NOW)
-    task = ledger.tasks.get("t1")
+    await sched.run_beat(wake, run_id=uid("r1"), now=_NOW)
+    task = ledger.tasks.get(uid("t1"))
     assert task is not None
     assert task.status is TaskStatus.BLOCKED
 
 
-async def test_beat_mints_running_run_with_lease(ledger: SqliteLedger) -> None:
+async def test_beat_mints_running_run_with_lease(ledger: Ledger) -> None:
     wake = _setup_task(ledger)
     sched = _wired(ledger, _FakeBeat(passed=True))
-    await sched.run_beat(wake, run_id="r1", now=_NOW)
-    run = ledger.runs.get("r1")
+    await sched.run_beat(wake, run_id=uid("r1"), now=_NOW)
+    run = ledger.runs.get(uid("r1"))
     assert run is not None
-    assert run.task_id == "t1"
-    assert run.wake_id == "w1"
+    assert run.task_id == uid("t1")
+    assert run.wake_id == uid("w1")
     assert run.lease_expires_at is not None and run.lease_expires_at > _NOW
     assert run.status is RunStatus.SUCCEEDED  # finished by the time the beat returns
 
 
-async def test_failed_beat_finishes_run_failed(ledger: SqliteLedger) -> None:
+async def test_failed_beat_finishes_run_failed(ledger: Ledger) -> None:
     wake = _setup_task(ledger)
     sched = _wired(ledger, _FakeBeat(passed=False))
-    await sched.run_beat(wake, run_id="r1", now=_NOW)
-    run = ledger.runs.get("r1")
+    await sched.run_beat(wake, run_id=uid("r1"), now=_NOW)
+    run = ledger.runs.get(uid("r1"))
     assert run is not None
     assert run.status is RunStatus.FAILED
 
 
-async def test_beat_releases_locks(ledger: SqliteLedger) -> None:
+async def test_beat_releases_locks(ledger: Ledger) -> None:
     wake = _setup_task(ledger)
     sched = _wired(ledger, _FakeBeat(passed=True))
-    await sched.run_beat(wake, run_id="r1", now=_NOW)
-    task = ledger.tasks.get("t1")
+    await sched.run_beat(wake, run_id=uid("r1"), now=_NOW)
+    task = ledger.tasks.get(uid("t1"))
     assert task is not None
     assert task.checkout_run_id is None
     assert task.execution_run_id is None
 
 
-async def test_beat_marks_wake_done(ledger: SqliteLedger) -> None:
+async def test_beat_marks_wake_done(ledger: Ledger) -> None:
     wake = _setup_task(ledger)
     sched = _wired(ledger, _FakeBeat(passed=True))
-    await sched.run_beat(wake, run_id="r1", now=_NOW)
-    done = ledger.wakes.get("w1")
+    await sched.run_beat(wake, run_id=uid("r1"), now=_NOW)
+    done = ledger.wakes.get(uid("w1"))
     assert done is not None
     assert done.status.value == "done"
     assert ledger.wakes.queued() == []
 
 
-async def test_passed_beat_records_dod_verdict(ledger: SqliteLedger) -> None:
-    eid, tid = "e1", "t1"
+async def test_passed_beat_records_dod_verdict(ledger: Ledger) -> None:
+    eid, tid = uid("e1"), uid("t1")
     ledger.employees.create(Employee(id=eid, name=eid, role="engineer"))
     ledger.tasks.submit(Task(id=tid, intent="ship it", assignee_employee_id=eid))
     ledger.tasks.set_status(tid, TaskStatus.TODO)
     ledger.dod.create(tid, _command_verifier())
-    assert ledger.tasks.checkout(tid, employee_id=eid, run_id="r1")
+    assert ledger.tasks.checkout(tid, employee_id=eid, run_id=uid("r1"))
     ledger.wakes.enqueue(
-        Wake(id="w1", employee_id=eid, reason=WakeReason.TASK_ASSIGNED, payload={"task_id": tid})
+        Wake(
+            id=uid("w1"), employee_id=eid, reason=WakeReason.TASK_ASSIGNED, payload={"task_id": tid}
+        )
     )
     (wake,) = ledger.wakes.claim(limit=1)
     sched = _wired(ledger, _FakeBeat(passed=True, outcome={"pr": "#7"}))
-    await sched.run_beat(wake, run_id="r1", now=_NOW)
+    await sched.run_beat(wake, run_id=uid("r1"), now=_NOW)
     dod = ledger.dod.get_for_task(tid)
     assert dod is not None
     assert dod.status is DodStatus.PASSED
 
 
-async def test_passed_beat_fires_downstream_deps_resolved(ledger: SqliteLedger) -> None:
+async def test_passed_beat_fires_downstream_deps_resolved(ledger: Ledger) -> None:
     wake = _setup_task(ledger)  # t1 assigned to e1, checked out
     # A dependent t2 (assigned to e2) waits on t1 — completing t1 should wake e2.
-    ledger.employees.create(Employee(id="e2", name="e2", role="engineer"))
-    ledger.tasks.submit(Task(id="t2", intent="after t1", assignee_employee_id="e2"))
-    ledger.tasks.set_status("t2", TaskStatus.TODO)
-    ledger.dependencies.add("t2", "t1")
+    ledger.employees.create(Employee(id=uid("e2"), name=uid("e2"), role="engineer"))
+    ledger.tasks.submit(Task(id=uid("t2"), intent="after t1", assignee_employee_id=uid("e2")))
+    ledger.tasks.set_status(uid("t2"), TaskStatus.TODO)
+    ledger.dependencies.add(uid("t2"), uid("t1"))
     sched = _wired(ledger, _FakeBeat(passed=True))
-    await sched.run_beat(wake, run_id="r1", now=_NOW)
-    downstream = ledger.wakes.queued(employee_id="e2")
+    await sched.run_beat(wake, run_id=uid("r1"), now=_NOW)
+    downstream = ledger.wakes.queued(employee_id=uid("e2"))
     assert len(downstream) == 1
     assert downstream[0].reason is WakeReason.DEPS_RESOLVED
-    assert downstream[0].payload["task_id"] == "t2"
+    assert downstream[0].payload["task_id"] == uid("t2")
 
 
-async def test_failed_beat_fires_no_downstream(ledger: SqliteLedger) -> None:
+async def test_failed_beat_fires_no_downstream(ledger: Ledger) -> None:
     wake = _setup_task(ledger)
-    ledger.employees.create(Employee(id="e2", name="e2", role="engineer"))
-    ledger.tasks.submit(Task(id="t2", intent="after t1", assignee_employee_id="e2"))
-    ledger.tasks.set_status("t2", TaskStatus.TODO)
-    ledger.dependencies.add("t2", "t1")
+    ledger.employees.create(Employee(id=uid("e2"), name=uid("e2"), role="engineer"))
+    ledger.tasks.submit(Task(id=uid("t2"), intent="after t1", assignee_employee_id=uid("e2")))
+    ledger.tasks.set_status(uid("t2"), TaskStatus.TODO)
+    ledger.dependencies.add(uid("t2"), uid("t1"))
     sched = _wired(ledger, _FakeBeat(passed=False))
-    await sched.run_beat(wake, run_id="r1", now=_NOW)
-    assert ledger.wakes.queued(employee_id="e2") == []
+    await sched.run_beat(wake, run_id=uid("r1"), now=_NOW)
+    assert ledger.wakes.queued(employee_id=uid("e2")) == []
 
 
-async def test_beat_passes_task_intent_to_dream(ledger: SqliteLedger) -> None:
+async def test_beat_passes_task_intent_to_dream(ledger: Ledger) -> None:
     wake = _setup_task(ledger)
     beat = _FakeBeat(passed=True)
     sched = _wired(ledger, beat)
-    await sched.run_beat(wake, run_id="r1", now=_NOW)
+    await sched.run_beat(wake, run_id=uid("r1"), now=_NOW)
     assert len(beat.calls) == 1
-    assert beat.calls[0]["task_id"] == "t1"
-    assert beat.calls[0]["intent"] == "do t1"
+    assert beat.calls[0]["task_id"] == uid("t1")
+    assert beat.calls[0]["intent"] == f"do {uid('t1')}"
 
 
-async def test_delegated_beat_carries_parent_objective_context(ledger: SqliteLedger) -> None:
-    ledger.employees.create(Employee(id="e1", name="e1", role="engineer"))
-    ledger.tasks.submit(Task(id="parent", intent="Build SQLite click ingestion keyed by event id"))
+async def test_delegated_beat_carries_parent_objective_context(ledger: Ledger) -> None:
+    ledger.employees.create(Employee(id=uid("e1"), name=uid("e1"), role="engineer"))
+    ledger.tasks.submit(
+        Task(id=uid("parent"), intent="Build SQLite click ingestion keyed by event id")
+    )
     ledger.tasks.submit(
         Task(
-            id="child",
+            id=uid("child"),
             intent="Implement analytics.py and its dedicated tests",
-            parent_id="parent",
+            parent_id=uid("parent"),
             depth=1,
-            assignee_employee_id="e1",
+            assignee_employee_id=uid("e1"),
         )
     )
-    ledger.tasks.set_status("child", TaskStatus.TODO)
-    assert ledger.tasks.checkout("child", employee_id="e1", run_id="r1")
+    ledger.tasks.set_status(uid("child"), TaskStatus.TODO)
+    assert ledger.tasks.checkout(uid("child"), employee_id=uid("e1"), run_id=uid("r1"))
     ledger.wakes.enqueue(
         Wake(
-            id="w1",
-            employee_id="e1",
+            id=uid("w1"),
+            employee_id=uid("e1"),
             reason=WakeReason.TASK_ASSIGNED,
-            payload={"task_id": "child"},
+            payload={"task_id": uid("child")},
         )
     )
     (wake,) = ledger.wakes.claim(limit=1)
     beat = _FakeBeat(passed=True)
 
-    await _wired(ledger, beat).run_beat(wake, run_id="r1", now=_NOW)
+    await _wired(ledger, beat).run_beat(wake, run_id=uid("r1"), now=_NOW)
 
     intent = str(beat.calls[0]["intent"])
     assert intent.startswith("Implement analytics.py and its dedicated tests")
@@ -245,7 +252,7 @@ async def test_delegated_beat_carries_parent_objective_context(ledger: SqliteLed
     assert "Do not expand beyond the assigned child scope" in intent
 
 
-async def test_errored_beat_strands_task_to_recovery(ledger: SqliteLedger) -> None:
+async def test_errored_beat_strands_task_to_recovery(ledger: Ledger) -> None:
     wake = _setup_task(ledger)
     outcome = BeatOutcome(
         passed=False,
@@ -253,69 +260,73 @@ async def test_errored_beat_strands_task_to_recovery(ledger: SqliteLedger) -> No
         outcome={"error": "RunTaskError('boom')", "phase": "sprint"},
     )
     sched = _wired(ledger, _CannedBeat(outcome))
-    await sched.run_beat(wake, run_id="r1", now=_NOW)
+    await sched.run_beat(wake, run_id=uid("r1"), now=_NOW)
 
-    task = ledger.tasks.get("t1")
+    task = ledger.tasks.get(uid("t1"))
     assert task is not None
     assert task.status is TaskStatus.BLOCKED  # stranded, not a DoD failure
-    assert task.assignee_employee_id == "e1"  # owner preserved
-    run = ledger.runs.get("r1")
+    assert task.assignee_employee_id == uid("e1")  # owner preserved
+    run = ledger.runs.get(uid("r1"))
     assert run is not None and run.status is RunStatus.FAILED
-    action = ledger.recovery_actions.active_for_source("t1")
+    action = ledger.recovery_actions.active_for_source(uid("t1"))
     assert action is not None
     assert action.kind is RecoveryKind.STRANDED
     assert action.cause == "run_task_error"
     assert action.evidence["phase"] == "sprint"  # the phase names where the loop broke
 
 
-async def test_errored_beat_records_no_dod_verdict(ledger: SqliteLedger) -> None:
+async def test_errored_beat_records_no_dod_verdict(ledger: Ledger) -> None:
     # an engine fault is not a DoD verdict — the dod row must stay pending (never recorded failed).
-    eid, tid = "e1", "t1"
+    eid, tid = uid("e1"), uid("t1")
     ledger.employees.create(Employee(id=eid, name=eid, role="engineer"))
     ledger.tasks.submit(Task(id=tid, intent="ship it", assignee_employee_id=eid))
     ledger.tasks.set_status(tid, TaskStatus.TODO)
     ledger.dod.create(tid, _command_verifier())
-    assert ledger.tasks.checkout(tid, employee_id=eid, run_id="r1")
+    assert ledger.tasks.checkout(tid, employee_id=eid, run_id=uid("r1"))
     ledger.wakes.enqueue(
-        Wake(id="w1", employee_id=eid, reason=WakeReason.TASK_ASSIGNED, payload={"task_id": tid})
+        Wake(
+            id=uid("w1"), employee_id=eid, reason=WakeReason.TASK_ASSIGNED, payload={"task_id": tid}
+        )
     )
     (wake,) = ledger.wakes.claim(limit=1)
     outcome = BeatOutcome(
         passed=False, disposition=BeatDisposition.ERRORED, outcome={"phase": "plan"}
     )
-    await _wired(ledger, _CannedBeat(outcome)).run_beat(wake, run_id="r1", now=_NOW)
+    await _wired(ledger, _CannedBeat(outcome)).run_beat(wake, run_id=uid("r1"), now=_NOW)
     dod = ledger.dod.get_for_task(tid)
     assert dod is not None
     assert dod.status is DodStatus.PENDING
 
 
-async def test_errored_beat_releases_locks(ledger: SqliteLedger) -> None:
+async def test_errored_beat_releases_locks(ledger: Ledger) -> None:
     wake = _setup_task(ledger)
     outcome = BeatOutcome(
         passed=False, disposition=BeatDisposition.ERRORED, outcome={"phase": "plan"}
     )
-    await _wired(ledger, _CannedBeat(outcome)).run_beat(wake, run_id="r1", now=_NOW)
-    task = ledger.tasks.get("t1")
+    await _wired(ledger, _CannedBeat(outcome)).run_beat(wake, run_id=uid("r1"), now=_NOW)
+    task = ledger.tasks.get(uid("t1"))
     assert task is not None
     assert task.checkout_run_id is None
     assert task.execution_run_id is None
 
 
-async def test_cancelled_beat_returns_task_to_pre_beat_state(ledger: SqliteLedger) -> None:
+async def test_cancelled_beat_returns_task_to_pre_beat_state(ledger: Ledger) -> None:
     wake = _setup_task(ledger)
     outcome = BeatOutcome(
         passed=False, disposition=BeatDisposition.CANCELLED, outcome={"cancelled": "budget"}
     )
     sched = _wired(ledger, _CannedBeat(outcome))
-    await sched.run_beat(wake, run_id="r1", now=_NOW)
+    await sched.run_beat(wake, run_id=uid("r1"), now=_NOW)
 
-    task = ledger.tasks.get("t1")
+    task = ledger.tasks.get(uid("t1"))
     assert task is not None
     assert task.status is TaskStatus.TODO  # back to dispatchable, its pre-beat state
     assert task.checkout_run_id is None  # lock released
-    run = ledger.runs.get("r1")
+    run = ledger.runs.get(uid("r1"))
     assert run is not None and run.status is RunStatus.CANCELLED
-    assert ledger.recovery_actions.active_for_source("t1") is None  # cancel opens no recovery card
+    assert (
+        ledger.recovery_actions.active_for_source(uid("t1")) is None
+    )  # cancel opens no recovery card
 
 
 def _command_verifier() -> object:

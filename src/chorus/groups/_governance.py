@@ -26,7 +26,7 @@ from chorus.ledger import (
     ApprovalSubjectKind,
     BudgetPolicy,
     BudgetScope,
-    SqliteLedger,
+    Ledger,
     StaffingRequest,
     StaffingRequestStatus,
     WorkforcePlan,
@@ -52,7 +52,7 @@ class GovernanceFacade:
 
     def __init__(
         self,
-        ledger: SqliteLedger,
+        ledger: Ledger,
         workforce: Workforce,
         roles: RoleRegistry,
         policy: GovernancePolicy,
@@ -171,7 +171,7 @@ class GovernanceFacade:
     def _create_employee_budget(self, employee_id: str, amount_cents: int) -> None:
         self._ledger.budget_policies.create(
             BudgetPolicy(
-                id=mint_id("bp"),
+                id=mint_id(),
                 scope_type=BudgetScope.EMPLOYEE,
                 scope_id=employee_id,
                 amount=amount_cents,

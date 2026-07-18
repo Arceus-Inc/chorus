@@ -15,11 +15,14 @@ Skips cleanly (exit 0) when those env vars are unset.
 from __future__ import annotations
 
 import os
+import uuid
+
+_EXAMPLE_COMPANY = str(uuid.uuid5(uuid.NAMESPACE_URL, "chorus-example"))  # one stable demo org
 import sys
 import tempfile
 from pathlib import Path
 
-from chorus.ledger import SqliteLedger
+from chorus.ledger import Ledger
 from chorus.workforce import Employee
 from chorus_cli._beats import default_pricing_from_env
 from chorus_cli._chat import ChatRenderBus, ensure_task
@@ -37,7 +40,10 @@ def main() -> int:
         return 0
 
     work = Path(tempfile.mkdtemp(prefix="chorus-role-chat-"))
-    ledger = SqliteLedger.open(":memory:")
+    ledger = Ledger.open(
+        os.environ.get("CHORUS_LEDGER_DSN", "postgresql://localhost/chorus"),
+        company_id=_EXAMPLE_COMPANY,
+    )
     try:
         ledger.employees.create(Employee(id="ada", name="Ada", role="backend_engineer"))
         render = ChatRenderBus(out=sys.stdout)
@@ -61,7 +67,9 @@ def main() -> int:
 
         hits = sorted(p for p in work.rglob("hello.txt"))
         if hits:
-            print(f"\nOK: engineer wrote {hits[0]} -> {hits[0].read_text(encoding='utf-8').strip()!r}")
+            print(
+                f"\nOK: engineer wrote {hits[0]} -> {hits[0].read_text(encoding='utf-8').strip()!r}"
+            )
         else:
             files = sorted(str(p.relative_to(work)) for p in work.rglob("*") if p.is_file())
             print(f"\nprobe: no hello.txt this run (model non-determinism). workdir files: {files}")

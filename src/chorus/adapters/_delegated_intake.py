@@ -12,7 +12,7 @@ from dream.contracts.delegation import (
 
 if TYPE_CHECKING:
     from chorus.facade import Chorus
-    from chorus.ledger import SqliteLedger
+    from chorus.ledger import Ledger
 
 
 class DelegatedIntakeAdapter:
@@ -21,7 +21,7 @@ class DelegatedIntakeAdapter:
     def __init__(
         self,
         chorus: Chorus,
-        ledger: SqliteLedger,
+        ledger: Ledger,
         *,
         company_id: str,
     ) -> None:
@@ -31,9 +31,7 @@ class DelegatedIntakeAdapter:
         self._ledger = ledger
         self._selector = LeadSelector(ledger, company_id=company_id)
 
-    def submit_delegated(
-        self, request: DelegatedWorkRequest
-    ) -> DelegatedWorkRef | StaffingBlocked:
+    def submit_delegated(self, request: DelegatedWorkRequest) -> DelegatedWorkRef | StaffingBlocked:
         """Return the original durable identities on retry, or create them once."""
         existing = self._existing_ref(request.origin_fingerprint)
         if existing is not None:
@@ -57,12 +55,10 @@ class DelegatedIntakeAdapter:
             delegation_spend_limit_cents=request.spend_limit_cents,
         )
         persisted = self._ledger.tasks.get(task.id)
-        if (
-            persisted is None
-            or persisted.team_id is None
-            or persisted.assignee_employee_id is None
-        ):
-            raise RuntimeError("delegated root was created without durable team and lead identities")
+        if persisted is None or persisted.team_id is None or persisted.assignee_employee_id is None:
+            raise RuntimeError(
+                "delegated root was created without durable team and lead identities"
+            )
         return DelegatedWorkRef(
             root_task_id=persisted.id,
             team_id=persisted.team_id,
@@ -74,9 +70,7 @@ class DelegatedIntakeAdapter:
 
         if not origin_fingerprint:
             return None
-        task = self._ledger.tasks.find_by_origin(
-            OriginKind.HORIZON_INTAKE, origin_fingerprint
-        )
+        task = self._ledger.tasks.find_by_origin(OriginKind.HORIZON_INTAKE, origin_fingerprint)
         if task is None:
             return None
         if task.team_id is None or task.assignee_employee_id is None:

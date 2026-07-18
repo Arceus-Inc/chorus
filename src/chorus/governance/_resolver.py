@@ -32,7 +32,7 @@ from chorus.ledger import (
 )
 
 if TYPE_CHECKING:
-    from chorus.ledger import SqliteLedger
+    from chorus.ledger import Ledger
 
 _TERMINAL = frozenset({TaskStatus.DONE, TaskStatus.CANCELLED, TaskStatus.REJECTED})
 
@@ -57,7 +57,7 @@ class ResolveOutcome:
 class GovernanceResolver:
     """Open and resolve governed-action approvals over a ledger, dispatching to handlers (spec 04 §5)."""
 
-    def __init__(self, ledger: SqliteLedger, registry: GovernanceRegistry | None = None) -> None:
+    def __init__(self, ledger: Ledger, registry: GovernanceRegistry | None = None) -> None:
         self._ledger = ledger
         self._registry = registry or GovernanceRegistry.from_actions(default_actions(ledger))
 
@@ -77,7 +77,7 @@ class GovernanceResolver:
         The exact-once index rejects a second open gate on the same subject (a duplicate raises)."""
         handler = self._registry.get(action)
         approval = Approval(
-            id=mint_id("ap"),
+            id=mint_id(),
             subject_kind=subject_kind,
             subject_id=subject_id,
             reason=reason,
@@ -180,7 +180,7 @@ class GovernanceResolver:
     def _audit(self, verb: ActivityVerb, approval: Approval, *, actor: str | None) -> None:
         self._ledger.activity.append(
             Activity(
-                id=mint_id("act"),
+                id=mint_id(),
                 verb=verb,
                 subject_kind=approval.subject_kind.value,
                 subject_id=approval.subject_id,

@@ -7,7 +7,7 @@ from chorus.ledger import (
     Artifact,
     ArtifactRevision,
     ArtifactType,
-    SqliteLedger,
+    Ledger,
     Task,
     TaskPriority,
 )
@@ -141,11 +141,11 @@ def _eligible(ctx: CommandContext) -> LoopSignal:
     return LoopSignal.CONTINUE
 
 
-def _accepted_plan(ledger: SqliteLedger, parent_id: str) -> str:
+def _accepted_plan(ledger: Ledger, parent_id: str) -> str:
     """Record a minimal accepted plan revision the decomposition claim references (spec 02 §4)."""
-    plan = Artifact(id=mint_id("plan"), task_id=parent_id, type=ArtifactType.DOC)
+    plan = Artifact(id=mint_id(), task_id=parent_id, type=ArtifactType.DOC)
     ledger.artifacts.create(plan)
-    revision = ArtifactRevision(id=mint_id("rev"), artifact_id=plan.id)
+    revision = ArtifactRevision(id=mint_id(), artifact_id=plan.id)
     ledger.artifact_revisions.record(revision)
     return revision.id
 
@@ -169,7 +169,7 @@ def _decompose(ctx: CommandContext) -> LoopSignal:
         ctx.out.error(f"no such task: {parent_id!r}")
         return LoopSignal.CONTINUE
     revision_id = _accepted_plan(ledger, parent_id)  # the manager's accepted plan (spec 02 §4)
-    child = Task(id=mint_id("task"), intent=child_intent)
+    child = Task(id=mint_id(), intent=child_intent)
     outcome = decompose(
         ledger,
         source_task_id=parent_id,

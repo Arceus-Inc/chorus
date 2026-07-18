@@ -9,6 +9,7 @@ import pytest
 
 from chorus.events import Event, EventKind
 from chorus.observability import EventBus, FanoutBus
+from chorus.testing import uid
 
 pytestmark = pytest.mark.unit
 
@@ -17,9 +18,9 @@ def _event(kind: EventKind = EventKind.RUN_STARTED) -> Event:
     return Event(
         kind=kind,
         at=datetime(2026, 6, 17, 18, 0, tzinfo=UTC),
-        task_id="task_1",
+        task_id=uid("task_1"),
         employee_id="employee",
-        run_id="run_1",
+        run_id=uid("run_1"),
         payload={"phase": "demo"},
     )
 
@@ -37,8 +38,8 @@ def test_event_bus_appends_jsonl_and_replays_events(tmp_path) -> None:  # type: 
             "employee_id": "employee",
             "kind": "run.started",
             "payload": {"phase": "demo"},
-            "run_id": "run_1",
-            "task_id": "task_1",
+            "run_id": uid("run_1"),
+            "task_id": uid("task_1"),
             "trace_id": None,
         }
     ]

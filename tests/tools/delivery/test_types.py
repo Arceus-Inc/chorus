@@ -10,6 +10,7 @@ import dataclasses
 
 import pytest
 
+from chorus.testing import uid
 from chorus_tools._go_live import GoLiveAction
 from chorus_tools.delivery import DeliveryError, DeliveryRecord, PublishedRef
 
@@ -19,14 +20,14 @@ pytestmark = pytest.mark.unit
 def _ref() -> PublishedRef:
     return PublishedRef(
         backend="strapi",
-        ref_id="doc123",
+        ref_id=uid("doc123"),
         url="http://localhost:1337/blog/#/post/doc123",
     )
 
 
 def _record() -> DeliveryRecord:
     return DeliveryRecord(
-        approval_id="apr_1",
+        approval_id=uid("apr_1"),
         action=GoLiveAction.PUBLISH,
         target="blog",
         published=_ref(),
@@ -45,7 +46,7 @@ class TestPublishedRef:
 
     def test_rejects_blank_backend(self) -> None:
         with pytest.raises(ValueError, match="backend"):
-            PublishedRef(backend="", ref_id="doc1", url="u")
+            PublishedRef(backend="", ref_id=uid("doc1"), url="u")
 
 
 class TestDeliveryRecord:
@@ -61,11 +62,11 @@ class TestDeliveryRecord:
     def test_as_dict_is_flat_and_json_safe(self) -> None:
         d = _record().as_dict()
         assert d == {
-            "approval_id": "apr_1",
+            "approval_id": uid("apr_1"),
             "action": "publish",
             "target": "blog",
             "backend": "strapi",
-            "ref_id": "doc123",
+            "ref_id": uid("doc123"),
             "url": "http://localhost:1337/blog/#/post/doc123",
         }
 

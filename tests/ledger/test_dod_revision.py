@@ -9,79 +9,80 @@ from __future__ import annotations
 
 import pytest
 
-from chorus.ledger import DodStatus, SqliteLedger, Task, TaskStatus
+from chorus.ledger import DodStatus, Ledger, Task, TaskStatus
 from chorus.outcomes import DoDKind, ReviewedBuild, Verifier
+from chorus.testing import uid
 
 pytestmark = pytest.mark.integration
 
 
-def test_apply_revision_bumps_revision_and_swaps_the_verifier(ledger: SqliteLedger) -> None:
-    ledger.tasks.submit(Task(id="t1", intent="ship", status=TaskStatus.TODO))
-    ledger.dod.create("t1", Verifier.command("pytest"))
-    ledger.dod.apply_revision("t1", Verifier.command("pytest && ruff check"))
+def test_apply_revision_bumps_revision_and_swaps_the_verifier(ledger: Ledger) -> None:
+    ledger.tasks.submit(Task(id=uid("t1"), intent="ship", status=TaskStatus.TODO))
+    ledger.dod.create(uid("t1"), Verifier.command("pytest"))
+    ledger.dod.apply_revision(uid("t1"), Verifier.command("pytest && ruff check"))
 
-    dod = ledger.dod.get_for_task("t1")
+    dod = ledger.dod.get_for_task(uid("t1"))
     assert dod is not None and dod.revision == 2
-    verifier = ledger.dod.verifier_for_task("t1")
+    verifier = ledger.dod.verifier_for_task(uid("t1"))
     assert verifier is not None and verifier.kind is DoDKind.COMMAND
     assert verifier.verification_steps()[0].command == "pytest && ruff check"
 
 
-def test_apply_revision_preserves_recorded_verdict(ledger: SqliteLedger) -> None:
+def test_apply_revision_preserves_recorded_verdict(ledger: Ledger) -> None:
     # the in-flight invariant: a revision swaps the bar but never re-judges already-recorded evidence.
-    ledger.tasks.submit(Task(id="t1", intent="ship", status=TaskStatus.TODO))
-    dod = ledger.dod.create("t1", Verifier.command("pytest"))
+    ledger.tasks.submit(Task(id=uid("t1"), intent="ship", status=TaskStatus.TODO))
+    dod = ledger.dod.create(uid("t1"), Verifier.command("pytest"))
     ledger.dod.record_verdict(dod.id, DodStatus.PASSED, verdict={"ok": True})
-    ledger.dod.apply_revision("t1", Verifier.command("pytest && ruff check"))
+    ledger.dod.apply_revision(uid("t1"), Verifier.command("pytest && ruff check"))
 
-    after = ledger.dod.get_for_task("t1")
+    after = ledger.dod.get_for_task(uid("t1"))
     assert after is not None
     assert after.verdict == {"ok": True}  # the recorded evidence is untouched by a revision
     assert after.status is DodStatus.PASSED
 
 
 def test_propose_revision_stages_without_touching_the_in_force_verifier(
-    ledger: SqliteLedger,
+    ledger: Ledger,
 ) -> None:
-    ledger.tasks.submit(Task(id="t1", intent="ship", status=TaskStatus.TODO))
-    ledger.dod.create("t1", Verifier.reviewed_build())
-    ledger.dod.propose_revision("t1", Verifier.command("pytest"))  # a loosen, staged
+    ledger.tasks.submit(Task(id=uid("t1"), intent="ship", status=TaskStatus.TODO))
+    ledger.dod.create(uid("t1"), Verifier.reviewed_build())
+    ledger.dod.propose_revision(uid("t1"), Verifier.command("pytest"))  # a loosen, staged
 
-    dod = ledger.dod.get_for_task("t1")
+    dod = ledger.dod.get_for_task(uid("t1"))
     assert dod is not None
     assert dod.revision == 1  # not bumped yet
-    assert ledger.dod.verifier_for_task("t1").kind is DoDKind.REVIEWED_BUILD  # type: ignore[union-attr]
+    assert ledger.dod.verifier_for_task(uid("t1")).kind is DoDKind.REVIEWED_BUILD  # type: ignore[union-attr]
     assert dod.proposed_revision is not None  # the staged loosen
 
 
-def test_apply_proposed_revision_promotes_and_clears(ledger: SqliteLedger) -> None:
-    ledger.tasks.submit(Task(id="t1", intent="ship", status=TaskStatus.TODO))
-    ledger.dod.create("t1", Verifier.reviewed_build())
-    ledger.dod.propose_revision("t1", Verifier.command("pytest"))
-    ledger.dod.apply_proposed_revision("t1")
+def test_apply_proposed_revision_promotes_and_clears(ledger: Ledger) -> None:
+    ledger.tasks.submit(Task(id=uid("t1"), intent="ship", status=TaskStatus.TODO))
+    ledger.dod.create(uid("t1"), Verifier.reviewed_build())
+    ledger.dod.propose_revision(uid("t1"), Verifier.command("pytest"))
+    ledger.dod.apply_proposed_revision(uid("t1"))
 
-    dod = ledger.dod.get_for_task("t1")
+    dod = ledger.dod.get_for_task(uid("t1"))
     assert dod is not None
     assert dod.revision == 2
     assert dod.proposed_revision is None  # cleared
-    assert ledger.dod.verifier_for_task("t1").kind is DoDKind.COMMAND  # type: ignore[union-attr]
+    assert ledger.dod.verifier_for_task(uid("t1")).kind is DoDKind.COMMAND  # type: ignore[union-attr]
 
 
-def test_clear_proposed_drops_the_staged_revision(ledger: SqliteLedger) -> None:
-    ledger.tasks.submit(Task(id="t1", intent="ship", status=TaskStatus.TODO))
-    ledger.dod.create("t1", Verifier.reviewed_build())
-    ledger.dod.propose_revision("t1", Verifier.command("pytest"))
-    ledger.dod.clear_proposed("t1")
+def test_clear_proposed_drops_the_staged_revision(ledger: Ledger) -> None:
+    ledger.tasks.submit(Task(id=uid("t1"), intent="ship", status=TaskStatus.TODO))
+    ledger.dod.create(uid("t1"), Verifier.reviewed_build())
+    ledger.dod.propose_revision(uid("t1"), Verifier.command("pytest"))
+    ledger.dod.clear_proposed(uid("t1"))
 
-    dod = ledger.dod.get_for_task("t1")
+    dod = ledger.dod.get_for_task(uid("t1"))
     assert dod is not None and dod.proposed_revision is None
-    assert ledger.dod.verifier_for_task("t1").kind is DoDKind.REVIEWED_BUILD  # type: ignore[union-attr]
+    assert ledger.dod.verifier_for_task(uid("t1")).kind is DoDKind.REVIEWED_BUILD  # type: ignore[union-attr]
 
 
-def test_reviewed_build_evidence_profile_round_trips(ledger: SqliteLedger) -> None:
-    ledger.tasks.submit(Task(id="t1", intent="ship", status=TaskStatus.TODO))
-    ledger.dod.create("t1", Verifier.reviewed_build(evidence_profile="tdd_review_v1"))
+def test_reviewed_build_evidence_profile_round_trips(ledger: Ledger) -> None:
+    ledger.tasks.submit(Task(id=uid("t1"), intent="ship", status=TaskStatus.TODO))
+    ledger.dod.create(uid("t1"), Verifier.reviewed_build(evidence_profile="tdd_review_v1"))
 
-    verifier = ledger.dod.verifier_for_task("t1")
+    verifier = ledger.dod.verifier_for_task(uid("t1"))
     assert verifier is not None and isinstance(verifier.spec, ReviewedBuild)
     assert verifier.spec.evidence_profile == "tdd_review_v1"

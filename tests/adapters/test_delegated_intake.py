@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
-from pathlib import Path
 from threading import Barrier
 
 import pytest
@@ -22,28 +21,29 @@ from chorus.ledger import (
     DelegationContractStatus,
     ExecutionMode,
     Goal,
+    Ledger,
     ManagementProfile,
     OriginKind,
-    SqliteLedger,
     TaskPriority,
     TeamStatus,
 )
 from chorus.observability import EventBus, LedgerInspector
 from chorus.roles import RoleRegistry, default_roles
+from chorus.testing import open_test_ledger, uid
 from chorus.workforce import Employee
 from chorus.workforce._ledger import LedgerWorkforce
 
 
 @pytest.fixture
-def ledger() -> Iterator[SqliteLedger]:
-    store = SqliteLedger.open(":memory:")
+def ledger() -> Iterator[Ledger]:
+    store = open_test_ledger()
     try:
         yield store
     finally:
         store.close()
 
 
-def _chorus(ledger: SqliteLedger) -> Chorus:
+def _chorus(ledger: Ledger) -> Chorus:
     return Chorus(
         ledger=ledger,
         workforce=LedgerWorkforce(ledger.employees),
@@ -57,7 +57,7 @@ def _chorus(ledger: SqliteLedger) -> Chorus:
     )
 
 
-def _lead(ledger: SqliteLedger, employee_id: str = "lead") -> Employee:
+def _lead(ledger: Ledger, employee_id: str = "lead") -> Employee:
     ledger.employees.create(Employee(id=employee_id, name=employee_id.title(), role="engineer"))
     ledger.employees.create(
         Employee(
@@ -89,7 +89,7 @@ def _lead(ledger: SqliteLedger, employee_id: str = "lead") -> Employee:
 def _request(*, fingerprint: str = "goal-8:v1") -> DelegatedWorkRequest:
     return DelegatedWorkRequest(
         intent="Ship M8",
-        goal_id="goal-8",
+        goal_id=uid("goal-8"),
         priority="high",
         requirements=(StaffingRequirement("engineer"),),
         max_team_size=3,
@@ -98,9 +98,9 @@ def _request(*, fingerprint: str = "goal-8:v1") -> DelegatedWorkRequest:
     )
 
 
-def test_adapter_conforms_and_creates_root_delegation(ledger: SqliteLedger) -> None:
+def test_adapter_conforms_and_creates_root_delegation(ledger: Ledger) -> None:
     lead = _lead(ledger)
-    ledger.goals.create(Goal(id="goal-8", title="Ship M8"))
+    ledger.goals.create(Goal(id=uid("goal-8"), title="Ship M8"))
     adapter = DelegatedIntakeAdapter(_chorus(ledger), ledger, company_id="company")
 
     result = adapter.submit_delegated(_request())
@@ -127,9 +127,9 @@ def test_adapter_conforms_and_creates_root_delegation(ledger: SqliteLedger) -> N
     assert contract.spend_limit_cents == 20_000
 
 
-def test_same_origin_fingerprint_returns_same_durable_ref(ledger: SqliteLedger) -> None:
+def test_same_origin_fingerprint_returns_same_durable_ref(ledger: Ledger) -> None:
     _lead(ledger)
-    ledger.goals.create(Goal(id="goal-8", title="Ship M8"))
+    ledger.goals.create(Goal(id=uid("goal-8"), title="Ship M8"))
     adapter = DelegatedIntakeAdapter(_chorus(ledger), ledger, company_id="company")
 
     first = adapter.submit_delegated(_request())
@@ -142,22 +142,22 @@ def test_same_origin_fingerprint_returns_same_durable_ref(ledger: SqliteLedger) 
     assert ledger.delegation_contracts.get(first.root_task_id) is not None
 
 
-def test_no_eligible_lead_returns_blocked_without_mutation(ledger: SqliteLedger) -> None:
-    ledger.goals.create(Goal(id="goal-8", title="Ship M8"))
+def test_no_eligible_lead_returns_blocked_without_mutation(ledger: Ledger) -> None:
+    ledger.goals.create(Goal(id=uid("goal-8"), title="Ship M8"))
     adapter = DelegatedIntakeAdapter(_chorus(ledger), ledger, company_id="company")
 
     result = adapter.submit_delegated(_request())
 
     assert isinstance(result, StaffingBlocked)
-    assert result.goal_id == "goal-8"
+    assert result.goal_id == uid("goal-8")
     assert ledger.tasks.all() == []
     assert ledger.teams.list_active() == []
     assert ledger.wakes.queued() == []
 
 
-def test_retry_returns_original_lead_before_reselecting(ledger: SqliteLedger) -> None:
+def test_retry_returns_original_lead_before_reselecting(ledger: Ledger) -> None:
     original = _lead(ledger, "zulu")
-    ledger.goals.create(Goal(id="goal-8", title="Ship M8"))
+    ledger.goals.create(Goal(id=uid("goal-8"), title="Ship M8"))
     adapter = DelegatedIntakeAdapter(_chorus(ledger), ledger, company_id="company")
     first = adapter.submit_delegated(_request())
     assert isinstance(first, DelegatedWorkRef)
@@ -169,19 +169,17 @@ def test_retry_returns_original_lead_before_reselecting(ledger: SqliteLedger) ->
     assert retry == first
 
 
-def test_concurrent_retry_is_exact_once_across_connections_and_restart(
-    tmp_path: Path,
-) -> None:
-    db_path = tmp_path / "delegated-intake.db"
-    seed = SqliteLedger.open(str(db_path))
+def test_concurrent_retry_is_exact_once_across_connections_and_restart() -> None:
+    seed = open_test_ledger(company_id=uid("delegated-intake-restart"))
+    dsn = seed._conn._pg.info.dsn  # every "connection" below reopens this same database
     _lead(seed)
-    seed.goals.create(Goal(id="goal-8", title="Ship M8"))
+    seed.goals.create(Goal(id=uid("goal-8"), title="Ship M8"))
     seed.close()
 
     barrier = Barrier(2)
 
     def submit_from_connection(_: int) -> DelegatedWorkRef | StaffingBlocked:
-        store = SqliteLedger.open(str(db_path))
+        store = Ledger.open(dsn, company_id=uid("delegated-intake-restart"))
         adapter = DelegatedIntakeAdapter(_chorus(store), store, company_id="company")
         original = store.tasks.find_by_origin
         call_count = 0
@@ -206,7 +204,7 @@ def test_concurrent_retry_is_exact_once_across_connections_and_restart(
     assert isinstance(refs[0], DelegatedWorkRef)
     assert refs == [refs[0], refs[0]]
 
-    reopened = SqliteLedger.open(str(db_path))
+    reopened = Ledger.open(dsn, company_id=uid("delegated-intake-restart"))
     try:
         assert len(reopened.tasks.all()) == 1
         assert len(reopened.teams.list()) == 1

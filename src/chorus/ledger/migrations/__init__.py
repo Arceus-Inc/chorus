@@ -1,19 +1,6 @@
-"""The migration set the SDK ships (spec 01 §schema-versioning).
+"""Authored Postgres migrations — immutable ``NNNN_name.sql`` deltas over the frozen baseline.
 
-Migrations are plain ``*.sql`` files in this directory (Postgres / golang-migrate style), applied
-in filename order by the :class:`~chorus.ledger._migrations.MigrationRunner` and recorded in
-``schema_migrations``. **Add a migration by dropping a new numbered ``.sql`` file — no Python edit.**
-
-The *declarative* current schema lives in ``chorus.ledger.schema`` (the ``schema/`` folder); a
-parity test asserts that applying these migrations yields exactly that schema, so they never drift.
+Empty today: the baseline (``schema/*.sql``) subsumes all history. The first post-baseline schema
+change lands here as ``0002_<name>.sql`` (the baseline occupies id ``0001``). See
+``chorus.ledger._migrations`` for the applied-set rules and authoring conventions.
 """
-
-from __future__ import annotations
-
-from importlib.resources import files
-
-from chorus.ledger._migrations import Migration, load_migrations
-
-MIGRATIONS: tuple[Migration, ...] = load_migrations(files(__name__))
-
-__all__ = ["MIGRATIONS"]

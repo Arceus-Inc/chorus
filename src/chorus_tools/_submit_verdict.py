@@ -13,7 +13,7 @@ from dream.tools._context import ToolExecutionContext
 from pydantic import BaseModel, Field
 
 from chorus.heartbeat import BeatContext
-from chorus.ledger import SqliteLedger
+from chorus.ledger import Ledger
 from chorus.lifecycle import CapabilityService
 
 
@@ -54,7 +54,7 @@ class SubmitVerdictTool(BaseTool):
     declaration = ToolDeclaration(risk="safe", tier_required=0, timeout_seconds=30.0)
     input_model = SubmitVerdictInput
 
-    def __init__(self, ledger: SqliteLedger) -> None:
+    def __init__(self, ledger: Ledger) -> None:
         self._service = CapabilityService(ledger)
 
     async def execute(self, input: dict[str, object], ctx: ToolExecutionContext) -> ToolResult:

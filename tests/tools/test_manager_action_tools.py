@@ -14,21 +14,22 @@ from chorus.ledger import (
     DelegationContractStatus,
     ExecutionMode,
     Goal,
+    Ledger,
     ManagementProfile,
     Run,
     RunStatus,
-    SqliteLedger,
     Task,
     TaskStatus,
 )
 from chorus.lifecycle import CapabilityService, MissionTeamPolicy
 from chorus.lifecycle._capability import AssignTaskResult, SubmitTaskResult
+from chorus.testing import uid
 from chorus.workforce import Employee
 from chorus_tools import AssignTaskTool, SubmitTaskTool
 
 pytestmark = pytest.mark.integration
 
-REV = "run_mgr_integrate_1"
+REV = uid("run_mgr_integrate_1")
 
 
 def _ctx(working_dir: Path) -> object:
@@ -43,7 +44,7 @@ def _ctx(working_dir: Path) -> object:
     )
 
 
-def _seed(ledger: SqliteLedger) -> None:
+def _seed(ledger: Ledger) -> None:
     lead = ledger.employees.create(Employee(id="mgr", name="Mgr", role="engineer"))
     ledger.employees.create(Employee(id="ada", name="Ada", role="engineer", reports_to="mgr"))
     ledger.employees.create(Employee(id="bob", name="Bob", role="engineer", reports_to="mgr"))
@@ -59,24 +60,24 @@ def _seed(ledger: SqliteLedger) -> None:
             granted_by_user_id="operator",
         )
     )
-    ledger.goals.create(Goal(id="goal-M", title="Ship it"))
+    ledger.goals.create(Goal(id=uid("goal-M"), title="Ship it"))
     team_policy = MissionTeamPolicy(ledger)
-    team = team_policy.create_for_root(lead, "goal-M")
+    team = team_policy.create_for_root(lead, uid("goal-M"))
     team_policy.activate(team.id)
     ledger.tasks.submit(
         Task(
-            id="M",
+            id=uid("M"),
             intent="ship it",
             status=TaskStatus.TODO,
             execution_mode=ExecutionMode.DELEGATION,
             team_id=team.id,
             assignee_employee_id="mgr",
-            goal_id="goal-M",
+            goal_id=uid("goal-M"),
         )
     )
     ledger.delegation_contracts.create(
         DelegationContract(
-            task_id="M",
+            task_id=uid("M"),
             team_id=team.id,
             lead_employee_id="mgr",
             management_profile_version=1,
@@ -87,12 +88,12 @@ def _seed(ledger: SqliteLedger) -> None:
             status=DelegationContractStatus.INTEGRATING,
         )
     )
-    ledger.runs.create(Run(id=REV, employee_id="mgr", task_id="M", status=RunStatus.RUNNING))
+    ledger.runs.create(Run(id=REV, employee_id="mgr", task_id=uid("M"), status=RunStatus.RUNNING))
 
 
-def test_submit_task_tool_creates_one_child(ledger: SqliteLedger, tmp_path: Path) -> None:
+def test_submit_task_tool_creates_one_child(ledger: Ledger, tmp_path: Path) -> None:
     _seed(ledger)
-    BeatContext(task_id="M", run_id=REV, employee_id="mgr").write(tmp_path)
+    BeatContext(task_id=uid("M"), run_id=REV, employee_id="mgr").write(tmp_path)
 
     result = asyncio.run(
         SubmitTaskTool(ledger).execute(
@@ -105,15 +106,15 @@ def test_submit_task_tool_creates_one_child(ledger: SqliteLedger, tmp_path: Path
     child_id = result.structured["child_id"]
     child = ledger.tasks.get(child_id)
     assert child is not None
-    assert child.parent_id == "M"
+    assert child.parent_id == uid("M")
     assert child.assignee_employee_id == "ada"
-    assert ledger.dependencies.unresolved_blockers("M") == [child_id]
+    assert ledger.dependencies.unresolved_blockers(uid("M")) == [child_id]
 
 
-def test_submit_task_tool_rejects_non_report(ledger: SqliteLedger, tmp_path: Path) -> None:
+def test_submit_task_tool_rejects_non_report(ledger: Ledger, tmp_path: Path) -> None:
     _seed(ledger)
     ledger.employees.create(Employee(id="eve", name="Eve", role="engineer"))
-    BeatContext(task_id="M", run_id=REV, employee_id="mgr").write(tmp_path)
+    BeatContext(task_id=uid("M"), run_id=REV, employee_id="mgr").write(tmp_path)
 
     result = asyncio.run(
         SubmitTaskTool(ledger).execute(
@@ -124,12 +125,12 @@ def test_submit_task_tool_rejects_non_report(ledger: SqliteLedger, tmp_path: Pat
 
     assert result.is_error is True
     assert result.structured["unknown_assignees"] == ["eve"]
-    assert ledger.dependencies.unresolved_blockers("M") == []
+    assert ledger.dependencies.unresolved_blockers(uid("M")) == []
 
 
-def test_assign_task_tool_routes_existing_child(ledger: SqliteLedger, tmp_path: Path) -> None:
+def test_assign_task_tool_routes_existing_child(ledger: Ledger, tmp_path: Path) -> None:
     _seed(ledger)
-    BeatContext(task_id="M", run_id=REV, employee_id="mgr").write(tmp_path)
+    BeatContext(task_id=uid("M"), run_id=REV, employee_id="mgr").write(tmp_path)
     submit = asyncio.run(
         SubmitTaskTool(ledger).execute(
             {"label": "fix", "intent": "fix", "assignee": "ada"},
@@ -148,15 +149,22 @@ def test_assign_task_tool_routes_existing_child(ledger: SqliteLedger, tmp_path: 
     assert ledger.tasks.get(submit.structured["child_id"]).assignee_employee_id == "bob"  # type: ignore[union-attr]
 
 
-def test_assign_task_tool_rejects_non_child(ledger: SqliteLedger, tmp_path: Path) -> None:
+def test_assign_task_tool_rejects_non_child(ledger: Ledger, tmp_path: Path) -> None:
     _seed(ledger)
     ledger.tasks.submit(
-        Task(id="outside", intent="outside", status=TaskStatus.TODO, assignee_employee_id="ada")
+        Task(
+            id=uid("outside"),
+            intent=uid("outside"),
+            status=TaskStatus.TODO,
+            assignee_employee_id="ada",
+        )
     )
-    BeatContext(task_id="M", run_id=REV, employee_id="mgr").write(tmp_path)
+    BeatContext(task_id=uid("M"), run_id=REV, employee_id="mgr").write(tmp_path)
 
     result = asyncio.run(
-        AssignTaskTool(ledger).execute({"task_id": "outside", "assignee": "bob"}, _ctx(tmp_path))
+        AssignTaskTool(ledger).execute(
+            {"task_id": uid("outside"), "assignee": "bob"}, _ctx(tmp_path)
+        )
     )
 
     assert result.is_error is True
@@ -164,15 +172,15 @@ def test_assign_task_tool_rejects_non_child(ledger: SqliteLedger, tmp_path: Path
 
 
 def test_submit_tool_forwards_actor_and_execution_mode(
-    ledger: SqliteLedger, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ledger: Ledger, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _seed(ledger)
-    BeatContext(task_id="M", run_id=REV, employee_id="mgr").write(tmp_path)
+    BeatContext(task_id=uid("M"), run_id=REV, employee_id="mgr").write(tmp_path)
     captured: dict[str, object] = {}
 
     def fake_submit(self: CapabilityService, **kwargs: object) -> SubmitTaskResult:
         captured.update(kwargs)
-        return SubmitTaskResult(child_id="task-area")
+        return SubmitTaskResult(child_id=uid("task-area"))
 
     monkeypatch.setattr(CapabilityService, "submit_one", fake_submit)
     result = asyncio.run(
@@ -194,10 +202,10 @@ def test_submit_tool_forwards_actor_and_execution_mode(
 
 
 def test_assign_tool_surfaces_authority_denial(
-    ledger: SqliteLedger, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ledger: Ledger, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _seed(ledger)
-    BeatContext(task_id="M", run_id=REV, employee_id="mgr").write(tmp_path)
+    BeatContext(task_id=uid("M"), run_id=REV, employee_id="mgr").write(tmp_path)
 
     def fake_reassign(self: CapabilityService, **kwargs: object) -> AssignTaskResult:
         assert kwargs["assigned_by"] == "mgr"
@@ -206,7 +214,7 @@ def test_assign_tool_surfaces_authority_denial(
     monkeypatch.setattr(CapabilityService, "reassign", fake_reassign)
     result = asyncio.run(
         AssignTaskTool(ledger).execute(
-            {"task_id": "child", "assignee": "ada"},
+            {"task_id": uid("child"), "assignee": "ada"},
             _ctx(tmp_path),
         )
     )

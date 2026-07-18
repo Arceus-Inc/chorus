@@ -17,10 +17,11 @@ from typing import ClassVar
 
 import pytest
 
-from chorus.ledger import SqliteLedger, Task, TaskStatus
+from chorus.ledger import Ledger, Task, TaskStatus
 from chorus.outcomes import ArtifactType, DoDKind
 from chorus.roles import default_roles, role_beat_config
 from chorus.roles._manifest import Isolation, MemoryScope, PermissionMode, SandboxTier
+from chorus.testing import uid
 from chorus.workspace import CompanyWorkspace
 from chorus_employee import default_landers
 from chorus_employee.pm import (
@@ -37,7 +38,7 @@ pytestmark = pytest.mark.integration
 
 def _task(assignee: str | None) -> Task:
     return Task(
-        id="decide-brief",
+        id=uid("decide-brief"),
         intent="decide whether to build presence indicators next",
         status=TaskStatus.IN_PROGRESS,
         assignee_employee_id=assignee,
@@ -267,7 +268,7 @@ class TestPmLander:
         assert artifact.resource_ref["commit"]
 
     def test_lander_rederives_decision_json_from_the_ledger(
-        self, ledger: SqliteLedger, tmp_path: Path
+        self, ledger: Ledger, tmp_path: Path
     ) -> None:
         """At landing, decision.json is re-derived from the ledger — repairing a model clobber.
 
@@ -278,7 +279,7 @@ class TestPmLander:
         from chorus.lifecycle._capability import CapabilityService, ClaimDraft
 
         CapabilityService(ledger).record_decision(
-            task_id="decide-brief",
+            task_id=uid("decide-brief"),
             revision="r1",
             option="build presence indicators",
             rationale="run opacity is the top complaint",
@@ -327,8 +328,6 @@ class TestPmLander:
         with pytest.raises(ValueError):
             asyncio.run(pm_lander(tmp_path / "acme").land(_task(None), None))
 
-    def test_default_landers_registers_the_doc_lander(
-        self, ledger: SqliteLedger, tmp_path: Path
-    ) -> None:
+    def test_default_landers_registers_the_doc_lander(self, ledger: Ledger, tmp_path: Path) -> None:
         registry = default_landers(tmp_path, ledger=ledger)
         assert registry.get("doc") is not None

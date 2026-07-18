@@ -16,9 +16,10 @@ import pytest
 
 from chorus.heartbeat import Scheduler, Wake, WakeReason
 from chorus.heartbeat._beat import BeatOutcome
-from chorus.ledger import SqliteLedger, Task, TaskStatus
+from chorus.ledger import Ledger, Task, TaskStatus
 from chorus.outcomes import Artifact, ArtifactType, LanderRegistry, Verifier
 from chorus.roles import RoleRegistry, default_roles
+from chorus.testing import uid
 from chorus.workforce import Employee
 from chorus.workspace import CompanyWorkspace
 from chorus_employee import default_landers
@@ -63,23 +64,26 @@ class _RecordingLander:
         return Artifact(task_id=task.id, type=ArtifactType.PR, resource_ref={"branch": "chorus/e1"})
 
 
-def _seed(ledger: SqliteLedger) -> Employee:
-    employee = ledger.employees.create(
-        Employee(id="e1", name="e1", role="backend_engineer")
-    )
+def _seed(ledger: Ledger) -> Employee:
+    employee = ledger.employees.create(Employee(id="e1", name="e1", role="backend_engineer"))
     ledger.tasks.submit(
-        Task(id="t1", intent="ship", status=TaskStatus.TODO, assignee_employee_id="e1")
+        Task(id=uid("t1"), intent="ship", status=TaskStatus.TODO, assignee_employee_id="e1")
     )
     # An explicit objective DoD so the beat lands directly — these tests exercise the landing path, not
     # the backend engineer's reviewed-build gate (covered in test_m3_review.py).
-    ledger.dod.create("t1", Verifier.command("true"))
+    ledger.dod.create(uid("t1"), Verifier.command("true"))
     ledger.wakes.enqueue(
-        Wake(id="w1", employee_id="e1", reason=WakeReason.TASK_ASSIGNED, payload={"task_id": "t1"})
+        Wake(
+            id=uid("w1"),
+            employee_id="e1",
+            reason=WakeReason.TASK_ASSIGNED,
+            payload={"task_id": uid("t1")},
+        )
     )
     return employee
 
 
-async def _run(ledger: SqliteLedger, *, landers: LanderRegistry | None) -> None:
+async def _run(ledger: Ledger, *, landers: LanderRegistry | None) -> None:
     sched = Scheduler(
         ledger=ledger,
         workforce=_FakeWorkforce(_seed(ledger)),
@@ -92,26 +96,26 @@ async def _run(ledger: SqliteLedger, *, landers: LanderRegistry | None) -> None:
     await sched.drain()
 
 
-async def test_passed_beat_records_the_role_artifact(ledger: SqliteLedger) -> None:
+async def test_passed_beat_records_the_role_artifact(ledger: Ledger) -> None:
     lander = _RecordingLander()
     await _run(ledger, landers=LanderRegistry.from_landers([lander]))
 
-    assert lander.landed == ["t1"]
-    artifacts = ledger.artifacts.list_for_task("t1")
+    assert lander.landed == [uid("t1")]
+    artifacts = ledger.artifacts.list_for_task(uid("t1"))
     assert len(artifacts) == 1 and artifacts[0].type.value == "pr"  # recorded on the ledger
     assert artifacts[0].resource_ref == {"branch": "chorus/e1"}
-    assert ledger.tasks.get("t1").status is TaskStatus.DONE  # type: ignore[union-attr]
+    assert ledger.tasks.get(uid("t1")).status is TaskStatus.DONE  # type: ignore[union-attr]
 
 
-async def test_no_lander_still_finalises_done(ledger: SqliteLedger) -> None:
+async def test_no_lander_still_finalises_done(ledger: Ledger) -> None:
     await _run(ledger, landers=None)  # back-compat: nothing to land
 
-    assert ledger.artifacts.list_for_task("t1") == []
-    assert ledger.tasks.get("t1").status is TaskStatus.DONE  # type: ignore[union-attr]
+    assert ledger.artifacts.list_for_task(uid("t1")) == []
+    assert ledger.tasks.get(uid("t1")).status is TaskStatus.DONE  # type: ignore[union-attr]
 
 
 async def test_real_engineer_lander_records_a_pr_with_a_real_commit(
-    ledger: SqliteLedger, tmp_path: Path
+    ledger: Ledger, tmp_path: Path
 ) -> None:
     # the real engineering lander over a real worktree: full kernel landing, no fakes
     company_root = tmp_path / "acme"
@@ -129,7 +133,7 @@ async def test_real_engineer_lander_records_a_pr_with_a_real_commit(
     await sched.tick(_NOW)
     await sched.drain()
 
-    artifacts = ledger.artifacts.list_for_task("t1")
+    artifacts = ledger.artifacts.list_for_task(uid("t1"))
     assert len(artifacts) == 1
     pr = artifacts[0]
     assert pr.type.value == "pr"

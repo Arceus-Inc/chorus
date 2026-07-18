@@ -22,7 +22,7 @@ from dream.tools._context import ToolExecutionContext
 from pydantic import BaseModel, Field, ValidationError
 
 from chorus.heartbeat import BeatContext
-from chorus.ledger import SqliteLedger
+from chorus.ledger import Ledger
 from chorus.ledger._models import Claim, DecisionRecord, RejectedAlternative
 from chorus.lifecycle import CapabilityService, ClaimDraft
 from chorus_employee.pm._decision import clears_floor, render_decision_mirror
@@ -82,7 +82,7 @@ class RecordDecisionTool(BaseTool):
     declaration = ToolDeclaration(risk="mutating", tier_required=1, timeout_seconds=30.0)
     input_model = RecordDecisionInput
 
-    def __init__(self, ledger: SqliteLedger) -> None:
+    def __init__(self, ledger: Ledger) -> None:
         self._service = CapabilityService(ledger)
 
     async def execute(self, input: dict[str, object], ctx: ToolExecutionContext) -> ToolResult:

@@ -1,7 +1,7 @@
 """The §5 governance suite — all four governed actions + revision_requested, end to end.
 
 Governance is a pure ledger mutation (no model), so this runs deterministically with no API keys: each
-scenario opens a real gate over a real :class:`SqliteLedger` and resolves it through the live
+scenario opens a real gate over a real :class:`Ledger` and resolves it through the live
 :class:`GovernanceResolver`, capturing the subject's status before and after. Writes
 ``reports/m3-governance.html``.
 
@@ -10,9 +10,27 @@ scenario opens a real gate over a real :class:`SqliteLedger` and resolves it thr
 
 from __future__ import annotations
 
+from chorus.ids import derive_id
+
+_demo_salt = {"n": 0}  # bumped per ledger open — scenario reruns in one database can't collide
+
+
+def _bump_demo_salt() -> None:
+    _demo_salt["n"] += 1
+
+
+def _id(name: str) -> str:
+    """A readable per-scenario entity id (deterministic within a scenario, unique across them)."""
+    return derive_id("demo", str(_demo_salt["n"]), name)
+
+
+import os
+import uuid
+
+_EXAMPLE_COMPANY = str(uuid.uuid5(uuid.NAMESPACE_URL, "chorus-example"))  # one stable demo org
+
 import html
 import sys
-import tempfile
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -24,7 +42,7 @@ from chorus.ledger import (
     ApprovalSubjectKind,
     Artifact,
     ArtifactType,
-    SqliteLedger,
+    Ledger,
     Task,
     TaskStatus,
 )
@@ -46,8 +64,12 @@ class Scenario:
     note: str
 
 
-def _ledger() -> SqliteLedger:
-    return SqliteLedger.open(str(Path(tempfile.mkdtemp(prefix="gov-")) / "ledger.db"))
+def _ledger() -> Ledger:
+    _bump_demo_salt()
+    return Ledger.open(
+        os.environ.get("CHORUS_LEDGER_DSN", "postgresql://localhost/chorus"),
+        company_id=str(uuid.uuid4()),  # fresh org per scenario — slugs reset
+    )
 
 
 def _hire(decision: ApprovalDecision) -> Scenario:
@@ -65,7 +87,11 @@ def _hire(decision: ApprovalDecision) -> Scenario:
     )
     lg.close()
     return Scenario(
-        "hire_employee", decision.value, "employee ada", before, out.subject_status,
+        "hire_employee",
+        decision.value,
+        "employee ada",
+        before,
+        out.subject_status,
         "approve activates the pending hire; deny terminates it.",
     )
 
@@ -75,20 +101,29 @@ def _plan(decision: ApprovalDecision) -> Scenario:
     lg.employees.create(Employee(id="moe", name="moe", role="manager"))
     for emp in ("ada", "bob"):
         lg.employees.create(Employee(id=emp, name=emp, role="engineer", reports_to="moe"))
-    lg.tasks.submit(Task(id="G", intent="ship", status=TaskStatus.TODO))
-    assign_task(lg, "G", "moe")
+    lg.tasks.submit(Task(id=_id("G"), intent="ship", status=TaskStatus.TODO))
+    assign_task(lg, _id("G"), "moe")
     CapabilityService(lg).decompose(
-        parent_id="G", revision="r1",
-        children=[ChildPlan(label="api", intent="api", assignee="ada"),
-                  ChildPlan(label="ui", intent="ui", assignee="bob")],
+        parent_id=_id("G"),
+        revision=_id("r1"),
+        children=[
+            ChildPlan(label="api", intent="api", assignee="ada"),
+            ChildPlan(label="ui", intent="ui", assignee="bob"),
+        ],
     )
-    gate = GovernanceResolver(lg).open_plan_gate("G", reason="sign off the plan")
+    gate = GovernanceResolver(lg).open_plan_gate(_id("G"), reason="sign off the plan")
     before = "children blocked"
     GovernanceResolver(lg).resolve(gate.id, decision=decision, decided_by_user_id=_USER, now=_NOW)
-    after = ", ".join(f"{c.origin_fingerprint}={c.status.value}" for c in lg.tasks.children("G"))
+    after = ", ".join(
+        f"{c.origin_fingerprint}={c.status.value}" for c in lg.tasks.children(_id("G"))
+    )
     lg.close()
     return Scenario(
-        "plan_approval", decision.value, "task G plan", before, after,
+        "plan_approval",
+        decision.value,
+        "task G plan",
+        before,
+        after,
         "approve releases the children; revise cancels them and re-plans.",
     )
 
@@ -96,12 +131,14 @@ def _plan(decision: ApprovalDecision) -> Scenario:
 def _board(decision: ApprovalDecision) -> Scenario:
     lg = _ledger()
     lg.employees.create(Employee(id="ada", name="ada", role="engineer"))
-    lg.tasks.submit(Task(id="t1", intent="pr", status=TaskStatus.DONE, assignee_employee_id="ada"))
-    lg.artifacts.create(Artifact(id="ar1", task_id="t1", type=ArtifactType.PR))
+    lg.tasks.submit(
+        Task(id=_id("t1"), intent="pr", status=TaskStatus.DONE, assignee_employee_id="ada")
+    )
+    lg.artifacts.create(Artifact(id=_id("ar1"), task_id=_id("t1"), type=ArtifactType.PR))
     gate = GovernanceResolver(lg).open(
         action=ApprovalAction.BOARD_APPROVAL,
         subject_kind=ApprovalSubjectKind.ARTIFACT,
-        subject_id="ar1",
+        subject_id=_id("ar1"),
         reason="promote the PR",
     )
     out = GovernanceResolver(lg).resolve(
@@ -109,7 +146,11 @@ def _board(decision: ApprovalDecision) -> Scenario:
     )
     lg.close()
     return Scenario(
-        "board_approval", decision.value, "artifact ar1 (pr)", "landed", out.subject_status,
+        "board_approval",
+        decision.value,
+        "artifact ar1 (pr)",
+        "landed",
+        out.subject_status,
         "approve promotes the deliverable to the board.",
     )
 
@@ -118,18 +159,22 @@ def _task_gate(decision: ApprovalDecision) -> Scenario:
     lg = _ledger()
     lg.employees.create(Employee(id="ada", name="ada", role="engineer"))
     lg.tasks.submit(
-        Task(id="t1", intent="ship", status=TaskStatus.IN_PROGRESS, assignee_employee_id="ada")
+        Task(id=_id("t1"), intent="ship", status=TaskStatus.IN_PROGRESS, assignee_employee_id="ada")
     )
     gate = GovernanceResolver(lg).open_task_gate(
-        "t1", gate_kind=ApprovalGate.ACCEPTANCE, reason="sign off"
+        _id("t1"), gate_kind=ApprovalGate.ACCEPTANCE, reason="sign off"
     )
-    before = lg.tasks.get("t1").status.value  # type: ignore[union-attr]
+    before = lg.tasks.get(_id("t1")).status.value  # type: ignore[union-attr]
     out = GovernanceResolver(lg).resolve(
         gate.id, decision=decision, decided_by_user_id=_USER, now=_NOW
     )
     lg.close()
     return Scenario(
-        "task_gate", decision.value, "task t1 (acceptance)", before, out.subject_status,
+        "task_gate",
+        decision.value,
+        "task t1 (acceptance)",
+        before,
+        out.subject_status,
         "the human acceptance gate; revise sends the work back to todo.",
     )
 

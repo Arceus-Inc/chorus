@@ -15,6 +15,9 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import os
+import uuid
+
+_EXAMPLE_COMPANY = str(uuid.uuid5(uuid.NAMESPACE_URL, "chorus-example"))  # one stable demo org
 import sqlite3
 import sys
 from pathlib import Path
@@ -26,7 +29,7 @@ for _stream in (sys.stdout, sys.stderr):
 os.environ["PATH"] = str(Path(sys.executable).parent) + os.pathsep + os.environ.get("PATH", "")
 
 from chorus.heartbeat import Scheduler
-from chorus.ledger import SqliteLedger, Task, TaskStatus
+from chorus.ledger import Ledger, Task, TaskStatus
 from chorus.lifecycle import assign_task
 from chorus.roles import RoleRegistry, default_roles
 from chorus.workforce import Employee, LedgerWorkforce
@@ -48,14 +51,26 @@ _INTENT = (
 )
 
 _SALES = [
-    ("A", "Q1", 1000, 100), ("A", "Q2", 1200, 110), ("A", "Q3", 1500, 130),
-    ("B", "Q1", 800, 90), ("B", "Q2", 900, 95), ("B", "Q3", 1100, 105),
-    ("C", "Q1", 600, 70), ("C", "Q2", 700, 72), ("C", "Q3", 650, 68),
+    ("A", "Q1", 1000, 100),
+    ("A", "Q2", 1200, 110),
+    ("A", "Q3", 1500, 130),
+    ("B", "Q1", 800, 90),
+    ("B", "Q2", 900, 95),
+    ("B", "Q3", 1100, 105),
+    ("C", "Q1", 600, 70),
+    ("C", "Q2", 700, 72),
+    ("C", "Q3", 650, 68),
 ]
 _COSTS = [
-    ("A", "Q1", 700), ("A", "Q2", 800), ("A", "Q3", 900),
-    ("B", "Q1", 650), ("B", "Q2", 700), ("B", "Q3", 800),
-    ("C", "Q1", 500), ("C", "Q2", 520), ("C", "Q3", 560),
+    ("A", "Q1", 700),
+    ("A", "Q2", 800),
+    ("A", "Q3", 900),
+    ("B", "Q1", 650),
+    ("B", "Q2", 700),
+    ("B", "Q3", 800),
+    ("C", "Q1", 500),
+    ("C", "Q2", 520),
+    ("C", "Q3", 560),
 ]
 
 
@@ -74,14 +89,24 @@ async def main() -> int:
     base = os.environ.get("AZURE_OPENAI_BASE_URL")
     dep = os.environ.get("AZURE_OPENAI_DEPLOYMENT")
     if not (key and base and dep):
-        print("skipping: set AZURE_OPENAI_API_KEY / AZURE_OPENAI_BASE_URL / AZURE_OPENAI_DEPLOYMENT")
+        print(
+            "skipping: set AZURE_OPENAI_API_KEY / AZURE_OPENAI_BASE_URL / AZURE_OPENAI_DEPLOYMENT"
+        )
         return 0
 
-    ledger = SqliteLedger.open(":memory:")
+    ledger = Ledger.open(
+        os.environ.get("CHORUS_LEDGER_DSN", "postgresql://localhost/chorus"),
+        company_id=_EXAMPLE_COMPANY,
+    )
     registry = RoleRegistry.from_plugins(default_roles())
     factory = EmployeeHarnessFactory(
-        api_key=key, base_url=base, deployment=dep, company_id="analyst-capstone",
-        roles=registry, ledger=ledger, timeout_s=900.0,
+        api_key=key,
+        base_url=base,
+        deployment=dep,
+        company_id="analyst-capstone",
+        roles=registry,
+        ledger=ledger,
+        timeout_s=900.0,
     )
     # Pre-materialize to create the worktree, then seed the warehouse into it (path-based continuity:
     # the kernel's beat reuses the same worktree).

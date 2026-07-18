@@ -21,6 +21,9 @@ from __future__ import annotations
 import asyncio
 import html
 import os
+import uuid
+
+_EXAMPLE_COMPANY = str(uuid.uuid5(uuid.NAMESPACE_URL, "chorus-example"))  # one stable demo org
 import subprocess
 import sys
 import tempfile
@@ -30,7 +33,7 @@ from pathlib import Path
 
 from chorus.heartbeat import IntegrateContextPacket, Scheduler
 from chorus.heartbeat._beat import BeatOutcome
-from chorus.ledger import SqliteLedger, Task, TaskStatus
+from chorus.ledger import Ledger, Task, TaskStatus
 from chorus.lifecycle import CapabilityService, ChildPlan, assign_task
 from chorus.outcomes import LanderRegistry
 from chorus.roles import RoleRegistry, default_roles
@@ -74,8 +77,12 @@ _CLEAN = (
     "    assert slugify('foo_bar  baz') == 'foo-bar-baz'\n"
     "    assert slugify('--A__B--') == 'a-b'\n",
 )
-_BUGGY = ("app.py", "def slugify(s):\n    return s  # TODO\n",
-          "test_app.py", "from app import slugify\n\ndef test():\n    assert slugify(' Hi There ') == 'hi-there'\n")
+_BUGGY = (
+    "app.py",
+    "def slugify(s):\n    return s  # TODO\n",
+    "test_app.py",
+    "from app import slugify\n\ndef test():\n    assert slugify(' Hi There ') == 'hi-there'\n",
+)
 _STUB = ("app.py", "def slugify(s):\n    raise NotImplementedError\n", "", "")
 
 
@@ -95,8 +102,16 @@ class _Engineer:
         self.working_dir = worktree
         self._run = run
 
-    async def run_task(self, *, task_id: str, intent: str, verification: object = (),
-                       rubric: object = "", observer: object = None, run_id: str | None = None) -> BeatOutcome:
+    async def run_task(
+        self,
+        *,
+        task_id: str,
+        intent: str,
+        verification: object = (),
+        rubric: object = "",
+        observer: object = None,
+        run_id: str | None = None,
+    ) -> BeatOutcome:
         # A "fix" beat (the manager's reaction to a rejection) always writes the complete _CLEAN code;
         # the initial beat writes the goal's code. Case-insensitive so a "Fix the rejected work" intent
         # still routes to the clean implementation.
@@ -105,13 +120,16 @@ class _Engineer:
         (self.working_dir / name).write_text(body, encoding="utf-8")
         if tname:
             (self.working_dir / tname).write_text(tbody, encoding="utf-8")
-        self._run.events.append(f"engineer built ({'fix' if 'fix' in intent else 'initial'}): {intent[:50]}")
+        self._run.events.append(
+            f"engineer built ({'fix' if 'fix' in intent else 'initial'}): {intent[:50]}"
+        )
         return BeatOutcome(passed=True, outcome={}, summary="built", model="scripted")
 
 
 class _Manager:
-    def __init__(self, ledger: SqliteLedger, worktree: Path, run: GoalRun, *, parent: str,
-                 plan: list[ChildPlan]) -> None:
+    def __init__(
+        self, ledger: Ledger, worktree: Path, run: GoalRun, *, parent: str, plan: list[ChildPlan]
+    ) -> None:
         self.working_dir = worktree
         self._ledger = ledger
         self._run = run
@@ -119,18 +137,33 @@ class _Manager:
         self._plan = plan
         self._fixed = False
 
-    async def run_task(self, *, task_id: str, intent: str, verification: object = (),
-                       rubric: object = "", observer: object = None, run_id: str | None = None) -> BeatOutcome:
+    async def run_task(
+        self,
+        *,
+        task_id: str,
+        intent: str,
+        verification: object = (),
+        rubric: object = "",
+        observer: object = None,
+        run_id: str | None = None,
+    ) -> BeatOutcome:
         svc = CapabilityService(self._ledger)
         if not self._ledger.tasks.has_children(self._parent):
             svc.decompose(parent_id=self._parent, revision=str(run_id), children=self._plan)
             self._run.events.append(f"manager decomposed into {[c.label for c in self._plan]}")
             return BeatOutcome(passed=False, outcome={}, summary="delegated", model="scripted")
-        if IntegrateContextPacket.recommended_for(self._ledger, self._parent) == "react" and not self._fixed:
+        if (
+            IntegrateContextPacket.recommended_for(self._ledger, self._parent) == "react"
+            and not self._fixed
+        ):
             self._fixed = True
-            svc.submit_one(parent_id=self._parent, revision=str(run_id),
-                           child=ChildPlan(label="fix", intent=f"Fix the rejected work. {_CONTRACT}",
-                                           assignee="bob"))
+            svc.submit_one(
+                parent_id=self._parent,
+                revision=str(run_id),
+                child=ChildPlan(
+                    label="fix", intent=f"Fix the rejected work. {_CONTRACT}", assignee="bob"
+                ),
+            )
             self._run.events.append("manager reacted to a rejection → submit_task('fix' → bob)")
             return BeatOutcome(passed=False, outcome={}, summary="reacted", model="scripted")
         self._run.events.append("manager accepted the completed subtree")
@@ -140,8 +173,17 @@ class _Manager:
 class _Org:
     """Scripted manager + engineers; the reviewer is delegated to the LIVE factory."""
 
-    def __init__(self, ledger: SqliteLedger, run: GoalRun, *, parent: str, plan: list[ChildPlan],
-                 factory: EmployeeHarnessFactory, workspace: CompanyWorkspace, mgr_dir: Path) -> None:
+    def __init__(
+        self,
+        ledger: Ledger,
+        run: GoalRun,
+        *,
+        parent: str,
+        plan: list[ChildPlan],
+        factory: EmployeeHarnessFactory,
+        workspace: CompanyWorkspace,
+        mgr_dir: Path,
+    ) -> None:
         self._ledger = ledger
         self._run = run
         self._parent = parent
@@ -152,10 +194,14 @@ class _Org:
 
     def runner_for(self, employee: Employee, *, task_id: str | None = None) -> object:
         if employee.role == "manager":
-            return _Manager(self._ledger, self._mgr_dir, self._run, parent=self._parent, plan=self._plan)
+            return _Manager(
+                self._ledger, self._mgr_dir, self._run, parent=self._parent, plan=self._plan
+            )
         return _Engineer(self._workspace.worktree_for(employee.id).path, self._run)
 
-    def review_runner_for(self, reviewer: Employee, *, task_id: str, worktree_owner_id: str) -> object:
+    def review_runner_for(
+        self, reviewer: Employee, *, task_id: str, worktree_owner_id: str
+    ) -> object:
         # the LIVE reviewer — materialized read-only at the engineer's worktree
         return self._factory.review_runner_for(
             reviewer, task_id=task_id, worktree_owner_id=worktree_owner_id
@@ -167,36 +213,84 @@ def _seed_repo(path: Path) -> None:
     subprocess.run(["git", "-C", str(path), "init", "-b", "trunk"], check=True, capture_output=True)
     (path / "README.md").write_text("# org\n", encoding="utf-8")
     subprocess.run(["git", "-C", str(path), "add", "-A"], check=True, capture_output=True)
-    subprocess.run(["git", "-C", str(path), "-c", "user.name=s", "-c", "user.email=s@x", "commit", "-m", "seed"],
-                   check=True, capture_output=True)
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(path),
+            "-c",
+            "user.name=s",
+            "-c",
+            "user.email=s@x",
+            "commit",
+            "-m",
+            "seed",
+        ],
+        check=True,
+        capture_output=True,
+    )
 
 
-async def _run_goal(run: GoalRun, plan: list[ChildPlan], *, api_key: str, base_url: str, deployment: str) -> GoalRun:
+async def _run_goal(
+    run: GoalRun, plan: list[ChildPlan], *, api_key: str, base_url: str, deployment: str
+) -> GoalRun:
     base = Path(tempfile.mkdtemp(prefix="chorus-live-"))
     seed = base / "seed"
     _seed_repo(seed)
-    lg = SqliteLedger.open(str(base / "ledger.db"))
+    lg = Ledger.open(
+        os.environ.get("CHORUS_LEDGER_DSN", "postgresql://localhost/chorus"),
+        company_id=_EXAMPLE_COMPANY,
+    )
     try:
-        for emp, role in [("moe", "manager"), ("ada", "engineer"), ("bob", "engineer"), ("rob", "reviewer")]:
-            LedgerWorkforce(lg.employees).hire(name=emp, role=role,
-                                               reports_to="moe" if role == "engineer" else None)
+        for emp, role in [
+            ("moe", "manager"),
+            ("ada", "engineer"),
+            ("bob", "engineer"),
+            ("rob", "reviewer"),
+        ]:
+            LedgerWorkforce(lg.employees).hire(
+                name=emp, role=role, reports_to="moe" if role == "engineer" else None
+            )
         lg.tasks.submit(Task(id="G", intent=run.goal, status=TaskStatus.TODO))
         assign_task(lg, "G", "moe")
         factory = EmployeeHarnessFactory(
-            api_key=api_key, base_url=base_url, deployment=deployment, company_id="acme",
-            roles=RoleRegistry.from_plugins(default_roles()), pricing=default_pricing_from_env(),
-            seed=seed, work_root=base / "work", ledger=lg,
+            api_key=api_key,
+            base_url=base_url,
+            deployment=deployment,
+            company_id="acme",
+            roles=RoleRegistry.from_plugins(default_roles()),
+            pricing=default_pricing_from_env(),
+            seed=seed,
+            work_root=base / "work",
+            ledger=lg,
         )
         workspace = CompanyWorkspace(factory.company_root, seed=seed)
-        for emp in ("ada", "bob"):  # pre-create the engineer worktrees the scripted beats write into
+        for emp in (
+            "ada",
+            "bob",
+        ):  # pre-create the engineer worktrees the scripted beats write into
             workspace.worktree_for(emp)
-        org = _Org(lg, run, parent="G", plan=plan, factory=factory, workspace=workspace, mgr_dir=base / "mgr")
+        org = _Org(
+            lg,
+            run,
+            parent="G",
+            plan=plan,
+            factory=factory,
+            workspace=workspace,
+            mgr_dir=base / "mgr",
+        )
         (base / "mgr").mkdir(parents=True, exist_ok=True)
         landers = LanderRegistry.from_landers([manager_lander(lg), reviewer_lander(lg)])
         sched = Scheduler(
-            ledger=lg, workforce=LedgerWorkforce(lg.employees), beat_runner_for=org,  # type: ignore[arg-type]
-            roles=RoleRegistry.from_plugins(default_roles()), landers=landers,
-            clock=lambda: _NOW, max_concurrent_runs=2, max_review_rounds=1, max_integrate_iterations=4,
+            ledger=lg,
+            workforce=LedgerWorkforce(lg.employees),
+            beat_runner_for=org,  # type: ignore[arg-type]
+            roles=RoleRegistry.from_plugins(default_roles()),
+            landers=landers,
+            clock=lambda: _NOW,
+            max_concurrent_runs=2,
+            max_review_rounds=1,
+            max_integrate_iterations=4,
         )
         for _ in range(24):
             g = lg.tasks.get("G")
@@ -241,19 +335,28 @@ def _render(runs: list[GoalRun]) -> str:
     cards = []
     for r in runs:
         ok = r.final_status == "done"
-        badge = "<span class='ok'>DONE</span>" if ok else f"<span class='no'>{esc(r.final_status)}</span>"
+        badge = (
+            "<span class='ok'>DONE</span>"
+            if ok
+            else f"<span class='no'>{esc(r.final_status)}</span>"
+        )
         evs = "".join(f"<li>{esc(e)}</li>" for e in r.events)
-        kids = "".join(f"<tr><td><code>{esc(k)}</code></td><td>{esc(s)}</td></tr>" for k, s in r.children.items())
+        kids = "".join(
+            f"<tr><td><code>{esc(k)}</code></td><td>{esc(s)}</td></tr>"
+            for k, s in r.children.items()
+        )
         verds = "".join(_verdict_html(v, esc) for v in r.verdicts)
         cards.append(f"""
         <section class="card"><div class="head"><h2>{esc(r.name)}</h2>{badge}</div>
           <p class="goal">{esc(r.goal)}</p>
           <h3>timeline</h3><ul>{evs}</ul>
-          <h3>LIVE reviewer verdicts</h3>{verds or '<p class=muted>(no verdict recorded)</p>'}
+          <h3>LIVE reviewer verdicts</h3>{verds or "<p class=muted>(no verdict recorded)</p>"}
           <h3>children (final)</h3><table>{kids}</table>
         </section>""")
     allok = all(r.final_status == "done" for r in runs)
-    overall = "ALL 3 GOALS COMPLETED (live reviewer)" if allok else "SOME GOALS INCOMPLETE — see verdicts"
+    overall = (
+        "ALL 3 GOALS COMPLETED (live reviewer)" if allok else "SOME GOALS INCOMPLETE — see verdicts"
+    )
     cls = "ok" if allok else "no"
     return f"""<!doctype html><html lang="en"><head><meta charset="utf-8">
 <title>manager + 2 engineers + LIVE reviewer</title><style>
@@ -276,7 +379,7 @@ code{{background:#0f1115;padding:.1rem .3rem;border-radius:4px}} .muted{{color:#
 model</b> that reads the real diff, discovers the verify command, and renders the verdict. The kernel
 runs that command for real. The verdicts + feedback below are the model's own words.</p>
 <div class="overall {cls}">{overall}</div>
-{''.join(cards)}
+{"".join(cards)}
 <footer class="muted">examples/m3_org_reviewed_live.py · chorus M3 reviewed-build (live reviewer)</footer>
 </body></html>"""
 
@@ -286,27 +389,49 @@ def main() -> int:
     base_url = os.environ.get("AZURE_OPENAI_BASE_URL")
     deployment = os.environ.get("AZURE_OPENAI_DEPLOYMENT")
     if not (api_key and base_url and deployment):
-        sys.stdout.write("skipping: set AZURE_OPENAI_API_KEY, AZURE_OPENAI_BASE_URL, AZURE_OPENAI_DEPLOYMENT\n")
+        sys.stdout.write(
+            "skipping: set AZURE_OPENAI_API_KEY, AZURE_OPENAI_BASE_URL, AZURE_OPENAI_DEPLOYMENT\n"
+        )
         return 0
 
     specs = [
-        (GoalRun("Goal 1 · clean code", f"Build a slugify utility. {_CONTRACT}", _CLEAN),
-         [ChildPlan(label="slugify", intent=_CONTRACT, assignee="ada")]),
-        (GoalRun("Goal 2 · buggy build", f"Build slugify; the first cut has a failing test. {_CONTRACT}", _BUGGY),
-         [ChildPlan(label="core", intent=_CONTRACT, assignee="ada")]),
-        (GoalRun("Goal 3 · incomplete stub", f"Build slugify; the first diff is an unfinished stub. {_CONTRACT}", _STUB),
-         [ChildPlan(label="stub", intent=_CONTRACT, assignee="ada")]),
+        (
+            GoalRun("Goal 1 · clean code", f"Build a slugify utility. {_CONTRACT}", _CLEAN),
+            [ChildPlan(label="slugify", intent=_CONTRACT, assignee="ada")],
+        ),
+        (
+            GoalRun(
+                "Goal 2 · buggy build",
+                f"Build slugify; the first cut has a failing test. {_CONTRACT}",
+                _BUGGY,
+            ),
+            [ChildPlan(label="core", intent=_CONTRACT, assignee="ada")],
+        ),
+        (
+            GoalRun(
+                "Goal 3 · incomplete stub",
+                f"Build slugify; the first diff is an unfinished stub. {_CONTRACT}",
+                _STUB,
+            ),
+            [ChildPlan(label="stub", intent=_CONTRACT, assignee="ada")],
+        ),
     ]
     runs: list[GoalRun] = []
     for run, plan in specs:
         sys.stdout.write(f"\n=== {run.name} ===\n")
         sys.stdout.flush()
-        runs.append(asyncio.run(_run_goal(run, plan, api_key=api_key, base_url=base_url, deployment=deployment)))
+        runs.append(
+            asyncio.run(
+                _run_goal(run, plan, api_key=api_key, base_url=base_url, deployment=deployment)
+            )
+        )
         r = runs[-1]
         sys.stdout.write(f"  final={r.final_status}  children={r.children}\n")
         for v in r.verdicts:
-            sys.stdout.write(f"  verdict[{v.get('child')}]: approve={v.get('approve')} "
-                             f"cmd={v.get('verify_command')!r} build_passed={v.get('build_passed')}\n")
+            sys.stdout.write(
+                f"  verdict[{v.get('child')}]: approve={v.get('approve')} "
+                f"cmd={v.get('verify_command')!r} build_passed={v.get('build_passed')}\n"
+            )
 
     _REPORT.parent.mkdir(parents=True, exist_ok=True)
     _REPORT.write_text(_render(runs), encoding="utf-8")

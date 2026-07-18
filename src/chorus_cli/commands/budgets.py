@@ -160,7 +160,7 @@ def _budget_set(ctx: CommandContext, args: tuple[str, ...]) -> LoopSignal:
         ledger.budget_policies.set_amount(existing.id, amount)
         ctx.out.line(f"updated {existing.id}: {scope.value} {scope_id} cap -> {amount} cents")
         return LoopSignal.CONTINUE
-    policy_id = mint_id("bp")
+    policy_id = mint_id()
     ledger.budget_policies.create(
         BudgetPolicy(
             id=policy_id,

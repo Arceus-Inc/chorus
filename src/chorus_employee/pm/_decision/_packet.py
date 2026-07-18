@@ -11,13 +11,13 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from chorus.ledger import SqliteLedger
+    from chorus.ledger import Ledger
     from chorus.ledger._models import Claim
 
 _EXPORT_SCOPE = "team"
 
 
-def render_packet(ledger: SqliteLedger, task_id: str) -> dict[str, Any]:
+def render_packet(ledger: Ledger, task_id: str) -> dict[str, Any]:
     """Project the task's decisions + claims into the ``sources.json`` packet contract (v1)."""
     decisions = ledger.decisions.for_task(task_id)
     claims = ledger.claims.for_decisions([decision.id for decision in decisions])

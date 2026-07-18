@@ -2,21 +2,28 @@
 
 The DAG of work, the org tree, and the durable rows the scheduler reads. Re-exports dream's
 ``ExecPlan``/``ExecPlanStatus`` contracts (spec 05) where the seam is shared — a chorus ``Task``
-*is* an ``ExecPlan`` made durable. Storage is per-aggregate **repos** behind a ``SqliteLedger``
-facade, applied via an **applied-migration-set** runner (spec 01 §schema-versioning, spec 12).
+*is* an ``ExecPlan`` made durable. Storage is per-aggregate **repos** behind the Postgres
+``Ledger`` facade (spec 12 §6) — the checked-in native baseline, bootstrapped on open.
 """
 
 from __future__ import annotations
 
 from dream.contracts import ExecPlan, ExecPlanLedger, ExecPlanStatus
 
-from chorus.ledger._ledger import Ledger, SqliteLedger
+from chorus.ledger._connection import LedgerConnection
+from chorus.ledger._ledger import (
+    Ledger,
+    LedgerIntegrityError,
+    SchemaDriftError,
+    baseline,
+    ledger_table_names,
+    postgres_ddl,
+)
 from chorus.ledger._migrations import (
     LedgerAheadError,
     Migration,
     MigrationDriftError,
-    MigrationError,
-    MigrationRunner,
+    load_migrations,
 )
 from chorus.ledger._models import (
     Activity,
@@ -68,6 +75,10 @@ from chorus.ledger._models import (
     RoutineTrigger,
     Run,
     RunStatus,
+    Skill,
+    SkillOrigin,
+    SkillRevision,
+    SkillState,
     StaffingNeed,
     StaffingRequest,
     StaffingRequestStatus,
@@ -87,7 +98,6 @@ from chorus.ledger._models import (
     WorkforcePlanDraft,
     WorkforcePlanStatus,
 )
-from chorus.ledger.migrations import MIGRATIONS
 from chorus.ledger.repos import (
     ActivityRepo,
     ApprovalRepo,
@@ -111,6 +121,8 @@ from chorus.ledger.repos import (
     RoutineRunRepo,
     RoutineTriggerRepo,
     RunRepo,
+    SkillRepo,
+    SkillRevisionRepo,
     StaffingRequestRepo,
     TaskRepo,
     TeamMemberRepo,
@@ -120,7 +132,6 @@ from chorus.ledger.repos import (
 )
 
 __all__ = [
-    "MIGRATIONS",
     "Activity",
     "ActivityRepo",
     "ActivityVerb",
@@ -165,6 +176,8 @@ __all__ = [
     "GoalRepo",
     "Ledger",
     "LedgerAheadError",
+    "LedgerConnection",
+    "LedgerIntegrityError",
     "ManagementGrantDraft",
     "ManagementProfile",
     "ManagementProfileRepo",
@@ -173,8 +186,6 @@ __all__ = [
     "MessageRepo",
     "Migration",
     "MigrationDriftError",
-    "MigrationError",
-    "MigrationRunner",
     "Monitor",
     "MonitorRecoveryPolicy",
     "MonitorRepo",
@@ -201,7 +212,13 @@ __all__ = [
     "Run",
     "RunRepo",
     "RunStatus",
-    "SqliteLedger",
+    "SchemaDriftError",
+    "Skill",
+    "SkillOrigin",
+    "SkillRepo",
+    "SkillRevision",
+    "SkillRevisionRepo",
+    "SkillState",
     "StaffingNeed",
     "StaffingRequest",
     "StaffingRequestRepo",
@@ -226,4 +243,8 @@ __all__ = [
     "WorkforcePlanDraft",
     "WorkforcePlanRepo",
     "WorkforcePlanStatus",
+    "baseline",
+    "ledger_table_names",
+    "load_migrations",
+    "postgres_ddl",
 ]

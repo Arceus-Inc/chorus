@@ -8,16 +8,22 @@ single ``IN`` query so rendering a packet across many decisions never becomes N+
 
 from __future__ import annotations
 
-import sqlite3
-
 from chorus.ledger._models import Claim, DecisionRecord, RejectedAlternative
-from chorus.ledger.repos._base import dumps, from_iso, loads_list, require_persisted, utcnow_iso
+from chorus.ledger.repos._base import (
+    LedgerConnection,
+    LedgerRow,
+    dumps,
+    from_iso,
+    loads_list,
+    require_persisted,
+    utcnow_iso,
+)
 
 
 class DecisionRepo:
     """Create, read, and supersede ``decision_record`` rows (data access only)."""
 
-    def __init__(self, conn: sqlite3.Connection) -> None:
+    def __init__(self, conn: LedgerConnection) -> None:
         self._conn = conn
 
     def create(self, decision: DecisionRecord) -> DecisionRecord:
@@ -71,7 +77,7 @@ class DecisionRepo:
 class ClaimRepo:
     """Create ``claim`` rows and batch-read them for a set of decisions (data access only)."""
 
-    def __init__(self, conn: sqlite3.Connection) -> None:
+    def __init__(self, conn: LedgerConnection) -> None:
         self._conn = conn
 
     def create(self, claim: Claim) -> Claim:
@@ -106,7 +112,7 @@ class ClaimRepo:
         return [_row_to_claim(row) for row in rows]
 
 
-def _row_to_decision(row: sqlite3.Row) -> DecisionRecord:
+def _row_to_decision(row: LedgerRow) -> DecisionRecord:
     alternatives = tuple(
         RejectedAlternative(option=alt["option"], reason=alt["reason"])
         for alt in loads_list(row["rejected_alternatives"])
@@ -125,7 +131,7 @@ def _row_to_decision(row: sqlite3.Row) -> DecisionRecord:
     )
 
 
-def _row_to_claim(row: sqlite3.Row) -> Claim:
+def _row_to_claim(row: LedgerRow) -> Claim:
     return Claim(
         id=row["id"],
         decision_id=row["decision_id"],

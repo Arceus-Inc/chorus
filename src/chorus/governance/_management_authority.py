@@ -9,8 +9,8 @@ from chorus.ledger import (
     ActivityVerb,
     DelegationContract,
     DelegationContractStatus,
+    Ledger,
     ManagementProfile,
-    SqliteLedger,
     Team,
     TeamMember,
 )
@@ -21,7 +21,7 @@ from chorus.roles import RoleRegistry
 class ManagementAuthorityService:
     """Apply management-authority policy mutations atomically and audit the human decision."""
 
-    def __init__(self, ledger: SqliteLedger) -> None:
+    def __init__(self, ledger: Ledger) -> None:
         self._ledger = ledger
 
     def upsert_profile(
@@ -86,9 +86,7 @@ class ManagementAuthorityService:
             )
         return persisted
 
-    def deactivate_profile(
-        self, employee_id: str, *, actor_user_id: str
-    ) -> ManagementProfile:
+    def deactivate_profile(self, employee_id: str, *, actor_user_id: str) -> ManagementProfile:
         actor_user_id = _require_human_actor(actor_user_id)
         try:
             with self._ledger.transaction():
@@ -145,9 +143,7 @@ class ManagementAuthorityService:
             )
         return persisted
 
-    def add_team_member(
-        self, member: TeamMember, *, actor_user_id: str
-    ) -> TeamMember:
+    def add_team_member(self, member: TeamMember, *, actor_user_id: str) -> TeamMember:
         actor_user_id = _require_human_actor(actor_user_id)
         subject_id = f"{member.team_id}/{member.employee_id}"
         with self._ledger.transaction():

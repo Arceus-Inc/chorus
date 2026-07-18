@@ -42,6 +42,7 @@ dependencies = [
 [project.optional-dependencies]
 postgres = ["psycopg[binary]>=3.1"]  # Arceus distribution driver (spec 00 §7)
 dev = [
+  "psycopg[binary]>=3.1",  # the Postgres ledger driver is type-checked + conformance-tested in dev
   "pytest>=8.2",
   "pytest-asyncio>=0.23",
   "pytest-cov>=5.0",

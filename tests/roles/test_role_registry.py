@@ -13,6 +13,7 @@ from chorus.roles import (
     RoleRegistry,
     default_roles,
 )
+from chorus.testing import uid
 from chorus_employee.manager import manager_plugin
 
 pytestmark = pytest.mark.unit
@@ -62,7 +63,7 @@ def test_get_returns_the_plugin() -> None:
 
 def test_get_unknown_raises_keyerror() -> None:
     with pytest.raises(KeyError):
-        RoleRegistry().get("ghost")
+        RoleRegistry().get(uid("ghost"))
 
 
 def test_empty_slug_is_invalid() -> None:

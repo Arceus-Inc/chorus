@@ -13,6 +13,7 @@ from pathlib import Path
 
 import pytest
 
+from chorus.testing import open_test_ledger
 from chorus_tools._design_lint import (
     DesignFinding,
     DesignLintTool,
@@ -210,11 +211,10 @@ class TestDesignLintTool:
 
 class TestWiring:
     def test_capability_tool_registers_design_lint(self) -> None:
-        from chorus.ledger import SqliteLedger
         from chorus.roles import RoleRegistry
         from chorus_harness._factory import _capability_tool
 
-        ledger = SqliteLedger.open(":memory:")
+        ledger = open_test_ledger()
         try:
             tool = _capability_tool("design_lint", ledger, RoleRegistry())
             assert isinstance(tool, DesignLintTool)

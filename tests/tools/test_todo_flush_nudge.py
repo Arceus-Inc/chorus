@@ -12,6 +12,7 @@ from dream.tools._context import ToolExecutionContext
 from pydantic import BaseModel, Field
 
 from chorus.heartbeat._todo_flush import read_todo_flush_nudge, write_todo_flush_nudge
+from chorus.testing import uid
 from chorus_tools._todo_flush_nudge import TodoFlushNudgeToolWrapper
 
 pytestmark = pytest.mark.unit
@@ -48,7 +49,7 @@ class _TodoWriteStub(BaseTool):
 
 
 def _ctx(tmp_path: Path) -> ToolExecutionContext:
-    return ToolExecutionContext(working_dir=tmp_path, session_id="s1")
+    return ToolExecutionContext(working_dir=tmp_path, session_id=uid("s1"))
 
 
 async def test_wrapper_passthrough_without_nudge(tmp_path: Path) -> None:

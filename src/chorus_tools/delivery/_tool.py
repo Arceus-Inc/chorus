@@ -16,7 +16,7 @@ from dream.tools._base import BaseTool, ToolDeclaration
 from dream.tools._context import ToolExecutionContext
 from pydantic import BaseModel, Field, ValidationError
 
-from chorus.ledger import Approval, ApprovalAction, ApprovalStatus, SqliteLedger
+from chorus.ledger import Approval, ApprovalAction, ApprovalStatus, Ledger
 from chorus_tools._beat import task_id_or_none
 from chorus_tools._go_live import GoLiveAction
 from chorus_tools.cms import ContentType, DraftRef
@@ -60,7 +60,7 @@ class ExecuteGoLiveTool(BaseTool):
 
     def __init__(
         self,
-        ledger: SqliteLedger,
+        ledger: Ledger,
         backend: PublishBackend,
         email_delivery: EmailDelivery | None = None,
     ) -> None:

@@ -17,6 +17,9 @@ from __future__ import annotations
 
 import asyncio
 import os
+import uuid
+
+_EXAMPLE_COMPANY = str(uuid.uuid5(uuid.NAMESPACE_URL, "chorus-example"))  # one stable demo org
 import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
@@ -26,7 +29,7 @@ import dream  # type: ignore[import-not-found]
 from chorus.adapters import DreamBeatRunner, ModelRate, TokenPricing
 from chorus.budgets import BudgetEnforcer
 from chorus.heartbeat import Scheduler, Wake, WakeReason
-from chorus.ledger import BudgetPolicy, BudgetScope, SqliteLedger, Task, TaskStatus
+from chorus.ledger import BudgetPolicy, BudgetScope, Ledger, Task, TaskStatus
 from chorus.lifecycle import assign_task
 from chorus.workforce import Employee
 
@@ -35,14 +38,16 @@ _EMPLOYEE = "eng"
 _INTENT = "Reply with the single word DONE."
 # Illustrative GPT-5-class pricing (whole cents per million tokens); a `default` rate prices whatever
 # model name dream reports, so the smoke never under-prices to zero.
-_PRICING = TokenPricing(rates={}, default=ModelRate(input_cents_per_mtok=125, output_cents_per_mtok=1000))
+_PRICING = TokenPricing(
+    rates={}, default=ModelRate(input_cents_per_mtok=125, output_cents_per_mtok=1000)
+)
 _CAP_CENTS = 1  # a deliberately tiny cap so any real beat blows it
 
 
 class _LedgerWorkforce:
     """The scheduler only needs ``get`` to rehydrate an employee — read it from the ledger."""
 
-    def __init__(self, ledger: SqliteLedger) -> None:
+    def __init__(self, ledger: Ledger) -> None:
         self._ledger = ledger
 
     def get(self, employee_id: str) -> Employee:
@@ -61,7 +66,10 @@ def main() -> int:
         return 0
 
     now = datetime.now(UTC)
-    ledger = SqliteLedger.open(":memory:")
+    ledger = Ledger.open(
+        os.environ.get("CHORUS_LEDGER_DSN", "postgresql://localhost/chorus"),
+        company_id=_EXAMPLE_COMPANY,
+    )
     try:
         with tempfile.TemporaryDirectory() as work_dir:
             harness = dream.build_harness(
@@ -86,8 +94,9 @@ def main() -> int:
             # Seed: an employee with a 1-cent monthly cap, and a task assigned to them.
             ledger.employees.create(Employee(id=_EMPLOYEE, name="alice", role="engineer"))
             ledger.budget_policies.create(
-                BudgetPolicy(id="bp1", scope_type=BudgetScope.EMPLOYEE, scope_id=_EMPLOYEE,
-                             amount=_CAP_CENTS)
+                BudgetPolicy(
+                    id="bp1", scope_type=BudgetScope.EMPLOYEE, scope_id=_EMPLOYEE, amount=_CAP_CENTS
+                )
             )
             ledger.tasks.submit(Task(id="t1", intent=_INTENT, status=TaskStatus.TODO))
             assign_task(ledger, "t1", _EMPLOYEE)
@@ -105,8 +114,10 @@ def main() -> int:
         blocked = enforcer.invocation_block(_EMPLOYEE, now=now)
         run = ledger.runs.for_task("t1")[-1]
         for ce in ledger.cost_events.for_run(run.id):
-            print(f"  cost_event: model={ce.model!r} in={ce.input_tokens} out={ce.output_tokens} "
-                  f"cost={ce.cost_cents}c")
+            print(
+                f"  cost_event: model={ce.model!r} in={ce.input_tokens} out={ce.output_tokens} "
+                f"cost={ce.cost_cents}c"
+            )
         print(f"  spent: {spent} cents (cap {_CAP_CENTS})")
         print(f"  open incidents: {[i.threshold_type.value for i in incidents]}")
         print(f"  invocation_block now: {blocked.value if blocked is not None else None}")
@@ -114,12 +125,18 @@ def main() -> int:
         # Gate 1: the next assigned beat must not dispatch while the scope is paused.
         ledger.tasks.submit(Task(id="t2", intent=_INTENT, status=TaskStatus.TODO))
         ledger.wakes.enqueue(
-            Wake(id="w2", employee_id=_EMPLOYEE, reason=WakeReason.TASK_ASSIGNED,
-                 payload={"task_id": "t2"})
+            Wake(
+                id="w2",
+                employee_id=_EMPLOYEE,
+                reason=WakeReason.TASK_ASSIGNED,
+                payload={"task_id": "t2"},
+            )
         )
 
         report2 = asyncio.run(scheduler.tick(now))
-        print(f"tick 2 — budget_gated={report2.budget_gated}, beats_started={report2.beats_started}")
+        print(
+            f"tick 2 — budget_gated={report2.budget_gated}, beats_started={report2.beats_started}"
+        )
 
         ok = spent > _CAP_CENTS and blocked is not None and report2.budget_gated == 1
         print("RESULT:", "PASS — real cost tripped the gate" if ok else "FAIL")

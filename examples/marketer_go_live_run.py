@@ -24,6 +24,9 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import uuid
+
+_EXAMPLE_COMPANY = str(uuid.uuid5(uuid.NAMESPACE_URL, "chorus-example"))  # one stable demo org
 import subprocess
 import sys
 import tempfile
@@ -37,7 +40,7 @@ from chorus.budgets import BudgetEnforcer
 from chorus.events import Event, EventKind
 from chorus.governance import ApprovalDecision, GovernanceResolver
 from chorus.heartbeat import Scheduler
-from chorus.ledger import SqliteLedger, Task, TaskStatus
+from chorus.ledger import Ledger, Task, TaskStatus
 from chorus.lifecycle import assign_task
 from chorus.observability import EventBus
 from chorus.roles import RoleRegistry, default_roles
@@ -94,7 +97,9 @@ class LoggingBus(EventBus):
     """Print the beat's events, highlighting the gate + executor calls."""
 
     _SPOTLIGHT: ClassVar[dict[str, str]] = {
-        "stage_go_live": "🚀", "cms_draft": "📄", "execute_go_live": "🟢",
+        "stage_go_live": "🚀",
+        "cms_draft": "📄",
+        "execute_go_live": "🟢",
     }
 
     def __init__(self) -> None:
@@ -136,9 +141,20 @@ def _seed_repo(path: Path) -> None:
     (path / MARKETER_CONTENT_DOC).write_text(_FINAL_DRAFT, encoding="utf-8")
     subprocess.run(["git", "-C", str(path), "add", "-A"], check=True, capture_output=True)
     subprocess.run(
-        ["git", "-C", str(path), "-c", "user.name=s", "-c", "user.email=s@x",
-         "commit", "-m", "init: seed brand spec + final draft"],
-        check=True, capture_output=True,
+        [
+            "git",
+            "-C",
+            str(path),
+            "-c",
+            "user.name=s",
+            "-c",
+            "user.email=s@x",
+            "commit",
+            "-m",
+            "init: seed brand spec + final draft",
+        ],
+        check=True,
+        capture_output=True,
     )
 
 
@@ -159,14 +175,19 @@ def _azure() -> tuple[str, str, str] | None:
 
 
 def _factory(
-    base: Path, ledger: SqliteLedger, creds: tuple[str, str, str]
+    base: Path, ledger: Ledger, creds: tuple[str, str, str]
 ) -> tuple[EmployeeHarnessFactory, RoleRegistry]:
     api_key, base_url, deployment = creds
     registry = RoleRegistry.from_plugins(default_roles())
     factory = EmployeeHarnessFactory(
-        api_key=api_key, base_url=base_url, deployment=deployment,
-        company_id="arceus", roles=registry,
-        pricing=default_pricing_from_env(), seed=base / "source", ledger=ledger,
+        api_key=api_key,
+        base_url=base_url,
+        deployment=deployment,
+        company_id="arceus",
+        roles=registry,
+        pricing=default_pricing_from_env(),
+        seed=base / "source",
+        ledger=ledger,
     )
     return factory, registry
 
@@ -180,13 +201,17 @@ def _tick(scheduler: Scheduler) -> None:
 
 
 def _scheduler(
-    ledger: SqliteLedger, factory: EmployeeHarnessFactory, registry: RoleRegistry
+    ledger: Ledger, factory: EmployeeHarnessFactory, registry: RoleRegistry
 ) -> Scheduler:
     return Scheduler(
-        ledger=ledger, workforce=LedgerWorkforce(ledger.employees),
-        beat_runner_for=factory, budget_enforcer=BudgetEnforcer(ledger, company_id="arceus"),
-        roles=registry, landers=default_landers(factory.company_root),
-        event_bus=LoggingBus(), max_concurrent_runs=1,
+        ledger=ledger,
+        workforce=LedgerWorkforce(ledger.employees),
+        beat_runner_for=factory,
+        budget_enforcer=BudgetEnforcer(ledger, company_id="arceus"),
+        roles=registry,
+        landers=default_landers(factory.company_root),
+        event_bus=LoggingBus(),
+        max_concurrent_runs=1,
     )
 
 
@@ -215,11 +240,16 @@ def _staged_document_id(working_dir: Path, task_id: str) -> str | None:
 def _stage(base: Path) -> int:
     creds = _azure()
     if creds is None:
-        _log("skipping stage: set AZURE_OPENAI_API_KEY, AZURE_OPENAI_BASE_URL, AZURE_OPENAI_DEPLOYMENT")
+        _log(
+            "skipping stage: set AZURE_OPENAI_API_KEY, AZURE_OPENAI_BASE_URL, AZURE_OPENAI_DEPLOYMENT"
+        )
         return 0
 
     _seed_repo(base / "source")
-    ledger = SqliteLedger.open(str(base / "ledger.db"))
+    ledger = Ledger.open(
+        os.environ.get("CHORUS_LEDGER_DSN", "postgresql://localhost/chorus"),
+        company_id=_EXAMPLE_COMPANY,
+    )
     try:
         factory, registry = _factory(base, ledger, creds)
         ledger.employees.create(Employee(id="mira", name="Mira", role="marketer"))
@@ -255,14 +285,19 @@ def _stage(base: Path) -> int:
             _log("   nothing published — reach is fail-closed behind this gate.")
         else:
             _log("   ⚠ no gate opened — Mira did not call stage_go_live")
-        _log(f"\n   next: GOLIVE_DEMO_DIR={base} uv run python examples/marketer_go_live_run.py resolve approve")
+        _log(
+            f"\n   next: GOLIVE_DEMO_DIR={base} uv run python examples/marketer_go_live_run.py resolve approve"
+        )
     finally:
         ledger.close()
     return 0
 
 
 def _resolve(base: Path, decision: str) -> int:
-    ledger = SqliteLedger.open(str(base / "ledger.db"))
+    ledger = Ledger.open(
+        os.environ.get("CHORUS_LEDGER_DSN", "postgresql://localhost/chorus"),
+        company_id=_EXAMPLE_COMPANY,
+    )
     try:
         pending = ledger.approvals.pending()
         if not pending:
@@ -281,7 +316,9 @@ def _resolve(base: Path, decision: str) -> int:
         _log(f"\n   gate status : {ledger.approvals.get(gate.id).status.value}")  # type: ignore[union-attr]
         _log(f"   task status : {task.status.value if task else '?'} (approve re-wakes Mira)")
         if verdict is ApprovalDecision.APPROVE:
-            _log(f"\n   next: GOLIVE_DEMO_DIR={base} uv run python examples/marketer_go_live_run.py publish")
+            _log(
+                f"\n   next: GOLIVE_DEMO_DIR={base} uv run python examples/marketer_go_live_run.py publish"
+            )
         else:
             _log("   → denied: nothing goes live; execute_go_live will refuse.")
     finally:
@@ -292,10 +329,15 @@ def _resolve(base: Path, decision: str) -> int:
 def _publish(base: Path) -> int:
     creds = _azure()
     if creds is None:
-        _log("skipping publish: set AZURE_OPENAI_API_KEY, AZURE_OPENAI_BASE_URL, AZURE_OPENAI_DEPLOYMENT")
+        _log(
+            "skipping publish: set AZURE_OPENAI_API_KEY, AZURE_OPENAI_BASE_URL, AZURE_OPENAI_DEPLOYMENT"
+        )
         return 0
 
-    ledger = SqliteLedger.open(str(base / "ledger.db"))
+    ledger = Ledger.open(
+        os.environ.get("CHORUS_LEDGER_DSN", "postgresql://localhost/chorus"),
+        company_id=_EXAMPLE_COMPANY,
+    )
     try:
         factory, registry = _factory(base, ledger, creds)
         mat = factory.materialize(ledger.employees.get("mira"))  # type: ignore[arg-type]
@@ -327,7 +369,9 @@ def _publish(base: Path) -> int:
         if doc:
             status = _public_post_status(doc)
             marker = "★ LIVE ON THE BLOG" if status == "published" else f"⚠ {status}"
-            _log(f"   {marker}: {os.environ.get('STRAPI_URL', 'http://localhost:1337')}/blog/#/post/{doc}")
+            _log(
+                f"   {marker}: {os.environ.get('STRAPI_URL', 'http://localhost:1337')}/blog/#/post/{doc}"
+            )
     finally:
         ledger.close()
     return 0

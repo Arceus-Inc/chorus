@@ -29,7 +29,7 @@ from uuid import uuid4
 
 from chorus.events import Event, EventKind
 from chorus.heartbeat import Scheduler
-from chorus.ledger import SqliteLedger, Task, TaskStatus
+from chorus.ledger import Ledger, Task, TaskStatus
 from chorus.lifecycle import assign_task
 from chorus.observability import EventBus
 from chorus.roles import RoleRegistry, default_roles
@@ -567,7 +567,7 @@ def _copy_traces(worktree: Path, destination: Path, secrets: tuple[str, ...]) ->
     return copied
 
 
-async def _drive(scheduler: Scheduler, ledger: SqliteLedger) -> None:
+async def _drive(scheduler: Scheduler, ledger: Ledger) -> None:
     """Advance settled pulses and stop at the first terminal or abnormal state."""
     for pulse in range(1, 5):
         print(f"pulse {pulse}: dispatch", flush=True)
@@ -774,7 +774,7 @@ def main() -> int:
     run_root.mkdir(parents=True)
     seed = run_root / "seed"
     _seed_repo(seed)
-    ledger = SqliteLedger.open(str(run_root / "company.db"))
+    ledger = Ledger.open(str(run_root / "company.db"))
     events_path = run_root / "events.jsonl"
     secrets = _secret_values()
     monitor = _Monitor()

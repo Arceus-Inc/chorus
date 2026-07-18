@@ -9,26 +9,16 @@ REPL tests use to drive an interactive loop without stdin.
 from __future__ import annotations
 
 import io
-from collections.abc import Callable, Iterator
+from collections.abc import Callable
 
 import pytest
 
-from chorus.ledger import SqliteLedger
+from chorus.ledger import Ledger
 from chorus_cli import CliSession, Console
 
 
 @pytest.fixture
-def ledger() -> Iterator[SqliteLedger]:
-    """An open, migrated in-memory ledger."""
-    lg = SqliteLedger.open(":memory:")
-    try:
-        yield lg
-    finally:
-        lg.close()
-
-
-@pytest.fixture
-def session(ledger: SqliteLedger) -> CliSession:
+def session(ledger: Ledger) -> CliSession:
     """A console session over the in-memory ledger."""
     return CliSession(ledger=ledger)
 

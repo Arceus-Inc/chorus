@@ -19,15 +19,15 @@ import asyncio
 import json
 import logging
 import subprocess
-import uuid
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 from pathlib import Path
-from typing import TYPE_CHECKING, Protocol, TypeVar, runtime_checkable
+from typing import TYPE_CHECKING, Any, Protocol, TypeVar, runtime_checkable
 
 from chorus.adapters._failure import failure_outcome
 from chorus.cron._fire import fire_routine
+from chorus.events import Event, EventKind
 from chorus.governance import GovernanceResolver
 from chorus.heartbeat._beat import BeatDisposition, BeatOutcome
 from chorus.heartbeat._beat_context import BeatContext, IntegrateContextPacket
@@ -61,6 +61,7 @@ from chorus.ledger._models import (
 from chorus.lifecycle import TERMINAL, record_activity
 from chorus.lifecycle._team_policy import MissionTeamPolicy
 from chorus.memory import EpisodicStore, SprintDelta, beat_fingerprint
+from chorus.observability._trace import TraceStamper, trace_root
 from chorus.outcomes import (
     AgentReview,
     DoDKind,
@@ -73,10 +74,9 @@ from chorus.verification import SYSTEM_VERIFIER, VerificationPrincipal
 
 if TYPE_CHECKING:
     from chorus.budgets import BudgetEnforcer
-    from chorus.events import Event
     from chorus.heartbeat._beat import BeatRunner
     from chorus.heartbeat._runner_for import BeatRunnerFor
-    from chorus.ledger import SqliteLedger, Task
+    from chorus.ledger import Ledger, Task
     from chorus.observability import EventSink
     from chorus.outcomes import Artifact as OutcomeArtifact
     from chorus.outcomes import LanderRegistry, VerificationStep
@@ -367,7 +367,7 @@ def _baseline_sha(working_dir: Path | None) -> str | None:
     return head or None
 
 
-def _execution_intent(ledger: SqliteLedger, task: Task) -> str:
+def _execution_intent(ledger: Ledger, task: Task) -> str:
     """Carry ancestor objectives into a delegated beat without widening its assigned scope."""
     if task.parent_id is None:
         return task.intent
@@ -432,7 +432,7 @@ def _sprint_delta(
 def _to_ledger_artifact(artifact: OutcomeArtifact) -> Artifact:
     """Map a lander's canonical :class:`~chorus.outcomes.Artifact` to a storable ledger row."""
     return Artifact(
-        id=mint_id("art"),
+        id=mint_id(),
         task_id=artifact.task_id,
         type=ArtifactType(artifact.type.value),
         external_id=artifact.external_id,
@@ -473,7 +473,7 @@ class Scheduler:
         max_review_rounds: int = 2,
         memory_writer: EpisodicStore | None = None,
         company_root: Path | None = None,
-        ledger: SqliteLedger | None = None,
+        ledger: Ledger | None = None,
         workforce: Workforce | None = None,
         beat_runner: BeatRunner | None = None,
         beat_runner_for: BeatRunnerFor | None = None,
@@ -543,6 +543,19 @@ class Scheduler:
         # (a) RECOVER — reap orphaned leases + reconcile stranded work before any new dispatch, so
         # a crashed beat's lock is freed and its slot returned to the budget this same pulse.
         swept = reconcile(ledger, now=now)
+        for (
+            reaped_run_id
+        ) in swept.reaped_runs:  # watchdog: a reaped lease is a red lane, not a counter
+            reaped = ledger.runs.get(reaped_run_id)
+            if reaped is not None:
+                self._emit_allocation(
+                    EventKind.RUN_STALLED,
+                    at=now,
+                    task_id=reaped.task_id,
+                    employee_id=reaped.employee_id,
+                    run_id=reaped.id,
+                    payload={"reason": "lease_expired"},
+                )
         recovered = len(swept.reaped_runs) + self._recover_landed_delegations(ledger)
 
         # (b) CRON — fire due routines (each firing double-fire-guarded; writes a task, never a beat).
@@ -560,7 +573,7 @@ class Scheduler:
                 continue
             ledger.wakes.enqueue(
                 Wake(
-                    id=mint_id("wake"),
+                    id=mint_id(),
                     employee_id=fired.employee_id,
                     reason=WakeReason.MONITOR_DUE,
                     payload={"task_id": fired.task_id},
@@ -623,7 +636,7 @@ class Scheduler:
                 if ledger.recovery_actions.active_for_source(task_id) is None:
                     ledger.recovery_actions.open(
                         RecoveryAction(
-                            id=mint_id("rec"),
+                            id=mint_id(),
                             source_task_id=task_id,
                             kind=RecoveryKind.STRANDED,
                             owner_user_id="operator",
@@ -659,15 +672,38 @@ class Scheduler:
             ):
                 ledger.wakes.release(wake.id)
                 budget_gated += 1
+                self._emit_allocation(
+                    EventKind.BUDGET_HARD_STOP,
+                    at=now,
+                    task_id=str(wake.payload["task_id"]),
+                    employee_id=wake.employee_id,
+                    payload={"gate": "dispatch"},
+                )
                 continue
             task_id = str(wake.payload["task_id"])
-            run_id = f"run_{uuid.uuid4().hex}"
+            run_id = mint_id()
             # Dispatch CAS (spec 03 §5): checkout flips the task to ``in_progress`` under ``run_id``.
             # A False is a 409 — a live owner already holds it — so we release the wake and skip.
             if not ledger.tasks.checkout(task_id, employee_id=wake.employee_id, run_id=run_id):
                 ledger.wakes.release(wake.id)
                 continue
             busy.add(wake.employee_id)
+            self._emit_allocation(
+                EventKind.WAKE_CLAIMED,
+                at=now,
+                task_id=task_id,
+                employee_id=wake.employee_id,
+                run_id=run_id,
+                payload={"reason": wake.reason.value, "coalesced": wake.coalesced_count},
+            )
+            self._emit_allocation(
+                EventKind.TASK_STATUS,
+                at=now,
+                task_id=task_id,
+                employee_id=wake.employee_id,
+                run_id=run_id,
+                payload={"from": "todo", "to": "in_progress"},
+            )
             self._dispatch_beat(wake, run_id=run_id, now=now)
             dispatched += 1
 
@@ -706,7 +742,7 @@ class Scheduler:
         """Signal :meth:`run` to exit after the current pulse (idempotent)."""
         self._stop.set()
 
-    def _apply_monitor_recovery(self, ledger: SqliteLedger, monitor: Monitor) -> None:
+    def _apply_monitor_recovery(self, ledger: Ledger, monitor: Monitor) -> None:
         """An exhausted monitor escalates per its recovery policy (spec 03 §3c, spec 01 Cluster B).
 
         ``wake_owner`` enqueues a recovery wake to the assignee; ``create_recovery``/``escalate``
@@ -716,7 +752,7 @@ class Scheduler:
         if monitor.recovery_policy is MonitorRecoveryPolicy.WAKE_OWNER:
             ledger.wakes.enqueue(
                 Wake(
-                    id=mint_id("wake"),
+                    id=mint_id(),
                     employee_id=monitor.employee_id,
                     reason=WakeReason.RECOVERY,
                     payload={"task_id": monitor.task_id, "cause": "monitor_exhausted"},
@@ -730,7 +766,7 @@ class Scheduler:
             if monitor.recovery_policy is MonitorRecoveryPolicy.ESCALATE
             else RecoveryKind.STALE_RUN_WATCHDOG
         )
-        action_id = mint_id("rec")
+        action_id = mint_id()
         ledger.recovery_actions.open(
             RecoveryAction(
                 id=action_id,
@@ -870,7 +906,18 @@ class Scheduler:
         ):
             return
 
-        observer = self._event_bus.emit if self._event_bus is not None else None
+        trace_id = trace_root(ledger, task.id)  # the lineage root — the product's run anchor
+        observer = (
+            TraceStamper(
+                self._event_bus.emit,
+                trace_id=trace_id,
+                task_id=task.id,
+                employee_id=employee.id,
+                run_id=run_id,
+            )
+            if self._event_bus is not None
+            else None
+        )
         verifier = None
         beat_runner: BeatRunner | None = None
         # The fingerprint baseline: HEAD *before* the beat runs, so the beat-end diff spans exactly this
@@ -1041,11 +1088,18 @@ class Scheduler:
         )
         ledger.tasks.release_locks(task_id, run_id=run_id)
         ledger.wakes.mark_done(wake.id)
-        self._record_cost(employee.id, task_id=task_id, run_id=run_id, result=result, now=now)
+        self._record_cost(
+            employee.id,
+            task_id=task_id,
+            run_id=run_id,
+            trace_id=trace_id,
+            result=result,
+            now=now,
+        )
 
     async def _capture_memory(
         self,
-        ledger: SqliteLedger,
+        ledger: Ledger,
         *,
         run_id: str,
         employee: Employee,
@@ -1117,7 +1171,7 @@ class Scheduler:
             return
 
     def _write_integrate_packet(
-        self, ledger: SqliteLedger, *, beat_runner: BeatRunner, task_id: str
+        self, ledger: Ledger, *, beat_runner: BeatRunner, task_id: str
     ) -> None:
         """Write the manager's child-feedback packet when the runner exposes a working directory."""
         if not isinstance(beat_runner, _RunnerWithWorkingDir):
@@ -1180,7 +1234,7 @@ class Scheduler:
             ledger.tasks.set_status(task.id, TaskStatus.BLOCKED)
             ledger.wakes.enqueue(
                 Wake(
-                    id=mint_id("wake"),
+                    id=mint_id(),
                     employee_id=employee.id,
                     reason=WakeReason.CHILDREN_DONE,
                     payload={"task_id": task.id, "cause": "required_descendant_failed"},
@@ -1236,7 +1290,7 @@ class Scheduler:
                 ledger.tasks.set_status(task.id, TaskStatus.BLOCKED)
                 ledger.wakes.enqueue(
                     Wake(
-                        id=mint_id("wake"),
+                        id=mint_id(),
                         employee_id=employee.id,
                         reason=WakeReason.CHILDREN_DONE,
                         payload={"task_id": task.id},
@@ -1286,7 +1340,7 @@ class Scheduler:
         """Run the integrated parent gate under the non-workforce system verifier."""
         ledger = self._require_ledger()
         reviewer = SYSTEM_VERIFIER
-        verification_run_id = mint_id("rev")
+        verification_run_id = mint_id()
         runner = self._verification_runner(
             reviewer,
             task_id=task.id,
@@ -1323,7 +1377,17 @@ class Scheduler:
                     "the objective is satisfied."
                 ),
                 rubric=rubric,
-                observer=self._event_bus.emit if self._event_bus is not None else None,
+                observer=(
+                    TraceStamper(
+                        self._event_bus.emit,
+                        trace_id=trace_root(ledger, task.id),
+                        task_id=task.id,
+                        employee_id=lead.id,
+                        run_id=verification_run_id,
+                    )
+                    if self._event_bus is not None
+                    else None
+                ),
             )
         except Exception as exc:
             review = failure_outcome(exc)
@@ -1334,7 +1398,7 @@ class Scheduler:
         )
         return review.passed, reviewer.id, verification_run_id
 
-    def _recover_landed_delegations(self, ledger: SqliteLedger) -> int:
+    def _recover_landed_delegations(self, ledger: Ledger) -> int:
         """Close delegation metadata left behind after a verified parent landed."""
         recovered = 0
         for contract in ledger.delegation_contracts.landed_awaiting_closure():
@@ -1395,7 +1459,7 @@ class Scheduler:
 
     async def _maybe_cap_integrate(
         self,
-        ledger: SqliteLedger,
+        ledger: Ledger,
         *,
         wake: Wake,
         run_id: str,
@@ -1428,7 +1492,7 @@ class Scheduler:
                 if ledger.recovery_actions.active_for_source(task.id) is None:
                     ledger.recovery_actions.open(
                         RecoveryAction(
-                            id=mint_id("rec"),
+                            id=mint_id(),
                             source_task_id=task.id,
                             kind=RecoveryKind.STRANDED,
                             owner_employee_id=employee.id,
@@ -1566,7 +1630,7 @@ class Scheduler:
         rubric = _review_rubric(verifier.spec)
         reviewer = SYSTEM_VERIFIER
 
-        review_run_id = mint_id("rev")
+        review_run_id = mint_id()
         runner = self._review_runner(reviewer, task_id=task_id, worktree_owner_id=author.id)
         ledger.runs.create(
             Run(
@@ -1588,7 +1652,17 @@ class Scheduler:
             BeatContext(task_id=task_id, run_id=review_run_id, employee_id=reviewer.id).write(
                 worktree
             )
-        observer = self._event_bus.emit if self._event_bus is not None else None
+        observer = (
+            TraceStamper(
+                self._event_bus.emit,
+                trace_id=trace_root(ledger, task_id),
+                task_id=task_id,
+                employee_id=reviewer.id,
+                run_id=review_run_id,
+            )
+            if self._event_bus is not None
+            else None
+        )
         try:
             result = await runner.run_task(
                 task_id=task_id,
@@ -1735,7 +1809,7 @@ class Scheduler:
             if task.parent_id is not None and ledger.tasks.all_children_terminal(task.parent_id):
                 ledger.wakes.enqueue(
                     Wake(
-                        id=mint_id("wake"),
+                        id=mint_id(),
                         employee_id=manager_id,
                         reason=WakeReason.CHILDREN_DONE,
                         payload={"task_id": task.parent_id},
@@ -1749,7 +1823,7 @@ class Scheduler:
             ledger.tasks.set_status(task_id, TaskStatus.TODO)  # re-dispatch the author to fix it
             ledger.wakes.enqueue(
                 Wake(
-                    id=mint_id("wake"),
+                    id=mint_id(),
                     employee_id=author.id,
                     reason=WakeReason.RECOVERY,
                     payload={"task_id": task_id, "cause": "review_blocked"},
@@ -1862,7 +1936,7 @@ class Scheduler:
             return
         ledger.recovery_actions.open(
             RecoveryAction(
-                id=mint_id("rec"),
+                id=mint_id(),
                 source_task_id=task_id,
                 kind=RecoveryKind.STRANDED,
                 owner_employee_id=owner_id,
@@ -1942,7 +2016,7 @@ class Scheduler:
             ledger.tasks.set_status(task_id, TaskStatus.TODO)  # dispatchable; not yet "stuck"
             ledger.wakes.enqueue(
                 Wake(
-                    id=mint_id("wake"),
+                    id=mint_id(),
                     employee_id=employee_id,
                     reason=WakeReason.RECOVERY,
                     payload={"task_id": task_id, "cause": "dod_failed"},
@@ -1953,7 +2027,7 @@ class Scheduler:
         if ledger.recovery_actions.active_for_source(task_id) is None:
             ledger.recovery_actions.open(
                 RecoveryAction(
-                    id=mint_id("rec"),
+                    id=mint_id(),
                     source_task_id=task_id,
                     kind=RecoveryKind.STALE_RUN_WATCHDOG,
                     owner_employee_id=employee_id,
@@ -1984,7 +2058,7 @@ class Scheduler:
                 ledger.tasks.set_status(task_id, TaskStatus.TODO)  # re-dispatchable; not stuck
                 ledger.wakes.enqueue(
                     Wake(
-                        id=mint_id("wake"),
+                        id=mint_id(),
                         employee_id=employee_id,
                         reason=WakeReason.RECOVERY,
                         payload={"task_id": task_id, "cause": "budget_resume"},
@@ -2008,7 +2082,7 @@ class Scheduler:
         phase = result.outcome.get("phase")
         ledger.recovery_actions.open(
             RecoveryAction(
-                id=mint_id("rec"),
+                id=mint_id(),
                 source_task_id=task_id,
                 kind=RecoveryKind.STRANDED,
                 owner_employee_id=employee_id,
@@ -2019,8 +2093,40 @@ class Scheduler:
             )
         )
 
+    def _emit_allocation(
+        self,
+        kind: EventKind,
+        *,
+        at: datetime,
+        task_id: str,
+        employee_id: str,
+        run_id: str | None = None,
+        payload: dict[str, Any] | None = None,
+    ) -> None:
+        """Mirror one allocation transition onto the bus (OBS P6) — no bus, no-op."""
+        if self._event_bus is None:
+            return
+        self._event_bus.emit(
+            Event(
+                kind=kind,
+                at=at,
+                trace_id=trace_root(self._require_ledger(), task_id),
+                task_id=task_id,
+                employee_id=employee_id,
+                run_id=run_id,
+                payload=payload or {},
+            )
+        )
+
     def _record_cost(
-        self, employee_id: str, *, task_id: str, run_id: str, result: BeatOutcome, now: datetime
+        self,
+        employee_id: str,
+        *,
+        task_id: str,
+        run_id: str,
+        trace_id: str,
+        result: BeatOutcome,
+        now: datetime,
     ) -> None:
         """Record the beat's spend as a cost event and run Gate 2 against it (spec 04 §3).
 
@@ -2032,7 +2138,7 @@ class Scheduler:
         ledger = self._require_ledger()
         event = ledger.cost_events.record(
             CostEvent(
-                id=mint_id("cost"),
+                id=mint_id(),
                 employee_id=employee_id,
                 task_id=task_id,
                 run_id=run_id,
@@ -2041,13 +2147,14 @@ class Scheduler:
                 cost_cents=result.cost_cents,
                 input_tokens=result.input_tokens,
                 output_tokens=result.output_tokens,
+                trace_id=trace_id,
                 occurred_at=now,
             )
         )
         if self._budget_enforcer is not None:
             self._budget_enforcer.on_cost_event(event, now=now)
 
-    def _require_ledger(self) -> SqliteLedger:
+    def _require_ledger(self) -> Ledger:
         return self._require(self._ledger, "ledger")
 
     @staticmethod

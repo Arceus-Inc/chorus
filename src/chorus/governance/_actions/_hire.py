@@ -15,7 +15,7 @@ from chorus.ledger import Approval, ApprovalAction
 from chorus.workforce import EmployeeStatus
 
 if TYPE_CHECKING:
-    from chorus.ledger import SqliteLedger
+    from chorus.ledger import Ledger
 
 
 class HireError(GovernanceError):
@@ -27,7 +27,7 @@ class HireEmployeeAction:
 
     action = ApprovalAction.HIRE_EMPLOYEE
 
-    def __init__(self, ledger: SqliteLedger) -> None:
+    def __init__(self, ledger: Ledger) -> None:
         self._ledger = ledger
 
     def on_open(self, approval: Approval) -> None:

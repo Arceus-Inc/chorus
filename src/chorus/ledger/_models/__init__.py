@@ -78,6 +78,7 @@ from chorus.ledger._models._scheduling import (
     Run,
     Wake,
 )
+from chorus.ledger._models._skills import Skill, SkillOrigin, SkillRevision, SkillState
 from chorus.ledger._models._staffing import (
     StaffingNeed,
     StaffingRequest,
@@ -149,6 +150,10 @@ __all__ = [
     "RoutineTrigger",
     "Run",
     "RunStatus",
+    "Skill",
+    "SkillOrigin",
+    "SkillRevision",
+    "SkillState",
     "StaffingNeed",
     "StaffingRequest",
     "StaffingRequestStatus",

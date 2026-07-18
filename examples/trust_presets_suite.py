@@ -50,7 +50,9 @@ def _task(**over: object) -> Task:
     return Task(**base)  # type: ignore[arg-type]
 
 
-def _scenario(name: str, *, config: RoleBeatConfig, task: Task, policy: TrustPolicy, note: str) -> Scenario:
+def _scenario(
+    name: str, *, config: RoleBeatConfig, task: Task, policy: TrustPolicy, note: str
+) -> Scenario:
     before = _posture(config)
     try:
         after = _posture(apply_trust(config, task=task, policy=policy))
@@ -64,7 +66,9 @@ def _scenarios() -> list[Scenario]:
     return [
         _scenario(
             "standard task",
-            config=_ENGINEER, task=_task(), policy=TrustPolicy(),
+            config=_ENGINEER,
+            task=_task(),
+            policy=TrustPolicy(),
             note="a trusted task keeps the role's full posture — untouched.",
         ),
         _scenario(
@@ -91,8 +95,11 @@ def _scenarios() -> list[Scenario]:
         _scenario(
             "low-trust, inline secret",
             config=RoleBeatConfig(
-                system_prompt="x", sandbox="unrestricted", permission_mode="default",
-                isolation="worktree", env=(("AWS_SECRET", "raw-key-value"),),
+                system_prompt="x",
+                sandbox="unrestricted",
+                permission_mode="default",
+                isolation="worktree",
+                env=(("AWS_SECRET", "raw-key-value"),),
             ),
             task=_task(trust_preset=TrustPreset.LOW_TRUST_REVIEW.value, trust_boundary=boundary),
             policy=TrustPolicy(),

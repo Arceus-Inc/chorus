@@ -20,7 +20,7 @@ from chorus.ledger._models import ActivityVerb, ExecutionMode, TaskStatus
 from chorus.lifecycle._audit import record_activity
 
 if TYPE_CHECKING:
-    from chorus.ledger import SqliteLedger
+    from chorus.ledger import Ledger
 
 _RELATIVE_PATH = Path(".harness") / "beat-context.json"
 _INTEGRATE_RELATIVE_PATH = Path(".harness") / "integrate-context.json"
@@ -140,7 +140,7 @@ class IntegrateContextPacket:
         return "accept" if complete else "react"
 
     @classmethod
-    def recommended_for(cls, ledger: SqliteLedger, parent_task_id: str) -> str:
+    def recommended_for(cls, ledger: Ledger, parent_task_id: str) -> str:
         """The completeness verdict for a parent, derived straight from the ledger.
 
         Lets a caller that does not need the whole packet — e.g. the harness factory, deciding whether
@@ -148,15 +148,13 @@ class IntegrateContextPacket:
         return cls.recommend(cls._children_for(ledger, parent_task_id))
 
     @classmethod
-    def _children_for(
-        cls, ledger: SqliteLedger, parent_task_id: str
-    ) -> tuple[ChildOutcomeContext, ...]:
+    def _children_for(cls, ledger: Ledger, parent_task_id: str) -> tuple[ChildOutcomeContext, ...]:
         return tuple(
             _child_outcome(ledger, child.id) for child in ledger.tasks.children(parent_task_id)
         )
 
     @staticmethod
-    def iteration_for(ledger: SqliteLedger, parent_task_id: str) -> int:
+    def iteration_for(ledger: Ledger, parent_task_id: str) -> int:
         """1-based count of integrate beats this parent has had (its runs minus the kickoff beat).
 
         The single source of truth for the loop depth — used both by the kernel (to write the packet
@@ -166,7 +164,7 @@ class IntegrateContextPacket:
 
     @classmethod
     def build(
-        cls, ledger: SqliteLedger, *, parent_task_id: str, audit: bool = True
+        cls, ledger: Ledger, *, parent_task_id: str, audit: bool = True
     ) -> IntegrateContextPacket:
         """Build the packet from durable ledger state for the manager's integrate beat."""
         parent = ledger.tasks.get(parent_task_id)
@@ -253,7 +251,7 @@ class IntegrateContextPacket:
         )
 
 
-def _delegation_depth(ledger: SqliteLedger, task_id: str) -> int:
+def _delegation_depth(ledger: Ledger, task_id: str) -> int:
     depth = 0
     seen: set[str] = set()
     contract = ledger.delegation_contracts.get(task_id)
@@ -267,7 +265,7 @@ def _delegation_depth(ledger: SqliteLedger, task_id: str) -> int:
 
 
 def _nested_subtree_summaries(
-    ledger: SqliteLedger, parent_task_id: str
+    ledger: Ledger, parent_task_id: str
 ) -> tuple[NestedSubtreeSummary, ...]:
     summaries: list[NestedSubtreeSummary] = []
     terminal = {TaskStatus.DONE, TaskStatus.CANCELLED, TaskStatus.REJECTED}
@@ -294,7 +292,7 @@ def _nested_subtree_summaries(
     return tuple(summaries)
 
 
-def _child_outcome(ledger: SqliteLedger, task_id: str) -> ChildOutcomeContext:
+def _child_outcome(ledger: Ledger, task_id: str) -> ChildOutcomeContext:
     task = ledger.tasks.get(task_id)
     if task is None:
         raise KeyError(task_id)

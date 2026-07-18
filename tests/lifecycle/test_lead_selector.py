@@ -15,12 +15,13 @@ from chorus.ledger import (
     BudgetPolicy,
     BudgetScope,
     CostEvent,
+    Ledger,
     ManagementProfile,
-    SqliteLedger,
     Task,
     TaskStatus,
 )
 from chorus.lifecycle import LeadSelector
+from chorus.testing import uid
 from chorus.workforce import Employee
 
 pytestmark = pytest.mark.integration
@@ -29,7 +30,7 @@ _NOW = datetime(2026, 7, 13, 12, tzinfo=UTC)
 
 
 def _candidate(
-    ledger: SqliteLedger,
+    ledger: Ledger,
     employee_id: str,
     *,
     profession: str = "architect",
@@ -46,9 +47,7 @@ def _candidate(
             can_lead=True,
             max_delegation_depth=2,
             max_team_size=5,
-            allowed_professions=tuple(
-                dict.fromkeys(("engineer", "designer", *report_professions))
-            ),
+            allowed_professions=tuple(dict.fromkeys(("engineer", "designer", *report_professions))),
             version=1,
         )
     )
@@ -69,18 +68,18 @@ def _candidate(
 def _request(*, preferred_lead: str | None = None) -> DelegatedWorkRequest:
     return DelegatedWorkRequest(
         intent="Ship M8",
-        goal_id="goal-8",
+        goal_id=uid("goal-8"),
         requirements=(StaffingRequirement("engineer"),),
         preferred_lead=preferred_lead,
         origin_fingerprint="goal-8:v1",
     )
 
 
-def _selector(ledger: SqliteLedger) -> LeadSelector:
+def _selector(ledger: Ledger) -> LeadSelector:
     return LeadSelector(ledger, company_id="company", clock=lambda: _NOW)
 
 
-def test_valid_preferred_lead_wins_over_automatic_ranking(ledger: SqliteLedger) -> None:
+def test_valid_preferred_lead_wins_over_automatic_ranking(ledger: Ledger) -> None:
     _candidate(ledger, "alpha")
     preferred = _candidate(ledger, "zulu")
 
@@ -89,31 +88,31 @@ def test_valid_preferred_lead_wins_over_automatic_ranking(ledger: SqliteLedger) 
     assert selected == preferred
 
 
-def test_no_eligible_lead_returns_typed_staffing_blocked(ledger: SqliteLedger) -> None:
-    ledger.employees.create(Employee(id="unprofiled", name="Unprofiled", role="engineer"))
+def test_no_eligible_lead_returns_typed_staffing_blocked(ledger: Ledger) -> None:
+    ledger.employees.create(Employee(id=uid("unprofiled"), name="Unprofiled", role="engineer"))
 
     selected = _selector(ledger).select(_request())
 
     assert selected == StaffingBlocked(
-        goal_id="goal-8",
+        goal_id=uid("goal-8"),
         reason="no invokable lead satisfies profile, line, team-size, and budget constraints",
     )
     assert ledger.tasks.all() == []
 
 
-def test_profession_fit_precedes_employee_id_tiebreak(ledger: SqliteLedger) -> None:
+def test_profession_fit_precedes_employee_id_tiebreak(ledger: Ledger) -> None:
     _candidate(ledger, "alpha", profession="designer")
     matching = _candidate(ledger, "zulu", profession="engineer")
 
     assert _selector(ledger).select(_request()) == matching
 
 
-def test_lower_observed_load_precedes_budget_headroom(ledger: SqliteLedger) -> None:
+def test_lower_observed_load_precedes_budget_headroom(ledger: Ledger) -> None:
     busy = _candidate(ledger, "alpha")
     available = _candidate(ledger, "zulu")
     ledger.tasks.submit(
         Task(
-            id="busy-task",
+            id=uid("busy-task"),
             intent="Existing work",
             status=TaskStatus.TODO,
             assignee_employee_id=busy.id,
@@ -121,7 +120,7 @@ def test_lower_observed_load_precedes_budget_headroom(ledger: SqliteLedger) -> N
     )
     ledger.budget_policies.create(
         BudgetPolicy(
-            id="busy-budget",
+            id=uid("busy-budget"),
             scope_type=BudgetScope.EMPLOYEE,
             scope_id=busy.id,
             amount=100_000,
@@ -129,7 +128,7 @@ def test_lower_observed_load_precedes_budget_headroom(ledger: SqliteLedger) -> N
     )
     ledger.budget_policies.create(
         BudgetPolicy(
-            id="available-budget",
+            id=uid("available-budget"),
             scope_type=BudgetScope.EMPLOYEE,
             scope_id=available.id,
             amount=1_000,
@@ -140,14 +139,14 @@ def test_lower_observed_load_precedes_budget_headroom(ledger: SqliteLedger) -> N
 
 
 def test_greater_budget_headroom_precedes_employee_id_tiebreak(
-    ledger: SqliteLedger,
+    ledger: Ledger,
 ) -> None:
     _candidate(ledger, "alpha")
     greater_headroom = _candidate(ledger, "zulu")
     for employee_id, amount in (("alpha", 1_000), ("zulu", 2_000)):
         ledger.budget_policies.create(
             BudgetPolicy(
-                id=f"budget-{employee_id}",
+                id=uid(f"budget-{employee_id}"),
                 scope_type=BudgetScope.EMPLOYEE,
                 scope_id=employee_id,
                 amount=amount,
@@ -157,12 +156,12 @@ def test_greater_budget_headroom_precedes_employee_id_tiebreak(
     assert _selector(ledger).select(_request()) == greater_headroom
 
 
-def test_budget_blocked_candidate_is_excluded(ledger: SqliteLedger) -> None:
+def test_budget_blocked_candidate_is_excluded(ledger: Ledger) -> None:
     blocked = _candidate(ledger, "alpha", profession="engineer")
     fallback = _candidate(ledger, "zulu")
     ledger.budget_policies.create(
         BudgetPolicy(
-            id="blocked-budget",
+            id=uid("blocked-budget"),
             scope_type=BudgetScope.EMPLOYEE,
             scope_id=blocked.id,
             amount=100,
@@ -170,7 +169,7 @@ def test_budget_blocked_candidate_is_excluded(ledger: SqliteLedger) -> None:
     )
     ledger.cost_events.record(
         CostEvent(
-            id="blocked-spend",
+            id=uid("blocked-spend"),
             employee_id=blocked.id,
             provider="test",
             model="test",
@@ -182,7 +181,7 @@ def test_budget_blocked_candidate_is_excluded(ledger: SqliteLedger) -> None:
     assert _selector(ledger).select(_request()) == fallback
 
 
-def test_equal_candidates_use_stable_employee_id_tiebreak(ledger: SqliteLedger) -> None:
+def test_equal_candidates_use_stable_employee_id_tiebreak(ledger: Ledger) -> None:
     selected = _candidate(ledger, "alpha")
     _candidate(ledger, "zulu")
 
@@ -190,7 +189,7 @@ def test_equal_candidates_use_stable_employee_id_tiebreak(ledger: SqliteLedger) 
 
 
 def test_hierarchical_requirements_select_shallow_ceo_over_leaf_specialists(
-    ledger: SqliteLedger,
+    ledger: Ledger,
 ) -> None:
     ceo = ledger.employees.create(Employee(id="ceo", name="CEO", role="ceo"))
     ledger.management_profiles.upsert(
@@ -206,11 +205,11 @@ def test_hierarchical_requirements_select_shallow_ceo_over_leaf_specialists(
         )
     )
     ledger.employees.create(
-        Employee(id="product-lead", name="Product Lead", role="pm", reports_to="ceo")
+        Employee(id=uid("product-lead"), name="Product Lead", role="pm", reports_to="ceo")
     )
     ledger.employees.create(
         Employee(
-            id="engineering-lead",
+            id=uid("engineering-lead"),
             name="Engineering Lead",
             role="backend_engineer",
             reports_to="ceo",
@@ -221,7 +220,7 @@ def test_hierarchical_requirements_select_shallow_ceo_over_leaf_specialists(
             id="designer",
             name="Designer",
             role="designer",
-            reports_to="product-lead",
+            reports_to=uid("product-lead"),
         )
     )
     ledger.employees.create(
@@ -229,29 +228,27 @@ def test_hierarchical_requirements_select_shallow_ceo_over_leaf_specialists(
             id="frontend",
             name="Frontend",
             role="frontend_engineer",
-            reports_to="engineering-lead",
+            reports_to=uid("engineering-lead"),
         )
     )
     ledger.employees.create(
         Employee(
-            id="backend",
+            id=uid("backend"),
             name="Backend",
             role="backend_engineer",
-            reports_to="engineering-lead",
+            reports_to=uid("engineering-lead"),
         )
     )
     request = DelegatedWorkRequest(
         intent="Ship feedback triage",
-        goal_id="goal-product",
+        goal_id=uid("goal-product"),
         lead_professions=("ceo",),
         requirements=(
             StaffingRequirement("designer", coverage="subtree", outcome_area="product"),
             StaffingRequirement(
                 "frontend_engineer", coverage="subtree", outcome_area="engineering"
             ),
-            StaffingRequirement(
-                "backend_engineer", coverage="subtree", outcome_area="engineering"
-            ),
+            StaffingRequirement("backend_engineer", coverage="subtree", outcome_area="engineering"),
         ),
     )
 
@@ -260,18 +257,18 @@ def test_hierarchical_requirements_select_shallow_ceo_over_leaf_specialists(
 
 
 def test_explicit_lead_profession_selects_functional_owner(
-    ledger: SqliteLedger,
+    ledger: Ledger,
 ) -> None:
-    _candidate(ledger, "product-lead", profession="pm")
+    _candidate(ledger, uid("product-lead"), profession="pm")
     engineering = _candidate(
         ledger,
-        "engineering-lead",
+        uid("engineering-lead"),
         profession="backend_engineer",
         report_professions=("frontend_engineer",),
     )
     request = DelegatedWorkRequest(
         intent="Build the interface",
-        goal_id="goal-engineering",
+        goal_id=uid("goal-engineering"),
         lead_professions=("backend_engineer",),
         requirements=(StaffingRequirement("frontend_engineer"),),
     )

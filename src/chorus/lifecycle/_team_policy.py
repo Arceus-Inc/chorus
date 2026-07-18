@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-import hashlib
 from typing import TYPE_CHECKING
 
+from chorus.ids import derive_id
 from chorus.ledger._models import (
     ActivityVerb,
     Team,
@@ -16,7 +16,7 @@ from chorus.lifecycle._audit import record_activity
 from chorus.workforce import Employee, EmployeeStatus
 
 if TYPE_CHECKING:
-    from chorus.ledger import SqliteLedger
+    from chorus.ledger import Ledger
 
 _UNAVAILABLE = frozenset({EmployeeStatus.PENDING, EmployeeStatus.TERMINATED})
 
@@ -28,7 +28,7 @@ class MissionTeamPolicyDenied(ValueError):
 class MissionTeamPolicy:
     """Create, validate, activate, and archive one durable Team per delegated goal."""
 
-    def __init__(self, ledger: SqliteLedger) -> None:
+    def __init__(self, ledger: Ledger) -> None:
         self._ledger = ledger
 
     def create_for_root(self, lead: Employee, goal_id: str) -> Team:
@@ -222,13 +222,11 @@ class MissionTeamPolicy:
 
 
 def _team_id(goal_id: str) -> str:
-    digest = hashlib.sha1(goal_id.encode()).hexdigest()[:16]
-    return f"team_{digest}"
+    return derive_id("team", goal_id)
 
 
 def _nested_team_id(parent_team_id: str, delegation_task_id: str) -> str:
-    digest = hashlib.sha1(f"{parent_team_id}::{delegation_task_id}".encode()).hexdigest()[:16]
-    return f"team_{digest}"
+    return derive_id("team", parent_team_id, delegation_task_id)
 
 
 __all__ = ["MissionTeamPolicy", "MissionTeamPolicyDenied"]

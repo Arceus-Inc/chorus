@@ -51,7 +51,7 @@ def _message(ctx: CommandContext) -> LoopSignal:
     wake = deliver_message(
         ctx.session.ledger,
         Message(
-            id=mint_id("msg"),
+            id=mint_id(),
             to_employee_id=to_employee_id,
             body=body,
             kind=MessageKind.INSTRUCTION,

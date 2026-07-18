@@ -18,6 +18,9 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import uuid
+
+_EXAMPLE_COMPANY = str(uuid.uuid5(uuid.NAMESPACE_URL, "chorus-example"))  # one stable demo org
 import subprocess
 import sys
 import tempfile
@@ -25,24 +28,25 @@ from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from pathlib import Path
 
+from lattice.domain.proposal import PatternDraft, Proposal
+
 from chorus.budgets import BudgetEnforcer
 from chorus.events import Event, EventKind
 from chorus.heartbeat import Scheduler
-from chorus.ledger import SqliteLedger, Task
+from chorus.ledger import Ledger, Task
 from chorus.lifecycle import assign_task
 from chorus.memory import EpisodicStore, SprintDelta
 from chorus.observability import EventBus
 from chorus.outcomes import Verifier
 from chorus.roles import RoleRegistry, default_roles
 from chorus.roles._plugin import RolePlugin
+from chorus.skills import SkillManager, SkillStore
 from chorus.workforce import Employee, LedgerWorkforce
 from chorus_cli._beats import default_pricing_from_env
 from chorus_cli._env import load_env_file
 from chorus_employee import default_landers
 from chorus_harness import EmployeeHarnessFactory
 from chorus_tools._lattice_bridge import build_lattice_for_chorus
-from chorus.skills import SkillManager, SkillStore
-from lattice.domain.proposal import PatternDraft, Proposal
 
 _EMPLOYEE_ID = "bex"
 _BEAT_TIMEOUT_S = float(os.environ.get("CHORUS_PROBE_BEAT_TIMEOUT_S", "180"))
@@ -256,7 +260,9 @@ def _seed_episodes(store: EpisodicStore, *, n: int = 5) -> list[str]:
     return run_ids
 
 
-def _apply_pattern_and_habit(*, company_root: Path, run_ids: list[str]) -> list[tuple[str, bool, str]]:
+def _apply_pattern_and_habit(
+    *, company_root: Path, ledger: Ledger, run_ids: list[str]
+) -> list[tuple[str, bool, str]]:
     from chorus_employee.backend_engineer._harness import backend_engineer_manifest
 
     skills_root = backend_engineer_manifest().skills_root
@@ -296,7 +302,7 @@ def _apply_pattern_and_habit(*, company_root: Path, run_ids: list[str]) -> list[
         )
     )
 
-    store = SkillStore(company_root / "skills")
+    store = SkillStore(ledger)
     episodes = tuple(EpisodicStore(company_root / "memory").records_for(_EMPLOYEE_ID, limit=20))
     mgr = SkillManager(
         store,
@@ -335,7 +341,9 @@ def _apply_pattern_and_habit(*, company_root: Path, run_ids: list[str]) -> list[
     return checks
 
 
-async def _run_task(scheduler: Scheduler, ledger: SqliteLedger, bus: _Bus, task_id: str) -> list[_BeatTrace]:
+async def _run_task(
+    scheduler: Scheduler, ledger: Ledger, bus: _Bus, task_id: str
+) -> list[_BeatTrace]:
     from chorus.ledger import TaskStatus
 
     before = len(bus.traces)
@@ -382,13 +390,11 @@ def _live_checks(*, traces: list[_BeatTrace], worktree: Path) -> list[tuple[str,
         ),
         (
             "materialized versioned skill",
-            (
-                worktree / ".harness" / "skills" / "structuring-any-service" / "SKILL.md"
-            ).is_file()
+            (worktree / ".harness" / "skills" / "structuring-any-service" / "SKILL.md").is_file()
             and "Before patching HTTP clients"
-            in (worktree / ".harness" / "skills" / "structuring-any-service" / "SKILL.md").read_text(
-                encoding="utf-8"
-            ),
+            in (
+                worktree / ".harness" / "skills" / "structuring-any-service" / "SKILL.md"
+            ).read_text(encoding="utf-8"),
             "worktree .harness/skills/structuring-any-service",
         ),
     ]
@@ -408,7 +414,10 @@ def main() -> int:
     seed = base / "source"
     _seed(seed)
 
-    ledger = SqliteLedger.open(":memory:")
+    ledger = Ledger.open(
+        os.environ.get("CHORUS_LEDGER_DSN", "postgresql://localhost/chorus"),
+        company_id=_EXAMPLE_COMPANY,
+    )
     report_path = (
         Path(__file__).resolve().parent.parent
         / "reports"
@@ -441,7 +450,9 @@ def main() -> int:
     _log(f"  seeded {len(run_ids)} runs")
 
     _log("\n--- PROGRAMMATIC pattern + habit EVOLVE ---")
-    prog_checks = _apply_pattern_and_habit(company_root=factory.company_root, run_ids=run_ids)
+    prog_checks = _apply_pattern_and_habit(
+        company_root=factory.company_root, ledger=ledger, run_ids=run_ids
+    )
     for name, ok, detail in prog_checks:
         _log(f"  [{'PASS' if ok else 'FAIL'}] {name} — {detail}")
     if not all(ok for _, ok, _ in prog_checks):
@@ -509,7 +520,9 @@ def main() -> int:
             all_ok = all_ok and ok
 
     soft_ok = all(
-        ok for name, ok, _ in live_checks if name in {"skill tool or section quoted", "lattice_context called"}
+        ok
+        for name, ok, _ in live_checks
+        if name in {"skill tool or section quoted", "lattice_context called"}
     )
 
     payload = {

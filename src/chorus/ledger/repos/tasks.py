@@ -9,10 +9,16 @@ arrives with the M2 ``task_dependency`` table).
 
 from __future__ import annotations
 
-import sqlite3
-
 from chorus.ledger._models import ExecutionMode, OriginKind, Task, TaskPriority, TaskStatus
-from chorus.ledger.repos._base import dumps, from_iso, loads, to_iso, utcnow_iso
+from chorus.ledger.repos._base import (
+    LedgerConnection,
+    LedgerRow,
+    dumps,
+    from_iso,
+    loads,
+    to_iso,
+    utcnow_iso,
+)
 from chorus.lifecycle._transitions import assert_legal
 
 # Statuses from which a task may be checked out into agent-owned in_progress (spec 02 §2). Includes
@@ -32,7 +38,7 @@ _STATUS_STAMP: dict[str, str] = {
 class TaskRepo:
     """Durable operations on ``task`` rows."""
 
-    def __init__(self, conn: sqlite3.Connection) -> None:
+    def __init__(self, conn: LedgerConnection) -> None:
         self._conn = conn
 
     def submit(self, task: Task) -> Task:
@@ -112,7 +118,7 @@ class TaskRepo:
             (run_id, run_id, employee_id, now, now, task_id, *_CLAIMABLE),
         )
         self._conn.commit()
-        return cursor.rowcount == 1
+        return bool(cursor.rowcount == 1)
 
     def release_locks(self, task_id: str, *, run_id: str) -> None:
         """Compare-and-clear: only release locks still pointing at ``run_id`` (spec 01 invariant 4)."""
@@ -137,6 +143,14 @@ class TaskRepo:
         self._conn.execute(
             "UPDATE task SET trust_preset = ?, trust_boundary = ?, updated_at = ? WHERE id = ?",
             (preset, dumps(boundary) if boundary is not None else None, utcnow_iso(), task_id),
+        )
+        self._conn.commit()
+
+    def set_priority(self, task_id: str, priority: TaskPriority) -> None:
+        """Reprioritise a task — a pure data write (no scheduling side effects)."""
+        self._conn.execute(
+            "UPDATE task SET priority = ?, updated_at = ? WHERE id = ?",
+            (priority.value, utcnow_iso(), task_id),
         )
         self._conn.commit()
 
@@ -187,7 +201,7 @@ class TaskRepo:
             (employee_id, now, task_id),
         )
         self._conn.commit()
-        return cursor.rowcount == 1
+        return bool(cursor.rowcount == 1)
 
     def has_children(self, parent_id: str) -> bool:
         """True iff ``parent_id`` has at least one child task (it delegated — spec M3 §5)."""
@@ -292,7 +306,7 @@ class TaskRepo:
         return row is not None
 
 
-def _row_to_task(row: sqlite3.Row) -> Task:
+def _row_to_task(row: LedgerRow) -> Task:
     return Task(
         id=row["id"],
         intent=row["intent"],

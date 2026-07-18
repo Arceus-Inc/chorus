@@ -13,6 +13,7 @@ from dream.tools._context import ToolExecutionContext
 from chorus.heartbeat import BeatContext
 from chorus.memory import EpisodicStore, SprintDelta
 from chorus.roles import RoleRegistry, default_roles
+from chorus.testing import uid
 from chorus.workforce import Employee
 from chorus_harness import _factory as _factory_mod
 from chorus_tools._lattice import LatticeApplyTool
@@ -87,8 +88,8 @@ async def test_apply_calls_forget_after_success(tmp_path: Path) -> None:
     now = datetime.now(UTC)
     store.append(
         SprintDelta(
-            run_id="r1",
-            task_id="t1",
+            run_id=uid("r1"),
+            task_id=uid("t1"),
             employee_id="bex",
             role="backend_engineer",
             scope="project",
@@ -107,7 +108,7 @@ async def test_apply_calls_forget_after_success(tmp_path: Path) -> None:
 
     worktree = tmp_path / "worktree"
     worktree.mkdir()
-    BeatContext(employee_id="bex", run_id="run_a", task_id="t1").write(worktree)
+    BeatContext(employee_id="bex", run_id=uid("run_a"), task_id=uid("t1")).write(worktree)
 
     result = await tool.execute(
         {
@@ -116,7 +117,7 @@ async def test_apply_calls_forget_after_success(tmp_path: Path) -> None:
                     {
                         "key": "api.retry",
                         "claim": "HTTP client retries use exponential backoff capped at 30s",
-                        "source_run_ids": ["r1"],
+                        "source_run_ids": [uid("r1")],
                     }
                 ],
             }

@@ -15,11 +15,12 @@ from datetime import UTC, datetime
 
 from chorus.adapters._observer import DreamObserverBridge
 from chorus.events import Event, EventKind
+from chorus.testing import uid
 
 
 def _bridge(sink: list[Event]) -> DreamObserverBridge:
     return DreamObserverBridge(
-        sink.append, task_id="task-1", clock=lambda: datetime(2026, 7, 1, tzinfo=UTC)
+        sink.append, task_id=uid("task-1"), clock=lambda: datetime(2026, 7, 1, tzinfo=UTC)
     )
 
 
@@ -146,3 +147,91 @@ class TestSubagentLifecycle:
         sink: list[Event] = []
         _bridge(sink).on_event({"kind": "planner.started", "detail": "x"})
         assert sink == []
+
+
+class TestMemoryRetrieved:
+    """Retrieval is instrumented at the moment of use (OBS P5) — synthesized from the recall
+    tool's structured result; a miss (zero hits) is signal, not silence."""
+
+    def test_recall_result_synthesizes_memory_retrieved(self) -> None:
+        sink: list[Event] = []
+        _bridge(sink).on_event(
+            {
+                "kind": "role.tool.result",
+                "tool": "recall",
+                "is_error": False,
+                "content_preview": "2 hits",
+                "structured": {
+                    "hits": [
+                        {"run_id": uid("r_a"), "score": 0.9},
+                        {"run_id": uid("r_b"), "score": 0.4},
+                    ],
+                    "mode": "keyword",
+                },
+            }
+        )
+        assert EventKind.MEMORY_RETRIEVED in _kinds(sink)
+        retrieved = next(e for e in sink if e.kind is EventKind.MEMORY_RETRIEVED)
+        assert retrieved.payload["tool"] == "recall"
+        assert retrieved.payload["hit_run_ids"] == [uid("r_a"), uid("r_b")]
+        assert retrieved.payload["empty"] is False
+
+    def test_empty_retrieval_is_still_an_event(self) -> None:
+        sink: list[Event] = []
+        _bridge(sink).on_event(
+            {
+                "kind": "role.tool.result",
+                "tool": "recall",
+                "is_error": False,
+                "content_preview": "no matches",
+                "structured": {"hits": [], "mode": "recency"},
+            }
+        )
+        retrieved = next(e for e in sink if e.kind is EventKind.MEMORY_RETRIEVED)
+        assert retrieved.payload["empty"] is True
+        assert retrieved.payload["hit_run_ids"] == []
+
+    def test_non_memory_tools_do_not_synthesize(self) -> None:
+        sink: list[Event] = []
+        _bridge(sink).on_event(
+            {
+                "kind": "role.tool.result",
+                "tool": "write_file",
+                "is_error": False,
+                "content_preview": "ok",
+                "structured": {"hits": [{"run_id": "x"}]},
+            }
+        )
+        assert EventKind.MEMORY_RETRIEVED not in _kinds(sink)
+
+
+class TestLlmCall:
+    """dream's per-role-session usage frame becomes the llm.call event (OBS §4) — model,
+    tokens, cache reads, cost — instead of being dropped by the closed vocabulary."""
+
+    def test_session_closed_maps_to_llm_call(self) -> None:
+        sink: list[Event] = []
+        _bridge(sink).on_event(
+            {
+                "kind": "role.session.closed",
+                "role": "generator",
+                "session_id": "s1",
+                "model": "gpt-x",
+                "usage": {
+                    "input_tokens": 1200,
+                    "output_tokens": 340,
+                    "cache_read_tokens": 800,
+                    "cache_write_tokens": 0,
+                },
+                "cost_usd": 0.0123,
+            }
+        )
+        assert _kinds(sink) == [EventKind.LLM_CALL]
+        call = sink[0]
+        assert call.payload["source"] == "dream"
+        assert call.payload["role"] == "generator"
+        assert call.payload["model"] == "gpt-x"
+        assert call.payload["input_tokens"] == 1200
+        assert call.payload["output_tokens"] == 340
+        assert call.payload["cache_read_tokens"] == 800
+        assert call.payload["cost_usd"] == 0.0123

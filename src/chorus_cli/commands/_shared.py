@@ -12,7 +12,7 @@ import threading
 from pathlib import Path
 
 from chorus.ledger import (
-    SqliteLedger,
+    Ledger,
     Task,
     TaskPriority,
 )
@@ -73,9 +73,8 @@ class _HeartbeatWorker:
             self._thread.join(timeout=2.0)
 
     def _run(self) -> None:
-        if self._db_path == ":memory:":
-            return
-        ledger = SqliteLedger.open(self._db_path)
+        # db_path carries the Postgres DSN (the field name survives for session compatibility).
+        ledger = Ledger.open(self._db_path, company_id=self._company_id)
         try:
             beats = self._build_thread_beat_service(ledger)
             if beats is None:
@@ -92,7 +91,7 @@ class _HeartbeatWorker:
         finally:
             ledger.close()
 
-    def _build_thread_beat_service(self, ledger: SqliteLedger) -> BeatService | None:
+    def _build_thread_beat_service(self, ledger: Ledger) -> BeatService | None:
         api_key = os.environ.get("AZURE_OPENAI_API_KEY")
         base_url = os.environ.get("AZURE_OPENAI_BASE_URL")
         deployment = os.environ.get("AZURE_OPENAI_DEPLOYMENT")
@@ -140,9 +139,7 @@ def _maybe_bootstrap_employee(ctx: CommandContext) -> None:
     if ledger.employees.list():
         return
     try:
-        created = LedgerWorkforce(ledger.employees).hire(
-            name="employee", role="backend_engineer"
-        )
+        created = LedgerWorkforce(ledger.employees).hire(name="employee", role="backend_engineer")
     except Exception as exc:
         # The demo can continue without the seed employee, but the operator should know why the
         # org came up empty rather than have it fail silently.
@@ -168,7 +165,7 @@ def _employee_base_path(company_id: str, employee_id: str) -> Path:
     return (default_work_root() / company_id) / "worktrees" / employee_id
 
 
-def _resolve_employee(ledger: SqliteLedger, raw: str) -> str | None:
+def _resolve_employee(ledger: Ledger, raw: str) -> str | None:
     """Resolve ``raw`` to an employee id.
 
     Accepts a direct employee id first; if absent, treats ``raw`` as a role name and resolves it
@@ -185,7 +182,7 @@ def _resolve_employee(ledger: SqliteLedger, raw: str) -> str | None:
     return matches[0]
 
 
-def _latest_task_for_employee(ledger: SqliteLedger, employee_id: str) -> Task | None:
+def _latest_task_for_employee(ledger: Ledger, employee_id: str) -> Task | None:
     open_task = ledger.tasks.open_for_assignee(employee_id)
     if open_task is not None:
         return open_task

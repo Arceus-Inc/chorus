@@ -29,7 +29,7 @@ from chorus.ledger import (
 )
 
 if TYPE_CHECKING:
-    from chorus.ledger import SqliteLedger
+    from chorus.ledger import Ledger
 
 
 class TaskGateError(GovernanceError):
@@ -41,7 +41,7 @@ class TaskGateAction:
 
     action = ApprovalAction.TASK_GATE
 
-    def __init__(self, ledger: SqliteLedger) -> None:
+    def __init__(self, ledger: Ledger) -> None:
         self._ledger = ledger
 
     def on_open(self, approval: Approval) -> None:
@@ -78,7 +78,7 @@ class TaskGateAction:
             return 0
         self._ledger.wakes.enqueue(
             Wake(
-                id=mint_id("wake"),
+                id=mint_id(),
                 employee_id=task.assignee_employee_id,
                 reason=WakeReason.TASK_ASSIGNED,
                 payload={"task_id": task_id},

@@ -14,8 +14,9 @@ import pytest
 from chorus.budgets import BudgetEnforcer
 from chorus.heartbeat import Scheduler, Wake, WakeReason
 from chorus.heartbeat._beat import BeatOutcome
-from chorus.ledger import SqliteLedger, Task
+from chorus.ledger import Ledger, Task
 from chorus.ledger._models import BudgetPolicy, BudgetScope, CostEvent, TaskStatus
+from chorus.testing import uid
 from chorus.workforce import Employee
 
 pytestmark = pytest.mark.integration
@@ -66,20 +67,22 @@ class _FakeWorkforce:
         return self._by_id[employee_id]
 
 
-def _emp(ledger: SqliteLedger, employee_id: str) -> Employee:
+def _emp(ledger: Ledger, employee_id: str) -> Employee:
     return ledger.employees.create(Employee(id=employee_id, name=employee_id, role="engineer"))
 
 
-def _employee_cap(ledger: SqliteLedger, employee_id: str, amount: int) -> None:
+def _employee_cap(ledger: Ledger, employee_id: str, amount: int) -> None:
     ledger.budget_policies.create(
-        BudgetPolicy(id="bp1", scope_type=BudgetScope.EMPLOYEE, scope_id=employee_id, amount=amount)
+        BudgetPolicy(
+            id=uid("bp1"), scope_type=BudgetScope.EMPLOYEE, scope_id=employee_id, amount=amount
+        )
     )
 
 
-def _spend(ledger: SqliteLedger, employee_id: str, cents: int) -> None:
+def _spend(ledger: Ledger, employee_id: str, cents: int) -> None:
     ledger.cost_events.record(
         CostEvent(
-            id=f"seed_{cents}",
+            id=uid(f"seed_{cents}"),
             employee_id=employee_id,
             provider="p",
             model="m",
@@ -89,7 +92,7 @@ def _spend(ledger: SqliteLedger, employee_id: str, cents: int) -> None:
     )
 
 
-def _assigned_wake(ledger: SqliteLedger, *, task_id: str, employee_id: str, wake_id: str) -> None:
+def _assigned_wake(ledger: Ledger, *, task_id: str, employee_id: str, wake_id: str) -> None:
     ledger.tasks.submit(
         Task(id=task_id, intent="ship", status=TaskStatus.TODO, assignee_employee_id=employee_id)
     )
@@ -104,7 +107,7 @@ def _assigned_wake(ledger: SqliteLedger, *, task_id: str, employee_id: str, wake
 
 
 def _wired(
-    ledger: SqliteLedger, beat: _FakeBeat, *employees: Employee, enforcer: BudgetEnforcer | None
+    ledger: Ledger, beat: _FakeBeat, *employees: Employee, enforcer: BudgetEnforcer | None
 ) -> Scheduler:
     return Scheduler(
         ledger=ledger,
@@ -115,96 +118,98 @@ def _wired(
     )
 
 
-async def test_gate1_blocks_dispatch_for_an_over_budget_employee(ledger: SqliteLedger) -> None:
-    e1 = _emp(ledger, "e1")
-    _employee_cap(ledger, "e1", 100)
-    _spend(ledger, "e1", 100)  # already at the cap
+async def test_gate1_blocks_dispatch_for_an_over_budget_employee(ledger: Ledger) -> None:
+    e1 = _emp(ledger, uid("e1"))
+    _employee_cap(ledger, uid("e1"), 100)
+    _spend(ledger, uid("e1"), 100)  # already at the cap
     beat = _FakeBeat()
     sched = _wired(ledger, beat, e1, enforcer=BudgetEnforcer(ledger, company_id=_COMPANY))
-    _assigned_wake(ledger, task_id="t1", employee_id="e1", wake_id="w1")
+    _assigned_wake(ledger, task_id=uid("t1"), employee_id=uid("e1"), wake_id=uid("w1"))
 
     report = await sched.tick(_NOW)
     await sched.drain()
 
     assert beat.calls == []  # never dispatched
-    task = ledger.tasks.get("t1")
+    task = ledger.tasks.get(uid("t1"))
     assert task is not None and task.status is TaskStatus.TODO  # not checked out
     assert report.budget_gated == 1
 
 
-async def test_gate1_allows_dispatch_under_budget(ledger: SqliteLedger) -> None:
-    e1 = _emp(ledger, "e1")
-    _employee_cap(ledger, "e1", 100)
-    _spend(ledger, "e1", 50)
+async def test_gate1_allows_dispatch_under_budget(ledger: Ledger) -> None:
+    e1 = _emp(ledger, uid("e1"))
+    _employee_cap(ledger, uid("e1"), 100)
+    _spend(ledger, uid("e1"), 50)
     beat = _FakeBeat()
     sched = _wired(ledger, beat, e1, enforcer=BudgetEnforcer(ledger, company_id=_COMPANY))
-    _assigned_wake(ledger, task_id="t1", employee_id="e1", wake_id="w1")
+    _assigned_wake(ledger, task_id=uid("t1"), employee_id=uid("e1"), wake_id=uid("w1"))
 
     await sched.tick(_NOW)
     await sched.drain()
 
-    assert beat.calls == ["t1"]
+    assert beat.calls == [uid("t1")]
 
 
 async def test_gate2_beat_cost_trips_hard_stop_then_next_dispatch_is_gated(
-    ledger: SqliteLedger,
+    ledger: Ledger,
 ) -> None:
-    e1 = _emp(ledger, "e1")
-    _employee_cap(ledger, "e1", 100)
+    e1 = _emp(ledger, uid("e1"))
+    _employee_cap(ledger, uid("e1"), 100)
     beat = _FakeBeat(cost_cents=150)  # one beat blows the cap
     enforcer = BudgetEnforcer(ledger, company_id=_COMPANY)
     sched = _wired(ledger, beat, e1, enforcer=enforcer)
 
-    _assigned_wake(ledger, task_id="t1", employee_id="e1", wake_id="w1")
+    _assigned_wake(ledger, task_id=uid("t1"), employee_id=uid("e1"), wake_id=uid("w1"))
     await sched.tick(_NOW)
     await sched.drain()
-    assert beat.calls == ["t1"]  # the first beat ran
-    assert enforcer.invocation_block("e1", now=_NOW) is not None  # its cost paused the scope
+    assert beat.calls == [uid("t1")]  # the first beat ran
+    assert enforcer.invocation_block(uid("e1"), now=_NOW) is not None  # its cost paused the scope
 
-    _assigned_wake(ledger, task_id="t2", employee_id="e1", wake_id="w2")
+    _assigned_wake(ledger, task_id=uid("t2"), employee_id=uid("e1"), wake_id=uid("w2"))
     report = await sched.tick(_NOW)
     await sched.drain()
-    assert beat.calls == ["t1"]  # t2 never dispatched — gated
+    assert beat.calls == [uid("t1")]  # t2 never dispatched — gated
     assert report.budget_gated == 1
 
 
-async def test_no_enforcer_means_budgets_are_off(ledger: SqliteLedger) -> None:
-    e1 = _emp(ledger, "e1")
-    _employee_cap(ledger, "e1", 100)
-    _spend(ledger, "e1", 500)  # wildly over — but no enforcer injected
+async def test_no_enforcer_means_budgets_are_off(ledger: Ledger) -> None:
+    e1 = _emp(ledger, uid("e1"))
+    _employee_cap(ledger, uid("e1"), 100)
+    _spend(ledger, uid("e1"), 500)  # wildly over — but no enforcer injected
     beat = _FakeBeat()
     sched = _wired(ledger, beat, e1, enforcer=None)
-    _assigned_wake(ledger, task_id="t1", employee_id="e1", wake_id="w1")
+    _assigned_wake(ledger, task_id=uid("t1"), employee_id=uid("e1"), wake_id=uid("w1"))
 
     await sched.tick(_NOW)
     await sched.drain()
 
-    assert beat.calls == ["t1"]  # dispatched despite over-budget — gating is opt-in
+    assert beat.calls == [uid("t1")]  # dispatched despite over-budget — gating is opt-in
 
 
-async def test_cost_event_is_recorded_even_with_budgets_off(ledger: SqliteLedger) -> None:
-    e1 = _emp(ledger, "e1")
+async def test_cost_event_is_recorded_even_with_budgets_off(ledger: Ledger) -> None:
+    e1 = _emp(ledger, uid("e1"))
     beat = _FakeBeat(cost_cents=42)
     sched = _wired(ledger, beat, e1, enforcer=None)
-    _assigned_wake(ledger, task_id="t1", employee_id="e1", wake_id="w1")
+    _assigned_wake(ledger, task_id=uid("t1"), employee_id=uid("e1"), wake_id=uid("w1"))
 
     await sched.tick(_NOW)
     await sched.drain()
 
-    assert beat.calls == ["t1"]
-    assert ledger.cost_events.spent_cents("e1") == 42  # the spend ledger fills regardless of gating
+    assert beat.calls == [uid("t1")]
+    assert (
+        ledger.cost_events.spent_cents(uid("e1")) == 42
+    )  # the spend ledger fills regardless of gating
 
 
-async def test_cost_event_records_the_beats_model_and_token_counts(ledger: SqliteLedger) -> None:
-    e1 = _emp(ledger, "e1")
+async def test_cost_event_records_the_beats_model_and_token_counts(ledger: Ledger) -> None:
+    e1 = _emp(ledger, uid("e1"))
     beat = _FakeBeat(cost_cents=42, model="gpt-5.2", input_tokens=1200, output_tokens=340)
     sched = _wired(ledger, beat, e1, enforcer=None)
-    _assigned_wake(ledger, task_id="t1", employee_id="e1", wake_id="w1")
+    _assigned_wake(ledger, task_id=uid("t1"), employee_id=uid("e1"), wake_id=uid("w1"))
 
     await sched.tick(_NOW)
     await sched.drain()
 
-    runs = ledger.runs.for_task("t1")
+    runs = ledger.runs.for_task(uid("t1"))
     events = ledger.cost_events.for_run(runs[0].id)
     assert len(events) == 1
     recorded = events[0]

@@ -14,7 +14,8 @@ import pytest
 
 from chorus.heartbeat import Scheduler, Wake, WakeReason
 from chorus.heartbeat._beat import BeatDisposition, BeatOutcome
-from chorus.ledger import SqliteLedger, Task, TaskStatus
+from chorus.ledger import Ledger, Task, TaskStatus
+from chorus.testing import uid
 from chorus.workforce import Employee
 
 pytestmark = pytest.mark.integration
@@ -57,15 +58,18 @@ class _FakeWorkforce:
         return self._by_id[employee_id]
 
 
-def _dispatch(
-    ledger: SqliteLedger, beat: _TimeoutBeat, *, max_resume_attempts: int = 2
-) -> Scheduler:
-    employee = ledger.employees.create(Employee(id="e1", name="e1", role="engineer"))
+def _dispatch(ledger: Ledger, beat: _TimeoutBeat, *, max_resume_attempts: int = 2) -> Scheduler:
+    employee = ledger.employees.create(Employee(id=uid("e1"), name=uid("e1"), role="engineer"))
     ledger.tasks.submit(
-        Task(id="t1", intent="x", status=TaskStatus.TODO, assignee_employee_id="e1")
+        Task(id=uid("t1"), intent="x", status=TaskStatus.TODO, assignee_employee_id=uid("e1"))
     )
     ledger.wakes.enqueue(
-        Wake(id="w1", employee_id="e1", reason=WakeReason.MANUAL, payload={"task_id": "t1"})
+        Wake(
+            id=uid("w1"),
+            employee_id=uid("e1"),
+            reason=WakeReason.MANUAL,
+            payload={"task_id": uid("t1")},
+        )
     )
     return Scheduler(
         ledger=ledger,
@@ -77,33 +81,33 @@ def _dispatch(
 
 
 async def test_budget_timeout_resumes_the_same_task_instead_of_stranding(
-    ledger: SqliteLedger,
+    ledger: Ledger,
 ) -> None:
     beat = _TimeoutBeat(fail_times=1)  # beat 1 times out; beat 2 resumes and finishes
     sched = _dispatch(ledger, beat)
     for _ in range(4):
         await sched.tick_once()
         await sched.drain()
-        task = ledger.tasks.get("t1")
+        task = ledger.tasks.get(uid("t1"))
         assert task is not None
         # a timeout must NEVER strand while resume budget remains — it re-dispatches, not blocks
         if task.status is TaskStatus.DONE:
             break
         assert task.status is not TaskStatus.BLOCKED
-    task = ledger.tasks.get("t1")
+    task = ledger.tasks.get(uid("t1"))
     assert task is not None
     assert beat.calls == 2  # beat 1 (timeout) + beat 2 (resumed → passed)
     assert task.status is TaskStatus.DONE
-    assert task.assignee_employee_id == "e1"  # resumed by the SAME employee
+    assert task.assignee_employee_id == uid("e1")  # resumed by the SAME employee
 
 
-async def test_repeated_timeout_strands_after_the_resume_budget(ledger: SqliteLedger) -> None:
+async def test_repeated_timeout_strands_after_the_resume_budget(ledger: Ledger) -> None:
     beat = _TimeoutBeat(fail_times=99)  # never finishes — always times out
     sched = _dispatch(ledger, beat, max_resume_attempts=2)
     for _ in range(6):
         await sched.tick_once()
         await sched.drain()
-    task = ledger.tasks.get("t1")
+    task = ledger.tasks.get(uid("t1"))
     assert task is not None
     assert beat.calls == 3  # 1 attempt + 2 resumes, then stranded (bounded)
     assert task.status is TaskStatus.BLOCKED

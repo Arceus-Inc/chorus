@@ -15,7 +15,8 @@ from pathlib import Path
 import pytest
 
 from chorus.heartbeat import BeatContext
-from chorus.ledger import SqliteLedger
+from chorus.ledger import Ledger
+from chorus.testing import uid
 from chorus_tools import RecordDecisionTool
 
 pytestmark = pytest.mark.integration
@@ -54,12 +55,10 @@ def _grounded_input() -> dict[str, object]:
 
 
 def _seed_beat(working_dir: Path) -> None:
-    BeatContext(task_id="pm-task", run_id=REV, employee_id="piper").write(working_dir)
+    BeatContext(task_id=uid("pm-task"), run_id=REV, employee_id=uid("piper")).write(working_dir)
 
 
-def test_records_a_grounded_decision_and_mirrors_the_json(
-    ledger: SqliteLedger, tmp_path: Path
-) -> None:
+def test_records_a_grounded_decision_and_mirrors_the_json(ledger: Ledger, tmp_path: Path) -> None:
     _seed_beat(tmp_path)
     result = asyncio.run(RecordDecisionTool(ledger).execute(_grounded_input(), _ctx(tmp_path)))
 
@@ -68,7 +67,7 @@ def test_records_a_grounded_decision_and_mirrors_the_json(
     decision_id = result.structured["decision_id"]
     assert any("plan.md" in action for action in result.structured["next_actions"])
 
-    decisions = ledger.decisions.for_task("pm-task")
+    decisions = ledger.decisions.for_task(uid("pm-task"))
     assert len(decisions) == 1 and decisions[0].id == decision_id
     assert {c.source_url for c in ledger.claims.for_decisions([decision_id])} == {"https://a"}
 
@@ -78,7 +77,7 @@ def test_records_a_grounded_decision_and_mirrors_the_json(
 
 
 def test_refuses_a_decision_below_the_floor_with_a_recovery_hint(
-    ledger: SqliteLedger, tmp_path: Path
+    ledger: Ledger, tmp_path: Path
 ) -> None:
     _seed_beat(tmp_path)
     weak = _grounded_input() | {"confidence": 0.4, "claims": []}
@@ -88,29 +87,29 @@ def test_refuses_a_decision_below_the_floor_with_a_recovery_hint(
     assert result.structured["status"] == "blocked"
     assert any("researcher" in action for action in result.structured["next_actions"])
     assert result.metadata["root_cause"] == "confidence-below-floor"
-    assert ledger.decisions.for_task("pm-task") == []  # nothing written
+    assert ledger.decisions.for_task(uid("pm-task")) == []  # nothing written
     assert not (tmp_path / "decision.json").exists()  # no mirror on refusal
 
 
-def test_malformed_input_is_recovery_not_crash(ledger: SqliteLedger, tmp_path: Path) -> None:
+def test_malformed_input_is_recovery_not_crash(ledger: Ledger, tmp_path: Path) -> None:
     _seed_beat(tmp_path)
     bad = _grounded_input() | {"confidence": 1.5}  # out of range
     result = asyncio.run(RecordDecisionTool(ledger).execute(bad, _ctx(tmp_path)))
     assert result.is_error is True
-    assert ledger.decisions.for_task("pm-task") == []
+    assert ledger.decisions.for_task(uid("pm-task")) == []
 
 
-def test_is_idempotent_on_refire(ledger: SqliteLedger, tmp_path: Path) -> None:
+def test_is_idempotent_on_refire(ledger: Ledger, tmp_path: Path) -> None:
     _seed_beat(tmp_path)
     tool = RecordDecisionTool(ledger)
     first = asyncio.run(tool.execute(_grounded_input(), _ctx(tmp_path)))
     second = asyncio.run(tool.execute(_grounded_input(), _ctx(tmp_path)))
     assert first.structured["decision_id"] == second.structured["decision_id"]
-    assert len(ledger.decisions.for_task("pm-task")) == 1  # no duplicate
+    assert len(ledger.decisions.for_task(uid("pm-task"))) == 1  # no duplicate
 
 
 def test_refire_with_different_input_keeps_the_mirror_on_the_recorded_decision(
-    ledger: SqliteLedger, tmp_path: Path
+    ledger: Ledger, tmp_path: Path
 ) -> None:
     """A second call in the same beat with different content must NOT drift decision.json.
 
@@ -130,7 +129,7 @@ def test_refire_with_different_input_keeps_the_mirror_on_the_recorded_decision(
     second = asyncio.run(tool.execute(changed, _ctx(tmp_path)))
 
     # Ledger unchanged: still the FIRST decision.
-    decisions = ledger.decisions.for_task("pm-task")
+    decisions = ledger.decisions.for_task(uid("pm-task"))
     assert len(decisions) == 1 and decisions[0].option == "build live presence indicators"
 
     # The mirror reflects the LEDGER (first), not the rejected second input.
@@ -143,5 +142,5 @@ def test_refire_with_different_input_keeps_the_mirror_on_the_recorded_decision(
     assert second.is_error is False
 
 
-def test_declares_a_repo_write_trust_tier(ledger: SqliteLedger) -> None:
+def test_declares_a_repo_write_trust_tier(ledger: Ledger) -> None:
     assert RecordDecisionTool(ledger).declaration.tier_required == 1

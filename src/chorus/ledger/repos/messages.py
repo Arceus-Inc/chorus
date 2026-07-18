@@ -8,16 +8,20 @@ A message lands here and carries no execution of its own — the scheduler turns
 
 from __future__ import annotations
 
-import sqlite3
-
 from chorus.ledger._models import Message, MessageKind
-from chorus.ledger.repos._base import from_iso, require_persisted, utcnow_iso
+from chorus.ledger.repos._base import (
+    LedgerConnection,
+    LedgerRow,
+    from_iso,
+    require_persisted,
+    utcnow_iso,
+)
 
 
 class MessageRepo:
     """Send, read, and drain ``message`` rows."""
 
-    def __init__(self, conn: sqlite3.Connection) -> None:
+    def __init__(self, conn: LedgerConnection) -> None:
         self._conn = conn
 
     def send(self, message: Message) -> Message:
@@ -62,7 +66,7 @@ class MessageRepo:
         self._conn.commit()
 
 
-def _row_to_message(row: sqlite3.Row) -> Message:
+def _row_to_message(row: LedgerRow) -> Message:
     return Message(
         id=row["id"],
         to_employee_id=row["to_employee_id"],

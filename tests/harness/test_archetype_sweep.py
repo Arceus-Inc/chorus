@@ -10,18 +10,20 @@ from __future__ import annotations
 import pytest
 
 from chorus.roles import RoleRegistry, default_roles
+from chorus.testing import uid
 from chorus.verification import SYSTEM_VERIFIER
 from chorus.workforce import Employee
 from chorus_harness import EmployeeHarnessFactory
 
 pytestmark = pytest.mark.unit
 
+
 def _factory(tmp_path) -> EmployeeHarnessFactory:
     return EmployeeHarnessFactory(
         api_key="x",
         base_url="http://localhost/v1",
         deployment="model",
-        company_id="sweep",
+        company_id=uid("sweep"),
         roles=RoleRegistry.from_plugins(default_roles()),
         work_root=tmp_path,
     )
@@ -37,15 +39,13 @@ def test_every_default_archetype_materializes(tmp_path) -> None:
 
 
 def test_backend_engineer_can_run_commands(tmp_path) -> None:
-    mat = _factory(tmp_path).materialize(
-        Employee(id="e", name="E", role="backend_engineer")
-    )
+    mat = _factory(tmp_path).materialize(Employee(id=uid("e"), name="E", role="backend_engineer"))
     assert "run_command" in mat.config.tools
     assert mat.config.sandbox == "unrestricted"
 
 
 def test_analyst_brings_tools_skills_and_subagents(tmp_path) -> None:
-    mat = _factory(tmp_path).materialize(Employee(id="a", name="A", role="analyst"))
+    mat = _factory(tmp_path).materialize(Employee(id=uid("a"), name="A", role="analyst"))
     assert {"warehouse_query", "notebook_run", "chart_render", "repo_search"} <= set(
         mat.config.tools
     )
@@ -57,9 +57,9 @@ def test_system_verifier_and_pm_are_read_or_spec_shaped(tmp_path) -> None:
     factory = _factory(tmp_path)
     verifier = factory.materialize_verifier(
         SYSTEM_VERIFIER,
-        task_id="verification-task",
+        task_id=uid("verification-task"),
         worktree_owner_id="author",
     )
-    pm = factory.materialize(Employee(id="p", name="P", role="pm"))
+    pm = factory.materialize(Employee(id=uid("p"), name="P", role="pm"))
     assert verifier.config.tools and pm.config.tools
     assert verifier.config.system_prompt and pm.config.system_prompt

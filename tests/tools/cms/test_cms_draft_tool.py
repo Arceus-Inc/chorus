@@ -12,6 +12,7 @@ from typing import Any
 
 import pytest
 
+from chorus.testing import uid
 from chorus_tools.cms import BlogDraft, CmsError, ContentType, DraftRef, EmailDraft, SocialDraft
 from chorus_tools.cms._tool import CmsDraftInput, CmsDraftTool
 
@@ -53,7 +54,7 @@ def _ctx(working_dir: Path) -> object:
 
     return ToolExecutionContext(
         working_dir=working_dir,
-        session_id="s",
+        session_id=uid("s"),
         metadata={},
         scratch_dir=working_dir,
         cancel_requested=False,
@@ -148,7 +149,7 @@ class TestInput:
 def _write_beat_context(working_dir: Path, task_id: str) -> None:
     from chorus.heartbeat import BeatContext
 
-    BeatContext(task_id=task_id, run_id="r1", employee_id="mira").write(working_dir)
+    BeatContext(task_id=task_id, run_id=uid("r1"), employee_id="mira").write(working_dir)
 
 
 class TestIdempotency:

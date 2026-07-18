@@ -18,7 +18,6 @@ from chorus.roles import RoleRegistry, default_roles
 from chorus.roles._plugin import RolePlugin
 from chorus.workforce import Employee
 from chorus_harness import EmployeeHarnessFactory
-
 from swe_eval.case import BenchCase, CandidateSolution
 from swe_eval.env import ModelCreds
 

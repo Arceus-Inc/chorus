@@ -8,21 +8,27 @@ edit never re-judges a firing in flight.
 
 from __future__ import annotations
 
-import sqlite3
-
 from chorus.ledger._models import (
     RoutineCatchUp,
     RoutineConcurrency,
     RoutineRevision,
     RoutineTarget,
 )
-from chorus.ledger.repos._base import dumps, from_iso, loads, require_persisted, utcnow_iso
+from chorus.ledger.repos._base import (
+    LedgerConnection,
+    LedgerRow,
+    dumps,
+    from_iso,
+    loads,
+    require_persisted,
+    utcnow_iso,
+)
 
 
 class RoutineRevisionRepo:
     """Append + read ``routine_revision`` rows (never update — history is immutable)."""
 
-    def __init__(self, conn: sqlite3.Connection) -> None:
+    def __init__(self, conn: LedgerConnection) -> None:
         self._conn = conn
 
     def append(self, revision: RoutineRevision) -> RoutineRevision:
@@ -79,7 +85,7 @@ class RoutineRevisionRepo:
         return _row_to_revision(row) if row is not None else None
 
 
-def _row_to_revision(row: sqlite3.Row) -> RoutineRevision:
+def _row_to_revision(row: LedgerRow) -> RoutineRevision:
     return RoutineRevision(
         id=row["id"],
         routine_id=row["routine_id"],

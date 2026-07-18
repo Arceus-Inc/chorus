@@ -18,8 +18,8 @@ from chorus.ledger import (
     DelegationContract,
     DelegationContractStatus,
     ExecutionMode,
+    Ledger,
     ManagementProfile,
-    SqliteLedger,
     Task,
     TaskStatus,
     Team,
@@ -28,6 +28,7 @@ from chorus.ledger import (
     TeamStatus,
 )
 from chorus.roles import RoleRegistry, default_roles
+from chorus.testing import open_test_ledger, uid
 from chorus.verification import SYSTEM_VERIFIER
 from chorus.workforce import Employee
 from chorus_harness import _factory as _factory_mod
@@ -35,7 +36,9 @@ from chorus_harness import _factory as _factory_mod
 pytestmark = pytest.mark.integration
 
 
-def _factory(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> tuple[Any, dict[str, Any]]:
+def _factory(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, ledger: Ledger | None
+) -> tuple[Any, dict[str, Any]]:
     captured: dict[str, Any] = {}
     monkeypatch.setattr(
         _factory_mod.dream, "build_harness", lambda **kw: captured.update(kw) or object()
@@ -47,11 +50,12 @@ def _factory(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> tuple[Any, dict
         company_id="acme",
         roles=RoleRegistry.from_plugins(default_roles()),
         work_root=tmp_path,
+        ledger=ledger,
     )
     return factory, captured
 
 
-def _seed_delegation(ledger: SqliteLedger, *, child_status: TaskStatus | None = None) -> Employee:
+def _seed_delegation(ledger: Ledger, *, child_status: TaskStatus | None = None) -> Employee:
     lead = Employee(id="moe", name="Moe", role="backend_engineer")
     worker = Employee(id="ada", name="Ada", role="backend_engineer", reports_to=lead.id)
     ledger.employees.create(lead)
@@ -70,7 +74,7 @@ def _seed_delegation(ledger: SqliteLedger, *, child_status: TaskStatus | None = 
     )
     ledger.teams.create(
         Team(
-            id="team-goal",
+            id=uid("team-goal"),
             name="Goal Team",
             lead_employee_id=lead.id,
             created_by="operator",
@@ -83,7 +87,7 @@ def _seed_delegation(ledger: SqliteLedger, *, child_status: TaskStatus | None = 
     ):
         ledger.team_members.add(
             TeamMember(
-                team_id="team-goal",
+                team_id=uid("team-goal"),
                 employee_id=employee_id,
                 source_manager_id=lead.id,
                 membership_role=membership_role,
@@ -91,18 +95,18 @@ def _seed_delegation(ledger: SqliteLedger, *, child_status: TaskStatus | None = 
         )
     ledger.tasks.submit(
         Task(
-            id="goal",
+            id=uid("goal"),
             intent="ship it",
             status=TaskStatus.BLOCKED if child_status is not None else TaskStatus.TODO,
             execution_mode=ExecutionMode.DELEGATION,
-            team_id="team-goal",
+            team_id=uid("team-goal"),
             assignee_employee_id=lead.id,
         )
     )
     ledger.delegation_contracts.create(
         DelegationContract(
-            task_id="goal",
-            team_id="team-goal",
+            task_id=uid("goal"),
+            team_id=uid("team-goal"),
             lead_employee_id=lead.id,
             management_profile_version=1,
             max_depth=1,
@@ -118,10 +122,10 @@ def _seed_delegation(ledger: SqliteLedger, *, child_status: TaskStatus | None = 
     if child_status is not None:
         ledger.tasks.submit(
             Task(
-                id="kid",
+                id=uid("kid"),
                 intent="a part",
                 status=child_status,
-                parent_id="goal",
+                parent_id=uid("goal"),
                 assignee_employee_id=worker.id,
             )
         )
@@ -129,9 +133,9 @@ def _seed_delegation(ledger: SqliteLedger, *, child_status: TaskStatus | None = 
 
 
 def test_backend_engineer_materializes_a_writable_harness_in_its_worktree(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, ledger: Ledger
 ) -> None:
-    factory, captured = _factory(monkeypatch, tmp_path)
+    factory, captured = _factory(monkeypatch, tmp_path, ledger)
     mat = factory.materialize(Employee(id="ada", name="Ada", role="backend_engineer"))
     # the engineer works confined to its own branch-isolated worktree under the org root
     assert mat.working_dir == tmp_path / "acme" / "worktrees" / "ada"
@@ -157,6 +161,7 @@ def test_backend_engineer_materializes_a_writable_harness_in_its_worktree(
         "lattice_packet",
         "lattice_apply",
         "skill_manage",
+        "spawn_subagent",  # strict-TDD profile (resolved from the live ledger) registers it
     }
     assert mat.config.permission_mode == "acceptEdits"
     assert captured["max_turns"] == 18  # the engine scalars come from the role too
@@ -175,14 +180,14 @@ def test_role_registry_registers_the_read_file_offload_companion() -> None:
 
 
 def test_engineer_role_overlays_admit_read_memory_for_read_only_heads(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, ledger: Ledger
 ) -> None:
     # The evaluator is the read-only head that keeps tools, so it admits the safe read-memory surfaces
     # (memory_search/memory_get/working_memory_read) to verify with. The planner is deliberately
     # TOOLLESS (`tools = []`) — given tools + tool_choice="auto", weaker models emit a tool call with
     # zero text and `run_task` fails with "planner reply missing <spec>" (see write_role_overlays). The
     # generator runs tools=null (no `tools =` line), so it sees the full role toolset.
-    factory, _ = _factory(monkeypatch, tmp_path)
+    factory, _ = _factory(monkeypatch, tmp_path, ledger)
     mat = factory.materialize(Employee(id="ada", name="Ada", role="backend_engineer"))
 
     planner = (mat.working_dir / ".harness" / "roles" / "planner.toml").read_text(encoding="utf-8")
@@ -202,11 +207,11 @@ def test_engineer_role_overlays_admit_read_memory_for_read_only_heads(
 
 
 def test_engineer_gets_an_unrestricted_sandbox_so_it_can_run_commands(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, ledger: Ledger
 ) -> None:
     # the engineer must run tests/builds (arbitrary commands), which dream gates behind an interactive
     # approval the autonomous kernel can't supply — so its trust posture is unrestricted-in-worktree.
-    factory, _ = _factory(monkeypatch, tmp_path)
+    factory, _ = _factory(monkeypatch, tmp_path, ledger)
     mat = factory.materialize(Employee(id="ada", name="Ada", role="backend_engineer"))
     sandbox = (mat.working_dir / ".harness" / "sandbox.toml").read_text(encoding="utf-8")
     assert 'tier = "unrestricted"' in sandbox
@@ -215,12 +220,12 @@ def test_engineer_gets_an_unrestricted_sandbox_so_it_can_run_commands(
 
 
 def test_pm_materializes_its_skill_bundle_into_the_worktree(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, ledger: Ledger
 ) -> None:
     # A role with skills (the PM) gets its bundle copied INTO the worktree, so the model can reach the
     # bundled reference files with its worktree-confined read_file — and dream's registry is pointed at
     # that in-worktree copy (skills enabled + a registry supplied).
-    factory, captured = _factory(monkeypatch, tmp_path)
+    factory, captured = _factory(monkeypatch, tmp_path, ledger)
     mat = factory.materialize(Employee(id="pat", name="Pat", role="pm"))
 
     canvas = mat.working_dir / ".harness" / "skills" / "recommendation-canvas"
@@ -233,12 +238,12 @@ def test_pm_materializes_its_skill_bundle_into_the_worktree(
 
 
 def test_materialized_skill_bundle_is_git_excluded_from_the_worktree(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, ledger: Ledger
 ) -> None:
     # The whole point of homing the bundle under .harness/: it is already excluded from every worktree
     # branch (chorus.workspace info/exclude), so a skill's files never get committed or merged as a
     # deliverable. git must not see .harness/skills as an untracked path.
-    factory, _ = _factory(monkeypatch, tmp_path)
+    factory, _ = _factory(monkeypatch, tmp_path, ledger)
     mat = factory.materialize(Employee(id="pat", name="Pat", role="pm"))
 
     status = subprocess.run(
@@ -257,8 +262,10 @@ def test_materialized_skill_bundle_is_git_excluded_from_the_worktree(
 def test_system_verifier_materializes_a_read_only_harness(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    factory, captured = _factory(monkeypatch, tmp_path)
-    mat = factory.materialize_verifier(SYSTEM_VERIFIER, task_id="review", worktree_owner_id="ada")
+    factory, captured = _factory(monkeypatch, tmp_path, None)
+    mat = factory.materialize_verifier(
+        SYSTEM_VERIFIER, task_id=uid("review"), worktree_owner_id="ada"
+    )
     # the headline win: a reviewer is read-only EVERYWHERE — not just in chat. Its only tool with no
     # ledger is read_file plus its scratch-confined offload companion (submit_verdict needs a ledger to
     # bind to, registered in the ledger-bound test).
@@ -273,11 +280,11 @@ def test_system_verifier_materializes_a_read_only_harness(
 
 
 def test_delegation_harness_registers_the_decompose_capability_tool(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, ledger: Ledger
 ) -> None:
     # The manager's leverage is the chorus `decompose` capability — a chorus-only tool with no dream
     # built-in. It is registered into the harness only when the factory has a ledger to bind it to.
-    ledger = SqliteLedger.open(":memory:")
+    ledger = open_test_ledger()
     try:
         captured: dict[str, Any] = {}
         monkeypatch.setattr(
@@ -293,7 +300,7 @@ def test_delegation_harness_registers_the_decompose_capability_tool(
             ledger=ledger,
         )
         lead = _seed_delegation(ledger)
-        factory.materialize(lead, task_id="goal")
+        factory.materialize(lead, task_id=uid("goal"))
         names = {t.name for t in captured["registry"].list_tools()}
         assert names == {
             "read_file",
@@ -307,12 +314,12 @@ def test_delegation_harness_registers_the_decompose_capability_tool(
 
 
 def test_marketer_harness_registers_the_stage_go_live_tool(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, ledger: Ledger
 ) -> None:
     # The marketer's ONLY path to a live surface is the `stage_go_live` capability tool (§07/§11): a
     # chorus capability that opens a governance gate, with no dream built-in. It is registered into
     # the harness only when the factory has a ledger to bind it to — fail-closed otherwise.
-    ledger = SqliteLedger.open(":memory:")
+    ledger = open_test_ledger()
     try:
         captured: dict[str, Any] = {}
         monkeypatch.setattr(
@@ -338,7 +345,7 @@ def test_marketer_harness_registers_the_stage_go_live_tool(
 
 
 def test_integrate_beat_harness_drops_the_decompose_tool(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, ledger: Ledger
 ) -> None:
     # Structural over-decompose guard (M3 §5): an integrate beat — the manager's task already has
     # children — is materialized WITHOUT `decompose`, so the model can react with submit_task /
@@ -346,7 +353,7 @@ def test_integrate_beat_harness_drops_the_decompose_tool(
     # is not enough; under load a manager re-decomposes.
     from chorus.ledger import TaskStatus
 
-    ledger = SqliteLedger.open(":memory:")
+    ledger = open_test_ledger()
     try:
         captured: dict[str, Any] = {}
         monkeypatch.setattr(
@@ -362,7 +369,7 @@ def test_integrate_beat_harness_drops_the_decompose_tool(
             work_root=tmp_path,
             ledger=ledger,
         )
-        factory.materialize(lead, task_id="goal")
+        factory.materialize(lead, task_id=uid("goal"))
         names = {t.name for t in captured["registry"].list_tools()}
         assert "decompose" not in names  # cannot re-decompose a delegated subtree
         assert {"read_file", "submit_task", "assign_task"} <= names  # the reactive toolset remains
@@ -371,7 +378,7 @@ def test_integrate_beat_harness_drops_the_decompose_tool(
 
 
 def test_integrate_beat_over_a_complete_subtree_drops_all_mutating_tools(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, ledger: Ledger
 ) -> None:
     # The strongest over-submit guard (M3 §5): when EVERY child is already done with a passing DoD, the
     # delegated work is complete — the kernel's recommendation is `accept`, so the integrate harness is
@@ -381,14 +388,14 @@ def test_integrate_beat_over_a_complete_subtree_drops_all_mutating_tools(
     from chorus.ledger import DodStatus, TaskStatus
     from chorus.outcomes import Verifier
 
-    ledger = SqliteLedger.open(":memory:")
+    ledger = open_test_ledger()
     try:
         captured: dict[str, Any] = {}
         monkeypatch.setattr(
             _factory_mod.dream, "build_harness", lambda **kw: captured.update(kw) or object()
         )
         lead = _seed_delegation(ledger, child_status=TaskStatus.DONE)
-        dod = ledger.dod.create("kid", Verifier.command("pytest", artifact_class="file"))
+        dod = ledger.dod.create(uid("kid"), Verifier.command("pytest", artifact_class="file"))
         ledger.dod.record_verdict(dod.id, DodStatus.PASSED, verdict={}, run_id=None)
         factory = _factory_mod.EmployeeHarnessFactory(
             api_key="k",
@@ -399,7 +406,7 @@ def test_integrate_beat_over_a_complete_subtree_drops_all_mutating_tools(
             work_root=tmp_path,
             ledger=ledger,
         )
-        factory.materialize(lead, task_id="goal")
+        factory.materialize(lead, task_id=uid("goal"))
         names = {t.name for t in captured["registry"].list_tools()}
         assert "decompose" not in names
         assert (
@@ -415,11 +422,11 @@ def test_integrate_beat_over_a_complete_subtree_drops_all_mutating_tools(
 
 
 def test_system_verifier_harness_registers_the_submit_verdict_capability_tool(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, ledger: Ledger
 ) -> None:
     # The Reviewer's one capability is the chorus `submit_verdict` tool — read-only on the filesystem,
     # it mutates only the ledger DoD verdict. Registered when the factory has a ledger to bind it to.
-    ledger = SqliteLedger.open(":memory:")
+    ledger = open_test_ledger()
     try:
         captured: dict[str, Any] = {}
         monkeypatch.setattr(
@@ -434,7 +441,9 @@ def test_system_verifier_harness_registers_the_submit_verdict_capability_tool(
             work_root=tmp_path,
             ledger=ledger,
         )
-        factory.materialize_verifier(SYSTEM_VERIFIER, task_id="review", worktree_owner_id="ada")
+        factory.materialize_verifier(
+            SYSTEM_VERIFIER, task_id=uid("review"), worktree_owner_id="ada"
+        )
         names = {t.name for t in captured["registry"].list_tools()}
         assert names == {
             "read_file",
@@ -446,13 +455,13 @@ def test_system_verifier_harness_registers_the_submit_verdict_capability_tool(
 
 
 def test_system_verifier_is_materialized_at_the_worker_s_worktree(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, ledger: Ledger
 ) -> None:
     # The reviewer inspects the work IN PLACE: pointed at the worker's worktree as its (read-only)
     # working dir, so the verdict is rendered on the real diff. Its read-only sandbox keeps it look-only.
-    factory, _ = _factory(monkeypatch, tmp_path)
+    factory, _ = _factory(monkeypatch, tmp_path, ledger)
     review = factory.materialize_verifier(
-        SYSTEM_VERIFIER, task_id="review", worktree_owner_id="ada"
+        SYSTEM_VERIFIER, task_id=uid("review"), worktree_owner_id="ada"
     )
     assert (
         review.working_dir == tmp_path / "acme" / "worktrees" / "ada"
@@ -462,11 +471,11 @@ def test_system_verifier_is_materialized_at_the_worker_s_worktree(
 
 
 def test_delegation_brief_is_rehydrated_with_its_team(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, ledger: Ledger
 ) -> None:
     # A delegating role needs to name valid assignees: the factory appends the live workforce roster to
     # the manager's brief (which the overlays write onto every dream role).
-    ledger = SqliteLedger.open(":memory:")
+    ledger = open_test_ledger()
     try:
         from chorus.workforce import Employee as _Emp
 
@@ -477,7 +486,7 @@ def test_delegation_brief_is_rehydrated_with_its_team(
         ledger.employees.create(_Emp(id="eve", name="Eve", role="backend_engineer"))
         ledger.team_members.add(
             TeamMember(
-                team_id="team-goal",
+                team_id=uid("team-goal"),
                 employee_id="bob",
                 source_manager_id="moe",
                 membership_role=TeamMembershipRole.MEMBER,
@@ -496,7 +505,7 @@ def test_delegation_brief_is_rehydrated_with_its_team(
             work_root=tmp_path,
             ledger=ledger,
         )
-        mat = factory.materialize(lead, task_id="goal")
+        mat = factory.materialize(lead, task_id=uid("goal"))
         generator = (mat.working_dir / ".harness" / "roles" / "generator.toml").read_text("utf-8")
         assert "ada (backend_engineer)" in generator
         assert "bob (backend_engineer)" in generator
@@ -513,7 +522,7 @@ def test_delegation_brief_is_rehydrated_with_its_team(
 def test_team_roster_uses_management_authority_to_identify_manager_reports(
     active: bool, can_lead: bool, expects_director_guidance: bool
 ) -> None:
-    ledger = SqliteLedger.open(":memory:")
+    ledger = open_test_ledger()
     try:
         director = Employee(id="ceo", name="Casey", role="ceo")
         specialist_lead = Employee(
@@ -545,9 +554,9 @@ def test_team_roster_uses_management_authority_to_identify_manager_reports(
 
 
 def test_management_profile_without_a_delegation_task_keeps_delivery_tools(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, ledger: Ledger
 ) -> None:
-    ledger = SqliteLedger.open(":memory:")
+    ledger = open_test_ledger()
     lead = _seed_delegation(ledger)
     captured: dict[str, Any] = {}
     monkeypatch.setattr(
@@ -570,15 +579,15 @@ def test_management_profile_without_a_delegation_task_keeps_delivery_tools(
 
 
 async def test_tdd_review_delivery_task_gates_parent_production_tools(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, ledger: Ledger
 ) -> None:
-    ledger = SqliteLedger.open(":memory:")
+    ledger = open_test_ledger()
     _seed_delegation(ledger)
     worker = ledger.employees.get("ada")
     assert worker is not None
     ledger.tasks.submit(
         Task(
-            id="delivery",
+            id=uid("delivery"),
             intent="implement the backend",
             status=TaskStatus.TODO,
             execution_mode=ExecutionMode.DELIVERY,
@@ -599,7 +608,7 @@ async def test_tdd_review_delivery_task_gates_parent_production_tools(
         ledger=ledger,
     )
 
-    materialized = factory.materialize(worker, task_id="delivery")
+    materialized = factory.materialize(worker, task_id=uid("delivery"))
     write_file = captured["registry"].get("write_file")
     assert write_file is not None
     result = await write_file.execute(
@@ -617,13 +626,17 @@ async def test_tdd_review_delivery_task_gates_parent_production_tools(
     ledger.close()
 
 
-def test_runner_for_is_a_beat_runner(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    factory, _ = _factory(monkeypatch, tmp_path)
+def test_runner_for_is_a_beat_runner(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, ledger: Ledger
+) -> None:
+    factory, _ = _factory(monkeypatch, tmp_path, ledger)
     runner = factory.runner_for(Employee(id="ada", name="Ada", role="backend_engineer"))
     assert isinstance(runner, BeatRunner)  # the scheduler dispatches through this
 
 
-def test_unregistered_role_fails_closed(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    factory, _ = _factory(monkeypatch, tmp_path)
+def test_unregistered_role_fails_closed(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, ledger: Ledger
+) -> None:
+    factory, _ = _factory(monkeypatch, tmp_path, ledger)
     with pytest.raises(ValueError, match="not a registered role"):
         factory.materialize(Employee(id="x", name="X", role="ghost"))

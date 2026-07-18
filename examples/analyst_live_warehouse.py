@@ -41,18 +41,30 @@ _INTENT = (
 
 # (region, month, product, units, revenue)
 _ROWS = [
-    ("West", "Jan", "A", 100, 1000), ("West", "Jan", "B", 50, 750),
-    ("West", "Feb", "A", 120, 1200), ("West", "Feb", "B", 60, 900),
-    ("West", "Mar", "A", 140, 1400), ("West", "Mar", "B", 70, 1050),
-    ("West", "Apr", "A", 160, 1600), ("West", "Apr", "B", 80, 1200),
-    ("East", "Jan", "A", 80, 800), ("East", "Jan", "B", 40, 600),
-    ("East", "Feb", "A", 85, 850), ("East", "Feb", "B", 42, 630),
-    ("East", "Mar", "A", 90, 900), ("East", "Mar", "B", 45, 675),
-    ("East", "Apr", "A", 95, 950), ("East", "Apr", "B", 47, 705),
-    ("North", "Jan", "A", 30, 300), ("North", "Jan", "B", 20, 300),
-    ("North", "Feb", "A", 45, 450), ("North", "Feb", "B", 30, 450),
-    ("North", "Mar", "A", 70, 700), ("North", "Mar", "B", 50, 750),
-    ("North", "Apr", "A", 110, 1100), ("North", "Apr", "B", 80, 1200),
+    ("West", "Jan", "A", 100, 1000),
+    ("West", "Jan", "B", 50, 750),
+    ("West", "Feb", "A", 120, 1200),
+    ("West", "Feb", "B", 60, 900),
+    ("West", "Mar", "A", 140, 1400),
+    ("West", "Mar", "B", 70, 1050),
+    ("West", "Apr", "A", 160, 1600),
+    ("West", "Apr", "B", 80, 1200),
+    ("East", "Jan", "A", 80, 800),
+    ("East", "Jan", "B", 40, 600),
+    ("East", "Feb", "A", 85, 850),
+    ("East", "Feb", "B", 42, 630),
+    ("East", "Mar", "A", 90, 900),
+    ("East", "Mar", "B", 45, 675),
+    ("East", "Apr", "A", 95, 950),
+    ("East", "Apr", "B", 47, 705),
+    ("North", "Jan", "A", 30, 300),
+    ("North", "Jan", "B", 20, 300),
+    ("North", "Feb", "A", 45, 450),
+    ("North", "Feb", "B", 30, 450),
+    ("North", "Mar", "A", 70, 700),
+    ("North", "Mar", "B", 50, 750),
+    ("North", "Apr", "A", 110, 1100),
+    ("North", "Apr", "B", 80, 1200),
 ]
 
 
@@ -87,13 +99,19 @@ async def main() -> int:
     base = os.environ.get("AZURE_OPENAI_BASE_URL")
     dep = os.environ.get("AZURE_OPENAI_DEPLOYMENT")
     if not (key and base and dep):
-        print("skipping: set AZURE_OPENAI_API_KEY / AZURE_OPENAI_BASE_URL / AZURE_OPENAI_DEPLOYMENT")
+        print(
+            "skipping: set AZURE_OPENAI_API_KEY / AZURE_OPENAI_BASE_URL / AZURE_OPENAI_DEPLOYMENT"
+        )
         return 0
 
     roles = RoleRegistry.from_plugins(default_roles())
     factory = EmployeeHarnessFactory(
-        api_key=key, base_url=base, deployment=dep, company_id="analyst-warehouse",
-        roles=roles, timeout_s=600.0,
+        api_key=key,
+        base_url=base,
+        deployment=dep,
+        company_id="analyst-warehouse",
+        roles=roles,
+        timeout_s=600.0,
     )
     mat = factory.materialize(Employee(id="vera", name="Vera", role="analyst"))
     _seed_warehouse(mat.working_dir / "warehouse.db")
@@ -106,8 +124,12 @@ async def main() -> int:
     # against the role's agent-review rubric.
     verifier = analyst_plugin().dod_generator(_INTENT)
     outcome = await mat.runner.run_task(
-        task_id="warehouse-1", intent=_INTENT, run_id="run-warehouse-1",
-        verification=verifier.verification_steps(), rubric=verifier.rubric(), observer=_print_event,
+        task_id="warehouse-1",
+        intent=_INTENT,
+        run_id="run-warehouse-1",
+        verification=verifier.verification_steps(),
+        rubric=verifier.rubric(),
+        observer=_print_event,
     )
 
     print(f"\npassed   = {outcome.passed}")

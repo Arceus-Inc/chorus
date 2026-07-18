@@ -33,14 +33,7 @@ _INTENT = (
     "single worst month, and state whether churn is trending up or down across the period."
 )
 
-_CSV = (
-    "month,signups,churned\n"
-    "Jan,1000,40\n"
-    "Feb,1100,55\n"
-    "Mar,1200,84\n"
-    "Apr,1250,100\n"
-    "May,1300,143\n"
-)
+_CSV = "month,signups,churned\nJan,1000,40\nFeb,1100,55\nMar,1200,84\nApr,1250,100\nMay,1300,143\n"
 
 
 def _short(value: object, n: int = 220) -> str:
@@ -70,7 +63,9 @@ async def main() -> int:
     base = os.environ.get("AZURE_OPENAI_BASE_URL")
     dep = os.environ.get("AZURE_OPENAI_DEPLOYMENT")
     if not (key and base and dep):
-        print("skipping: set AZURE_OPENAI_API_KEY / AZURE_OPENAI_BASE_URL / AZURE_OPENAI_DEPLOYMENT")
+        print(
+            "skipping: set AZURE_OPENAI_API_KEY / AZURE_OPENAI_BASE_URL / AZURE_OPENAI_DEPLOYMENT"
+        )
         return 0
 
     roles = RoleRegistry.from_plugins(default_roles())
@@ -90,7 +85,9 @@ async def main() -> int:
 
     print(f"worktree : {mat.working_dir}")
     print(f"tools    : {mat.config.tools}")
-    print(f"sandbox  : {mat.config.sandbox}  max_turns={mat.config.max_turns}  max_sprints={mat.config.max_sprints}")
+    print(
+        f"sandbox  : {mat.config.sandbox}  max_turns={mat.config.max_turns}  max_sprints={mat.config.max_sprints}"
+    )
     print(f"intent   : {_INTENT}\n")
 
     outcome = await mat.runner.run_task(

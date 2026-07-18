@@ -14,6 +14,7 @@ import pytest
 
 from chorus.ledger import Task
 from chorus.outcomes import ArtifactType
+from chorus.testing import uid
 from chorus.workspace import CompanyWorkspace
 from chorus_employee.engineer import engineer_lander
 
@@ -35,10 +36,10 @@ async def test_land_snapshots_the_worktree_and_returns_a_pr_artifact(tmp_path: P
     lander = engineer_lander(company_root)
     assert lander.outcome_kind == "pr"
     artifact = await lander.land(
-        Task(id="t1", intent="ship it", assignee_employee_id="ada"), result=None
+        Task(id=uid("t1"), intent="ship it", assignee_employee_id="ada"), result=None
     )
 
-    assert artifact.task_id == "t1"
+    assert artifact.task_id == uid("t1")
     assert artifact.type is ArtifactType.PR
     assert artifact.resource_ref["branch"] == "chorus/ada"
     assert artifact.resource_ref["commit"]  # a real commit sha
@@ -56,7 +57,7 @@ async def test_land_integrates_the_branch_into_company_main(tmp_path: Path) -> N
     (wt.path / "feature.py").write_text("print('shipped')\n", encoding="utf-8")
 
     artifact = await engineer_lander(company_root).land(
-        Task(id="t1", intent="ship it", assignee_employee_id="ada"), result=None
+        Task(id=uid("t1"), intent="ship it", assignee_employee_id="ada"), result=None
     )
 
     assert artifact.resource_ref["merged"] is True
@@ -72,7 +73,7 @@ async def test_artifact_ref_is_host_safe(tmp_path: Path) -> None:
     (workspace.worktree_for("ada").path / "feature.py").write_text("x\n", encoding="utf-8")
 
     artifact = await engineer_lander(company_root).land(
-        Task(id="t1", intent="ship it", assignee_employee_id="ada"), result=None
+        Task(id=uid("t1"), intent="ship it", assignee_employee_id="ada"), result=None
     )
 
     assert artifact.resource_ref["worktree"] == "worktrees/ada"  # relative to the company root
@@ -95,7 +96,7 @@ async def test_merge_conflict_is_recorded_not_raised(tmp_path: Path) -> None:
     _git(workspace.repo, "-c", "user.name=x", "-c", "user.email=x@x", "commit", "-m", "main edit")
 
     artifact = await engineer_lander(company_root).land(
-        Task(id="t1", intent="ship it", assignee_employee_id="ada"), result=None
+        Task(id=uid("t1"), intent="ship it", assignee_employee_id="ada"), result=None
     )
 
     assert artifact.resource_ref["merged"] is False  # not integrated

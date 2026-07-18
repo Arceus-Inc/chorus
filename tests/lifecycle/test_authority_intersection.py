@@ -77,8 +77,6 @@ def test_allowed_professions_are_intersected_without_widening() -> None:
     ],
 )
 def test_subdelegation_requires_every_layer(grants: tuple[bool, ...], expected: bool) -> None:
-    layers = tuple(
-        AuthorityLimits(5, 5, can_subdelegate=grant) for grant in grants
-    )
+    layers = tuple(AuthorityLimits(5, 5, can_subdelegate=grant) for grant in grants)
 
     assert AuthorityIntersection.intersect(*layers).can_subdelegate is expected

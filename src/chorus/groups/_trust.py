@@ -8,14 +8,14 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
-from chorus.ledger import SqliteLedger
+from chorus.ledger import Ledger
 from chorus.trust import TrustPreset
 
 
 class TrustFacade:
     """The ``org.trust`` surface — set a task's preset + boundary."""
 
-    def __init__(self, ledger: SqliteLedger) -> None:
+    def __init__(self, ledger: Ledger) -> None:
         self._ledger = ledger
 
     def set_task(

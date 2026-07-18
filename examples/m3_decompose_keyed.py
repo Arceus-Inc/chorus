@@ -16,13 +16,16 @@ from __future__ import annotations
 
 import asyncio
 import os
+import uuid
+
+_EXAMPLE_COMPANY = str(uuid.uuid5(uuid.NAMESPACE_URL, "chorus-example"))  # one stable demo org
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
 
 from chorus.events import Event, EventKind
-from chorus.ledger import Run, RunStatus, SqliteLedger, Task, TaskStatus
+from chorus.ledger import Ledger, Run, RunStatus, Task, TaskStatus
 from chorus.lifecycle import assign_task
 from chorus.observability import EventBus
 from chorus.roles import RoleRegistry, default_roles, role_beat_config
@@ -74,7 +77,18 @@ def _seed_repo(path: Path) -> None:
     (path / "README.md").write_text("# movie app\n", encoding="utf-8")
     subprocess.run(["git", "-C", str(path), "add", "-A"], check=True, capture_output=True)
     subprocess.run(
-        ["git", "-C", str(path), "-c", "user.name=s", "-c", "user.email=s@x", "commit", "-m", "init"],
+        [
+            "git",
+            "-C",
+            str(path),
+            "-c",
+            "user.name=s",
+            "-c",
+            "user.email=s@x",
+            "commit",
+            "-m",
+            "init",
+        ],
         check=True,
         capture_output=True,
     )
@@ -93,12 +107,20 @@ def main() -> int:
     seed = base / "source"
     _seed_repo(seed)
 
-    ledger = SqliteLedger.open(":memory:")
+    ledger = Ledger.open(
+        os.environ.get("CHORUS_LEDGER_DSN", "postgresql://localhost/chorus"),
+        company_id=_EXAMPLE_COMPANY,
+    )
     try:
         registry = RoleRegistry.from_plugins(default_roles())
         factory = EmployeeHarnessFactory(
-            api_key=api_key, base_url=base_url, deployment=deployment,
-            company_id="acme", roles=registry, pricing=default_pricing_from_env(), seed=seed,
+            api_key=api_key,
+            base_url=base_url,
+            deployment=deployment,
+            company_id="acme",
+            roles=registry,
+            pricing=default_pricing_from_env(),
+            seed=seed,
             ledger=ledger,  # the manager's decompose tool mutates this live
         )
         ledger.employees.create(Employee(id="moe", name="Moe", role="manager"))
@@ -133,7 +155,9 @@ def main() -> int:
         _log("4. LEDGER AFTER THE BEAT — did decompose really fan it out?")
         children = [t for t in _all_tasks(ledger) if t.parent_id == "feature"]
         for child in sorted(children, key=lambda t: t.id):
-            _log(f"   child {child.id}: assignee={child.assignee_employee_id!r} status={child.status.value}")
+            _log(
+                f"   child {child.id}: assignee={child.assignee_employee_id!r} status={child.status.value}"
+            )
             _log(f"          intent: {child.intent[:90]}")
         blockers = ledger.dependencies.unresolved_blockers("feature")
         _log(f"   parent 'feature' waits on: {blockers}")
@@ -148,14 +172,20 @@ def main() -> int:
         gated = set(blockers) == {c.id for c in children}
         all_woken = all(c.id in woken for c in children)
         ok = len(children) >= 2 and assigned and gated and all_woken
-        _log("\n" + ("✅ PASS — decompose ran live: parent fanned out to assigned, gated, woken children"
-                      if ok else "❌ the capability did not fan out as expected (see the trace above)"))
+        _log(
+            "\n"
+            + (
+                "✅ PASS — decompose ran live: parent fanned out to assigned, gated, woken children"
+                if ok
+                else "❌ the capability did not fan out as expected (see the trace above)"
+            )
+        )
         return 0 if ok else 1
     finally:
         ledger.close()
 
 
-def _all_tasks(ledger: SqliteLedger) -> list[Task]:
+def _all_tasks(ledger: Ledger) -> list[Task]:
     rows = ledger.tasks._conn.execute("SELECT id FROM task").fetchall()
     return [t for t in (ledger.tasks.get(str(r[0])) for r in rows) if t is not None]
 
