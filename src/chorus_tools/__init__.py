@@ -25,6 +25,12 @@ from chorus_tools._code_quality import (
     is_noop_quality_command,
 )
 from chorus_tools._code_quality import write_report as write_quality_report
+from chorus_tools._comment import (
+    CommentInput,
+    CommentTool,
+    ReadCommentsInput,
+    ReadCommentsTool,
+)
 from chorus_tools._decompose import DecomposeInput, DecomposeTool
 from chorus_tools._design_exemplar import (
     DesignExemplarInput,
@@ -112,6 +118,8 @@ __all__ = [
     "ChartRenderTool",
     "CodeQualityInput",
     "CodeQualityTool",
+    "CommentInput",
+    "CommentTool",
     "DecomposeInput",
     "DecomposeTool",
     "DesignExemplarInput",
@@ -151,6 +159,8 @@ __all__ = [
     "QualityCheck",
     "QualityCheckSpec",
     "QualityReport",
+    "ReadCommentsInput",
+    "ReadCommentsTool",
     "RecallInput",
     "RecallTool",
     "RecordDecisionInput",

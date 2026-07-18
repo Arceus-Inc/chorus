@@ -311,6 +311,8 @@ def test_delegation_harness_registers_the_decompose_capability_tool(
             "decompose",
             "team_read",
             "staffing_request",
+            "comment",  # coordination verbs ride every employee beat (OM-3)
+            "read_comments",
         }
     finally:
         ledger.close()
@@ -419,7 +421,9 @@ def test_integrate_beat_over_a_complete_subtree_drops_all_mutating_tools(
             "read_file",
             "read_offloaded",
             "team_read",
-        }  # only reads remain before acceptance
+            "comment",  # coordination stays open — a comment mutates nothing (OM-3)
+            "read_comments",
+        }  # only reads + coordination remain before acceptance
     finally:
         ledger.close()
 

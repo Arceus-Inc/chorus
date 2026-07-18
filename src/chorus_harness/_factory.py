@@ -63,12 +63,14 @@ from chorus_tools import (
     AssignTaskTool,
     BrandLintTool,
     CodeQualityTool,
+    CommentTool,
     DecomposeTool,
     DesignExemplarTool,
     DesignLintTool,
     EvidenceScanTool,
     GetRunTool,
     GoLiveTool,
+    ReadCommentsTool,
     RecallTool,
     RecordDecisionTool,
     SecretScanTool,
@@ -176,6 +178,12 @@ _CHORUS_TO_DREAM_TOOL: dict[str, str] = {
     # via _capability_tool, so it must stay in this map for the subagent projection to keep it.
     "recall": "recall",
     "get_run": "get_run",
+    # comment / read_comments — the coordination verbs (OM-3): chorus capability tools
+    # (registered via _capability_tool, need the ledger). Identity-mapped like record_decision
+    # so dream_tool_names keeps them; rolled out to every ledger-backed employee in materialize
+    # (the get_run precedent) — comments are communication, not authority; they run nothing.
+    "comment": "comment",
+    "read_comments": "read_comments",
     # lattice — semantic pattern consolidation (read-mostly; apply is gated). Identity-mapped like recall.
     "lattice_context": "lattice_context",
     "lattice_packet": "lattice_packet",
@@ -335,6 +343,10 @@ def _capability_tool(
             return GoLiveTool(ledger)
         if name == "record_decision":
             return RecordDecisionTool(ledger)
+        if name == "comment":
+            return CommentTool(ledger)
+        if name == "read_comments":
+            return ReadCommentsTool(ledger)
         if name == "staffing_request":
             return StaffingRequestTool(ledger)
         if name == "workforce_catalog_read":
@@ -961,6 +973,38 @@ class EmployeeHarnessFactory:
 
         if "recall" in config.tools and "get_run" not in config.tools:
             config = replace(config, tools=(*config.tools, "get_run"))
+
+        # OM-3: every ledger-backed EMPLOYEE gets the coordination verbs (the get_run precedent —
+        # comments are communication, not authority: they run nothing). And the inbox IS the brief
+        # (paperclip: inbox = assigned tasks + comments): unread messages land in the operating
+        # brief and are consumed, so the thread stays readable via read_comments but the nudge
+        # never repeats. Verification beats stay OUTSIDE the coordination channel by design —
+        # the verifier's independence is the point — and a non-employee principal has no ledger
+        # row for the message FK anyway.
+        if (
+            self._ledger is not None
+            and not verification_only
+            and self._ledger.employees.get(employee.id) is not None
+        ):
+            missing = tuple(t for t in ("comment", "read_comments") if t not in config.tools)
+            if missing:
+                config = replace(config, tools=(*config.tools, *missing))
+            inbox = self._ledger.messages.inbox(employee.id)
+            if inbox:
+                lines = "\n".join(
+                    f"- [task {m.task_id or '—'}] from {m.from_employee_id or m.from_user_id}: "
+                    f"{m.body}"
+                    for m in inbox
+                )
+                config = replace(
+                    config,
+                    system_prompt=config.system_prompt
+                    + "\n\n## Inbox — unread comments for you\n"
+                    + lines
+                    + "\nRead the full thread with read_comments(task_id); reply with comment.",
+                )
+                for m in inbox:  # ponytail: consumed at injection; a crashed beat re-reads via read_comments
+                    self._ledger.messages.mark_read(m.id)
         if _LATTICE_TOOLS.intersection(config.tools):
             config = replace(config, system_prompt=config.system_prompt + LATTICE_DIRECTIVES_BLOCK)
 

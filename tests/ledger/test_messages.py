@@ -108,3 +108,34 @@ def test_message_can_anchor_to_task(ledger: Ledger) -> None:
         )
     )
     assert sent.task_id == uid("t1")
+
+
+def test_for_task_returns_the_task_thread_oldest_first(ledger: Ledger) -> None:
+    """OM-3: task-anchored messages ARE the comment thread — for_task reads it in order,
+    read or unread, any recipient (the thread is shared context, not a private inbox)."""
+    _emp(ledger, "mgr")
+    _emp(ledger, uid("rep"))
+    task = ledger.tasks.submit(Task(id=uid("t1"), intent="ship it"))
+    ledger.messages.send(
+        Message(
+            id=uid("c1"),
+            from_employee_id="mgr",
+            to_employee_id=uid("rep"),
+            task_id=task.id,
+            body="first",
+        )
+    )
+    ledger.messages.send(
+        Message(
+            id=uid("c2"),
+            from_employee_id=uid("rep"),
+            to_employee_id="mgr",
+            task_id=task.id,
+            body="second",
+        )
+    )
+    ledger.messages.mark_read(uid("c1"))
+    ledger.messages.send(  # not on the task — never part of the thread
+        Message(id=uid("c3"), from_employee_id="mgr", to_employee_id=uid("rep"), body="offtopic")
+    )
+    assert [m.body for m in ledger.messages.for_task(task.id)] == ["first", "second"]
