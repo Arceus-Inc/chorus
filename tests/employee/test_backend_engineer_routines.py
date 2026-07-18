@@ -67,9 +67,12 @@ class TestReportOnlyDoD:
             verifier = backend_engineer_dod(routine.intent_template)
             assert verifier.kind is DoDKind.AGENT_REVIEW, routine.routine_key
 
-    def test_build_intents_keep_the_reviewed_build(self) -> None:
+    def test_build_intents_keep_the_self_judged_build_review(self) -> None:
+        # Operator decision (2026-07-18): build intents are a self-judged agent_review on the "pr"
+        # artifact class — the report-only branch must still be distinguishable from it.
         from chorus.outcomes import DoDKind
         from chorus_employee.backend_engineer import backend_engineer_dod
 
         verifier = backend_engineer_dod("Implement the edits module with unit tests")
-        assert verifier.kind is DoDKind.REVIEWED_BUILD
+        assert verifier.kind is DoDKind.AGENT_REVIEW
+        assert verifier.artifact_class == "pr"

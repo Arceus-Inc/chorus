@@ -215,32 +215,25 @@ def test_brief_mandates_the_code_reviewer_red_team() -> None:
     assert "authz" in lower or "authorization" in lower or "n+1" in lower
 
 
-def test_dod_rubric_gates_on_the_cleared_review() -> None:
-    from chorus_employee.backend_engineer import backend_engineer_dod
-
-    rubric = backend_engineer_dod("build a service").rubric()
-    assert "review_verdict.json" in rubric
-    assert "cleared" in rubric.lower()
-
-
-def test_dod_rubric_makes_the_reviewer_gate_on_the_tdd_artifacts() -> None:
-    # The reviewed build carries a typed, kernel-owned evidence profile, so the project command stays
-    # separate from cross-platform JSON checks for RED, the test plan, and independent review.
-    from chorus.outcomes import DoDKind, ReviewedBuild
+def test_dod_is_a_self_judged_agent_review_without_evidence_file_demands() -> None:
+    # Operator decision (2026-07-18): employees verify their own work — no kernel evidence machinery.
+    # The rubric judges substance the employee can self-check in-beat (tests pass when run, diff
+    # implements the contract, inputs validated, no secrets) and demands NO evidence-bundle files.
+    from chorus.outcomes import DoDKind
     from chorus_employee.backend_engineer import backend_engineer_dod
 
     dod = backend_engineer_dod("build a small commerce API")
-    assert dod.kind is DoDKind.REVIEWED_BUILD
-    assert isinstance(dod.spec, ReviewedBuild)
-    assert dod.spec.evidence_profile == "tdd_review_v1"
+    assert dod.kind is DoDKind.AGENT_REVIEW
     rubric = dod.rubric()
-    assert "test_plan.json" in rubric
-    assert "api_verdict.json" in rubric
-    assert "red_evidence" in rubric.lower() or "red" in rubric.lower()
-    assert "test_evidence/red.json" in rubric
-    assert "red-confirmed" in rubric
-    assert "grep -q" not in rubric
-    assert "test -f" not in rubric
+    assert "test" in rubric.lower() and "secret" in rubric.lower()
+    for evidence_file in (
+        "test_evidence/manifest.json",
+        "test_evidence/red.json",
+        "test_plan.json",
+        "review_verdict.json",
+        "api_verdict.json",
+    ):
+        assert evidence_file not in rubric
 
 
 def test_reviewer_treats_red_evidence_as_historical_and_runs_current_floor() -> None:
@@ -253,15 +246,15 @@ def test_reviewer_treats_red_evidence_as_historical_and_runs_current_floor() -> 
     assert "verify_command" in brief
 
 
-def test_dod_rubric_mechanically_requires_the_durable_evidence_floor() -> None:
-    # spec §10: "it was tested" must be a file on disk, not a claim. The reviewer-discovered
-    # verify_command must include a green test_evidence/manifest.json check — the durable evidence
-    # floor the kernel greps, not something only the brief's prose asks for.
+def test_dod_rubric_requires_tests_to_actually_run() -> None:
+    # Operator decision (2026-07-18): the durable evidence-file floor is gone; the rubric instead
+    # binds the in-beat evaluator to substance it can check itself — the tests exist and pass when
+    # actually run, never on the model's word.
     from chorus_employee.backend_engineer import backend_engineer_dod
 
-    rubric = backend_engineer_dod("build a service").rubric()
-    assert "test_evidence/manifest.json" in rubric
-    assert '"verdict": "pass"' in rubric
+    rubric = backend_engineer_dod("build a service").rubric().lower()
+    assert "pass" in rubric and "run" in rubric
+    assert "test_evidence/manifest.json" not in rubric
 
 
 def test_brief_fits_the_lean_token_budget() -> None:

@@ -129,12 +129,13 @@ async def test_intake_applies_the_assignee_role_dod_when_none_set(ledger: Ledger
     await sched.tick(_NOW)
     await sched.drain()
 
-    # the engineer's role DoD (a reviewed build) was inherited + persisted; it runs no objective step at
-    # the engineer's OWN beat — the gate is a reviewer beat + a kernel-run command (M3 reviewed-build).
+    # the engineer's role DoD was inherited + persisted; it runs no objective step at the engineer's
+    # OWN beat. Operator decision (2026-07-18): employees verify their own work — the role DoD is a
+    # self-judged agent_review whose rubric the in-beat evaluator renders, not a reviewer-gated build.
     from chorus.outcomes import DoDKind
 
     verifier = ledger.dod.verifier_for_task(uid("t1"))
-    assert verifier is not None and verifier.kind is DoDKind.REVIEWED_BUILD
+    assert verifier is not None and verifier.kind is DoDKind.AGENT_REVIEW
     assert beat.verification == ()
 
 

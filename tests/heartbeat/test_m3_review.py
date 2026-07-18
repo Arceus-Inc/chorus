@@ -1,18 +1,14 @@
-"""M3 — the load-bearing Reviewer through the kernel (spec M3, deterministic, no model).
+"""M3 — in-beat verdicts through the kernel (deterministic, no model).
 
-A leaf ``agent_review`` deliverable is gated by a real reviewer beat: the kernel dispatches a read-only
-Reviewer that calls ``submit_verdict``; approve lands the work ``done``, block routes per subsidiarity —
-escalate to a manager parent (the rejected child drives the Slice-2 integrate), else bounded author
-self-repair then a recovery card. Fake beat runners stand in for the worker / reviewer / manager.
+Operator decision (2026-07-18): employees verify their own work — no system verifier. Every leaf
+DoD is judged by dream's single in-beat evaluator (spec 16): one ``run_task`` renders the verdict
+and lands the work ``done`` (or blocks it). There is no second Reviewer beat and no kernel evidence
+machinery. Fake beat runners stand in for the worker / manager.
 """
 
 from __future__ import annotations
 
-import asyncio
-import json
-import sys
-from datetime import UTC, datetime, timedelta
-from hashlib import sha256
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -34,18 +30,14 @@ from chorus.ledger import (
     TeamStatus,
 )
 from chorus.lifecycle import CapabilityService, ChildPlan, assign_task
-from chorus.recovery import reconcile
 from chorus.roles import RoleRegistry, default_roles
 from chorus.testing import uid
-from chorus.verification import VerificationPrincipal
 from chorus.workforce import Employee, LedgerWorkforce
 from chorus_employee import default_landers
 
 pytestmark = pytest.mark.integration
 
 _NOW = datetime(2026, 6, 19, 12, 0, tzinfo=UTC)
-_PASS_COMMAND = f'"{sys.executable}" -c "raise SystemExit(0)"'
-_FAIL_COMMAND = f'"{sys.executable}" -c "raise SystemExit(1)"'
 
 
 class _Runner:
@@ -58,7 +50,7 @@ class _Runner:
 
 
 class _Worker(_Runner):
-    """A leaf worker that renders its own verdict in-beat (spec 16): an ``agent_review`` DoD is judged by
+    """A leaf worker that renders its own verdict in-beat (spec 16): the DoD rubric is judged by
     dream's single in-beat evaluator, so the worker beat itself passes or blocks — there is no second
     Reviewer beat. ``decide(task_id)`` selects the verdict (default: always pass)."""
 
@@ -78,120 +70,6 @@ class _Worker(_Runner):
     ) -> BeatOutcome:
         passed = True if self._decide is None else bool(self._decide(task_id))  # type: ignore[operator]
         return BeatOutcome(passed=passed, outcome={}, summary="produced", model="m")
-
-
-class _Reviewer(_Runner):
-    """A reviewer that records a verdict via the real CapabilityService. ``decide(task_id)`` → approve?
-
-    ``verify_command`` (when set) is reported on the verdict — the kernel runs it as the objective floor.
-    """
-
-    def __init__(
-        self,
-        ledger: Ledger,
-        *,
-        reviewer_id: str,
-        decide: object,
-        working_dir: Path,
-        verify_command: str = "",
-    ) -> None:
-        super().__init__(working_dir)
-        self._ledger = ledger
-        self._id = reviewer_id
-        self._decide = decide
-        self._verify_command = verify_command
-
-    async def run_task(
-        self,
-        *,
-        task_id: str,
-        intent: str,
-        verification: object = (),
-        rubric: object = "",
-        observer: object = None,
-        run_id: str | None = None,
-    ) -> BeatOutcome:
-        approve = bool(self._decide(task_id))  # type: ignore[operator]
-        CapabilityService(self._ledger).record_verdict(
-            task_id=task_id,
-            run_id=str(run_id),
-            reviewer_id=self._id,
-            approve=approve,
-            feedback="fb",
-            verify_command=self._verify_command,
-        )
-        return BeatOutcome(passed=True, outcome={}, summary="reviewed", model="m")
-
-
-class _SilentReviewer(_Runner):
-    """A reviewer that runs but never calls submit_verdict (renders no verdict)."""
-
-    async def run_task(
-        self,
-        *,
-        task_id: str,
-        intent: str,
-        verification: object = (),
-        rubric: object = "",
-        observer: object = None,
-        run_id: str | None = None,
-    ) -> BeatOutcome:
-        return BeatOutcome(passed=True, outcome={}, summary="said nothing", model="m")
-
-
-class _SlowReviewer(_Reviewer):
-    """A reviewer whose beat spans several event-loop turns, so the ``run()`` loop ticks (and RECOVER
-    sweeps) *while the review run is in flight* — the genuine ``run_forever`` condition, not a hand-poked
-    reconcile. The approved deliverable must still land ``done``."""
-
-    async def run_task(
-        self,
-        *,
-        task_id: str,
-        intent: str,
-        verification: object = (),
-        rubric: object = "",
-        observer: object = None,
-        run_id: str | None = None,
-    ) -> BeatOutcome:
-        for _ in range(6):
-            await asyncio.sleep(0)  # yield: let run()'s pulses interleave with the in-flight review
-        return await super().run_task(
-            task_id=task_id,
-            intent=intent,
-            verification=verification,
-            observer=observer,
-            run_id=run_id,
-        )
-
-
-class _ReconcilingReviewer(_Reviewer):
-    """A reviewer that runs a RECOVER sweep mid-review before recording its verdict.
-
-    The review beat runs inline inside the author's beat; under ``run_forever`` the tick loop keeps
-    firing RECOVER (``reconcile``) while the reviewer awaits the model. This reproduces that: the review
-    run must carry a lease, or the sweep reaps it as crash debris (a ``RUNNING`` run with a null lease)
-    and strands the approved work — the bug that only surfaces under continuous ticking, never tick+drain.
-    """
-
-    async def run_task(
-        self,
-        *,
-        task_id: str,
-        intent: str,
-        verification: object = (),
-        rubric: object = "",
-        observer: object = None,
-        run_id: str | None = None,
-    ) -> BeatOutcome:
-        reconcile(self._ledger, now=_NOW + timedelta(seconds=1))  # a concurrent tick's RECOVER step
-        return await super().run_task(
-            task_id=task_id,
-            intent=intent,
-            verification=verification,
-            observer=observer,
-            run_id=run_id,
-        )
 
 
 class _Manager(_Runner):
@@ -245,57 +123,24 @@ class _Manager(_Runner):
 
 
 class _Org:
-    """A fake harness factory: a role-faithful fake runner per employee, plus the review seam."""
+    """A fake harness factory: a role-faithful fake runner per employee."""
 
     def __init__(
         self,
         ledger: Ledger,
         *,
-        decide: object,
         root: Path,
         parent: str = uid("M"),
-        silent: bool = False,
-        verify_command: str = "",
-        reconciling: bool = False,
-        slow_review: bool = False,
         worker_decide: object = None,
     ) -> None:
         self._ledger = ledger
-        self._decide = decide
         self._root = root
         self._parent = parent
-        self._silent = silent
-        self._verify_command = verify_command
-        self._reconciling = reconciling
-        self._slow_review = slow_review
         self._worker_decide = (
-            worker_decide  # spec 16: an agent_review worker renders its verdict in-beat
+            worker_decide  # spec 16: a worker renders its verdict in-beat
         )
 
     def runner_for(self, employee: Employee, *, task_id: str | None = None) -> object:
-        return self._for(employee)
-
-    def review_runner_for(
-        self, reviewer: VerificationPrincipal, *, task_id: str, worktree_owner_id: str
-    ) -> object:
-        return self._for(reviewer)
-
-    def _for(self, employee: Employee | VerificationPrincipal) -> object:
-        if isinstance(employee, VerificationPrincipal):
-            if self._silent:
-                return _SilentReviewer(self._root)
-            reviewer_cls = _Reviewer
-            if self._reconciling:
-                reviewer_cls = _ReconcilingReviewer
-            elif self._slow_review:
-                reviewer_cls = _SlowReviewer
-            return reviewer_cls(
-                self._ledger,
-                reviewer_id=employee.id,
-                decide=self._decide,
-                working_dir=self._root,
-                verify_command=self._verify_command,
-            )
         profile = self._ledger.management_profiles.get(employee.id)
         if profile is not None and profile.active:
             return _Manager(self._ledger, parent=self._parent, working_dir=self._root)
@@ -322,7 +167,7 @@ async def test_approve_lands_the_deliverable_done(ledger: Ledger, tmp_path: Path
     ledger.employees.create(Employee(id=uid("pen"), name="Pen", role="pm"))
     ledger.tasks.submit(Task(id=uid("spec"), intent="write the spec", status=TaskStatus.TODO))
     assign_task(ledger, uid("spec"), uid("pen"))
-    org = _Org(ledger, decide=lambda _tid: True, root=tmp_path)
+    org = _Org(ledger, root=tmp_path)
     sched = _sched(ledger, org, tmp_path)
 
     await sched.tick_once()
@@ -335,144 +180,25 @@ async def test_approve_lands_the_deliverable_done(ledger: Ledger, tmp_path: Path
     assert not [a for a in ledger.artifacts.list_for_task(uid("spec")) if a.type.value == "verdict"]
 
 
-async def test_review_run_survives_a_concurrent_recover_sweep(
+async def test_passed_backend_engineer_leaf_lands_done_with_no_system_verifier_run(
     ledger: Ledger, tmp_path: Path
 ) -> None:
-    """A RECOVER sweep firing while the inline reviewer beat is in flight must not reap it.
+    """Operator decision (2026-07-18): employees verify their own work — no system verifier.
 
-    The review beat runs inside the author's beat; under ``run_forever`` the tick loop keeps sweeping
-    stale leases (``reconcile``) while the reviewer awaits the model. Reproduced here by reconciling
-    mid-review: an approved deliverable must still land ``done`` (the review run carries a lease, so the
-    sweep leaves it alone) — not be stranded as reaped crash debris. Regression for the run_forever bug.
-    Spec 16 keeps the Reviewer beat for ``reviewed_build``, so this rides its gate (POSIX command floor).
-    """
-    _reviewed_build_task(ledger)
-    org = _Org(
-        ledger,
-        decide=lambda _tid: True,
-        root=tmp_path,
-        reconciling=True,
-        verify_command=_PASS_COMMAND,
-    )
-    sched = _sched(ledger, org, tmp_path)
-
-    await sched.tick_once()
-    await sched.drain()
-
-    assert ledger.tasks.get(uid("code")).status is TaskStatus.DONE  # type: ignore[union-attr]
-
-
-async def test_review_run_carries_a_lease(ledger: Ledger, tmp_path: Path) -> None:
-    """The in-flight review run is leased like any other beat — so the stale-run reaper (a concurrent
-    RECOVER, or another Arceus worker) never mistakes it for crash debris (a null lease) and reaps it.
-
-    Spec 16 keeps the Reviewer beat only for ``reviewed_build`` (its objective command floor), so this
-    leases-the-review-run invariant is exercised through an engineer's reviewed_build gate."""
-    _reviewed_build_task(ledger)
-    org = _Org(ledger, decide=lambda _tid: True, root=tmp_path)
-    sched = _sched(ledger, org, tmp_path)
-
-    await sched.tick_once()
-    await sched.drain()
-
-    review_runs = [r for r in ledger.runs.for_task(uid("code")) if r.principal_kind == "system"]
-    assert review_runs and all(r.lease_expires_at is not None for r in review_runs)
-
-
-async def test_run_forever_lands_a_reviewed_deliverable_done(
-    ledger: Ledger, tmp_path: Path
-) -> None:
-    """The production driver ``run()`` (continuous pulses, no per-pulse drain) lands an approved review.
-
-    With a reviewer beat that spans several pulses, this exercises the real ``run_forever``
-    interleaving end to end and asserts the deliverable still reaches ``done``. Spec 16 keeps the
-    Reviewer beat for ``reviewed_build``, so this rides its gate (POSIX command floor).
-    """
-    _reviewed_build_task(ledger)
-    org = _Org(
-        ledger,
-        decide=lambda _tid: True,
-        root=tmp_path,
-        slow_review=True,
-        verify_command=_PASS_COMMAND,
-    )
-
-    pulses = 0
-    _SAFETY_CAP = (
-        2000  # an instant injected sleep lets run() spin many no-op pulses; cap so a genuine
-    )
-    # stall (the deliverable never settling) fails fast instead of looping forever.
-
-    async def _sleep(_seconds: float) -> None:
-        nonlocal pulses
-        pulses += 1
-        await asyncio.sleep(0)  # one real yield so the in-flight review can advance between pulses
-        if (
-            pulses > _SAFETY_CAP
-            or ledger.tasks.get(uid("code")) is None
-            or (
-                (task := ledger.tasks.get(uid("code"))) is not None
-                and task.status is TaskStatus.DONE
-            )
-        ):
-            sched.stop()
-
-    sched = Scheduler(
-        ledger=ledger,
-        workforce=LedgerWorkforce(ledger.employees),
-        beat_runner_for=org,  # type: ignore[arg-type]
-        roles=RoleRegistry.from_plugins(default_roles()),
-        landers=default_landers(tmp_path, ledger=ledger),
-        clock=lambda: _NOW,
-        max_concurrent_runs=4,
-        sleep=_sleep,
-    )
-    await sched.run()
-
-    # The invariant under run_forever: the approved deliverable settles ``done`` (it is never stranded by
-    # RECOVER/dispatch firing mid-review). The pulse count itself is not meaningful (instant sleep spins).
-    assert pulses <= _SAFETY_CAP, "run() never settled the reviewed deliverable"
-    assert ledger.tasks.get(uid("code")).status is TaskStatus.DONE  # type: ignore[union-attr]
-
-
-async def test_system_verifier_reviews_without_a_reviewer_employee(
-    ledger: Ledger, tmp_path: Path
-) -> None:
+    A backend-engineer leaf inherits its role DoD (a self-judged ``agent_review``); the in-beat
+    evaluation IS the verdict, so a passed beat lands ``done`` with no second beat and no run row
+    where ``principal_kind='system'``."""
     ledger.employees.create(Employee(id="dev", name="Dev", role="backend_engineer"))
     ledger.tasks.submit(Task(id=uid("code"), intent="build the widget", status=TaskStatus.TODO))
     assign_task(ledger, uid("code"), "dev")
-    from chorus.outcomes import Verifier
-
-    ledger.dod.create(uid("code"), Verifier.reviewed_build(artifact_class="pr"))
-    org = _Org(
-        ledger,
-        decide=lambda _tid: True,
-        root=tmp_path,
-        verify_command=_PASS_COMMAND,
-    )
+    org = _Org(ledger, root=tmp_path)
     sched = _sched(ledger, org, tmp_path)
 
     await sched.tick_once()
     await sched.drain()
 
     assert ledger.tasks.get(uid("code")).status is TaskStatus.DONE  # type: ignore[union-attr]
-    assert all(employee.role != "reviewer" for employee in ledger.employees.list())
-    review_runs = [
-        run for run in ledger.runs.for_task(uid("code")) if run.principal_kind == "system"
-    ]
-    assert len(review_runs) == 1
-    assert review_runs[0].employee_id == "dev"
-    assert review_runs[0].principal_kind == "system"
-    assert review_runs[0].principal_id == "system-verifier"
-    assert review_runs[0].lease_expires_at is not None
-    verdicts = [
-        event
-        for event in ledger.activity.by_subject("task", uid("code"))
-        if event.verb.value == "review_verdict"
-    ]
-    assert len(verdicts) == 1
-    assert verdicts[0].actor_employee_id is None
-    assert verdicts[0].actor_system_principal_id == "system-verifier"
+    assert not [r for r in ledger.runs.for_task(uid("code")) if r.principal_kind == "system"]
 
 
 async def test_standalone_block_self_repairs_then_opens_recovery(
@@ -484,7 +210,7 @@ async def test_standalone_block_self_repairs_then_opens_recovery(
     ledger.tasks.submit(Task(id=uid("spec"), intent="write the spec", status=TaskStatus.TODO))
     assign_task(ledger, uid("spec"), uid("pen"))
     org = _Org(
-        ledger, decide=lambda _tid: True, root=tmp_path, worker_decide=lambda _tid: False
+        ledger, root=tmp_path, worker_decide=lambda _tid: False
     )  # the in-beat evaluator always blocks
     sched = _sched(ledger, org, tmp_path)
 
@@ -498,236 +224,11 @@ async def test_standalone_block_self_repairs_then_opens_recovery(
     )  # bounded, then a human
 
 
-async def test_a_reviewer_that_renders_no_verdict_opens_a_recovery_card(
-    ledger: Ledger, tmp_path: Path
-) -> None:
-    # The deliverable must never silently pass, nor loop forever, when the reviewer beat fails to
-    # render a verdict (the live bug this guards): the task blocks and a human is paged. Spec 16 keeps
-    # the Reviewer beat for ``reviewed_build``, so the silent-reviewer guard rides its gate.
-    _reviewed_build_task(ledger)
-    org = _Org(ledger, decide=lambda _tid: True, root=tmp_path, silent=True)
-    sched = _sched(ledger, org, tmp_path)
-
-    for _ in range(4):
-        await sched.tick_once()
-        await sched.drain()
-
-    assert ledger.tasks.get(uid("code")).status is TaskStatus.BLOCKED  # type: ignore[union-attr]
-    assert ledger.recovery_actions.active_for_source(uid("code")) is not None
-    assert not [
-        a for a in ledger.artifacts.list_for_task(uid("code")) if a.type.value == "verdict"
-    ]  # no empty verdict
-
-
-def _reviewed_build_task(ledger: Ledger) -> None:
-    from chorus.outcomes import Verifier
-
-    ledger.employees.create(Employee(id="dev", name="Dev", role="engineer"))
-    ledger.employees.create(Employee(id=uid("rob"), name="Rob", role="reviewer"))
-    ledger.tasks.submit(Task(id=uid("code"), intent="build the widget", status=TaskStatus.TODO))
-    assign_task(ledger, uid("code"), "dev")
-    ledger.dod.create(
-        uid("code"), Verifier.reviewed_build(artifact_class="pr")
-    )  # the engineer's gate
-
-
-def _structured_reviewed_build_task(ledger: Ledger) -> None:
-    from chorus.outcomes import Verifier
-
-    ledger.employees.create(Employee(id="dev", name="Dev", role="backend_engineer"))
-    ledger.employees.create(Employee(id=uid("rob"), name="Rob", role="reviewer"))
-    ledger.tasks.submit(Task(id=uid("code"), intent="build the widget", status=TaskStatus.TODO))
-    assign_task(ledger, uid("code"), "dev")
-    ledger.dod.create(
-        uid("code"),
-        Verifier.reviewed_build(artifact_class="pr", evidence_profile="tdd_review_v1"),
-    )
-
-
-def _write_structured_review_evidence(root: Path) -> None:
-    test_path = root / "tests" / "test_widget.py"
-    test_path.parent.mkdir()
-    test_path.write_text("def test_widget():\n    assert True\n", encoding="utf-8")
-    evidence = root / "test_evidence"
-    evidence.mkdir()
-    (evidence / "manifest.json").write_text(
-        json.dumps(
-            {
-                "verdict": "pass",
-                "gates": [
-                    {
-                        "name": "unit",
-                        "command": "python -m pytest -q",
-                        "status": "pass",
-                        "returncode": 0,
-                    }
-                ],
-            }
-        ),
-        encoding="utf-8",
-    )
-    (evidence / "red.json").write_text(
-        json.dumps(
-            {
-                "verdict": "red-confirmed",
-                "command": "python -m pytest -q",
-                "returncode": 1,
-                "expected_failure_matched": True,
-                "command_unavailable": False,
-                "test_paths": ["tests/test_widget.py"],
-                "test_hashes": {"tests/test_widget.py": sha256(test_path.read_bytes()).hexdigest()},
-                "production_paths": [],
-                "invalid_test_paths": [],
-                "missing_tests": [],
-            }
-        ),
-        encoding="utf-8",
-    )
-    (root / "test_plan.json").write_text(
-        json.dumps({"tests": ["tests/test_widget.py"]}), encoding="utf-8"
-    )
-    (root / "review_verdict.json").write_text(
-        json.dumps({"cleared": True, "findings": [], "evidence": "reviewed widget"}),
-        encoding="utf-8",
-    )
-
-
-async def test_reviewed_build_approve_and_passing_command_lands_done(
-    ledger: Ledger, tmp_path: Path
-) -> None:
-    _reviewed_build_task(ledger)
-    org = _Org(ledger, decide=lambda _tid: True, root=tmp_path, verify_command=_PASS_COMMAND)
-    sched = _sched(ledger, org, tmp_path)
-
-    await sched.tick_once()
-    await sched.drain()
-
-    assert ledger.tasks.get(uid("code")).status is TaskStatus.DONE  # type: ignore[union-attr]
-    dod = ledger.dod.get_for_task(uid("code"))
-    assert dod is not None and dod.verdict is not None and dod.verdict["build_passed"] is True
-
-
-async def test_reviewed_build_structured_evidence_and_project_command_both_pass(
-    ledger: Ledger, tmp_path: Path
-) -> None:
-    _structured_reviewed_build_task(ledger)
-    _write_structured_review_evidence(tmp_path)
-    org = _Org(ledger, decide=lambda _tid: True, root=tmp_path, verify_command=_PASS_COMMAND)
-    sched = _sched(ledger, org, tmp_path)
-
-    await sched.tick_once()
-    await sched.drain()
-
-    assert ledger.tasks.get(uid("code")).status is TaskStatus.DONE  # type: ignore[union-attr]
-    dod = ledger.dod.get_for_task(uid("code"))
-    assert dod is not None and dod.verdict is not None
-    assert dod.verdict["evidence_passed"] is True
-    assert dod.verdict["build_passed"] is True
-    assert dod.verdict["build_exit"] == 0
-
-
-async def test_reviewed_build_rejects_test_changed_after_red(
-    ledger: Ledger, tmp_path: Path
-) -> None:
-    _structured_reviewed_build_task(ledger)
-    _write_structured_review_evidence(tmp_path)
-    (tmp_path / "tests" / "test_widget.py").write_text(
-        "def test_widget():\n    assert False\n", encoding="utf-8"
-    )
-    org = _Org(ledger, decide=lambda _tid: True, root=tmp_path, verify_command=_PASS_COMMAND)
-    sched = _sched(ledger, org, tmp_path, max_review_rounds=0)
-
-    await sched.tick_once()
-    await sched.drain()
-
-    assert ledger.tasks.get(uid("code")).status is not TaskStatus.DONE  # type: ignore[union-attr]
-    dod = ledger.dod.get_for_task(uid("code"))
-    assert dod is not None and dod.verdict is not None
-    assert dod.verdict["evidence_passed"] is False
-    assert "changed after red" in str(dod.verdict["evidence_output"]).lower()
-    assert "build_exit" not in dod.verdict
-
-
-@pytest.mark.parametrize(
-    ("relative_path", "invalid_payload", "reason"),
-    [
-        (
-            "test_evidence/manifest.json",
-            {"verdict": "pass", "gates": [{"status": "fail", "returncode": 1}]},
-            "manifest",
-        ),
-        (
-            "test_evidence/red.json",
-            {"verdict": "red-confirmed", "expected_failure_matched": False},
-            "red",
-        ),
-        ("test_plan.json", [], "test_plan"),
-        ("review_verdict.json", {"cleared": False}, "review_verdict"),
-    ],
-)
-async def test_reviewed_build_rejects_invalid_structured_evidence_before_project_command(
-    ledger: Ledger,
-    tmp_path: Path,
-    relative_path: str,
-    invalid_payload: object,
-    reason: str,
-) -> None:
-    _structured_reviewed_build_task(ledger)
-    _write_structured_review_evidence(tmp_path)
-    (tmp_path / relative_path).write_text(json.dumps(invalid_payload), encoding="utf-8")
-    org = _Org(ledger, decide=lambda _tid: True, root=tmp_path, verify_command=_PASS_COMMAND)
-    sched = _sched(ledger, org, tmp_path, max_review_rounds=0)
-
-    await sched.tick_once()
-    await sched.drain()
-
-    assert ledger.tasks.get(uid("code")).status is not TaskStatus.DONE  # type: ignore[union-attr]
-    dod = ledger.dod.get_for_task(uid("code"))
-    assert dod is not None and dod.verdict is not None
-    assert dod.verdict["evidence_passed"] is False
-    assert reason in str(dod.verdict["evidence_output"])
-    assert "build_exit" not in dod.verdict
-
-
-async def test_reviewed_build_failing_command_does_not_land(ledger: Ledger, tmp_path: Path) -> None:
-    # The reviewer liked the diff, but the kernel-run command fails → the build is NOT done (the floor
-    # is un-rationalizable). Standalone → bounded self-repair, never a silent pass.
-    _reviewed_build_task(ledger)
-    org = _Org(ledger, decide=lambda _tid: True, root=tmp_path, verify_command=_FAIL_COMMAND)
-    sched = _sched(ledger, org, tmp_path, max_review_rounds=1)
-
-    for _ in range(6):
-        await sched.tick_once()
-        await sched.drain()
-
-    assert ledger.tasks.get(uid("code")).status is not TaskStatus.DONE  # type: ignore[union-attr]
-    dod = ledger.dod.get_for_task(uid("code"))
-    assert dod is not None and dod.verdict is not None and dod.verdict["build_passed"] is False
-    assert ledger.recovery_actions.active_for_source(uid("code")) is not None  # bounded → human
-
-
-async def test_reviewed_build_quality_block_skips_the_command(
-    ledger: Ledger, tmp_path: Path
-) -> None:
-    _reviewed_build_task(ledger)
-    # the reviewer blocks on quality; the command never runs (no build_passed recorded)
-    org = _Org(ledger, decide=lambda _tid: False, root=tmp_path, verify_command=_PASS_COMMAND)
-    sched = _sched(ledger, org, tmp_path, max_review_rounds=1)
-
-    for _ in range(4):
-        await sched.tick_once()
-        await sched.drain()
-
-    assert ledger.tasks.get(uid("code")).status is not TaskStatus.DONE  # type: ignore[union-attr]
-    dod = ledger.dod.get_for_task(uid("code"))
-    assert dod is not None and dod.verdict is not None and "build_passed" not in dod.verdict
-
-
 async def test_delegation_rejection_reacts_once_then_escalates_without_force_acceptance(
     ledger: Ledger, tmp_path: Path
 ) -> None:
     # A rejected child remains part of the durable subtree. The lead may submit one correction, but
-    # cannot force acceptance when independent verification still sees the rejected attempt.
+    # cannot force acceptance when the deterministic descendants check still sees the rejected attempt.
     ledger.employees.create(Employee(id="moe", name="Moe", role="pm"))
     ledger.employees.create(Employee(id=uid("pen"), name="Pen", role="pm", reports_to="moe"))
     ledger.employees.create(Employee(id=uid("paul"), name="Paul", role="pm", reports_to="moe"))
@@ -782,7 +283,7 @@ async def test_delegation_rejection_reacts_once_then_escalates_without_force_acc
             team_id=uid("team-M"),
             lead_employee_id="moe",
             management_profile_version=1,
-            objective_rubric="the complete spec is independently reviewed",
+            objective_rubric="the complete spec is reviewed",
             max_depth=1,
             max_team_size=3,
             status=DelegationContractStatus.DELEGATED,
@@ -794,7 +295,7 @@ async def test_delegation_rejection_reacts_once_then_escalates_without_force_acc
         task = ledger.tasks.get(task_id)
         return task is not None and task.origin_fingerprint != "draft"  # block only the first draft
 
-    org = _Org(ledger, decide=decide, root=tmp_path, parent=uid("M"), worker_decide=decide)
+    org = _Org(ledger, root=tmp_path, parent=uid("M"), worker_decide=decide)
     sched = _sched(ledger, org, tmp_path)
 
     for _ in range(12):

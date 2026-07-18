@@ -28,15 +28,12 @@ from dream.subagents._projection import build_subagent_set
 from dream.tools._base import BaseTool
 from dream.tools._registry import ToolRegistry, ToolSource
 from dream.tools.builtin import default_registry
-from dream.tools.builtin.spawn_subagent import SpawnSubagentTool
 
 from chorus.adapters import DreamBeatRunner, TokenPricing
 from chorus.heartbeat import BeatRunner, ExecutionProfileResolver, IntegrateContextPacket
 from chorus.memory import EpisodicRecallService, EpisodicStore
 from chorus.outcomes import (
     LanderRegistry,
-    ReviewedBuild,
-    ReviewedBuildEvidenceProfile,
     runtime_brief_block,
 )
 from chorus.roles import RoleBeatConfig, RoleRegistry, role_beat_config
@@ -59,7 +56,6 @@ from chorus_employee.reviewer._harness import reviewer_manifest
 from chorus_harness._company_state import write_company_state
 from chorus_harness._env_capabilities import degrade_for_env
 from chorus_harness._skills import materialize_skills, materialize_versioned_skills_into
-from chorus_harness._tdd_gate import TddProductionGate
 from chorus_harness._trust import apply_trust
 from chorus_tools import (
     AssignTaskTool,
@@ -766,7 +762,6 @@ class EmployeeHarnessFactory:
         *,
         root: Path,
         lattice: Lattice | None,
-        strict_tdd: bool,
     ) -> ToolRegistry:
         """Bind every chorus capability the role's manifest names onto dream's registry.
 
@@ -873,11 +868,6 @@ class EmployeeHarnessFactory:
             if atool is not None and registry.get(name) is None:
                 registry.register(atool, source=ToolSource.DEFAULT)
 
-        if strict_tdd:
-            if registry.get("spawn_subagent") is None:
-                registry.register(SpawnSubagentTool(), source=ToolSource.DEFAULT)
-            registry = TddProductionGate(root).wrap_registry(registry)
-
         if "todo_write" in config.tools:
             registry = registry_with_todo_flush_nudge(registry)
         return registry
@@ -915,7 +905,6 @@ class EmployeeHarnessFactory:
             if task_id is not None and self._ledger is not None
             else None
         )
-        strict_tdd = False
         if config_override is not None:
             config = config_override
         elif self._ledger is None or review_worktree_of is not None:
@@ -925,11 +914,6 @@ class EmployeeHarnessFactory:
             assert isinstance(employee, Employee)
             profile = ExecutionProfileResolver(self._roles, self._ledger).resolve(employee, task)
             config = profile.config
-            strict_tdd = (
-                isinstance(profile.verifier.spec, ReviewedBuild)
-                and profile.verifier.spec.evidence_profile
-                is ReviewedBuildEvidenceProfile.TDD_REVIEW_V1
-            )
         config = apply_trust(config, task=task, policy=self._trust_policy)
         # Env-capability degradation (H2): a tool this environment cannot back (web research with no
         # Tavily key) is dropped and disclosed in the brief — the beat still runs, on what's possible.
@@ -1081,7 +1065,7 @@ class EmployeeHarnessFactory:
             write_mcp_allowlist(root, config.mcp_servers)
 
         registry = self._build_tool_registry(
-            config, root=root, lattice=lattice, strict_tdd=strict_tdd
+            config, root=root, lattice=lattice
         )
 
         # Subagents: project the role's Tier-1 declarations into dream's SubagentSet. The

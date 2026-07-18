@@ -12,7 +12,6 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from dream.tools._context import ToolExecutionContext
 
 from chorus.heartbeat import BeatRunner
 from chorus.ledger import (
@@ -164,7 +163,8 @@ def test_backend_engineer_materializes_a_writable_harness_in_its_worktree(
         "lattice_packet",
         "lattice_apply",
         "skill_manage",
-        "spawn_subagent",  # strict-TDD profile (resolved from the live ledger) registers it
+        # spawn_subagent is no longer factory-registered: the strict-TDD gate is unwired (operator
+        # decision 2026-07-18); dream's build_harness registers it from config.subagents at build time.
     }
     assert mat.config.permission_mode == "acceptEdits"
     assert captured["max_turns"] == 18  # the engine scalars come from the role too
@@ -684,54 +684,6 @@ def test_management_profile_without_a_delegation_task_keeps_delivery_tools(
     names = {t.name for t in captured["registry"].list_tools()}
     assert not {"decompose", "submit_task", "assign_task"}.intersection(names)
     assert {"write_file", "bash", "git"} <= names
-    ledger.close()
-
-
-async def test_tdd_review_delivery_task_gates_parent_production_tools(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, ledger: Ledger
-) -> None:
-    ledger = open_test_ledger()
-    _seed_delegation(ledger)
-    worker = ledger.employees.get("ada")
-    assert worker is not None
-    ledger.tasks.submit(
-        Task(
-            id=uid("delivery"),
-            intent="implement the backend",
-            status=TaskStatus.TODO,
-            execution_mode=ExecutionMode.DELIVERY,
-            assignee_employee_id=worker.id,
-        )
-    )
-    captured: dict[str, Any] = {}
-    monkeypatch.setattr(
-        _factory_mod.dream, "build_harness", lambda **kw: captured.update(kw) or object()
-    )
-    factory = _factory_mod.EmployeeHarnessFactory(
-        api_key="k",
-        base_url="https://x/openai/v1",
-        deployment="gpt-x",
-        company_id="acme",
-        roles=RoleRegistry.from_plugins(default_roles()),
-        work_root=tmp_path,
-        ledger=ledger,
-    )
-
-    materialized = factory.materialize(worker, task_id=uid("delivery"))
-    write_file = captured["registry"].get("write_file")
-    assert write_file is not None
-    result = await write_file.execute(
-        {"path": "backend/service.py", "content": "implemented = True\n"},
-        ToolExecutionContext(
-            working_dir=materialized.working_dir,
-            session_id="session",
-            metadata={"dream.role": "generator"},
-        ),
-    )
-
-    assert result.is_error is True
-    assert result.metadata["root_cause"] == "strict_tdd_red_not_authorized"
-    assert captured["registry"].get("spawn_subagent") is not None
     ledger.close()
 
 

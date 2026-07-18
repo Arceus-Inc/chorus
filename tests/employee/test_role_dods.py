@@ -24,7 +24,9 @@ _INTENT = "do the thing the task asks for"
 
 def test_each_role_dod_returns_the_expected_archetype() -> None:
     cases = {
-        "engineer": (engineer_plugin, DoDKind.REVIEWED_BUILD),
+        # Operator decision (2026-07-18): employees verify their own work — the engineer's build
+        # DoD is a self-judged agent_review, not a reviewer-gated build.
+        "engineer": (engineer_plugin, DoDKind.AGENT_REVIEW),
         "reviewer": (reviewer_plugin, DoDKind.HUMAN_APPROVAL),
         "manager": (manager_plugin, DoDKind.AGENT_REVIEW),
         "analyst": (analyst_plugin, DoDKind.AGENT_REVIEW),
@@ -42,9 +44,9 @@ def test_agent_review_carries_a_rubric_no_command() -> None:
     assert v.verification_steps() == ()  # no objective shell gate
 
 
-def test_reviewed_build_carries_a_rubric() -> None:
+def test_engineer_build_dod_carries_a_rubric() -> None:
     v = engineer_plugin().dod_generator(_INTENT)
-    assert v.kind is DoDKind.REVIEWED_BUILD
+    assert v.kind is DoDKind.AGENT_REVIEW  # self-judged in-beat (operator decision 2026-07-18)
     assert v.rubric()
 
 
