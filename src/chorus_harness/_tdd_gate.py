@@ -57,6 +57,12 @@ class _TddGatedTool(BaseTool):
             self.name in _PRODUCTION_CAPABLE_TOOLS
             and ctx.metadata.get(_SUBAGENT_NAME_KEY) != "test_author"
             and not self._gate.authorized
+            # The gate stops production WRITES before RED. A call the tool itself classifies
+            # read-only (`ls`, `git status`, `cat` — the vetted allowlists in dream's bash/git)
+            # is orientation, not production. Found live 2026-07-18 in three companies: denying
+            # inspection stalled every strict-TDD beat at zero artifacts — the generator could
+            # not see its worktree, so it never even spawned test_author.
+            and not self._delegate.is_read_only_for(input)
         ):
             return ToolResult(
                 content=(

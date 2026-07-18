@@ -197,3 +197,30 @@ async def test_machine_certified_red_is_reused_for_correction_beat(tmp_path: Pat
 
     assert result.is_error is False
     assert production.calls == 1
+
+
+class _ReadOnlyAwareBash(_Tool):
+    """Stands in for dream's bash: read-only heads (ls, git status) self-classify."""
+
+    name = "bash"
+
+    def is_read_only_for(self, input: dict[str, Any]) -> bool:
+        return str(input.get("command", "")).startswith(("ls", "git status", "cat "))
+
+
+async def test_read_only_invocations_pass_the_gate_before_red(tmp_path: Path) -> None:
+    """Found live 2026-07-18 (three companies): pre-RED the gate denied `ls`/`git status`, so
+    the generator could not even orient in its worktree — beats stalled at zero artifacts and
+    the employee escalated 'even repo inspection is denied'. The gate exists to stop production
+    WRITES before RED; a call the tool itself classifies read-only is harmless."""
+    _init_repo(tmp_path)
+    tool = _ReadOnlyAwareBash()
+    gated = TddProductionGate(tmp_path).wrap(tool)
+
+    looked = await gated.execute({"command": "git status"}, _ctx(tmp_path))
+    assert looked.is_error is not True
+    assert tool.calls == 1  # the delegate ran
+
+    denied = await gated.execute({"command": "touch backend/service.py"}, _ctx(tmp_path))
+    assert denied.is_error is True  # mutations stay locked until RED
+    assert tool.calls == 1
