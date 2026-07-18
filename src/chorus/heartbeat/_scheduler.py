@@ -1430,7 +1430,7 @@ class Scheduler:
         """A failed beat climbs the bounded self-repair ladder, owning the task's status (spec 04 §1).
 
         A ``needs-changes`` beat means the step isn't done yet — so re-wake the same assignee to resume
-        it: a ``Command`` DoD re-runs its objective gate, a ``reviewed_build``/``agent_review`` continues
+        it: a ``Command`` DoD re-runs its objective gate, an ``agent_review`` continues
         its (multi-sprint) build (spec 05, one-beat-one-sprint). Rung 1 (budget left) keeps the task
         ``todo`` with a live recovery wake, so the recovery sweep leaves it alone; rung 3 (budget spent)
         sets ``blocked`` + a ``recovery_action`` for a human. A task with **no** DoD has no objective
