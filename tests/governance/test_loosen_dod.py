@@ -25,12 +25,12 @@ _USER = "chair"
 
 
 def _loosened_with_open_gate(ledger: Ledger) -> str:
-    """A manager loosens t1's DoD (reviewed_build → command); returns the open gate id."""
+    """A manager loosens t1's DoD (agent_review → command); returns the open gate id."""
     ledger.employees.create(Employee(id="moe", name="moe", role="engineer"))
     ledger.employees.create(Employee(id="ada", name="ada", role="engineer", reports_to="moe"))
     ledger.tasks.submit(Task(id=uid("t1"), intent="ship", status=TaskStatus.IN_PROGRESS))
     assign_task(ledger, uid("t1"), "ada")
-    ledger.dod.create(uid("t1"), Verifier.reviewed_build())
+    ledger.dod.create(uid("t1"), Verifier.agent_review(rubric="be strict"))
     outcome = revise_dod(
         ledger, task_id=uid("t1"), new_verifier=Verifier.command("pytest"), revised_by="moe"
     )
@@ -40,8 +40,8 @@ def _loosened_with_open_gate(ledger: Ledger) -> str:
 
 def test_loosen_holds_the_stricter_dod_until_approved(ledger: Ledger) -> None:
     _loosened_with_open_gate(ledger)
-    # the old reviewed_build DoD is still in force while the gate is pending.
-    assert ledger.dod.verifier_for_task(uid("t1")).kind is DoDKind.REVIEWED_BUILD  # type: ignore[union-attr]
+    # the old agent_review DoD is still in force while the gate is pending.
+    assert ledger.dod.verifier_for_task(uid("t1")).kind is DoDKind.AGENT_REVIEW  # type: ignore[union-attr]
     assert [a.action for a in ledger.approvals.pending()] == [ApprovalAction.LOOSEN_DOD]
 
 
@@ -70,7 +70,7 @@ def test_deny_keeps_the_stricter_dod(ledger: Ledger) -> None:
     assert (
         dod is not None and dod.revision == 1 and dod.proposed_revision is None
     )  # staging dropped
-    assert ledger.dod.verifier_for_task(uid("t1")).kind is DoDKind.REVIEWED_BUILD  # type: ignore[union-attr]
+    assert ledger.dod.verifier_for_task(uid("t1")).kind is DoDKind.AGENT_REVIEW  # type: ignore[union-attr]
 
 
 def test_revise_withdraws_the_staged_loosen(ledger: Ledger) -> None:
@@ -82,7 +82,7 @@ def test_revise_withdraws_the_staged_loosen(ledger: Ledger) -> None:
 
     dod = ledger.dod.get_for_task(uid("t1"))
     assert dod is not None and dod.proposed_revision is None
-    assert ledger.dod.verifier_for_task(uid("t1")).kind is DoDKind.REVIEWED_BUILD  # type: ignore[union-attr]
+    assert ledger.dod.verifier_for_task(uid("t1")).kind is DoDKind.AGENT_REVIEW  # type: ignore[union-attr]
 
 
 def test_handler_action_kind() -> None:

@@ -147,7 +147,7 @@ class _Org:
         return _Worker(self._root, decide=self._worker_decide)
 
 
-def _sched(ledger: Ledger, org: _Org, root: Path, *, max_review_rounds: int = 2) -> Scheduler:
+def _sched(ledger: Ledger, org: _Org, root: Path) -> Scheduler:
     return Scheduler(
         ledger=ledger,
         workforce=LedgerWorkforce(ledger.employees),
@@ -156,7 +156,6 @@ def _sched(ledger: Ledger, org: _Org, root: Path, *, max_review_rounds: int = 2)
         landers=default_landers(root, ledger=ledger),
         clock=lambda: _NOW,
         max_concurrent_runs=4,
-        max_review_rounds=max_review_rounds,
     )
 
 
@@ -311,38 +310,3 @@ async def test_delegation_rejection_reacts_once_then_escalates_without_force_acc
     assert contract is not None and contract.status is DelegationContractStatus.BLOCKED
     recovery = ledger.recovery_actions.active_for_source(uid("M"))
     assert recovery is not None and recovery.cause == "integrate_iteration_exhausted"
-
-
-def test_worktree_file_manifest_lists_the_files_a_listless_reviewer_cannot_see(
-    tmp_path: Path,
-) -> None:
-    # The reviewer's toolset is (read_file, submit_verdict) — no directory listing. The kernel must hand
-    # it the actual file manifest, or it guesses standard manifest names, never finds app.py/test_app.py,
-    # and wrongly declares the worktree empty (the live-reviewer-blocks-clean-code bug).
-    from chorus.heartbeat._scheduler import _worktree_file_manifest
-
-    (tmp_path / "app.py").write_text("def slugify(s): return s\n")
-    (tmp_path / "test_app.py").write_text("from app import slugify\n")
-    (tmp_path / "pkg").mkdir()
-    (tmp_path / "pkg" / "util.py").write_text("x = 1\n")
-    (tmp_path / ".git").mkdir()
-    (tmp_path / ".git" / "HEAD").write_text("ref: refs/heads/main\n")
-    (tmp_path / ".harness" / "roles").mkdir(parents=True)  # kernel-injected, not the author's work
-    (tmp_path / ".harness" / "roles" / "reviewer.toml").write_text("x = 1\n")
-    (tmp_path / ".dream").mkdir()
-    (tmp_path / ".dream" / "registry.json").write_text("{}\n")
-
-    manifest = _worktree_file_manifest(tmp_path)
-
-    assert "app.py" in manifest
-    assert "test_app.py" in manifest
-    assert "pkg/util.py" in manifest
-    assert ".git" not in manifest  # internal git plumbing is never review material
-    assert ".harness" not in manifest  # kernel harness injection is identical in every worktree
-    assert ".dream" not in manifest
-
-
-def test_worktree_file_manifest_is_empty_for_no_worktree() -> None:
-    from chorus.heartbeat._scheduler import _worktree_file_manifest
-
-    assert _worktree_file_manifest(None) == ""

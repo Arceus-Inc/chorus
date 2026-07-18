@@ -11,7 +11,6 @@ import pytest
 
 from chorus.roles import RoleRegistry, default_roles
 from chorus.testing import uid
-from chorus.verification import SYSTEM_VERIFIER
 from chorus.workforce import Employee
 from chorus_harness import EmployeeHarnessFactory
 
@@ -51,15 +50,3 @@ def test_analyst_brings_tools_skills_and_subagents(tmp_path) -> None:
     )
     assert mat.config.skills_root is not None
     assert {sa.name for sa in mat.config.subagents} >= {"data", "critic"}
-
-
-def test_system_verifier_and_pm_are_read_or_spec_shaped(tmp_path) -> None:
-    factory = _factory(tmp_path)
-    verifier = factory.materialize_verifier(
-        SYSTEM_VERIFIER,
-        task_id=uid("verification-task"),
-        worktree_owner_id="author",
-    )
-    pm = factory.materialize(Employee(id=uid("p"), name="P", role="pm"))
-    assert verifier.config.tools and pm.config.tools
-    assert verifier.config.system_prompt and pm.config.system_prompt

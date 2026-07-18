@@ -1,8 +1,8 @@
 """Each role's DoD generator returns the archetype its outcome needs (spec 04 §1).
 
-Covers the full archetype surface across the default workforce: ReviewedBuild (engineer),
-HumanApproval (reviewer), AgentReview (manager / analyst). The objective Command archetype is
-exercised live (examples/analyst_live_command_dod.py) and at the verifier/enforcement level
+Covers the archetype surface across the default workforce: AgentReview (engineer / manager /
+analyst / ceo — self-judged in-beat, operator decision 2026-07-18). The objective Command archetype
+is exercised live (examples/analyst_live_command_dod.py) and at the verifier/enforcement level
 (tests/outcomes/test_verifier.py, tests/heartbeat/test_dod_enforcement.py).
 """
 
@@ -15,7 +15,6 @@ from chorus_employee.analyst import analyst_plugin
 from chorus_employee.ceo import ceo_plugin
 from chorus_employee.engineer import engineer_plugin
 from chorus_employee.manager import manager_plugin
-from chorus_employee.reviewer import reviewer_plugin
 
 pytestmark = pytest.mark.unit
 
@@ -27,7 +26,6 @@ def test_each_role_dod_returns_the_expected_archetype() -> None:
         # Operator decision (2026-07-18): employees verify their own work — the engineer's build
         # DoD is a self-judged agent_review, not a reviewer-gated build.
         "engineer": (engineer_plugin, DoDKind.AGENT_REVIEW),
-        "reviewer": (reviewer_plugin, DoDKind.HUMAN_APPROVAL),
         "manager": (manager_plugin, DoDKind.AGENT_REVIEW),
         "analyst": (analyst_plugin, DoDKind.AGENT_REVIEW),
         "ceo": (ceo_plugin, DoDKind.AGENT_REVIEW),
@@ -51,7 +49,7 @@ def test_engineer_build_dod_carries_a_rubric() -> None:
 
 
 def test_human_approval_has_no_rubric_or_command() -> None:
-    v = reviewer_plugin().dod_generator(_INTENT)
+    v = Verifier.human_approval()
     assert v.kind is DoDKind.HUMAN_APPROVAL
     assert v.rubric() == "" and v.verification_steps() == ()
 

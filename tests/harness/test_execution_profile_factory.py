@@ -171,22 +171,3 @@ def test_stale_profile_is_denied_before_harness_build(
         factory.materialize(lead, task_id=delegation.id)
 
     assert calls == []
-
-
-def test_independent_verifier_uses_reviewer_read_only_surface_in_lead_worktree(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, ledger: Ledger
-) -> None:
-    lead, _, delegation = _seed_tasks(ledger)
-    reviewer = ledger.employees.create(Employee(id="reviewer", name="Reviewer", role="reviewer"))
-    factory, calls = _factory(monkeypatch, tmp_path, ledger)
-
-    factory.verification_runner_for(
-        reviewer,
-        task_id=delegation.id,
-        worktree_owner_id=lead.id,
-    )
-
-    tools = {tool.name for tool in calls[0]["registry"].list_tools()}
-    assert tools == {"read_file", "read_offloaded"}
-    sandbox = Path(calls[0]["working_dir"]) / ".harness" / "sandbox.toml"
-    assert 'tier = "read-only"' in sandbox.read_text(encoding="utf-8")
