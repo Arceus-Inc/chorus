@@ -11,7 +11,25 @@ portably, and separately from the repository's build/test command.
 
 from __future__ import annotations
 
+import re
+
 from chorus.outcomes import ReviewedBuildEvidenceProfile, Verifier
+
+# The standing routines declare their contract in the intent itself ("Report only" / "Report and
+# propose only" — authored in ._routines, same package): a report's DoD is a judged report, not a
+# TDD PR. Found live 2026-07-18 in two companies: report-only beats under the reviewed build's
+# strict-TDD gate failed 0.0 — the evaluator could not even read the repo.
+_REPORT_ONLY_RE = re.compile(r"\breport(?:\s+and\s+propose)?\s+only\b", re.IGNORECASE)
+
+_REPORT_RUBRIC = (
+    "the deliverable is a REPORT, not production code: a markdown or JSON artifact in the worktree "
+    "states what was scanned/checked, each finding with concrete evidence (file paths, tool "
+    "output, or an explicit 'nothing found' / 'not declared in this repo' — absence honestly "
+    "reported is a PASSING finding), and bounded proposed next steps. Judge substance: PASS a "
+    "report that scanned what exists and reported truthfully, even when the repo is young and the "
+    "answer is 'nothing to scan yet'. FAIL only for a concrete defect: no report artifact, "
+    "invented numbers/sources, or production code changes smuggled into a report-only task."
+)
 
 _RUBRIC = (
     "the diff implements the task to its contract, in its own file(s), built TEST-FIRST; the project "
@@ -31,7 +49,10 @@ _RUBRIC = (
 
 
 def backend_engineer_dod(intent: str) -> Verifier:
-    """The Backend Engineer's DoD generator: a reviewed build — reviewer-judged + kernel-run tests."""
+    """The Backend Engineer's DoD generator: a reviewed build — or a judged report for
+    report-only work (the standing routines' contract)."""
+    if _REPORT_ONLY_RE.search(intent):
+        return Verifier.agent_review(rubric=_REPORT_RUBRIC, artifact_class="finding")
     return Verifier.reviewed_build(
         rubric=_RUBRIC,
         artifact_class="pr",

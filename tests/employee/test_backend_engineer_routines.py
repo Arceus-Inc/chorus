@@ -47,3 +47,29 @@ def test_flaky_quarantine_is_not_declared_yet() -> None:
     # test_evidence primitive doesn't carry yet. Only the two non-deferred routines are declared.
     keys = {r.routine_key for r in BACKEND_ENGINEER_ROUTINES}
     assert not any("flaky" in key for key in keys)
+
+
+class TestReportOnlyDoD:
+    def test_routine_report_intents_land_on_a_report_dod(self) -> None:
+        """Free-run (found live 2026-07-18, both companies): the SLO watch beat ran under the
+        strict-TDD reviewed build — the evaluator could not even read the repo, and every
+        report-only routine beat failed 0.0. A report's DoD is a judged report, not a TDD PR:
+        the routine intents already declare the contract ("Report only" / "Report and propose
+        only"); the DoD generator must honor it."""
+        from chorus.outcomes import DoDKind
+        from chorus_employee.backend_engineer import backend_engineer_dod
+        from chorus_employee.backend_engineer._routines import (
+            BACKEND_ENGINEER_DEPENDENCY_SCAN,
+            BACKEND_ENGINEER_SLO_WATCH,
+        )
+
+        for routine in (BACKEND_ENGINEER_SLO_WATCH, BACKEND_ENGINEER_DEPENDENCY_SCAN):
+            verifier = backend_engineer_dod(routine.intent_template)
+            assert verifier.kind is DoDKind.AGENT_REVIEW, routine.routine_key
+
+    def test_build_intents_keep_the_reviewed_build(self) -> None:
+        from chorus.outcomes import DoDKind
+        from chorus_employee.backend_engineer import backend_engineer_dod
+
+        verifier = backend_engineer_dod("Implement the edits module with unit tests")
+        assert verifier.kind is DoDKind.REVIEWED_BUILD
