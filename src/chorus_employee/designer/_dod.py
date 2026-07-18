@@ -11,8 +11,9 @@ Requiring both keeps them SEPARATE — the token system lives in ``DESIGN.md``, 
 spec. A screen that looks great but omits its system, its states, or its a11y notes is not done.
 
 Above the floor, taste and flow are a judgment call. The design doc envisions a second **AgentReview**
-layer — a Reviewer judges hierarchy/affordance/flow against the intent — but that arrives with the
-Design-Critic slice (it can be upgraded to :meth:`Verifier.reviewed_build` then). For this slice, quality
+layer — hierarchy/affordance/flow judged against the intent — but that arrives with the Design-Critic
+slice (it can be upgraded to a self-judged :meth:`Verifier.agent_review` then; operator decision
+2026-07-18: employees verify their own work, no second verifier beat). For this slice, quality
 is enforced *inside the beat* by the Design-Critic subagent (§06, §10) and the ``design_lint`` tool;
 landing a reversible spec must be **deterministic**, and auditing "did the critic run" from a tool-less
 evaluator is not. The artifact class is ``design``.
