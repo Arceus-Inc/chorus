@@ -143,6 +143,44 @@ def test_ceo_tool_persists_proposal_without_hiring(ledger: Ledger, tmp_path: Pat
     ]
 
 
+def test_ceo_tool_audits_proposal_in_governance_ledger(ledger: Ledger, tmp_path: Path) -> None:
+    """The DoD reviewer's ground truth is governance-ledger.md — a propose must land there.
+
+    Live formation finding (2026-07-17): the plan row existed and was human-approved, but the
+    reviewer read a ledger with no propose line, scored the sprint "0 workforce_plan_propose
+    calls", and the scheduler re-beat the CEO into a duplicate proposal."""
+    ledger.employees.create(
+        Employee(id="ceo", name="CEO", role="ceo", status=EmployeeStatus.ACTIVE)
+    )
+    run_id = uid("run-1")
+    BeatContext(task_id=uid("formation"), run_id=run_id, employee_id="ceo").write(tmp_path)
+
+    result = asyncio.run(
+        WorkforcePlanProposeTool(ledger, _roles()).execute(_payload(), _ctx(tmp_path))
+    )
+
+    assert result.is_error is False
+    audit = (tmp_path / "governance-ledger.md").read_text(encoding="utf-8")
+    assert f"[run {run_id}]" in audit  # run-stamped, so the reviewer can scope THIS beat
+    assert "workforce_plan_propose" in audit
+    assert str(result.structured["plan_id"]) in audit
+    assert "pending human approval" in audit
+
+
+def test_ceo_tool_refusal_leaves_no_governance_ledger_line(ledger: Ledger, tmp_path: Path) -> None:
+    ledger.employees.create(
+        Employee(id="ceo", name="CEO", role="ceo", status=EmployeeStatus.ACTIVE)
+    )
+    BeatContext(task_id=uid("formation"), run_id=uid("run-1"), employee_id="ceo").write(tmp_path)
+    bad = _payload()
+    bad["employees"][0]["profession"] = "Tech Lead"  # not hireable -> typed refusal
+
+    result = asyncio.run(WorkforcePlanProposeTool(ledger, _roles()).execute(bad, _ctx(tmp_path)))
+
+    assert result.is_error is True
+    assert not (tmp_path / "governance-ledger.md").exists()
+
+
 def test_ceo_tool_returns_refusal_for_deep_plan_without_partial_writes(
     ledger: Ledger, tmp_path: Path
 ) -> None:

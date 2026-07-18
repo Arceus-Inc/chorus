@@ -103,6 +103,23 @@ def test_ceo_classify_action() -> None:
     assert classify_action("ship to production on Friday") is ActionClass.COMMIT
 
 
+def test_ceo_classify_ignores_negated_cues() -> None:
+    """Live 2026-07-18: the executive-review routine's own guard sentence — "do not hire,
+    delegate, or spend in this routine" — tripped the commit gate, parking a PASSED report
+    behind board approval. A negated cue is the opposite of a commitment."""
+    from chorus_employee.ceo import CEO_ROUTINES
+
+    assert (
+        classify_action("report only — do not hire, delegate, or spend in this routine")
+        is ActionClass.DIRECTIVE
+    )
+    assert classify_action("never fire anyone without board sign-off") is ActionClass.DIRECTIVE
+    # A real commitment after a clause boundary still gates.
+    assert classify_action("do not delay: hire two engineers") is ActionClass.COMMIT
+    # The shipped routine intent itself must classify as a reviewed directive.
+    assert classify_action(CEO_ROUTINES[0].intent_template) is ActionClass.DIRECTIVE
+
+
 def test_ceo_skills_exist_on_disk() -> None:
     import chorus_employee.ceo as ceo_pkg
 
@@ -115,3 +132,22 @@ def test_ceo_skills_exist_on_disk() -> None:
 def test_default_workforce_registers_the_ceo_from_here() -> None:
     assert "ceo" in {p.name for p in default_roles()}
     assert "ceo" in {p.name for p in default_employees()}
+
+
+def test_ceo_declares_the_executive_review_routine() -> None:
+    # Paperclip's default CEO loop, adapted: "review what your executives are doing, check
+    # metrics, reprioritize" — a standing heartbeat, so the org moves when nobody is watching.
+    from chorus.ledger import RoutineConcurrency
+    from chorus_employee.ceo import CEO_ROUTINES
+
+    plugin = ceo_plugin()
+    assert plugin.declared_routines == CEO_ROUTINES
+    assert {r.routine_key for r in CEO_ROUTINES} == {"ceo-executive-review"}
+    review = CEO_ROUTINES[0]
+    assert review.schedule == "0 * * * *"  # hourly — the cadence of an attentive executive
+    assert review.concurrency is RoutineConcurrency.COALESCE
+    # The loop's substance: goals, reports' progress, spend — and it stays report/propose only.
+    intent = review.intent_template.lower()
+    for topic in ("goal", "report", "spend", "propose"):
+        assert topic in intent
+    assert "do not" in intent  # never delegates or hires on its own — that crosses human gates

@@ -22,6 +22,7 @@ from chorus.ledger import (
 )
 from chorus.roles import RoleRegistry
 from chorus.workforce import LedgerWorkforce
+from chorus_tools._governance import _audit
 
 _HIREABLE_PROFESSIONS = (
     "analyst",
@@ -204,6 +205,9 @@ class WorkforcePlanProposeTool(BaseTool):
                     ),
                 ),
                 proposed_by_employee_id=beat.employee_id,
+                # A proposal task is done when its proposal is decided — the plan carries its
+                # origin beat task so approval can complete it (free-run, found live).
+                proposed_in_task_id=beat.task_id,
                 staffing_request_id=args.staffing_request_id,
             )
         except (ValidationError, ValueError) as exc:
@@ -257,6 +261,14 @@ class WorkforcePlanProposeTool(BaseTool):
             ],
         }
         ctx.working_dir.mkdir(parents=True, exist_ok=True)
+        # The DoD reviewer's ground truth is the run-stamped governance ledger; without this line
+        # a formation beat's propose is invisible to a read-only reviewer and the beat re-runs.
+        _audit(
+            ctx,
+            f"workforce_plan_propose: proposed workforce plan {plan.id} "
+            f"revision {plan.revision} ({len(plan.draft.employees)} new hires, "
+            f"{len(plan.draft.management_grants)} management grants) — pending human approval",
+        )
         target = ctx.working_dir / "workforce_plan.json"
         with NamedTemporaryFile(
             "w",

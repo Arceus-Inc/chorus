@@ -92,6 +92,7 @@ class WorkforcePlan:
     revised_by_user_id: str | None = None
     decided_by_user_id: str | None = None
     staffing_request_id: str | None = None
+    proposed_in_task_id: str | None = None
     created_at: datetime | None = None
     decided_at: datetime | None = None
 

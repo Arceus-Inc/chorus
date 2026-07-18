@@ -41,12 +41,14 @@ def test_manifest_is_unrestricted_in_a_worktree() -> None:
     assert manifest.model is None  # uses the deployment model the composition root supplies
 
 
-def test_dod_is_a_reviewed_build_landing_a_pr() -> None:
+def test_dod_is_a_self_judged_agent_review_landing_a_pr() -> None:
+    # Operator decision (2026-07-18): employees verify their own work — the in-beat evaluation IS
+    # the verdict, so the build DoD is a self-judged agent_review, not a reviewer-gated build.
     plugin = backend_engineer_plugin()
     assert plugin.name == "backend_engineer"
     assert plugin.outcome_kind == "pr"
     verifier = plugin.dod_generator("add an idempotent endpoint")
-    assert verifier.kind is DoDKind.REVIEWED_BUILD
+    assert verifier.kind is DoDKind.AGENT_REVIEW
     assert verifier.artifact_class == "pr"
 
 

@@ -15,6 +15,7 @@ so the factory rebuilds the harness per call without a cache.
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
@@ -27,15 +28,12 @@ from dream.subagents._projection import build_subagent_set
 from dream.tools._base import BaseTool
 from dream.tools._registry import ToolRegistry, ToolSource
 from dream.tools.builtin import default_registry
-from dream.tools.builtin.spawn_subagent import SpawnSubagentTool
 
 from chorus.adapters import DreamBeatRunner, TokenPricing
 from chorus.heartbeat import BeatRunner, ExecutionProfileResolver, IntegrateContextPacket
 from chorus.memory import EpisodicRecallService, EpisodicStore
 from chorus.outcomes import (
     LanderRegistry,
-    ReviewedBuild,
-    ReviewedBuildEvidenceProfile,
     runtime_brief_block,
 )
 from chorus.roles import RoleBeatConfig, RoleRegistry, role_beat_config
@@ -55,19 +53,22 @@ from chorus_employee._lattice import (
 from chorus_employee._recall import PLANNER_TOOLLESS_NOTE
 from chorus_employee._shared_skills import SHARED_SKILLS_ROOT
 from chorus_employee.reviewer._harness import reviewer_manifest
+from chorus_harness._company_state import write_company_state
+from chorus_harness._env_capabilities import degrade_for_env
 from chorus_harness._skills import materialize_skills, materialize_versioned_skills_into
-from chorus_harness._tdd_gate import TddProductionGate
 from chorus_harness._trust import apply_trust
 from chorus_tools import (
     AssignTaskTool,
     BrandLintTool,
     CodeQualityTool,
+    CommentTool,
     DecomposeTool,
     DesignExemplarTool,
     DesignLintTool,
     EvidenceScanTool,
     GetRunTool,
     GoLiveTool,
+    ReadCommentsTool,
     RecallTool,
     RecordDecisionTool,
     SecretScanTool,
@@ -95,8 +96,9 @@ from chorus_tools.delivery import (
 
 if TYPE_CHECKING:
     from dream.contracts import GovernancePort
+    from lattice.facade import Lattice
 
-    from chorus.ledger import Ledger
+    from chorus.ledger import Ledger, Task
 
 # dream runs these three intra-task roles per task; the employee's identity is overlaid onto each.
 _DREAM_ROLES: tuple[Literal["planner", "generator", "evaluator"], ...] = (
@@ -174,6 +176,12 @@ _CHORUS_TO_DREAM_TOOL: dict[str, str] = {
     # via _capability_tool, so it must stay in this map for the subagent projection to keep it.
     "recall": "recall",
     "get_run": "get_run",
+    # comment / read_comments — the coordination verbs (OM-3): chorus capability tools
+    # (registered via _capability_tool, need the ledger). Identity-mapped like record_decision
+    # so dream_tool_names keeps them; rolled out to every ledger-backed employee in materialize
+    # (the get_run precedent) — comments are communication, not authority; they run nothing.
+    "comment": "comment",
+    "read_comments": "read_comments",
     # lattice — semantic pattern consolidation (read-mostly; apply is gated). Identity-mapped like recall.
     "lattice_context": "lattice_context",
     "lattice_packet": "lattice_packet",
@@ -246,6 +254,9 @@ _READ_ONLY_DREAM_SURFACE_TOOLS = frozenset(
         # the generator phase only.
         "governance_read",
         "workforce_catalog_read",
+        # read_comments is read-only/safe: a verifier judging "did the work address the thread"
+        # must be able to read it. The write half (comment) stays generator-only.
+        "read_comments",
     }
 )
 
@@ -333,6 +344,10 @@ def _capability_tool(
             return GoLiveTool(ledger)
         if name == "record_decision":
             return RecordDecisionTool(ledger)
+        if name == "comment":
+            return CommentTool(ledger)
+        if name == "read_comments":
+            return ReadCommentsTool(ledger)
         if name == "staffing_request":
             return StaffingRequestTool(ledger)
         if name == "workforce_catalog_read":
@@ -367,6 +382,67 @@ _LEDGER_FREE_CAPABILITY_TOOLS = frozenset(
 _DELEGATING_TOOLS = frozenset({"decompose", "submit_task", "assign_task"})
 # The manager's reactive tools on an integrate beat — withheld once the subtree is already complete.
 _REACTIVE_TOOLS = frozenset({"submit_task", "assign_task"})
+
+
+def _failure_inheritance(ledger: Ledger, task: Task, root: Path) -> str:
+    """The corrective beat's inherited defect list — machine-injected, never re-discovered.
+
+    Live T3 (2026-07-18): the lead re-dispatched rejected children correctly, but each
+    corrective child received only prose ("fix remaining review findings") while the
+    evaluator's exact defect ("base62 alphabet order…, tests assert the wrong vectors")
+    stayed in the failed attempt's records — so the corrective beat re-failed on it for two
+    full cycles. Lineage is derived structurally (same parent, same assignee, terminal
+    REJECTED/CANCELLED siblings), which also folds a whole corrective chain's history into
+    the newest attempt. Evidence comes from the ledger's run outcomes plus the evaluator
+    records dream persisted in this worktree (docs/evals/<run>/sprint-*.json).
+    """
+    from chorus.ledger import TaskStatus
+
+    parent_id = task.parent_id
+    assignee = task.assignee_employee_id
+    task_id = task.id
+    if parent_id is None or assignee is None:
+        return ""
+    failed = [
+        sibling
+        for sibling in ledger.tasks.children(parent_id)
+        if sibling.id != task_id
+        and sibling.assignee_employee_id == assignee
+        and sibling.status in {TaskStatus.REJECTED, TaskStatus.CANCELLED}
+    ]
+    if not failed:
+        return ""
+    lines = [
+        "\n\n## Inherited failure evidence — you are the corrective attempt",
+        "Prior attempts at this exact scope FAILED with the findings below. Fix these "
+        "findings FIRST; do not re-discover or re-litigate them.",
+    ]
+    for sibling in failed:
+        lines.append(f"\n### Failed attempt {sibling.id} ({sibling.status.value})")
+        for run in ledger.runs.for_task(sibling.id):
+            outcome = run.outcome or {}
+            fragments = []
+            if outcome.get("sprint_outcomes"):
+                fragments.append(f"sprint outcomes: {outcome['sprint_outcomes']}")
+            if outcome.get("subagent_evidence_reason"):
+                fragments.append(f"evidence gate: {outcome['subagent_evidence_reason']}")
+            if fragments:
+                lines.append(f"- run {run.id} ({run.status.value}): " + "; ".join(fragments))
+            for eval_path in sorted(root.glob(f"docs/evals/{run.id}/sprint-*.json")):
+                try:
+                    record = json.loads(eval_path.read_text(encoding="utf-8"))
+                except (OSError, json.JSONDecodeError, ValueError):
+                    continue
+                notes = str(record.get("notes", "")).strip() if isinstance(record, dict) else ""
+                if notes:
+                    lines.append(f"  - evaluator ({eval_path.name}): {notes}")
+    lines.append(
+        "\nWhere a finding implicates the TESTS themselves (wrong assertions or vectors), you "
+        "are AUTHORIZED to re-author those tests via the test_author subagent — correcting a "
+        "wrong assertion is a fix, not a weakening. Address every finding above, then run the "
+        "full verification gate."
+    )
+    return "\n".join(lines)
 
 
 def _team_roster(ledger: Ledger, *, exclude: str, team_id: str | None = None) -> str:
@@ -680,158 +756,19 @@ class EmployeeHarnessFactory:
             verification_only=verification_only,
         )
 
-    def _materialize(
+    def _build_tool_registry(
         self,
-        employee: Employee | VerificationPrincipal,
+        config: RoleBeatConfig,
         *,
-        task_id: str | None = None,
-        review_worktree_of: str | None = None,
-        verification_only: bool = False,
-        config_override: RoleBeatConfig | None = None,
-    ) -> EmployeeHarness:
-        """Resolve ``employee``'s role into a configured dream harness in its isolated worktree.
+        root: Path,
+        lattice: Lattice | None,
+    ) -> ToolRegistry:
+        """Bind every chorus capability the role's manifest names onto dream's registry.
 
-        ``task_id`` shapes the harness to the beat's phase: a manager's **integrate** beat (its task
-        already has children) is materialized **without** ``decompose``, so the model can react with
-        ``submit_task`` / ``assign_task`` but cannot re-decompose a delegated subtree (M3 §5). The
-        kickoff beat (no children yet) keeps ``decompose``.
-
-        ``review_worktree_of`` points a (read-only) reviewer at another employee's worktree as its
-        working dir, so it inspects the work under review *in place* — the verdict is rendered on the
-        real diff, and the reviewer's read-only sandbox makes the borrowed worktree look-but-don't-touch.
+        One stanza per capability family; each is register-if-named and fail-closed on its
+        own dependency (ledger, governance port, lattice), so a missing backend drops the
+        tool rather than half-wiring it.
         """
-        if config_override is None and (
-            not isinstance(employee, Employee) or employee.role not in self._roles
-        ):
-            role = employee.role if isinstance(employee, Employee) else employee.kind
-            raise ValueError(f"role {role!r} for {employee.id!r} is not a registered role")
-
-        # §4 trust: narrow the harness to the task's effective preset (read-only / plan for a low-trust
-        # beat) and assert containment. A TrustDenied propagates — an uncontained beat is not built.
-        task = (
-            self._ledger.tasks.get(task_id)
-            if task_id is not None and self._ledger is not None
-            else None
-        )
-        strict_tdd = False
-        if config_override is not None:
-            config = config_override
-        elif self._ledger is None or review_worktree_of is not None:
-            assert isinstance(employee, Employee)
-            config = role_beat_config(self._roles.get(employee.role).manifest)
-        else:
-            assert isinstance(employee, Employee)
-            profile = ExecutionProfileResolver(self._roles, self._ledger).resolve(employee, task)
-            config = profile.config
-            strict_tdd = (
-                isinstance(profile.verifier.spec, ReviewedBuild)
-                and profile.verifier.spec.evidence_profile
-                is ReviewedBuildEvidenceProfile.TDD_REVIEW_V1
-            )
-        config = apply_trust(config, task=task, policy=self._trust_policy)
-        if verification_only:
-            config = replace(
-                config,
-                tools=tuple(tool for tool in config.tools if tool != "submit_verdict"),
-            )
-
-        # Persisted contract status selects the phase-specific management tools in the execution
-        # profile. Child presence is retained only for worktree synchronization and the completed
-        # subtree guard; it is not an authority source.
-        is_integrate_beat = (
-            task_id is not None
-            and self._ledger is not None
-            and self._ledger.tasks.has_children(task_id)
-        )
-        if is_integrate_beat:
-            assert task_id is not None and self._ledger is not None  # narrowed by is_integrate_beat
-            # Structural over-submit guard: when the kernel's verdict is `accept` — every child done,
-            # unblocked, and passing — the delegated work is complete, so submit_task/assign_task are
-            # withheld too. The manager can only review and accept; it cannot bolt on redundant work.
-            # (A live gpt-class manager over-submits even when the brief + packet tell it to accept.)
-            if IntegrateContextPacket.recommended_for(self._ledger, task_id) == "accept":
-                config = replace(
-                    config, tools=tuple(t for t in config.tools if t not in _REACTIVE_TOOLS)
-                )
-
-        # Team rehydration: a delegating role (decompose/submit/assign) gets its reports appended to its
-        # brief, read live from the workforce — so the model assigns to real employee ids, not invented.
-        if self._ledger is not None and _DELEGATING_TOOLS.intersection(config.tools):
-            roster = _team_roster(
-                self._ledger,
-                exclude=employee.id,
-                team_id=task.team_id if task is not None else None,
-            )
-            config = replace(config, system_prompt=config.system_prompt + roster)
-
-        # Operating environment: a role that RUNS commands (a build engineer) gets a factual runtime
-        # block appended to its brief — the OS, the shell run_command lands on, and which build runtimes
-        # (Node/npm/Playwright) are on PATH — so it writes portable commands and its DoD is known to be
-        # platform-agnostic instead of guessed. dream advertises OS/shell/Python to every role already;
-        # this adds the toolchain facts only a command-running role needs (doc/review roles run nothing).
-        if "run_command" in config.tools:
-            config = replace(
-                config, system_prompt=config.system_prompt + "\n\n" + runtime_brief_block()
-            )
-
-        if "recall" in config.tools and "get_run" not in config.tools:
-            config = replace(config, tools=(*config.tools, "get_run"))
-        if _LATTICE_TOOLS.intersection(config.tools):
-            config = replace(config, system_prompt=config.system_prompt + LATTICE_DIRECTIVES_BLOCK)
-
-        # ``working_dir`` IS the worktree, because dream confines its tools to it — that is what
-        # isolates one employee's edits from another's. A non-worktree posture falls back to a flat
-        # per-employee dir under the org root.
-        workspace: CompanyWorkspace | None = None
-        if config.isolation == "worktree":
-            workspace = CompanyWorkspace(self._company_root, seed=self._seed)
-            worktree_owner = review_worktree_of if review_worktree_of is not None else employee.id
-            # Integrate beat: the manager delegated, so its worktree still sits at the ``main`` it
-            # branched from — blind to the children's deliverables that have since landed. Sync it to
-            # ``main`` first so the manager reviews the real, merged subtree instead of an empty tree
-            # (read_file on the children's files would otherwise error and the verdict be vacuous).
-            if is_integrate_beat and review_worktree_of is None:
-                workspace.sync_to_main(worktree_owner)
-            root = workspace.worktree_for(worktree_owner).path
-        else:
-            root = self._company_root / employee.id
-        root.mkdir(parents=True, exist_ok=True)
-        # Lattice sleep-as-verifier (integration §4.4): adjudicate fresh episodes at beat START, then
-        # inject the prior beat's gate-open consolidation teaser (if any) so the model consolidates
-        # FIRST this beat. Best-effort: a lattice failure never blocks the beat.
-        lattice = None
-        if _LATTICE_TOOLS.intersection(config.tools):
-            try:
-                lattice = build_lattice_for_chorus(
-                    self._company_root,
-                    canonical_skills_root=config.skills_root,
-                )
-                if lattice.has_fresh_episodes(employee.id):
-                    lattice.adjudicate(employee.id)
-            except Exception as exc:
-                lattice = None
-                write_lattice_error(root, site="materialize.adjudicate", error=exc)
-            lattice_push = read_lattice_consolidation_push(root)
-            if lattice_push:
-                config = replace(
-                    config,
-                    system_prompt=(
-                        config.system_prompt
-                        + "\n\n"
-                        + LATTICE_BEAT_START_HEADER
-                        + lattice_push
-                        + "\n"
-                    ),
-                )
-        write_role_overlays(root, config)  # the employee's identity overlays the whole harness
-        write_sandbox_config(
-            root, config.sandbox
-        )  # the role's trust posture → .harness/sandbox.toml
-        # The role's admitted MCP servers → .harness/mcp-allowlist.toml (only when the role opts in via
-        # ``mcp`` AND declares servers; dream connects them lazily on the first session).
-        if config.mcp and config.mcp_servers:
-            write_mcp_allowlist(root, config.mcp_servers)
-
         registry = _role_registry(dream_tool_names(config.tools))
         # Bind the role's chorus capability tools. The ledger-free ones (pure file readers:
         # design_lint / design_exemplar / brand_lint) register regardless — they need no ledger, and
@@ -931,13 +868,205 @@ class EmployeeHarnessFactory:
             if atool is not None and registry.get(name) is None:
                 registry.register(atool, source=ToolSource.DEFAULT)
 
-        if strict_tdd:
-            if registry.get("spawn_subagent") is None:
-                registry.register(SpawnSubagentTool(), source=ToolSource.DEFAULT)
-            registry = TddProductionGate(root).wrap_registry(registry)
-
         if "todo_write" in config.tools:
             registry = registry_with_todo_flush_nudge(registry)
+        return registry
+
+    def _materialize(
+        self,
+        employee: Employee | VerificationPrincipal,
+        *,
+        task_id: str | None = None,
+        review_worktree_of: str | None = None,
+        verification_only: bool = False,
+        config_override: RoleBeatConfig | None = None,
+    ) -> EmployeeHarness:
+        """Resolve ``employee``'s role into a configured dream harness in its isolated worktree.
+
+        ``task_id`` shapes the harness to the beat's phase: a manager's **integrate** beat (its task
+        already has children) is materialized **without** ``decompose``, so the model can react with
+        ``submit_task`` / ``assign_task`` but cannot re-decompose a delegated subtree (M3 §5). The
+        kickoff beat (no children yet) keeps ``decompose``.
+
+        ``review_worktree_of`` points a (read-only) reviewer at another employee's worktree as its
+        working dir, so it inspects the work under review *in place* — the verdict is rendered on the
+        real diff, and the reviewer's read-only sandbox makes the borrowed worktree look-but-don't-touch.
+        """
+        if config_override is None and (
+            not isinstance(employee, Employee) or employee.role not in self._roles
+        ):
+            role = employee.role if isinstance(employee, Employee) else employee.kind
+            raise ValueError(f"role {role!r} for {employee.id!r} is not a registered role")
+
+        # §4 trust: narrow the harness to the task's effective preset (read-only / plan for a low-trust
+        # beat) and assert containment. A TrustDenied propagates — an uncontained beat is not built.
+        task = (
+            self._ledger.tasks.get(task_id)
+            if task_id is not None and self._ledger is not None
+            else None
+        )
+        if config_override is not None:
+            config = config_override
+        elif self._ledger is None or review_worktree_of is not None:
+            assert isinstance(employee, Employee)
+            config = role_beat_config(self._roles.get(employee.role).manifest)
+        else:
+            assert isinstance(employee, Employee)
+            profile = ExecutionProfileResolver(self._roles, self._ledger).resolve(employee, task)
+            config = profile.config
+        config = apply_trust(config, task=task, policy=self._trust_policy)
+        # Env-capability degradation (H2): a tool this environment cannot back (web research with no
+        # Tavily key) is dropped and disclosed in the brief — the beat still runs, on what's possible.
+        config = degrade_for_env(config)
+        if verification_only:
+            config = replace(
+                config,
+                tools=tuple(tool for tool in config.tools if tool != "submit_verdict"),
+            )
+
+        # Persisted contract status selects the phase-specific management tools in the execution
+        # profile. Child presence is retained only for worktree synchronization and the completed
+        # subtree guard; it is not an authority source.
+        is_integrate_beat = (
+            task_id is not None
+            and self._ledger is not None
+            and self._ledger.tasks.has_children(task_id)
+        )
+        if is_integrate_beat:
+            assert task_id is not None and self._ledger is not None  # narrowed by is_integrate_beat
+            # Structural over-submit guard: when the kernel's verdict is `accept` — every child done,
+            # unblocked, and passing — the delegated work is complete, so submit_task/assign_task are
+            # withheld too. The manager can only review and accept; it cannot bolt on redundant work.
+            # (A live gpt-class manager over-submits even when the brief + packet tell it to accept.)
+            if IntegrateContextPacket.recommended_for(self._ledger, task_id) == "accept":
+                config = replace(
+                    config, tools=tuple(t for t in config.tools if t not in _REACTIVE_TOOLS)
+                )
+
+        # Team rehydration: a delegating role (decompose/submit/assign) gets its reports appended to its
+        # brief, read live from the workforce — so the model assigns to real employee ids, not invented.
+        if self._ledger is not None and _DELEGATING_TOOLS.intersection(config.tools):
+            roster = _team_roster(
+                self._ledger,
+                exclude=employee.id,
+                team_id=task.team_id if task is not None else None,
+            )
+            config = replace(config, system_prompt=config.system_prompt + roster)
+
+        # Operating environment: a role that RUNS commands (a build engineer) gets a factual runtime
+        # block appended to its brief — the OS, the shell run_command lands on, and which build runtimes
+        # (Node/npm/Playwright) are on PATH — so it writes portable commands and its DoD is known to be
+        # platform-agnostic instead of guessed. dream advertises OS/shell/Python to every role already;
+        # this adds the toolchain facts only a command-running role needs (doc/review roles run nothing).
+        if "run_command" in config.tools:
+            config = replace(
+                config, system_prompt=config.system_prompt + "\n\n" + runtime_brief_block()
+            )
+
+        if "recall" in config.tools and "get_run" not in config.tools:
+            config = replace(config, tools=(*config.tools, "get_run"))
+
+        # OM-3: every ledger-backed EMPLOYEE gets the coordination verbs (the get_run precedent —
+        # comments are communication, not authority: they run nothing). And the inbox IS the brief
+        # (paperclip: inbox = assigned tasks + comments): unread messages land in the operating
+        # brief and are consumed, so the thread stays readable via read_comments but the nudge
+        # never repeats. Verification beats stay OUTSIDE the coordination channel by design —
+        # the verifier's independence is the point — and a non-employee principal has no ledger
+        # row for the message FK anyway.
+        if (
+            self._ledger is not None
+            and not verification_only
+            and self._ledger.employees.get(employee.id) is not None
+        ):
+            missing = tuple(t for t in ("comment", "read_comments") if t not in config.tools)
+            if missing:
+                config = replace(config, tools=(*config.tools, *missing))
+            inbox = self._ledger.messages.inbox(employee.id)
+            if inbox:
+                lines = "\n".join(
+                    f"- [task {m.task_id or '—'}] from {m.from_employee_id or m.from_user_id}: "
+                    f"{m.body}"
+                    for m in inbox
+                )
+                config = replace(
+                    config,
+                    system_prompt=config.system_prompt
+                    + "\n\n## Inbox — unread comments for you\n"
+                    + lines
+                    + "\nRead the full thread with read_comments(task_id); reply with comment.",
+                )
+                for m in inbox:  # ponytail: consumed at injection; a crashed beat re-reads via read_comments
+                    self._ledger.messages.mark_read(m.id)
+        if _LATTICE_TOOLS.intersection(config.tools):
+            config = replace(config, system_prompt=config.system_prompt + LATTICE_DIRECTIVES_BLOCK)
+
+        # ``working_dir`` IS the worktree, because dream confines its tools to it — that is what
+        # isolates one employee's edits from another's. A non-worktree posture falls back to a flat
+        # per-employee dir under the org root.
+        workspace: CompanyWorkspace | None = None
+        if config.isolation == "worktree":
+            workspace = CompanyWorkspace(self._company_root, seed=self._seed)
+            worktree_owner = review_worktree_of if review_worktree_of is not None else employee.id
+            # Integrate beat: the manager delegated, so its worktree still sits at the ``main`` it
+            # branched from — blind to the children's deliverables that have since landed. Sync it to
+            # ``main`` first so the manager reviews the real, merged subtree instead of an empty tree
+            # (read_file on the children's files would otherwise error and the verdict be vacuous).
+            if is_integrate_beat and review_worktree_of is None:
+                workspace.sync_to_main(worktree_owner)
+            root = workspace.worktree_for(worktree_owner).path
+        else:
+            root = self._company_root / employee.id
+        root.mkdir(parents=True, exist_ok=True)
+        # Lattice sleep-as-verifier (integration §4.4): adjudicate fresh episodes at beat START, then
+        # inject the prior beat's gate-open consolidation teaser (if any) so the model consolidates
+        # FIRST this beat. Best-effort: a lattice failure never blocks the beat.
+        lattice = None
+        if _LATTICE_TOOLS.intersection(config.tools):
+            try:
+                lattice = build_lattice_for_chorus(
+                    self._company_root,
+                    canonical_skills_root=config.skills_root,
+                )
+                if lattice.has_fresh_episodes(employee.id):
+                    lattice.adjudicate(employee.id)
+            except Exception as exc:
+                lattice = None
+                write_lattice_error(root, site="materialize.adjudicate", error=exc)
+            lattice_push = read_lattice_consolidation_push(root)
+            if lattice_push:
+                config = replace(
+                    config,
+                    system_prompt=(
+                        config.system_prompt
+                        + "\n\n"
+                        + LATTICE_BEAT_START_HEADER
+                        + lattice_push
+                        + "\n"
+                    ),
+                )
+        # Corrective replacement: a child whose same-assignee siblings already failed inherits
+        # their exact findings (never applied to verifier/borrowed-worktree materializations).
+        if (
+            self._ledger is not None
+            and task is not None
+            and config_override is None
+            and review_worktree_of is None
+        ):
+            inheritance = _failure_inheritance(self._ledger, task, root)
+            if inheritance:
+                config = replace(config, system_prompt=config.system_prompt + inheritance)
+        write_role_overlays(root, config)  # the employee's identity overlays the whole harness
+        write_sandbox_config(
+            root, config.sandbox
+        )  # the role's trust posture → .harness/sandbox.toml
+        # The role's admitted MCP servers → .harness/mcp-allowlist.toml (only when the role opts in via
+        # ``mcp`` AND declares servers; dream connects them lazily on the first session).
+        if config.mcp and config.mcp_servers:
+            write_mcp_allowlist(root, config.mcp_servers)
+
+        registry = self._build_tool_registry(
+            config, root=root, lattice=lattice
+        )
 
         # Subagents: project the role's Tier-1 declarations into dream's SubagentSet. The
         # spawn_subagent tool (already in the registry if "spawn_subagent" is in the role's tools)
@@ -974,6 +1103,11 @@ class EmployeeHarnessFactory:
                     employee_id=employee.id,
                 )
             skill_registry, _shadows = load_skill_registry(project_dirs=[skills_dir])
+        # Free-run checklist #5: an executive beat receives the company state it must review —
+        # ledger truth mirrored as a citable worktree file (governance_read = the signature).
+        if self._ledger is not None and "governance_read" in config.tools:
+            write_company_state(self._ledger, root)
+
         harness = dream.build_harness(
             model=config.model or self._deployment,
             api_key=self._api_key,

@@ -75,6 +75,24 @@ def test_submit_with_assignee_assigns_and_wakes() -> None:
         ledger.close()
 
 
+def test_submit_resolves_plan_materialized_ids_exactly() -> None:
+    """A workforce-plan approval materializes employees under the CEO's refs (e.g.
+    ``new_backend_lead_1``), which are NOT slugs. Live finding (2026-07-17): submit's
+    slug-only lookup turned the underscores into hyphens and raised UnknownEmployee,
+    making the whole approved org unreachable. Exact id wins; slug stays the name path."""
+    ledger = open_test_ledger()
+    try:
+        ledger.employees.create(
+            Employee(id="new_backend_lead_1", name="Backend Engineer (Lead)", role="engineer")
+        )
+        task = _chorus(ledger).submit("ship the core", assignee="new_backend_lead_1")
+        stored = ledger.tasks.get(task.id)
+        assert stored is not None
+        assert stored.assignee_employee_id == "new_backend_lead_1"
+    finally:
+        ledger.close()
+
+
 def test_submit_unknown_assignee_is_fail_closed() -> None:
     ledger = open_test_ledger()
     try:

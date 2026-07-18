@@ -42,11 +42,19 @@ class TestQualityGateWiring:
         assert "code_quality" in brief
         assert "verifying-any-stack" in brief
 
-    def test_brief_demands_all_three_quality_kinds_not_just_types(self) -> None:
-        # The mechanical lever: format + lint + types are non-optional, tagged by kind.
-        brief = BACKEND_ENGINEER_BRIEF
-        assert "ALL THREE" in brief
-        assert '"kind"' in brief  # each check is tagged with its gate kind
+    def test_all_three_quality_kinds_are_machine_enforced_not_prose(self) -> None:
+        # Per docs/plans/2026-07-18-hooks-and-briefs-research.md §B the "ALL THREE kinds" rule left
+        # the brief: CodeQualityInput's validator refuses a partial report, and the tool description
+        # carries the worked example — the gate holds, prose would only decay.
+        from pydantic import ValidationError
+
+        from chorus_tools._code_quality import CodeQualityInput, CodeQualityTool
+
+        with pytest.raises(ValidationError, match="all three gate kinds"):
+            CodeQualityInput.model_validate(
+                {"checks": [{"name": "types", "kind": "types", "command": "mypy ."}]}
+            )
+        assert "all three gate kinds" in CodeQualityTool.description
 
 
 class TestStructureSkillWiring:
@@ -77,16 +85,33 @@ def test_brief_demands_a_package_layout_not_a_flat_dump() -> None:
     assert "flat" in brief  # "never a flat pile of scripts"
 
 
-def test_brief_demands_layered_separation_of_concerns() -> None:
-    brief = BACKEND_ENGINEER_BRIEF.lower()
-    assert "transport/http → service → data-access → domain" in brief
-    assert "one reason to change" in brief
+def test_layered_separation_of_concerns_lives_in_the_structuring_skill() -> None:
+    # Per docs/plans/2026-07-18-hooks-and-briefs-research.md §B the layering procedure moved from
+    # the brief into its natural owner, the structuring-any-service skill; the brief keeps only the
+    # by-DOMAIN / INWARD judgment pointer (pinned above).
+    manifest = backend_engineer_plugin().manifest
+    assert manifest.skills_root is not None
+    body = (
+        (Path(manifest.skills_root) / "structuring-any-service" / "SKILL.md")
+        .read_text(encoding="utf-8")
+        .lower()
+    )
+    assert "transport" in body and "inward" in body
+    assert "one reason to change" in body
 
 
-def test_brief_forbids_broad_exceptions_and_wants_full_typing() -> None:
-    brief = BACKEND_ENGINEER_BRIEF
-    assert "except Exception" in brief  # named as the thing NOT to do
-    assert "type every function signature" in BACKEND_ENGINEER_BRIEF.lower()
+def test_clean_code_craft_lives_in_the_structuring_skill() -> None:
+    # Per docs/plans/2026-07-18-hooks-and-briefs-research.md §B the clean-code craft detail (typing,
+    # specific exceptions, small functions) moved from the brief into structuring-any-service.
+    manifest = backend_engineer_plugin().manifest
+    assert manifest.skills_root is not None
+    body = (
+        (Path(manifest.skills_root) / "structuring-any-service" / "SKILL.md")
+        .read_text(encoding="utf-8")
+        .lower()
+    )
+    assert "except exception" in body  # named as the thing NOT to do
+    assert "type every function signature" in body
 
 
 def test_brief_requires_a_mechanical_lint_or_type_gate() -> None:
@@ -160,9 +185,11 @@ def test_brief_mandates_test_first_tdd_via_the_test_author() -> None:
     # the old optional phrasing is gone — delegation is required
     assert "for non-trivial behaviour, delegate" not in lower
     assert "test_red" in lower
-    assert "without writing a production file" in lower
-    assert "do not edit those test files after red" in lower
-    assert "test hashes" in lower
+    # Per docs/plans/2026-07-18-hooks-and-briefs-research.md §B the RED-chronology prohibitions
+    # ("without writing a production file", "do not edit those test files after RED", the test-hash
+    # warning) left the brief: TddProductionGate (chorus_harness/_tdd_gate.py) denies production
+    # writes pre-RED and its denial messages teach the retry path, and the kernel rejects a delivery
+    # whose independently authored tests changed after RED. The gates hold; prose would only decay.
     assert "quote the exact assigned behavior" in lower
     assert "never ask it to infer" in lower
 
@@ -188,32 +215,25 @@ def test_brief_mandates_the_code_reviewer_red_team() -> None:
     assert "authz" in lower or "authorization" in lower or "n+1" in lower
 
 
-def test_dod_rubric_gates_on_the_cleared_review() -> None:
-    from chorus_employee.backend_engineer import backend_engineer_dod
-
-    rubric = backend_engineer_dod("build a service").rubric()
-    assert "review_verdict.json" in rubric
-    assert "cleared" in rubric.lower()
-
-
-def test_dod_rubric_makes_the_reviewer_gate_on_the_tdd_artifacts() -> None:
-    # The reviewed build carries a typed, kernel-owned evidence profile, so the project command stays
-    # separate from cross-platform JSON checks for RED, the test plan, and independent review.
-    from chorus.outcomes import DoDKind, ReviewedBuild
+def test_dod_is_a_self_judged_agent_review_without_evidence_file_demands() -> None:
+    # Operator decision (2026-07-18): employees verify their own work — no kernel evidence machinery.
+    # The rubric judges substance the employee can self-check in-beat (tests pass when run, diff
+    # implements the contract, inputs validated, no secrets) and demands NO evidence-bundle files.
+    from chorus.outcomes import DoDKind
     from chorus_employee.backend_engineer import backend_engineer_dod
 
     dod = backend_engineer_dod("build a small commerce API")
-    assert dod.kind is DoDKind.REVIEWED_BUILD
-    assert isinstance(dod.spec, ReviewedBuild)
-    assert dod.spec.evidence_profile == "tdd_review_v1"
+    assert dod.kind is DoDKind.AGENT_REVIEW
     rubric = dod.rubric()
-    assert "test_plan.json" in rubric
-    assert "api_verdict.json" in rubric
-    assert "red_evidence" in rubric.lower() or "red" in rubric.lower()
-    assert "test_evidence/red.json" in rubric
-    assert "red-confirmed" in rubric
-    assert "grep -q" not in rubric
-    assert "test -f" not in rubric
+    assert "test" in rubric.lower() and "secret" in rubric.lower()
+    for evidence_file in (
+        "test_evidence/manifest.json",
+        "test_evidence/red.json",
+        "test_plan.json",
+        "review_verdict.json",
+        "api_verdict.json",
+    ):
+        assert evidence_file not in rubric
 
 
 def test_reviewer_treats_red_evidence_as_historical_and_runs_current_floor() -> None:
@@ -226,12 +246,32 @@ def test_reviewer_treats_red_evidence_as_historical_and_runs_current_floor() -> 
     assert "verify_command" in brief
 
 
-def test_dod_rubric_mechanically_requires_the_durable_evidence_floor() -> None:
-    # spec §10: "it was tested" must be a file on disk, not a claim. The reviewer-discovered
-    # verify_command must include a green test_evidence/manifest.json check — the durable evidence
-    # floor the kernel greps, not something only the brief's prose asks for.
+def test_dod_rubric_requires_tests_to_actually_run() -> None:
+    # Operator decision (2026-07-18): the durable evidence-file floor is gone; the rubric instead
+    # binds the in-beat evaluator to substance it can check itself — the tests exist and pass when
+    # actually run, never on the model's word.
     from chorus_employee.backend_engineer import backend_engineer_dod
 
-    rubric = backend_engineer_dod("build a service").rubric()
-    assert "test_evidence/manifest.json" in rubric
-    assert '"verdict": "pass"' in rubric
+    rubric = backend_engineer_dod("build a service").rubric().lower()
+    assert "pass" in rubric and "run" in rubric
+    assert "test_evidence/manifest.json" not in rubric
+
+
+def test_brief_fits_the_lean_token_budget() -> None:
+    """The brief stays under ~900 tokens (words * 4/3 heuristic).
+
+    docs/plans/2026-07-18-hooks-and-briefs-research.md §B (podium repo): target <~600 tokens, hard
+    budget 900 — 250-375-token instruction blocks beat 1500+ on tool selection; briefs carry
+    character and judgment, gates carry law.
+    """
+    assert len(BACKEND_ENGINEER_BRIEF.split()) * 4 / 3 <= 900
+
+
+def test_brief_keeps_the_anatomy_essentials() -> None:
+    """Identity survives the diet: subagents by name, manager escalation, deliverable class."""
+    brief = BACKEND_ENGINEER_BRIEF
+    for subagent in ("test_author", "api_verifier", "code_reviewer"):
+        assert subagent in brief, subagent
+    assert "manager" in brief.lower()  # escalate-to-manager communication norm
+    assert "PR" in brief  # the deliverable artifact class it lands
+    assert "test_evidence" in brief  # the durable evidence bundle it leaves

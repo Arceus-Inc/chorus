@@ -150,6 +150,8 @@ def test_same_backend_engineer_materializes_delivery_then_delegation_surface(
         "team_read",
         "staffing_request",
         "decompose",
+        "comment",  # coordination verbs ride every employee beat (OM-3)
+        "read_comments",
     }
     assert delivered.config.memory_scope == "project"
     assert delegated.config.memory_scope == "team"

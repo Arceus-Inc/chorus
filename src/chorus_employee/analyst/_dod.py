@@ -24,6 +24,7 @@ done is proven, not *what* is landed.
 from __future__ import annotations
 
 import re
+import sys
 from enum import StrEnum
 
 from chorus.outcomes import Verifier
@@ -139,7 +140,10 @@ def analyst_dod(intent: str) -> Verifier:
     if action is ActionClass.PREDICT:
         # Offline, verifiable, free: an independent held-out scorer is the objective floor a
         # self-reported metric cannot fake (fixes cross-validation gaming).
-        return Verifier.command("python score.py", artifact_class="prediction", timeout_s=600)
+        interpreter = sys.executable or "python3"  # bare `python` is absent on macOS hosts
+        return Verifier.command(
+            f'"{interpreter}" score.py', artifact_class="prediction", timeout_s=600
+        )
     return Verifier.agent_review(rubric=_FINDINGS_RUBRIC, artifact_class="finding")
 
 

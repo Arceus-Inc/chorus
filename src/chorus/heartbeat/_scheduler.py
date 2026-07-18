@@ -38,6 +38,7 @@ from chorus.heartbeat._execution_profile import (
 from chorus.heartbeat._invokability import InvokabilityReason, invokability_block
 from chorus.heartbeat._runner_for import single
 from chorus.heartbeat._wake import TickReport, Wake
+from chorus.hooks import OrgHook, default_org_hooks, run_org_hooks
 from chorus.ids import mint_id
 from chorus.ledger import ApprovalGate, TaskPriority
 from chorus.ledger._models import (
@@ -297,10 +298,11 @@ def _worktree_file_manifest(worktree: Path | None, *, max_files: int = _MANIFEST
     return "\n".join(paths)
 
 
-# Leaf DoD kinds the kernel still gates with a separate read-only Reviewer beat. Spec 16 collapses
-# ``agent_review`` into dream's single in-beat evaluator (its rubric rides into ``run_task``), so only
-# ``reviewed_build`` keeps a second beat — for its reviewer-discovered objective command floor.
-_REVIEWER_GATED_DODS = frozenset({DoDKind.REVIEWED_BUILD})
+# Leaf DoD kinds the kernel gates with a separate read-only Reviewer beat: NONE. Operator decision
+# (2026-07-18): employees verify their own work — no second verifier beat. The in-beat evaluation
+# (dream's plan→generate→evaluate loop judging the role rubric) IS the verdict, so even a stray
+# ``ReviewedBuild`` DoD lands through the normal passed path.
+_REVIEWER_GATED_DODS: frozenset[DoDKind] = frozenset()
 
 
 def _review_rubric(spec: object) -> str:
@@ -483,6 +485,7 @@ class Scheduler:
         landers: LanderRegistry | None = None,
         clock: Callable[[], datetime] | None = None,
         sleep: Callable[[float], Awaitable[None]] | None = None,
+        org_hooks: tuple[OrgHook, ...] | None = None,
     ) -> None:
         self.tick_interval_s = tick_interval_s
         self.max_concurrent_runs = max_concurrent_runs
@@ -494,6 +497,8 @@ class Scheduler:
         # from its worktree + TODO.md before the task strands as too-big-for-one-beat. Distinct from the
         # DoD repair budget — a timeout is unfinished work, not a rejected attempt.
         self.max_resume_attempts = max_resume_attempts
+        # Org hooks: deterministic reactions the pulse fires after cron (chorus.hooks).
+        self._org_hooks = org_hooks if org_hooks is not None else default_org_hooks()
         # In-beat retry budget for *transient* engine faults (a planner/evaluator parse blip): re-run the
         # beat this many times before stranding it onto the recovery ladder (spec 05 §5).
         self.transient_retries = transient_retries
@@ -563,6 +568,10 @@ class Scheduler:
         for trigger in ledger.routine_triggers.due(now=now):
             if fire_routine(ledger, trigger, now=now) is not None:
                 routines_fired += 1
+
+        # (b2) ORG HOOKS — deterministic reactions to durable state (an instruction message
+        # becomes a task, …). Isolated + idempotent by contract; a hook bug never kills the pulse.
+        run_org_hooks(ledger, self._org_hooks)
 
         # (c) MONITORS — drain deferred self-wakes; a one-shot fire wakes the owner, an exhausted
         # monitor escalates per its recovery policy instead.
@@ -1036,6 +1045,22 @@ class Scheduler:
             # the recovery ladder with the phase on the evidence, owner preserved (§5).
             ledger.runs.finish(run_id, RunStatus.FAILED, outcome=verdict)
             self._resume_or_strand(task_id, employee_id=employee.id, result=result)
+        elif result.passed and task.execution_mode is ExecutionMode.DELEGATION:
+            # A delegation root that never fanned out cannot be done — its lifecycle is its
+            # subtree's, and the contract's acceptance/verification path only runs over children.
+            # (Found live 2026-07-18: a kickoff beat "passed" its in-beat evaluation without
+            # decomposing and landed DONE through the delivery path — zero children, contract
+            # never verified.) Park it and re-wake the lead to decompose.
+            ledger.runs.finish(run_id, RunStatus.SUCCEEDED, outcome=verdict)
+            ledger.tasks.set_status(task_id, TaskStatus.BLOCKED)
+            ledger.wakes.enqueue(
+                Wake(
+                    id=mint_id(),
+                    employee_id=employee.id,
+                    reason=WakeReason.CHILDREN_DONE,
+                    payload={"task_id": task_id, "cause": "delegation_root_never_decomposed"},
+                )
+            )
         elif result.passed:
             ledger.runs.finish(run_id, RunStatus.SUCCEEDED, outcome=verdict)
             await self._land_passed(
@@ -1225,7 +1250,11 @@ class Scheduler:
         outcome_kind: str | None,
         now: datetime,
     ) -> None:
-        """Require lead acceptance and an independent gate before closing delegated work."""
+        """Close delegated work on the lead's own acceptance plus the deterministic gates.
+
+        Operator decision (2026-07-18): no system-verifier beat — the lead's integrate acceptance is
+        the verdict, gated only by the descendants-passed check and the objective rollup floor.
+        """
         ledger = self._require_ledger()
         contract = ledger.delegation_contracts.active_for_task(task.id)
         if contract is None:
@@ -1257,13 +1286,11 @@ class Scheduler:
             verifier=verifier,
             beat_runner=beat_runner,
         )
-        review_passed, reviewer_id, verification_run_id = await self._verify_delegation_parent(
-            task=task,
-            lead=employee,
-            verifier=verifier,
-            now=now,
-        )
-        verified = result.passed and review_passed and floor_passed is not False
+        # Operator decision (2026-07-18): employees verify their own work — no SYSTEM_VERIFIER beat
+        # before closing delegated work. The lead's own integrate acceptance is the verdict; the
+        # deterministic descendants check (above) and the objective rollup command floor (cheap
+        # command runs the lead's beat contracts to) remain the only gates.
+        verified = result.passed and floor_passed is not False
         if not verified:
             with ledger.transaction():
                 ledger.delegation_contracts.update_status(
@@ -1277,8 +1304,6 @@ class Scheduler:
                     payload={
                         "passed": False,
                         "run_id": run_id,
-                        "reviewer_id": reviewer_id,
-                        "verification_run_id": verification_run_id,
                     },
                 )
                 ledger.finalize_beat(
@@ -1308,13 +1333,7 @@ class Scheduler:
             outcome_kind=outcome_kind,
             now=now,
         )
-        self._close_verified_delegation(
-            task.id,
-            run_id=run_id,
-            recovered=False,
-            reviewer_id=reviewer_id,
-            verification_run_id=verification_run_id,
-        )
+        self._close_verified_delegation(task.id, run_id=run_id, recovered=False)
 
     def _required_descendants_passed(self, task_id: str) -> bool:
         """Require every persisted parent gate, or every legacy direct child, to be done."""
@@ -1328,75 +1347,6 @@ class Scheduler:
         return bool(required) and all(
             child is not None and child.status is TaskStatus.DONE for child in required
         )
-
-    async def _verify_delegation_parent(
-        self,
-        *,
-        task: Task,
-        lead: Employee,
-        verifier: Verifier | None,
-        now: datetime,
-    ) -> tuple[bool, str | None, str | None]:
-        """Run the integrated parent gate under the non-workforce system verifier."""
-        ledger = self._require_ledger()
-        reviewer = SYSTEM_VERIFIER
-        verification_run_id = mint_id()
-        runner = self._verification_runner(
-            reviewer,
-            task_id=task.id,
-            worktree_owner_id=lead.id,
-        )
-        ledger.runs.create(
-            Run(
-                id=verification_run_id,
-                employee_id=lead.id,
-                task_id=task.id,
-                principal_kind="system",
-                system_principal_id=reviewer.id,
-                status=RunStatus.RUNNING,
-                lease_expires_at=now + timedelta(seconds=self.lease_ttl_s),
-                started_at=now,
-            )
-        )
-        worktree = runner.working_dir if isinstance(runner, _RunnerWithWorkingDir) else None
-        if worktree is not None:
-            BeatContext(
-                task_id=task.id,
-                run_id=verification_run_id,
-                employee_id=reviewer.id,
-            ).write(worktree)
-        rubric = verifier.rubric() if verifier is not None else task.intent
-        try:
-            review = await runner.run_task(
-                task_id=task.id,
-                run_id=verification_run_id,
-                intent=(
-                    f"Independently verify the integrated delegated objective: {task.intent}\n"
-                    f"Objective rubric: {rubric}\n"
-                    "Inspect the assembled result read-only and return a passing outcome only when "
-                    "the objective is satisfied."
-                ),
-                rubric=rubric,
-                observer=(
-                    TraceStamper(
-                        self._event_bus.emit,
-                        trace_id=trace_root(ledger, task.id),
-                        task_id=task.id,
-                        employee_id=lead.id,
-                        run_id=verification_run_id,
-                    )
-                    if self._event_bus is not None
-                    else None
-                ),
-            )
-        except Exception as exc:
-            review = failure_outcome(exc)
-        ledger.runs.finish(
-            verification_run_id,
-            RunStatus.SUCCEEDED if review.passed else RunStatus.FAILED,
-            outcome=review.outcome or None,
-        )
-        return review.passed, reviewer.id, verification_run_id
 
     def _recover_landed_delegations(self, ledger: Ledger) -> int:
         """Close delegation metadata left behind after a verified parent landed."""

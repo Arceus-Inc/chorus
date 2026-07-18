@@ -193,8 +193,10 @@ async def test_delegation_profile_drives_scheduler_contract(ledger: Ledger) -> N
     verifier = ledger.dod.verifier_for_task(uid("task-release"))
     assert verifier is not None
     assert (verifier.rubric(), verifier.artifact_class) == (_RUBRIC, "subtree")
-    assert beat.rubrics == [_RUBRIC, _RUBRIC]
-    assert beat.intents[1].startswith("Independently verify")
+    # Operator decision (2026-07-18): employees verify their own work — the lead's single integrate
+    # beat is the only run; no "Independently verify" system-verifier beat follows it.
+    assert beat.rubrics == [_RUBRIC]
+    assert not any(intent.startswith("Independently verify") for intent in beat.intents)
     assert len(memory.appended) == 1 and memory.appended[0].scope == "team"
     assert lander.landed == [uid("task-release")]
     assert ledger.tasks.get(uid("task-release")).status is TaskStatus.DONE  # type: ignore[union-attr]
@@ -210,24 +212,20 @@ async def test_delegation_profile_drives_scheduler_contract(ledger: Ledger) -> N
         ActivityVerb.PARENT_VERIFIED,
     ]
     assert contract_events[-1].payload["passed"] is True
-    assert contract_events[-1].payload["reviewer_id"] == "system-verifier"
-    verification_run = ledger.runs.get(str(contract_events[-1].payload["verification_run_id"]))
-    assert verification_run is not None and verification_run.principal_kind == "system"
-    verification_runs = [
-        run
-        for run in ledger.runs.for_task(uid("task-release"))
-        if run.principal_id == "system-verifier"
-    ]
-    assert len(verification_runs) == 1
-    assert verification_runs[0].employee_id == lead.id
+    assert "reviewer_id" not in contract_events[-1].payload  # no verifier principal involved
+    assert not [
+        run for run in ledger.runs.for_task(uid("task-release")) if run.principal_kind == "system"
+    ]  # the lead's own acceptance IS the verdict — no system run row
     assert lead.role == "backend_engineer"
 
 
 async def test_failed_parent_verification_returns_contract_to_integrating(
     ledger: Ledger,
 ) -> None:
+    # Operator decision (2026-07-18): no verifier beat — the failing verdict is the lead's OWN
+    # integrate beat (self-judged in-beat evaluation), which returns the contract to INTEGRATING.
     _seed_delegation(ledger)
-    beat = _RecordingBeat(review_passed=False)
+    beat = _RecordingBeat(passed=False)
     lander = _SubtreeLander()
     scheduler = Scheduler(
         ledger=ledger,
@@ -258,7 +256,7 @@ async def test_failed_parent_verification_returns_contract_to_integrating(
         ActivityVerb.PARENT_VERIFIED,
     ]
     assert contract_events[-1].payload["passed"] is False
-    assert contract_events[-1].payload["reviewer_id"] == "system-verifier"
+    assert "reviewer_id" not in contract_events[-1].payload  # no verifier principal involved
 
 
 async def test_rejected_required_child_cannot_reach_acceptance_or_verification(

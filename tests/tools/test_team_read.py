@@ -152,6 +152,7 @@ def test_team_read_returns_safe_contract_scoped_roster(ledger: Ledger, tmp_path:
             "reports_to": "lead",
             "status": "idle",
             "observed_load": 1,
+            "capabilities": [],  # no applied formation plan declared responsibilities (OM-5)
         }
     ]
     assert result.structured["team_candidates"] == []
@@ -205,3 +206,58 @@ def test_team_read_refuses_non_delegation_beat(ledger: Ledger, tmp_path: Path) -
 
     assert result.is_error is True
     assert "active delegation contract" in result.content
+
+
+def test_team_read_surfaces_formation_capabilities(ledger: Ledger, tmp_path: Path) -> None:
+    """OM-5: each candidate carries a "when I'm relevant" blurb — the responsibilities the
+    applied formation plan declared — so a lead picks the right assignee, not a guess."""
+    from chorus.ledger import (
+        ManagementGrantDraft,
+        PlannedEmployee,
+        WorkforcePlan,
+        WorkforcePlanDraft,
+        WorkforcePlanStatus,
+    )
+
+    _seed_delegation(ledger)
+    ledger.workforce_plans.create(
+        WorkforcePlan(
+            id=uid("plan-1"),
+            revision=1,
+            status=WorkforcePlanStatus.APPLIED,
+            proposed_by_employee_id="lead",
+            draft=WorkforcePlanDraft(
+                rationale="formation",
+                confidence=0.9,
+                source_goal_ids=("g1",),
+                employees=(
+                    PlannedEmployee(
+                        ref="ada",
+                        name="Ada",
+                        profession="engineer",
+                        reports_to_ref="lead",
+                        responsibilities=("owns the parser module", "CI pipelines"),
+                    ),
+                ),
+                management_grants=(
+                    ManagementGrantDraft(
+                        employee_ref="lead",
+                        can_lead=True,
+                        can_subdelegate=True,
+                        max_delegation_depth=4,
+                        max_team_size=5,
+                    ),
+                ),
+            ),
+        )
+    )
+    BeatContext(task_id=uid("root"), run_id=uid("run-cap"), employee_id="lead").write(tmp_path)
+
+    result = asyncio.run(TeamReadTool(ledger).execute({}, _ctx(tmp_path)))
+
+    assert result.is_error is False
+    ada = next(
+        r for r in result.structured["legal_direct_reports"] if r["employee_id"] == "ada"
+    )
+    assert ada["capabilities"] == ["owns the parser module", "CI pipelines"]
+    assert "owns the parser module" in result.content  # the lead reads it in the rendering

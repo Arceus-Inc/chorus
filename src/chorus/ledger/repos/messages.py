@@ -58,6 +58,16 @@ class MessageRepo:
         ).fetchall()
         return [_row_to_message(row) for row in rows]
 
+    def for_task(self, task_id: str) -> list[Message]:
+        """The task's comment thread, oldest first — read or unread, any recipient (OM-3).
+
+        Task-anchored messages ARE the comments; the thread is shared context, not an inbox.
+        """
+        rows = self._conn.execute(
+            "SELECT * FROM message WHERE task_id = ? ORDER BY created_at, id", (task_id,)
+        ).fetchall()
+        return [_row_to_message(row) for row in rows]
+
     def mark_read(self, message_id: str) -> None:
         now = utcnow_iso()
         self._conn.execute(

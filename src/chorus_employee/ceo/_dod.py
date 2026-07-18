@@ -57,6 +57,13 @@ def _cue_matcher(cues: tuple[str, ...]) -> re.Pattern[str]:
     return re.compile(rf"\b(?:{alternation})s?\b")
 
 
+# A negated cue is the OPPOSITE of a commitment ("do not hire", "never fire … without sign-off").
+# Strip the negation's clause (bounded at punctuation, so "do not delay: hire two" still gates)
+# before matching. Live 2026-07-18: the executive-review routine's own guard sentence tripped the
+# commit gate and parked a PASSED report behind board approval.
+_NEGATION_CLAUSE_RE = re.compile(r"\b(?:do not|don't|never|no|without)\b[^.;:!?]*", re.IGNORECASE)
+
+
 _COMMIT_RE = _cue_matcher(_COMMIT_CUES)
 
 _DIRECTIVE_RUBRIC = (
@@ -89,6 +96,13 @@ _DIRECTIVE_RUBRIC = (
     "recorded there as an append-only line. That ledger + `directive.md` are the COMPLETE evidence — the "
     "actions ARE auditable from artifacts. Do NOT fail the directive for lack of proof that the tool "
     "calls happened; the ledger is that proof.\n\n"
+    "FORMATION BEATS — when the intent asks for a workforce/organization proposal: the propose "
+    "tool records a run-stamped `workforce_plan_propose: proposed workforce plan <id> …` line in "
+    "`governance-ledger.md` AND writes the canonical `workforce_plan.json` in the worktree. Those "
+    "two artifacts ARE the complete proof the proposal happened; verify the plan id the directive "
+    "cites against them. A plan that is PENDING HUMAN APPROVAL is the CORRECT terminal state of a "
+    "formation beat — never fail it because nobody was hired, the plan is not yet approved, or "
+    "you cannot observe the tool calls themselves.\n\n"
     "SCOPE — a standing company accumulates history: RECENTLY DECIDED and DECISIONS may contain "
     "proposals adjudicated in PRIOR beats, and governance-ledger.md accumulates lines across beats. "
     "Each ledger line is stamped `[run <id>]`; THIS beat's actions are exactly the lines whose run id "
@@ -103,7 +117,8 @@ _DIRECTIVE_RUBRIC = (
 
 def classify_action(intent: str) -> ActionClass:
     """Infer the action class from a beat's intent — an irreversible commitment wins the human gate."""
-    if _COMMIT_RE.search(intent.lower()):
+    affirmed = _NEGATION_CLAUSE_RE.sub(" ", intent.lower())
+    if _COMMIT_RE.search(affirmed):
         return ActionClass.COMMIT
     return ActionClass.DIRECTIVE
 

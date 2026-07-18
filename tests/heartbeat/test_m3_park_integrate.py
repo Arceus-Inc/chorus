@@ -481,3 +481,52 @@ async def test_integrate_lands_done_when_the_objective_rollup_floor_passes(
 
     assert ledger.tasks.get(uid("M")).status is TaskStatus.DONE  # type: ignore[union-attr]  # floor passed → done
     assert ledger.tasks.all_children_terminal(uid("M"))
+
+
+async def test_delegation_parent_closes_verified_with_no_system_verifier_run(
+    ledger: Ledger, tmp_path: object
+) -> None:
+    """Operator decision (2026-07-18): employees verify their own work — no second verifier beat.
+
+    Closing a delegated contract is the lead's own integrate acceptance plus the deterministic
+    descendants check and objective rollup floor. The kernel dispatches NO system-verifier beat,
+    so no run row with ``principal_kind='system'`` exists for the parent."""
+    _delegated_parent(ledger)
+    beat = _TeamBeat(ledger, parent=uid("M"))
+    sched = _sched(ledger, beat, tmp_path=tmp_path)
+
+    for _ in range(6):  # decompose → api → ui → children_done → integrate
+        await sched.tick_once()
+        await sched.drain()
+
+    assert ledger.tasks.get(uid("M")).status is TaskStatus.DONE  # type: ignore[union-attr]
+    contract = ledger.delegation_contracts.get(uid("M"))
+    assert contract is not None and contract.status is DelegationContractStatus.DONE
+    assert not [
+        r for r in ledger.runs.for_task(uid("M")) if r.principal_kind == "system"
+    ]  # the lead's own acceptance IS the verdict — no verifier beat, no system run row
+
+
+async def test_passed_kickoff_without_children_parks_never_done(ledger: Ledger) -> None:
+    """Found live 2026-07-18 (videocursor duplicate root): a delegation kickoff beat whose
+    directive "passed" its in-beat evaluation — but that never decomposed — landed the root
+    DONE through the delivery path: zero children, contract never verified. A delegation
+    root's lifecycle is its subtree's; with no subtree it can only park and re-beat."""
+    _delegated_parent(ledger)
+
+    class _NoFanoutBeat:
+        working_dir = None
+
+        async def run_task(self, **_: object) -> BeatOutcome:
+            return BeatOutcome(passed=True, outcome={}, summary="wrote a directive, no fan-out")
+
+    beat = _NoFanoutBeat()
+    sched = _sched(ledger, beat, tmp_path=None)  # type: ignore[arg-type]
+
+    await sched.tick_once()
+    await sched.drain()
+
+    parent = ledger.tasks.get(uid("M"))
+    assert parent is not None and parent.status is TaskStatus.BLOCKED  # parked, NOT done
+    contract = ledger.delegation_contracts.get(uid("M"))
+    assert contract is not None and contract.status is DelegationContractStatus.DELEGATED

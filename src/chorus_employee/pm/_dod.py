@@ -19,6 +19,8 @@ the in-tool gate can never drift. The artifact class is ``spec``.
 
 from __future__ import annotations
 
+import sys
+
 from chorus.outcomes import Verifier
 from chorus_employee.pm._brief import PM_PLAN_DOC
 from chorus_employee.pm._decision import CONFIDENCE_FLOOR
@@ -37,7 +39,10 @@ _DECISION_CHECK = (
     "and any(c.get('source_url') for c in d.get('claims',[])) else 1)"
 )
 
-_GROUNDING_FLOOR = f'python -c "{_DECISION_CHECK}"'
+# The interpreter that runs the oracle runs the floor — bare `python` does not exist on every
+# host (macOS ships python3 only); `python_check` (._platform) makes the same choice.
+_INTERPRETER = sys.executable or "python3"
+_GROUNDING_FLOOR = f'"{_INTERPRETER}" -c "{_DECISION_CHECK}"'
 
 
 def pm_dod(intent: str) -> Verifier:

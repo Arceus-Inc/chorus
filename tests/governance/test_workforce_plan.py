@@ -329,3 +329,45 @@ def test_apply_rolls_back_every_hire_and_grant_when_audit_fails(
     assert [employee.id for employee in ledger.employees.list()] == ["ceo"]
     assert ledger.management_profiles.list() == []
     assert ledger.workforce_plans.latest(proposed.id).status is WorkforcePlanStatus.PROPOSED  # type: ignore[union-attr]
+
+
+def test_apply_provisions_role_declared_routines_for_each_hire(ledger: Ledger) -> None:
+    """OM-1, found live 2026-07-18: a formed org must heartbeat like a facade-hired one.
+    Plan materialization creates employees directly, so it must run the same routine
+    reconciliation hire() does — else the CEO's plan yields a dormant workforce."""
+    _seed_ceo(ledger)
+    service = _service(ledger)
+    plan = service.propose(_draft(), proposed_by_employee_id="ceo")
+
+    service.approve(plan.id, approved_by_user_id="user-founder")
+
+    # The pm role declares a weekly planning routine; the materialized PM must carry it.
+    routines = ledger.routines.list(employee_id="product-lead")
+    assert {r.routine_key for r in routines} == {"pm-weekly-planning-review"}
+    # And the backend engineer's two standing scans.
+    engineer_keys = {r.routine_key for r in ledger.routines.list(employee_id="engineering-lead")}
+    assert engineer_keys == {"backend-engineer-dependency-scan", "backend-engineer-slo-watch"}
+
+
+def test_apply_completes_the_proposing_task(ledger: Ledger) -> None:
+    """Free-run (found live 2026-07-18): a formation task whose plan was APPLIED kept re-beating
+    forever — burning spend on ledger-hygiene nitpicks. First principles: a proposal task is done
+    when its proposal is decided; the plan carries its origin task and approve completes it."""
+    import uuid as _uuid
+
+    from chorus.ledger import Task, TaskStatus
+
+    _seed_ceo(ledger)
+    origin = ledger.tasks.submit(
+        Task(id=str(_uuid.uuid4()), intent="form the org", assignee_employee_id="ceo")
+    )
+    service = _service(ledger)
+    plan = service.propose(
+        _draft(), proposed_by_employee_id="ceo", proposed_in_task_id=origin.id
+    )
+    assert ledger.workforce_plans.latest(plan.id).proposed_in_task_id == origin.id
+
+    service.approve(plan.id, approved_by_user_id="user-founder")
+
+    refreshed = ledger.tasks.get(origin.id)
+    assert refreshed is not None and refreshed.status is TaskStatus.DONE

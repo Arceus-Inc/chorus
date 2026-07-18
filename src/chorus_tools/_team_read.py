@@ -11,7 +11,7 @@ from pydantic import BaseModel
 
 from chorus.heartbeat import BeatContext
 from chorus.heartbeat._invokability import invokability_block
-from chorus.ledger import ExecutionMode, Ledger, TeamStatus
+from chorus.ledger import ExecutionMode, Ledger, TeamStatus, WorkforcePlanStatus
 from chorus.workforce._ledger import LedgerWorkforce
 
 _TERMINAL_TASK_STATUSES = {"cancelled", "done", "rejected"}
@@ -63,6 +63,7 @@ class TeamReadTool(BaseTool):
         ):
             return _refused("the management profile is missing, inactive, or stale")
 
+        capabilities = _plan_capabilities(self._ledger)
         members = self._ledger.team_members.members_of(team.id)
         member_ids = {member.employee_id for member in members}
         load = Counter(
@@ -85,6 +86,9 @@ class TeamReadTool(BaseTool):
                 "reports_to": employee.reports_to,
                 "status": employee.status.value,
                 "observed_load": load[employee.id],
+                # OM-5: the "when I'm relevant" blurb the applied formation plan declared —
+                # assignment by declared ownership, not profession guesswork.
+                "capabilities": capabilities.get(employee.id, []),
             }
             for employee in sorted(legal_reports, key=lambda item: item.id)
         ]
@@ -150,18 +154,19 @@ class TeamReadTool(BaseTool):
             f"observed_load={member['observed_load']}"
             for member in current_member_views
         ]
-        report_lines = [
-            f"- {report['employee_id']}: profession={report['profession']}, "
-            f"reports_to={report['reports_to'] or 'none'}, status={report['status']}, "
-            f"observed_load={report['observed_load']}"
-            for report in report_views
-        ]
-        candidate_lines = [
-            f"- {report['employee_id']}: profession={report['profession']}, "
-            f"reports_to={report['reports_to'] or 'none'}, status={report['status']}, "
-            f"observed_load={report['observed_load']}"
-            for report in team_candidates
-        ]
+        def _report_line(report: dict[str, list[str] | int | str | None]) -> str:
+            line = (
+                f"- {report['employee_id']}: profession={report['profession']}, "
+                f"reports_to={report['reports_to'] or 'none'}, status={report['status']}, "
+                f"observed_load={report['observed_load']}"
+            )
+            blurb = report.get("capabilities")
+            if isinstance(blurb, list) and blurb:
+                line += f", capabilities={'; '.join(blurb)}"
+            return line
+
+        report_lines = [_report_line(report) for report in report_views]
+        candidate_lines = [_report_line(report) for report in team_candidates]
         return ToolResult(
             content="\n".join(
                 [
@@ -179,6 +184,18 @@ class TeamReadTool(BaseTool):
             ),
             structured=structured,
         )
+
+
+def _plan_capabilities(ledger: Ledger) -> dict[str, list[str]]:
+    """Employee ref → responsibilities from APPLIED workforce plans (later revisions win)."""
+    blurbs: dict[str, list[str]] = {}
+    for plan in ledger.workforce_plans.list():
+        if plan.status is not WorkforcePlanStatus.APPLIED:
+            continue
+        for planned in plan.draft.employees:
+            if planned.responsibilities:
+                blurbs[planned.ref] = list(planned.responsibilities)
+    return blurbs
 
 
 def _refused(reason: str) -> ToolResult:

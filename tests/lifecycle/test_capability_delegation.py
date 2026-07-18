@@ -776,9 +776,44 @@ def test_submit_one_requires_replacement_lineage_while_a_direct_child_failed(
     )
 
     assert result.child_id is None
-    assert result.authority_denied == (
+    assert result.authority_denied is not None
+    assert result.authority_denied.startswith(
         f"failed direct child {rejected} must be named in replaces_task_id"
     )
+    # The refusal teaches the exact corrective call (live T3: the lead exhausted its
+    # integrate budget re-sending the same refused submit without this).
+    assert f'replaces_task_id="{rejected}"' in result.authority_denied
+    assert [child.id for child in ledger.tasks.children(parent.id)] == [rejected]
+
+
+def test_submit_one_refuses_label_collision_with_guidance(ledger: Ledger) -> None:
+    """Live T3: corrective submit reusing the failed child's label hit a raw duplicate-key
+    error (child ids derive from (parent, label)). Refuse typed, with the fix named."""
+    service, parent = _seed_delegation_parent(ledger)
+    rejected = service.decompose(
+        parent_id=parent.id,
+        revision=uid("initial-wave"),
+        actor_employee_id="lead",
+        children=[ChildPlan(label="links", intent="Build links", assignee=uid("member"))],
+    ).child_ids["links"]
+    ledger.tasks.set_status(rejected, TaskStatus.REJECTED)
+    _start_integrating(ledger, parent)
+
+    result = service.submit_one(
+        parent_id=parent.id,
+        revision=uid("correction-wave"),
+        actor_employee_id="lead",
+        child=ChildPlan(
+            label="links",  # the collision: same label as the failed child
+            intent="Redo links",
+            assignee=uid("member"),
+            replaces_task_id=rejected,
+        ),
+    )
+
+    assert result.child_id is None
+    assert result.authority_denied is not None
+    assert "pick a NEW label" in result.authority_denied
     assert [child.id for child in ledger.tasks.children(parent.id)] == [rejected]
 
 

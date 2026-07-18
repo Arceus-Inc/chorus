@@ -6,12 +6,12 @@ worktree side-effects run on real git in a temp dir.
 
 from __future__ import annotations
 
+import json
 import subprocess
 from pathlib import Path
 from typing import Any
 
 import pytest
-from dream.tools._context import ToolExecutionContext
 
 from chorus.heartbeat import BeatRunner
 from chorus.ledger import (
@@ -20,6 +20,8 @@ from chorus.ledger import (
     ExecutionMode,
     Ledger,
     ManagementProfile,
+    Run,
+    RunStatus,
     Task,
     TaskStatus,
     Team,
@@ -161,7 +163,8 @@ def test_backend_engineer_materializes_a_writable_harness_in_its_worktree(
         "lattice_packet",
         "lattice_apply",
         "skill_manage",
-        "spawn_subagent",  # strict-TDD profile (resolved from the live ledger) registers it
+        # spawn_subagent is no longer factory-registered: the strict-TDD gate is unwired (operator
+        # decision 2026-07-18); dream's build_harness registers it from config.subagents at build time.
     }
     assert mat.config.permission_mode == "acceptEdits"
     assert captured["max_turns"] == 18  # the engine scalars come from the role too
@@ -308,6 +311,8 @@ def test_delegation_harness_registers_the_decompose_capability_tool(
             "decompose",
             "team_read",
             "staffing_request",
+            "comment",  # coordination verbs ride every employee beat (OM-3)
+            "read_comments",
         }
     finally:
         ledger.close()
@@ -416,7 +421,9 @@ def test_integrate_beat_over_a_complete_subtree_drops_all_mutating_tools(
             "read_file",
             "read_offloaded",
             "team_read",
-        }  # only reads remain before acceptance
+            "comment",  # coordination stays open — a comment mutates nothing (OM-3)
+            "read_comments",
+        }  # only reads + coordination remain before acceptance
     finally:
         ledger.close()
 
@@ -515,6 +522,108 @@ def test_delegation_brief_is_rehydrated_with_its_team(
         ledger.close()
 
 
+def test_corrective_child_inherits_failed_sibling_evidence(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Live T3 (2026-07-18): corrective children re-failed on findings they never saw. The
+    beat brief must machine-inject the failed same-scope attempts' run outcomes and the
+    evaluator notes recorded in the worktree, and authorize re-authoring implicated tests."""
+    ledger = open_test_ledger()
+    try:
+        ic = Employee(id="bex", name="Bex", role="backend_engineer")
+        ledger.employees.create(ic)
+        parent = ledger.tasks.submit(Task(id=uid("root"), intent="deliver links"))
+        failed = ledger.tasks.submit(
+            Task(
+                id=uid("attempt-1"),
+                intent="build links.py",
+                parent_id=parent.id,
+                assignee_employee_id=ic.id,
+                status=TaskStatus.REJECTED,
+            )
+        )
+        corrective = ledger.tasks.submit(
+            Task(
+                id=uid("attempt-2"),
+                intent="fix remaining review findings",
+                parent_id=parent.id,
+                assignee_employee_id=ic.id,
+                status=TaskStatus.TODO,
+            )
+        )
+        run_id = uid("failed-run")
+        ledger.runs.create(
+            Run(
+                id=run_id,
+                employee_id=ic.id,
+                task_id=failed.id,
+                status=RunStatus.FAILED,
+                outcome={
+                    "sprint_outcomes": ["needs-changes", "needs-changes"],
+                    "subagent_evidence_reason": (
+                        "code_reviewer evidence does not carry the required claim"
+                    ),
+                },
+            )
+        )
+        factory, _ = _factory(monkeypatch, tmp_path, ledger)
+        # The first materialize creates the worktree; drop the evaluator record where dream
+        # persists it (docs/evals/<run>/sprint-N.json), then materialize the corrective beat.
+        first = factory.materialize(ic, task_id=corrective.id)
+        evals = first.working_dir / "docs" / "evals" / run_id
+        evals.mkdir(parents=True, exist_ok=True)
+        (evals / "sprint-1.json").write_text(
+            json.dumps(
+                {
+                    "outcome": "needs-changes",
+                    "notes": (
+                        "base62 alphabet implementation contradicts the required 0-9,A-Z,a-z "
+                        "order and the tests themselves assert the wrong vectors"
+                    ),
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        mat = factory.materialize(ic, task_id=corrective.id)
+
+        generator = (mat.working_dir / ".harness" / "roles" / "generator.toml").read_text("utf-8")
+        assert "Inherited failure evidence" in generator
+        assert failed.id in generator
+        assert "contradicts the required 0-9,A-Z,a-z" in generator
+        assert "code_reviewer evidence does not carry the required claim" in generator
+        assert "AUTHORIZED to re-author" in generator
+    finally:
+        ledger.close()
+
+
+def test_first_attempt_child_gets_no_inheritance_block(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    ledger = open_test_ledger()
+    try:
+        ic = Employee(id="bex", name="Bex", role="backend_engineer")
+        ledger.employees.create(ic)
+        parent = ledger.tasks.submit(Task(id=uid("root"), intent="deliver links"))
+        child = ledger.tasks.submit(
+            Task(
+                id=uid("attempt-1"),
+                intent="build links.py",
+                parent_id=parent.id,
+                assignee_employee_id=ic.id,
+                status=TaskStatus.TODO,
+            )
+        )
+        factory, _ = _factory(monkeypatch, tmp_path, ledger)
+
+        mat = factory.materialize(ic, task_id=child.id)
+
+        generator = (mat.working_dir / ".harness" / "roles" / "generator.toml").read_text("utf-8")
+        assert "Inherited failure evidence" not in generator
+    finally:
+        ledger.close()
+
+
 @pytest.mark.parametrize(
     ("active", "can_lead", "expects_director_guidance"),
     ((True, True, True), (False, True, False), (True, False, False)),
@@ -575,54 +684,6 @@ def test_management_profile_without_a_delegation_task_keeps_delivery_tools(
     names = {t.name for t in captured["registry"].list_tools()}
     assert not {"decompose", "submit_task", "assign_task"}.intersection(names)
     assert {"write_file", "bash", "git"} <= names
-    ledger.close()
-
-
-async def test_tdd_review_delivery_task_gates_parent_production_tools(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, ledger: Ledger
-) -> None:
-    ledger = open_test_ledger()
-    _seed_delegation(ledger)
-    worker = ledger.employees.get("ada")
-    assert worker is not None
-    ledger.tasks.submit(
-        Task(
-            id=uid("delivery"),
-            intent="implement the backend",
-            status=TaskStatus.TODO,
-            execution_mode=ExecutionMode.DELIVERY,
-            assignee_employee_id=worker.id,
-        )
-    )
-    captured: dict[str, Any] = {}
-    monkeypatch.setattr(
-        _factory_mod.dream, "build_harness", lambda **kw: captured.update(kw) or object()
-    )
-    factory = _factory_mod.EmployeeHarnessFactory(
-        api_key="k",
-        base_url="https://x/openai/v1",
-        deployment="gpt-x",
-        company_id="acme",
-        roles=RoleRegistry.from_plugins(default_roles()),
-        work_root=tmp_path,
-        ledger=ledger,
-    )
-
-    materialized = factory.materialize(worker, task_id=uid("delivery"))
-    write_file = captured["registry"].get("write_file")
-    assert write_file is not None
-    result = await write_file.execute(
-        {"path": "backend/service.py", "content": "implemented = True\n"},
-        ToolExecutionContext(
-            working_dir=materialized.working_dir,
-            session_id="session",
-            metadata={"dream.role": "generator"},
-        ),
-    )
-
-    assert result.is_error is True
-    assert result.metadata["root_cause"] == "strict_tdd_red_not_authorized"
-    assert captured["registry"].get("spawn_subagent") is not None
     ledger.close()
 
 

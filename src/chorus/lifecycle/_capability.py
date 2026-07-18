@@ -564,19 +564,41 @@ class CapabilityService:
         )
 
     def _replacement_denial(self, parent: Task, child: ChildPlan) -> DecomposeResult | None:
+        correction_id = _child_id(parent.id, child.label)
+        existing = self._ledger.tasks.get(correction_id)
+        if existing is not None:
+            # Live T3 finding (2026-07-18): the lead reused the failed child's label and the
+            # deterministic (parent, label) id collided as a raw duplicate-key error. Refuse
+            # typed, with the fix, before the insert.
+            return DecomposeResult(
+                authority_denied=(
+                    f"label {child.label!r} already names an existing child "
+                    f"({correction_id}); pick a NEW label for the corrective task"
+                )
+            )
         replaced_id = child.replaces_task_id
         if replaced_id is None:
-            for blocker_id in self._ledger.dependencies.blockers(parent.id):
-                blocker = self._ledger.tasks.get(blocker_id)
-                if blocker is not None and blocker.status in {
-                    TaskStatus.REJECTED,
-                    TaskStatus.CANCELLED,
-                }:
-                    return DecomposeResult(
-                        authority_denied=(
-                            f"failed direct child {blocker_id} must be named in replaces_task_id"
-                        )
+            failed = [
+                blocker_id
+                for blocker_id in self._ledger.dependencies.blockers(parent.id)
+                if (blocker := self._ledger.tasks.get(blocker_id)) is not None
+                and blocker.status in {TaskStatus.REJECTED, TaskStatus.CANCELLED}
+            ]
+            if failed:
+                # Live T3 finding (2026-07-18): a lead burned every integrate iteration on this
+                # refusal because it never learned the exact corrective call. Name every failed
+                # child and the exact field so ONE refusal is enough to self-correct.
+                listed = ", ".join(failed)
+                return DecomposeResult(
+                    authority_denied=(
+                        f"failed direct child {failed[0]} must be named in replaces_task_id. "
+                        f"Correction: re-call submit_task with a NEW label (child ids derive "
+                        f"from the label, so reusing the failed child's label collides), the "
+                        f'same intent/assignee, plus replaces_task_id="{failed[0]}" — one '
+                        f"corrective task per failed child. Failed children gating this task: "
+                        f"{listed}"
                     )
+                )
             return None
         replaced = self._ledger.tasks.get(replaced_id)
         correction_id = _child_id(parent.id, child.label)
