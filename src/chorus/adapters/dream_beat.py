@@ -327,6 +327,8 @@ class DreamBeatRunner:
         working_dir: str | Path | None = None,
         employee_id: str | None = None,
         clock: Callable[[], datetime] | None = None,
+        # name -> (artifact_path, required_claim[, evidence_read_only=True])
+        # e.g. {"test_author": ("test_plan.json", {"authored": True}, False)}
         subagent_evidence: Mapping[
             str,
             tuple[str, Mapping[str, object]] | tuple[str, Mapping[str, object], bool],
@@ -484,6 +486,7 @@ class DreamBeatRunner:
     def _guard_subagent_evidence(
         self,
         outcome: BeatOutcome,
+        # name -> (typed_output_json, is_error, worktree_sha_before_review, worktree_sha_after_review)
         fresh_results: Mapping[str, tuple[str, bool, str, str]],
     ) -> BeatOutcome:
         """Reject a passing beat whose durable subagent evidence lacks valid provenance."""

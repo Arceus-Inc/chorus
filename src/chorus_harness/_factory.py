@@ -96,6 +96,7 @@ from chorus_tools.delivery import (
 
 if TYPE_CHECKING:
     from dream.contracts import GovernancePort
+    from lattice.facade import Lattice
 
     from chorus.ledger import Ledger, Task
 
@@ -742,6 +743,128 @@ class EmployeeHarnessFactory:
             verification_only=verification_only,
         )
 
+    def _build_tool_registry(
+        self,
+        config: RoleBeatConfig,
+        *,
+        root: Path,
+        lattice: Lattice | None,
+        strict_tdd: bool,
+    ) -> ToolRegistry:
+        """Bind every chorus capability the role's manifest names onto dream's registry.
+
+        One stanza per capability family; each is register-if-named and fail-closed on its
+        own dependency (ledger, governance port, lattice), so a missing backend drops the
+        tool rather than half-wiring it.
+        """
+        registry = _role_registry(dream_tool_names(config.tools))
+        # Bind the role's chorus capability tools. The ledger-free ones (pure file readers:
+        # design_lint / design_exemplar / brand_lint) register regardless — they need no ledger, and
+        # withholding them when the factory has none is the bug that makes a role's own primitives
+        # vanish from its toolset. The ledger-bound ones (decompose / submit_task / …) need the live
+        # ledger and fail closed — dropped — when it is absent.
+        for name in config.tools:
+            if self._ledger is None and name not in _LEDGER_FREE_CAPABILITY_TOOLS:
+                continue
+            capability = _capability_tool(name, self._ledger, self._roles)
+            if capability is not None:
+                registry.register(capability, source=ToolSource.DEFAULT)
+        # cms_draft is registered here (not in _capability_tool): its Markdown fallback backend needs the
+        # worktree, and the backend (Strapi when its env is set, else Markdown) is config-selected. No
+        # ledger needed — a reversible CMS write, below the go-live gate.
+        if "cms_draft" in config.tools:
+            registry.register(
+                CmsDraftTool(cms_backend_from_env(root / "cms_drafts")), source=ToolSource.DEFAULT
+            )
+        # The governance tools (the CEO's reverse edge onto horizon) bind to the injected GovernancePort
+        # rather than the ledger, so they register in their own block — independent of the ledger, gated
+        # only on the port being present. Same fail-closed rule: no port ⇒ a role's governance tools are
+        # simply dropped from its toolset.
+        if self._governance is not None:
+            for name in config.tools:
+                gov_tool = governance_tool(name, self._governance)
+                if gov_tool is not None:
+                    registry.register(gov_tool, source=ToolSource.DEFAULT)
+        # test_evidence (Backend Engineer §10): a pure worktree runner — it runs the discovered verify
+        # commands via the execution context and writes the test_evidence/ bundle. No ledger, so it
+        # registers UNCONDITIONALLY (not behind the `self._ledger is not None` gate) — the design_lint fix.
+        if "test_evidence" in config.tools:
+            registry.register(TestEvidenceTool(), source=ToolSource.DEFAULT)
+        if "test_red" in config.tools:
+            registry.register(TestRedTool(), source=ToolSource.DEFAULT)
+        # secret_scan is the same shape: a pure worktree scanner that reads files + writes the
+        # security_scan/ report. No ledger, so it registers UNCONDITIONALLY too.
+        if "secret_scan" in config.tools:
+            registry.register(SecretScanTool(), source=ToolSource.DEFAULT)
+        # code_quality: a stack-blind executor that runs the discovered fmt/lint/type checks + writes
+        # the durable code_quality/ report. No ledger — registers UNCONDITIONALLY, like the above.
+        if "code_quality" in config.tools:
+            registry.register(CodeQualityTool(), source=ToolSource.DEFAULT)
+        # recall (spec 07 §11): read your OWN past episodic beats — recency/keyword. No
+        # ledger; rooted at the ORG's memory dir (company_root/memory), not the per-employee worktree
+        # — episodic capture is one shared SQLite store for the whole company.
+        if "recall" in config.tools:
+            episodic = EpisodicRecallService(EpisodicStore(self._company_root / "memory"))
+            registry.register(RecallTool(episodic), source=ToolSource.DEFAULT)
+            registry.register(GetRunTool(episodic), source=ToolSource.DEFAULT)
+        # lattice tools: read consolidated patterns (context), build the consolidation packet, apply
+        # adjudicated proposals. Reuses the lattice built (or not) at beat start above. Advisory like
+        # the adjudicate step: a broken lattice skips these tools (with a breadcrumb), never the beat.
+        if _LATTICE_TOOLS.intersection(config.tools):
+            if lattice is None:
+                try:
+                    lattice = build_lattice_for_chorus(
+                        self._company_root,
+                        canonical_skills_root=config.skills_root,
+                    )
+                except Exception as exc:
+                    write_lattice_error(root, site="materialize.tool_registration", error=exc)
+            if lattice is not None:
+                for name in _LATTICE_TOOLS.intersection(config.tools):
+                    tool = lattice_tool(name, lattice)
+                    if tool is not None:
+                        registry.register(tool, source=ToolSource.DEFAULT)
+        if "skill_manage" in config.tools and self._ledger is not None:
+            registry.register(
+                SkillManageTool(
+                    company_root=self._company_root,
+                    ledger=self._ledger,
+                    canonical_skills_root=(
+                        Path(config.skills_root) if config.skills_root else None
+                    ),
+                ),
+                source=ToolSource.DEFAULT,
+            )
+        # execute_go_live pairs with cms_draft: it publishes the staged draft once the human approves
+        # the stage_go_live gate. Needs BOTH the ledger (fail-closed gate check) and the worktree
+        # (standing-draft + delivery indexes), so it registers here rather than in _capability_tool.
+        if "execute_go_live" in config.tools and self._ledger is not None:
+            registry.register(
+                ExecuteGoLiveTool(
+                    self._ledger,
+                    publish_backend_from_env(root / "cms_drafts"),
+                    email_delivery=email_delivery_from_env(root / "cms_drafts"),
+                ),
+                source=ToolSource.DEFAULT,
+            )
+        # Analysis tools (ledger-free, worktree-scoped): warehouse_query / repo_search / notebook_run /
+        # chart_render. The generator runs tools=null, so registering them here is enough for the model
+        # to see and call them; they are not dream built-ins, so _role_registry skipped them above.
+        # (Web tools web_search/web_extract ARE dream built-ins, so _role_registry already picked them up.)
+        for name in config.tools:
+            atool = analysis_tool(name)
+            if atool is not None and registry.get(name) is None:
+                registry.register(atool, source=ToolSource.DEFAULT)
+
+        if strict_tdd:
+            if registry.get("spawn_subagent") is None:
+                registry.register(SpawnSubagentTool(), source=ToolSource.DEFAULT)
+            registry = TddProductionGate(root).wrap_registry(registry)
+
+        if "todo_write" in config.tools:
+            registry = registry_with_todo_flush_nudge(registry)
+        return registry
+
     def _materialize(
         self,
         employee: Employee | VerificationPrincipal,
@@ -905,112 +1028,9 @@ class EmployeeHarnessFactory:
         if config.mcp and config.mcp_servers:
             write_mcp_allowlist(root, config.mcp_servers)
 
-        registry = _role_registry(dream_tool_names(config.tools))
-        # Bind the role's chorus capability tools. The ledger-free ones (pure file readers:
-        # design_lint / design_exemplar / brand_lint) register regardless — they need no ledger, and
-        # withholding them when the factory has none is the bug that makes a role's own primitives
-        # vanish from its toolset. The ledger-bound ones (decompose / submit_task / …) need the live
-        # ledger and fail closed — dropped — when it is absent.
-        for name in config.tools:
-            if self._ledger is None and name not in _LEDGER_FREE_CAPABILITY_TOOLS:
-                continue
-            capability = _capability_tool(name, self._ledger, self._roles)
-            if capability is not None:
-                registry.register(capability, source=ToolSource.DEFAULT)
-        # cms_draft is registered here (not in _capability_tool): its Markdown fallback backend needs the
-        # worktree, and the backend (Strapi when its env is set, else Markdown) is config-selected. No
-        # ledger needed — a reversible CMS write, below the go-live gate.
-        if "cms_draft" in config.tools:
-            registry.register(
-                CmsDraftTool(cms_backend_from_env(root / "cms_drafts")), source=ToolSource.DEFAULT
-            )
-        # The governance tools (the CEO's reverse edge onto horizon) bind to the injected GovernancePort
-        # rather than the ledger, so they register in their own block — independent of the ledger, gated
-        # only on the port being present. Same fail-closed rule: no port ⇒ a role's governance tools are
-        # simply dropped from its toolset.
-        if self._governance is not None:
-            for name in config.tools:
-                gov_tool = governance_tool(name, self._governance)
-                if gov_tool is not None:
-                    registry.register(gov_tool, source=ToolSource.DEFAULT)
-        # test_evidence (Backend Engineer §10): a pure worktree runner — it runs the discovered verify
-        # commands via the execution context and writes the test_evidence/ bundle. No ledger, so it
-        # registers UNCONDITIONALLY (not behind the `self._ledger is not None` gate) — the design_lint fix.
-        if "test_evidence" in config.tools:
-            registry.register(TestEvidenceTool(), source=ToolSource.DEFAULT)
-        if "test_red" in config.tools:
-            registry.register(TestRedTool(), source=ToolSource.DEFAULT)
-        # secret_scan is the same shape: a pure worktree scanner that reads files + writes the
-        # security_scan/ report. No ledger, so it registers UNCONDITIONALLY too.
-        if "secret_scan" in config.tools:
-            registry.register(SecretScanTool(), source=ToolSource.DEFAULT)
-        # code_quality: a stack-blind executor that runs the discovered fmt/lint/type checks + writes
-        # the durable code_quality/ report. No ledger — registers UNCONDITIONALLY, like the above.
-        if "code_quality" in config.tools:
-            registry.register(CodeQualityTool(), source=ToolSource.DEFAULT)
-        # recall (spec 07 §11): read your OWN past episodic beats — recency/keyword. No
-        # ledger; rooted at the ORG's memory dir (company_root/memory), not the per-employee worktree
-        # — episodic capture is one shared SQLite store for the whole company.
-        if "recall" in config.tools:
-            episodic = EpisodicRecallService(EpisodicStore(self._company_root / "memory"))
-            registry.register(RecallTool(episodic), source=ToolSource.DEFAULT)
-            registry.register(GetRunTool(episodic), source=ToolSource.DEFAULT)
-        # lattice tools: read consolidated patterns (context), build the consolidation packet, apply
-        # adjudicated proposals. Reuses the lattice built (or not) at beat start above. Advisory like
-        # the adjudicate step: a broken lattice skips these tools (with a breadcrumb), never the beat.
-        if _LATTICE_TOOLS.intersection(config.tools):
-            if lattice is None:
-                try:
-                    lattice = build_lattice_for_chorus(
-                        self._company_root,
-                        canonical_skills_root=config.skills_root,
-                    )
-                except Exception as exc:
-                    write_lattice_error(root, site="materialize.tool_registration", error=exc)
-            if lattice is not None:
-                for name in _LATTICE_TOOLS.intersection(config.tools):
-                    tool = lattice_tool(name, lattice)
-                    if tool is not None:
-                        registry.register(tool, source=ToolSource.DEFAULT)
-        if "skill_manage" in config.tools and self._ledger is not None:
-            registry.register(
-                SkillManageTool(
-                    company_root=self._company_root,
-                    ledger=self._ledger,
-                    canonical_skills_root=(
-                        Path(config.skills_root) if config.skills_root else None
-                    ),
-                ),
-                source=ToolSource.DEFAULT,
-            )
-        # execute_go_live pairs with cms_draft: it publishes the staged draft once the human approves
-        # the stage_go_live gate. Needs BOTH the ledger (fail-closed gate check) and the worktree
-        # (standing-draft + delivery indexes), so it registers here rather than in _capability_tool.
-        if "execute_go_live" in config.tools and self._ledger is not None:
-            registry.register(
-                ExecuteGoLiveTool(
-                    self._ledger,
-                    publish_backend_from_env(root / "cms_drafts"),
-                    email_delivery=email_delivery_from_env(root / "cms_drafts"),
-                ),
-                source=ToolSource.DEFAULT,
-            )
-        # Analysis tools (ledger-free, worktree-scoped): warehouse_query / repo_search / notebook_run /
-        # chart_render. The generator runs tools=null, so registering them here is enough for the model
-        # to see and call them; they are not dream built-ins, so _role_registry skipped them above.
-        # (Web tools web_search/web_extract ARE dream built-ins, so _role_registry already picked them up.)
-        for name in config.tools:
-            atool = analysis_tool(name)
-            if atool is not None and registry.get(name) is None:
-                registry.register(atool, source=ToolSource.DEFAULT)
-
-        if strict_tdd:
-            if registry.get("spawn_subagent") is None:
-                registry.register(SpawnSubagentTool(), source=ToolSource.DEFAULT)
-            registry = TddProductionGate(root).wrap_registry(registry)
-
-        if "todo_write" in config.tools:
-            registry = registry_with_todo_flush_nudge(registry)
+        registry = self._build_tool_registry(
+            config, root=root, lattice=lattice, strict_tdd=strict_tdd
+        )
 
         # Subagents: project the role's Tier-1 declarations into dream's SubagentSet. The
         # spawn_subagent tool (already in the registry if "spawn_subagent" is in the role's tools)
