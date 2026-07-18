@@ -1036,6 +1036,22 @@ class Scheduler:
             # the recovery ladder with the phase on the evidence, owner preserved (§5).
             ledger.runs.finish(run_id, RunStatus.FAILED, outcome=verdict)
             self._resume_or_strand(task_id, employee_id=employee.id, result=result)
+        elif result.passed and task.execution_mode is ExecutionMode.DELEGATION:
+            # A delegation root that never fanned out cannot be done — its lifecycle is its
+            # subtree's, and the contract's acceptance/verification path only runs over children.
+            # (Found live 2026-07-18: a kickoff beat "passed" its in-beat evaluation without
+            # decomposing and landed DONE through the delivery path — zero children, contract
+            # never verified.) Park it and re-wake the lead to decompose.
+            ledger.runs.finish(run_id, RunStatus.SUCCEEDED, outcome=verdict)
+            ledger.tasks.set_status(task_id, TaskStatus.BLOCKED)
+            ledger.wakes.enqueue(
+                Wake(
+                    id=mint_id(),
+                    employee_id=employee.id,
+                    reason=WakeReason.CHILDREN_DONE,
+                    payload={"task_id": task_id, "cause": "delegation_root_never_decomposed"},
+                )
+            )
         elif result.passed:
             ledger.runs.finish(run_id, RunStatus.SUCCEEDED, outcome=verdict)
             await self._land_passed(
