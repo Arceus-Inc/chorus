@@ -115,3 +115,22 @@ def test_ceo_skills_exist_on_disk() -> None:
 def test_default_workforce_registers_the_ceo_from_here() -> None:
     assert "ceo" in {p.name for p in default_roles()}
     assert "ceo" in {p.name for p in default_employees()}
+
+
+def test_ceo_declares_the_executive_review_routine() -> None:
+    # Paperclip's default CEO loop, adapted: "review what your executives are doing, check
+    # metrics, reprioritize" — a standing heartbeat, so the org moves when nobody is watching.
+    from chorus.ledger import RoutineConcurrency
+    from chorus_employee.ceo import CEO_ROUTINES
+
+    plugin = ceo_plugin()
+    assert plugin.declared_routines == CEO_ROUTINES
+    assert {r.routine_key for r in CEO_ROUTINES} == {"ceo-executive-review"}
+    review = CEO_ROUTINES[0]
+    assert review.schedule == "0 * * * *"  # hourly — the cadence of an attentive executive
+    assert review.concurrency is RoutineConcurrency.COALESCE
+    # The loop's substance: goals, reports' progress, spend — and it stays report/propose only.
+    intent = review.intent_template.lower()
+    for topic in ("goal", "report", "spend", "propose"):
+        assert topic in intent
+    assert "do not" in intent  # never delegates or hires on its own — that crosses human gates
