@@ -14,7 +14,6 @@ context, to run the commands.
 
 from __future__ import annotations
 
-import json
 import sys
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -26,6 +25,8 @@ from dream.contracts.tool import ToolResult
 from dream.tools._base import BaseTool, ToolDeclaration
 from dream.tools._context import ToolExecutionContext
 from pydantic import BaseModel, Field
+
+from chorus_tools._shared import write_json
 
 GateStatus = Literal["pass", "fail"]
 
@@ -93,9 +94,7 @@ def write_bundle(worktree: Path, manifest: EvidenceManifest, outputs: Mapping[st
     """Write the ``test_evidence/`` bundle (the manifest + one log per gate); return its directory."""
     bundle = worktree / _BUNDLE_DIR
     bundle.mkdir(parents=True, exist_ok=True)
-    (bundle / _MANIFEST).write_text(
-        json.dumps(manifest.to_dict(), indent=2) + "\n", encoding="utf-8"
-    )
+    write_json(bundle / _MANIFEST, manifest.to_dict())
     for gate in manifest.gates:
         (bundle / _log_filename(gate.name)).write_text(outputs.get(gate.name, ""), encoding="utf-8")
     return bundle
@@ -257,7 +256,7 @@ class TestRedTool(BaseTool):
             "git_error": git_error,
         }
         manifest_path = _red_manifest_path(ctx.working_dir)
-        manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+        write_json(manifest_path, manifest)
         (manifest_path.parent / _RED_LOG).write_text(command_output, encoding="utf-8")
 
         if confirmed:

@@ -1099,7 +1099,7 @@ class Scheduler:
             verifier=verifier,
             beat_runner=beat_runner,
         )
-        # Operator decision (2026-07-18): employees verify their own work — no SYSTEM_VERIFIER beat
+        # Operator decision (2026-07-18): employees verify their own work — no system-verifier beat
         # before closing delegated work. The lead's own integrate acceptance is the verdict; the
         # deterministic descendants check (above) and the objective rollup command floor (cheap
         # command runs the lead's beat contracts to) remain the only gates.

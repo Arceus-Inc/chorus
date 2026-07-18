@@ -13,7 +13,6 @@ discover and read the files.
 
 from __future__ import annotations
 
-import json
 import re
 from collections.abc import Iterable
 from dataclasses import dataclass
@@ -24,6 +23,8 @@ from dream.contracts.tool import ToolResult
 from dream.tools._base import BaseTool, ToolDeclaration
 from dream.tools._context import ToolExecutionContext
 from pydantic import BaseModel, Field
+
+from chorus_tools._shared import write_json
 
 _REPORT_DIR = "security_scan"
 _REPORT = "report.json"
@@ -114,7 +115,7 @@ def write_report(worktree: Path, report: SecretScanReport) -> Path:
     """Write ``security_scan/report.json`` into the worktree; return its directory."""
     out = worktree / _REPORT_DIR
     out.mkdir(parents=True, exist_ok=True)
-    (out / _REPORT).write_text(json.dumps(report.to_dict(), indent=2) + "\n", encoding="utf-8")
+    write_json(out / _REPORT, report.to_dict())
     return out
 
 

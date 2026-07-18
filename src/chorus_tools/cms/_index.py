@@ -12,6 +12,7 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
+from chorus_tools._shared import write_json
 from chorus_tools.cms._types import DraftRef
 
 
@@ -31,7 +32,7 @@ class CmsDraftIndex:
         data = self._load()
         data[key] = ref.as_dict()
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        write_json(self.path, data)
 
     def _load(self) -> dict[str, object]:
         if not self.path.exists():

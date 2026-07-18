@@ -14,13 +14,15 @@ contract (``root_cause`` / ``safe_retry`` / ``stop_condition``) on every error p
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from typing import Literal
 
 from dream.contracts.tool import ToolResult
 from dream.tools._base import BaseTool, ToolDeclaration
 from dream.tools._context import ToolExecutionContext
 from pydantic import BaseModel, Field, ValidationError
+
+from chorus_tools._shared import rejected
 
 FindingKind = Literal["prohibited_phrase", "unsubstantiated_claim"]
 
@@ -63,13 +65,7 @@ class BrandFinding:
     fix: str  # a concrete, actionable remedy
 
     def as_dict(self) -> dict[str, object]:
-        return {
-            "kind": self.kind,
-            "line": self.line,
-            "quote": self.quote,
-            "rule": self.rule,
-            "fix": self.fix,
-        }
+        return asdict(self)
 
 
 def parse_prohibited_phrases(spec_text: str) -> tuple[str, ...]:
@@ -226,14 +222,10 @@ def _report(args: BrandLintInput, findings: tuple[BrandFinding, ...], spec_note:
 
 
 def _rejected(message: str) -> ToolResult:
-    return ToolResult(
-        content=f"brand_lint rejected: {message}",
-        is_error=True,
-        metadata={
-            "root_cause": message,
-            "safe_retry": "provide a non-empty 'doc' path (and optional 'spec'); both are read from the worktree",
-            "stop_condition": "the tool input was invalid",
-        },
+    return rejected(
+        "brand_lint",
+        message,
+        safe_retry="provide a non-empty 'doc' path (and optional 'spec'); both are read from the worktree",
     )
 
 

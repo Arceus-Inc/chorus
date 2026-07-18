@@ -23,7 +23,7 @@ never imports ``chorus_employee`` (that would invert the dependency direction).
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Literal
 
@@ -31,6 +31,8 @@ from dream.contracts.tool import ToolResult
 from dream.tools._base import BaseTool, ToolDeclaration
 from dream.tools._context import ToolExecutionContext
 from pydantic import BaseModel, Field, ValidationError
+
+from chorus_tools._shared import rejected
 
 FindingKind = Literal[
     "missing_project",
@@ -111,7 +113,7 @@ class EvidenceFinding:
     fix: str
 
     def as_dict(self) -> dict[str, object]:
-        return {"kind": self.kind, "detail": self.detail, "fix": self.fix}
+        return asdict(self)
 
 
 @dataclass(frozen=True, slots=True)
@@ -384,14 +386,10 @@ def _artifacts(report: EvidenceReport) -> dict[str, object]:
 
 
 def _rejected(message: str) -> ToolResult:
-    return ToolResult(
-        content=f"test_evidence rejected: {message}",
-        is_error=True,
-        metadata={
-            "root_cause": message,
-            "safe_retry": "call with no args to scan the standard bundle, or override the paths",
-            "stop_condition": "the tool input was invalid",
-        },
+    return rejected(
+        "test_evidence",
+        message,
+        safe_retry="call with no args to scan the standard bundle, or override the paths",
     )
 
 

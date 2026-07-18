@@ -8,7 +8,7 @@ without knowing the concrete type. :class:`DraftRef` is the backend-agnostic res
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from enum import StrEnum
 from typing import Protocol, runtime_checkable
 
@@ -145,13 +145,7 @@ class DraftRef:
     status: str = "draft"
 
     def as_dict(self) -> dict[str, str]:
-        return {
-            "backend": self.backend,
-            "content_type": self.content_type.value,
-            "ref_id": self.ref_id,
-            "url": self.url,
-            "status": self.status,
-        }
+        return asdict(self)
 
     @classmethod
     def from_dict(cls, data: dict[str, str]) -> DraftRef:

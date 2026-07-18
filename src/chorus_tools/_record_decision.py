@@ -12,7 +12,6 @@ stays policy-free; the floor policy is imported here from the PM package (a comp
 
 from __future__ import annotations
 
-import json
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -26,6 +25,7 @@ from chorus.ledger import Ledger
 from chorus.ledger._models import Claim, DecisionRecord, RejectedAlternative
 from chorus.lifecycle import CapabilityService, ClaimDraft
 from chorus_employee.pm._decision import clears_floor, render_decision_mirror
+from chorus_tools._shared import write_json
 
 _DECISION_MIRROR = "decision.json"
 
@@ -188,7 +188,7 @@ class RecordDecisionTool(BaseTool):
         can never drift from the lander's re-derivation of the same file.
         """
         payload = render_decision_mirror(record, claims)
-        (working_dir / _DECISION_MIRROR).write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        write_json(working_dir / _DECISION_MIRROR, payload)
 
 
 __all__ = ["RecordDecisionInput", "RecordDecisionTool"]
