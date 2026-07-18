@@ -347,3 +347,27 @@ def test_apply_provisions_role_declared_routines_for_each_hire(ledger: Ledger) -
     # And the backend engineer's two standing scans.
     engineer_keys = {r.routine_key for r in ledger.routines.list(employee_id="engineering-lead")}
     assert engineer_keys == {"backend-engineer-dependency-scan", "backend-engineer-slo-watch"}
+
+
+def test_apply_completes_the_proposing_task(ledger: Ledger) -> None:
+    """Free-run (found live 2026-07-18): a formation task whose plan was APPLIED kept re-beating
+    forever — burning spend on ledger-hygiene nitpicks. First principles: a proposal task is done
+    when its proposal is decided; the plan carries its origin task and approve completes it."""
+    import uuid as _uuid
+
+    from chorus.ledger import Task, TaskStatus
+
+    _seed_ceo(ledger)
+    origin = ledger.tasks.submit(
+        Task(id=str(_uuid.uuid4()), intent="form the org", assignee_employee_id="ceo")
+    )
+    service = _service(ledger)
+    plan = service.propose(
+        _draft(), proposed_by_employee_id="ceo", proposed_in_task_id=origin.id
+    )
+    assert ledger.workforce_plans.latest(plan.id).proposed_in_task_id == origin.id
+
+    service.approve(plan.id, approved_by_user_id="user-founder")
+
+    refreshed = ledger.tasks.get(origin.id)
+    assert refreshed is not None and refreshed.status is TaskStatus.DONE

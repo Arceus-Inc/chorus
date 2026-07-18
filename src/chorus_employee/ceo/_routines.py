@@ -21,10 +21,10 @@ CEO_EXECUTIVE_REVIEW = RoutineDeclaration(
     routine_key="ceo-executive-review",
     intent_template=(
         "Executive review: your evidence base is `company_state.json` in your worktree — the "
-        "mirrored ledger truth (goal tree, workforce with status and spend, open tasks). Read it "
+        "mirrored ledger truth (goal tree, workforce with status and spending, open tasks). Read it "
         "and cite it. Assess each active goal's health (progressing, stalled, or unowned) from "
         "the open tasks under it; review your reports' recent work and blockers; compare each "
-        "report's spend against their budget. Re-prioritize: note which goals deserve focus and "
+        "report's spending against their budget. Re-prioritize: note which goals deserve focus and "
         "which should pause. Where a goal lacks capacity, propose staffing via a workforce plan; "
         "where work is blocked, name the blocker and the unblocking step. Write the review as "
         "`directive.md`. Report and propose only — do not hire, delegate, or spend in this "

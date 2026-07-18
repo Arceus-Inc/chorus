@@ -205,6 +205,9 @@ class WorkforcePlanProposeTool(BaseTool):
                     ),
                 ),
                 proposed_by_employee_id=beat.employee_id,
+                # A proposal task is done when its proposal is decided — the plan carries its
+                # origin beat task so approval can complete it (free-run, found live).
+                proposed_in_task_id=beat.task_id,
                 staffing_request_id=args.staffing_request_id,
             )
         except (ValidationError, ValueError) as exc:

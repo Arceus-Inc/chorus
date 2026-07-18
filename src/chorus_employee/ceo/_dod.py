@@ -57,6 +57,13 @@ def _cue_matcher(cues: tuple[str, ...]) -> re.Pattern[str]:
     return re.compile(rf"\b(?:{alternation})s?\b")
 
 
+# A negated cue is the OPPOSITE of a commitment ("do not hire", "never fire … without sign-off").
+# Strip the negation's clause (bounded at punctuation, so "do not delay: hire two" still gates)
+# before matching. Live 2026-07-18: the executive-review routine's own guard sentence tripped the
+# commit gate and parked a PASSED report behind board approval.
+_NEGATION_CLAUSE_RE = re.compile(r"\b(?:do not|don't|never|no|without)\b[^.;:!?]*", re.IGNORECASE)
+
+
 _COMMIT_RE = _cue_matcher(_COMMIT_CUES)
 
 _DIRECTIVE_RUBRIC = (
@@ -110,7 +117,8 @@ _DIRECTIVE_RUBRIC = (
 
 def classify_action(intent: str) -> ActionClass:
     """Infer the action class from a beat's intent — an irreversible commitment wins the human gate."""
-    if _COMMIT_RE.search(intent.lower()):
+    affirmed = _NEGATION_CLAUSE_RE.sub(" ", intent.lower())
+    if _COMMIT_RE.search(affirmed):
         return ActionClass.COMMIT
     return ActionClass.DIRECTIVE
 

@@ -14,6 +14,7 @@ from chorus.ledger import (
     PlannedEmployee,
     StaffingRequest,
     StaffingRequestStatus,
+    TaskStatus,
     WorkforcePlan,
     WorkforcePlanDraft,
     WorkforcePlanStatus,
@@ -58,6 +59,7 @@ class WorkforcePlanService:
         *,
         proposed_by_employee_id: str,
         staffing_request_id: str | None = None,
+        proposed_in_task_id: str | None = None,
     ) -> WorkforcePlan:
         proposer = self._ledger.employees.get(proposed_by_employee_id)
         if (
@@ -92,6 +94,7 @@ class WorkforcePlanService:
             proposed_by_employee_id=proposer.id,
             draft=draft,
             staffing_request_id=staffing_request_id,
+            proposed_in_task_id=proposed_in_task_id,
         )
         with self._ledger.transaction():
             persisted = self._ledger.workforce_plans.create(plan)
@@ -150,6 +153,7 @@ class WorkforcePlanService:
             revised_by_user_id=actor,
             draft=draft,
             staffing_request_id=current.staffing_request_id,
+            proposed_in_task_id=current.proposed_in_task_id,
         )
         with self._ledger.transaction():
             self._ledger.workforce_plans.update_status(
@@ -228,6 +232,16 @@ class WorkforcePlanService:
                 WorkforcePlanStatus.APPLIED,
                 decided_by_user_id=actor,
             )
+            # A proposal task is done when its proposal is decided (free-run, found live):
+            # without this the formation task re-beats forever after its plan was applied.
+            if plan.proposed_in_task_id is not None:
+                origin = self._ledger.tasks.get(plan.proposed_in_task_id)
+                if origin is not None and origin.status.value not in {
+                    "done",
+                    "cancelled",
+                    "rejected",
+                }:
+                    self._ledger.tasks.set_status(origin.id, TaskStatus.DONE)
             record_activity(
                 self._ledger,
                 verb=ActivityVerb.WORKFORCE_PLAN_APPLIED,

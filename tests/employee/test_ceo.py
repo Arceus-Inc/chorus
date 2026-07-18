@@ -103,6 +103,23 @@ def test_ceo_classify_action() -> None:
     assert classify_action("ship to production on Friday") is ActionClass.COMMIT
 
 
+def test_ceo_classify_ignores_negated_cues() -> None:
+    """Live 2026-07-18: the executive-review routine's own guard sentence — "do not hire,
+    delegate, or spend in this routine" — tripped the commit gate, parking a PASSED report
+    behind board approval. A negated cue is the opposite of a commitment."""
+    from chorus_employee.ceo import CEO_ROUTINES
+
+    assert (
+        classify_action("report only — do not hire, delegate, or spend in this routine")
+        is ActionClass.DIRECTIVE
+    )
+    assert classify_action("never fire anyone without board sign-off") is ActionClass.DIRECTIVE
+    # A real commitment after a clause boundary still gates.
+    assert classify_action("do not delay: hire two engineers") is ActionClass.COMMIT
+    # The shipped routine intent itself must classify as a reviewed directive.
+    assert classify_action(CEO_ROUTINES[0].intent_template) is ActionClass.DIRECTIVE
+
+
 def test_ceo_skills_exist_on_disk() -> None:
     import chorus_employee.ceo as ceo_pkg
 

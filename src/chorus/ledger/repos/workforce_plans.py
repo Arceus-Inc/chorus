@@ -32,7 +32,8 @@ class WorkforcePlanRepo:
         self._conn.execute(
             "INSERT INTO workforce_plan (id, revision, status, proposed_by_employee_id, "
             "rationale, confidence, source_goal_ids, revised_by_user_id, decided_by_user_id, "
-            "staffing_request_id, created_at, decided_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "staffing_request_id, proposed_in_task_id, created_at, decided_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 plan.id,
                 plan.revision,
@@ -44,6 +45,7 @@ class WorkforcePlanRepo:
                 plan.revised_by_user_id,
                 plan.decided_by_user_id,
                 plan.staffing_request_id,
+                plan.proposed_in_task_id,
                 now,
                 plan.decided_at.isoformat() if plan.decided_at is not None else None,
             ),
@@ -173,6 +175,7 @@ class WorkforcePlanRepo:
             revised_by_user_id=row["revised_by_user_id"],
             decided_by_user_id=row["decided_by_user_id"],
             staffing_request_id=row["staffing_request_id"],
+            proposed_in_task_id=row["proposed_in_task_id"],
             created_at=from_iso(row["created_at"]),
             decided_at=from_iso(row["decided_at"]),
         )
