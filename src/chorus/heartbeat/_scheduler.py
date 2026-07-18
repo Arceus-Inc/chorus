@@ -38,6 +38,7 @@ from chorus.heartbeat._execution_profile import (
 from chorus.heartbeat._invokability import InvokabilityReason, invokability_block
 from chorus.heartbeat._runner_for import single
 from chorus.heartbeat._wake import TickReport, Wake
+from chorus.hooks import OrgHook, default_org_hooks, run_org_hooks
 from chorus.ids import mint_id
 from chorus.ledger import ApprovalGate, TaskPriority
 from chorus.ledger._models import (
@@ -483,6 +484,7 @@ class Scheduler:
         landers: LanderRegistry | None = None,
         clock: Callable[[], datetime] | None = None,
         sleep: Callable[[float], Awaitable[None]] | None = None,
+        org_hooks: tuple[OrgHook, ...] | None = None,
     ) -> None:
         self.tick_interval_s = tick_interval_s
         self.max_concurrent_runs = max_concurrent_runs
@@ -494,6 +496,8 @@ class Scheduler:
         # from its worktree + TODO.md before the task strands as too-big-for-one-beat. Distinct from the
         # DoD repair budget — a timeout is unfinished work, not a rejected attempt.
         self.max_resume_attempts = max_resume_attempts
+        # Org hooks: deterministic reactions the pulse fires after cron (chorus.hooks).
+        self._org_hooks = org_hooks if org_hooks is not None else default_org_hooks()
         # In-beat retry budget for *transient* engine faults (a planner/evaluator parse blip): re-run the
         # beat this many times before stranding it onto the recovery ladder (spec 05 §5).
         self.transient_retries = transient_retries
@@ -563,6 +567,10 @@ class Scheduler:
         for trigger in ledger.routine_triggers.due(now=now):
             if fire_routine(ledger, trigger, now=now) is not None:
                 routines_fired += 1
+
+        # (b2) ORG HOOKS — deterministic reactions to durable state (an instruction message
+        # becomes a task, …). Isolated + idempotent by contract; a hook bug never kills the pulse.
+        run_org_hooks(ledger, self._org_hooks)
 
         # (c) MONITORS — drain deferred self-wakes; a one-shot fire wakes the owner, an exhausted
         # monitor escalates per its recovery policy instead.
