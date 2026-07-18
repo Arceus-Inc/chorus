@@ -57,6 +57,7 @@ from chorus_employee._recall import PLANNER_TOOLLESS_NOTE
 from chorus_employee._shared_skills import SHARED_SKILLS_ROOT
 from chorus_employee.reviewer._harness import reviewer_manifest
 from chorus_harness._company_state import write_company_state
+from chorus_harness._env_capabilities import degrade_for_env
 from chorus_harness._skills import materialize_skills, materialize_versioned_skills_into
 from chorus_harness._tdd_gate import TddProductionGate
 from chorus_harness._trust import apply_trust
@@ -930,6 +931,9 @@ class EmployeeHarnessFactory:
                 is ReviewedBuildEvidenceProfile.TDD_REVIEW_V1
             )
         config = apply_trust(config, task=task, policy=self._trust_policy)
+        # Env-capability degradation (H2): a tool this environment cannot back (web research with no
+        # Tavily key) is dropped and disclosed in the brief — the beat still runs, on what's possible.
+        config = degrade_for_env(config)
         if verification_only:
             config = replace(
                 config,
