@@ -188,6 +188,17 @@ class WorkforcePlanService:
                         status=EmployeeStatus.IDLE,
                     )
                 )
+                # OM-1 (found live): a formed org must heartbeat like a facade-hired one —
+                # provision the role's declared routines exactly as ``Chorus.hire`` does.
+                plugin = self._roles.get(planned.profession)  # _validate pinned it exists
+                if plugin.declared_routines:
+                    from chorus.cron import reconcile_declared_routines
+
+                    reconcile_declared_routines(
+                        self._ledger,
+                        employee_id=planned.ref,
+                        declarations=plugin.declared_routines,
+                    )
                 if planned.budget_cents is not None:
                     self._ledger.budget_policies.create(
                         BudgetPolicy(
