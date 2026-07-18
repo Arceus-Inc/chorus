@@ -56,6 +56,7 @@ from chorus_employee._lattice import (
 from chorus_employee._recall import PLANNER_TOOLLESS_NOTE
 from chorus_employee._shared_skills import SHARED_SKILLS_ROOT
 from chorus_employee.reviewer._harness import reviewer_manifest
+from chorus_harness._company_state import write_company_state
 from chorus_harness._skills import materialize_skills, materialize_versioned_skills_into
 from chorus_harness._tdd_gate import TddProductionGate
 from chorus_harness._trust import apply_trust
@@ -256,6 +257,9 @@ _READ_ONLY_DREAM_SURFACE_TOOLS = frozenset(
         # the generator phase only.
         "governance_read",
         "workforce_catalog_read",
+        # read_comments is read-only/safe: a verifier judging "did the work address the thread"
+        # must be able to read it. The write half (comment) stays generator-only.
+        "read_comments",
     }
 )
 
@@ -1111,6 +1115,11 @@ class EmployeeHarnessFactory:
                     employee_id=employee.id,
                 )
             skill_registry, _shadows = load_skill_registry(project_dirs=[skills_dir])
+        # Free-run checklist #5: an executive beat receives the company state it must review —
+        # ledger truth mirrored as a citable worktree file (governance_read = the signature).
+        if self._ledger is not None and "governance_read" in config.tools:
+            write_company_state(self._ledger, root)
+
         harness = dream.build_harness(
             model=config.model or self._deployment,
             api_key=self._api_key,

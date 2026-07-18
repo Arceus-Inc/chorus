@@ -99,3 +99,21 @@ def test_unread_comments_are_injected_into_the_brief_and_consumed(
         assert ledger.messages.inbox("rex") == []  # consumed — the thread stays in for_task
     finally:
         ledger.close()
+
+
+def test_evaluator_head_may_read_the_thread(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A verifier judging "did the work address the comments" must be able to read the thread —
+    read_comments is read-only/safe, so it belongs to the evaluator's read surface. The write
+    half (comment) stays generator-only."""
+    ledger = open_test_ledger()
+    try:
+        ledger.employees.create(Employee(id=uid("eva"), name="Eva", role="backend_engineer"))
+        factory, _ = _factory(monkeypatch, tmp_path, ledger)
+        mat = factory.materialize(Employee(id=uid("eva"), name="Eva", role="backend_engineer"))
+        evaluator = (mat.working_dir / ".harness" / "roles" / "evaluator.toml").read_text("utf-8")
+        assert '"read_comments"' in evaluator
+        assert '"comment"' not in evaluator
+    finally:
+        ledger.close()
