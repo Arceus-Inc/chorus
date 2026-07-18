@@ -7,6 +7,7 @@ scopes the sum to the live budget window.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime
 
 from chorus.ledger._models import CostEvent
@@ -18,6 +19,25 @@ from chorus.ledger.repos._base import (
     to_iso,
     utcnow_iso,
 )
+
+
+@dataclass(frozen=True)
+class SpendGroup:
+    """One aggregate row of the spend ledger (the Costs read model's shape)."""
+
+    key: str  # the group value: a model name, employee slug, or ISO day
+    cost_cents: int
+    input_tokens: int
+    output_tokens: int
+    events: int
+
+
+# Closed whitelist: the group key is interpolated into SQL, so it is never caller text.
+_GROUP_EXPRESSIONS = {
+    "model": "model",
+    "employee": "employee_id",
+    "day": "to_char(occurred_at, 'YYYY-MM-DD')",  # UTC session (the connection pins it)
+}
 
 
 class CostEventRepo:
@@ -32,14 +52,15 @@ class CostEventRepo:
             raise ValueError("cost_cents must be non-negative")
         occurred = to_iso(event.occurred_at) or utcnow_iso()
         self._conn.execute(
-            "INSERT INTO cost_event (id, employee_id, task_id, run_id, provider, model, "
+            "INSERT INTO cost_event (id, employee_id, task_id, run_id, trace_id, provider, model, "
             "input_tokens, output_tokens, cost_cents, occurred_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 event.id,
                 event.employee_id,
                 event.task_id,
                 event.run_id,
+                event.trace_id,
                 event.provider,
                 event.model,
                 event.input_tokens,
@@ -51,6 +72,28 @@ class CostEventRepo:
         self._conn.commit()
         recorded = require_persisted(self.get(event.id), event.id)
         return recorded
+
+    def grouped(self, by: str) -> list[SpendGroup]:
+        """Spend aggregated by ``model`` | ``employee`` | ``day``, biggest first (OBS §5)."""
+        expression = _GROUP_EXPRESSIONS.get(by)
+        if expression is None:
+            raise ValueError(f"unknown spend grouping {by!r}")
+        rows = self._conn.execute(
+            f"SELECT {expression} AS key, SUM(cost_cents) AS cost_cents, "
+            f"SUM(input_tokens) AS input_tokens, SUM(output_tokens) AS output_tokens, "
+            f"COUNT(*) AS events FROM cost_event GROUP BY {expression} "
+            f"ORDER BY SUM(cost_cents) DESC, key"
+        ).fetchall()
+        return [
+            SpendGroup(
+                key=str(row["key"]),
+                cost_cents=int(row["cost_cents"]),
+                input_tokens=int(row["input_tokens"]),
+                output_tokens=int(row["output_tokens"]),
+                events=int(row["events"]),
+            )
+            for row in rows
+        ]
 
     def get(self, event_id: str) -> CostEvent | None:
         row = self._conn.execute("SELECT * FROM cost_event WHERE id = ?", (event_id,)).fetchone()
@@ -101,6 +144,7 @@ def _row_to_event(row: LedgerRow) -> CostEvent:
         cost_cents=row["cost_cents"],
         task_id=row["task_id"],
         run_id=row["run_id"],
+        trace_id=row["trace_id"],
         input_tokens=row["input_tokens"],
         output_tokens=row["output_tokens"],
         occurred_at=from_iso(row["occurred_at"]),

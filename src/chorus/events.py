@@ -48,6 +48,12 @@ class EventKind(StrEnum):
     # subagents — dream's intra-beat swarm (spawn_subagent)
     SUBAGENT_SPAWNED = "run.subagent_spawned"
     SUBAGENT_COMPLETED = "run.subagent_completed"
+    # memory — retrieval at the moment of use (OBS P5); learning events come with their taps
+    MEMORY_RETRIEVED = "memory.retrieved"
+    # model calls — one role session's spend (model, tokens, cache, cost)
+    LLM_CALL = "llm.call"
+    # watchdog — an orphaned lease was reaped (silent-run / crashed-beat surfacing)
+    RUN_STALLED = "run.stalled"
     # cron — tick
     ROUTINE_FIRED = "routine.fired"
     ROUTINE_SUPPRESSED = "routine.suppressed"

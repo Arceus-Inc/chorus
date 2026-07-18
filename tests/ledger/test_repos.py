@@ -362,3 +362,81 @@ def test_list_eligible_excludes_human_owned(ledger: Ledger) -> None:
     )
     # human-owned t2 is excluded — checkout would always reject it (eligibility ⇔ claimability)
     assert [t.id for t in ledger.tasks.list_eligible(limit=10)] == [uid("t1")]
+
+
+def test_runs_running_lists_live_beats_oldest_first(ledger: Ledger) -> None:
+    from datetime import UTC, datetime
+
+    from chorus.ledger._models import Run, RunStatus
+
+    ledger.employees.create(Employee(id="ada", name="Ada", role="engineer"))
+    ledger.tasks.submit(Task(id=uid("rr-t1"), intent="a", assignee_employee_id="ada"))
+    for n, rid in enumerate((uid("rr-r1"), uid("rr-r2"))):
+        ledger.runs.create(
+            Run(
+                id=rid,
+                employee_id="ada",
+                task_id=uid("rr-t1"),
+                status=RunStatus.RUNNING,
+                started_at=datetime(2026, 6, 1, 12, n, tzinfo=UTC),
+            )
+        )
+    assert [run.id for run in ledger.runs.running()] == [uid("rr-r1"), uid("rr-r2")]
+
+
+def test_cost_events_grouped_spend(ledger: Ledger) -> None:
+    from datetime import UTC, datetime
+
+    from chorus.ledger._models import CostEvent
+
+    ledger.employees.create(Employee(id="ada", name="Ada", role="engineer"))
+    ledger.employees.create(Employee(id="bex", name="Bex", role="pm"))
+    for n, (eid, model, cents) in enumerate(
+        [("ada", "gpt-x", 300), ("ada", "gpt-mini", 50), ("bex", "gpt-x", 100)]
+    ):
+        ledger.cost_events.record(
+            CostEvent(
+                id=uid(f"ce-{n}"),
+                employee_id=eid,
+                provider="dream",
+                model=model,
+                cost_cents=cents,
+                input_tokens=10 * (n + 1),
+                output_tokens=5,
+                occurred_at=datetime(2026, 6, 1 + n, 12, 0, tzinfo=UTC),
+            )
+        )
+
+    by_model = {row.key: row for row in ledger.cost_events.grouped("model")}
+    assert by_model["gpt-x"].cost_cents == 400
+    assert by_model["gpt-mini"].cost_cents == 50
+    assert by_model["gpt-x"].events == 2
+
+    by_employee = {row.key: row for row in ledger.cost_events.grouped("employee")}
+    assert by_employee["ada"].cost_cents == 350
+
+    by_day = {row.key: row for row in ledger.cost_events.grouped("day")}
+    assert by_day["2026-06-01"].cost_cents == 300
+    assert len(by_day) == 3
+
+    try:
+        ledger.cost_events.grouped("provider; DROP TABLE cost_event")  # type: ignore[arg-type]
+        raise AssertionError("unreachable")
+    except ValueError:
+        pass  # closed whitelist — never interpolate a caller string
+
+
+def test_artifacts_list_recent(ledger: Ledger) -> None:
+    from chorus.ledger import Artifact, ArtifactType
+
+    ledger.employees.create(Employee(id="ada", name="Ada", role="engineer"))
+    for n in range(3):
+        task_id = uid(f"ar-t{n}")
+        ledger.tasks.submit(Task(id=task_id, intent=f"work {n}", assignee_employee_id="ada"))
+        ledger.artifacts.create(
+            Artifact(id=uid(f"ar-a{n}"), task_id=task_id, type=ArtifactType.DOC)
+        )
+    recent = ledger.artifacts.list_recent(limit=2)
+    assert len(recent) == 2
+    assert recent[0].id == uid("ar-a2")  # newest first
+    assert ledger.artifacts.list_recent(limit=10)[-1].id == uid("ar-a0")

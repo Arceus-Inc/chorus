@@ -23,10 +23,11 @@ from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 from pathlib import Path
-from typing import TYPE_CHECKING, Protocol, TypeVar, runtime_checkable
+from typing import TYPE_CHECKING, Any, Protocol, TypeVar, runtime_checkable
 
 from chorus.adapters._failure import failure_outcome
 from chorus.cron._fire import fire_routine
+from chorus.events import Event, EventKind
 from chorus.governance import GovernanceResolver
 from chorus.heartbeat._beat import BeatDisposition, BeatOutcome
 from chorus.heartbeat._beat_context import BeatContext, IntegrateContextPacket
@@ -60,6 +61,7 @@ from chorus.ledger._models import (
 from chorus.lifecycle import TERMINAL, record_activity
 from chorus.lifecycle._team_policy import MissionTeamPolicy
 from chorus.memory import EpisodicStore, SprintDelta, beat_fingerprint
+from chorus.observability._trace import TraceStamper, trace_root
 from chorus.outcomes import (
     AgentReview,
     DoDKind,
@@ -72,7 +74,6 @@ from chorus.verification import SYSTEM_VERIFIER, VerificationPrincipal
 
 if TYPE_CHECKING:
     from chorus.budgets import BudgetEnforcer
-    from chorus.events import Event
     from chorus.heartbeat._beat import BeatRunner
     from chorus.heartbeat._runner_for import BeatRunnerFor
     from chorus.ledger import Ledger, Task
@@ -542,6 +543,19 @@ class Scheduler:
         # (a) RECOVER — reap orphaned leases + reconcile stranded work before any new dispatch, so
         # a crashed beat's lock is freed and its slot returned to the budget this same pulse.
         swept = reconcile(ledger, now=now)
+        for (
+            reaped_run_id
+        ) in swept.reaped_runs:  # watchdog: a reaped lease is a red lane, not a counter
+            reaped = ledger.runs.get(reaped_run_id)
+            if reaped is not None:
+                self._emit_allocation(
+                    EventKind.RUN_STALLED,
+                    at=now,
+                    task_id=reaped.task_id,
+                    employee_id=reaped.employee_id,
+                    run_id=reaped.id,
+                    payload={"reason": "lease_expired"},
+                )
         recovered = len(swept.reaped_runs) + self._recover_landed_delegations(ledger)
 
         # (b) CRON — fire due routines (each firing double-fire-guarded; writes a task, never a beat).
@@ -658,6 +672,13 @@ class Scheduler:
             ):
                 ledger.wakes.release(wake.id)
                 budget_gated += 1
+                self._emit_allocation(
+                    EventKind.BUDGET_HARD_STOP,
+                    at=now,
+                    task_id=str(wake.payload["task_id"]),
+                    employee_id=wake.employee_id,
+                    payload={"gate": "dispatch"},
+                )
                 continue
             task_id = str(wake.payload["task_id"])
             run_id = mint_id()
@@ -667,6 +688,22 @@ class Scheduler:
                 ledger.wakes.release(wake.id)
                 continue
             busy.add(wake.employee_id)
+            self._emit_allocation(
+                EventKind.WAKE_CLAIMED,
+                at=now,
+                task_id=task_id,
+                employee_id=wake.employee_id,
+                run_id=run_id,
+                payload={"reason": wake.reason.value, "coalesced": wake.coalesced_count},
+            )
+            self._emit_allocation(
+                EventKind.TASK_STATUS,
+                at=now,
+                task_id=task_id,
+                employee_id=wake.employee_id,
+                run_id=run_id,
+                payload={"from": "todo", "to": "in_progress"},
+            )
             self._dispatch_beat(wake, run_id=run_id, now=now)
             dispatched += 1
 
@@ -869,7 +906,18 @@ class Scheduler:
         ):
             return
 
-        observer = self._event_bus.emit if self._event_bus is not None else None
+        trace_id = trace_root(ledger, task.id)  # the lineage root — the product's run anchor
+        observer = (
+            TraceStamper(
+                self._event_bus.emit,
+                trace_id=trace_id,
+                task_id=task.id,
+                employee_id=employee.id,
+                run_id=run_id,
+            )
+            if self._event_bus is not None
+            else None
+        )
         verifier = None
         beat_runner: BeatRunner | None = None
         # The fingerprint baseline: HEAD *before* the beat runs, so the beat-end diff spans exactly this
@@ -1040,7 +1088,14 @@ class Scheduler:
         )
         ledger.tasks.release_locks(task_id, run_id=run_id)
         ledger.wakes.mark_done(wake.id)
-        self._record_cost(employee.id, task_id=task_id, run_id=run_id, result=result, now=now)
+        self._record_cost(
+            employee.id,
+            task_id=task_id,
+            run_id=run_id,
+            trace_id=trace_id,
+            result=result,
+            now=now,
+        )
 
     async def _capture_memory(
         self,
@@ -1322,7 +1377,17 @@ class Scheduler:
                     "the objective is satisfied."
                 ),
                 rubric=rubric,
-                observer=self._event_bus.emit if self._event_bus is not None else None,
+                observer=(
+                    TraceStamper(
+                        self._event_bus.emit,
+                        trace_id=trace_root(ledger, task.id),
+                        task_id=task.id,
+                        employee_id=lead.id,
+                        run_id=verification_run_id,
+                    )
+                    if self._event_bus is not None
+                    else None
+                ),
             )
         except Exception as exc:
             review = failure_outcome(exc)
@@ -1587,7 +1652,17 @@ class Scheduler:
             BeatContext(task_id=task_id, run_id=review_run_id, employee_id=reviewer.id).write(
                 worktree
             )
-        observer = self._event_bus.emit if self._event_bus is not None else None
+        observer = (
+            TraceStamper(
+                self._event_bus.emit,
+                trace_id=trace_root(ledger, task_id),
+                task_id=task_id,
+                employee_id=reviewer.id,
+                run_id=review_run_id,
+            )
+            if self._event_bus is not None
+            else None
+        )
         try:
             result = await runner.run_task(
                 task_id=task_id,
@@ -2018,8 +2093,40 @@ class Scheduler:
             )
         )
 
+    def _emit_allocation(
+        self,
+        kind: EventKind,
+        *,
+        at: datetime,
+        task_id: str,
+        employee_id: str,
+        run_id: str | None = None,
+        payload: dict[str, Any] | None = None,
+    ) -> None:
+        """Mirror one allocation transition onto the bus (OBS P6) — no bus, no-op."""
+        if self._event_bus is None:
+            return
+        self._event_bus.emit(
+            Event(
+                kind=kind,
+                at=at,
+                trace_id=trace_root(self._require_ledger(), task_id),
+                task_id=task_id,
+                employee_id=employee_id,
+                run_id=run_id,
+                payload=payload or {},
+            )
+        )
+
     def _record_cost(
-        self, employee_id: str, *, task_id: str, run_id: str, result: BeatOutcome, now: datetime
+        self,
+        employee_id: str,
+        *,
+        task_id: str,
+        run_id: str,
+        trace_id: str,
+        result: BeatOutcome,
+        now: datetime,
     ) -> None:
         """Record the beat's spend as a cost event and run Gate 2 against it (spec 04 §3).
 
@@ -2040,6 +2147,7 @@ class Scheduler:
                 cost_cents=result.cost_cents,
                 input_tokens=result.input_tokens,
                 output_tokens=result.output_tokens,
+                trace_id=trace_id,
                 occurred_at=now,
             )
         )

@@ -16,12 +16,14 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Sequence
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from chorus.budgets import BudgetEnforcer
 from chorus.cron import reconcile_declared_routines
 from chorus.errors import OrgInvariantViolation
+from chorus.events import Event, EventKind
 from chorus.governance import GovernancePolicy
 from chorus.groups import (
     BudgetsFacade,
@@ -294,8 +296,8 @@ class Chorus:
             self._ledger.dod.create(task.id, dod)
         for blocker in depends_on:
             self._ledger.dependencies.add(task.id, blocker)
-        if employee_id is not None:
-            assign_task(self._ledger, task.id, employee_id)
+        wake = assign_task(self._ledger, task.id, employee_id) if employee_id is not None else None
+        self._emit_intake(task, assignee_id=employee_id, wake=wake)
         return task
 
     def _submit_root_delegation(
@@ -379,7 +381,7 @@ class Chorus:
                     self._ledger.dod.create(task.id, dod)
                 for blocker in depends_on:
                     self._ledger.dependencies.add(task.id, blocker)
-                assign_task(self._ledger, task.id, lead.id)
+                wake = assign_task(self._ledger, task.id, lead.id)
         except LedgerIntegrityError:
             if origin_kind is not OriginKind.HORIZON_INTAKE:
                 raise
@@ -387,7 +389,48 @@ class Chorus:
             if existing is None:
                 raise
             return existing
+        self._emit_intake(task, assignee_id=lead.id, wake=wake)
         return task
+
+    def _emit_intake(self, task: Task, *, assignee_id: str | None, wake: Wake | None) -> None:
+        """Mirror intake onto the bus (OBS P6) — an intake task is its own lineage root."""
+        at = datetime.now(UTC)
+        self._event_bus.emit(
+            Event(
+                kind=EventKind.TASK_CREATED,
+                at=at,
+                trace_id=task.id,
+                task_id=task.id,
+                employee_id=assignee_id,
+                payload={
+                    "intent_excerpt": task.intent[:200],
+                    "priority": task.priority.value,
+                    "execution_mode": task.execution_mode.value,
+                },
+            )
+        )
+        if assignee_id is not None:
+            self._event_bus.emit(
+                Event(
+                    kind=EventKind.TASK_ASSIGNED,
+                    at=at,
+                    trace_id=task.id,
+                    task_id=task.id,
+                    employee_id=assignee_id,
+                    payload={},
+                )
+            )
+        if wake is not None:
+            self._event_bus.emit(
+                Event(
+                    kind=EventKind.WAKE_ENQUEUED,
+                    at=at,
+                    trace_id=task.id,
+                    task_id=task.id,
+                    employee_id=wake.employee_id,
+                    payload={"reason": wake.reason.value},
+                )
+            )
 
     def assign(
         self, task_id: str, employee_id: str, *, assigned_by: str | None = None

@@ -36,6 +36,13 @@ class ArtifactRepo:
         self._conn.commit()
         return artifact
 
+    def list_recent(self, *, limit: int) -> list[Artifact]:
+        """The company's landed outcomes, newest first — the product's artifacts index."""
+        rows = self._conn.execute(
+            "SELECT * FROM artifact ORDER BY created_at DESC, id DESC LIMIT ?", (limit,)
+        ).fetchall()
+        return [_row_to_artifact(row) for row in rows]
+
     def get(self, artifact_id: str) -> Artifact | None:
         row = self._conn.execute("SELECT * FROM artifact WHERE id = ?", (artifact_id,)).fetchone()
         return _row_to_artifact(row) if row is not None else None
