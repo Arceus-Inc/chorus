@@ -302,7 +302,7 @@ async def test_failure_without_a_command_dod_just_blocks(ledger: Ledger) -> None
 
 
 async def test_non_command_dod_needs_changes_rewakes_to_continue(ledger: Ledger) -> None:
-    """A reviewed_build/agent_review ``needs-changes`` beat means the (multi-sprint) build isn't done —
+    """An ``agent_review`` needs-changes beat means the (multi-sprint) build isn't done —
     the kernel re-dispatches the assignee (bounded) to resume it, rather than stranding it ``blocked``
     where no later beat can finish it (spec 04 §1, spec 05 one-beat-one-sprint)."""
     employee = _seed(ledger)

@@ -10,7 +10,7 @@ from __future__ import annotations
 import pytest
 
 from chorus.ledger import DodStatus, Ledger, Task, TaskStatus
-from chorus.outcomes import DoDKind, ReviewedBuild, Verifier
+from chorus.outcomes import DoDKind, Verifier
 from chorus.testing import uid
 
 pytestmark = pytest.mark.integration
@@ -45,19 +45,19 @@ def test_propose_revision_stages_without_touching_the_in_force_verifier(
     ledger: Ledger,
 ) -> None:
     ledger.tasks.submit(Task(id=uid("t1"), intent="ship", status=TaskStatus.TODO))
-    ledger.dod.create(uid("t1"), Verifier.reviewed_build())
+    ledger.dod.create(uid("t1"), Verifier.agent_review(rubric="be strict"))
     ledger.dod.propose_revision(uid("t1"), Verifier.command("pytest"))  # a loosen, staged
 
     dod = ledger.dod.get_for_task(uid("t1"))
     assert dod is not None
     assert dod.revision == 1  # not bumped yet
-    assert ledger.dod.verifier_for_task(uid("t1")).kind is DoDKind.REVIEWED_BUILD  # type: ignore[union-attr]
+    assert ledger.dod.verifier_for_task(uid("t1")).kind is DoDKind.AGENT_REVIEW  # type: ignore[union-attr]
     assert dod.proposed_revision is not None  # the staged loosen
 
 
 def test_apply_proposed_revision_promotes_and_clears(ledger: Ledger) -> None:
     ledger.tasks.submit(Task(id=uid("t1"), intent="ship", status=TaskStatus.TODO))
-    ledger.dod.create(uid("t1"), Verifier.reviewed_build())
+    ledger.dod.create(uid("t1"), Verifier.agent_review(rubric="be strict"))
     ledger.dod.propose_revision(uid("t1"), Verifier.command("pytest"))
     ledger.dod.apply_proposed_revision(uid("t1"))
 
@@ -70,19 +70,10 @@ def test_apply_proposed_revision_promotes_and_clears(ledger: Ledger) -> None:
 
 def test_clear_proposed_drops_the_staged_revision(ledger: Ledger) -> None:
     ledger.tasks.submit(Task(id=uid("t1"), intent="ship", status=TaskStatus.TODO))
-    ledger.dod.create(uid("t1"), Verifier.reviewed_build())
+    ledger.dod.create(uid("t1"), Verifier.agent_review(rubric="be strict"))
     ledger.dod.propose_revision(uid("t1"), Verifier.command("pytest"))
     ledger.dod.clear_proposed(uid("t1"))
 
     dod = ledger.dod.get_for_task(uid("t1"))
     assert dod is not None and dod.proposed_revision is None
-    assert ledger.dod.verifier_for_task(uid("t1")).kind is DoDKind.REVIEWED_BUILD  # type: ignore[union-attr]
-
-
-def test_reviewed_build_evidence_profile_round_trips(ledger: Ledger) -> None:
-    ledger.tasks.submit(Task(id=uid("t1"), intent="ship", status=TaskStatus.TODO))
-    ledger.dod.create(uid("t1"), Verifier.reviewed_build(evidence_profile="tdd_review_v1"))
-
-    verifier = ledger.dod.verifier_for_task(uid("t1"))
-    assert verifier is not None and isinstance(verifier.spec, ReviewedBuild)
-    assert verifier.spec.evidence_profile == "tdd_review_v1"
+    assert ledger.dod.verifier_for_task(uid("t1")).kind is DoDKind.AGENT_REVIEW  # type: ignore[union-attr]

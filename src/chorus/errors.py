@@ -71,40 +71,12 @@ class RolePluginConflict(ChorusError):
     code = "chorus.role_plugin_conflict"
 
 
-class SwarmRoleInvalid(ChorusError):
-    """Shared swarm-role registration failed validation (spec GM §4)."""
-
-    code = "chorus.swarm_role_invalid"
-
-
-class SwarmRoleConflict(ChorusError):
-    """A swarm-role name was re-registered with a different definition without ``replace=True``."""
-
-    code = "chorus.swarm_role_conflict"
-
-
-class BudgetBlocked(ChorusError):
-    """A submit/dispatch was refused by a hard-stop budget gate (spec 04 §3)."""
-
-    code = "chorus.budget_blocked"
-
-
-class PackageImportError(ChorusError):
-    """A portable-package import failed a version gate or has unresolved refs (spec 09 §3)."""
-
-    code = "chorus.package_import"
-
-
 __all__ = [
     "ActiveDelegationConflict",
-    "BudgetBlocked",
     "ChorusError",
     "InvalidIntake",
     "OrgInvariantViolation",
-    "PackageImportError",
     "RolePluginConflict",
     "RolePluginInvalid",
-    "SwarmRoleConflict",
-    "SwarmRoleInvalid",
     "UnknownEmployee",
 ]

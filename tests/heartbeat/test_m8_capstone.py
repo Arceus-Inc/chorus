@@ -346,7 +346,6 @@ async def test_specialist_nested_delegation_capstone_folds_verified_root_exactly
         for task in tasks
     )
     assert len([task for task in tasks if task.origin_fingerprint == "nested-correction"]) == 1
-    assert all(task.assignee_employee_id != "system-verifier" for task in tasks)
     assert all(team.status is TeamStatus.ARCHIVED for team in ledger.teams.list())
     verified = [
         event
@@ -355,22 +354,16 @@ async def test_specialist_nested_delegation_capstone_folds_verified_root_exactly
         if event.verb is ActivityVerb.PARENT_VERIFIED
     ]
     assert len(verified) == 2 and all(event.payload["passed"] is True for event in verified)
-    assert all(event.payload["reviewer_id"] == "system-verifier" for event in verified)
-    verification_runs = [
-        ledger.runs.get(str(event.payload["verification_run_id"])) for event in verified
+    # Operator decision (2026-07-18): employees verify their own work — the lead's accepted run IS
+    # the verifying run; no system-principal verification beat exists anywhere in the tree.
+    accepted = {contract.accepted_run_id for contract in contracts}
+    assert all(event.payload["run_id"] in accepted for event in verified)
+    assert not [
+        run
+        for task in tasks
+        for run in ledger.runs.for_task(task.id)
+        if run.principal_kind == "system"
     ]
-    assert all(run is not None for run in verification_runs)
-    assert all(
-        run.principal_id == "system-verifier"
-        and run.employee_id in {"root-lead", "nested-lead"}
-        and run.lease_expires_at is not None
-        and run.finished_at is not None
-        for run in verification_runs
-        if run is not None
-    )
-    assert {str(event.payload["verification_run_id"]) for event in verified}.isdisjoint(
-        {contract.accepted_run_id for contract in contracts}
-    )
     assert {task_id for task_id, _ in org.verification_snapshots} == {
         contract.task_id for contract in contracts
     }

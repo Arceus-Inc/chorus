@@ -2,9 +2,8 @@
 
 Lean and principled per docs/plans/2026-07-18-hooks-and-briefs-research.md §B (podium repo): the
 brief carries identity, autonomy stance, communication contract, ranked judgment priorities, and
-ending discipline — the LAW lives in the machinery. The TDD chronology is enforced by
-``TddProductionGate`` (production writes are denied pre-RED and the denial teaches the retry path),
-the evidence bundle and test hashes are validated by the kernel (``tdd_review_v1``), and
+ending discipline — the LAW lives in the machinery. The TDD chronology is proven by the
+``test_red``/``test_evidence`` tools (RED captured before production, gates recorded green), and
 ``code_quality`` refuses partial or no-op reports. Deep procedure lives on the self-describing
 tools and in the role's skills; the composition root layers this brief onto each dream intra-task
 role as a per-role overlay.

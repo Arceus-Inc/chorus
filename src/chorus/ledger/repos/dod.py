@@ -25,8 +25,6 @@ from chorus.outcomes import (
     Command,
     DoDKind,
     HumanApproval,
-    ReviewedBuild,
-    ReviewedBuildEvidenceProfile,
     Verifier,
 )
 
@@ -179,20 +177,6 @@ def _verifier_from_parts(kind_value: str, spec: dict[str, object], artifact_clas
     if kind is DoDKind.AGENT_REVIEW:
         return Verifier(
             kind, AgentReview(str(spec["reviewer_role"]), str(spec["rubric"])), artifact_class
-        )
-    if kind is DoDKind.REVIEWED_BUILD:
-        evidence_profile = spec.get("evidence_profile")
-        return Verifier(
-            kind,
-            ReviewedBuild(
-                str(spec["reviewer_role"]),
-                str(spec["rubric"]),
-                int(cast("int", spec["verify_timeout_s"])),
-                ReviewedBuildEvidenceProfile(str(evidence_profile))
-                if evidence_profile is not None
-                else None,
-            ),
-            artifact_class,
         )
     return Verifier(kind, HumanApproval(str(spec["approver"])), artifact_class)
 

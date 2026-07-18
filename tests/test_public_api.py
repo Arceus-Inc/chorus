@@ -81,8 +81,6 @@ EXPECTED_PUBLIC_API: frozenset[str] = frozenset(
         "OrgInvariantViolation",
         "RolePluginInvalid",
         "RolePluginConflict",
-        "BudgetBlocked",
-        "PackageImportError",
         # metadata
         "__version__",
     }

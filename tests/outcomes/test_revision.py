@@ -46,26 +46,6 @@ def test_cross_kind_change_is_a_loosen() -> None:
     assert classify(old, new) is RevisionDirection.LOOSEN
 
 
-def test_reviewed_build_adds_the_build_obligation_over_review() -> None:
-    old = Verifier.agent_review(reviewer_role="reviewer")
-    new = Verifier.reviewed_build(reviewer_role="reviewer")
-    # reviewed_build = {review, build} ⊋ {review} → tighten.
-    assert classify(old, new) is RevisionDirection.TIGHTEN
-
-
-def test_adding_structured_evidence_to_reviewed_build_is_a_tightening() -> None:
-    old = Verifier.reviewed_build()
-    new = Verifier.reviewed_build(evidence_profile="tdd_review_v1")
-
-    assert classify(old, new) is RevisionDirection.TIGHTEN
-
-
-def test_reviewed_build_to_review_drops_the_build_obligation() -> None:
-    old = Verifier.reviewed_build(reviewer_role="reviewer")
-    new = Verifier.agent_review(reviewer_role="reviewer")
-    assert classify(old, new) is RevisionDirection.LOOSEN
-
-
 def test_conjunct_order_does_not_matter() -> None:
     # obligations are a set — reordering is not a change.
     old = Verifier.command("pytest && ruff check")

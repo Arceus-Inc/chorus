@@ -18,7 +18,6 @@ Layered so the logic is model-free and unit-tested: :class:`QualityReport` is a 
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal, get_args
@@ -27,6 +26,8 @@ from dream.contracts.tool import ToolResult
 from dream.tools._base import BaseTool, ToolDeclaration
 from dream.tools._context import ToolExecutionContext
 from pydantic import BaseModel, Field, model_validator
+
+from chorus_tools._shared import write_json
 
 _REPORT_DIR = "code_quality"
 _REPORT = "report.json"
@@ -102,7 +103,7 @@ def write_report(worktree: Path, report: QualityReport) -> Path:
     """Write ``code_quality/report.json`` into the worktree; return its directory."""
     out = worktree / _REPORT_DIR
     out.mkdir(parents=True, exist_ok=True)
-    (out / _REPORT).write_text(json.dumps(report.to_dict(), indent=2) + "\n", encoding="utf-8")
+    write_json(out / _REPORT, report.to_dict())
     return out
 
 

@@ -40,7 +40,6 @@ from chorus.roles import RoleBeatConfig, RoleRegistry, role_beat_config
 from chorus.roles._manifest import McpServerSpec
 from chorus.roles._subagent import SubagentSpec
 from chorus.trust import TrustPolicy
-from chorus.verification import VerificationPrincipal
 from chorus.workforce import Employee
 from chorus.workspace import CompanyWorkspace, default_work_root
 from chorus_employee import default_landers
@@ -52,7 +51,6 @@ from chorus_employee._lattice import (
 )
 from chorus_employee._recall import PLANNER_TOOLLESS_NOTE
 from chorus_employee._shared_skills import SHARED_SKILLS_ROOT
-from chorus_employee.reviewer._harness import reviewer_manifest
 from chorus_harness._company_state import write_company_state
 from chorus_harness._env_capabilities import degrade_for_env
 from chorus_harness._skills import materialize_skills, materialize_versioned_skills_into
@@ -74,7 +72,6 @@ from chorus_tools import (
     SecretScanTool,
     StaffingRequestTool,
     SubmitTaskTool,
-    SubmitVerdictTool,
     TeamReadTool,
     TestEvidenceTool,
     TestRedTool,
@@ -338,8 +335,6 @@ def _capability_tool(
             return AssignTaskTool(ledger)
         if name == "team_read":
             return TeamReadTool(ledger)
-        if name == "submit_verdict":
-            return SubmitVerdictTool(ledger)
         if name == "stage_go_live":
             return GoLiveTool(ledger)
         if name == "record_decision":
@@ -694,8 +689,8 @@ class EmployeeHarnessFactory:
         Symmetric with :meth:`runner_for`: the factory owns execution, so it owns how each employee's
         deliverable lands. The consumer wires both at once —
         ``Chorus.build(..., beat_runner_for=factory.runner_for, landers=factory.landers)`` — instead of
-        hand-building ``default_landers`` at every call site. The manager and verifier verdict landers
-        come online only when the factory holds the live ledger they read from.
+        hand-building ``default_landers`` at every call site. The manager's subtree lander comes
+        online only when the factory holds the live ledger it reads from.
         """
         return default_landers(self._company_root, ledger=self._ledger)
 
@@ -703,58 +698,8 @@ class EmployeeHarnessFactory:
         """The :class:`~chorus.heartbeat.BeatRunnerFor` seam — the role-faithful runner for a beat."""
         return self.materialize(employee, task_id=task_id).runner
 
-    def review_runner_for(
-        self, reviewer: VerificationPrincipal, *, task_id: str, worktree_owner_id: str
-    ) -> BeatRunner:
-        """Build the system verifier in the author's worktree without a workforce role."""
-        return self.materialize_verifier(
-            reviewer,
-            task_id=task_id,
-            worktree_owner_id=worktree_owner_id,
-        ).runner
-
-    def verification_runner_for(
-        self, reviewer: VerificationPrincipal, *, task_id: str, worktree_owner_id: str
-    ) -> BeatRunner:
-        """Build a read-only system verifier that returns evidence without mutating the task DoD."""
-        return self.materialize_verifier(
-            reviewer,
-            task_id=task_id,
-            worktree_owner_id=worktree_owner_id,
-            verification_only=True,
-        ).runner
-
-    def materialize_verifier(
-        self,
-        principal: VerificationPrincipal,
-        *,
-        task_id: str,
-        worktree_owner_id: str,
-        verification_only: bool = False,
-    ) -> EmployeeHarness:
-        """Materialize the built-in verifier profile without registering or persisting an employee."""
-        return self._materialize(
-            principal,
-            task_id=task_id,
-            review_worktree_of=worktree_owner_id,
-            verification_only=verification_only,
-            config_override=role_beat_config(reviewer_manifest()),
-        )
-
-    def materialize(
-        self,
-        employee: Employee,
-        *,
-        task_id: str | None = None,
-        review_worktree_of: str | None = None,
-        verification_only: bool = False,
-    ) -> EmployeeHarness:
-        return self._materialize(
-            employee,
-            task_id=task_id,
-            review_worktree_of=review_worktree_of,
-            verification_only=verification_only,
-        )
+    def materialize(self, employee: Employee, *, task_id: str | None = None) -> EmployeeHarness:
+        return self._materialize(employee, task_id=task_id)
 
     def _build_tool_registry(
         self,
@@ -874,12 +819,9 @@ class EmployeeHarnessFactory:
 
     def _materialize(
         self,
-        employee: Employee | VerificationPrincipal,
+        employee: Employee,
         *,
         task_id: str | None = None,
-        review_worktree_of: str | None = None,
-        verification_only: bool = False,
-        config_override: RoleBeatConfig | None = None,
     ) -> EmployeeHarness:
         """Resolve ``employee``'s role into a configured dream harness in its isolated worktree.
 
@@ -887,16 +829,9 @@ class EmployeeHarnessFactory:
         already has children) is materialized **without** ``decompose``, so the model can react with
         ``submit_task`` / ``assign_task`` but cannot re-decompose a delegated subtree (M3 §5). The
         kickoff beat (no children yet) keeps ``decompose``.
-
-        ``review_worktree_of`` points a (read-only) reviewer at another employee's worktree as its
-        working dir, so it inspects the work under review *in place* — the verdict is rendered on the
-        real diff, and the reviewer's read-only sandbox makes the borrowed worktree look-but-don't-touch.
         """
-        if config_override is None and (
-            not isinstance(employee, Employee) or employee.role not in self._roles
-        ):
-            role = employee.role if isinstance(employee, Employee) else employee.kind
-            raise ValueError(f"role {role!r} for {employee.id!r} is not a registered role")
+        if employee.role not in self._roles:
+            raise ValueError(f"role {employee.role!r} for {employee.id!r} is not a registered role")
 
         # §4 trust: narrow the harness to the task's effective preset (read-only / plan for a low-trust
         # beat) and assert containment. A TrustDenied propagates — an uncontained beat is not built.
@@ -905,24 +840,15 @@ class EmployeeHarnessFactory:
             if task_id is not None and self._ledger is not None
             else None
         )
-        if config_override is not None:
-            config = config_override
-        elif self._ledger is None or review_worktree_of is not None:
-            assert isinstance(employee, Employee)
+        if self._ledger is None:
             config = role_beat_config(self._roles.get(employee.role).manifest)
         else:
-            assert isinstance(employee, Employee)
             profile = ExecutionProfileResolver(self._roles, self._ledger).resolve(employee, task)
             config = profile.config
         config = apply_trust(config, task=task, policy=self._trust_policy)
         # Env-capability degradation (H2): a tool this environment cannot back (web research with no
         # Tavily key) is dropped and disclosed in the brief — the beat still runs, on what's possible.
         config = degrade_for_env(config)
-        if verification_only:
-            config = replace(
-                config,
-                tools=tuple(tool for tool in config.tools if tool != "submit_verdict"),
-            )
 
         # Persisted contract status selects the phase-specific management tools in the execution
         # profile. Child presence is retained only for worktree synchronization and the completed
@@ -970,14 +896,8 @@ class EmployeeHarnessFactory:
         # comments are communication, not authority: they run nothing). And the inbox IS the brief
         # (paperclip: inbox = assigned tasks + comments): unread messages land in the operating
         # brief and are consumed, so the thread stays readable via read_comments but the nudge
-        # never repeats. Verification beats stay OUTSIDE the coordination channel by design —
-        # the verifier's independence is the point — and a non-employee principal has no ledger
-        # row for the message FK anyway.
-        if (
-            self._ledger is not None
-            and not verification_only
-            and self._ledger.employees.get(employee.id) is not None
-        ):
+        # never repeats.
+        if self._ledger is not None and self._ledger.employees.get(employee.id) is not None:
             missing = tuple(t for t in ("comment", "read_comments") if t not in config.tools)
             if missing:
                 config = replace(config, tools=(*config.tools, *missing))
@@ -1006,14 +926,13 @@ class EmployeeHarnessFactory:
         workspace: CompanyWorkspace | None = None
         if config.isolation == "worktree":
             workspace = CompanyWorkspace(self._company_root, seed=self._seed)
-            worktree_owner = review_worktree_of if review_worktree_of is not None else employee.id
             # Integrate beat: the manager delegated, so its worktree still sits at the ``main`` it
             # branched from — blind to the children's deliverables that have since landed. Sync it to
             # ``main`` first so the manager reviews the real, merged subtree instead of an empty tree
             # (read_file on the children's files would otherwise error and the verdict be vacuous).
-            if is_integrate_beat and review_worktree_of is None:
-                workspace.sync_to_main(worktree_owner)
-            root = workspace.worktree_for(worktree_owner).path
+            if is_integrate_beat:
+                workspace.sync_to_main(employee.id)
+            root = workspace.worktree_for(employee.id).path
         else:
             root = self._company_root / employee.id
         root.mkdir(parents=True, exist_ok=True)
@@ -1045,13 +964,8 @@ class EmployeeHarnessFactory:
                     ),
                 )
         # Corrective replacement: a child whose same-assignee siblings already failed inherits
-        # their exact findings (never applied to verifier/borrowed-worktree materializations).
-        if (
-            self._ledger is not None
-            and task is not None
-            and config_override is None
-            and review_worktree_of is None
-        ):
+        # their exact findings.
+        if self._ledger is not None and task is not None:
             inheritance = _failure_inheritance(self._ledger, task, root)
             if inheritance:
                 config = replace(config, system_prompt=config.system_prompt + inheritance)

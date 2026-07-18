@@ -17,13 +17,15 @@ contract (``root_cause`` / ``safe_retry`` / ``stop_condition``) on every error p
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from typing import Literal
 
 from dream.contracts.tool import ToolResult
 from dream.tools._base import BaseTool, ToolDeclaration
 from dream.tools._context import ToolExecutionContext
 from pydantic import BaseModel, Field, ValidationError
+
+from chorus_tools._shared import rejected
 
 FindingKind = Literal["off_token_color", "off_scale_spacing", "missing_a11y_note"]
 
@@ -81,13 +83,7 @@ class DesignFinding:
     fix: str  # a concrete, actionable remedy
 
     def as_dict(self) -> dict[str, object]:
-        return {
-            "kind": self.kind,
-            "line": self.line,
-            "quote": self.quote,
-            "rule": self.rule,
-            "fix": self.fix,
-        }
+        return asdict(self)
 
 
 def parse_design_tokens(system_text: str) -> DesignTokens:
@@ -292,14 +288,10 @@ def _report(
 
 
 def _rejected(message: str) -> ToolResult:
-    return ToolResult(
-        content=f"design_lint rejected: {message}",
-        is_error=True,
-        metadata={
-            "root_cause": message,
-            "safe_retry": "provide a non-empty 'doc' path (and optional 'system'); both are read from the worktree",
-            "stop_condition": "the tool input was invalid",
-        },
+    return rejected(
+        "design_lint",
+        message,
+        safe_retry="provide a non-empty 'doc' path (and optional 'system'); both are read from the worktree",
     )
 
 

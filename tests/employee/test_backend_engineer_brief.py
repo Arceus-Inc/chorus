@@ -187,9 +187,8 @@ def test_brief_mandates_test_first_tdd_via_the_test_author() -> None:
     assert "test_red" in lower
     # Per docs/plans/2026-07-18-hooks-and-briefs-research.md §B the RED-chronology prohibitions
     # ("without writing a production file", "do not edit those test files after RED", the test-hash
-    # warning) left the brief: TddProductionGate (chorus_harness/_tdd_gate.py) denies production
-    # writes pre-RED and its denial messages teach the retry path, and the kernel rejects a delivery
-    # whose independently authored tests changed after RED. The gates hold; prose would only decay.
+    # warning) left the brief: the test_red/test_evidence tools prove the chronology. Prose would
+    # only decay.
     assert "quote the exact assigned behavior" in lower
     assert "never ask it to infer" in lower
 
@@ -234,16 +233,6 @@ def test_dod_is_a_self_judged_agent_review_without_evidence_file_demands() -> No
         "api_verdict.json",
     ):
         assert evidence_file not in rubric
-
-
-def test_reviewer_treats_red_evidence_as_historical_and_runs_current_floor() -> None:
-    from chorus_employee.reviewer._brief import REVIEWER_BRIEF
-
-    brief = REVIEWER_BRIEF.lower()
-    assert "historical" in brief
-    assert "red_evidence" in brief
-    assert "current defect" in brief
-    assert "verify_command" in brief
 
 
 def test_dod_rubric_requires_tests_to_actually_run() -> None:

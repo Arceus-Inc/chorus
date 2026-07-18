@@ -38,12 +38,11 @@ def test_landers_is_a_registry_with_the_engineer_pr_lander() -> None:
     assert "pr" in landers  # the Engineer's deliverable lands without needing a ledger
 
 
-def test_landers_adds_manager_and_reviewer_when_a_ledger_is_present() -> None:
+def test_landers_adds_the_manager_when_a_ledger_is_present() -> None:
     ledger = open_test_ledger()
     try:
         landers = _factory(ledger=ledger).landers
         assert "pr" in landers  # engineer
         assert "subtree" in landers  # manager (reads its delegated children from the ledger)
-        assert "verdict" in landers  # reviewer (reads the recorded verdict)
     finally:
         ledger.close()

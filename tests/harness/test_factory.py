@@ -31,7 +31,6 @@ from chorus.ledger import (
 )
 from chorus.roles import RoleRegistry, default_roles
 from chorus.testing import open_test_ledger, uid
-from chorus.verification import SYSTEM_VERIFIER
 from chorus.workforce import Employee
 from chorus_harness import _factory as _factory_mod
 
@@ -262,26 +261,6 @@ def test_materialized_skill_bundle_is_git_excluded_from_the_worktree(
     )
 
 
-def test_system_verifier_materializes_a_read_only_harness(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    factory, captured = _factory(monkeypatch, tmp_path, None)
-    mat = factory.materialize_verifier(
-        SYSTEM_VERIFIER, task_id=uid("review"), worktree_owner_id="ada"
-    )
-    # the headline win: a reviewer is read-only EVERYWHERE — not just in chat. Its only tool with no
-    # ledger is read_file plus its scratch-confined offload companion (submit_verdict needs a ledger to
-    # bind to, registered in the ledger-bound test).
-    names = {t.name for t in captured["registry"].list_tools()}
-    assert names == {"read_file", "read_offloaded"}
-    # DEFAULT permission so it can call its ledger-only verdict tool; its read-only-ness is structural —
-    # no file-writing tool + the read-only sandbox tier.
-    assert mat.config.permission_mode == "default"
-    sandbox = (mat.working_dir / ".harness" / "sandbox.toml").read_text(encoding="utf-8")
-    assert 'tier = "read-only"' in sandbox
-    assert "confirm_unrestricted" not in sandbox
-
-
 def test_delegation_harness_registers_the_decompose_capability_tool(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, ledger: Ledger
 ) -> None:
@@ -426,55 +405,6 @@ def test_integrate_beat_over_a_complete_subtree_drops_all_mutating_tools(
         }  # only reads + coordination remain before acceptance
     finally:
         ledger.close()
-
-
-def test_system_verifier_harness_registers_the_submit_verdict_capability_tool(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, ledger: Ledger
-) -> None:
-    # The Reviewer's one capability is the chorus `submit_verdict` tool — read-only on the filesystem,
-    # it mutates only the ledger DoD verdict. Registered when the factory has a ledger to bind it to.
-    ledger = open_test_ledger()
-    try:
-        captured: dict[str, Any] = {}
-        monkeypatch.setattr(
-            _factory_mod.dream, "build_harness", lambda **kw: captured.update(kw) or object()
-        )
-        factory = _factory_mod.EmployeeHarnessFactory(
-            api_key="k",
-            base_url="https://x/openai/v1",
-            deployment="gpt-x",
-            company_id="acme",
-            roles=RoleRegistry.from_plugins(default_roles()),
-            work_root=tmp_path,
-            ledger=ledger,
-        )
-        factory.materialize_verifier(
-            SYSTEM_VERIFIER, task_id=uid("review"), worktree_owner_id="ada"
-        )
-        names = {t.name for t in captured["registry"].list_tools()}
-        assert names == {
-            "read_file",
-            "read_offloaded",
-            "submit_verdict",
-        }  # read-only inspection + the verdict capability
-    finally:
-        ledger.close()
-
-
-def test_system_verifier_is_materialized_at_the_worker_s_worktree(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, ledger: Ledger
-) -> None:
-    # The reviewer inspects the work IN PLACE: pointed at the worker's worktree as its (read-only)
-    # working dir, so the verdict is rendered on the real diff. Its read-only sandbox keeps it look-only.
-    factory, _ = _factory(monkeypatch, tmp_path, ledger)
-    review = factory.materialize_verifier(
-        SYSTEM_VERIFIER, task_id=uid("review"), worktree_owner_id="ada"
-    )
-    assert (
-        review.working_dir == tmp_path / "acme" / "worktrees" / "ada"
-    )  # ada's worktree, not a system-principal worktree
-    sandbox = (review.working_dir / ".harness" / "sandbox.toml").read_text(encoding="utf-8")
-    assert 'tier = "read-only"' in sandbox
 
 
 def test_delegation_brief_is_rehydrated_with_its_team(

@@ -21,7 +21,6 @@ import logging
 import subprocess
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
-from hashlib import sha256
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol, TypeVar, runtime_checkable
 
@@ -30,7 +29,7 @@ from chorus.cron._fire import fire_routine
 from chorus.events import Event, EventKind
 from chorus.governance import GovernanceResolver
 from chorus.heartbeat._beat import BeatDisposition, BeatOutcome
-from chorus.heartbeat._beat_context import BeatContext, IntegrateContextPacket
+from chorus.heartbeat._beat_context import IntegrateContextPacket
 from chorus.heartbeat._execution_profile import (
     ExecutionProfileResolver,
     ResolvedExecutionProfile,
@@ -63,15 +62,8 @@ from chorus.lifecycle import TERMINAL, record_activity
 from chorus.lifecycle._team_policy import MissionTeamPolicy
 from chorus.memory import EpisodicStore, SprintDelta, beat_fingerprint
 from chorus.observability._trace import TraceStamper, trace_root
-from chorus.outcomes import (
-    AgentReview,
-    DoDKind,
-    ReviewedBuild,
-    ReviewedBuildEvidenceProfile,
-    Verifier,
-)
+from chorus.outcomes import DoDKind, Verifier
 from chorus.recovery import reconcile
-from chorus.verification import SYSTEM_VERIFIER, VerificationPrincipal
 
 if TYPE_CHECKING:
     from chorus.budgets import BudgetEnforcer
@@ -86,104 +78,6 @@ if TYPE_CHECKING:
 
 _T = TypeVar("_T")
 _logger = logging.getLogger("chorus.heartbeat.scheduler")
-_MAX_EVIDENCE_BYTES = 1_048_576
-
-
-def _read_evidence_object(
-    worktree: Path, relative_path: str
-) -> tuple[dict[str, object] | None, str]:
-    """Load one bounded, regular JSON evidence object from the worktree."""
-    path = worktree / relative_path
-    if not path.is_file() or path.is_symlink():
-        return None, f"{relative_path} is missing or is not a regular file"
-    try:
-        if path.stat().st_size > _MAX_EVIDENCE_BYTES:
-            return None, f"{relative_path} exceeds {_MAX_EVIDENCE_BYTES} bytes"
-        value = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
-        return None, f"{relative_path} is not valid JSON: {exc}"
-    if not isinstance(value, dict):
-        return None, f"{relative_path} must contain a JSON object"
-    return value, ""
-
-
-def _tdd_review_evidence_passes(worktree: Path) -> tuple[bool, str]:
-    """Validate the versioned RED, gate, plan, and independent-review evidence contract."""
-    manifest, reason = _read_evidence_object(worktree, "test_evidence/manifest.json")
-    if manifest is None:
-        return False, reason
-    gates = manifest.get("gates")
-    if manifest.get("verdict") != "pass" or not isinstance(gates, list) or not gates:
-        return False, "test_evidence/manifest.json must declare pass with at least one gate"
-    for index, gate in enumerate(gates):
-        if not isinstance(gate, dict):
-            return False, f"test_evidence/manifest.json gate {index} is not an object"
-        if (
-            not str(gate.get("name", "")).strip()
-            or not str(gate.get("command", "")).strip()
-            or gate.get("status") != "pass"
-            or type(gate.get("returncode")) is not int
-            or gate.get("returncode") != 0
-        ):
-            return False, f"test_evidence/manifest.json gate {index} is not a recorded pass"
-
-    red, reason = _read_evidence_object(worktree, "test_evidence/red.json")
-    if red is None:
-        return False, reason
-    test_paths = red.get("test_paths")
-    test_hashes = red.get("test_hashes")
-    if (
-        red.get("verdict") != "red-confirmed"
-        or red.get("expected_failure_matched") is not True
-        or red.get("command_unavailable") is not False
-        or not str(red.get("command", "")).strip()
-        or type(red.get("returncode")) is not int
-        or red.get("returncode") == 0
-        or not isinstance(test_paths, list)
-        or not test_paths
-        or not all(isinstance(path, str) and path.strip() for path in test_paths)
-        or not isinstance(test_hashes, dict)
-        or set(test_hashes) != set(test_paths)
-        or not all(isinstance(value, str) and len(value) == 64 for value in test_hashes.values())
-        or red.get("production_paths") != []
-        or red.get("invalid_test_paths") != []
-        or red.get("missing_tests") != []
-    ):
-        return False, "test_evidence/red.json does not prove valid RED-before-production"
-    for relative_path in test_paths:
-        candidate = Path(relative_path)
-        if candidate.is_absolute() or ".." in candidate.parts:
-            return False, f"test_evidence/red.json test path escapes worktree: {relative_path}"
-        test_path = worktree / candidate
-        if not test_path.is_file() or test_path.is_symlink():
-            return False, f"RED-captured test is missing or invalid: {relative_path}"
-        try:
-            current_hash = sha256(test_path.read_bytes()).hexdigest()
-        except OSError as exc:
-            return False, f"RED-captured test cannot be read: {relative_path}: {exc}"
-        if current_hash != test_hashes[relative_path]:
-            return False, f"RED-captured test changed after RED: {relative_path}"
-
-    test_plan, reason = _read_evidence_object(worktree, "test_plan.json")
-    if test_plan is None:
-        return False, reason
-    if not test_plan:
-        return False, "test_plan.json must contain a non-empty independent test plan"
-
-    review, reason = _read_evidence_object(worktree, "review_verdict.json")
-    if review is None:
-        return False, reason
-    findings = review.get("findings")
-    if (
-        review.get("cleared") is not True
-        or not isinstance(findings, list)
-        or not str(review.get("evidence", "")).strip()
-        or any(
-            isinstance(finding, dict) and finding.get("severity") == "high" for finding in findings
-        )
-    ):
-        return False, "review_verdict.json is not a cleared independent review"
-    return True, "structured TDD and review evidence passed"
 
 
 @runtime_checkable
@@ -199,29 +93,6 @@ class _RunnerWithWorkingDir(Protocol):
     def working_dir(self) -> Path | None: ...
 
 
-@runtime_checkable
-class _ReviewRunnerFor(Protocol):
-    """A factory that can materialize a read-only reviewer beat at *another* employee's worktree.
-
-    The reviewer inspects the work under review in place (the author's worktree), so the verdict is
-    rendered on the real diff. Checked structurally so a plain :class:`BeatRunnerFor` (no review seam)
-    degrades gracefully to materializing the reviewer in its own worktree.
-    """
-
-    def review_runner_for(
-        self, reviewer: VerificationPrincipal, *, task_id: str, worktree_owner_id: str
-    ) -> BeatRunner: ...
-
-
-@runtime_checkable
-class _VerificationRunnerFor(Protocol):
-    """Materialize a reviewer that can inspect but cannot write a verdict or mutate work."""
-
-    def verification_runner_for(
-        self, reviewer: VerificationPrincipal, *, task_id: str, worktree_owner_id: str
-    ) -> BeatRunner: ...
-
-
 def _utc_now() -> datetime:
     return datetime.now(UTC)
 
@@ -234,11 +105,11 @@ _VERIFY_SPAWN_FAILED_EXIT = 127
 
 
 def _run_verify_command(worktree: Path, command: str, *, timeout_s: int) -> tuple[int, str]:
-    """Run a reviewer-discovered verify command in ``worktree`` — the kernel's objective floor.
+    """Run a DoD verify command in ``worktree`` — the kernel's objective floor.
 
     Returns ``(exit_code, output_tail)``. A timeout or a spawn failure is a *non-zero* exit (treated as a
     failing build), so a build can never pass by failing to run. Runs in the engineer's already-isolated,
-    already-unrestricted worktree — the same trust tier the engineer itself executes at (M3 reviewed-build).
+    already-unrestricted worktree — the same trust tier the engineer itself executes at.
     """
     try:
         completed = subprocess.run(
@@ -264,52 +135,6 @@ def _as_text(value: str | bytes | None) -> str:
     if value is None:
         return ""
     return value if isinstance(value, str) else value.decode("utf-8", "replace")
-
-
-_MANIFEST_MAX_FILES = 200
-# Top-level dirs that are infrastructure, not the author's deliverable: git plumbing and the kernel's
-# own per-beat harness injection (role overlays, sandbox config, cron). A diff review never inspects
-# these — they are identical in every worktree — so they are excluded to keep the manifest signal-rich.
-_MANIFEST_EXCLUDED_ROOTS = frozenset({".git", ".dream", ".harness"})
-
-
-def _worktree_file_manifest(worktree: Path | None, *, max_files: int = _MANIFEST_MAX_FILES) -> str:
-    """The relative paths of the author's files in ``worktree`` — what a list-less reviewer can't see.
-
-    A read-only Reviewer's toolset is ``(read_file, submit_verdict)``: it can read a file by path but has
-    no way to enumerate a directory. Without this it guesses standard manifest names, misses the author's
-    actual files, and wrongly judges the worktree empty. The kernel hands it the listing so it reviews
-    what is really there. Harness/VCS plumbing (:data:`_MANIFEST_EXCLUDED_ROOTS`) is dropped; the list is
-    sorted and capped.
-    """
-    if worktree is None or not worktree.is_dir():
-        return ""
-    paths: list[str] = []
-    for path in sorted(worktree.rglob("*")):
-        if not path.is_file():
-            continue
-        rel = path.relative_to(worktree)
-        if rel.parts and rel.parts[0] in _MANIFEST_EXCLUDED_ROOTS:
-            continue
-        paths.append(rel.as_posix())
-        if len(paths) >= max_files:
-            paths.append(f"… (listing truncated at {max_files} files)")
-            break
-    return "\n".join(paths)
-
-
-# Leaf DoD kinds the kernel gates with a separate read-only Reviewer beat: NONE. Operator decision
-# (2026-07-18): employees verify their own work — no second verifier beat. The in-beat evaluation
-# (dream's plan→generate→evaluate loop judging the role rubric) IS the verdict, so even a stray
-# ``ReviewedBuild`` DoD lands through the normal passed path.
-_REVIEWER_GATED_DODS: frozenset[DoDKind] = frozenset()
-
-
-def _review_rubric(spec: object) -> str:
-    """The rubric carried by a reviewer-gated DoD."""
-    if isinstance(spec, AgentReview | ReviewedBuild):
-        return spec.rubric
-    return ""
 
 
 _OUTCOME_BY_DISPOSITION: dict[BeatDisposition, str] = {
@@ -472,7 +297,6 @@ class Scheduler:
         max_resume_attempts: int = 2,
         transient_retries: int = 2,
         max_integrate_iterations: int = 3,
-        max_review_rounds: int = 2,
         memory_writer: EpisodicStore | None = None,
         company_root: Path | None = None,
         ledger: Ledger | None = None,
@@ -505,9 +329,6 @@ class Scheduler:
         # How many adaptive integrate beats a manager gets per goal before the kernel forces
         # acceptance of the completed subtree — bounds the submit→re-integrate loop (spec M3 §5).
         self.max_integrate_iterations = max_integrate_iterations
-        # How many times a reviewer may block a standalone (no-manager) deliverable and have its author
-        # self-repair before the kernel opens a recovery card for a human (M3 load-bearing Reviewer).
-        self.max_review_rounds = max_review_rounds
         self._ledger = ledger
         self._workforce = workforce
         # The beat seam is per-employee (resolve a role-faithful runner for the dispatched employee). A
@@ -911,7 +732,6 @@ class Scheduler:
             task=task,
             employee=employee,
             execution_profile=execution_profile,
-            now=now,
         ):
             return
 
@@ -956,9 +776,7 @@ class Scheduler:
             verifier = ledger.dod.verifier_for_task(task_id)
             verification = verifier.verification_steps() if verifier is not None else ()
             # Spec 16: an ``agent_review`` DoD's rubric rides into dream's single in-beat evaluator so
-            # one ``run_task`` renders the judgment verdict — no redundant second Reviewer beat. A
-            # ``reviewed_build`` rubric is withheld here; its Reviewer beat still discovers + runs the
-            # objective command floor (and would judge a worktree the in-beat evaluator can't yet see).
+            # one ``run_task`` renders the judgment verdict — no redundant second Reviewer beat.
             rubric = (
                 verifier.rubric()
                 if verifier is not None and verifier.kind is DoDKind.AGENT_REVIEW
@@ -1008,7 +826,6 @@ class Scheduler:
                     outcome_kind=(
                         execution_profile.outcome_kind if execution_profile is not None else None
                     ),
-                    now=now,
                 )
             elif (
                 self._integrate_floor_verdict(task_id, verifier=verifier, beat_runner=beat_runner)
@@ -1037,7 +854,6 @@ class Scheduler:
                     outcome_kind=(
                         execution_profile.outcome_kind if execution_profile is not None else None
                     ),
-                    now=now,
                 )
         elif result.disposition is BeatDisposition.ERRORED:
             # Engine/tool fault: the run failed. A wall-clock TIMEOUT is unfinished-not-wrong — resume it
@@ -1073,7 +889,6 @@ class Scheduler:
                 outcome_kind=(
                     execution_profile.outcome_kind if execution_profile is not None else None
                 ),
-                now=now,
             )
         else:
             ledger.runs.finish(run_id, RunStatus.FAILED, outcome=verdict)
@@ -1081,13 +896,12 @@ class Scheduler:
                 task_id=task_id, run_id=run_id, dod_status=DodStatus.FAILED, verdict=verdict
             )
             # A DoD failure on a *manager-parented* leaf escalates to the manager (mark REJECTED, wake it
-            # on children_done) so its integrate beat reacts — the same coherence loop a reviewer block
-            # drove (spec 15). Since spec 16 renders the ``agent_review`` verdict in-beat (no second
-            # Reviewer beat), the child block now arrives here, not via ``_run_review`` → ``_route_block``;
-            # routing it the same way keeps the manager loop intact. A standalone leaf climbs the bounded
-            # self-repair ladder (spec 04 §1) as before.
+            # on children_done) so its integrate beat reacts (spec 15). Since spec 16 renders the
+            # ``agent_review`` verdict in-beat (no second Reviewer beat), the child block arrives here;
+            # routing it via ``_route_block`` keeps the manager loop intact. A standalone leaf climbs the
+            # bounded self-repair ladder (spec 04 §1) as before.
             if self._manager_of(task) is not None:
-                self._route_block(task_id, author=employee)
+                self._route_block(task_id)
             else:
                 self._climb_repair_ladder(task_id, employee_id=employee.id, verifier=verifier)
 
@@ -1248,7 +1062,6 @@ class Scheduler:
         result: BeatOutcome,
         beat_runner: BeatRunner | None,
         outcome_kind: str | None,
-        now: datetime,
     ) -> None:
         """Close delegated work on the lead's own acceptance plus the deterministic gates.
 
@@ -1286,7 +1099,7 @@ class Scheduler:
             verifier=verifier,
             beat_runner=beat_runner,
         )
-        # Operator decision (2026-07-18): employees verify their own work — no SYSTEM_VERIFIER beat
+        # Operator decision (2026-07-18): employees verify their own work — no system-verifier beat
         # before closing delegated work. The lead's own integrate acceptance is the verdict; the
         # deterministic descendants check (above) and the objective rollup command floor (cheap
         # command runs the lead's beat contracts to) remain the only gates.
@@ -1331,7 +1144,6 @@ class Scheduler:
             employee=employee,
             result=result,
             outcome_kind=outcome_kind,
-            now=now,
         )
         self._close_verified_delegation(task.id, run_id=run_id, recovered=False)
 
@@ -1368,8 +1180,6 @@ class Scheduler:
         *,
         run_id: str,
         recovered: bool,
-        reviewer_id: str | None = None,
-        verification_run_id: str | None = None,
     ) -> bool:
         """Atomically record verification, close the contract, and archive its Team."""
         ledger = self._require_ledger()
@@ -1389,12 +1199,6 @@ class Scheduler:
                 payload={
                     "passed": True,
                     "run_id": run_id,
-                    **({"reviewer_id": reviewer_id} if reviewer_id is not None else {}),
-                    **(
-                        {"verification_run_id": verification_run_id}
-                        if verification_run_id is not None
-                        else {}
-                    ),
                     **({"recovered": True} if recovered else {}),
                 },
             )
@@ -1416,7 +1220,6 @@ class Scheduler:
         task: Task,
         employee: Employee,
         execution_profile: ResolvedExecutionProfile | None,
-        now: datetime,
     ) -> bool:
         """At the integrate-iteration cap, accept the completed subtree mechanically — no model beat.
 
@@ -1483,7 +1286,6 @@ class Scheduler:
                 outcome_kind=(
                     execution_profile.outcome_kind if execution_profile is not None else None
                 ),
-                now=now,
             )
         ledger.tasks.release_locks(task.id, run_id=run_id)
         ledger.wakes.mark_done(wake.id)
@@ -1505,16 +1307,13 @@ class Scheduler:
         employee: Employee,
         result: BeatOutcome,
         outcome_kind: str | None,
-        now: datetime,
     ) -> None:
-        """A passed beat lands its role's outcome, then ``done`` — unless a person or reviewer decides.
+        """A passed beat lands its role's outcome, then ``done`` — unless a person decides.
 
         For a ``HumanApproval`` DoD the deliverable is produced but a person decides: open an
-        **acceptance** gate (parks the task ``blocked`` pending the approval). For a ``ReviewedBuild``
-        DoD on a *leaf* deliverable, a read-only Reviewer beat discovers + runs the objective command
-        floor that gates completion (a delegated subtree integrates mechanically and is excluded). An
-        ``AgentReview`` DoD renders no second beat: its rubric was already judged by dream's single
-        in-beat evaluator (spec 16), so a passed beat *is* the verdict. Otherwise the role's
+        **acceptance** gate (parks the task ``blocked`` pending the approval). An ``AgentReview`` DoD
+        renders no second beat: its rubric was already judged by dream's single in-beat evaluator
+        (spec 16), so a passed beat *is* the verdict. Otherwise the role's
         :class:`~chorus.outcomes.OutcomeLander` records the deliverable before the task is finalised ``done``.
         """
         ledger = self._require_ledger()
@@ -1537,20 +1336,6 @@ class Scheduler:
                 reason=f"human-approval DoD for {task_id}",
             )
             return
-        if (
-            verifier is not None
-            and verifier.kind in _REVIEWER_GATED_DODS
-            and not ledger.tasks.has_children(task_id)
-        ):
-            await self._run_review(
-                task_id,
-                verifier=verifier,
-                author=employee,
-                work_result=result,
-                author_outcome_kind=outcome_kind,
-                now=now,
-            )
-            return
         await self._land_outcome(
             task_id, employee=employee, result=result, outcome_kind=outcome_kind
         )
@@ -1558,230 +1343,29 @@ class Scheduler:
             task_id=task_id, run_id=run_id, dod_status=DodStatus.PASSED, verdict=verdict
         )
 
-    async def _run_review(
-        self,
-        task_id: str,
-        *,
-        verifier: Verifier,
-        author: Employee,
-        work_result: BeatOutcome,
-        author_outcome_kind: str | None,
-        now: datetime,
-    ) -> None:
-        """Dispatch a read-only Reviewer beat as the verification step for a reviewer-gated DoD.
+    def _route_block(self, task_id: str) -> None:
+        """Route a blocked child to its manager parent (spec 15).
 
-        The reviewer inspects the work in the author's worktree and calls ``submit_verdict``, recording
-        the work task's DoD verdict. The kernel reads it back: a quality ``approve`` lands the deliverable
-        (for a ``reviewed_build`` it first runs the reviewer-discovered command as the objective floor); a
-        ``block`` routes per :meth:`_route_block`. The verifier is a built-in system principal, never a
-        workforce member and never the author.
-        """
-        ledger = self._require_ledger()
-        rubric = _review_rubric(verifier.spec)
-        reviewer = SYSTEM_VERIFIER
-
-        review_run_id = mint_id()
-        runner = self._review_runner(reviewer, task_id=task_id, worktree_owner_id=author.id)
-        ledger.runs.create(
-            Run(
-                id=review_run_id,
-                employee_id=author.id,
-                task_id=task_id,
-                principal_kind="system",
-                system_principal_id=reviewer.id,
-                status=RunStatus.RUNNING,
-                # A lease, like every other running beat: a null lease reads as crash debris to the
-                # stale-run reaper (a concurrent RECOVER under run_forever, or another Arceus worker),
-                # which would reap this in-flight review and strand the deliverable (spec 03 §5).
-                lease_expires_at=now + timedelta(seconds=self.lease_ttl_s),
-                started_at=now,
-            )
-        )
-        worktree = runner.working_dir if isinstance(runner, _RunnerWithWorkingDir) else None
-        if worktree is not None:
-            BeatContext(task_id=task_id, run_id=review_run_id, employee_id=reviewer.id).write(
-                worktree
-            )
-        observer = (
-            TraceStamper(
-                self._event_bus.emit,
-                trace_id=trace_root(ledger, task_id),
-                task_id=task_id,
-                employee_id=reviewer.id,
-                run_id=review_run_id,
-            )
-            if self._event_bus is not None
-            else None
-        )
-        try:
-            result = await runner.run_task(
-                task_id=task_id,
-                run_id=review_run_id,
-                intent=self._review_intent(task_id, verifier, rubric, worktree=worktree),
-                observer=observer,
-            )
-        except Exception as exc:
-            result = failure_outcome(exc)
-        ledger.runs.finish(review_run_id, RunStatus.SUCCEEDED, outcome=result.outcome or None)
-
-        dod = ledger.dod.get_for_task(task_id)
-        if dod is None or dod.status is DodStatus.PENDING:
-            # The reviewer beat rendered no verdict (it never called ``submit_verdict``). Don't silently
-            # pass it and don't loop self-repair forever — a human looks at why the reviewer stalled.
-            ledger.tasks.set_status(task_id, TaskStatus.BLOCKED)
-            self._open_review_recovery(task_id, cause="no_verdict", owner_id=author.id)
-            return
-        if dod.status is not DodStatus.PASSED:  # the reviewer blocked on quality
-            await self._land_outcome(task_id, employee=None, result=result, outcome_kind="verdict")
-            self._route_block(task_id, author=author)
-            return
-        # Quality approved. A reviewed_build still has an objective floor: the kernel runs the
-        # reviewer-discovered command — passing it never depends on the model's word.
-        if verifier.kind is DoDKind.REVIEWED_BUILD and not self._reviewed_build_passes(
-            task_id,
-            dod_id=dod.id,
-            run_id=review_run_id,
-            verifier=verifier,
-            verdict=dod.verdict,
-            worktree=worktree,
-        ):
-            await self._land_outcome(task_id, employee=None, result=result, outcome_kind="verdict")
-            self._route_block(task_id, author=author)
-            return
-        await self._land_outcome(
-            task_id, employee=None, result=result, outcome_kind="verdict"
-        )  # the `verdict` artifact
-        await self._land_outcome(
-            task_id,
-            employee=author,
-            result=work_result,
-            outcome_kind=author_outcome_kind,
-        )
-        dod_after = ledger.dod.get_for_task(task_id)
-        ledger.finalize_beat(
-            task_id=task_id,
-            run_id=review_run_id,
-            dod_status=DodStatus.PASSED,
-            verdict=dod_after.verdict if dod_after is not None else dod.verdict,
-        )
-
-    def _reviewed_build_passes(
-        self,
-        task_id: str,
-        *,
-        dod_id: str,
-        run_id: str,
-        verifier: Verifier,
-        verdict: dict[str, object] | None,
-        worktree: Path | None,
-    ) -> bool:
-        """Validate configured evidence, then run the project command as a separate objective floor.
-
-        Returns ``True`` iff both configured floors pass. Failures are recorded on the DoD verdict and
-        block landing without relying on model-composed shell fragments."""
-        ledger = self._require_ledger()
-        command = str((verdict or {}).get("verify_command", "")).strip()
-        timeout_s = (
-            verifier.spec.verify_timeout_s if isinstance(verifier.spec, ReviewedBuild) else 600
-        )
-        evidence: dict[str, object] = {}
-        profile = (
-            verifier.spec.evidence_profile if isinstance(verifier.spec, ReviewedBuild) else None
-        )
-        if profile is not None:
-            if worktree is None:
-                evidence = {
-                    "evidence_passed": False,
-                    "evidence_output": "no worktree to validate structured evidence in",
-                }
-            elif profile is ReviewedBuildEvidenceProfile.TDD_REVIEW_V1:
-                evidence_passed, evidence_output = _tdd_review_evidence_passes(worktree)
-                evidence = {
-                    "evidence_passed": evidence_passed,
-                    "evidence_output": evidence_output,
-                }
-            if evidence.get("evidence_passed") is not True:
-                ledger.dod.record_verdict(
-                    dod_id,
-                    DodStatus.FAILED,
-                    verdict={**(verdict or {}), **evidence, "build_passed": False},
-                    run_id=run_id,
-                )
-                return False
-        if not command or worktree is None:
-            reason = (
-                "reviewer approved but supplied no verify command"
-                if not command
-                else ("no worktree to run the verify command in")
-            )
-            ledger.dod.record_verdict(
-                dod_id,
-                DodStatus.FAILED,
-                verdict={
-                    **(verdict or {}),
-                    **evidence,
-                    "build_passed": False,
-                    "build_output": reason,
-                },
-                run_id=run_id,
-            )
-            return False
-        exit_code, output = _run_verify_command(worktree, command, timeout_s=timeout_s)
-        ledger.dod.record_verdict(
-            dod_id,
-            DodStatus.PASSED if exit_code == 0 else DodStatus.FAILED,
-            verdict={
-                **(verdict or {}),
-                **evidence,
-                "build_passed": exit_code == 0,
-                "build_exit": exit_code,
-                "build_output": output,
-            },
-            run_id=run_id,
-        )
-        return exit_code == 0
-
-    def _route_block(self, task_id: str, *, author: Employee) -> None:
-        """Route a reviewer ``block`` — escalate to a manager parent, else bounded author self-repair.
-
-        A child of a manager → mark it ``rejected`` (terminal) and, once the subtree is wholly terminal,
-        wake the manager: its Slice-2 integrate beat sees the rejection and reacts (``submit_task`` /
-        ``assign_task``). A standalone deliverable → re-dispatch the author up to ``max_review_rounds``,
-        then open a recovery card for a human.
+        Mark it ``rejected`` (terminal) and, once the subtree is wholly terminal, wake the manager:
+        its integrate beat sees the rejection and reacts (``submit_task`` / ``assign_task``).
         """
         ledger = self._require_ledger()
         task = ledger.tasks.get(task_id)
         if task is None:
             return
         manager_id = self._manager_of(task)
-        if manager_id is not None:
-            ledger.tasks.set_status(task_id, TaskStatus.REJECTED)
-            if task.parent_id is not None and ledger.tasks.all_children_terminal(task.parent_id):
-                ledger.wakes.enqueue(
-                    Wake(
-                        id=mint_id(),
-                        employee_id=manager_id,
-                        reason=WakeReason.CHILDREN_DONE,
-                        payload={"task_id": task.parent_id},
-                    )
-                )
+        if manager_id is None:
             return
-        # Count the author's actual rework attempts — robust whether the rejection was a quality block
-        # or a failed build (a build-fail is the reviewer approving + the kernel-run command failing).
-        attempts = sum(1 for run in ledger.runs.for_task(task_id) if run.employee_id == author.id)
-        if attempts <= self.max_review_rounds:
-            ledger.tasks.set_status(task_id, TaskStatus.TODO)  # re-dispatch the author to fix it
+        ledger.tasks.set_status(task_id, TaskStatus.REJECTED)
+        if task.parent_id is not None and ledger.tasks.all_children_terminal(task.parent_id):
             ledger.wakes.enqueue(
                 Wake(
                     id=mint_id(),
-                    employee_id=author.id,
-                    reason=WakeReason.RECOVERY,
-                    payload={"task_id": task_id, "cause": "review_blocked"},
+                    employee_id=manager_id,
+                    reason=WakeReason.CHILDREN_DONE,
+                    payload={"task_id": task.parent_id},
                 )
             )
-            return
-        ledger.tasks.set_status(task_id, TaskStatus.BLOCKED)
-        self._open_review_recovery(task_id, cause="review_exhausted", owner_id=author.id)
 
     def _manager_of(self, task: Task) -> str | None:
         """The employee id of the task's manager (its parent's assignee), or ``None`` if standalone."""
@@ -1790,111 +1374,6 @@ class Scheduler:
         ledger = self._require_ledger()
         parent = ledger.tasks.get(task.parent_id)
         return parent.assignee_employee_id if parent is not None else None
-
-    def _review_runner(
-        self, reviewer: VerificationPrincipal, *, task_id: str, worktree_owner_id: str
-    ) -> BeatRunner:
-        """Resolve a reviewer runner at the author's worktree, else its own (a non-review-aware seam)."""
-        beat_runner_for = self._require(self._beat_runner_for, "beat_runner")
-        if isinstance(beat_runner_for, _ReviewRunnerFor):
-            return beat_runner_for.review_runner_for(
-                reviewer, task_id=task_id, worktree_owner_id=worktree_owner_id
-            )
-        return beat_runner_for.runner_for(reviewer, task_id=task_id)  # type: ignore[arg-type]
-
-    def _verification_runner(
-        self, reviewer: VerificationPrincipal, *, task_id: str, worktree_owner_id: str
-    ) -> BeatRunner:
-        """Resolve the strict verifier seam, with compatibility fallbacks for test runners."""
-        beat_runner_for = self._require(self._beat_runner_for, "beat_runner")
-        if isinstance(beat_runner_for, _VerificationRunnerFor):
-            return beat_runner_for.verification_runner_for(
-                reviewer,
-                task_id=task_id,
-                worktree_owner_id=worktree_owner_id,
-            )
-        if isinstance(beat_runner_for, _ReviewRunnerFor):
-            return beat_runner_for.review_runner_for(
-                reviewer,
-                task_id=task_id,
-                worktree_owner_id=worktree_owner_id,
-            )
-        return beat_runner_for.runner_for(reviewer, task_id=task_id)  # type: ignore[arg-type]
-
-    def _review_intent(
-        self, task_id: str, verifier: Verifier, rubric: str, *, worktree: Path | None = None
-    ) -> str:
-        """The reviewer beat's instruction: judge the work in the worktree against the rubric.
-
-        For a ``reviewed_build`` the reviewer also discovers the project's verify command and passes it
-        as ``verify_command`` — the kernel runs it as the objective floor, so the reviewer never runs it.
-
-        The reviewer has no directory-listing tool, so the kernel embeds the worktree's file manifest:
-        without it the reviewer guesses standard filenames, misses the author's actual files, and wrongly
-        judges the work empty.
-        """
-        ledger = self._require_ledger()
-        task = ledger.tasks.get(task_id)
-        goal = task.intent if task is not None else task_id
-        rubric_line = rubric or "the task is complete, correct, and meets its stated intent"
-        build = ""
-        if verifier.kind is DoDKind.REVIEWED_BUILD:
-            evidence_instruction = ""
-            if (
-                isinstance(verifier.spec, ReviewedBuild)
-                and verifier.spec.evidence_profile is not None
-            ):
-                evidence_instruction = (
-                    "Pass only the repository's exact configured build/test command as "
-                    "`verify_command`; do not append grep, test -f, PowerShell, or other evidence-file "
-                    "checks. The kernel parses the configured structured evidence separately. "
-                )
-            build = (
-                "This is a code task: inspect the project's files (package.json / Cargo.toml / "
-                "pyproject.toml / Makefile / go.mod, etc.) to determine the correct command that builds + "
-                "tests it, and pass that as `verify_command` (e.g. 'npm ci && npm test', 'cargo test', "
-                "'pytest -q'). The kernel runs it as the objective gate — you do not run it yourself, and "
-                "you CANNOT run it (you are read-only). Do NOT block merely because you could not execute "
-                "the tests: judge the diff's correctness against the contract by reading it; if the code is "
-                "correct, approve=true and pass the command — the kernel runs it and will fail the build if "
-                "the tests do not pass. "
-                f"{evidence_instruction}"
-                "Reserve approve=false for a concrete correctness defect you can name.\n"
-            )
-        manifest = _worktree_file_manifest(worktree)
-        files = (
-            "Files in this worktree (read the relevant ones with `read_file`; you have no listing tool, "
-            f"so this is the authoritative inventory of what is here):\n{manifest}\n"
-            if manifest
-            else ""
-        )
-        return (
-            f"You are reviewing the work in this worktree for the task: {goal}\n"
-            f"Rubric: {rubric_line}\n"
-            f"{files}"
-            f"{build}"
-            "Read the relevant files to judge it. You MUST finish by calling the `submit_verdict` tool "
-            "exactly once — that tool call IS your review and the ONLY way to complete this task. Pass "
-            "approve=true to accept or approve=false to block, with concrete feedback. Do NOT just write "
-            "your verdict as text; an un-recorded verdict does not count."
-        )
-
-    def _open_review_recovery(self, task_id: str, *, cause: str, owner_id: str) -> None:
-        """Open a recovery card for a reviewed task a human must now resolve (idempotent per source)."""
-        ledger = self._require_ledger()
-        if ledger.recovery_actions.active_for_source(task_id) is not None:
-            return
-        ledger.recovery_actions.open(
-            RecoveryAction(
-                id=mint_id(),
-                source_task_id=task_id,
-                kind=RecoveryKind.STRANDED,
-                owner_employee_id=owner_id,
-                cause=cause,
-                fingerprint="review",
-                next_action="resolve the rejected deliverable or revise its DoD",
-            )
-        )
 
     def _lease_seconds_for(
         self,
@@ -1951,7 +1430,7 @@ class Scheduler:
         """A failed beat climbs the bounded self-repair ladder, owning the task's status (spec 04 §1).
 
         A ``needs-changes`` beat means the step isn't done yet — so re-wake the same assignee to resume
-        it: a ``Command`` DoD re-runs its objective gate, a ``reviewed_build``/``agent_review`` continues
+        it: a ``Command`` DoD re-runs its objective gate, an ``agent_review`` continues
         its (multi-sprint) build (spec 05, one-beat-one-sprint). Rung 1 (budget left) keeps the task
         ``todo`` with a live recovery wake, so the recovery sweep leaves it alone; rung 3 (budget spent)
         sets ``blocked`` + a ``recovery_action`` for a human. A task with **no** DoD has no objective
