@@ -238,20 +238,33 @@ def _sprint_delta(
     now: datetime,
     files_touched: tuple[str, ...] = (),
     artifacts: tuple[str, ...] = (),
+    orchestrated: bool = False,
 ) -> SprintDelta:
-    """Build the beat's raw episodic record — honest fields derived from the run (spec 07 §3)."""
+    """Build the beat's raw episodic record — honest fields derived from the run (spec 07 §3).
+
+    ``orchestrated`` marks a beat that succeeded at *delegating* — a lead that decomposed and handed
+    off. Its own deliverable is the subtree it created, judged later at integrate, so scoring the
+    hand-off against the (not-yet-done) subtree rubric records a correct decomposition as a failure
+    (``needs_changes``/0.0). That both poisons the episodic learning signal and, once horizon's
+    outcome loop is driven, folds a false 0.0 onto a healthy goal. A clean hand-off records as
+    ``delegated``/1.0 (F5).
+    """
     verdict = result.outcome or {}
     raw_score = verdict.get("score")
     score = (
         float(raw_score) if isinstance(raw_score, int | float) else (1.0 if result.passed else 0.0)
     )
+    if orchestrated:
+        outcome, score = "delegated", 1.0
+    else:
+        outcome = _episodic_outcome(result)
     return SprintDelta(
         run_id=run_id,
         task_id=task.id,
         employee_id=employee.id,
         scope=scope,
         intent=task.intent,
-        outcome=_episodic_outcome(result),
+        outcome=outcome,
         score=score,
         created_at=now,
         role=employee.role,
@@ -977,6 +990,15 @@ class Scheduler:
             for artifact in ledger.artifacts.list_for_task(task.id)
             if (ref := _artifact_ref(artifact))
         )
+        # A delegation beat that decomposed and parked BLOCKED awaiting its subtree succeeded at its
+        # own job (the hand-off); the subtree it owns is judged later at integrate. Re-read the task
+        # so a transition during the beat is reflected.
+        latest = ledger.tasks.get(task.id) or task
+        orchestrated = (
+            latest.execution_mode is ExecutionMode.DELEGATION
+            and latest.status is TaskStatus.BLOCKED
+            and ledger.tasks.has_children(task.id)
+        )
         delta = _sprint_delta(
             run_id=run_id,
             employee=employee,
@@ -986,6 +1008,7 @@ class Scheduler:
             now=now,
             files_touched=files_touched,
             artifacts=artifacts,
+            orchestrated=orchestrated,
         )
         self._memory_writer.append(delta)
 
