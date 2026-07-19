@@ -60,7 +60,7 @@ from chorus.ledger._models import (
 )
 from chorus.lifecycle import TERMINAL, record_activity
 from chorus.lifecycle._team_policy import MissionTeamPolicy
-from chorus.memory import EpisodicStore, SprintDelta, beat_fingerprint
+from chorus.memory import EpisodicStore, SprintDelta, beat_fingerprint, distilled_body
 from chorus.observability._trace import TraceStamper, trace_root
 from chorus.outcomes import DoDKind, Verifier
 from chorus.recovery import reconcile
@@ -158,6 +158,12 @@ def _episodic_outcome(result: BeatOutcome) -> str:
     return _OUTCOME_BY_DISPOSITION.get(result.disposition or BeatDisposition.ERRORED, "blocked")
 
 
+# Recall pulls the episodic body into a future beat's context, so it must stay small. A full
+# raw_record is 100k+ chars (the whole event stream); only the ``role.text`` prose is worth
+# recalling, and the full stream is durable in the run log + trace. Keep a bounded slice.
+_EPISODIC_BODY_MAX_CHARS = 6000
+
+
 def _artifact_ref(artifact: Artifact) -> str:
     """A stable string reference for the episodic record — the artifact's id-like fields, not its dict.
 
@@ -252,7 +258,9 @@ def _sprint_delta(
         recorded_at=now,
         files_touched=files_touched,
         artifacts=artifacts,
-        body=result.raw_record or result.summary or "",
+        body=distilled_body(
+            result.raw_record, summary=result.summary, max_chars=_EPISODIC_BODY_MAX_CHARS
+        ),
     )
 
 
