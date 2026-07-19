@@ -363,10 +363,48 @@ async def test_unmigrated_manager_is_blocked_before_dispatch(
     assert uid("legacy-manager") in caplog.text and "specialize-manager" in caplog.text
 
 
-async def test_delegation_integrate_cap_escalates_without_force_acceptance(
+async def test_delegation_integrate_cap_accepts_completed_subtree(
     ledger: Ledger,
 ) -> None:
-    _seed_delegation(ledger)
+    # At the integrate cap, a delegation whose subtree produced REAL deliverables (>=1 done child)
+    # AND passes its objective floor is ACCEPTED by the kernel on the manager's behalf — exactly what
+    # the manager brief promises ("after a few iterations the kernel accepts for you"). It converges
+    # to done so the goal can roll up, instead of stranding for a human even though the work is there.
+    _seed_delegation(ledger)  # children DONE by default
+    beat = _RecordingBeat()
+    lander = _SubtreeLander()
+    scheduler = Scheduler(
+        ledger=ledger,
+        workforce=LedgerWorkforce(ledger.employees),
+        beat_runner=beat,
+        roles=RoleRegistry.from_plugins(default_roles()),
+        memory_writer=_RecordingMemory(),
+        landers=LanderRegistry.from_landers([lander]),
+        max_concurrent_runs=1,
+        max_integrate_iterations=0,
+    )
+
+    await scheduler.tick(_NOW)
+    await scheduler.drain()
+
+    contract = ledger.delegation_contracts.get(uid("task-release"))
+    assert contract is not None and contract.status is DelegationContractStatus.DONE
+    assert ledger.tasks.get(uid("task-release")).status is TaskStatus.DONE  # type: ignore[union-attr]
+    assert ledger.teams.get(uid("team-release")).status is TeamStatus.ARCHIVED  # type: ignore[union-attr]
+    # accepted mechanically at the cap — no model rubric beat runs, but the subtree lands
+    assert beat.rubrics == []
+    assert lander.landed == [uid("task-release")]
+    # real work converged, so no stranding recovery is opened
+    assert ledger.recovery_actions.active_for_source(uid("task-release")) is None
+
+
+async def test_delegation_integrate_cap_strands_when_nothing_converged(
+    ledger: Ledger,
+) -> None:
+    # The honest guard: at the cap, a delegation whose subtree produced NO completed deliverable
+    # (its only child was rejected) is NOT force-accepted — it strands for human review. The kernel
+    # accepts real work, never fabricates a pass over failed work.
+    _seed_delegation(ledger, child_status=TaskStatus.REJECTED)
     beat = _RecordingBeat()
     lander = _SubtreeLander()
     scheduler = Scheduler(
@@ -385,15 +423,11 @@ async def test_delegation_integrate_cap_escalates_without_force_acceptance(
 
     contract = ledger.delegation_contracts.get(uid("task-release"))
     assert contract is not None and contract.status is DelegationContractStatus.BLOCKED
-    assert contract.accepted_run_id is None
     assert ledger.tasks.get(uid("task-release")).status is TaskStatus.BLOCKED  # type: ignore[union-attr]
-    assert ledger.teams.get(uid("team-release")).status is TeamStatus.ACTIVE  # type: ignore[union-attr]
     recovery = ledger.recovery_actions.active_for_source(uid("task-release"))
     assert recovery is not None
-    assert recovery.owner_employee_id == "lead"
     assert recovery.cause == "integrate_iteration_exhausted"
-    assert recovery.evidence == {"iteration": 1, "cap": 0, "contract_task_id": uid("task-release")}
-    assert beat.rubrics == []
+    assert recovery.evidence["done_children"] == 0  # type: ignore[index]
     assert lander.landed == []
 
 

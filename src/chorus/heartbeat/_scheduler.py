@@ -1232,11 +1232,61 @@ class Scheduler:
         iteration = IntegrateContextPacket.iteration_for(ledger, task.id)
         if iteration <= self.max_integrate_iterations:
             return False
+        verifier = ledger.dod.verifier_for_task(task.id)
+        beat_runner_for = self._require(self._beat_runner_for, "beat_runner")
+        beat_runner = beat_runner_for.runner_for(employee, task_id=task.id)
+        floor_ok = (
+            self._integrate_floor_verdict(task.id, verifier=verifier, beat_runner=beat_runner)
+            is not False
+        )
         if task.execution_mode is ExecutionMode.DELEGATION:
+            children = list(ledger.tasks.children(task.id))
+            done_children = [c for c in children if c.status is TaskStatus.DONE]
+            # Converge, don't strand: a capped delegation that produced REAL, verified output — at
+            # least one completed child deliverable AND a passing objective command floor — is
+            # accepted here so Phase 0 can roll the goal up to ``done``. This is the difference
+            # between a company that finishes work and one that loops until a human intervenes. Only
+            # strand for human review when nothing genuine converged (every child failed/was
+            # rejected, or the floor fails) — never fabricate a pass on empty or failed work.
+            if done_children and floor_ok:
+                ledger.runs.finish(run_id, RunStatus.SUCCEEDED, outcome=None)
+                ledger.delegation_contracts.accept_for_verification(task.id, run_id)
+                record_activity(
+                    ledger,
+                    verb=ActivityVerb.PARENT_VERIFIED,
+                    subject_kind="delegation_contract",
+                    subject_id=task.id,
+                    actor_employee_id=employee.id,
+                    payload={
+                        "capped_accept": True,
+                        "iteration": iteration,
+                        "deliverables": len(done_children),
+                    },
+                )
+                await self._land_passed(
+                    task.id,
+                    run_id=run_id,
+                    verifier=verifier,
+                    verdict=None,
+                    employee=employee,
+                    result=BeatOutcome(
+                        passed=True,
+                        outcome={},
+                        summary=f"integrated at cap ({len(done_children)} deliverables)",
+                    ),
+                    outcome_kind=(
+                        execution_profile.outcome_kind if execution_profile is not None else None
+                    ),
+                )
+                self._close_verified_delegation(task.id, run_id=run_id, recovered=False)
+                ledger.tasks.release_locks(task.id, run_id=run_id)
+                ledger.wakes.mark_done(wake.id)
+                return True
             evidence: dict[str, object] = {
                 "iteration": iteration,
                 "cap": self.max_integrate_iterations,
                 "contract_task_id": task.id,
+                "done_children": len(done_children),
             }
             with ledger.transaction():
                 ledger.runs.finish(run_id, RunStatus.FAILED, outcome=evidence)
@@ -1258,14 +1308,8 @@ class Scheduler:
             ledger.tasks.release_locks(task.id, run_id=run_id)
             ledger.wakes.mark_done(wake.id)
             return True
-        verifier = ledger.dod.verifier_for_task(task.id)
-        beat_runner_for = self._require(self._beat_runner_for, "beat_runner")
-        beat_runner = beat_runner_for.runner_for(employee, task_id=task.id)
         ledger.runs.finish(run_id, RunStatus.SUCCEEDED, outcome=None)
-        if (
-            self._integrate_floor_verdict(task.id, verifier=verifier, beat_runner=beat_runner)
-            is False
-        ):
+        if not floor_ok:
             # The cap bounds the MODEL loop (no further decompose/integrate beats), NOT the objective
             # gate: even here a parent does not land ``done`` while its ``command`` rollup floor fails —
             # record the failed verdict and park BLOCKED rather than fabricate a passing outcome.
