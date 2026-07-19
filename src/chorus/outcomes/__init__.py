@@ -56,7 +56,6 @@ __all__ = [
     "Verifier",
     "classify",
     "classify_deliverable",
-    "resolve_delivery_verifier",
     "detect_platform",
     "file_exists",
     "file_matches",
@@ -64,5 +63,6 @@ __all__ = [
     "glob_at_least",
     "min_words",
     "python_check",
+    "resolve_delivery_verifier",
     "runtime_brief_block",
 ]
