@@ -7,6 +7,11 @@ typed :class:`Verifier` (DoD) tiers and the :class:`OutcomeLander` seam.
 
 from __future__ import annotations
 
+from chorus.outcomes._deliverable import (
+    DeliverableKind,
+    classify_deliverable,
+    resolve_delivery_verifier,
+)
 from chorus.outcomes._lander import Artifact, ArtifactType, OutcomeLander
 from chorus.outcomes._platform import (
     Check,
@@ -38,6 +43,7 @@ __all__ = [
     "ArtifactType",
     "Check",
     "Command",
+    "DeliverableKind",
     "DoDKind",
     "DoDSpec",
     "HumanApproval",
@@ -49,6 +55,8 @@ __all__ = [
     "VerificationStep",
     "Verifier",
     "classify",
+    "classify_deliverable",
+    "resolve_delivery_verifier",
     "detect_platform",
     "file_exists",
     "file_matches",

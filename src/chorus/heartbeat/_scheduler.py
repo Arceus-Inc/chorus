@@ -256,8 +256,13 @@ def _sprint_delta(
     )
 
 
-def _to_ledger_artifact(artifact: OutcomeArtifact) -> Artifact:
-    """Map a lander's canonical :class:`~chorus.outcomes.Artifact` to a storable ledger row."""
+def _to_ledger_artifact(artifact: OutcomeArtifact, *, review_state: str | None = None) -> Artifact:
+    """Map a lander's canonical :class:`~chorus.outcomes.Artifact` to a storable ledger row.
+
+    ``review_state`` carries the beat's DoD verdict onto the artifact: a beat only lands its
+    deliverable on the pass path, so a landed artifact is verified — recording it lets the artifacts
+    index distinguish verified work from unreviewed rows (which stay ``None``).
+    """
     return Artifact(
         id=mint_id(),
         task_id=artifact.task_id,
@@ -266,6 +271,7 @@ def _to_ledger_artifact(artifact: OutcomeArtifact) -> Artifact:
         url=artifact.url,
         is_primary=artifact.is_primary,
         resource_ref=artifact.resource_ref,
+        review_state=review_state,
     )
 
 
@@ -1337,7 +1343,11 @@ class Scheduler:
             )
             return
         await self._land_outcome(
-            task_id, employee=employee, result=result, outcome_kind=outcome_kind
+            task_id,
+            employee=employee,
+            result=result,
+            outcome_kind=outcome_kind,
+            review_state="verified",  # F7: a beat lands only on the pass path, so this is verified
         )
         ledger.finalize_beat(
             task_id=task_id, run_id=run_id, dod_status=DodStatus.PASSED, verdict=verdict
@@ -1402,11 +1412,13 @@ class Scheduler:
         employee: Employee | None,
         result: BeatOutcome,
         outcome_kind: str | None = None,
+        review_state: str | None = None,
     ) -> None:
         """Record the role's deliverable as an artifact via its registered lander (spec 04 §2).
 
         A no-op when no lander registry is wired or the employee's role lands no artifact kind — the
         beat still finalises ``done``, so landing is purely additive (the strict-completion record).
+        ``review_state`` stamps the beat's DoD verdict onto the landed artifact (F7).
         """
         if self._landers is None:
             return
@@ -1422,7 +1434,7 @@ class Scheduler:
         if task is None:
             return
         artifact = await lander.land(task, result)
-        ledger.artifacts.create(_to_ledger_artifact(artifact))
+        ledger.artifacts.create(_to_ledger_artifact(artifact, review_state=review_state))
 
     def _climb_repair_ladder(
         self, task_id: str, *, employee_id: str, verifier: Verifier | None
