@@ -280,9 +280,38 @@ class WorkforcePlanService:
         refs = [employee.ref for employee in draft.employees]
         if len(refs) != len(set(refs)):
             raise ValueError("workforce plan employee refs must be unique")
+        # Identity dedup (found live 2026-07-19): an expansion that re-lists someone who already
+        # exists — same name, new slug — created idle "ghost" duplicates (two Averys, two Jordans).
+        # Enforce name-uniqueness across the live org and within the plan: to add capacity you hire a
+        # NEW distinct person, you never re-hire an existing name.
+        existing_names = {
+            e.name.strip().casefold()
+            for e in self._ledger.employees.list()
+            if e.status not in {EmployeeStatus.TERMINATED, EmployeeStatus.PENDING}
+        }
+        lead_refs = {grant.employee_ref for grant in draft.management_grants if grant.can_lead}
+        seen_names: set[str] = set()
         for employee in draft.employees:
             if self._ledger.employees.get(employee.ref) is not None:
                 raise ValueError(f"employee ref {employee.ref!r} already exists")
+            name_key = employee.name.strip().casefold()
+            if not name_key:
+                raise ValueError("every hire needs a real given name")
+            if name_key in existing_names:
+                raise ValueError(
+                    f"an employee named {employee.name!r} already exists — add NEW distinct people "
+                    "with real given names, or reference the existing employee; never re-hire a duplicate"
+                )
+            if name_key in seen_names:
+                raise ValueError(f"duplicate employee name {employee.name!r} within the plan")
+            seen_names.add(name_key)
+            # Only leads report to the CEO (found live: pm ICs hung directly off the CEO). A new hire
+            # whose manager is the CEO must itself carry a lead grant in this plan.
+            if employee.reports_to_ref == root_employee_id and employee.ref not in lead_refs:
+                raise ValueError(
+                    f"employee {employee.name!r} reports to the CEO but is not a lead — only leads "
+                    "report to the CEO; place individual contributors under their pod lead"
+                )
             if (
                 employee.profession not in _PLAN_PROFESSIONS
                 or employee.profession not in self._roles
