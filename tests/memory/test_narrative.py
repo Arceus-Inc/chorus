@@ -50,3 +50,31 @@ def test_ignores_blank_lines() -> None:
 def test_malformed_line_is_skipped_not_raised() -> None:
     body = "\n".join(["not json", _line("role.text", role="generator", text="hello")])
     assert narrative(body) == "hello"
+
+
+def test_distilled_body_keeps_only_prose_and_bounds_it() -> None:
+    """A 100k+ raw record is reduced to bounded role.text; tool I/O is dropped (F3)."""
+    import json as _json
+
+    from chorus.memory.episodic.narrative import distilled_body, narrative
+
+    lines = []
+    lines.append(_json.dumps({"kind": "role.text", "text": "Chose a split-pane editor."}))
+    # a huge tool-result event that used to bloat the body to 100k+ chars
+    lines.append(_json.dumps({"kind": "role.tool.result", "text": "x" * 200_000}))
+    lines.append(_json.dumps({"kind": "role.text", "text": "Wired autosave to localStorage."}))
+    raw = "\n".join(lines)
+
+    body = distilled_body(raw, summary="", max_chars=6000)
+
+    assert len(body) < 6000  # the 200k tool result is gone
+    assert "Chose a split-pane editor." in narrative(body)
+    assert "Wired autosave to localStorage." in narrative(body)
+    assert "xxxxx" not in body  # tool I/O dropped
+
+
+def test_distilled_body_falls_back_to_summary_as_role_text() -> None:
+    from chorus.memory.episodic.narrative import distilled_body, narrative
+
+    body = distilled_body("", summary="Delegated the build to three ICs.", max_chars=6000)
+    assert narrative(body) == "Delegated the build to three ICs."

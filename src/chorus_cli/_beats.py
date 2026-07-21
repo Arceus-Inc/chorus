@@ -11,6 +11,7 @@ keys-free console never pays for it.
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 from pathlib import Path
 
@@ -60,17 +61,50 @@ def _env_float(name: str, default: float) -> float:
         return default
 
 
+def _env_model_rates(name: str) -> dict[str, ModelRate]:
+    """Parse a per-model rate table from a JSON env var; empty when unset or malformed.
+
+    Shape: ``{"<model>": {"input": N, "output": M, "cache_read": R, "cache_write": W}}`` (cents per
+    million tokens; ``cache_*`` optional, default 0). Pricing is operator configuration, so per-model
+    rates come from the environment — no model name or price is baked into source.
+    """
+    raw = os.environ.get(name)
+    if not raw:
+        return {}
+    try:
+        table = json.loads(raw)
+        return {
+            str(model): ModelRate(
+                input_cents_per_mtok=int(spec["input"]),
+                output_cents_per_mtok=int(spec["output"]),
+                cache_read_cents_per_mtok=int(spec.get("cache_read", 0)),
+                cache_write_cents_per_mtok=int(spec.get("cache_write", 0)),
+            )
+            for model, spec in table.items()
+        }
+    except (ValueError, TypeError, KeyError):
+        return {}  # a malformed table degrades to the flat default rather than crashing beats
+
+
 def default_pricing_from_env() -> TokenPricing:
-    """A default-rate :class:`TokenPricing` so any model a beat reports accrues spend.
+    """A :class:`TokenPricing` so any model a beat reports accrues spend.
 
     Lives with the beat composition root (not the CLI entrypoint) so both the ``tick`` and ``chat``
-    beat services price spend identically. Rates come from CHORUS_PRICE_INPUT/OUTPUT_CENTS_PER_MTOK.
+    beat services price spend identically. Per-model rates come from ``CHORUS_PRICE_RATES`` (a JSON
+    table, so real per-model attribution needs no code change); a model absent from it falls back to
+    the flat default from CHORUS_PRICE_{INPUT,OUTPUT,CACHE_READ,CACHE_WRITE}_CENTS_PER_MTOK.
     """
     return TokenPricing(
-        rates={},
+        rates=_env_model_rates("CHORUS_PRICE_RATES"),
         default=ModelRate(
-            _env_int("CHORUS_PRICE_INPUT_CENTS_PER_MTOK", _DEFAULT_INPUT_CENTS_PER_MTOK),
-            _env_int("CHORUS_PRICE_OUTPUT_CENTS_PER_MTOK", _DEFAULT_OUTPUT_CENTS_PER_MTOK),
+            input_cents_per_mtok=_env_int(
+                "CHORUS_PRICE_INPUT_CENTS_PER_MTOK", _DEFAULT_INPUT_CENTS_PER_MTOK
+            ),
+            output_cents_per_mtok=_env_int(
+                "CHORUS_PRICE_OUTPUT_CENTS_PER_MTOK", _DEFAULT_OUTPUT_CENTS_PER_MTOK
+            ),
+            cache_read_cents_per_mtok=_env_int("CHORUS_PRICE_CACHE_READ_CENTS_PER_MTOK", 0),
+            cache_write_cents_per_mtok=_env_int("CHORUS_PRICE_CACHE_WRITE_CENTS_PER_MTOK", 0),
         ),
     )
 

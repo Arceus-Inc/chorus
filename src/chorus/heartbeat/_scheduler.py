@@ -60,7 +60,7 @@ from chorus.ledger._models import (
 )
 from chorus.lifecycle import TERMINAL, record_activity
 from chorus.lifecycle._team_policy import MissionTeamPolicy
-from chorus.memory import EpisodicStore, SprintDelta, beat_fingerprint
+from chorus.memory import EpisodicStore, SprintDelta, beat_fingerprint, distilled_body
 from chorus.observability._trace import TraceStamper, trace_root
 from chorus.outcomes import DoDKind, Verifier
 from chorus.recovery import reconcile
@@ -158,6 +158,12 @@ def _episodic_outcome(result: BeatOutcome) -> str:
     return _OUTCOME_BY_DISPOSITION.get(result.disposition or BeatDisposition.ERRORED, "blocked")
 
 
+# Recall pulls the episodic body into a future beat's context, so it must stay small. A full
+# raw_record is 100k+ chars (the whole event stream); only the ``role.text`` prose is worth
+# recalling, and the full stream is durable in the run log + trace. Keep a bounded slice.
+_EPISODIC_BODY_MAX_CHARS = 6000
+
+
 def _artifact_ref(artifact: Artifact) -> str:
     """A stable string reference for the episodic record — the artifact's id-like fields, not its dict.
 
@@ -232,32 +238,52 @@ def _sprint_delta(
     now: datetime,
     files_touched: tuple[str, ...] = (),
     artifacts: tuple[str, ...] = (),
+    orchestrated: bool = False,
 ) -> SprintDelta:
-    """Build the beat's raw episodic record — honest fields derived from the run (spec 07 §3)."""
+    """Build the beat's raw episodic record — honest fields derived from the run (spec 07 §3).
+
+    ``orchestrated`` marks a beat that succeeded at *delegating* — a lead that decomposed and handed
+    off. Its own deliverable is the subtree it created, judged later at integrate, so scoring the
+    hand-off against the (not-yet-done) subtree rubric records a correct decomposition as a failure
+    (``needs_changes``/0.0). That both poisons the episodic learning signal and, once horizon's
+    outcome loop is driven, folds a false 0.0 onto a healthy goal. A clean hand-off records as
+    ``delegated``/1.0 (F5).
+    """
     verdict = result.outcome or {}
     raw_score = verdict.get("score")
     score = (
         float(raw_score) if isinstance(raw_score, int | float) else (1.0 if result.passed else 0.0)
     )
+    if orchestrated:
+        outcome, score = "delegated", 1.0
+    else:
+        outcome = _episodic_outcome(result)
     return SprintDelta(
         run_id=run_id,
         task_id=task.id,
         employee_id=employee.id,
         scope=scope,
         intent=task.intent,
-        outcome=_episodic_outcome(result),
+        outcome=outcome,
         score=score,
         created_at=now,
         role=employee.role,
         recorded_at=now,
         files_touched=files_touched,
         artifacts=artifacts,
-        body=result.raw_record or result.summary or "",
+        body=distilled_body(
+            result.raw_record, summary=result.summary, max_chars=_EPISODIC_BODY_MAX_CHARS
+        ),
     )
 
 
-def _to_ledger_artifact(artifact: OutcomeArtifact) -> Artifact:
-    """Map a lander's canonical :class:`~chorus.outcomes.Artifact` to a storable ledger row."""
+def _to_ledger_artifact(artifact: OutcomeArtifact, *, review_state: str | None = None) -> Artifact:
+    """Map a lander's canonical :class:`~chorus.outcomes.Artifact` to a storable ledger row.
+
+    ``review_state`` carries the beat's DoD verdict onto the artifact: a beat only lands its
+    deliverable on the pass path, so a landed artifact is verified — recording it lets the artifacts
+    index distinguish verified work from unreviewed rows (which stay ``None``).
+    """
     return Artifact(
         id=mint_id(),
         task_id=artifact.task_id,
@@ -266,6 +292,7 @@ def _to_ledger_artifact(artifact: OutcomeArtifact) -> Artifact:
         url=artifact.url,
         is_primary=artifact.is_primary,
         resource_ref=artifact.resource_ref,
+        review_state=review_state,
     )
 
 
@@ -963,6 +990,15 @@ class Scheduler:
             for artifact in ledger.artifacts.list_for_task(task.id)
             if (ref := _artifact_ref(artifact))
         )
+        # A delegation beat that decomposed and parked BLOCKED awaiting its subtree succeeded at its
+        # own job (the hand-off); the subtree it owns is judged later at integrate. Re-read the task
+        # so a transition during the beat is reflected.
+        latest = ledger.tasks.get(task.id) or task
+        orchestrated = (
+            latest.execution_mode is ExecutionMode.DELEGATION
+            and latest.status is TaskStatus.BLOCKED
+            and ledger.tasks.has_children(task.id)
+        )
         delta = _sprint_delta(
             run_id=run_id,
             employee=employee,
@@ -972,6 +1008,7 @@ class Scheduler:
             now=now,
             files_touched=files_touched,
             artifacts=artifacts,
+            orchestrated=orchestrated,
         )
         self._memory_writer.append(delta)
 
@@ -1381,7 +1418,11 @@ class Scheduler:
             )
             return
         await self._land_outcome(
-            task_id, employee=employee, result=result, outcome_kind=outcome_kind
+            task_id,
+            employee=employee,
+            result=result,
+            outcome_kind=outcome_kind,
+            review_state="verified",  # F7: a beat lands only on the pass path, so this is verified
         )
         ledger.finalize_beat(
             task_id=task_id, run_id=run_id, dod_status=DodStatus.PASSED, verdict=verdict
@@ -1446,11 +1487,13 @@ class Scheduler:
         employee: Employee | None,
         result: BeatOutcome,
         outcome_kind: str | None = None,
+        review_state: str | None = None,
     ) -> None:
         """Record the role's deliverable as an artifact via its registered lander (spec 04 §2).
 
         A no-op when no lander registry is wired or the employee's role lands no artifact kind — the
         beat still finalises ``done``, so landing is purely additive (the strict-completion record).
+        ``review_state`` stamps the beat's DoD verdict onto the landed artifact (F7).
         """
         if self._landers is None:
             return
@@ -1466,7 +1509,7 @@ class Scheduler:
         if task is None:
             return
         artifact = await lander.land(task, result)
-        ledger.artifacts.create(_to_ledger_artifact(artifact))
+        ledger.artifacts.create(_to_ledger_artifact(artifact, review_state=review_state))
 
     def _climb_repair_ladder(
         self, task_id: str, *, employee_id: str, verifier: Verifier | None

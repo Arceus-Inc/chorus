@@ -35,7 +35,9 @@ def _task() -> Task:
 def _outcome() -> BeatOutcome:
     return BeatOutcome(
         passed=True,
-        raw_record='{"kind": "assistant", "text": "bumped the pool size"}',
+        # The real dream stream tags the model's prose ``role.text``; the distilled episodic body
+        # keeps those lines (bounded) and drops tool I/O.
+        raw_record='{"kind": "role.text", "text": "bumped the pool size"}',
         disposition=BeatDisposition.PASSED,
     )
 
@@ -69,7 +71,10 @@ def test_sprint_delta_falls_back_to_summary_without_raw_record() -> None:
         scope="project",
         now=_NOW,
     )
-    assert delta.body == "plan complete"
+    # With no raw prose, the summary is stored as a single role.text line so recall still reads it.
+    from chorus.memory import narrative
+
+    assert narrative(delta.body) == "plan complete"
 
 
 def test_artifact_ref_prefers_string_ids_then_json_dumps_resource_ref() -> None:
@@ -182,3 +187,25 @@ def test_sprint_delta_non_timeout_error_is_blocked() -> None:
         now=_NOW,
     )
     assert delta.outcome == "blocked"
+
+
+def test_sprint_delta_orchestrated_records_delegated_not_needs_changes() -> None:
+    """F5: a lead that decomposed and handed off is scored on the hand-off, not the unfinished subtree."""
+    # A delegation beat whose in-beat subtree review returned needs-changes (subtree not done yet).
+    result = BeatOutcome(
+        passed=False,
+        outcome={"score": 0.0},
+        summary="decomposed into three IC tasks",
+        disposition=BeatDisposition.PASSED,
+    )
+    delta = _sprint_delta(
+        run_id=uid("r_1"),
+        employee=_employee(),
+        task=_task(),
+        result=result,
+        scope="team",
+        now=_NOW,
+        orchestrated=True,
+    )
+    assert delta.outcome == "delegated"
+    assert delta.score == 1.0
