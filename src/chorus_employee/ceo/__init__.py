@@ -17,6 +17,7 @@ from __future__ import annotations
 from chorus.roles._plugin import RolePlugin
 from chorus_employee.ceo._brief import CEO_BRIEF, CEO_DIRECTIVE_DOC
 from chorus_employee.ceo._dod import ActionClass, ceo_dod, classify_action
+from chorus_employee.ceo._formation import CEO_FORMATION_CONTRACT, formation_directive
 from chorus_employee.ceo._harness import ceo_manifest
 from chorus_employee.ceo._lander import CeoLander, ceo_lander
 from chorus_employee.ceo._routines import CEO_ROUTINES
@@ -36,6 +37,7 @@ def ceo_plugin() -> RolePlugin:
 __all__ = [
     "CEO_BRIEF",
     "CEO_DIRECTIVE_DOC",
+    "CEO_FORMATION_CONTRACT",
     "CEO_ROUTINES",
     "ActionClass",
     "CeoLander",
@@ -44,4 +46,5 @@ __all__ = [
     "ceo_manifest",
     "ceo_plugin",
     "classify_action",
+    "formation_directive",
 ]
