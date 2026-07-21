@@ -212,6 +212,7 @@ _CHORUS_TO_DREAM_TOOL: dict[str, str] = {
     # them. ``_role_registry`` still skips them (no built-in); the governance block in materialize binds
     # them to the injected port.
     "governance_read": "governance_read",
+    "roadmap_propose": "roadmap_propose",
     "proposal_approve": "proposal_approve",
     "proposal_reject": "proposal_reject",
     "goal_set_priority": "goal_set_priority",
