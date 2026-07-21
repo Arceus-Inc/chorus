@@ -1398,6 +1398,18 @@ class Scheduler:
         :class:`~chorus.outcomes.OutcomeLander` records the deliverable before the task is finalised ``done``.
         """
         ledger = self._require_ledger()
+        # A concurrent path (the completion daemon rolling a subtree up, or a duplicate integrate beat)
+        # can finalise this task before its own pass lands. Landing again is at best a redundant outcome
+        # write and at worst fatal: ``open_task_gate`` on a HUMAN_APPROVAL DoD raises on a terminal task,
+        # and that exception escapes ``run_beat`` unhandled — wedging the pulse (the run row it would have
+        # finished stays visible, slots never free). The outcome is already recorded, so short-circuit.
+        landed = ledger.tasks.get(task_id)
+        if landed is not None and landed.status in (
+            TaskStatus.DONE,
+            TaskStatus.CANCELLED,
+            TaskStatus.REJECTED,
+        ):
+            return
         # A gate opened *during* the beat (e.g. the marketer's ``stage_go_live`` tool) must win over the
         # DoD: a task carrying a pending approval is parked BLOCKED, not finalised ``done`` — resolving
         # the gate is what completes it. Explicitly (re-)block here rather than trusting the mid-run
