@@ -16,6 +16,7 @@ build/testing craft skills (loaded on demand via the ``skill`` tool) are all wir
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from chorus.roles._manifest import (
@@ -37,8 +38,25 @@ from chorus_employee.frontend_engineer._subagents import (
 _SKILLS_ROOT = str(Path(__file__).parent / "skills")
 
 
+def _browser_mcp_disabled() -> bool:
+    """Operator escape hatch for a host where the Playwright MCP's ``npx`` stdio server *hangs* on
+    connect (e.g. a first-run package/browser download stalling the handshake) rather than failing
+    cleanly. dream's "failed connect is non-fatal" guard only covers a clean failure; a hang instead
+    eats the whole beat budget every recovery cycle, wedging the build loop. Setting
+    ``CHORUS_DISABLE_BROWSER_MCP`` omits the browser MCP so the beat still builds and runs the committed
+    ``npx playwright test`` spec (the real DoD proof) — only the mid-build interactive scouting tool is
+    dropped."""
+    return os.environ.get("CHORUS_DISABLE_BROWSER_MCP", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
 def frontend_engineer_manifest() -> RoleManifest:
     """The complete harness identity of a Frontend Engineer (→ dream ``build_harness``)."""
+    browser_mcp_off = _browser_mcp_disabled()
     return RoleManifest(
         # --- per-role overlay ---
         system_prompt=FRONTEND_ENGINEER_BRIEF,
@@ -135,8 +153,9 @@ def frontend_engineer_manifest() -> RoleManifest:
         # ``npx playwright test`` spec that remains the after-beat gate. The committed e2e (re-run by the
         # DoD floor) is still the proof; the MCP is the scouting tool that makes that proof easier to
         # author. A failed connect is non-fatal (dream records it, never raises), so the beat is robust
-        # even if the MCP runtime is unavailable on a given host.
-        mcp=True,
+        # even if the MCP runtime is unavailable on a given host. Operators can also omit it entirely on
+        # a host where the ``npx`` stdio server *hangs* (rather than failing) via CHORUS_DISABLE_BROWSER_MCP.
+        mcp=not browser_mcp_off,
         plugins=False,
         # The MCP servers this role admits → written to ``.harness/mcp-allowlist.toml`` at materialize.
         # Playwright's MCP is a local stdio server run via ``npx`` (the MCP SDK resolves ``npx``→
@@ -145,12 +164,16 @@ def frontend_engineer_manifest() -> RoleManifest:
         # in-memory browser profile. The version is pinned so a future breaking release can't silently
         # change the tool surface. tier_required=repo_write keeps the browser tools above tier 0.
         mcp_servers=(
-            McpServerSpec(
-                name="playwright",
-                endpoint="stdio://npx @playwright/mcp@0.0.77 --headless --isolated",
-                transport="stdio",
-                tier_required="repo_write",
-            ),
+            ()
+            if browser_mcp_off
+            else (
+                McpServerSpec(
+                    name="playwright",
+                    endpoint="stdio://npx @playwright/mcp@0.0.77 --headless --isolated",
+                    transport="stdio",
+                    tier_required="repo_write",
+                ),
+            )
         ),
         # --- build_harness(env=...) ---
         env=(),
