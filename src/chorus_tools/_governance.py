@@ -85,6 +85,21 @@ def _render(view: GovernanceView) -> str:
         lines.append("RECENTLY DECIDED PROPOSALS")
         for p in view.decided:
             lines.append(f"- [{p.proposal_id}] ({p.status}) {p.statement}")
+    # The current building power, by profession — what the CEO must SIZE the roadmap to. Free capacity
+    # is roughly ``eligible - assigned``; a profession with none free is a hiring signal, not a place to
+    # queue more goals.
+    if view.capacity:
+        lines.append("")
+        lines.append("CAPACITY (by profession)")
+        for c in view.capacity:
+            budget = (
+                "" if c.budget_headroom_cents is None
+                else f" budget_headroom_cents={c.budget_headroom_cents}"
+            )
+            lines.append(
+                f"- {c.profession}: eligible={c.eligible} running={c.running} "
+                f"assigned={c.assigned_nonterminal} queued={c.queued_wakes}{budget}"
+            )
     return "\n".join(lines)
 
 
@@ -115,6 +130,7 @@ class GovernanceReadTool(BaseTool):
                 "decisions": len(view.decisions),
                 "proposals": len(view.proposals),
                 "decided": len(view.decided),
+                "capacity": len(view.capacity),
             },
         )
 

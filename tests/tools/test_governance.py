@@ -17,6 +17,7 @@ from dream.contracts import (
     GovernanceView,
     GovGoal,
     GovProposal,
+    ProfessionCapacity,
 )
 from dream.tools._context import ToolExecutionContext
 
@@ -88,6 +89,17 @@ class FakeGovernance:
                     status="approved",
                 ),
             ),
+            capacity=(
+                ProfessionCapacity(
+                    profession="frontend_engineer",
+                    eligible=3,
+                    running=1,
+                    assigned_nonterminal=2,
+                    queued_wakes=0,
+                    budget_blocked=0,
+                    budget_headroom_cents=100_000,
+                ),
+            ),
         )
 
     def approve_proposal(self, proposal_id: str, *, by: str) -> str:
@@ -122,7 +134,9 @@ def test_governance_read_renders_the_direction(tmp_path: Path) -> None:
     # the decided proposal is surfaced so the CEO can cite it and a reviewer can confirm the work
     assert "RECENTLY DECIDED" in result.content
     assert "launch the loyalty program" in result.content
-    assert result.structured == {"decisions": 1, "proposals": 1, "decided": 1}
+    # the capacity snapshot is shown so the CEO can size the roadmap to it
+    assert "CAPACITY" in result.content and "frontend_engineer" in result.content
+    assert result.structured == {"decisions": 1, "proposals": 1, "decided": 1, "capacity": 1}
 
 
 def test_proposal_approve_reaches_the_port_with_the_ceo_identity(tmp_path: Path) -> None:
