@@ -58,6 +58,7 @@ def ceo_manifest() -> RoleManifest:
             "working_memory_write",
             "working_memory_append",
             "governance_read",
+            "roadmap_propose",
             "proposal_approve",
             "proposal_reject",
             "goal_set_priority",
@@ -92,6 +93,7 @@ def ceo_manifest() -> RoleManifest:
         skills=(
             "executive-decision-making",
             "strategic-prioritization",
+            "how-to-plan-a-roadmap",
             "capital-allocation",
             "governance-and-oversight",
             "risk-and-downside-management",

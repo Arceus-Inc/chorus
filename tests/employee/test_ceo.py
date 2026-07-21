@@ -39,6 +39,7 @@ def test_ceo_declares_its_executive_toolset() -> None:
         "working_memory_write",
         "working_memory_append",
         "governance_read",
+        "roadmap_propose",
         "proposal_approve",
         "proposal_reject",
         "goal_set_priority",
@@ -62,6 +63,13 @@ def test_ceo_authority_stays_narrow() -> None:
     assert manifest.max_sprints > 1
     assert manifest.model is None  # uses the deployment model the composition root supplies
     assert manifest.mcp is False and manifest.plugins is False
+
+
+def test_ceo_carries_the_roadmap_pen_and_method() -> None:
+    """The CEO authors direction: the deterministic pen (``roadmap_propose``) + the method (the skill)."""
+    manifest = ceo_plugin().manifest
+    assert "roadmap_propose" in manifest.tools  # the pen — the CEO writes the roadmap through it
+    assert "how-to-plan-a-roadmap" in manifest.skills  # the method it plans with
 
 
 def test_ceo_runs_in_an_isolated_worktree_sandbox() -> None:
