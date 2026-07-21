@@ -424,6 +424,10 @@ class RoadmapProposeTool(BaseTool):
         try:
             decision_id = self._port.propose_roadmap(args.statement, specs, by=beat.employee_id)
         except Exception as exc:  # the ledger (horizon) rejects a structurally invalid roadmap
+            # Audit the refusal too: a silent failure lets a reviewer (and the model itself) mistake a
+            # rejected roadmap for an accepted one. The ledger is the artifact-side proof of what really
+            # happened, so a REFUSED line is as load-bearing as a PROPOSED one.
+            _audit(ctx, f"roadmap_propose REFUSED ({len(specs)} goals) — {exc}")
             return ToolResult(
                 content=(
                     f"refused: the roadmap was not accepted — {exc}. Fix the flagged goal(s) "
