@@ -378,6 +378,13 @@ class RoadmapProposeInput(BaseModel):
     statement: str = Field(
         description="the decision this roadmap serves — the sprint's strategic anchor, one sentence"
     )
+    rationale: str = Field(
+        default="",
+        description=(
+            "why THIS decision now — the reasoning behind the roadmap, grounded in the reality digest "
+            "(evidence, numbers, tradeoffs). This is recorded on the decision itself."
+        ),
+    )
     goals: list[RoadmapGoalInput] = Field(
         min_length=1,
         description="the goals, sized to current capacity and sequenced by dependency",
@@ -422,7 +429,9 @@ class RoadmapProposeTool(BaseTool):
                 spec["rationale"] = goal.rationale
             specs.append(spec)
         try:
-            decision_id = self._port.propose_roadmap(args.statement, specs, by=beat.employee_id)
+            decision_id = self._port.propose_roadmap(
+                args.statement, specs, by=beat.employee_id, rationale=args.rationale
+            )
         except Exception as exc:  # the ledger (horizon) rejects a structurally invalid roadmap
             # Audit the refusal too: a silent failure lets a reviewer (and the model itself) mistake a
             # rejected roadmap for an accepted one. The ledger is the artifact-side proof of what really

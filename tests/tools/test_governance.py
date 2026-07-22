@@ -116,7 +116,9 @@ class FakeGovernance:
     def archive_goal(self, goal_id: str) -> None:
         self.archived.append(goal_id)
 
-    def propose_roadmap(self, statement: str, specs, *, by: str | None = None) -> str:
+    def propose_roadmap(
+        self, statement: str, specs, *, by: str | None = None, rationale: str = ""
+    ) -> str:
         self.roadmaps.append((statement, list(specs), by))
         return "d3"
 
@@ -295,7 +297,9 @@ def test_roadmap_propose_wraps_a_ledger_rejection_cleanly(tmp_path: Path) -> Non
     _beat(tmp_path)
 
     class Boom(FakeGovernance):
-        def propose_roadmap(self, statement: str, specs, *, by: str | None = None) -> str:
+        def propose_roadmap(
+            self, statement: str, specs, *, by: str | None = None, rationale: str = ""
+        ) -> str:
             raise ValueError("goal 'A' needs a target")
 
     result = asyncio.run(
