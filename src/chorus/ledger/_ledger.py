@@ -214,9 +214,15 @@ class Ledger:
         """
         conn = LedgerConnection.connect(conninfo, company_id=company_id)
         ledger = cls(conn)
-        ledger._bootstrap()
-        if company_id is not None:
-            ledger._seed_system_principals()
+        try:
+            ledger._bootstrap()
+            if company_id is not None:
+                ledger._seed_system_principals()
+        except BaseException:
+            # Bootstrap/seed failed after the connection opened — release it so a failing open
+            # (e.g. migration drift) cannot leak a slot on every retry and exhaust the pool.
+            ledger.close()
+            raise
         return ledger
 
     def _seed_system_principals(self) -> None:
