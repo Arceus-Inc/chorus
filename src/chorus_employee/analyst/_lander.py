@@ -16,12 +16,13 @@ from typing import TYPE_CHECKING, Any
 
 from chorus.outcomes import Artifact, ArtifactType
 from chorus.workspace import CompanyWorkspace
+from chorus_employee._authorship import author_for, commit_message
 from chorus_employee.analyst._brief import ANALYST_FINDINGS_DOC
 
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from chorus.ledger import Task
+    from chorus.ledger import Ledger, Task
 
 
 class AnalystLander:
@@ -29,8 +30,9 @@ class AnalystLander:
 
     outcome_kind = "finding"
 
-    def __init__(self, company_root: Path) -> None:
+    def __init__(self, company_root: Path, ledger: Ledger | None = None) -> None:
         self._company_root = company_root
+        self._ledger = ledger
 
     async def land(self, task: Task, result: Any) -> Artifact:
         """Snapshot the assignee's worktree and return the ``finding`` artifact for its findings file."""
@@ -41,7 +43,9 @@ class AnalystLander:
         workspace = CompanyWorkspace(self._company_root)
         doc = workspace.worktree_for(employee_id).path / ANALYST_FINDINGS_DOC
         present = doc.is_file() and doc.stat().st_size > 0
-        commit = workspace.snapshot(employee_id)  # commit the findings on chorus/{employee}
+        commit = workspace.snapshot(
+            employee_id, author=author_for(employee_id, self._ledger), message=commit_message(task)
+        )  # commit the findings on chorus/{employee}
         return Artifact(
             task_id=task.id,
             type=ArtifactType.FINDING,
@@ -56,9 +60,9 @@ class AnalystLander:
         )
 
 
-def analyst_lander(company_root: Path) -> AnalystLander:
+def analyst_lander(company_root: Path, ledger: Ledger | None = None) -> AnalystLander:
     """The Analyst's :class:`~chorus.outcomes.OutcomeLander`, rooted at the org workspace."""
-    return AnalystLander(company_root)
+    return AnalystLander(company_root, ledger)
 
 
 __all__ = ["AnalystLander", "analyst_lander"]

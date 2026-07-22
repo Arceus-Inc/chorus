@@ -16,12 +16,13 @@ from typing import TYPE_CHECKING, Any
 
 from chorus.outcomes import Artifact, ArtifactType
 from chorus.workspace import CompanyWorkspace
+from chorus_employee._authorship import author_for, commit_message
 from chorus_employee.designer._brief import DESIGN_SPEC_DOC
 
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from chorus.ledger import Task
+    from chorus.ledger import Ledger, Task
 
 
 class DesignerLander:
@@ -29,8 +30,9 @@ class DesignerLander:
 
     outcome_kind = "design"
 
-    def __init__(self, company_root: Path) -> None:
+    def __init__(self, company_root: Path, ledger: Ledger | None = None) -> None:
         self._company_root = company_root
+        self._ledger = ledger
 
     async def land(self, task: Task, result: Any) -> Artifact:
         """Snapshot the assignee's worktree and return the ``design`` artifact for its spec."""
@@ -41,7 +43,9 @@ class DesignerLander:
         workspace = CompanyWorkspace(self._company_root)
         doc = workspace.worktree_for(employee_id).path / DESIGN_SPEC_DOC
         present = doc.is_file() and doc.stat().st_size > 0
-        commit = workspace.snapshot(employee_id)
+        commit = workspace.snapshot(
+            employee_id, author=author_for(employee_id, self._ledger), message=commit_message(task)
+        )
         return Artifact(
             task_id=task.id,
             type=ArtifactType.ARTIFACT,
@@ -56,9 +60,9 @@ class DesignerLander:
         )
 
 
-def designer_lander(company_root: Path) -> DesignerLander:
+def designer_lander(company_root: Path, ledger: Ledger | None = None) -> DesignerLander:
     """The Designer's :class:`~chorus.outcomes.OutcomeLander`, rooted at the org workspace."""
-    return DesignerLander(company_root)
+    return DesignerLander(company_root, ledger)
 
 
 __all__ = ["DesignerLander", "designer_lander"]

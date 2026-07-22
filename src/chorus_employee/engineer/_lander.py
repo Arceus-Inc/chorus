@@ -22,11 +22,12 @@ from typing import TYPE_CHECKING, Any
 
 from chorus.outcomes import Artifact, ArtifactType
 from chorus.workspace import CompanyWorkspace
+from chorus_employee._authorship import author_for, commit_message
 
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from chorus.ledger import Task
+    from chorus.ledger import Ledger, Task
 
 
 class EngineerLander:
@@ -34,8 +35,9 @@ class EngineerLander:
 
     outcome_kind = "pr"
 
-    def __init__(self, company_root: Path) -> None:
+    def __init__(self, company_root: Path, ledger: Ledger | None = None) -> None:
         self._company_root = company_root
+        self._ledger = ledger
 
     async def land(self, task: Task, result: Any) -> Artifact:
         """Snapshot the assignee's worktree, integrate it into ``main``, and return the ``pr`` artifact."""
@@ -43,10 +45,14 @@ class EngineerLander:
         if employee_id is None:
             raise ValueError(f"task {task.id!r} has no assignee — cannot land a PR")
         workspace = CompanyWorkspace(self._company_root)
+        author = author_for(employee_id, self._ledger)
+        message = commit_message(task)
         commit = workspace.snapshot(
-            employee_id
-        )  # commit the work on chorus/{employee} — the PR tip
-        merge = workspace.merge(employee_id)  # PR → integrate into the company main (conflict-safe)
+            employee_id, author=author, message=message
+        )  # commit the work on chorus/{employee} — the PR tip, authored by the employee
+        merge = workspace.merge(
+            employee_id, author=author, message=message
+        )  # PR → integrate into the company main (conflict-safe)
         return Artifact(
             task_id=task.id,
             type=ArtifactType.PR,
@@ -61,9 +67,9 @@ class EngineerLander:
         )
 
 
-def engineer_lander(company_root: Path) -> EngineerLander:
+def engineer_lander(company_root: Path, ledger: Ledger | None = None) -> EngineerLander:
     """The Engineer's :class:`~chorus.outcomes.OutcomeLander`, rooted at the org workspace."""
-    return EngineerLander(company_root)
+    return EngineerLander(company_root, ledger)
 
 
 __all__ = ["EngineerLander", "engineer_lander"]

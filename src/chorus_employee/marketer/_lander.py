@@ -14,12 +14,13 @@ from typing import TYPE_CHECKING, Any
 
 from chorus.outcomes import Artifact, ArtifactType
 from chorus.workspace import CompanyWorkspace
+from chorus_employee._authorship import author_for, commit_message
 from chorus_employee.marketer._brief import MARKETER_CONTENT_DOC
 
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from chorus.ledger import Task
+    from chorus.ledger import Ledger, Task
 
 
 class MarketerLander:
@@ -27,8 +28,9 @@ class MarketerLander:
 
     outcome_kind = "content"
 
-    def __init__(self, company_root: Path) -> None:
+    def __init__(self, company_root: Path, ledger: Ledger | None = None) -> None:
         self._company_root = company_root
+        self._ledger = ledger
 
     async def land(self, task: Task, result: Any) -> Artifact:
         """Snapshot the assignee's worktree and return the ``content`` artifact for its draft."""
@@ -39,7 +41,9 @@ class MarketerLander:
         workspace = CompanyWorkspace(self._company_root)
         doc = workspace.worktree_for(employee_id).path / MARKETER_CONTENT_DOC
         present = doc.is_file() and doc.stat().st_size > 0
-        commit = workspace.snapshot(employee_id)
+        commit = workspace.snapshot(
+            employee_id, author=author_for(employee_id, self._ledger), message=commit_message(task)
+        )
         return Artifact(
             task_id=task.id,
             type=ArtifactType.ARTIFACT,
@@ -54,9 +58,9 @@ class MarketerLander:
         )
 
 
-def marketer_lander(company_root: Path) -> MarketerLander:
+def marketer_lander(company_root: Path, ledger: Ledger | None = None) -> MarketerLander:
     """The Marketer's :class:`~chorus.outcomes.OutcomeLander`, rooted at the org workspace."""
-    return MarketerLander(company_root)
+    return MarketerLander(company_root, ledger)
 
 
 __all__ = ["MarketerLander", "marketer_lander"]

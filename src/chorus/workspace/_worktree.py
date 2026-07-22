@@ -13,6 +13,7 @@ reusable by the public API and fully testable with a real git repo in a temp dir
 from __future__ import annotations
 
 import logging
+import os
 import shutil
 import subprocess
 from dataclasses import dataclass
@@ -77,6 +78,35 @@ class MergeResult:
     merged: bool
     conflicted: bool
     detail: str
+
+
+@dataclass(frozen=True)
+class Identity:
+    """A commit **author** identity — the employee who did the work.
+
+    Distinct from the machine *committer* (``chorus``): git records both, so the history reads as
+    "authored by Jules, committed by the automation" — real attribution without pretending a person
+    ran git. ``email`` is a stable, derived address (the employee is not a real mailbox).
+    """
+
+    name: str
+    email: str
+
+    @classmethod
+    def for_employee(cls, employee_id: str, name: str | None = None) -> Identity:
+        """Build an author identity for an employee id, using its display ``name`` when known."""
+        display = (name or employee_id).strip() or employee_id
+        return cls(name=display, email=f"{employee_id}@chorus.local")
+
+
+def _author_env(author: Identity | None) -> dict[str, str] | None:
+    """Overlay ``GIT_AUTHOR_*`` for an authored commit; ``None`` leaves the committer as the author."""
+    if author is None:
+        return None
+    env = dict(os.environ)
+    env["GIT_AUTHOR_NAME"] = author.name
+    env["GIT_AUTHOR_EMAIL"] = author.email
+    return env
 
 
 class CompanyWorkspace:
@@ -207,15 +237,23 @@ class CompanyWorkspace:
         return WorktreeWorkspace(path=path, branch=branch)
 
     def merge(
-        self, employee_id: str, *, into: str = "main", message: str | None = None
+        self,
+        employee_id: str,
+        *,
+        into: str = "main",
+        message: str | None = None,
+        author: Identity | None = None,
     ) -> MergeResult:
         """Snapshot the employee's uncommitted work, then merge its branch into ``into`` (default main).
 
-        Returns a :class:`MergeResult`; a merge conflict is reported (and aborted), never raised, so a
-        caller can surface it without the workspace left mid-merge.
+        ``author`` (the employee) is recorded as the git author on both the snapshot and the merge
+        commit; the committer stays the ``chorus`` automation. ``message`` describes the delivered
+        work (falls back to a generic snapshot/merge message). Returns a :class:`MergeResult`; a merge
+        conflict is reported (and aborted), never raised, so a caller can surface it without the
+        workspace left mid-merge.
         """
         branch = f"chorus/{employee_id}"
-        self._snapshot(employee_id)
+        self._snapshot(employee_id, author=author, message=message)
         msg = message or f"chorus: merge {branch}"
         done = subprocess.run(
             [
@@ -231,6 +269,7 @@ class CompanyWorkspace:
             ],
             capture_output=True,
             text=True,
+            env=_author_env(author),
         )
         if done.returncode == 0:
             return MergeResult(
@@ -288,16 +327,29 @@ class CompanyWorkspace:
         )
         return False
 
-    def snapshot(self, employee_id: str) -> str:
+    def snapshot(
+        self,
+        employee_id: str,
+        *,
+        author: Identity | None = None,
+        message: str | None = None,
+    ) -> str:
         """Commit any uncommitted work in the employee's worktree; return its branch HEAD commit sha.
 
         The outcome-landing primitive (spec 04 §2): an Engineer's deliverable is its branch + the
         committed work, so landing a "PR" snapshots the worktree and points the artifact at this sha.
+        ``author``/``message`` attribute the commit to the employee with a meaningful summary.
         """
-        self._snapshot(employee_id)
+        self._snapshot(employee_id, author=author, message=message)
         return self._run(self.worktree_for(employee_id).path, "rev-parse", "HEAD")
 
-    def _snapshot(self, employee_id: str) -> None:
+    def _snapshot(
+        self,
+        employee_id: str,
+        *,
+        author: Identity | None = None,
+        message: str | None = None,
+    ) -> None:
         """Commit any uncommitted (non-excluded) work in the employee's worktree, if there is any."""
         wt = self.worktree_for(employee_id).path
         self._run(wt, "add", "-A")
@@ -305,7 +357,14 @@ class CompanyWorkspace:
             ["git", "-C", str(wt), "diff", "--cached", "--quiet"], capture_output=True, text=True
         )
         if staged.returncode != 0:  # non-zero → there are staged changes to capture
-            self._run(wt, *_COMMIT_IDENTITY, "commit", "-m", "chorus: snapshot work")
+            self._run(
+                wt,
+                *_COMMIT_IDENTITY,
+                "commit",
+                "-m",
+                message or "chorus: snapshot work",
+                env=_author_env(author),
+            )
 
     def _branch_exists(self, branch: str) -> bool:
         return (
@@ -317,8 +376,10 @@ class CompanyWorkspace:
             == 0
         )
 
-    def _run(self, cwd: Path, *args: str) -> str:
-        done = subprocess.run(["git", "-C", str(cwd), *args], capture_output=True, text=True)
+    def _run(self, cwd: Path, *args: str, env: dict[str, str] | None = None) -> str:
+        done = subprocess.run(
+            ["git", "-C", str(cwd), *args], capture_output=True, text=True, env=env
+        )
         if done.returncode != 0:
             raise WorkspaceError(
                 f"git {' '.join(args)} failed: {(done.stderr or done.stdout).strip()}"
@@ -328,6 +389,7 @@ class CompanyWorkspace:
 
 __all__ = [
     "CompanyWorkspace",
+    "Identity",
     "MergeResult",
     "WorkspaceError",
     "WorktreeWorkspace",

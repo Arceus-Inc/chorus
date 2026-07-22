@@ -40,14 +40,14 @@ def default_landers(company_root: Path, *, ledger: Ledger | None = None) -> Land
     change.
     """
     landers: list[OutcomeLander] = [
-        engineer_lander(company_root),
+        engineer_lander(company_root, ledger),
         pm_lander(
             company_root, ledger
         ),  # ledger (when present) also renders the §10 decision packet
-        analyst_lander(company_root),
-        marketer_lander(company_root),
-        designer_lander(company_root),
-        ceo_lander(company_root),
+        analyst_lander(company_root, ledger),
+        marketer_lander(company_root, ledger),
+        designer_lander(company_root, ledger),
+        ceo_lander(company_root, ledger),
     ]
     if ledger is not None:
         landers.append(manager_lander(ledger))

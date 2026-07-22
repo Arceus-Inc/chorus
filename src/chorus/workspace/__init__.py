@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from chorus.workspace._worktree import (
     CompanyWorkspace,
+    Identity,
     MergeResult,
     WorkspaceError,
     WorktreeWorkspace,
@@ -18,6 +19,7 @@ from chorus.workspace._worktree import (
 
 __all__ = [
     "CompanyWorkspace",
+    "Identity",
     "MergeResult",
     "WorkspaceError",
     "WorktreeWorkspace",
