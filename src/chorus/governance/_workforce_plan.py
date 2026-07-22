@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections import Counter, defaultdict
 
 from chorus.ids import mint_id
@@ -181,14 +182,31 @@ class WorkforcePlanService:
         ordered = self._topological_employees(
             plan.draft, root_employee_id=plan.proposed_by_employee_id
         )
+        # A plan ``ref`` is a CEO-authored, in-plan handle used only to wire reporting lines and
+        # grants within one proposal (e.g. the model writes "new-jules"). It must NOT leak into the
+        # ledger as the permanent employee id. Mint a clean, human id from the person's real name
+        # and remap every in-plan reference (``reports_to_ref``, grant ``employee_ref``) through it;
+        # an existing employee id (a current manager like the CEO) passes through unchanged.
+        taken_ids = {employee.id for employee in self._ledger.employees.list()}
+        ref_to_id: dict[str, str] = {}
+        for planned in ordered:
+            employee_id = _mint_employee_id(planned.name, taken_ids)
+            ref_to_id[planned.ref] = employee_id
+            taken_ids.add(employee_id)
+
+        def _resolve(ref: str) -> str:
+            """Map an in-plan new-hire ref to its minted id; an existing employee id passes through."""
+            return ref_to_id.get(ref, ref)
+
         with self._ledger.transaction():
             for planned in ordered:
+                employee_id = ref_to_id[planned.ref]
                 self._ledger.employees.create(
                     Employee(
-                        id=planned.ref,
+                        id=employee_id,
                         name=planned.name,
                         role=planned.profession,
-                        reports_to=planned.reports_to_ref,
+                        reports_to=_resolve(planned.reports_to_ref),
                         status=EmployeeStatus.IDLE,
                     )
                 )
@@ -200,7 +218,7 @@ class WorkforcePlanService:
 
                     reconcile_declared_routines(
                         self._ledger,
-                        employee_id=planned.ref,
+                        employee_id=employee_id,
                         declarations=plugin.declared_routines,
                     )
                 if planned.budget_cents is not None:
@@ -208,20 +226,21 @@ class WorkforcePlanService:
                         BudgetPolicy(
                             id=mint_id(),
                             scope_type=BudgetScope.EMPLOYEE,
-                            scope_id=planned.ref,
+                            scope_id=employee_id,
                             amount=planned.budget_cents,
                         )
                     )
             for grant in plan.draft.management_grants:
+                grant_employee_id = _resolve(grant.employee_ref)
                 # A grant may re-affirm an employee who already holds a profile (the CEO always
                 # does; so do leads carried across an amendment). The profile is versioned and the
                 # store requires the version to strictly increase, so bump past the current one —
                 # a fresh grant starts at 1.
-                current = self._ledger.management_profiles.get(grant.employee_ref)
+                current = self._ledger.management_profiles.get(grant_employee_id)
                 next_version = current.version + 1 if current is not None else 1
                 self._ledger.management_profiles.upsert(
                     ManagementProfile(
-                        employee_id=grant.employee_ref,
+                        employee_id=grant_employee_id,
                         granted_by_user_id=actor,
                         active=True,
                         can_lead=grant.can_lead,
@@ -453,6 +472,25 @@ def _require_human_actor(actor_user_id: str) -> str:
     if not actor:
         raise ValueError("human actor user id is required")
     return actor
+
+
+def _slugify_name(name: str) -> str:
+    """A clean id fragment from a person's name: lowercase, latin-alnum runs joined by ``-``."""
+    return re.sub(r"[^a-z0-9]+", "-", name.strip().casefold()).strip("-")
+
+
+def _mint_employee_id(name: str, taken: set[str]) -> str:
+    """A stable, human-readable permanent employee id derived from ``name``, unique against ``taken``.
+
+    The CEO-authored plan ``ref`` is only an in-plan handle (e.g. "new-jules"); the permanent id is
+    derived from the person's real name instead — "Jules" -> ``jules``, "Mary Jane" -> ``mary-jane`` —
+    so the ledger reads like a real roster. Falls back to a minted id for a name with no latin
+    alphanumerics, and disambiguates a collision with a short suffix.
+    """
+    base = _slugify_name(name) or f"emp-{mint_id()[:8]}"
+    if base not in taken:
+        return base
+    return f"{base}-{mint_id()[:4]}"
 
 
 __all__ = ["WorkforcePlanService"]
