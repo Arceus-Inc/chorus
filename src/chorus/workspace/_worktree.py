@@ -158,6 +158,10 @@ class CompanyWorkspace:
                 "-m",
                 "chorus: company root",
             )
+        # Deeply nested workdir paths (workdir/<company>/work/<company>/repo/...) can exceed the
+        # Windows 260-char MAX_PATH and break `git add` mid-beat; long paths are shared with the
+        # linked worktrees via the common config, so set it once on the company repo.
+        self._run(self._repo, "config", "core.longpaths", "true")
         exclude = self._repo / ".git" / "info" / "exclude"
         exclude.write_text("\n".join(_OPERATIONAL_EXCLUDES) + "\n", encoding="utf-8")
         return self._repo
