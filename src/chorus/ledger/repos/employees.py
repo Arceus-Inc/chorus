@@ -7,16 +7,16 @@ to the Workforce layer (spec 06 §3), not here — this is plain row I/O.
 
 from __future__ import annotations
 
-import sqlite3
+import builtins
 
-from chorus.ledger.repos._base import utcnow_iso
+from chorus.ledger.repos._base import LedgerConnection, LedgerRow, utcnow_iso
 from chorus.workforce import Employee, EmployeeStatus
 
 
 class EmployeeRepo:
     """Create + read ``employee`` rows."""
 
-    def __init__(self, conn: sqlite3.Connection) -> None:
+    def __init__(self, conn: LedgerConnection) -> None:
         self._conn = conn
 
     def create(self, employee: Employee) -> Employee:
@@ -43,9 +43,7 @@ class EmployeeRepo:
         return employee
 
     def get(self, employee_id: str) -> Employee | None:
-        row = self._conn.execute(
-            "SELECT * FROM employee WHERE id = ?", (employee_id,)
-        ).fetchone()
+        row = self._conn.execute("SELECT * FROM employee WHERE id = ?", (employee_id,)).fetchone()
         return _row_to_employee(row) if row is not None else None
 
     def list(self) -> list[Employee]:
@@ -61,8 +59,35 @@ class EmployeeRepo:
         )
         self._conn.commit()
 
+    def set_reports_to(self, employee_id: str, reports_to: str | None) -> None:
+        """Persist one reporting-line change after the Workforce validates it."""
+        self._conn.execute(
+            "UPDATE employee SET reports_to = ?, updated_at = ? WHERE id = ?",
+            (reports_to, utcnow_iso(), employee_id),
+        )
+        self._conn.commit()
 
-def _row_to_employee(row: sqlite3.Row) -> Employee:
+    def set_role(self, employee_id: str, role: str) -> None:
+        """Persist an explicitly validated profession migration."""
+        self._conn.execute(
+            "UPDATE employee SET role = ?, updated_at = ? WHERE id = ?",
+            (role, utcnow_iso(), employee_id),
+        )
+        self._conn.commit()
+
+    def active_contract_refs(self, employee_id: str) -> builtins.list[tuple[str, str]]:
+        """Active ``(task_id, team_id)`` contracts involving this employee."""
+        rows = self._conn.execute(
+            "SELECT DISTINCT dc.task_id, dc.team_id FROM delegation_contract dc "
+            "LEFT JOIN team_member tm ON tm.team_id = dc.team_id AND tm.left_at IS NULL "
+            "WHERE dc.status <> 'done' AND (dc.lead_employee_id = ? OR tm.employee_id = ?) "
+            "ORDER BY dc.task_id",
+            (employee_id, employee_id),
+        ).fetchall()
+        return [(row["task_id"], row["team_id"]) for row in rows]
+
+
+def _row_to_employee(row: LedgerRow) -> Employee:
     return Employee(
         id=row["id"],
         name=row["name"],

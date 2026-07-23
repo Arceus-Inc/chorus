@@ -1,7 +1,7 @@
 """M2 memory capture, keyed end-to-end: a real engineer beat lands one episodic sprint delta.
 
 Proves spec 07 §3 with a **real** dream beat: run one Engineer beat through the kernel with an
-``AppendOnlyMemoryWriter`` injected, then verify that exactly one provenance-stamped ``sprint_delta``
+``EpisodicStore`` injected, then verify that exactly one provenance-stamped ``sprint_delta``
 record landed under the project scope — and that **dream's own scanner** reads it back (the
 ``MemoryWriter`` / ``MemoryStore`` contract holds). Emits an HTML verification report.
 
@@ -14,6 +14,9 @@ from __future__ import annotations
 import asyncio
 import html
 import os
+import uuid
+
+_EXAMPLE_COMPANY = str(uuid.uuid5(uuid.NAMESPACE_URL, "chorus-example"))  # one stable demo org
 import subprocess
 import sys
 import tempfile
@@ -23,9 +26,9 @@ from dream.memory._scan import scan_memory_dir
 
 from chorus.budgets import BudgetEnforcer
 from chorus.heartbeat import Scheduler
-from chorus.ledger import SqliteLedger, Task, TaskStatus
+from chorus.ledger import Ledger, Task, TaskStatus
 from chorus.lifecycle import assign_task
-from chorus.memory import AppendOnlyMemoryWriter
+from chorus.memory import EpisodicStore
 from chorus.roles import RoleRegistry, default_roles
 from chorus.workforce import Employee, LedgerWorkforce
 from chorus_cli._beats import default_pricing_from_env
@@ -53,7 +56,18 @@ def _seed_repo(path: Path) -> None:
     )
     subprocess.run(["git", "-C", str(path), "add", "-A"], check=True, capture_output=True)
     subprocess.run(
-        ["git", "-C", str(path), "-c", "user.name=s", "-c", "user.email=s@x", "commit", "-m", "init"],
+        [
+            "git",
+            "-C",
+            str(path),
+            "-c",
+            "user.name=s",
+            "-c",
+            "user.email=s@x",
+            "commit",
+            "-m",
+            "init",
+        ],
         check=True,
         capture_output=True,
     )
@@ -62,7 +76,7 @@ def _seed_repo(path: Path) -> None:
 def _write_report(checks: list[tuple[str, bool, str]], record_text: str) -> None:
     rows = "\n".join(
         f'<tr><td>{html.escape(name)}</td><td class="{"ok" if ok else "bad"}">'
-        f'{"PASS" if ok else "FAIL"}</td><td>{html.escape(detail)}</td></tr>'
+        f"{'PASS' if ok else 'FAIL'}</td><td>{html.escape(detail)}</td></tr>"
         for name, ok, detail in checks
     )
     verdict = "ALL CHECKS PASS" if all(ok for _, ok, _ in checks) else "FAILURES PRESENT"
@@ -83,7 +97,7 @@ pre{{background:#0f172a;color:#dbeafe;padding:12px;border-radius:10px;overflow-x
 read back by dream's own scanner.</p>
 <p><strong class="{"ok" if verdict.startswith("ALL") else "bad"}">{verdict}</strong></p></div>
 <div class="card"><h2>Scenario</h2><p>Run one real Engineer beat (add <code>subtract</code> + a test)
-through the kernel with an <code>AppendOnlyMemoryWriter</code> injected; verify the captured memory record.</p></div>
+through the kernel with an <code>EpisodicStore</code> injected; verify the captured memory record.</p></div>
 <div class="card"><h2>Checks</h2><table><tr><th>Check</th><th>Result</th><th>Detail</th></tr>
 {rows}</table></div>
 <div class="card"><h2>The captured record</h2><pre>{html.escape(record_text)}</pre></div>
@@ -105,24 +119,36 @@ def main() -> int:
     seed = base / "source"
     _seed_repo(seed)
 
-    ledger = SqliteLedger.open(":memory:")
+    ledger = Ledger.open(
+        os.environ.get("CHORUS_LEDGER_DSN", "postgresql://localhost/chorus"),
+        company_id=_EXAMPLE_COMPANY,
+    )
     try:
         registry = RoleRegistry.from_plugins(default_roles())
         factory = EmployeeHarnessFactory(
-            api_key=api_key, base_url=base_url, deployment=deployment,
-            company_id="acme", roles=registry, pricing=default_pricing_from_env(), seed=seed,
+            api_key=api_key,
+            base_url=base_url,
+            deployment=deployment,
+            company_id="acme",
+            roles=registry,
+            pricing=default_pricing_from_env(),
+            seed=seed,
         )
         memory_root = factory.company_root / "memory"
-        writer = AppendOnlyMemoryWriter(memory_root)
+        writer = EpisodicStore(memory_root)
         ledger.employees.create(Employee(id="ada", name="Ada", role="engineer"))
         ledger.tasks.submit(Task(id="t1", intent=_TASK))
         assign_task(ledger, "t1", "ada")
 
         scheduler = Scheduler(
-            ledger=ledger, workforce=LedgerWorkforce(ledger.employees),
-            beat_runner_for=factory, budget_enforcer=BudgetEnforcer(ledger, company_id="acme"),
-            roles=registry, landers=default_landers(factory.company_root),
-            memory_writer=writer, max_concurrent_runs=1,
+            ledger=ledger,
+            workforce=LedgerWorkforce(ledger.employees),
+            beat_runner_for=factory,
+            budget_enforcer=BudgetEnforcer(ledger, company_id="acme"),
+            roles=registry,
+            landers=default_landers(factory.company_root),
+            memory_writer=writer,
+            max_concurrent_runs=1,
         )
 
         _log("running one keyed engineer beat with memory capture …")
@@ -140,17 +166,35 @@ def main() -> int:
         project_dir = memory_root / "project"
         records = scan_memory_dir(project_dir)
         rec = records[0] if records else None
-        rec_text = (rec.source.read_text(encoding="utf-8") if rec and rec.source else "(no record written)")
+        rec_text = (
+            rec.source.read_text(encoding="utf-8") if rec and rec.source else "(no record written)"
+        )
         fm = rec.frontmatter if rec else {}
 
         checks: list[tuple[str, bool, str]] = [
-            ("one episodic record written", len(records) == 1, f"{len(records)} record(s) under {project_dir}"),
-            ("named by the run id (provenance)", bool(rec) and rec.id == run_id, f"id={rec.id if rec else '-'} run={run_id}"),
+            (
+                "one episodic record written",
+                len(records) == 1,
+                f"{len(records)} record(s) under {project_dir}",
+            ),
+            (
+                "named by the run id (provenance)",
+                bool(rec) and rec.id == run_id,
+                f"id={rec.id if rec else '-'} run={run_id}",
+            ),
             ("kind = sprint_delta", fm.get("kind") == "sprint_delta", str(fm.get("kind"))),
             ("provenance: task_id", fm.get("task_id") == "t1", str(fm.get("task_id"))),
             ("provenance: employee_id", fm.get("employee_id") == "ada", str(fm.get("employee_id"))),
-            ("outcome recorded", fm.get("outcome") in ("done", "needs_changes", "blocked"), str(fm.get("outcome"))),
-            ("dream's scanner reads it back", bool(rec) and bool(rec.content), "scan_memory_dir parsed the record"),
+            (
+                "outcome recorded",
+                fm.get("outcome") in ("done", "needs_changes", "blocked"),
+                str(fm.get("outcome")),
+            ),
+            (
+                "dream's scanner reads it back",
+                bool(rec) and bool(rec.content),
+                "scan_memory_dir parsed the record",
+            ),
         ]
         _write_report(checks, rec_text)
 

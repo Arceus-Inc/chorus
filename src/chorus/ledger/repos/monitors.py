@@ -9,17 +9,23 @@ closes it when the task goes terminal or human-owned.
 
 from __future__ import annotations
 
-import sqlite3
 from datetime import datetime
 
 from chorus.ledger._models import Monitor, MonitorRecoveryPolicy, MonitorStatus
-from chorus.ledger.repos._base import from_iso, to_iso, utcnow_iso
+from chorus.ledger.repos._base import (
+    LedgerConnection,
+    LedgerRow,
+    from_iso,
+    require_persisted,
+    to_iso,
+    utcnow_iso,
+)
 
 
 class MonitorRepo:
     """Arm, scan, fire, re-arm, and clear ``monitor`` rows."""
 
-    def __init__(self, conn: sqlite3.Connection) -> None:
+    def __init__(self, conn: LedgerConnection) -> None:
         self._conn = conn
 
     def arm(self, monitor: Monitor) -> Monitor:
@@ -45,8 +51,7 @@ class MonitorRepo:
             ),
         )
         self._conn.commit()
-        armed = self.get(monitor.id)
-        assert armed is not None  # just inserted in this transaction
+        armed = require_persisted(self.get(monitor.id), monitor.id)
         return armed
 
     def get(self, monitor_id: str) -> Monitor | None:
@@ -106,18 +111,15 @@ class MonitorRepo:
 
     def clear(self, monitor_id: str) -> None:
         """Close the monitor (task went terminal or human-owned), freeing the task."""
-        self._conn.execute(
-            "UPDATE monitor SET status = 'cleared' WHERE id = ?", (monitor_id,)
-        )
+        self._conn.execute("UPDATE monitor SET status = 'cleared' WHERE id = ?", (monitor_id,))
         self._conn.commit()
 
     def _reload(self, monitor_id: str) -> Monitor:
-        reloaded = self.get(monitor_id)
-        assert reloaded is not None  # the row exists — caller verified it above
+        reloaded = require_persisted(self.get(monitor_id), monitor_id)
         return reloaded
 
 
-def _row_to_monitor(row: sqlite3.Row) -> Monitor:
+def _row_to_monitor(row: LedgerRow) -> Monitor:
     return Monitor(
         id=row["id"],
         task_id=row["task_id"],

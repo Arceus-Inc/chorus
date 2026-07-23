@@ -14,7 +14,8 @@ import pytest
 from chorus.heartbeat import Scheduler, Wake, WakeReason
 from chorus.heartbeat._beat import BeatOutcome
 from chorus.heartbeat._runner_for import runner_from, single
-from chorus.ledger import RunStatus, SqliteLedger, Task, TaskStatus
+from chorus.ledger import Ledger, RunStatus, Task, TaskStatus
+from chorus.testing import uid
 from chorus.workforce import Employee
 
 pytestmark = pytest.mark.integration
@@ -30,7 +31,14 @@ class _TaggedBeat:
         self.calls: list[str] = []
 
     async def run_task(
-        self, *, task_id: str, intent: str, verification: object = (), rubric: object = "", observer: object = None, run_id: str | None = None
+        self,
+        *,
+        task_id: str,
+        intent: str,
+        verification: object = (),
+        rubric: object = "",
+        observer: object = None,
+        run_id: str | None = None,
     ) -> BeatOutcome:
         self.calls.append(task_id)
         return BeatOutcome(passed=True, outcome={}, summary=self.tag)
@@ -59,14 +67,18 @@ class _FakeWorkforce:
         return self._by_id[employee_id]
 
 
-def _seed(ledger: SqliteLedger, employee_id: str, task_id: str) -> Employee:
+def _seed(ledger: Ledger, employee_id: str, task_id: str) -> Employee:
     employee = ledger.employees.create(Employee(id=employee_id, name=employee_id, role="engineer"))
     ledger.tasks.submit(
         Task(id=task_id, intent="ship", status=TaskStatus.TODO, assignee_employee_id=employee_id)
     )
     ledger.wakes.enqueue(
-        Wake(id=f"w_{task_id}", employee_id=employee_id, reason=WakeReason.TASK_ASSIGNED,
-             payload={"task_id": task_id})
+        Wake(
+            id=uid(f"w_{task_id}"),
+            employee_id=employee_id,
+            reason=WakeReason.TASK_ASSIGNED,
+            payload={"task_id": task_id},
+        )
     )
     return employee
 
@@ -74,8 +86,8 @@ def _seed(ledger: SqliteLedger, employee_id: str, task_id: str) -> Employee:
 def test_single_returns_the_one_runner_for_any_employee() -> None:
     runner = _TaggedBeat("only")
     seam = single(runner)
-    assert seam.runner_for(Employee(id="a", name="a", role="engineer")) is runner
-    assert seam.runner_for(Employee(id="b", name="b", role="reviewer")) is runner
+    assert seam.runner_for(Employee(id=uid("a"), name=uid("a"), role="engineer")) is runner
+    assert seam.runner_for(Employee(id=uid("b"), name=uid("b"), role="reviewer")) is runner
 
 
 def test_runner_from_wraps_a_callable_as_the_seam() -> None:
@@ -88,14 +100,14 @@ def test_runner_from_wraps_a_callable_as_the_seam() -> None:
         return runner
 
     seam = runner_from(resolve)
-    got = seam.runner_for(Employee(id="a", name="a", role="engineer"), task_id="t1")
+    got = seam.runner_for(Employee(id=uid("a"), name=uid("a"), role="engineer"), task_id=uid("t1"))
     assert got is runner
-    assert seen == [("a", "t1")]
+    assert seen == [(uid("a"), uid("t1"))]
 
 
-async def test_scheduler_resolves_a_distinct_runner_per_employee(ledger: SqliteLedger) -> None:
-    ada = _seed(ledger, "ada", "t-ada")
-    bob = _seed(ledger, "bob", "t-bob")
+async def test_scheduler_resolves_a_distinct_runner_per_employee(ledger: Ledger) -> None:
+    ada = _seed(ledger, "ada", uid("t-ada"))
+    bob = _seed(ledger, "bob", uid("t-bob"))
     factory = _PerEmployee()
     sched = Scheduler(
         ledger=ledger,
@@ -108,12 +120,12 @@ async def test_scheduler_resolves_a_distinct_runner_per_employee(ledger: SqliteL
     await sched.drain()
 
     # each employee's own runner ran exactly its own task — not one shared runner
-    assert factory.runners["ada"].calls == ["t-ada"]
-    assert factory.runners["bob"].calls == ["t-bob"]
+    assert factory.runners["ada"].calls == [uid("t-ada")]
+    assert factory.runners["bob"].calls == [uid("t-bob")]
 
 
-async def test_scheduler_still_accepts_a_single_beat_runner(ledger: SqliteLedger) -> None:
-    ada = _seed(ledger, "ada", "t-ada")
+async def test_scheduler_still_accepts_a_single_beat_runner(ledger: Ledger) -> None:
+    ada = _seed(ledger, "ada", uid("t-ada"))
     runner = _TaggedBeat("shared")
     sched = Scheduler(
         ledger=ledger, workforce=_FakeWorkforce(ada), beat_runner=runner, max_concurrent_runs=1
@@ -122,13 +134,13 @@ async def test_scheduler_still_accepts_a_single_beat_runner(ledger: SqliteLedger
     await sched.tick(_NOW)
     await sched.drain()
 
-    assert runner.calls == ["t-ada"]  # back-compat: a single runner is wrapped in single()
+    assert runner.calls == [uid("t-ada")]  # back-compat: a single runner is wrapped in single()
 
 
 async def test_runner_materialization_failure_is_recorded_as_failed_run(
-    ledger: SqliteLedger,
+    ledger: Ledger,
 ) -> None:
-    ada = _seed(ledger, "ada", "t-ada")
+    ada = _seed(ledger, "ada", uid("t-ada"))
     sched = Scheduler(
         ledger=ledger,
         workforce=_FakeWorkforce(ada),
@@ -139,14 +151,14 @@ async def test_runner_materialization_failure_is_recorded_as_failed_run(
     await sched.tick(_NOW)
     await sched.drain()
 
-    runs = ledger.runs.for_task("t-ada")
+    runs = ledger.runs.for_task(uid("t-ada"))
     assert len(runs) == 1
     assert runs[0].status is RunStatus.FAILED
     assert "copy loop" in str(runs[0].outcome)
 
-    task = ledger.tasks.get("t-ada")
+    task = ledger.tasks.get(uid("t-ada"))
     assert task is not None
     assert task.status is TaskStatus.BLOCKED
     assert task.checkout_run_id is None
     assert task.execution_run_id is None
-    assert ledger.recovery_actions.active_for_source("t-ada") is not None
+    assert ledger.recovery_actions.active_for_source(uid("t-ada")) is not None

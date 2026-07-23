@@ -6,7 +6,7 @@ from datetime import UTC
 
 import pytest
 
-from chorus.ledger import SqliteLedger
+from chorus.ledger import Ledger
 from chorus_cli import CliSession, LoopSignal
 from chorus_cli._context import utc_now
 
@@ -22,5 +22,5 @@ def test_utc_now_is_timezone_aware() -> None:
     assert utc_now().tzinfo is UTC
 
 
-def test_session_defaults_to_the_utc_clock(ledger: SqliteLedger) -> None:
+def test_session_defaults_to_the_utc_clock(ledger: Ledger) -> None:
     assert CliSession(ledger=ledger).clock is utc_now

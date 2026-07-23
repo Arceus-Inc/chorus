@@ -10,13 +10,14 @@ from __future__ import annotations
 
 import pytest
 
-from chorus.ledger import SqliteLedger, Task, TaskStatus
+from chorus.ledger import Ledger, Task, TaskStatus
 from chorus.lifecycle import (
     IllegalTransition,
     assert_legal,
     entry_stamp,
     is_legal,
 )
+from chorus.testing import uid
 from chorus.workforce import Employee
 
 # The authoritative edges (spec 02 §2) — pinned here, independently of the module.
@@ -49,9 +50,7 @@ _LEGAL: dict[TaskStatus, set[TaskStatus]] = {
 
 _ALL = list(TaskStatus)
 _LEGAL_PAIRS = [(s, t) for s, ts in _LEGAL.items() for t in ts]
-_ILLEGAL_PAIRS = [
-    (s, t) for s in _ALL for t in _ALL if t not in _LEGAL[s]
-]
+_ILLEGAL_PAIRS = [(s, t) for s in _ALL for t in _ALL if t not in _LEGAL[s]]
 
 
 # -- the pure machine ---------------------------------------------------------
@@ -112,59 +111,59 @@ def test_bare_patch_into_in_progress_is_rejected() -> None:
 # -- the guarded repo seam ----------------------------------------------------
 
 
-def _submit(ledger: SqliteLedger, status: TaskStatus) -> Task:
-    return ledger.tasks.submit(Task(id="t1", intent="ship it", status=status))
+def _submit(ledger: Ledger, status: TaskStatus) -> Task:
+    return ledger.tasks.submit(Task(id=uid("t1"), intent="ship it", status=status))
 
 
-def test_transition_todo_to_blocked(ledger: SqliteLedger) -> None:
+def test_transition_todo_to_blocked(ledger: Ledger) -> None:
     _submit(ledger, TaskStatus.TODO)
-    ledger.tasks.transition("t1", TaskStatus.BLOCKED)
-    task = ledger.tasks.get("t1")
+    ledger.tasks.transition(uid("t1"), TaskStatus.BLOCKED)
+    task = ledger.tasks.get(uid("t1"))
     assert task is not None
     assert task.status is TaskStatus.BLOCKED
     assert task.started_at is None  # blocked stamps nothing
 
 
-def test_transition_into_in_progress_requires_checkout(ledger: SqliteLedger) -> None:
+def test_transition_into_in_progress_requires_checkout(ledger: Ledger) -> None:
     _submit(ledger, TaskStatus.TODO)
     with pytest.raises(IllegalTransition):
-        ledger.tasks.transition("t1", TaskStatus.IN_PROGRESS)
-    task = ledger.tasks.get("t1")
+        ledger.tasks.transition(uid("t1"), TaskStatus.IN_PROGRESS)
+    task = ledger.tasks.get(uid("t1"))
     assert task is not None
     assert task.status is TaskStatus.TODO  # rejected, unchanged
 
 
 def test_checkout_then_transition_to_done_stamps_completed(
-    ledger: SqliteLedger, employee: Employee
+    ledger: Ledger, employee: Employee
 ) -> None:
     _submit(ledger, TaskStatus.TODO)
-    assert ledger.tasks.checkout("t1", employee_id=employee.id, run_id="run_1")
-    ledger.tasks.transition("t1", TaskStatus.DONE)
-    task = ledger.tasks.get("t1")
+    assert ledger.tasks.checkout(uid("t1"), employee_id=employee.id, run_id=uid("run_1"))
+    ledger.tasks.transition(uid("t1"), TaskStatus.DONE)
+    task = ledger.tasks.get(uid("t1"))
     assert task is not None
     assert task.status is TaskStatus.DONE
     assert task.started_at is not None
     assert task.completed_at is not None
 
 
-def test_transition_to_cancelled_stamps_cancelled_at(ledger: SqliteLedger) -> None:
+def test_transition_to_cancelled_stamps_cancelled_at(ledger: Ledger) -> None:
     _submit(ledger, TaskStatus.TODO)
-    ledger.tasks.transition("t1", TaskStatus.CANCELLED)
-    task = ledger.tasks.get("t1")
+    ledger.tasks.transition(uid("t1"), TaskStatus.CANCELLED)
+    task = ledger.tasks.get(uid("t1"))
     assert task is not None
     assert task.status is TaskStatus.CANCELLED
     assert task.cancelled_at is not None
 
 
-def test_transition_from_terminal_is_rejected(ledger: SqliteLedger) -> None:
+def test_transition_from_terminal_is_rejected(ledger: Ledger) -> None:
     _submit(ledger, TaskStatus.DONE)
     with pytest.raises(IllegalTransition):
-        ledger.tasks.transition("t1", TaskStatus.TODO)
-    task = ledger.tasks.get("t1")
+        ledger.tasks.transition(uid("t1"), TaskStatus.TODO)
+    task = ledger.tasks.get(uid("t1"))
     assert task is not None
     assert task.status is TaskStatus.DONE  # terminal, unchanged
 
 
-def test_transition_unknown_task_raises(ledger: SqliteLedger) -> None:
+def test_transition_unknown_task_raises(ledger: Ledger) -> None:
     with pytest.raises(KeyError):
-        ledger.tasks.transition("nope", TaskStatus.TODO)
+        ledger.tasks.transition(uid("nope"), TaskStatus.TODO)

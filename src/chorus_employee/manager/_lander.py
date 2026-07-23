@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, Any
 from chorus.outcomes import Artifact, ArtifactType
 
 if TYPE_CHECKING:
-    from chorus.ledger import SqliteLedger, Task
+    from chorus.ledger import Ledger, Task
 
 
 class ManagerLander:
@@ -24,12 +24,14 @@ class ManagerLander:
 
     outcome_kind = "subtree"
 
-    def __init__(self, ledger: SqliteLedger) -> None:
+    def __init__(self, ledger: Ledger) -> None:
         self._ledger = ledger
 
     async def land(self, task: Task, result: Any) -> Artifact:
         """Record the completed subtree: every child id, its assignee, and its terminal status."""
-        del result  # the deliverable is the subtree state, read from the ledger — not the beat output
+        del (
+            result
+        )  # the deliverable is the subtree state, read from the ledger — not the beat output
         children = self._ledger.tasks.children(task.id)
         return Artifact(
             task_id=task.id,
@@ -45,7 +47,7 @@ class ManagerLander:
         )
 
 
-def manager_lander(ledger: SqliteLedger) -> ManagerLander:
+def manager_lander(ledger: Ledger) -> ManagerLander:
     """The Manager's :class:`~chorus.outcomes.OutcomeLander`, reading its subtree from the ledger."""
     return ManagerLander(ledger)
 

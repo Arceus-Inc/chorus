@@ -7,8 +7,6 @@ it exact-once — a second pending request for the same subject raises ``Integri
 
 from __future__ import annotations
 
-import sqlite3
-
 from chorus.ledger._models import (
     Approval,
     ApprovalAction,
@@ -16,13 +14,19 @@ from chorus.ledger._models import (
     ApprovalStatus,
     ApprovalSubjectKind,
 )
-from chorus.ledger.repos._base import from_iso, utcnow_iso
+from chorus.ledger.repos._base import (
+    LedgerConnection,
+    LedgerRow,
+    from_iso,
+    require_persisted,
+    utcnow_iso,
+)
 
 
 class ApprovalRepo:
     """Open, resolve, and read ``approval`` rows."""
 
-    def __init__(self, conn: sqlite3.Connection) -> None:
+    def __init__(self, conn: LedgerConnection) -> None:
         self._conn = conn
 
     def request(self, approval: Approval) -> Approval:
@@ -45,8 +49,7 @@ class ApprovalRepo:
             ),
         )
         self._conn.commit()
-        opened = self.get(approval.id)
-        assert opened is not None  # just inserted in this transaction
+        opened = require_persisted(self.get(approval.id), approval.id)
         return opened
 
     def approve(self, approval_id: str, *, decided_by_user_id: str) -> None:
@@ -71,10 +74,20 @@ class ApprovalRepo:
         self._conn.commit()
 
     def get(self, approval_id: str) -> Approval | None:
-        row = self._conn.execute(
-            "SELECT * FROM approval WHERE id = ?", (approval_id,)
-        ).fetchone()
+        row = self._conn.execute("SELECT * FROM approval WHERE id = ?", (approval_id,)).fetchone()
         return _row_to_approval(row) if row is not None else None
+
+    def for_subject(self, subject_id: str) -> list[Approval]:
+        """Every gate ever opened on ``subject_id``, newest first — any status.
+
+        The go-live executor resolves a task's gate with this (fail-closed on its status), so the
+        model never has to remember an approval id across beats.
+        """
+        rows = self._conn.execute(
+            "SELECT * FROM approval WHERE subject_id = ? ORDER BY created_at DESC, id DESC",
+            (subject_id,),
+        ).fetchall()
+        return [_row_to_approval(row) for row in rows]
 
     def pending(self) -> list[Approval]:
         """Open gates that have not lapsed, oldest first.
@@ -91,7 +104,7 @@ class ApprovalRepo:
         return [_row_to_approval(row) for row in rows]
 
 
-def _row_to_approval(row: sqlite3.Row) -> Approval:
+def _row_to_approval(row: LedgerRow) -> Approval:
     return Approval(
         id=row["id"],
         subject_kind=ApprovalSubjectKind(row["subject_kind"]),

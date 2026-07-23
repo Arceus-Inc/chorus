@@ -10,6 +10,7 @@ in for dream's real types.
 from __future__ import annotations
 
 import asyncio
+import json
 import subprocess
 import sys
 from dataclasses import dataclass, field
@@ -21,7 +22,9 @@ import pytest
 from chorus.adapters import DreamBeatRunner, ModelRate, TokenPricing, to_beat_outcome
 from chorus.events import Event, EventKind
 from chorus.heartbeat import BeatDisposition
+from chorus.heartbeat._todo_flush import read_todo_flush_nudge
 from chorus.outcomes import VerificationStep
+from chorus.testing import uid
 
 pytestmark = pytest.mark.unit
 
@@ -147,7 +150,7 @@ class _HangingHarness:
 
 async def test_run_task_timeout_is_an_errored_outcome() -> None:
     outcome = await DreamBeatRunner(_HangingHarness(), timeout_s=0.01).run_task(
-        task_id="t1", intent="x"
+        task_id=uid("t1"), intent="x"
     )
 
     assert outcome.disposition is BeatDisposition.ERRORED
@@ -162,7 +165,7 @@ async def test_run_task_timeout_can_land_when_local_verification_passes(tmp_path
 
     outcome = await DreamBeatRunner(
         _HangingHarness(), timeout_s=0.01, working_dir=tmp_path
-    ).run_task(task_id="t1", intent="x", verification=(VerificationStep(command),))
+    ).run_task(task_id=uid("t1"), intent="x", verification=(VerificationStep(command),))
 
     assert outcome.passed is True
     assert outcome.disposition is BeatDisposition.PASSED
@@ -180,7 +183,7 @@ async def test_run_task_can_land_when_local_verification_passes_after_incomplete
     outcome = await DreamBeatRunner(
         _FakeHarness(result=_result("blocked", sprints=("needs-changes",))),
         working_dir=tmp_path,
-    ).run_task(task_id="t1", intent="x", verification=(VerificationStep(command),))
+    ).run_task(task_id=uid("t1"), intent="x", verification=(VerificationStep(command),))
 
     assert outcome.passed is True
     assert outcome.disposition is BeatDisposition.PASSED
@@ -191,7 +194,7 @@ async def test_run_task_can_land_when_local_verification_passes_after_incomplete
 async def test_run_task_passes_working_dir_as_harness_dir(tmp_path: Path) -> None:
     harness = _FakeHarness(result=_result("done"))
 
-    await DreamBeatRunner(harness, working_dir=tmp_path).run_task(task_id="t1", intent="x")
+    await DreamBeatRunner(harness, working_dir=tmp_path).run_task(task_id=uid("t1"), intent="x")
 
 
 async def test_dream_gets_a_per_beat_task_id_from_the_run_id(tmp_path: Path) -> None:
@@ -199,10 +202,10 @@ async def test_dream_gets_a_per_beat_task_id_from_the_run_id(tmp_path: Path) -> 
     # its own run, so dream must see the run_id as its task identity — a self-repair re-dispatch (new
     # run_id) is then an independent planning pass, not a stranded PlannerAlreadyRan error.
     harness = _FakeHarness(result=_result("done"))
-    await DreamBeatRunner(harness, working_dir=tmp_path, employee_id="e").run_task(
-        task_id="task_M", intent="x", run_id="run_42"
+    await DreamBeatRunner(harness, working_dir=tmp_path, employee_id=uid("e")).run_task(
+        task_id="task_M", intent="x", run_id=uid("run_42")
     )
-    assert harness.calls == ["run_42"]  # dream saw the per-beat run id, not the chorus task id
+    assert harness.calls == [uid("run_42")]  # dream saw the per-beat run id, not the chorus task id
 
 
 async def test_without_a_run_id_dream_falls_back_to_the_task_id(tmp_path: Path) -> None:
@@ -218,14 +221,14 @@ async def test_run_task_writes_the_beat_context_for_capability_tools(tmp_path: P
 
     harness = _FakeHarness(result=_result("done"))
     await DreamBeatRunner(harness, working_dir=tmp_path, employee_id="mgr").run_task(
-        task_id="M", intent="x", run_id="run1"
+        task_id="M", intent="x", run_id=uid("run1")
     )
 
-    assert BeatContext.read(tmp_path) == BeatContext(task_id="M", run_id="run1", employee_id="mgr")
+    assert BeatContext.read(tmp_path) == BeatContext(
+        task_id="M", run_id=uid("run1"), employee_id="mgr"
+    )
 
     assert harness.harness_dir == tmp_path / ".harness"
-
-
 
 
 # -- to_beat_outcome: the verdict rule -------------------------------------------------------------
@@ -237,6 +240,37 @@ def test_passed_when_every_step_done() -> None:
     assert outcome.outcome["steps_total"] == 2
     assert outcome.outcome["steps_done"] == 2
     assert outcome.outcome["sprint_outcomes"] == ["pass", "pass"]
+
+
+async def test_run_task_records_reasoning_and_actions_into_raw_record() -> None:
+    harness = _FakeHarness(
+        result=_result("done"),
+        events=(
+            {"kind": "role.text", "text": "I chose a salted hashlib password hash"},
+            {"kind": "role.tool.start", "tool": "write_file", "input": {"path": "auth/service.py"}},
+            {"kind": "role.tool.result", "tool": "write_file", "content_preview": "wrote 42 lines"},
+            {"kind": "planner.run.completed"},  # lifecycle noise — must NOT be recorded
+        ),
+    )
+    outcome = await DreamBeatRunner(harness).run_task(
+        task_id=uid("t"), intent="build auth", run_id=uid("r1")
+    )
+    assert "salted hashlib password hash" in outcome.raw_record  # the reasoning
+    assert "auth/service.py" in outcome.raw_record  # the action + its args
+    assert "wrote 42 lines" in outcome.raw_record  # the tool result
+    assert "planner.run.completed" not in outcome.raw_record  # lifecycle excluded
+
+
+async def test_run_task_records_reasoning_even_on_failure() -> None:
+    harness = _FakeHarness(
+        error=_FakeRunTaskError("boom", phase="plan"),
+        events=({"kind": "role.text", "text": "tried the pool bump, it regressed"},),
+    )
+    outcome = await DreamBeatRunner(harness).run_task(
+        task_id=uid("t"), intent="x", run_id=uid("r1")
+    )
+    assert outcome.passed is False
+    assert "tried the pool bump" in outcome.raw_record  # a failed beat still keeps its account
 
 
 def test_not_passed_when_a_step_is_unfinished() -> None:
@@ -305,16 +339,16 @@ def test_multiple_models_are_joined_and_tokens_summed() -> None:
 async def test_run_task_maps_a_completed_plan_to_passed() -> None:
     harness = _FakeHarness(result=_result("done"))
     runner = DreamBeatRunner(harness)
-    outcome = await runner.run_task(task_id="t1", intent="ship it")
+    outcome = await runner.run_task(task_id=uid("t1"), intent="ship it")
     assert outcome.passed is True
-    assert harness.calls == ["t1"]
+    assert harness.calls == [uid("t1")]
     assert harness.close_calls == 1
 
 
 async def test_run_task_turns_a_harness_error_into_a_failed_beat() -> None:
     harness = _FakeHarness(error=RuntimeError("provider 500"))
     runner = DreamBeatRunner(harness)
-    outcome = await runner.run_task(task_id="t1", intent="ship it")
+    outcome = await runner.run_task(task_id=uid("t1"), intent="ship it")
     assert outcome.passed is False
     assert outcome.disposition is BeatDisposition.ERRORED  # an unexpected fault is an engine error
     assert "provider 500" in str(outcome.outcome["error"])
@@ -327,7 +361,7 @@ async def test_run_task_prices_the_beat_when_pricing_is_wired() -> None:
         result=_result("done", usage_by_model={"gpt-x": _Usage(input_tokens=2_000_000)})
     )
     runner = DreamBeatRunner(harness, pricing=TokenPricing(rates={"gpt-x": ModelRate(125, 1000)}))
-    outcome = await runner.run_task(task_id="t1", intent="ship it")
+    outcome = await runner.run_task(task_id=uid("t1"), intent="ship it")
     assert outcome.cost_cents == 250  # 2 Mtok input * 125 c/Mtok
 
 
@@ -335,7 +369,7 @@ async def test_run_task_is_unpriced_without_pricing() -> None:
     harness = _FakeHarness(
         result=_result("done", usage_by_model={"gpt-x": _Usage(input_tokens=2_000_000)})
     )
-    outcome = await DreamBeatRunner(harness).run_task(task_id="t1", intent="x")
+    outcome = await DreamBeatRunner(harness).run_task(task_id=uid("t1"), intent="x")
     assert outcome.cost_cents == 0
 
 
@@ -343,7 +377,7 @@ async def test_run_task_forwards_the_command_dod_as_verification_steps() -> None
     harness = _FakeHarness(result=_result("done"))
     runner = DreamBeatRunner(harness)
     await runner.run_task(
-        task_id="t1", intent="ship", verification=(VerificationStep(command="pytest -q"),)
+        task_id=uid("t1"), intent="ship", verification=(VerificationStep(command="pytest -q"),)
     )
     # dream requires kind ∈ {test, lint, eval}; a chorus Command DoD maps to "eval"
     assert harness.verification_steps == ({"kind": "eval", "command": "pytest -q"},)
@@ -351,14 +385,14 @@ async def test_run_task_forwards_the_command_dod_as_verification_steps() -> None
 
 async def test_run_task_with_no_verification_passes_none() -> None:
     harness = _FakeHarness(result=_result("done"))
-    await DreamBeatRunner(harness).run_task(task_id="t1", intent="x")
+    await DreamBeatRunner(harness).run_task(task_id=uid("t1"), intent="x")
     assert harness.verification_steps == ()
 
 
 async def test_run_task_bounds_the_dream_sprint_loop_by_default() -> None:
     harness = _FakeHarness(result=_result("done"))
 
-    await DreamBeatRunner(harness).run_task(task_id="t1", intent="x")
+    await DreamBeatRunner(harness).run_task(task_id=uid("t1"), intent="x")
 
     assert harness.max_sprints == 1
 
@@ -368,15 +402,17 @@ async def test_run_task_forwards_dream_events_to_the_observer() -> None:
     harness = _FakeHarness(
         result=_result("done"),
         events=(
-            {"kind": "task.started", "task_id": "t1", "intent": "x"},
+            {"kind": "task.started", "task_id": uid("t1"), "intent": "x"},
             {"kind": "role.text", "role": "generator", "text": "hello"},
             {"kind": "role.tool.start", "role": "generator", "tool": "bash"},
             {"kind": "evaluator.completed", "sprint_number": 1, "outcome": "pass", "score": 1.0},
-            {"kind": "task.completed", "task_id": "t1", "sprint_count": 1},
+            {"kind": "task.completed", "task_id": uid("t1"), "sprint_count": 1},
         ),
     )
     seen: list[Event] = []
-    outcome = await DreamBeatRunner(harness).run_task(task_id="t1", intent="x", observer=seen.append)
+    outcome = await DreamBeatRunner(harness).run_task(
+        task_id=uid("t1"), intent="x", observer=seen.append
+    )
     assert outcome.passed is True
     assert [e.kind for e in seen] == [
         EventKind.RUN_STARTED,
@@ -386,7 +422,7 @@ async def test_run_task_forwards_dream_events_to_the_observer() -> None:
         EventKind.RUN_DONE,
     ]
     text = next(e for e in seen if e.kind is EventKind.RUN_TEXT)
-    assert text.task_id == "t1"
+    assert text.task_id == uid("t1")
     assert text.payload["text"] == "hello"
     assert text.payload["dream_kind"] == "role.text"  # the original dream kind is preserved
 
@@ -396,20 +432,377 @@ async def test_run_task_drops_dream_events_without_a_chorus_equivalent() -> None
     harness = _FakeHarness(
         result=_result("done"),
         events=(
-            {"kind": "planner.started", "task_id": "t1"},
+            {"kind": "planner.started", "task_id": uid("t1")},
             {"kind": "contract.written", "sprint_number": 1, "path": "c.json"},
             {"kind": "role.text", "text": "kept"},
         ),
     )
     seen: list[Event] = []
-    await DreamBeatRunner(harness).run_task(task_id="t1", intent="x", observer=seen.append)
+    await DreamBeatRunner(harness).run_task(task_id=uid("t1"), intent="x", observer=seen.append)
     assert [e.kind for e in seen] == [EventKind.RUN_TEXT]
 
 
-async def test_run_task_runs_dream_silent_without_an_observer() -> None:
-    harness = _FakeHarness(result=_result("done"), events=({"kind": "role.text", "text": "x"},))
-    await DreamBeatRunner(harness).run_task(task_id="t1", intent="x")
-    assert harness.observer is None  # no observer in -> no bridge handed to dream
+async def test_run_task_records_the_account_even_without_a_chorus_observer() -> None:
+    # No chorus observer -> no liveness bridge, but the reasoning recorder is always handed to dream so
+    # the episodic account is captured regardless of whether anyone is witnessing the run.
+    harness = _FakeHarness(
+        result=_result("done"), events=({"kind": "role.text", "text": "picked X"},)
+    )
+    outcome = await DreamBeatRunner(harness).run_task(task_id=uid("t1"), intent="x")
+    assert "picked X" in outcome.raw_record  # captured with no chorus observer wired
+
+
+async def test_run_task_rejects_a_parent_replaced_subagent_artifact(tmp_path: Path) -> None:
+    reviewer_output = {
+        "cleared": False,
+        "findings": [
+            {
+                "category": "other",
+                "severity": "high",
+                "location": "links.py:1",
+                "detail": "runtime state is committed",
+                "fix": "remove it",
+            }
+        ],
+        "evidence": "reviewed the diff",
+    }
+    (tmp_path / "review_verdict.json").write_text(
+        json.dumps({"cleared": True, "findings": [], "evidence": "parent replacement"})
+    )
+    events = (
+        {
+            "kind": "role.tool.start",
+            "role": "generator",
+            "tool": "spawn_subagent",
+            "input": {"name": "code_reviewer", "prompt": "Review"},
+        },
+        {
+            "kind": "role.tool.result",
+            "role": "generator",
+            "tool": "spawn_subagent",
+            "is_error": False,
+            "content": json.dumps(reviewer_output),
+            "content_preview": json.dumps(reviewer_output)[:240],
+        },
+    )
+    harness = _FakeHarness(result=_result("done"), events=events)
+
+    outcome = await DreamBeatRunner(
+        harness,
+        working_dir=tmp_path,
+        subagent_evidence={"code_reviewer": ("review_verdict.json", {"cleared": True})},
+    ).run_task(task_id=uid("t1"), intent="x")
+
+    assert outcome.passed is False
+    assert outcome.outcome["subagent_evidence"] == "failed"
+    assert "required claim" in outcome.summary
+    assert json.loads((tmp_path / "review_verdict.json").read_text()) == reviewer_output
+
+
+async def test_run_task_records_and_reuses_valid_subagent_provenance(tmp_path: Path) -> None:
+    reviewer_output = {"cleared": True, "findings": [], "evidence": "reviewed the diff"}
+    events = (
+        {
+            "kind": "role.tool.start",
+            "role": "generator",
+            "tool": "spawn_subagent",
+            "input": {"name": "code_reviewer", "prompt": "Review"},
+        },
+        {
+            "kind": "role.tool.result",
+            "role": "generator",
+            "tool": "spawn_subagent",
+            "is_error": False,
+            "content": json.dumps(reviewer_output),
+            "content_preview": json.dumps(reviewer_output)[:40],
+        },
+    )
+    requirement = {"code_reviewer": ("review_verdict.json", {"cleared": True})}
+
+    first = await DreamBeatRunner(
+        _FakeHarness(result=_result("done"), events=events),
+        working_dir=tmp_path,
+        subagent_evidence=requirement,
+    ).run_task(task_id=uid("t1"), intent="x")
+    resumed = await DreamBeatRunner(
+        _FakeHarness(result=_result("done")),
+        working_dir=tmp_path,
+        subagent_evidence=requirement,
+    ).run_task(task_id=uid("t1"), intent="resume")
+
+    assert first.passed is True
+    assert resumed.passed is True
+    assert json.loads((tmp_path / "review_verdict.json").read_text()) == reviewer_output
+    assert (tmp_path / ".harness" / "subagent-evidence" / "code_reviewer.json").is_file()
+
+
+async def test_run_task_rejects_code_changed_after_independent_review(tmp_path: Path) -> None:
+    reviewer_output = {"cleared": True, "findings": [], "evidence": "reviewed links.py"}
+    (tmp_path / "links.py").write_text("VALUE = 1\n")
+    (tmp_path / "review_verdict.json").write_text(json.dumps(reviewer_output))
+    events = (
+        {
+            "kind": "role.tool.start",
+            "role": "generator",
+            "tool": "spawn_subagent",
+            "input": {"name": "code_reviewer", "prompt": "Review"},
+        },
+        {
+            "kind": "role.tool.result",
+            "role": "generator",
+            "tool": "spawn_subagent",
+            "is_error": False,
+            "content": json.dumps(reviewer_output),
+            "content_preview": json.dumps(reviewer_output),
+        },
+    )
+
+    class _MutatesAfterReview(_FakeHarness):
+        async def run_task(self, **kwargs: Any) -> _Result:
+            result = await super().run_task(**kwargs)
+            (tmp_path / "links.py").write_text("VALUE = 2\n")
+            return result
+
+    outcome = await DreamBeatRunner(
+        _MutatesAfterReview(result=_result("done"), events=events),
+        working_dir=tmp_path,
+        subagent_evidence={"code_reviewer": ("review_verdict.json", {"cleared": True})},
+    ).run_task(task_id=uid("t1"), intent="x")
+
+    assert outcome.passed is False
+    assert "worktree changed after independent review" in outcome.summary
+
+
+async def test_run_task_rejects_evidence_subagent_mutating_worktree(tmp_path: Path) -> None:
+    reviewer_output = {"cleared": True, "findings": [], "evidence": "reviewed links.py"}
+    (tmp_path / "links.py").write_text("VALUE = 1\n")
+
+    class _MutatesDuringReview(_FakeHarness):
+        async def run_task(self, **kwargs: Any) -> _Result:
+            observer = kwargs["observer"]
+            observer.on_event(
+                {
+                    "kind": "role.tool.start",
+                    "role": "generator",
+                    "tool": "spawn_subagent",
+                    "input": {"name": "code_reviewer", "prompt": "Review"},
+                }
+            )
+            (tmp_path / "review_verdict.old.json").write_text("{}\n")
+            observer.on_event(
+                {
+                    "kind": "role.tool.result",
+                    "role": "generator",
+                    "tool": "spawn_subagent",
+                    "is_error": False,
+                    "content": json.dumps(reviewer_output),
+                    "content_preview": json.dumps(reviewer_output),
+                }
+            )
+            assert self._result is not None
+            return self._result
+
+    outcome = await DreamBeatRunner(
+        _MutatesDuringReview(result=_result("done")),
+        working_dir=tmp_path,
+        subagent_evidence={"code_reviewer": ("review_verdict.json", {"cleared": True})},
+    ).run_task(task_id=uid("t1"), intent="x")
+
+    assert outcome.passed is False
+    assert "changed the worktree during independent review" in outcome.summary
+
+
+async def test_run_task_accepts_mutating_test_author_provenance(tmp_path: Path) -> None:
+    author_output = {
+        "authored": True,
+        "files": ["tests/test_links.py"],
+        "covers": ["create and resolve"],
+        "red_evidence": "red-confirmed",
+        "evidence": "python -m pytest -q",
+    }
+
+    class _AuthorsTestsThenProductionChanges(_FakeHarness):
+        async def run_task(self, **kwargs: Any) -> _Result:
+            observer = kwargs["observer"]
+            observer.on_event(
+                {
+                    "kind": "role.tool.start",
+                    "role": "generator",
+                    "tool": "spawn_subagent",
+                    "input": {"name": "test_author", "prompt": "Author tests"},
+                }
+            )
+            tests = tmp_path / "tests"
+            tests.mkdir()
+            (tests / "test_links.py").write_text("def test_links():\n    assert True\n")
+            observer.on_event(
+                {
+                    "kind": "role.tool.result",
+                    "role": "generator",
+                    "tool": "spawn_subagent",
+                    "is_error": False,
+                    "content": json.dumps(author_output),
+                    "content_preview": json.dumps(author_output),
+                }
+            )
+            (tmp_path / "links.py").write_text("VALUE = 1\n")
+            assert self._result is not None
+            return self._result
+
+    outcome = await DreamBeatRunner(
+        _AuthorsTestsThenProductionChanges(result=_result("done")),
+        working_dir=tmp_path,
+        subagent_evidence={"test_author": ("test_plan.json", {"authored": True}, False)},
+    ).run_task(task_id=uid("t1"), intent="x")
+
+    assert outcome.passed is True
+    provenance = json.loads(
+        (tmp_path / ".harness" / "subagent-evidence" / "test_author.json").read_text()
+    )
+    assert provenance["evidence_read_only"] is False
+    assert json.loads((tmp_path / "test_plan.json").read_text()) == author_output
+
+
+async def test_rebeat_keeps_validated_test_author_evidence(tmp_path: Path) -> None:
+    """Live 2026-07-17: an integrate re-beat over an already-green worktree spawned test_author
+    again; it honestly reported authored=false ("RED impossible: production already present") and
+    clobbered test_plan.json — demoting a passing beat to failed despite beat-1's validated
+    provenance. A failed re-attempt must not erase evidence a prior beat already proved."""
+    requirement = {"test_author": ("test_plan.json", {"authored": True}, False)}
+    authored = {
+        "authored": True,
+        "files": ["tests/test_links.py"],
+        "covers": ["create and resolve"],
+        "red_evidence": "red-confirmed",
+        "evidence": "python -m pytest -q",
+    }
+    declined = {
+        "authored": False,
+        "files": ["tests/test_links.py"],
+        "covers": ["create and resolve"],
+        "red_evidence": "RED-first could not be satisfied: suite already green",
+        "evidence": "python -m pytest -q -> 9 passed",
+    }
+
+    def _events(output: dict[str, object]) -> tuple[dict[str, Any], ...]:
+        return (
+            {
+                "kind": "role.tool.start",
+                "role": "generator",
+                "tool": "spawn_subagent",
+                "input": {"name": "test_author", "prompt": "Author tests"},
+            },
+            {
+                "kind": "role.tool.result",
+                "role": "generator",
+                "tool": "spawn_subagent",
+                "is_error": False,
+                "content": json.dumps(output),
+                "content_preview": json.dumps(output)[:60],
+            },
+        )
+
+    first = await DreamBeatRunner(
+        _FakeHarness(result=_result("done"), events=_events(authored)),
+        working_dir=tmp_path,
+        subagent_evidence=requirement,
+    ).run_task(task_id=uid("t1"), intent="x")
+    assert first.passed is True
+
+    # The re-beat's subagent rewrites the worktree artifact itself (as the real one does)...
+    (tmp_path / "test_plan.json").write_text(json.dumps(declined))
+    rebeat = await DreamBeatRunner(
+        _FakeHarness(result=_result("done"), events=_events(declined)),
+        working_dir=tmp_path,
+        subagent_evidence=requirement,
+    ).run_task(task_id=uid("t1"), intent="integrate")
+
+    assert rebeat.passed is True  # beat-1's validated provenance is the durable proof
+    assert rebeat.outcome["subagent_evidence"] == "passed"
+
+
+async def test_first_beat_still_fails_without_authored_evidence(tmp_path: Path) -> None:
+    """The RED-first ratchet binds first-time work: no prior provenance, authored=false fails."""
+    declined = {
+        "authored": False,
+        "files": [],
+        "covers": [],
+        "red_evidence": "did not author",
+        "evidence": "",
+    }
+    events = (
+        {
+            "kind": "role.tool.start",
+            "role": "generator",
+            "tool": "spawn_subagent",
+            "input": {"name": "test_author", "prompt": "Author tests"},
+        },
+        {
+            "kind": "role.tool.result",
+            "role": "generator",
+            "tool": "spawn_subagent",
+            "is_error": False,
+            "content": json.dumps(declined),
+            "content_preview": json.dumps(declined)[:60],
+        },
+    )
+    outcome = await DreamBeatRunner(
+        _FakeHarness(result=_result("done"), events=events),
+        working_dir=tmp_path,
+        subagent_evidence={"test_author": ("test_plan.json", {"authored": True}, False)},
+    ).run_task(task_id=uid("t1"), intent="x")
+
+    assert outcome.passed is False
+    assert "required claim" in outcome.summary
+
+
+async def test_review_provenance_ignores_post_review_machine_bookkeeping(tmp_path: Path) -> None:
+    reviewer_output = {"cleared": True, "findings": [], "evidence": "reviewed links.py"}
+    (tmp_path / "links.py").write_text("VALUE = 1\n")
+    (tmp_path / "review_verdict.json").write_text(json.dumps(reviewer_output))
+    events = (
+        {
+            "kind": "role.tool.start",
+            "role": "generator",
+            "tool": "spawn_subagent",
+            "input": {"name": "code_reviewer", "prompt": "Review"},
+        },
+        {
+            "kind": "role.tool.result",
+            "role": "generator",
+            "tool": "spawn_subagent",
+            "is_error": False,
+            "content": json.dumps(reviewer_output),
+            "content_preview": json.dumps(reviewer_output),
+        },
+    )
+
+    class _WritesBookkeepingAfterReview(_FakeHarness):
+        async def run_task(self, **kwargs: Any) -> _Result:
+            result = await super().run_task(**kwargs)
+            (tmp_path / "TODO.md").write_text("- [x] independent review\n")
+            report = tmp_path / "security_scan" / "report.json"
+            report.parent.mkdir()
+            report.write_text('{"verdict": "clean"}\n')
+            evaluation = tmp_path / "docs" / "evals" / uid("run-1") / "sprint-1.json"
+            evaluation.parent.mkdir(parents=True)
+            evaluation.write_text('{"outcome": "pass"}\n')
+            plan = tmp_path / "docs" / "exec-plans" / "active" / "run-1.json"
+            plan.parent.mkdir(parents=True)
+            plan.write_text('{"status": "complete"}\n')
+            evidence = tmp_path / "test_evidence" / "discovered-gate.txt"
+            evidence.parent.mkdir()
+            evidence.write_text("gate passed\n")
+            (tmp_path / "test_plan.json").write_text('{"authored": true}\n')
+            return result
+
+    outcome = await DreamBeatRunner(
+        _WritesBookkeepingAfterReview(result=_result("done"), events=events),
+        working_dir=tmp_path,
+        subagent_evidence={"code_reviewer": ("review_verdict.json", {"cleared": True})},
+    ).run_task(task_id=uid("t1"), intent="x")
+
+    assert outcome.passed is True
 
 
 # -- the failure contract: a raise -> a typed disposition (spec 05 §5) -----------------------------
@@ -417,7 +810,7 @@ async def test_run_task_runs_dream_silent_without_an_observer() -> None:
 
 async def test_run_task_classifies_a_run_task_error_as_errored() -> None:
     harness = _FakeHarness(error=_FakeRunTaskError("planner blew up", phase="plan"))
-    outcome = await DreamBeatRunner(harness).run_task(task_id="t1", intent="x")
+    outcome = await DreamBeatRunner(harness).run_task(task_id=uid("t1"), intent="x")
     assert outcome.passed is False
     assert outcome.disposition is BeatDisposition.ERRORED
     assert outcome.outcome["phase"] == "plan"  # the typed phase rides onto the outcome
@@ -426,7 +819,7 @@ async def test_run_task_classifies_a_run_task_error_as_errored() -> None:
 
 async def test_run_task_classifies_task_cancelled_as_cancelled() -> None:
     harness = _FakeHarness(error=_FakeTaskCancelled("budget exhausted"))
-    outcome = await DreamBeatRunner(harness).run_task(task_id="t1", intent="x")
+    outcome = await DreamBeatRunner(harness).run_task(task_id=uid("t1"), intent="x")
     assert outcome.passed is False
     assert outcome.disposition is BeatDisposition.CANCELLED
     assert "budget exhausted" in str(outcome.outcome["cancelled"])
@@ -436,7 +829,41 @@ async def test_run_task_propagates_asyncio_cancellation() -> None:
     # structured cancellation must never be swallowed into a beat outcome — it re-raises.
     harness = _FakeHarness(error=asyncio.CancelledError())
     with pytest.raises(asyncio.CancelledError):
-        await DreamBeatRunner(harness).run_task(task_id="t1", intent="x")
+        await DreamBeatRunner(harness).run_task(task_id=uid("t1"), intent="x")
+
+
+async def test_run_task_arms_todo_flush_nudge_at_ninety_percent_budget(tmp_path: Path) -> None:
+    timeout_s = 0.2
+    runner = DreamBeatRunner(
+        _HangingHarness(),
+        timeout_s=timeout_s,
+        working_dir=tmp_path,
+        employee_id="bex",
+    )
+    run = asyncio.create_task(
+        runner.run_task(task_id=uid("t1"), intent="x", run_id=uid("run-1")),
+    )
+    try:
+        await asyncio.sleep(timeout_s * 0.91)
+        nudge = read_todo_flush_nudge(tmp_path)
+        assert nudge is not None
+        assert nudge.timeout_s == timeout_s
+        assert nudge.remaining_s == pytest.approx(timeout_s * 0.10)
+    finally:
+        outcome = await run
+        assert outcome.disposition is BeatDisposition.ERRORED
+        assert read_todo_flush_nudge(tmp_path) is None
+
+
+async def test_run_task_clears_stale_todo_flush_nudge_at_beat_start(tmp_path: Path) -> None:
+    from chorus.heartbeat._todo_flush import write_todo_flush_nudge
+
+    write_todo_flush_nudge(tmp_path, timeout_s=10.0, remaining_s=1.0)
+    harness = _FakeHarness(result=_result("done"))
+    await DreamBeatRunner(harness, working_dir=tmp_path, employee_id="bex").run_task(
+        task_id=uid("t1"), intent="x", run_id=uid("run-1")
+    )
+    assert read_todo_flush_nudge(tmp_path) is None
 
 
 def test_beat_outcome_disposition_defaults_from_passed() -> None:

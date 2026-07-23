@@ -12,10 +12,16 @@ dream's ``RunTaskResult`` (the protocols below), so the SDK import stays at the 
 from __future__ import annotations
 
 import asyncio
+import json
+import os
+import subprocess
+import tempfile
 from collections.abc import Callable, Mapping, Sequence
 from contextlib import suppress
+from dataclasses import asdict, replace
 from datetime import UTC, datetime
 from enum import StrEnum
+from hashlib import sha256
 from inspect import isawaitable
 from pathlib import Path
 from typing import Any, Protocol
@@ -23,13 +29,109 @@ from typing import Any, Protocol
 from chorus.adapters._failure import failure_outcome
 from chorus.adapters._observer import DreamObserverBridge
 from chorus.adapters._pricing import TokenPricing, UsageView
+from chorus.adapters._trace import beat_subagent_stats, sidecar_traces
 from chorus.events import Event
-from chorus.heartbeat import BeatContext, BeatOutcome
+from chorus.heartbeat import BeatContext, BeatDisposition, BeatOutcome
+from chorus.heartbeat._todo_flush import (
+    TODO_FLUSH_REMAINING_FRACTION,
+    clear_todo_flush_nudge,
+    write_todo_flush_nudge,
+)
 from chorus.outcomes import VerificationStep
 
 
 def _utc_now() -> datetime:
     return datetime.now(UTC)
+
+
+_REVIEW_FINGERPRINT_EXCLUDED_PATHS = frozenset(
+    {
+        "TODO.md",
+        "api_verdict.json",
+        "code_quality/report.json",
+        "review_verdict.json",
+        "security_scan/report.json",
+        "test_evidence/manifest.json",
+        "test_evidence/red.json",
+        "test_evidence/red.txt",
+        "test_plan.json",
+    }
+)
+_REVIEW_FINGERPRINT_EXCLUDED_PREFIXES = (
+    ".dream/",
+    ".harness/",
+    "docs/evals/",
+    "docs/exec-plans/active/",
+    "test_evidence/",
+)
+
+
+def _is_review_fingerprint_path(relative_path: str) -> bool:
+    normalized = relative_path.replace("\\", "/")
+    return normalized not in _REVIEW_FINGERPRINT_EXCLUDED_PATHS and not normalized.startswith(
+        _REVIEW_FINGERPRINT_EXCLUDED_PREFIXES
+    )
+
+
+def _worktree_fingerprint(root: Path) -> str:
+    """Hash the Git-visible worktree state, with a filesystem fallback for bare test roots."""
+    digest = sha256()
+    listed = subprocess.run(
+        ["git", "ls-files", "--cached", "--others", "--exclude-standard", "-z"],
+        cwd=root,
+        capture_output=True,
+        check=False,
+    )
+    status = subprocess.run(
+        ["git", "status", "--porcelain=v1", "-z", "--untracked-files=all"],
+        cwd=root,
+        capture_output=True,
+        check=False,
+    )
+    if listed.returncode == 0 and status.returncode == 0:
+        relative_paths = sorted(
+            os.fsdecode(raw)
+            for raw in listed.stdout.split(b"\0")
+            if raw and _is_review_fingerprint_path(os.fsdecode(raw))
+        )
+    else:
+        relative_paths = sorted(
+            path.relative_to(root).as_posix()
+            for path in root.rglob("*")
+            if path.is_file() and _is_review_fingerprint_path(path.relative_to(root).as_posix())
+        )
+    for relative_path in relative_paths:
+        digest.update(relative_path.encode("utf-8", errors="surrogateescape"))
+        path = root / relative_path
+        if not path.exists():
+            digest.update(b"\0missing\0")
+        elif path.is_symlink():
+            digest.update(b"\0link\0" + os.readlink(path).encode("utf-8"))
+        elif path.is_file():
+            digest.update(b"\0file\0" + path.read_bytes())
+    return digest.hexdigest()
+
+
+def _write_json_atomic(path: Path, value: Mapping[str, object]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary_name: str | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=path.parent,
+            prefix=f".{path.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as temporary:
+            temporary_name = temporary.name
+            json.dump(value, temporary, indent=2, sort_keys=True)
+            temporary.write("\n")
+        os.replace(temporary_name, path)
+    finally:
+        if temporary_name is not None:
+            with suppress(FileNotFoundError):
+                Path(temporary_name).unlink()
 
 
 class DreamStepStatus(StrEnum):
@@ -99,6 +201,71 @@ class TaskHarness(Protocol):
     ) -> RunResult: ...
 
 
+class _ReasoningRecorder:
+    """Capture the agent's account for the episodic raw record (spec 07 §3), then forward downstream.
+
+    dream calls ``on_event(dict)`` for every engine event. Its lifecycle/handoff kinds (``planner.*``,
+    ``handoff.*``) are structural noise; the *reasoning* lives in ``role.text`` (what the model
+    concluded) and its *actions* in ``role.tool.start`` / ``role.tool.result`` (the tool it called, its
+    args, and the output preview). We keep exactly those and drop the rest, so the record is the
+    agent's own account — not the orchestration log. Every event is still forwarded to the chorus
+    observer bridge (when present) so liveness/subagent witnessing is unaffected.
+    """
+
+    _KEPT_KINDS = frozenset({"role.text", "role.tool.start", "role.tool.result"})
+
+    def __init__(
+        self,
+        forward: Callable[[dict[str, Any]], None] | None,
+        *,
+        working_dir: Path | None = None,
+        evidence_subagents: frozenset[str] = frozenset(),
+    ) -> None:
+        self._forward = forward
+        self._events: list[dict[str, Any]] = []
+        self._working_dir = working_dir
+        self._evidence_subagents = evidence_subagents
+        self._pending_subagents: list[tuple[str, str]] = []
+        self._subagent_results: dict[str, tuple[str, bool, str, str]] = {}
+
+    def on_event(self, event: dict[str, Any]) -> None:
+        if str(event.get("kind", "")) in self._KEPT_KINDS:
+            self._events.append(event)
+        if event.get("tool") == "spawn_subagent":
+            if event.get("kind") == "role.tool.start":
+                name = str(dict(event.get("input") or {}).get("name", "subagent"))
+                before_hash = (
+                    _worktree_fingerprint(self._working_dir)
+                    if name in self._evidence_subagents and self._working_dir is not None
+                    else ""
+                )
+                self._pending_subagents.append((name, before_hash))
+            elif event.get("kind") == "role.tool.result":
+                name, before_hash = (
+                    self._pending_subagents.pop(0) if self._pending_subagents else ("subagent", "")
+                )
+                if name in self._evidence_subagents and self._working_dir is not None:
+                    content = str(event.get("content", event.get("content_preview", "")))
+                    self._subagent_results[name] = (
+                        content,
+                        bool(event.get("is_error", False)),
+                        before_hash,
+                        _worktree_fingerprint(self._working_dir),
+                    )
+        if self._forward is not None:
+            self._forward(event)
+
+    def as_jsonl(self) -> str:
+        """The captured account as JSON lines — one reasoning/action event per line."""
+        return "\n".join(
+            json.dumps(event, default=str, ensure_ascii=False) for event in self._events
+        )
+
+    def subagent_results(self) -> dict[str, tuple[str, bool, str, str]]:
+        """Return evidence results with their pre-run and completion worktree fingerprints."""
+        return dict(self._subagent_results)
+
+
 def to_beat_outcome(result: RunResult, *, pricing: TokenPricing | None = None) -> BeatOutcome:
     """Map a dream run result to the chorus verdict: ``passed`` iff every plan step is ``done``.
 
@@ -160,6 +327,13 @@ class DreamBeatRunner:
         working_dir: str | Path | None = None,
         employee_id: str | None = None,
         clock: Callable[[], datetime] | None = None,
+        # name -> (artifact_path, required_claim[, evidence_read_only=True])
+        # e.g. {"test_author": ("test_plan.json", {"authored": True}, False)}
+        subagent_evidence: Mapping[
+            str,
+            tuple[str, Mapping[str, object]] | tuple[str, Mapping[str, object], bool],
+        ]
+        | None = None,
     ) -> None:
         self._harness = harness
         self._pricing = pricing
@@ -168,6 +342,12 @@ class DreamBeatRunner:
         self._working_dir = Path(working_dir) if working_dir is not None else None
         self._employee_id = employee_id
         self._clock = clock or _utc_now
+        self._subagent_evidence: dict[str, tuple[str, dict[str, object], bool]] = {}
+        for name, requirement in (subagent_evidence or {}).items():
+            path = requirement[0]
+            claim = requirement[1]
+            read_only = requirement[2] if len(requirement) == 3 else True
+            self._subagent_evidence[name] = (path, dict(claim), read_only)
 
     @property
     def working_dir(self) -> Path | None:
@@ -197,6 +377,23 @@ class DreamBeatRunner:
             if observer is not None
             else None
         )
+        # Record the agent's reasoning + actions for the episodic raw record, forwarding to the bridge
+        # so liveness witnessing is unchanged (spec 07 §3). It is dream's observer for this beat.
+        recorder = _ReasoningRecorder(
+            bridge.on_event if bridge is not None else None,
+            working_dir=self._working_dir,
+            evidence_subagents=frozenset(self._subagent_evidence),
+        )
+
+        def _with_record(outcome: BeatOutcome) -> BeatOutcome:
+            guarded = self._guard_subagent_evidence(outcome, recorder.subagent_results())
+            return replace(guarded, raw_record=recorder.as_jsonl())
+
+        # Snapshot existing sidecar traces so we can isolate *this* beat's trace afterwards and recover
+        # the subagent counters dream drops before they reach the observer (see ``_trace``).
+        traces_before = (
+            sidecar_traces(self._working_dir) if self._working_dir is not None else frozenset()
+        )
         # dream's verification step ``kind`` must be one of {test, lint, eval} (its SprintContract
         # rejects anything else and the whole beat errors before the generator). A chorus Command DoD
         # is a generic shell command, so it maps to ``eval``; the oracle runs ``command`` regardless of
@@ -210,13 +407,18 @@ class DreamBeatRunner:
         # instead of repairing it. Each beat is its own run, so each is an independent planning pass; the
         # worktree carries state across beats. Events still correlate via the bridge's chorus task_id.
         dream_task_id = run_id if run_id is not None else task_id
+        nudge_task: asyncio.Task[None] | None = None
+        if self._working_dir is not None:
+            clear_todo_flush_nudge(self._working_dir)
+        if self._working_dir is not None and self._timeout_s is not None and self._timeout_s > 0:
+            nudge_task = asyncio.create_task(self._arm_todo_flush_nudge())
         try:
             if self._working_dir is None:
                 run = self._harness.run_task(
                     task_id=dream_task_id,
                     intent=intent,
                     verification_steps=steps,
-                    observer=bridge,
+                    observer=recorder,
                     max_sprints=self._max_sprints,
                     rubric=rubric,
                 )
@@ -225,7 +427,7 @@ class DreamBeatRunner:
                     task_id=dream_task_id,
                     intent=intent,
                     verification_steps=steps,
-                    observer=bridge,
+                    observer=recorder,
                     max_sprints=self._max_sprints,
                     harness_dir=self._working_dir / ".harness",
                     rubric=rubric,
@@ -233,39 +435,284 @@ class DreamBeatRunner:
             result = await asyncio.wait_for(run, timeout=self._timeout_s)
         except TimeoutError as exc:
             if verification and await self._verification_passed(verification):
-                return BeatOutcome(
-                    passed=True,
-                    summary="objective verification passed after dream timeout",
-                    outcome={
-                        "steps_total": len(verification),
-                        "steps_done": len(verification),
-                        "verified_after_timeout": True,
-                        "timeout_s": self._timeout_s,
-                    },
+                return _with_record(
+                    BeatOutcome(
+                        passed=True,
+                        summary="objective verification passed after dream timeout",
+                        outcome={
+                            "steps_total": len(verification),
+                            "steps_done": len(verification),
+                            "verified_after_timeout": True,
+                            "timeout_s": self._timeout_s,
+                        },
+                    )
                 )
-            return failure_outcome(exc)
+            return _with_record(failure_outcome(exc))
         except asyncio.CancelledError:
             raise  # structured cancellation must propagate — never classify it as a beat outcome
-        except Exception as exc:  # typed by failure_outcome — a beat never crashes the dispatch loop
-            return failure_outcome(exc)
+        except (
+            Exception
+        ) as exc:  # typed by failure_outcome — a beat never crashes the dispatch loop
+            return _with_record(failure_outcome(exc))
         finally:
+            if nudge_task is not None:
+                nudge_task.cancel()
+                with suppress(asyncio.CancelledError):
+                    await nudge_task
+            if self._working_dir is not None:
+                clear_todo_flush_nudge(self._working_dir)
             await self._close_harness()
-        outcome = to_beat_outcome(result, pricing=self._pricing)
+        outcome = self._attach_subagent_stats(
+            to_beat_outcome(result, pricing=self._pricing), traces_before
+        )
         if not outcome.passed and verification and await self._verification_passed(verification):
-            return BeatOutcome(
-                passed=True,
-                summary="objective verification passed after dream returned incomplete",
-                outcome={
-                    **outcome.outcome,
-                    "verified_after_incomplete_dream_result": True,
-                    "verification_steps": len(verification),
-                },
-                cost_cents=outcome.cost_cents,
-                model=outcome.model,
-                input_tokens=outcome.input_tokens,
-                output_tokens=outcome.output_tokens,
+            return _with_record(
+                BeatOutcome(
+                    passed=True,
+                    summary="objective verification passed after dream returned incomplete",
+                    outcome={
+                        **outcome.outcome,
+                        "verified_after_incomplete_dream_result": True,
+                        "verification_steps": len(verification),
+                    },
+                    cost_cents=outcome.cost_cents,
+                    model=outcome.model,
+                    input_tokens=outcome.input_tokens,
+                    output_tokens=outcome.output_tokens,
+                )
             )
-        return outcome
+        return _with_record(outcome)
+
+    def _guard_subagent_evidence(
+        self,
+        outcome: BeatOutcome,
+        # name -> (typed_output_json, is_error, worktree_sha_before_review, worktree_sha_after_review)
+        fresh_results: Mapping[str, tuple[str, bool, str, str]],
+    ) -> BeatOutcome:
+        """Reject a passing beat whose durable subagent evidence lacks valid provenance."""
+        if not outcome.passed or not self._subagent_evidence:
+            return outcome
+        if self._working_dir is None:
+            return self._subagent_evidence_failure(outcome, "working directory is unavailable")
+
+        provenance_to_write: list[tuple[Path, dict[str, object]]] = []
+        for name, (
+            relative_path,
+            required_claim,
+            evidence_read_only,
+        ) in self._subagent_evidence.items():
+            artifact_path = (self._working_dir / relative_path).resolve()
+            try:
+                artifact_path.relative_to(self._working_dir.resolve())
+            except ValueError:
+                return self._subagent_evidence_failure(
+                    outcome, f"{name} evidence path escapes the worktree"
+                )
+            provenance_path = self._working_dir / ".harness" / "subagent-evidence" / f"{name}.json"
+            fresh = fresh_results.get(name)
+            if fresh is not None:
+                fresh_reason, fresh_artifact = self._validate_fresh_evidence(
+                    name=name,
+                    fresh=fresh,
+                    relative_path=relative_path,
+                    required_claim=required_claim,
+                    evidence_read_only=evidence_read_only,
+                    artifact_path=artifact_path,
+                    provenance_path=provenance_path,
+                    provenance_to_write=provenance_to_write,
+                )
+                if fresh_reason is None:
+                    continue
+                # A failed re-attempt must not erase what a prior beat already proved (live
+                # 2026-07-17: an integrate re-beat over an already-green worktree spawned
+                # test_author again, it honestly declined to re-author RED-first, and the
+                # beat was demoted despite beat-1's validated provenance). The stored record
+                # is the durable proof; the ratchet still binds first-time work below.
+                if (
+                    self._validate_stored_evidence(
+                        name=name,
+                        relative_path=relative_path,
+                        required_claim=required_claim,
+                        evidence_read_only=evidence_read_only,
+                        artifact_path=artifact_path,
+                        provenance_path=provenance_path,
+                    )
+                    is None
+                ):
+                    continue
+                if fresh_artifact is not None:
+                    # No validated prior evidence to protect: land the honest failing verdict
+                    # on disk so it displaces any parent-forged artifact and documents the
+                    # refusal for the repair beat.
+                    _write_json_atomic(artifact_path, fresh_artifact)
+                return self._subagent_evidence_failure(outcome, fresh_reason)
+            stored_reason = self._validate_stored_evidence(
+                name=name,
+                relative_path=relative_path,
+                required_claim=required_claim,
+                evidence_read_only=evidence_read_only,
+                artifact_path=artifact_path,
+                provenance_path=provenance_path,
+            )
+            if stored_reason is not None:
+                return self._subagent_evidence_failure(outcome, stored_reason)
+
+        for provenance_path, provenance in provenance_to_write:
+            provenance_path.parent.mkdir(parents=True, exist_ok=True)
+            provenance_path.write_text(
+                json.dumps(provenance, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+            )
+        return replace(
+            outcome,
+            outcome={**outcome.outcome, "subagent_evidence": "passed"},
+        )
+
+    def _validate_fresh_evidence(
+        self,
+        *,
+        name: str,
+        fresh: tuple[str, bool, str, str],
+        relative_path: str,
+        required_claim: dict[str, object],
+        evidence_read_only: bool,
+        artifact_path: Path,
+        provenance_path: Path,
+        provenance_to_write: list[tuple[Path, dict[str, object]]],
+    ) -> tuple[str | None, dict[str, object] | None]:
+        """Validate this beat's subagent output; persist artifact+provenance only when it holds.
+
+        The claim is checked BEFORE the artifact is written: a failing re-attempt must never
+        clobber evidence a prior beat validated (the caller falls back to the stored record).
+        Returns ``(failure_reason, parsed_artifact)`` — the artifact rides along so the caller
+        can still land an honest failing verdict when there is no prior evidence to protect.
+        """
+        assert self._working_dir is not None
+        content, is_error, before_worktree_hash, reviewed_worktree_hash = fresh
+        if is_error:
+            return f"{name} subagent execution failed", None
+        if evidence_read_only and before_worktree_hash != reviewed_worktree_hash:
+            return f"{name} changed the worktree during independent review", None
+        try:
+            returned = json.loads(content)
+        except (json.JSONDecodeError, ValueError):
+            return f"{name} typed output was invalid or fail-open", None
+        if not isinstance(returned, dict):
+            return f"{name} typed output was invalid or fail-open", None
+        if any(returned.get(field) != expected for field, expected in required_claim.items()):
+            return f"{name} evidence does not carry the required claim", returned
+        if (
+            evidence_read_only
+            and _worktree_fingerprint(self._working_dir) != reviewed_worktree_hash
+        ):
+            return f"{name} worktree changed after independent review", returned
+        _write_json_atomic(artifact_path, returned)
+        provenance_to_write.append(
+            (
+                provenance_path,
+                {
+                    "subagent_name": name,
+                    "artifact_path": relative_path,
+                    "artifact_sha256": sha256(artifact_path.read_bytes()).hexdigest(),
+                    "worktree_sha256": reviewed_worktree_hash,
+                    "required_claim": required_claim,
+                    "evidence_read_only": evidence_read_only,
+                },
+            )
+        )
+        return None, returned
+
+    def _validate_stored_evidence(
+        self,
+        *,
+        name: str,
+        relative_path: str,
+        required_claim: dict[str, object],
+        evidence_read_only: bool,
+        artifact_path: Path,
+        provenance_path: Path,
+    ) -> str | None:
+        """Validate evidence a prior beat recorded (resume / re-beat path).
+
+        Read-only evidence pins the artifact bytes AND the worktree the reviewer saw. A
+        non-read-only producer's artifact lives in a worktree later beats legitimately mutate
+        (its own re-run rewrites it), so there the machine-validated provenance record is the
+        durable proof and the mutable file is not re-pinned.
+        """
+        assert self._working_dir is not None
+        try:
+            provenance = json.loads(provenance_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError, ValueError):
+            return f"{name} has no machine provenance from an independent run"
+        if (
+            not isinstance(provenance, dict)
+            or provenance.get("artifact_path") != relative_path
+            or provenance.get("required_claim") != required_claim
+            or provenance.get("evidence_read_only", True) is not evidence_read_only
+        ):
+            return f"{name} artifact changed after independent review"
+        if not evidence_read_only:
+            return None
+        if not artifact_path.is_file():
+            return f"{name} evidence artifact is missing: {relative_path}"
+        try:
+            artifact = json.loads(artifact_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError, ValueError):
+            return f"{name} evidence artifact is not valid JSON"
+        if not isinstance(artifact, dict) or any(
+            artifact.get(field) != expected for field, expected in required_claim.items()
+        ):
+            return f"{name} evidence does not carry the required claim"
+        if provenance.get("artifact_sha256") != sha256(
+            artifact_path.read_bytes()
+        ).hexdigest() or provenance.get("worktree_sha256") != _worktree_fingerprint(
+            self._working_dir
+        ):
+            return f"{name} artifact changed after independent review"
+        return None
+
+    @staticmethod
+    def _subagent_evidence_failure(outcome: BeatOutcome, reason: str) -> BeatOutcome:
+        return replace(
+            outcome,
+            passed=False,
+            outcome={
+                **outcome.outcome,
+                "subagent_evidence": "failed",
+                "subagent_evidence_reason": reason,
+            },
+            summary=f"subagent evidence failed: {reason}",
+            disposition=BeatDisposition.DOD_FAILED,
+            retryable=False,
+        )
+
+    def _attach_subagent_stats(
+        self, outcome: BeatOutcome, traces_before: frozenset[Path]
+    ) -> BeatOutcome:
+        """Enrich a beat outcome with this beat's subagent counters (best-effort, from the trace)."""
+        if self._working_dir is None:
+            return outcome
+        stats = beat_subagent_stats(self._working_dir, traces_before)
+        if not stats:
+            return outcome
+        return replace(
+            outcome, outcome={**outcome.outcome, "subagents": [asdict(s) for s in stats]}
+        )
+
+    async def _arm_todo_flush_nudge(self) -> None:
+        """Write the TODO flush nudge when beat budget drops below the remaining threshold."""
+        assert self._working_dir is not None
+        assert self._timeout_s is not None
+        delay = self._timeout_s * (1.0 - TODO_FLUSH_REMAINING_FRACTION)
+        try:
+            await asyncio.sleep(delay)
+        except asyncio.CancelledError:
+            return
+        remaining = self._timeout_s * TODO_FLUSH_REMAINING_FRACTION
+        write_todo_flush_nudge(
+            self._working_dir,
+            timeout_s=self._timeout_s,
+            remaining_s=remaining,
+        )
 
     async def _close_harness(self) -> None:
         close = getattr(self._harness, "aclose", None)

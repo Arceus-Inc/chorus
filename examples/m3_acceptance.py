@@ -19,6 +19,9 @@ from __future__ import annotations
 import asyncio
 import html
 import os
+import uuid
+
+_EXAMPLE_COMPANY = str(uuid.uuid5(uuid.NAMESPACE_URL, "chorus-example"))  # one stable demo org
 import subprocess
 import sys
 import tempfile
@@ -27,7 +30,7 @@ from pathlib import Path
 from chorus.budgets import BudgetEnforcer
 from chorus.events import Event, EventKind
 from chorus.heartbeat import Scheduler
-from chorus.ledger import SqliteLedger, Task, TaskStatus
+from chorus.ledger import Ledger, Task, TaskStatus
 from chorus.lifecycle import assign_task
 from chorus.observability import EventBus
 from chorus.workforce import Employee, LedgerWorkforce
@@ -70,12 +73,24 @@ def _seed_repo(path: Path) -> None:
     (path / "test_smoke.py").write_text("def test_smoke():\n    assert True\n", encoding="utf-8")
     subprocess.run(["git", "-C", str(path), "add", "-A"], check=True, capture_output=True)
     subprocess.run(
-        ["git", "-C", str(path), "-c", "user.name=s", "-c", "user.email=s@x", "commit", "-m", "init"],
-        check=True, capture_output=True,
+        [
+            "git",
+            "-C",
+            str(path),
+            "-c",
+            "user.name=s",
+            "-c",
+            "user.email=s@x",
+            "commit",
+            "-m",
+            "init",
+        ],
+        check=True,
+        capture_output=True,
     )
 
 
-def _write_report(ledger: SqliteLedger, *, ok: bool) -> Path:
+def _write_report(ledger: Ledger, *, ok: bool) -> Path:
     rows = []
     parent = ledger.tasks.get("feature")
     for child in ledger.tasks.children("feature"):
@@ -86,8 +101,12 @@ def _write_report(ledger: SqliteLedger, *, ok: bool) -> Path:
             f"<td>{html.escape(child.status.value)}</td><td><code>{html.escape(str(ref))}</code></td></tr>"
         )
     subtree = next(
-        (a for a in ledger.artifacts.list_for_task("feature")
-         if a.resource_ref is not None and a.resource_ref.get("kind") == "subtree"), None,
+        (
+            a
+            for a in ledger.artifacts.list_for_task("feature")
+            if a.resource_ref is not None and a.resource_ref.get("kind") == "subtree"
+        ),
+        None,
     )
     verdict = "PASS ✅" if ok else "INCOMPLETE ⚠️"
     body = (
@@ -97,9 +116,11 @@ def _write_report(ledger: SqliteLedger, *, ok: bool) -> Path:
         "<h2>Children (the delegated subtree)</h2>"
         "<table border=1 cellpadding=6 style='border-collapse:collapse'>"
         "<tr><th>task</th><th>assignee</th><th>status</th><th>artifact</th></tr>"
-        + "".join(rows) + "</table>"
+        + "".join(rows)
+        + "</table>"
         "<h2>Beat trace</h2><pre style='background:#111;color:#ddd;padding:12px'>"
-        + html.escape("\n".join(_LOG)) + "</pre>"
+        + html.escape("\n".join(_LOG))
+        + "</pre>"
     )
     out = Path(__file__).parent / "reports" / "m3_acceptance.html"
     out.parent.mkdir(exist_ok=True)
@@ -120,14 +141,23 @@ def main() -> int:
     seed = base / "source"
     _seed_repo(seed)
 
-    ledger = SqliteLedger.open(":memory:")
+    ledger = Ledger.open(
+        os.environ.get("CHORUS_LEDGER_DSN", "postgresql://localhost/chorus"),
+        company_id=_EXAMPLE_COMPANY,
+    )
     try:
         from chorus.roles import RoleRegistry, default_roles
 
         registry = RoleRegistry.from_plugins(default_roles())
         factory = EmployeeHarnessFactory(
-            api_key=api_key, base_url=base_url, deployment=deployment, company_id="acme",
-            roles=registry, pricing=default_pricing_from_env(), seed=seed, ledger=ledger,
+            api_key=api_key,
+            base_url=base_url,
+            deployment=deployment,
+            company_id="acme",
+            roles=registry,
+            pricing=default_pricing_from_env(),
+            seed=seed,
+            ledger=ledger,
         )
         ledger.employees.create(Employee(id="moe", name="Moe", role="manager"))
         ledger.employees.create(Employee(id="ada", name="Ada", role="engineer"))
@@ -136,10 +166,14 @@ def main() -> int:
         assign_task(ledger, "feature", "moe")
 
         scheduler = Scheduler(
-            ledger=ledger, workforce=LedgerWorkforce(ledger.employees), beat_runner_for=factory,
-            budget_enforcer=BudgetEnforcer(ledger, company_id="acme"), roles=registry,
+            ledger=ledger,
+            workforce=LedgerWorkforce(ledger.employees),
+            beat_runner_for=factory,
+            budget_enforcer=BudgetEnforcer(ledger, company_id="acme"),
+            roles=registry,
             landers=default_landers(factory.company_root, ledger=ledger),
-            event_bus=_Bus(), max_concurrent_runs=2,
+            event_bus=_Bus(),
+            max_concurrent_runs=2,
         )
 
         async def _drive() -> None:
@@ -152,13 +186,19 @@ def main() -> int:
                 await scheduler.drain()
                 p = ledger.tasks.get("feature")
                 kids = ledger.tasks.children("feature")
-                _log(f"  parent={p.status.value if p else '?'}  "
-                     f"children={[(c.id[-4:], c.status.value) for c in kids]}")
+                _log(
+                    f"  parent={p.status.value if p else '?'}  "
+                    f"children={[(c.id[-4:], c.status.value) for c in kids]}"
+                )
 
         asyncio.run(_drive())
 
         parent = ledger.tasks.get("feature")
-        ok = parent is not None and parent.status is TaskStatus.DONE and ledger.tasks.all_children_terminal("feature")
+        ok = (
+            parent is not None
+            and parent.status is TaskStatus.DONE
+            and ledger.tasks.all_children_terminal("feature")
+        )
         report = _write_report(ledger, ok=ok)
         _log("\n" + ("=" * 60))
         _log(f"parent status : {parent.status.value if parent else '?'}")

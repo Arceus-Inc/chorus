@@ -1,15 +1,14 @@
-"""The v0 role plugins (spec 06 §2 table).
+"""The canonical concrete workforce plugins.
 
 | Role      | Toolset leans            | DoD (verifier)          | Outcome              |
 |-----------|--------------------------|-------------------------|----------------------|
-| Engineer  | repo-write, run gates    | Command (CI/tests exit0)| PR opened, CI green  |
-| Reviewer  | read-only                | renders the verdict     | approve/block        |
-| Manager   | ledger-write (decompose) | children done+integrated| a completed subtree  |
 | Product/PM| read + write docs        | AgentReview (Reviewer)  | spec/decision        |
 | Analyst   | read + data tools        | AgentReview (Reviewer)  | a data finding       |
+| Marketer  | read + draft-write       | AgentReview (brand)     | content draft        |
 
-Reviewer is load-bearing, not a luxury (B3.2): it is the verifier for all
-judgment-class work, so it must ship at M3 with the first non-code role.
+Verification is performed by the non-workforce ``system-verifier`` principal. Generic ``engineer``
+and employee ``reviewer`` plugins remain available for explicit legacy registration but are not new
+workforce defaults.
 """
 
 from __future__ import annotations
@@ -20,24 +19,28 @@ from chorus.roles._plugin import RolePlugin
 # there — single source, no drift — rather than re-declaring them here. Submodule imports (not the
 # chorus_employee package root) keep this edge cycle-free.
 from chorus_employee.analyst import analyst_plugin
-from chorus_employee.engineer import engineer_plugin
-from chorus_employee.manager import manager_plugin
+from chorus_employee.backend_engineer import backend_engineer_plugin
+from chorus_employee.ceo import ceo_plugin
+from chorus_employee.designer import designer_plugin
+from chorus_employee.frontend_engineer import frontend_engineer_plugin
+from chorus_employee.marketer import marketer_plugin
 from chorus_employee.pm import pm_plugin
-from chorus_employee.reviewer import reviewer_plugin
 
 
 def default_roles() -> tuple[RolePlugin, ...]:
-    """The canonical v0 workforce roles, registered at boot (spec 06 §2).
+    """The canonical workforce professions registered at boot.
 
-    A consumer adds a sixth role with ``chorus.workforce.register_role(...)`` — never by
-    editing the kernel (spec 09 §1).
+    A consumer adds a role, including a legacy compatibility role, with
+    ``chorus.workforce.register_role(...)`` rather than editing the kernel (spec 09 §1).
     """
     return (
-        engineer_plugin(),
-        reviewer_plugin(),
-        manager_plugin(),
+        backend_engineer_plugin(),
         pm_plugin(),
         analyst_plugin(),
+        marketer_plugin(),
+        designer_plugin(),
+        frontend_engineer_plugin(),
+        ceo_plugin(),
     )
 
 

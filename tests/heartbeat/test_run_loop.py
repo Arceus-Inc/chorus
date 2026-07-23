@@ -15,8 +15,9 @@ import pytest
 
 from chorus.heartbeat import Scheduler, Wake, WakeReason
 from chorus.heartbeat._beat import BeatOutcome
-from chorus.ledger import SqliteLedger, Task
+from chorus.ledger import Ledger, Task
 from chorus.ledger._models import TaskStatus
+from chorus.testing import uid
 from chorus.workforce import Employee
 
 pytestmark = pytest.mark.integration
@@ -31,7 +32,14 @@ class _FakeBeat:
         self.calls: list[str] = []
 
     async def run_task(
-        self, *, task_id: str, intent: str, verification: object = (), rubric: object = "", observer: object = None, run_id: str | None = None
+        self,
+        *,
+        task_id: str,
+        intent: str,
+        verification: object = (),
+        rubric: object = "",
+        observer: object = None,
+        run_id: str | None = None,
     ) -> BeatOutcome:
         self.calls.append(task_id)
         return BeatOutcome(passed=True, outcome={}, summary="ok")
@@ -63,13 +71,17 @@ def _stop_after(
     return clock, sleep
 
 
-async def test_run_ticks_until_stopped(ledger: SqliteLedger) -> None:
+async def test_run_ticks_until_stopped(ledger: Ledger) -> None:
     pulses: list[datetime] = []
     box: list[Scheduler] = []
     clock, sleep = _stop_after(pulses, 3, box)
     sched = Scheduler(
-        ledger=ledger, workforce=_FakeWorkforce(), beat_runner=_FakeBeat(),
-        clock=clock, sleep=sleep, tick_interval_s=1.0,
+        ledger=ledger,
+        workforce=_FakeWorkforce(),
+        beat_runner=_FakeBeat(),
+        clock=clock,
+        sleep=sleep,
+        tick_interval_s=1.0,
     )
     box.append(sched)
 
@@ -78,13 +90,18 @@ async def test_run_ticks_until_stopped(ledger: SqliteLedger) -> None:
     assert len(pulses) == 3  # exactly three pulses, then the loop saw stop() and exited
 
 
-async def test_run_dispatches_a_beat_across_ticks(ledger: SqliteLedger) -> None:
-    e1 = ledger.employees.create(Employee(id="e1", name="e1", role="engineer"))
+async def test_run_dispatches_a_beat_across_ticks(ledger: Ledger) -> None:
+    e1 = ledger.employees.create(Employee(id=uid("e1"), name=uid("e1"), role="engineer"))
     ledger.tasks.submit(
-        Task(id="t1", intent="ship", status=TaskStatus.TODO, assignee_employee_id="e1")
+        Task(id=uid("t1"), intent="ship", status=TaskStatus.TODO, assignee_employee_id=uid("e1"))
     )
     ledger.wakes.enqueue(
-        Wake(id="w1", employee_id="e1", reason=WakeReason.MANUAL, payload={"task_id": "t1"})
+        Wake(
+            id=uid("w1"),
+            employee_id=uid("e1"),
+            reason=WakeReason.MANUAL,
+            payload={"task_id": uid("t1")},
+        )
     )
     beat = _FakeBeat()
     pulses: list[datetime] = []
@@ -97,18 +114,21 @@ async def test_run_dispatches_a_beat_across_ticks(ledger: SqliteLedger) -> None:
 
     await sched.run()  # one pulse dispatches the beat; the loop drains it on exit
 
-    assert beat.calls == ["t1"]
-    task = ledger.tasks.get("t1")
+    assert beat.calls == [uid("t1")]
+    task = ledger.tasks.get(uid("t1"))
     assert task is not None and task.status is TaskStatus.DONE
 
 
-async def test_stop_before_run_does_no_pulses(ledger: SqliteLedger) -> None:
+async def test_stop_before_run_does_no_pulses(ledger: Ledger) -> None:
     pulses: list[datetime] = []
     box: list[Scheduler] = []
     clock, sleep = _stop_after(pulses, 99, box)
     sched = Scheduler(
-        ledger=ledger, workforce=_FakeWorkforce(), beat_runner=_FakeBeat(),
-        clock=clock, sleep=sleep,
+        ledger=ledger,
+        workforce=_FakeWorkforce(),
+        beat_runner=_FakeBeat(),
+        clock=clock,
+        sleep=sleep,
     )
     box.append(sched)
     sched.stop()  # stopped before it ever runs
@@ -118,9 +138,11 @@ async def test_stop_before_run_does_no_pulses(ledger: SqliteLedger) -> None:
     assert pulses == []  # the while-guard saw stop() up front; never ticked
 
 
-async def test_tick_once_uses_the_injected_clock(ledger: SqliteLedger) -> None:
+async def test_tick_once_uses_the_injected_clock(ledger: Ledger) -> None:
     sched = Scheduler(
-        ledger=ledger, workforce=_FakeWorkforce(), beat_runner=_FakeBeat(),
+        ledger=ledger,
+        workforce=_FakeWorkforce(),
+        beat_runner=_FakeBeat(),
         clock=lambda: _START,
     )
     report = await sched.tick_once()

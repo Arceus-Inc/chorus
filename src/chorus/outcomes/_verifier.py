@@ -6,9 +6,8 @@ is generated at intake by the assignee's role plugin, persisted typed on
 self-report. Three tiers:
 
     Verifier(kind) = Command        # objective gate: a shell command exits 0
-                   | AgentReview    # judgment gate: a Reviewer employee verdicts
+                   | AgentReview    # judgment gate: the rubric rides into the in-beat evaluator
                    | HumanApproval  # a person decides (the approval primitive)
-                   | ReviewedBuild  # a Reviewer discovers + judges; the kernel runs the command
 """
 
 from __future__ import annotations
@@ -23,7 +22,6 @@ class DoDKind(StrEnum):
     COMMAND = "command"
     AGENT_REVIEW = "agent_review"
     HUMAN_APPROVAL = "human_approval"
-    REVIEWED_BUILD = "reviewed_build"
 
 
 @dataclass(frozen=True)
@@ -36,7 +34,7 @@ class Command:
 
 @dataclass(frozen=True)
 class AgentReview:
-    """Judgment gate — a Reviewer-role employee renders a verdict against a rubric."""
+    """Judgment gate — the beat's own evaluator renders a verdict against a rubric (spec 16)."""
 
     reviewer_role: str = "reviewer"
     rubric: str = ""
@@ -49,23 +47,8 @@ class HumanApproval:
     approver: str = "board"
 
 
-@dataclass(frozen=True)
-class ReviewedBuild:
-    """Reviewed build — language-agnostic, judgment-aware engineer gate (M3 reviewed-build).
-
-    A read-only Reviewer *discovers* the project's verify command and *judges* the diff; the kernel runs
-    that command as the deterministic objective floor. So the engineer's own beat runs no hardcoded
-    command (no language-lock), and ``done`` means the discovered command exits 0 *and* the reviewer
-    approved the diff.
-    """
-
-    reviewer_role: str = "reviewer"
-    rubric: str = ""
-    verify_timeout_s: int = 600
-
-
 # The DoD spec union (spec 04 §1).
-DoDSpec = Command | AgentReview | HumanApproval | ReviewedBuild
+DoDSpec = Command | AgentReview | HumanApproval
 
 
 @dataclass(frozen=True)
@@ -103,30 +86,17 @@ class Verifier:
         return cls(DoDKind.AGENT_REVIEW, AgentReview(reviewer_role, rubric), artifact_class)
 
     @classmethod
-    def human_approval(cls, *, approver: str = "board", artifact_class: str = "decision") -> Verifier:
-        return cls(DoDKind.HUMAN_APPROVAL, HumanApproval(approver), artifact_class)
-
-    @classmethod
-    def reviewed_build(
-        cls,
-        *,
-        reviewer_role: str = "reviewer",
-        rubric: str = "",
-        artifact_class: str = "pr",
-        verify_timeout_s: int = 600,
+    def human_approval(
+        cls, *, approver: str = "board", artifact_class: str = "decision"
     ) -> Verifier:
-        return cls(
-            DoDKind.REVIEWED_BUILD,
-            ReviewedBuild(reviewer_role, rubric, verify_timeout_s),
-            artifact_class,
-        )
+        return cls(DoDKind.HUMAN_APPROVAL, HumanApproval(approver), artifact_class)
 
     def verification_steps(self) -> tuple[VerificationStep, ...]:
         """The objective checks dream's evaluator should run — the ``Command`` gate, else none.
 
-        ``AgentReview``, ``HumanApproval``, and ``ReviewedBuild`` are chorus-orchestrated (a Reviewer
-        beat / an approval / a reviewer-discovered command the kernel runs), not subprocesses dream runs
-        at the worker's own beat, so they contribute no verification steps.
+        ``AgentReview`` and ``HumanApproval`` are chorus-orchestrated (an in-beat rubric / an
+        approval), not subprocesses dream runs at the worker's own beat, so they contribute no
+        verification steps.
         """
         if isinstance(self.spec, Command):
             return (VerificationStep(command=self.spec.command, timeout_s=self.spec.timeout_s),)
@@ -135,12 +105,11 @@ class Verifier:
     def rubric(self) -> str:
         """The review rubric dream's evaluator judges the artefact against (spec 16).
 
-        ``AgentReview`` and ``ReviewedBuild`` carry a rubric; folding it into the single in-beat
-        evaluator turn (via dream ``run_task(rubric=...)``) is what collapses the redundant second
-        Reviewer beat — one task, one ``run_task``, one verdict. ``Command``/``HumanApproval`` carry
-        none.
+        ``AgentReview`` carries a rubric; folding it into the single in-beat evaluator turn (via
+        dream ``run_task(rubric=...)``) is what collapses the redundant second Reviewer beat — one
+        task, one ``run_task``, one verdict. ``Command``/``HumanApproval`` carry none.
         """
-        if isinstance(self.spec, (AgentReview, ReviewedBuild)):
+        if isinstance(self.spec, AgentReview):
             return self.spec.rubric
         return ""
 
@@ -151,7 +120,6 @@ __all__ = [
     "DoDKind",
     "DoDSpec",
     "HumanApproval",
-    "ReviewedBuild",
     "VerificationStep",
     "Verifier",
 ]

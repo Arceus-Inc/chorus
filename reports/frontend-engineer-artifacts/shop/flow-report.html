@@ -1,0 +1,981 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Frontend Engineer — Run Flow Report (shop)</title>
+<style>
+  :root {
+    --bg:#f6f8fa; --card:#ffffff; --ink:#1f2328; --muted:#57606a; --line:#d0d7de;
+    --accent:#0d9488; --accent-soft:#ecfeff;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink);
+    font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; }
+  .wrap { max-width:960px; margin:0 auto; padding:32px 20px 80px; }
+  header.top { background:linear-gradient(135deg,#ecfeff,#f6f8fa); border:1px solid var(--line);
+    border-radius:16px; padding:28px 28px 22px; margin-bottom:22px; }
+  header.top .eyebrow { color:var(--accent); font-weight:700; letter-spacing:.06em;
+    text-transform:uppercase; font-size:12px; }
+  header.top h1 { margin:.2em 0 .3em; font-size:26px; }
+  header.top .intent { color:var(--muted); margin:0; }
+  header.top .intent b { color:var(--ink); }
+  .badge { font-size:12px; font-weight:700; padding:3px 10px; border-radius:999px; }
+  .badge.ok { background:#dcfce7; color:#166534; }
+  .badge.warn { background:#fef9c3; color:#854d0e; }
+  .badge.info { background:var(--accent-soft); color:#0e7490; }
+  .reverify { background:var(--card); border:1px solid var(--line); border-radius:14px;
+    padding:6px 20px 18px; margin:22px 0; }
+  .reverify h2 { font-size:13px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted);
+    margin:16px 0 6px; }
+  .vrow { display:flex; align-items:center; gap:12px; padding:8px 0; border-bottom:1px dashed var(--line); }
+  .vrow:last-of-type { border-bottom:none; }
+  .vlabel { min-width:230px; font-weight:600; font-size:14px; }
+  .vrow .muted { color:var(--muted); font-size:12.5px; }
+  .overall { display:flex; align-items:center; gap:14px; margin-top:14px; padding:14px 16px;
+    border-radius:12px; }
+  .overall.ok { background:#f0fdf4; border:1px solid #bbf7d0; }
+  .overall.warn { background:#fffbeb; border:1px solid #fde68a; }
+  .overall .big { font-size:18px; font-weight:800; letter-spacing:.02em; }
+  .overall.ok .big { color:#166534; }
+  .overall.warn .big { color:#854d0e; }
+  .overall p { margin:0; color:var(--muted); font-size:13px; }
+  .chips { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; margin:22px 0; }
+  .chip { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:14px 16px;
+    color:var(--muted); font-size:12.5px; }
+  .chip span { display:block; font-size:24px; font-weight:750; color:var(--ink); line-height:1.1; }
+  .subchips { display:flex; flex-wrap:wrap; gap:8px; margin:-6px 0 22px; }
+  .subchip { background:#f3e8ff; color:#6b21a8; border:1px solid #e9d5ff; border-radius:999px;
+    padding:4px 12px; font-size:13px; }
+  h2.sec { font-size:15px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted);
+    margin:34px 0 12px; }
+  .legend { display:flex; flex-wrap:wrap; gap:14px; margin-bottom:14px; font-size:12.5px; color:var(--muted); }
+  .leg { display:inline-flex; align-items:center; gap:6px; }
+  .dot { width:9px; height:9px; border-radius:50%; display:inline-block; flex:0 0 auto; }
+  .phase { background:var(--card); border:1px solid var(--line); border-radius:14px;
+    margin-bottom:16px; overflow:hidden; }
+  .phase-head { display:flex; gap:14px; align-items:flex-start; padding:18px 20px 14px;
+    border-bottom:1px solid var(--line); background:#fbfcfe; }
+  .pnum { flex:0 0 auto; width:30px; height:30px; border-radius:50%; background:var(--accent);
+    color:#fff; font-weight:750; display:grid; place-items:center; }
+  .phase-head h3 { margin:2px 0 3px; font-size:17px; }
+  .phase-head p { margin:0; color:var(--muted); font-size:13.5px; }
+  .phase-body { padding:12px 16px 16px; display:flex; flex-direction:column; gap:5px; }
+  .step { display:flex; align-items:center; gap:9px; padding:5px 8px; border-radius:8px; font-size:13.5px; }
+  .step:hover { background:#f6f8fa; }
+  .step .tool { font-weight:650; }
+  .step .arg { color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+    font:12.5px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; }
+  .err { font-size:10.5px; font-weight:700; color:#b91c1c; background:#fee2e2; border-radius:5px;
+    padding:1px 6px; }
+  details.sub { border:1px solid #e9d5ff; border-radius:10px; background:#faf5ff; margin:3px 0; }
+  details.sub > summary { cursor:pointer; list-style:none; padding:8px 12px; display:flex;
+    align-items:center; gap:9px; font-size:13.5px; }
+  details.sub > summary::-webkit-details-marker { display:none; }
+  details.sub > summary::before { content:"▶"; font-size:9px; color:#a855f7; transition:transform .15s; }
+  details.sub[open] > summary::before { transform:rotate(90deg); }
+  details.sub .agent { font-weight:750; color:#6b21a8; }
+  details.sub .count { margin-left:auto; color:var(--muted); font-size:12px; }
+  .subbody { padding:2px 12px 12px 26px; display:flex; flex-direction:column; gap:3px;
+    border-top:1px dashed #e9d5ff; }
+  .empty { color:var(--muted); font-size:13px; padding:6px; }
+  .eval { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px 18px;
+    margin-bottom:12px; }
+  .eval-top { display:flex; align-items:center; gap:12px; }
+  .eval-top .score { margin-left:auto; color:var(--muted); font-size:13px; }
+  .bar { height:8px; background:#eaeef2; border-radius:999px; margin:10px 0 8px; overflow:hidden; }
+  .bar span { display:block; height:100%; background:linear-gradient(90deg,#14b8a6,#0d9488); }
+  .notes { margin:0; color:var(--muted); font-size:13px; }
+  details.art { background:var(--card); border:1px solid var(--line); border-radius:12px;
+    margin-bottom:12px; }
+  details.art > summary { cursor:pointer; padding:14px 18px; font-weight:650; }
+  details.art pre { margin:0; padding:0 18px 18px; white-space:pre-wrap; word-wrap:break-word;
+    font:12.5px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; color:#24292f; }
+  .note { background:#fffbeb; border:1px solid #fde68a; border-radius:12px; padding:14px 18px;
+    color:#854d0e; font-size:13.5px; margin-top:8px; }
+  footer { color:var(--muted); font-size:12px; text-align:center; margin-top:40px; }
+</style></head>
+<body><div class="wrap">
+
+<header class="top">
+  <div class="eyebrow">Chorus · Frontend Engineer (Finn) · task &ldquo;shop&rdquo;</div>
+  <h1>Run Flow Report</h1>
+  <p class="intent"><b>Intent:</b> Build a small storefront that works as one continuous experience across three connected views: a browsable list of products, a single product&#x27;s detail page, and a cart. From the list a person can open any product to see its details and add it to the cart; from a product&#x27;s details they can return to browsing; and from anywhere they can open the cart to change item quantities or remove items. A running count of items in the cart and the current total are visible at all times and stay correct as things are added, changed, and removed while moving between the different views. Navigating the storefront must feel like a real app: a person can use the browser&#x27;s back and forward buttons to retrace their steps, opening a link to a specific product or the cart directly lands on the right view, and whatever is in the cart survives all of that moving around.</p>
+</header>
+
+<div class="reverify">
+  <h2>Independent verification — did the shipped code actually work?</h2>
+  <div class="vrow"><span class="vlabel">DoD floor (after-beat gate)</span><span class="badge ok">pass</span></div><div class="vrow"><span class="vlabel">Independent unit re-run</span><span class="badge ok">exit 0</span> <span class="muted">npm test, clean process, shipped worktree</span></div><div class="vrow"><span class="vlabel">Independent e2e re-run</span><span class="badge ok">exit 0</span> <span class="muted">npx playwright test, real browser</span></div>
+  <div class="overall ok"><span class="big">TRULY PASSED</span><p>the shipped code passed the DoD floor AND both suites went green again under the harness's own hands</p></div>
+</div>
+
+<div class="chips"><div class="chip"><span>165</span>Total tool calls</div><div class="chip"><span>6</span>Subagents spawned</div><div class="chip"><span>60</span>run_command calls</div><div class="chip"><span>2</span>skills loaded</div><div class="chip"><span>1</span>Sprints</div></div>
+<div class="subchips"><span class="subchip">ui_tester <b>&times;4</b></span><span class="subchip">code_reviewer <b>&times;2</b></span></div>
+
+<h2 class="sec">The flow, phase by phase</h2>
+<div class="legend"><span class="leg"><span class="dot" style="background:#7c3aed"></span>subagent</span><span class="leg"><span class="dot" style="background:#0d9488"></span>run</span><span class="leg"><span class="dot" style="background:#d97706"></span>git</span><span class="leg"><span class="dot" style="background:#2563eb"></span>evidence</span><span class="leg"><span class="dot" style="background:#16a34a"></span>write</span><span class="leg"><span class="dot" style="background:#6b7280"></span>read</span><span class="leg"><span class="dot" style="background:#db2777"></span>skill</span></div>
+<section class="phase"><div class="phase-head"><span class="pnum">0</span><div><h3>Understand &amp; size</h3><p>Read the intent and any existing code, load the craft <b>skill</b> that fits, <b>choose the stack</b> that suits the job, and pick the smallest slice that <em>actually works</em>.</p></div></div><div class="phase-body"><div class="step"><span class="dot" style="background:#db2777"></span><span class="tool">skill</span><span class="arg">choosing-a-frontend-stack</span></div><div class="step"><span class="dot" style="background:#db2777"></span><span class="tool">skill</span><span class="arg">spec-to-working-app</span></div><div class="step"><span class="dot" style="background:#d97706"></span><span class="tool">git</span><span class="arg">git status --porcelain</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">dir</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">dir docs &amp;&amp; if exist package.json (type package.json) else (echo no package.json)</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">npm create vite@latest shop -- --template react-ts</span> <span class="err" title="benign — usually a retry reading an offloaded scratch file or a Windows-only DoD floor probe">err</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">npm create vite@latest shop -- --template react-ts --yes</span></div></div></section><section class="phase"><div class="phase-head"><span class="pnum">1</span><div><h3>Build the slice</h3><p>Write the running app in the stack it chose — accessible by construction and wired end to end so the behaviour happens in the browser.</p></div></div><div class="phase-body"><div class="empty">— no steps recorded —</div></div></section><section class="phase"><div class="phase-head"><span class="pnum">2</span><div><h3>Author the tests</h3><p>Write <b>unit</b> tests for the logic (in whatever runner the stack uses) and a real-browser <b>Playwright</b> e2e that drives the app the way a user does.</p></div></div><div class="phase-body"><div class="empty">— no steps recorded —</div></div></section><section class="phase"><div class="phase-head"><span class="pnum">3</span><div><h3>Run &amp; capture the proof</h3><p>Install deps, run both suites, and tee the <em>real</em> output into the durable <code>test_evidence/</code> bundle.</p></div></div><div class="phase-body"><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">cd shop &amp;&amp; npm install</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">cd shop &amp;&amp; npm install -D @playwright/test &amp;&amp; npx playwright --version</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">cd shop &amp;&amp; npm install -D vitest @testing-library/react @testing-library/jest-dom jsdom</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">cd shop &amp;&amp; type package.json</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">cd shop &amp;&amp; npm install react-router-dom</span></div><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">shop/vitest.config.ts</span></div><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">shop/src/test/setup.ts</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">cd shop &amp;&amp; node -e &quot;const fs=require(\&#x27;fs\&#x27;);const p=\&#x27;package.json\&#x27;;const j=JSON.parse…</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">cd shop &amp;&amp; mkdir src\\data src\\cart src\\routes tests test_evidence</span></div><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">shop/src/data/products.ts</span></div><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">shop/src/cart/cart.ts</span></div><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">shop/src/cart/CartProvider.tsx</span></div><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">shop/src/routes/ProductList.tsx</span></div><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">shop/src/routes/ProductDetail.tsx</span></div><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">shop/src/routes/CartView.tsx</span></div><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">shop/src/App.tsx</span></div><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">shop/src/main.tsx</span></div><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">shop/src/index.css</span></div><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">shop/index.html</span></div><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">shop/src/cart/cart.test.ts</span></div><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">shop/playwright.config.ts</span></div><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">shop/tests/storefront.spec.ts</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">cd shop &amp;&amp; npm test</span> <span class="err" title="benign — usually a retry reading an offloaded scratch file or a Windows-only DoD floor probe">err</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">cd shop &amp;&amp; node -e &quot;const fs=require(\&#x27;fs\&#x27;);const p=\&#x27;package.json\&#x27;;const j=JSON.parse…</span></div><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">shop/src/cart/cart.test.ts</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">cd shop &amp;&amp; npm test</span> <span class="err" title="benign — usually a retry reading an offloaded scratch file or a Windows-only DoD floor probe">err</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">cd shop &amp;&amp; node -p &quot;require(\&#x27;vitest/package.json\&#x27;).version&quot;</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">cd shop &amp;&amp; type vitest.config.ts</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">cd shop &amp;&amp; npx vitest run src/cart/cart.test.ts --reporter verbose</span> <span class="err" title="benign — usually a retry reading an offloaded scratch file or a Windows-only DoD floor probe">err</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">cd shop &amp;&amp; nl -ba src/cart/cart.test.ts | sed -n &quot;1,40p&quot;</span> <span class="err" title="benign — usually a retry reading an offloaded scratch file or a Windows-only DoD floor probe">err</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">cd shop &amp;&amp; node -e &quot;const fs=require(\&#x27;fs\&#x27;);const s=fs.readFileSync(\&#x27;src/cart/cart.tes…</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">cd shop &amp;&amp; node -e &quot;import(\&#x27;vitest\&#x27;).then(m=&gt;console.log(Object.keys(m))).catch(e=&gt;{co…</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">cd shop &amp;&amp; npx vitest run --no-threads src/cart/cart.test.ts</span> <span class="err" title="benign — usually a retry reading an offloaded scratch file or a Windows-only DoD floor probe">err</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">cd shop &amp;&amp; npx vitest run --help | findstr /I pool</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">cd shop &amp;&amp; npx vitest run --pool vm src/cart/cart.test.ts</span> <span class="err" title="benign — usually a retry reading an offloaded scratch file or a Windows-only DoD floor probe">err</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">cd shop &amp;&amp; node -e &quot;const fs=require(\&#x27;fs\&#x27;);const p=\&#x27;package.json\&#x27;;const j=JSON.parse…</span> <span class="err" title="benign — usually a retry reading an offloaded scratch file or a Windows-only DoD floor probe">err</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">cd shop &amp;&amp; node -e &quot;const fs=require(\&#x27;fs\&#x27;);const p=\&#x27;package.json\&#x27;;const j=JSON.parse…</span> <span class="err" title="benign — usually a retry reading an offloaded scratch file or a Windows-only DoD floor probe">err</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">cd shop &amp;&amp; node -e &quot;const fs=require(\&#x27;fs\&#x27;);const p=\&#x27;package.json\&#x27;;const j=JSON.parse…</span> <span class="err" title="benign — usually a retry reading an offloaded scratch file or a Windows-only DoD floor probe">err</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">cd shop &amp;&amp; npm view vitest versions --json | node -e &quot;const v=JSON.parse(require(\&#x27;fs\&#x27;)…</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">cd shop &amp;&amp; node -e &quot;import(\&#x27;vitest\&#x27;).then(async m=&gt;{try{console.log(\&#x27;calling describe…</span> <span class="err" title="benign — usually a retry reading an offloaded scratch file or a Windows-only DoD floor probe">err</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">cd shop &amp;&amp; node -e &quot;const fs=require(\&#x27;fs\&#x27;);const p=\&#x27;package.json\&#x27;;const j=JSON.parse…</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">cd shop &amp;&amp; npm test</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">cd shop &amp;&amp; npx playwright test</span> <span class="err" title="benign — usually a retry reading an offloaded scratch file or a Windows-only DoD floor probe">err</span></div><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">shop/tests/storefront.spec.ts</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">cd shop &amp;&amp; npx playwright test</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">cd shop &amp;&amp; mkdir test_evidence</span> <span class="err" title="benign — usually a retry reading an offloaded scratch file or a Windows-only DoD floor probe">err</span></div><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">shop/test_evidence/summary.md</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">cd shop &amp;&amp; npm test &gt; test_evidence\\unit.txt 2&gt;&amp;1</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">cd shop &amp;&amp; npx playwright test &gt; test_evidence\\e2e.txt 2&gt;&amp;1</span></div></div></section><section class="phase"><div class="phase-head"><span class="pnum">4</span><div><h3>Review under pressure</h3><p>Spawn the read-only <b>code_reviewer</b> and <b>ui_tester</b>, self-check with <b>test_evidence</b>, address every blocker/major, and re-run until green.</p></div></div><div class="phase-body"><details class="sub"><summary><span class="dot" style="background:#7c3aed"></span><b>spawn_subagent</b> <span class="agent">code_reviewer</span><span class="count">3 inner calls · 2 benign err</span></summary><div class="subbody"><div class="step"><span class="dot" style="background:#2563eb"></span><span class="tool">test_evidence</span><span class="arg">(scan the worktree)</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">dir</span> <span class="err" title="benign — usually a retry reading an offloaded scratch file or a Windows-only DoD floor probe">err</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">.</span> <span class="err" title="benign — usually a retry reading an offloaded scratch file or a Windows-only DoD floor probe">err</span></div></div></details><details class="sub"><summary><span class="dot" style="background:#7c3aed"></span><b>spawn_subagent</b> <span class="agent">ui_tester</span><span class="count">1 inner call</span></summary><div class="subbody"><div class="step"><span class="dot" style="background:#2563eb"></span><span class="tool">test_evidence</span><span class="arg">(scan the worktree)</span></div></div></details><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">dir &amp;&amp; dir shop</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">copy shop\\package.json package.json /Y &amp;&amp; copy shop\\package-lock.json package-lock.jso…</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">if not exist tests mkdir tests &amp;&amp; xcopy shop\\tests tests /E /I /Y</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">if not exist src mkdir src &amp;&amp; xcopy shop\\src src /E /I /Y</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">copy shop\\index.html index.html /Y &amp;&amp; copy shop\\vite.config.ts vite.config.ts /Y &amp;&amp; co…</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">if not exist test_evidence mkdir test_evidence &amp;&amp; copy shop\\test_evidence\\summary.md t…</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">npm install</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">npm test</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">rmdir /S /Q shop</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">npm test</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">npx playwright test</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">npm test &gt; test_evidence\\unit.txt 2&gt;&amp;1</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">npx playwright test &gt; test_evidence\\e2e.txt 2&gt;&amp;1</span></div><details class="sub"><summary><span class="dot" style="background:#7c3aed"></span><b>spawn_subagent</b> <span class="agent">code_reviewer</span><span class="count">24 inner calls · 1 benign err</span></summary><div class="subbody"><div class="step"><span class="dot" style="background:#2563eb"></span><span class="tool">test_evidence</span><span class="arg">(scan the worktree)</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">package.json</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">playwright.config.ts</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">test_evidence/summary.md</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">test_evidence/unit.txt</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">test_evidence/e2e.txt</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/main.tsx</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/App.tsx</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/cart/cart.ts</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/cart/CartProvider.tsx</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">tests/storefront.spec.ts</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/cart/cart.test.ts</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/routes/CartView.tsx</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">20260705-124551-read_file-47b347c38840.txt</span> <span class="err" title="benign — usually a retry reading an offloaded scratch file or a Windows-only DoD floor probe">err</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/routes/CartView.tsx</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/routes/CartView.tsx</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/cart/cart.ts</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/cart/cart.ts</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/cart/cart.ts</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/cart/cart.ts</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/routes/ProductList.tsx</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/routes/ProductDetail.tsx</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/index.css</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/data/products.ts</span></div></div></details><details class="sub"><summary><span class="dot" style="background:#7c3aed"></span><b>spawn_subagent</b> <span class="agent">ui_tester</span><span class="count">6 inner calls</span></summary><div class="subbody"><div class="step"><span class="dot" style="background:#2563eb"></span><span class="tool">test_evidence</span><span class="arg">(scan the worktree)</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">test_evidence/e2e.txt</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">playwright.config.ts</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">package.json</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">test_evidence/summary.md</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">tests/storefront.spec.ts</span></div></div></details><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">tests/storefront.spec.ts</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">npx playwright test</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">npx playwright test &gt; test_evidence\\e2e.txt 2&gt;&amp;1</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">npm test &gt; test_evidence\\unit.txt 2&gt;&amp;1</span></div><details class="sub"><summary><span class="dot" style="background:#7c3aed"></span><b>spawn_subagent</b> <span class="agent">ui_tester</span><span class="count">13 inner calls · 5 benign err</span></summary><div class="subbody"><div class="step"><span class="dot" style="background:#2563eb"></span><span class="tool">test_evidence</span><span class="arg">(scan the worktree)</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">test_evidence/e2e.txt</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">package.json</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">playwright.config.js</span> <span class="err" title="benign — usually a retry reading an offloaded scratch file or a Windows-only DoD floor probe">err</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">dir /s /b *.spec.* tests e2e playwright</span> <span class="err" title="benign — usually a retry reading an offloaded scratch file or a Windows-only DoD floor probe">err</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">dir /b playwright.config.*</span> <span class="err" title="benign — usually a retry reading an offloaded scratch file or a Windows-only DoD floor probe">err</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">dir /s /b tests\\*.spec.*</span> <span class="err" title="benign — usually a retry reading an offloaded scratch file or a Windows-only DoD floor probe">err</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">playwright.config.ts</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">tests/storefront.spec.ts</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">20260705-124727-read_file-b120ee47f66f.txt</span> <span class="err" title="benign — usually a retry reading an offloaded scratch file or a Windows-only DoD floor probe">err</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">tests/storefront.spec.ts</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">tests/storefront.spec.ts</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">tests/storefront.spec.ts</span></div></div></details><div class="step"><span class="dot" style="background:#16a34a"></span><span class="tool">write_file</span><span class="arg">tests/storefront.spec.ts</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">npx playwright test</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">npx playwright test &gt; test_evidence\\e2e.txt 2&gt;&amp;1</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">npm test &gt; test_evidence\\unit.txt 2&gt;&amp;1</span></div><details class="sub"><summary><span class="dot" style="background:#7c3aed"></span><b>spawn_subagent</b> <span class="agent">ui_tester</span><span class="count">8 inner calls · 1 benign err</span></summary><div class="subbody"><div class="step"><span class="dot" style="background:#2563eb"></span><span class="tool">test_evidence</span><span class="arg">(scan the worktree)</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">test_evidence/e2e.txt</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">playwright.config.ts</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">package.json</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">dir /s /b tests e2e playwright</span> <span class="err" title="benign — usually a retry reading an offloaded scratch file or a Windows-only DoD floor probe">err</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">tests/storefront.spec.ts</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">tests/storefront.spec.ts</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">tests/storefront.spec.ts</span></div></div></details><div class="step"><span class="dot" style="background:#2563eb"></span><span class="tool">test_evidence</span><span class="arg">(scan the worktree)</span></div><div class="step"><span class="dot" style="background:#d97706"></span><span class="tool">git</span><span class="arg">git diff --name-only</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">package.json</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">test_evidence/summary.md</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">playwright.config.js</span> <span class="err" title="benign — usually a retry reading an offloaded scratch file or a Windows-only DoD floor probe">err</span></div><div class="step"><span class="dot" style="background:#0d9488"></span><span class="tool">bash</span><span class="arg">dir /s /b src tests e2e playwright test_evidence 2&gt;nul</span> <span class="err" title="benign — usually a retry reading an offloaded scratch file or a Windows-only DoD floor probe">err</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">playwright.config.ts</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">vite.config.ts</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/main.tsx</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/App.tsx</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/cart/cart.ts</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/routes/ProductList.tsx</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/routes/ProductDetail.tsx</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/routes/CartView.tsx</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/cart/CartProvider.tsx</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">tests/storefront.spec.ts</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">20260705-124901-read_file-94c9e4e1f801.txt</span> <span class="err" title="benign — usually a retry reading an offloaded scratch file or a Windows-only DoD floor probe">err</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">20260705-124901-read_file-6e2f418229d6.txt</span> <span class="err" title="benign — usually a retry reading an offloaded scratch file or a Windows-only DoD floor probe">err</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">20260705-124858-read_file-63a564d5ac5d.txt</span> <span class="err" title="benign — usually a retry reading an offloaded scratch file or a Windows-only DoD floor probe">err</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/routes/CartView.tsx</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">tests/storefront.spec.ts</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/cart/cart.ts</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/data/products.ts</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/index.css</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">src/cart/cart.test.ts</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">test_evidence/unit.txt</span></div><div class="step"><span class="dot" style="background:#6b7280"></span><span class="tool">read_file</span><span class="arg">test_evidence/e2e.txt</span></div></div></section>
+
+<h2 class="sec">Sprint evaluations</h2>
+<div class="eval"><div class="eval-top"><span class="badge ok">sprint 1: pass</span><span class="score">score 1.00</span></div><div class="bar"><span style="width:100%"></span></div><p class="notes">Three-view React Router SPA with persistent shared cart + always-visible summary; unit tests and Playwright e2e (including deep links and back/forward) are present with passing captured evidence.</p></div>
+
+<h2 class="sec">Artifacts produced</h2>
+<details class="art"><summary>package.json — the chosen stack + wired scripts · 71 words</summary><pre>{
+  &quot;name&quot;: &quot;shop&quot;,
+  &quot;private&quot;: true,
+  &quot;version&quot;: &quot;0.0.0&quot;,
+  &quot;type&quot;: &quot;module&quot;,
+  &quot;scripts&quot;: {
+    &quot;dev&quot;: &quot;vite&quot;,
+    &quot;build&quot;: &quot;tsc -b &amp;&amp; vite build&quot;,
+    &quot;lint&quot;: &quot;oxlint&quot;,
+    &quot;preview&quot;: &quot;vite preview&quot;,
+    &quot;test&quot;: &quot;vitest run src&quot;,
+    &quot;test:watch&quot;: &quot;vitest&quot;,
+    &quot;e2e&quot;: &quot;playwright test&quot;
+  },
+  &quot;dependencies&quot;: {
+    &quot;react&quot;: &quot;^19.2.7&quot;,
+    &quot;react-dom&quot;: &quot;^19.2.7&quot;,
+    &quot;react-router-dom&quot;: &quot;^7.18.1&quot;
+  },
+  &quot;devDependencies&quot;: {
+    &quot;@playwright/test&quot;: &quot;^1.61.1&quot;,
+    &quot;@testing-library/jest-dom&quot;: &quot;^6.9.1&quot;,
+    &quot;@testing-library/react&quot;: &quot;^16.3.2&quot;,
+    &quot;@types/node&quot;: &quot;^24.13.2&quot;,
+    &quot;@types/react&quot;: &quot;^19.2.17&quot;,
+    &quot;@types/react-dom&quot;: &quot;^19.2.3&quot;,
+    &quot;@vitejs/plugin-react&quot;: &quot;^6.0.3&quot;,
+    &quot;jsdom&quot;: &quot;^29.1.1&quot;,
+    &quot;oxlint&quot;: &quot;^1.71.0&quot;,
+    &quot;typescript&quot;: &quot;~6.0.2&quot;,
+    &quot;vite&quot;: &quot;^8.1.1&quot;,
+    &quot;vitest&quot;: &quot;^3.2.4&quot;
+  }
+}
+</pre></details><details class="art"><summary>index.html — the app entry · 13 lines</summary><pre>&lt;!doctype html&gt;
+&lt;html lang=&quot;en&quot;&gt;
+  &lt;head&gt;
+    &lt;meta charset=&quot;UTF-8&quot; /&gt;
+    &lt;meta name=&quot;viewport&quot; content=&quot;width=device-width, initial-scale=1.0&quot; /&gt;
+    &lt;title&gt;Run Shop&lt;/title&gt;
+  &lt;/head&gt;
+  &lt;body&gt;
+    &lt;div id=&quot;root&quot;&gt;&lt;/div&gt;
+    &lt;script type=&quot;module&quot; src=&quot;/src/main.tsx&quot;&gt;&lt;/script&gt;
+  &lt;/body&gt;
+&lt;/html&gt;
+</pre></details><details class="art"><summary>src/App.tsx — source · 70 lines</summary><pre>import { Link, NavLink, Route, Routes } from &#x27;react-router-dom&#x27;;
+import { CartProvider, useCart } from &#x27;./cart/CartProvider&#x27;;
+import { PRODUCTS } from &#x27;./data/products&#x27;;
+import { formatMoneyFromCents, getCartItemCount, getCartTotalCents } from &#x27;./cart/cart&#x27;;
+import { ProductList } from &#x27;./routes/ProductList&#x27;;
+import { ProductDetail } from &#x27;./routes/ProductDetail&#x27;;
+import { CartView } from &#x27;./routes/CartView&#x27;;
+
+export default function App() {
+  return (
+    &lt;CartProvider&gt;
+      &lt;div className=&quot;appShell&quot;&gt;
+        &lt;SiteHeader /&gt;
+        &lt;div className=&quot;content&quot;&gt;
+          &lt;Routes&gt;
+            &lt;Route path=&quot;/&quot; element={&lt;ProductList /&gt;} /&gt;
+            &lt;Route path=&quot;/product/:id&quot; element={&lt;ProductDetail /&gt;} /&gt;
+            &lt;Route path=&quot;/cart&quot; element={&lt;CartView /&gt;} /&gt;
+            &lt;Route
+              path=&quot;*&quot;
+              element={
+                &lt;main aria-labelledby=&quot;page-title&quot;&gt;
+                  &lt;h1 id=&quot;page-title&quot;&gt;Not found&lt;/h1&gt;
+                  &lt;p&gt;
+                    &lt;Link to=&quot;/&quot;&gt;Back to products&lt;/Link&gt;
+                  &lt;/p&gt;
+                &lt;/main&gt;
+              }
+            /&gt;
+          &lt;/Routes&gt;
+        &lt;/div&gt;
+      &lt;/div&gt;
+    &lt;/CartProvider&gt;
+  );
+}
+
+function SiteHeader() {
+  return (
+    &lt;header className=&quot;siteHeader&quot;&gt;
+      &lt;div className=&quot;siteHeader__inner&quot;&gt;
+        &lt;nav aria-label=&quot;Primary&quot;&gt;
+          &lt;NavLink to=&quot;/&quot; end&gt;
+            Products
+          &lt;/NavLink&gt;
+          &lt;NavLink to=&quot;/cart&quot;&gt;Cart&lt;/NavLink&gt;
+        &lt;/nav&gt;
+
+        &lt;CartSummary /&gt;
+      &lt;/div&gt;
+    &lt;/header&gt;
+  );
+}
+
+function CartSummary() {
+  const { state } = useCart();
+  const count = getCartItemCount(state);
+  const total = getCartTotalCents(state, PRODUCTS);
+
+  return (
+    &lt;div className=&quot;cartSummary&quot; aria-label=&quot;Cart summary&quot;&gt;
+      &lt;span&gt;
+        Items: &lt;strong aria-label=&quot;Cart items&quot;&gt;{count}&lt;/strong&gt;
+      &lt;/span&gt;
+      &lt;span&gt;
+        Total: &lt;strong aria-label=&quot;Cart total&quot;&gt;{formatMoneyFromCents(total)}&lt;/strong&gt;
+      &lt;/span&gt;
+    &lt;/div&gt;
+  );
+}
+</pre></details><details class="art"><summary>src/cart/CartProvider.tsx — source · 38 lines</summary><pre>import React, { createContext, useContext, useEffect, useMemo, useReducer } from &#x27;react&#x27;;
+import {
+  cartReducer,
+  createEmptyCart,
+  loadCartFromStorage,
+  saveCartToStorage,
+  type CartAction,
+  type CartState,
+} from &#x27;./cart&#x27;;
+
+type CartContextValue = {
+  state: CartState;
+  dispatch: React.Dispatch&lt;CartAction&gt;;
+};
+
+const CartContext = createContext&lt;CartContextValue | null&gt;(null);
+
+export function CartProvider({ children }: { children: React.ReactNode }) {
+  const [state, dispatch] = useReducer(cartReducer, undefined, () =&gt; {
+    if (typeof window === &#x27;undefined&#x27;) return createEmptyCart();
+    return loadCartFromStorage(window.localStorage);
+  });
+
+  useEffect(() =&gt; {
+    saveCartToStorage(window.localStorage, state);
+  }, [state]);
+
+  const value = useMemo(() =&gt; ({ state, dispatch }), [state]);
+
+  return &lt;CartContext.Provider value={value}&gt;{children}&lt;/CartContext.Provider&gt;;
+}
+
+export function useCart(): CartContextValue {
+  const ctx = useContext(CartContext);
+  if (!ctx) throw new Error(&#x27;useCart must be used within CartProvider&#x27;);
+  return ctx;
+}
+</pre></details><details class="art"><summary>src/cart/cart.ts — source · 157 lines</summary><pre>import type { Product } from &#x27;../data/products&#x27;;
+
+export type CartLine = {
+  productId: string;
+  quantity: number;
+};
+
+export type CartState = {
+  lines: CartLine[];
+};
+
+export type AddToCartAction = {
+  type: &#x27;add&#x27;;
+  productId: string;
+  quantity?: number;
+};
+
+export type RemoveFromCartAction = {
+  type: &#x27;remove&#x27;;
+  productId: string;
+};
+
+export type SetQuantityAction = {
+  type: &#x27;setQuantity&#x27;;
+  productId: string;
+  quantity: number;
+};
+
+export type ClearCartAction = { type: &#x27;clear&#x27; };
+
+export type CartAction =
+  | AddToCartAction
+  | RemoveFromCartAction
+  | SetQuantityAction
+  | ClearCartAction;
+
+export const CART_STORAGE_KEY = &#x27;run-shop.cart.v1&#x27;;
+
+export function createEmptyCart(): CartState {
+  return { lines: [] };
+}
+
+export function cartReducer(state: CartState, action: CartAction): CartState {
+  switch (action.type) {
+    case &#x27;add&#x27;: {
+      const quantity = clampInt(action.quantity ?? 1, 1, 999);
+      const existing = state.lines.find((l) =&gt; l.productId === action.productId);
+      if (!existing) {
+        return {
+          lines: [...state.lines, { productId: action.productId, quantity }],
+        };
+      }
+      return {
+        lines: state.lines.map((l) =&gt;
+          l.productId === action.productId
+            ? { ...l, quantity: clampInt(l.quantity + quantity, 1, 999) }
+            : l,
+        ),
+      };
+    }
+    case &#x27;remove&#x27;: {
+      return {
+        lines: state.lines.filter((l) =&gt; l.productId !== action.productId),
+      };
+    }
+    case &#x27;setQuantity&#x27;: {
+      const quantity = clampInt(action.quantity, 0, 999);
+      if (quantity === 0) {
+        return {
+          lines: state.lines.filter((l) =&gt; l.productId !== action.productId),
+        };
+      }
+      const hasLine = state.lines.some((l) =&gt; l.productId === action.productId);
+      if (!hasLine) return state;
+      return {
+        lines: state.lines.map((l) =&gt;
+          l.productId === action.productId ? { ...l, quantity } : l,
+        ),
+      };
+    }
+    case &#x27;clear&#x27;: {
+      return createEmptyCart();
+    }
+    default: {
+      return state;
+    }
+  }
+}
+
+export function getCartItemCount(state: CartState): number {
+  return state.lines.reduce((sum, l) =&gt; sum + l.quantity, 0);
+}
+
+export function getCartTotalCents(state: CartState, products: Product[]): number {
+  const priceById = new Map(products.map((p) =&gt; [p.id, p.priceCents] as const));
+  return state.lines.reduce((sum, l) =&gt; {
+    const price = priceById.get(l.productId);
+    if (price == null) return sum;
+    return sum + price * l.quantity;
+  }, 0);
+}
+
+export function formatMoneyFromCents(amountCents: number): string {
+  const dollars = amountCents / 100;
+  return dollars.toLocaleString(undefined, {
+    style: &#x27;currency&#x27;,
+    currency: &#x27;USD&#x27;,
+  });
+}
+
+export function loadCartFromStorage(storage: Pick&lt;Storage, &#x27;getItem&#x27;&gt;): CartState {
+  try {
+    const raw = storage.getItem(CART_STORAGE_KEY);
+    if (!raw) return createEmptyCart();
+    const parsed = JSON.parse(raw) as unknown;
+    const lines = parseLines(parsed);
+    return { lines };
+  } catch {
+    return createEmptyCart();
+  }
+}
+
+export function saveCartToStorage(
+  storage: Pick&lt;Storage, &#x27;setItem&#x27;&gt;,
+  state: CartState,
+): void {
+  storage.setItem(CART_STORAGE_KEY, JSON.stringify({ lines: state.lines }));
+}
+
+function parseLines(value: unknown): CartLine[] {
+  if (!value || typeof value !== &#x27;object&#x27;) return [];
+  const v = value as { lines?: unknown };
+  if (!Array.isArray(v.lines)) return [];
+  const lines: CartLine[] = [];
+  for (const entry of v.lines) {
+    if (!entry || typeof entry !== &#x27;object&#x27;) continue;
+    const e = entry as { productId?: unknown; quantity?: unknown };
+    if (typeof e.productId !== &#x27;string&#x27;) continue;
+    const q = typeof e.quantity === &#x27;number&#x27; ? e.quantity : Number(e.quantity);
+    if (!Number.isFinite(q)) continue;
+    const quantity = clampInt(q, 1, 999);
+    lines.push({ productId: e.productId, quantity });
+  }
+  // de-dupe by productId, keeping the last
+  const byId = new Map&lt;string, CartLine&gt;();
+  for (const l of lines) byId.set(l.productId, l);
+  return [...byId.values()];
+}
+
+function clampInt(value: number, min: number, max: number): number {
+  if (!Number.isFinite(value)) return min;
+  const v = Math.trunc(value);
+  if (v &lt; min) return min;
+  if (v &gt; max) return max;
+  return v;
+}
+</pre></details><details class="art"><summary>src/data/products.ts — source · 32 lines</summary><pre>export type Product = {
+  id: string;
+  name: string;
+  description: string;
+  priceCents: number;
+};
+
+export const PRODUCTS: Product[] = [
+  {
+    id: &#x27;p1&#x27;,
+    name: &#x27;Arc Mug&#x27;,
+    description: &#x27;Stoneware mug, 12oz. Dishwasher safe.&#x27;,
+    priceCents: 1599,
+  },
+  {
+    id: &#x27;p2&#x27;,
+    name: &#x27;Chorus Tee&#x27;,
+    description: &#x27;Unisex cotton tee. True to size.&#x27;,
+    priceCents: 2499,
+  },
+  {
+    id: &#x27;p3&#x27;,
+    name: &#x27;Field Notebook&#x27;,
+    description: &#x27;Dot grid, 80 pages, soft cover.&#x27;,
+    priceCents: 899,
+  },
+];
+
+export function getProductById(id: string): Product | undefined {
+  return PRODUCTS.find((p) =&gt; p.id === id);
+}
+</pre></details><details class="art"><summary>src/main.tsx — source · 14 lines</summary><pre>import React from &#x27;react&#x27;;
+import ReactDOM from &#x27;react-dom/client&#x27;;
+import { BrowserRouter } from &#x27;react-router-dom&#x27;;
+import App from &#x27;./App&#x27;;
+import &#x27;./index.css&#x27;;
+
+ReactDOM.createRoot(document.getElementById(&#x27;root&#x27;)!).render(
+  &lt;React.StrictMode&gt;
+    &lt;BrowserRouter&gt;
+      &lt;App /&gt;
+    &lt;/BrowserRouter&gt;
+  &lt;/React.StrictMode&gt;,
+);
+</pre></details><details class="art"><summary>src/routes/CartView.tsx — source · 123 lines</summary><pre>import { Link } from &#x27;react-router-dom&#x27;;
+import { PRODUCTS } from &#x27;../data/products&#x27;;
+import {
+  formatMoneyFromCents,
+  getCartItemCount,
+  getCartTotalCents,
+  type CartLine,
+} from &#x27;../cart/cart&#x27;;
+import { useCart } from &#x27;../cart/CartProvider&#x27;;
+
+function getProductName(productId: string): string {
+  return PRODUCTS.find((p) =&gt; p.id === productId)?.name ?? productId;
+}
+
+function getProductPriceCents(productId: string): number | undefined {
+  return PRODUCTS.find((p) =&gt; p.id === productId)?.priceCents;
+}
+
+export function CartView() {
+  const { state, dispatch } = useCart();
+
+  const count = getCartItemCount(state);
+  const total = getCartTotalCents(state, PRODUCTS);
+
+  return (
+    &lt;main aria-labelledby=&quot;page-title&quot;&gt;
+      &lt;h1 id=&quot;page-title&quot;&gt;Your cart&lt;/h1&gt;
+
+      {state.lines.length === 0 ? (
+        &lt;p&gt;
+          Your cart is empty. &lt;Link to=&quot;/&quot;&gt;Browse products&lt;/Link&gt;.
+        &lt;/p&gt;
+      ) : (
+        &lt;&gt;
+          &lt;ul style={{ listStyle: &#x27;none&#x27;, padding: 0, margin: &#x27;0 0 12px&#x27;, display: &#x27;grid&#x27;, gap: 12 }}&gt;
+            {state.lines.map((line) =&gt; (
+              &lt;CartLineItem key={line.productId} line={line} /&gt;
+            ))}
+          &lt;/ul&gt;
+
+          &lt;div
+            style={{
+              display: &#x27;flex&#x27;,
+              justifyContent: &#x27;space-between&#x27;,
+              padding: 12,
+              border: &#x27;1px solid var(--border)&#x27;,
+              borderRadius: 8,
+              background: &#x27;var(--panel)&#x27;,
+            }}
+          &gt;
+            &lt;div&gt;
+              &lt;div&gt;
+                Items: &lt;strong aria-label=&quot;Cart items&quot;&gt;{count}&lt;/strong&gt;
+              &lt;/div&gt;
+              &lt;div&gt;
+                Total: &lt;strong aria-label=&quot;Cart total&quot;&gt;{formatMoneyFromCents(total)}&lt;/strong&gt;
+              &lt;/div&gt;
+            &lt;/div&gt;
+            &lt;button type=&quot;button&quot; onClick={() =&gt; dispatch({ type: &#x27;clear&#x27; })}&gt;
+              Clear cart
+            &lt;/button&gt;
+          &lt;/div&gt;
+        &lt;/&gt;
+      )}
+    &lt;/main&gt;
+  );
+}
+
+function CartLineItem({ line }: { line: CartLine }) {
+  const { dispatch } = useCart();
+  const name = getProductName(line.productId);
+  const priceCents = getProductPriceCents(line.productId);
+  const lineTotal = (priceCents ?? 0) * line.quantity;
+  const inputId = `qty-${line.productId}`;
+
+  return (
+    &lt;li
+      style={{
+        border: &#x27;1px solid var(--border)&#x27;,
+        borderRadius: 8,
+        padding: 12,
+        background: &#x27;var(--panel)&#x27;,
+      }}
+    &gt;
+      &lt;div style={{ display: &#x27;flex&#x27;, justifyContent: &#x27;space-between&#x27;, gap: 12 }}&gt;
+        &lt;div&gt;
+          &lt;div style={{ fontWeight: 700 }}&gt;{name}&lt;/div&gt;
+          &lt;div style={{ color: &#x27;var(--muted)&#x27; }}&gt;{formatMoneyFromCents(priceCents ?? 0)} each&lt;/div&gt;
+        &lt;/div&gt;
+        &lt;div style={{ textAlign: &#x27;right&#x27; }}&gt;
+          &lt;div style={{ fontWeight: 700 }}&gt;{formatMoneyFromCents(lineTotal)}&lt;/div&gt;
+          &lt;button
+            type=&quot;button&quot;
+            onClick={() =&gt; dispatch({ type: &#x27;remove&#x27;, productId: line.productId })}
+          &gt;
+            Remove
+          &lt;/button&gt;
+        &lt;/div&gt;
+      &lt;/div&gt;
+
+      &lt;div style={{ display: &#x27;flex&#x27;, alignItems: &#x27;center&#x27;, gap: 8, marginTop: 10 }}&gt;
+        &lt;label htmlFor={inputId}&gt;Quantity&lt;/label&gt;
+        &lt;input
+          id={inputId}
+          type=&quot;number&quot;
+          inputMode=&quot;numeric&quot;
+          min={0}
+          max={999}
+          value={line.quantity}
+          onChange={(e) =&gt;
+            dispatch({
+              type: &#x27;setQuantity&#x27;,
+              productId: line.productId,
+              quantity: Number(e.currentTarget.value),
+            })
+          }
+          style={{ width: 100 }}
+        /&gt;
+      &lt;/div&gt;
+    &lt;/li&gt;
+  );
+}
+</pre></details><details class="art"><summary>src/routes/ProductDetail.tsx — source · 49 lines</summary><pre>import { Link, useParams } from &#x27;react-router-dom&#x27;;
+import { getProductById, PRODUCTS } from &#x27;../data/products&#x27;;
+import { formatMoneyFromCents, getCartItemCount, getCartTotalCents } from &#x27;../cart/cart&#x27;;
+import { useCart } from &#x27;../cart/CartProvider&#x27;;
+
+export function ProductDetail() {
+  const { id } = useParams();
+  const product = id ? getProductById(id) : undefined;
+  const { state, dispatch } = useCart();
+
+  if (!product) {
+    return (
+      &lt;main aria-labelledby=&quot;page-title&quot;&gt;
+        &lt;h1 id=&quot;page-title&quot;&gt;Product not found&lt;/h1&gt;
+        &lt;p&gt;
+          &lt;Link to=&quot;/&quot;&gt;Back to products&lt;/Link&gt;
+        &lt;/p&gt;
+      &lt;/main&gt;
+    );
+  }
+
+  const count = getCartItemCount(state);
+  const total = getCartTotalCents(state, PRODUCTS);
+
+  return (
+    &lt;main aria-labelledby=&quot;page-title&quot;&gt;
+      &lt;h1 id=&quot;page-title&quot;&gt;{product.name}&lt;/h1&gt;
+      &lt;p style={{ color: &#x27;var(--muted)&#x27; }}&gt;{product.description}&lt;/p&gt;
+      &lt;p style={{ fontSize: 18, fontWeight: 700 }}&gt;{formatMoneyFromCents(product.priceCents)}&lt;/p&gt;
+
+      &lt;div style={{ display: &#x27;flex&#x27;, gap: 12, alignItems: &#x27;center&#x27;, flexWrap: &#x27;wrap&#x27; }}&gt;
+        &lt;button
+          type=&quot;button&quot;
+          onClick={() =&gt; dispatch({ type: &#x27;add&#x27;, productId: product.id })}
+        &gt;
+          Add to cart
+        &lt;/button&gt;
+        &lt;Link to=&quot;/cart&quot;&gt;Go to cart&lt;/Link&gt;
+      &lt;/div&gt;
+
+      &lt;hr style={{ margin: &#x27;16px 0&#x27;, borderColor: &#x27;var(--border)&#x27; }} /&gt;
+      &lt;p style={{ margin: 0 }}&gt;
+        Cart now: &lt;strong aria-label=&quot;Cart items&quot;&gt;{count}&lt;/strong&gt; items,{&#x27; &#x27;}
+        &lt;strong aria-label=&quot;Cart total&quot;&gt;{formatMoneyFromCents(total)}&lt;/strong&gt;
+      &lt;/p&gt;
+    &lt;/main&gt;
+  );
+}
+</pre></details><details class="art"><summary>src/routes/ProductList.tsx — source · 36 lines</summary><pre>import { Link } from &#x27;react-router-dom&#x27;;
+import { PRODUCTS } from &#x27;../data/products&#x27;;
+import { formatMoneyFromCents } from &#x27;../cart/cart&#x27;;
+
+export function ProductList() {
+  return (
+    &lt;main aria-labelledby=&quot;page-title&quot;&gt;
+      &lt;h1 id=&quot;page-title&quot;&gt;Products&lt;/h1&gt;
+      &lt;ul style={{ listStyle: &#x27;none&#x27;, padding: 0, margin: 0, display: &#x27;grid&#x27;, gap: 12 }}&gt;
+        {PRODUCTS.map((p) =&gt; (
+          &lt;li
+            key={p.id}
+            style={{
+              border: &#x27;1px solid var(--border)&#x27;,
+              borderRadius: 8,
+              padding: 12,
+              background: &#x27;var(--panel)&#x27;,
+            }}
+          &gt;
+            &lt;div style={{ display: &#x27;flex&#x27;, justifyContent: &#x27;space-between&#x27;, gap: 12 }}&gt;
+              &lt;div&gt;
+                &lt;h2 style={{ margin: &#x27;0 0 4px&#x27; }}&gt;{p.name}&lt;/h2&gt;
+                &lt;p style={{ margin: 0, color: &#x27;var(--muted)&#x27; }}&gt;{p.description}&lt;/p&gt;
+              &lt;/div&gt;
+              &lt;div style={{ textAlign: &#x27;right&#x27; }}&gt;
+                &lt;div style={{ fontWeight: 700 }}&gt;{formatMoneyFromCents(p.priceCents)}&lt;/div&gt;
+                &lt;Link to={`/product/${p.id}`}&gt;View details&lt;/Link&gt;
+              &lt;/div&gt;
+            &lt;/div&gt;
+          &lt;/li&gt;
+        ))}
+      &lt;/ul&gt;
+    &lt;/main&gt;
+  );
+}
+</pre></details><details class="art"><summary>src/test/setup.ts — source · 2 lines</summary><pre>import &#x27;@testing-library/jest-dom/vitest&#x27;;
+</pre></details><details class="art"><summary>src/cart/cart.test.ts — unit test · 92 lines</summary><pre>import { describe, expect, it } from &#x27;vitest&#x27;;
+import {
+  cartReducer,
+  createEmptyCart,
+  formatMoneyFromCents,
+  getCartItemCount,
+  getCartTotalCents,
+  loadCartFromStorage,
+  saveCartToStorage,
+} from &#x27;./cart&#x27;;
+import type { Product } from &#x27;../data/products&#x27;;
+
+const PRODUCTS: Product[] = [
+  { id: &#x27;a&#x27;, name: &#x27;A&#x27;, description: &#x27;&#x27;, priceCents: 500 },
+  { id: &#x27;b&#x27;, name: &#x27;B&#x27;, description: &#x27;&#x27;, priceCents: 250 },
+];
+
+describe(&#x27;cart reducer&#x27;, () =&gt; {
+  it(&#x27;adds a new line&#x27;, () =&gt; {
+    const s0 = createEmptyCart();
+    const s1 = cartReducer(s0, { type: &#x27;add&#x27;, productId: &#x27;a&#x27; });
+    expect(s1.lines).toEqual([{ productId: &#x27;a&#x27;, quantity: 1 }]);
+  });
+
+  it(&#x27;increments quantity on repeated add&#x27;, () =&gt; {
+    const s0 = { lines: [{ productId: &#x27;a&#x27;, quantity: 1 }] };
+    const s1 = cartReducer(s0, { type: &#x27;add&#x27;, productId: &#x27;a&#x27;, quantity: 2 });
+    expect(s1.lines).toEqual([{ productId: &#x27;a&#x27;, quantity: 3 }]);
+  });
+
+  it(&#x27;removes a line&#x27;, () =&gt; {
+    const s0 = { lines: [{ productId: &#x27;a&#x27;, quantity: 2 }] };
+    const s1 = cartReducer(s0, { type: &#x27;remove&#x27;, productId: &#x27;a&#x27; });
+    expect(s1.lines).toEqual([]);
+  });
+
+  it(&#x27;sets quantity and removes when set to 0&#x27;, () =&gt; {
+    const s0 = { lines: [{ productId: &#x27;a&#x27;, quantity: 2 }] };
+    const s1 = cartReducer(s0, { type: &#x27;setQuantity&#x27;, productId: &#x27;a&#x27;, quantity: 5 });
+    expect(s1.lines).toEqual([{ productId: &#x27;a&#x27;, quantity: 5 }]);
+
+    const s2 = cartReducer(s1, { type: &#x27;setQuantity&#x27;, productId: &#x27;a&#x27;, quantity: 0 });
+    expect(s2.lines).toEqual([]);
+  });
+});
+
+describe(&#x27;cart selectors&#x27;, () =&gt; {
+  it(&#x27;computes item count&#x27;, () =&gt; {
+    const s = { lines: [{ productId: &#x27;a&#x27;, quantity: 2 }, { productId: &#x27;b&#x27;, quantity: 1 }] };
+    expect(getCartItemCount(s)).toBe(3);
+  });
+
+  it(&#x27;computes total cents and ignores unknown ids&#x27;, () =&gt; {
+    const s = {
+      lines: [
+        { productId: &#x27;a&#x27;, quantity: 2 },
+        { productId: &#x27;missing&#x27;, quantity: 10 },
+        { productId: &#x27;b&#x27;, quantity: 1 },
+      ],
+    };
+    expect(getCartTotalCents(s, PRODUCTS)).toBe(500 * 2 + 250 * 1);
+  });
+
+  it(&#x27;formats money&#x27;, () =&gt; {
+    expect(formatMoneyFromCents(0)).toMatch(/\$0\.00/);
+  });
+});
+
+describe(&#x27;storage&#x27;, () =&gt; {
+  it(&#x27;loads empty on missing/invalid data&#x27;, () =&gt; {
+    const empty = loadCartFromStorage({ getItem: () =&gt; null });
+    expect(empty.lines).toEqual([]);
+
+    const invalid = loadCartFromStorage({ getItem: () =&gt; &#x27;{not json&#x27; });
+    expect(invalid.lines).toEqual([]);
+  });
+
+  it(&#x27;saves and loads round trip&#x27;, () =&gt; {
+    const store = new Map&lt;string, string&gt;();
+    const storage = {
+      getItem: (k: string) =&gt; store.get(k) ?? null,
+      setItem: (k: string, v: string) =&gt; {
+        store.set(k, v);
+      },
+    };
+
+    saveCartToStorage(storage, { lines: [{ productId: &#x27;a&#x27;, quantity: 3 }] });
+    const loaded = loadCartFromStorage(storage);
+    expect(loaded.lines).toEqual([{ productId: &#x27;a&#x27;, quantity: 3 }]);
+  });
+});
+</pre></details><details class="art"><summary>tests/storefront.spec.ts — e2e spec · 79 lines</summary><pre>import { expect, test } from &#x27;@playwright/test&#x27;;
+
+test(&#x27;storefront routing + cart correctness + back/forward + deep links&#x27;, async ({ page }) =&gt; {
+  // Deep link into a product detail page first.
+  await page.goto(&#x27;/product/p2&#x27;);
+  await expect(page.getByRole(&#x27;heading&#x27;, { name: &#x27;Chorus Tee&#x27; })).toBeVisible();
+
+  const cartSummary = page.getByLabel(&#x27;Cart summary&#x27;);
+  await expect(cartSummary.getByLabel(&#x27;Cart items&#x27;)).toHaveText(&#x27;0&#x27;);
+  await expect(cartSummary.getByLabel(&#x27;Cart total&#x27;)).toHaveText(&#x27;$0.00&#x27;);
+
+  await page.getByRole(&#x27;button&#x27;, { name: &#x27;Add to cart&#x27; }).click();
+  await expect(cartSummary.getByLabel(&#x27;Cart items&#x27;)).toHaveText(&#x27;1&#x27;);
+  await expect(cartSummary.getByLabel(&#x27;Cart total&#x27;)).toHaveText(&#x27;$24.99&#x27;);
+
+  // Navigate to cart and edit quantities.
+  await page.getByRole(&#x27;navigation&#x27;, { name: &#x27;Primary&#x27; }).getByRole(&#x27;link&#x27;, { name: &#x27;Cart&#x27; }).click();
+  await expect(page.getByRole(&#x27;heading&#x27;, { name: &#x27;Your cart&#x27; })).toBeVisible();
+  await expect(page.getByText(&#x27;Chorus Tee&#x27;)).toBeVisible();
+
+  const qtyInput = page.getByLabel(&#x27;Quantity&#x27;);
+  await qtyInput.fill(&#x27;2&#x27;);
+  await expect(cartSummary.getByLabel(&#x27;Cart items&#x27;)).toHaveText(&#x27;2&#x27;);
+  await expect(cartSummary.getByLabel(&#x27;Cart total&#x27;)).toHaveText(&#x27;$49.98&#x27;);
+
+  await page.getByRole(&#x27;button&#x27;, { name: &#x27;Remove&#x27; }).click();
+  await expect(cartSummary.getByLabel(&#x27;Cart items&#x27;)).toHaveText(&#x27;0&#x27;);
+  await expect(cartSummary.getByLabel(&#x27;Cart total&#x27;)).toHaveText(&#x27;$0.00&#x27;);
+
+  // Navigate to products, then to a different product.
+  await page.getByRole(&#x27;navigation&#x27;, { name: &#x27;Primary&#x27; }).getByRole(&#x27;link&#x27;, { name: &#x27;Products&#x27; }).click();
+  await expect(page.getByRole(&#x27;heading&#x27;, { name: &#x27;Products&#x27; })).toBeVisible();
+
+  // Add first product from the list (Arc Mug: $15.99)
+  await page.getByRole(&#x27;link&#x27;, { name: &#x27;View details&#x27; }).first().click();
+  await expect(page.getByRole(&#x27;heading&#x27;, { name: &#x27;Arc Mug&#x27; })).toBeVisible();
+  await page.getByRole(&#x27;button&#x27;, { name: &#x27;Add to cart&#x27; }).click();
+
+  // Assert cart summary correctness after the second add (count + total).
+  await expect(cartSummary.getByLabel(&#x27;Cart items&#x27;)).toHaveText(&#x27;1&#x27;);
+  await expect(cartSummary.getByLabel(&#x27;Cart total&#x27;)).toHaveText(&#x27;$15.99&#x27;);
+
+  // Back to products list and forward to product detail should keep cart state.
+  await page.goBack();
+  await expect(page.getByRole(&#x27;heading&#x27;, { name: &#x27;Products&#x27; })).toBeVisible();
+  await expect(cartSummary.getByLabel(&#x27;Cart items&#x27;)).toHaveText(&#x27;1&#x27;);
+  await expect(cartSummary.getByLabel(&#x27;Cart total&#x27;)).toHaveText(&#x27;$15.99&#x27;);
+
+  await page.goForward();
+  await expect(page.getByRole(&#x27;heading&#x27;, { name: &#x27;Arc Mug&#x27; })).toBeVisible();
+  await expect(cartSummary.getByLabel(&#x27;Cart items&#x27;)).toHaveText(&#x27;1&#x27;);
+  await expect(cartSummary.getByLabel(&#x27;Cart total&#x27;)).toHaveText(&#x27;$15.99&#x27;);
+
+  // Deep link to cart URL works without prior in-app navigation.
+  await page.goto(&#x27;/cart&#x27;);
+  await expect(page.getByRole(&#x27;heading&#x27;, { name: &#x27;Your cart&#x27; })).toBeVisible();
+  await expect(cartSummary.getByLabel(&#x27;Cart items&#x27;)).toHaveText(&#x27;1&#x27;);
+  await expect(cartSummary.getByLabel(&#x27;Cart total&#x27;)).toHaveText(&#x27;$15.99&#x27;);
+  await expect(page.getByText(&#x27;Arc Mug&#x27;)).toBeVisible();
+});
+
+test(&#x27;cart persists via localStorage and deep link to /cart works from cold start&#x27;, async ({ page }) =&gt; {
+  // Seed localStorage before app scripts run.
+  await page.addInitScript(() =&gt; {
+    window.localStorage.setItem(
+      &#x27;run-shop.cart.v1&#x27;,
+      JSON.stringify({ lines: [{ productId: &#x27;p2&#x27;, quantity: 2 }] }),
+    );
+  });
+
+  await page.goto(&#x27;/cart&#x27;);
+  await expect(page.getByRole(&#x27;heading&#x27;, { name: &#x27;Your cart&#x27; })).toBeVisible();
+  await expect(page.getByText(&#x27;Chorus Tee&#x27;)).toBeVisible();
+
+  const cartSummary = page.getByLabel(&#x27;Cart summary&#x27;);
+  await expect(cartSummary.getByLabel(&#x27;Cart items&#x27;)).toHaveText(&#x27;2&#x27;);
+  await expect(cartSummary.getByLabel(&#x27;Cart total&#x27;)).toHaveText(&#x27;$49.98&#x27;);
+});
+</pre></details><details class="art"><summary>vite.config.ts — config · 8 lines</summary><pre>import { defineConfig } from &#x27;vite&#x27;
+import react from &#x27;@vitejs/plugin-react&#x27;
+
+// https://vite.dev/config/
+export default defineConfig({
+  plugins: [react()],
+})
+</pre></details><details class="art"><summary>playwright.config.ts — config · 22 lines</summary><pre>import { defineConfig, devices } from &#x27;@playwright/test&#x27;;
+
+export default defineConfig({
+  testDir: &#x27;./tests&#x27;,
+  use: {
+    baseURL: &#x27;http://127.0.0.1:4173&#x27;,
+    trace: &#x27;on-first-retry&#x27;,
+  },
+  webServer: {
+    command: &#x27;npm run build &amp;&amp; npm run preview -- --host 127.0.0.1 --port 4173&#x27;,
+    url: &#x27;http://127.0.0.1:4173&#x27;,
+    reuseExistingServer: !process.env.CI,
+    timeout: 120_000,
+  },
+  projects: [
+    {
+      name: &#x27;chromium&#x27;,
+      use: { ...devices[&#x27;Desktop Chrome&#x27;] },
+    },
+  ],
+});
+</pre></details><details class="art"><summary>test_evidence/summary.md — the written proof (incl. the stack decision) · 479 words</summary><pre># run-shop storefront SPA — summary
+
+## Stack choice + rationale
+
+**Chosen stack:** React + TypeScript + Vite, with **React Router** for client-side routing; Vitest for unit tests; Playwright for end-to-end.
+
+**Why this stack fits:** the goal requires a real three-view SPA with stable routes (`/`, `/product/:id`, `/cart`), browser back/forward history, and **persistent shared cart state** that must survive navigation. A component framework plus a router is the smallest, most maintainable way to deliver this without hand-rolling routing/state subscriptions. Vite gives a fast, verifiable build and a preview server that Playwright can drive.
+
+Trade-off: this is heavier than a single HTML file, but the requirements (routing, shared state across views, deep links, back/forward) cross the threshold where framework + router reduces risk and complexity.
+
+## What was built
+
+- **Product list view (`/`)**
+  - Renders all products.
+  - Each product has a stable link to its detail route (`/product/:id`).
+- **Product detail view (`/product/:id`)**
+  - Shows name/description/price.
+  - Includes an **“Add to cart”** button that updates cart state immediately.
+- **Cart view (`/cart`)**
+  - Lists line items.
+  - Per-line quantity input (set to 0 removes) and a Remove button.
+  - Clear cart button.
+- **Persistent cart summary (always visible)**
+  - Sticky header shows **item count** and **total price**.
+  - Updates immediately when adding, changing quantity, removing, or clearing.
+
+## State + persistence wiring
+
+- Cart state is a pure reducer (`src/cart/cart.ts`) with selectors for **count** and **total**.
+- A `CartProvider` wraps the app, storing cart state in React context.
+- Cart is loaded from `localStorage` on first render and saved back on every cart state change, so navigation/back-forward does not reset the cart.
+
+## Unit tests (npm test)
+
+- Vitest unit tests cover the pure cart module:
+  - `add` (new line and increment existing)
+  - `remove`
+  - `setQuantity` (including removal at 0)
+  - selectors: `getCartItemCount`, `getCartTotalCents` (including unknown product IDs)
+  - storage load/save round-trip and invalid/missing storage cases
+
+Result: **9 unit tests passed**.
+
+## End-to-end test (Playwright)
+
+- `tests/storefront.spec.ts` drives the real app via the preview build:
+  - deep link to `/product/p2`
+  - add to cart and assert header cart summary count/total
+  - navigate to `/cart`, change quantity, remove item and assert count/total throughout
+  - navigate to products list, open another product, add to cart
+  - browser **back/forward** and assert the view matches history and cart state remains correct
+  - direct navigation to `/cart` and assert correct rendering without prior in-app navigation
+
+Result: **1 e2e test passed**.
+
+## Accessibility notes
+
+- Semantic landmarks (`&lt;header&gt;`, `&lt;nav aria-label=&quot;Primary&quot;&gt;`, `&lt;main&gt;`), headings per view.
+- All controls have accessible names (buttons, links, quantity input uses a `&lt;label&gt;`).
+- Visible focus ring via `:focus-visible` and strong contrast (dark background, light text, high-contrast focus outline).
+
+## Known gaps / trade-offs
+
+- Product data is static in-module (no network loading states). The cart module and UI are structured so introducing async fetch later would be straightforward.
+</pre></details><details class="art"><summary>reverify_unit.txt — the harness&#x27;s OWN unit re-run · 18 lines</summary><pre>$ npm test
+[exit 0]
+
+
+&gt; shop@0.0.0 test
+&gt; vitest run src
+
+
+[1m[46m RUN [49m[22m [36mv3.2.4 [39m[90mq:/projects/inspired-arc/chorus/.chorus/work/frontend-eng-hard-shop/worktrees/finn[39m
+
+ [32m✓[39m src/cart/cart.test.ts [2m([22m[2m9 tests[22m[2m)[22m[32m 27[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m1 passed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[32m9 passed[39m[22m[90m (9)[39m
+[2m   Start at [22m 12:49:15
+[2m   Duration [22m 2.52s[2m (transform 91ms, setup 212ms, collect 50ms, tests 27ms, environment 1.59s, prepare 257ms)[22m
+
+</pre></details><details class="art"><summary>reverify_e2e.txt — the harness&#x27;s OWN e2e re-run · 8 lines</summary><pre>$ npx playwright test
+[exit 0]
+
+
+Running 2 tests using 1 worker
+··
+  2 passed (7.3s)
+</pre></details>
+
+<div class="note"><b>Reading the errors:</b> most <span class="err">err</span> markers are benign — the
+model retrying a <code>read_file</code> against an offloaded scratch path, a reviewer probing a file
+that doesn't exist, or the DoD oracle's Windows-only floor probe. The engineering flow itself completed:
+size → build → unit + e2e tests → run &amp; capture → review under pressure. The verdict box at the top
+is the honest answer: it re-runs the shipped suites in a clean process.</div>
+
+<footer>Generated from reports/frontend-engineer-artifacts/shop/flow.log — Frontend Engineer beat, model gpt-5.2 (Azure). Press E to expand all, C to collapse subagents.</footer>
+</div>
+
+<script>
+  document.addEventListener('keydown', e => {
+    if (e.key === 'e' || e.key === 'E') document.querySelectorAll('details').forEach(d => d.open = true);
+    if (e.key === 'c' || e.key === 'C') document.querySelectorAll('details.sub').forEach(d => d.open = false);
+  });
+</script>
+</body></html>

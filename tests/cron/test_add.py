@@ -11,15 +11,16 @@ import pytest
 
 from chorus.cron import add_routine
 from chorus.errors import InvalidIntake
-from chorus.ledger import SqliteLedger
+from chorus.ledger import Ledger
+from chorus.testing import open_test_ledger, uid
 from chorus.workforce import Employee
 
 pytestmark = pytest.mark.integration
 
 
-def _ledger() -> SqliteLedger:
-    ledger = SqliteLedger.open(":memory:")
-    ledger.employees.create(Employee(id="e1", name="Ada", role="pm"))
+def _ledger() -> Ledger:
+    ledger = open_test_ledger()
+    ledger.employees.create(Employee(id=uid("e1"), name="Ada", role="pm"))
     return ledger
 
 
@@ -28,7 +29,7 @@ def test_add_routine_seeds_revision_one_and_a_trigger() -> None:
     try:
         routine = add_routine(
             ledger,
-            employee_id="e1",
+            employee_id=uid("e1"),
             intent_template="weekly plan",
             schedule="0 9 * * 1",
             routine_key="weekly-planning",
@@ -50,7 +51,10 @@ def test_add_routine_rejects_an_inline_secret_fail_closed() -> None:
     try:
         with pytest.raises(InvalidIntake, match="inline secret"):
             add_routine(
-                ledger, employee_id="e1", intent_template="x", schedule="0 9 * * 1",
+                ledger,
+                employee_id=uid("e1"),
+                intent_template="x",
+                schedule="0 9 * * 1",
                 env={"API_KEY": "sk-raw"},
             )
         assert ledger.routines.list() == []  # nothing persisted on the failed path
@@ -61,14 +65,24 @@ def test_add_routine_rejects_an_inline_secret_fail_closed() -> None:
 def test_by_key_finds_the_routine_scoped_to_its_owner() -> None:
     ledger = _ledger()
     try:
-        ledger.employees.create(Employee(id="e2", name="Bo", role="pm"))
-        add_routine(ledger, employee_id="e1", intent_template="a", schedule="0 9 * * 1",
-                    routine_key="weekly")
-        add_routine(ledger, employee_id="e2", intent_template="b", schedule="0 9 * * 1",
-                    routine_key="weekly")
+        ledger.employees.create(Employee(id=uid("e2"), name="Bo", role="pm"))
+        add_routine(
+            ledger,
+            employee_id=uid("e1"),
+            intent_template="a",
+            schedule="0 9 * * 1",
+            routine_key="weekly",
+        )
+        add_routine(
+            ledger,
+            employee_id=uid("e2"),
+            intent_template="b",
+            schedule="0 9 * * 1",
+            routine_key="weekly",
+        )
 
-        found = ledger.routines.by_key("e1", "weekly")
-        assert found is not None and found.employee_id == "e1" and found.intent_template == "a"
-        assert ledger.routines.by_key("e1", "absent") is None
+        found = ledger.routines.by_key(uid("e1"), "weekly")
+        assert found is not None and found.employee_id == uid("e1") and found.intent_template == "a"
+        assert ledger.routines.by_key(uid("e1"), "absent") is None
     finally:
         ledger.close()

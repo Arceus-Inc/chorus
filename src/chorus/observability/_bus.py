@@ -10,12 +10,15 @@ telemetry); the ``activity`` audit table does not (spec 08 §5).
 from __future__ import annotations
 
 import json
+import logging
 from collections.abc import Callable, Iterator
 from datetime import datetime
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
 from chorus.events import Event, EventKind
+
+_logger = logging.getLogger("chorus.observability.bus")
 
 # A synchronous subscriber callback (the beat observer passes ``emit`` to dream).
 Subscriber = Callable[[Event], None]
@@ -87,7 +90,9 @@ class FanoutBus:
             try:
                 sink.emit(event)
             except Exception:
-                continue
+                # Isolate the beat from a bad sink, but never silently — a dead sink that leaves no
+                # trace is invisible forever. Log with the traceback and carry on to the next sink.
+                _logger.warning("event sink %r failed on %s", sink, event.kind, exc_info=True)
 
 
 def _event_to_json(event: Event) -> dict[str, object]:

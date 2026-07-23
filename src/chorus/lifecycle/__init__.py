@@ -8,7 +8,19 @@ the facade and repos consume it.
 from __future__ import annotations
 
 from chorus.lifecycle._audit import record_activity
-from chorus.lifecycle._capability import CapabilityService, ChildPlan, DecomposeResult
+from chorus.lifecycle._authority import (
+    AuthorityIntersection,
+    AuthorityLimits,
+    AuthorizationResult,
+    EffectiveAuthority,
+)
+from chorus.lifecycle._capability import (
+    CapabilityService,
+    ChildPlan,
+    ClaimDraft,
+    DecisionOutcome,
+    DecomposeResult,
+)
 from chorus.lifecycle._coordination import assign_task, deliver_message
 from chorus.lifecycle._decompose import (
     DEFAULT_REQUEST_DEPTH_CAP,
@@ -22,6 +34,7 @@ from chorus.lifecycle._disposition import (
     DispositionAction,
     reconcile_disposition,
 )
+from chorus.lifecycle._lead_selector import LeadSelector
 from chorus.lifecycle._liveness import Health, Liveness, classify
 from chorus.lifecycle._revise_dod import (
     NoRevision,
@@ -29,6 +42,7 @@ from chorus.lifecycle._revise_dod import (
     RevisionAuthorityError,
     revise_dod,
 )
+from chorus.lifecycle._team_policy import MissionTeamPolicy, MissionTeamPolicyDenied
 from chorus.lifecycle._transitions import (
     LEGAL_TRANSITIONS,
     TERMINAL,
@@ -42,17 +56,26 @@ __all__ = [
     "DEFAULT_REQUEST_DEPTH_CAP",
     "LEGAL_TRANSITIONS",
     "TERMINAL",
+    "AuthorityIntersection",
+    "AuthorityLimits",
+    "AuthorizationResult",
     "CapabilityService",
     "ChildPlan",
     "ChildSpec",
+    "ClaimDraft",
+    "DecisionOutcome",
     "DecomposeResult",
     "DepthCapped",
     "Disposition",
     "DispositionAction",
+    "EffectiveAuthority",
     "Fanned",
     "Health",
     "IllegalTransition",
+    "LeadSelector",
     "Liveness",
+    "MissionTeamPolicy",
+    "MissionTeamPolicyDenied",
     "NoRevision",
     "ReviseOutcome",
     "RevisionAuthorityError",

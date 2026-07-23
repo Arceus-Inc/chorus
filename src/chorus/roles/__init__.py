@@ -11,6 +11,7 @@ from chorus.roles._beat_config import RoleBeatConfig, role_beat_config
 from chorus.roles._defaults import default_roles
 from chorus.roles._manifest import (
     Isolation,
+    McpServerSpec,
     MemoryScope,
     PermissionMode,
     RoleManifest,
@@ -20,12 +21,14 @@ from chorus.roles._overlay import ManifestOverlay, resolve_manifest
 from chorus.roles._plugin import DoDGenerator, Role, RolePlugin
 from chorus.roles._registry import RoleRegistry
 from chorus.roles._routine_declaration import RoutineDeclaration
+from chorus.roles._subagent import SubagentSpec
 from chorus.roles._surfaces import RoleSurfaceOverride, apply_role_surface_overrides
 
 __all__ = [
     "DoDGenerator",
     "Isolation",
     "ManifestOverlay",
+    "McpServerSpec",
     "MemoryScope",
     "PermissionMode",
     "Role",
@@ -36,6 +39,7 @@ __all__ = [
     "RoleSurfaceOverride",
     "RoutineDeclaration",
     "SandboxTier",
+    "SubagentSpec",
     "apply_role_surface_overrides",
     "default_roles",
     "resolve_manifest",

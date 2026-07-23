@@ -10,80 +10,85 @@ from __future__ import annotations
 
 import pytest
 
-from chorus.ledger import Artifact, ArtifactRevision, ArtifactType, SqliteLedger, Task
+from chorus.ledger import Artifact, ArtifactRevision, ArtifactType, Ledger, Task
 from chorus.ledger._models import RecoveryKind, RecoveryStatus, TaskStatus
 from chorus.lifecycle import ChildSpec, DepthCapped, Fanned, decompose
+from chorus.testing import uid
 from chorus.workforce import Employee
 
 pytestmark = pytest.mark.integration
 
 
-def _manager_with_source(ledger: SqliteLedger, *, request_depth: int) -> None:
-    ledger.employees.create(Employee(id="mgr", name="m", role="manager"))
+def _manager_with_source(ledger: Ledger, *, request_depth: int) -> None:
+    ledger.employees.create(Employee(id="mgr", name="m", role="engineer"))
     ledger.tasks.submit(
-        Task(id="src", intent="big", assignee_employee_id="mgr", request_depth=request_depth)
+        Task(id=uid("src"), intent="big", assignee_employee_id="mgr", request_depth=request_depth)
     )
 
 
-def _accepted_plan(ledger: SqliteLedger, *, source_id: str, revision_id: str) -> None:
+def _accepted_plan(ledger: Ledger, *, source_id: str, revision_id: str) -> None:
     """Seed the manager's accepted plan revision the decomposition claim references (spec 02 §4)."""
-    ledger.artifacts.create(Artifact(id=f"plan_{source_id}", task_id=source_id, type=ArtifactType.DOC))
-    ledger.artifact_revisions.record(ArtifactRevision(id=revision_id, artifact_id=f"plan_{source_id}"))
+    ledger.artifacts.create(
+        Artifact(id=uid(f"plan_{source_id}"), task_id=source_id, type=ArtifactType.DOC)
+    )
+    ledger.artifact_revisions.record(
+        ArtifactRevision(id=revision_id, artifact_id=uid(f"plan_{source_id}"))
+    )
 
 
-def test_decompose_under_cap_fans_out(ledger: SqliteLedger) -> None:
+def test_decompose_under_cap_fans_out(ledger: Ledger) -> None:
     _manager_with_source(ledger, request_depth=0)
-    _accepted_plan(ledger, source_id="src", revision_id="rev_1")
+    _accepted_plan(ledger, source_id=uid("src"), revision_id=uid("rev_1"))
     outcome = decompose(
         ledger,
-        source_task_id="src",
-        accepted_plan_revision_id="rev_1",
-        children=[ChildSpec(Task(id="c1", intent="part 1"))],
+        source_task_id=uid("src"),
+        accepted_plan_revision_id=uid("rev_1"),
+        children=[ChildSpec(Task(id=uid("c1"), intent="part 1"))],
         request_depth_cap=5,
     )
     assert isinstance(outcome, Fanned)
-    child = ledger.tasks.get("c1")
+    child = ledger.tasks.get(uid("c1"))
     assert child is not None
     assert child.request_depth == 1  # inherited parent + 1
 
 
-def test_decompose_one_below_cap_is_allowed(ledger: SqliteLedger) -> None:
+def test_decompose_one_below_cap_is_allowed(ledger: Ledger) -> None:
     # source at depth 4, cap 5 → child lands at depth 5 (== cap) → allowed.
     _manager_with_source(ledger, request_depth=4)
-    _accepted_plan(ledger, source_id="src", revision_id="rev_1")
+    _accepted_plan(ledger, source_id=uid("src"), revision_id=uid("rev_1"))
     outcome = decompose(
         ledger,
-        source_task_id="src",
-        accepted_plan_revision_id="rev_1",
-        children=[ChildSpec(Task(id="c1", intent="part 1"))],
+        source_task_id=uid("src"),
+        accepted_plan_revision_id=uid("rev_1"),
+        children=[ChildSpec(Task(id=uid("c1"), intent="part 1"))],
         request_depth_cap=5,
     )
     assert isinstance(outcome, Fanned)
-    assert ledger.tasks.get("c1") is not None
+    assert ledger.tasks.get(uid("c1")) is not None
 
 
-def test_decompose_at_cap_fails_closed(ledger: SqliteLedger) -> None:
+def test_decompose_at_cap_fails_closed(ledger: Ledger) -> None:
     # source at depth 5, cap 5 → child would be depth 6 > cap → refuse.
     _manager_with_source(ledger, request_depth=5)
     outcome = decompose(
         ledger,
-        source_task_id="src",
-        accepted_plan_revision_id="rev_1",
-        children=[ChildSpec(Task(id="c1", intent="part 1"))],
+        source_task_id=uid("src"),
+        accepted_plan_revision_id=uid("rev_1"),
+        children=[ChildSpec(Task(id=uid("c1"), intent="part 1"))],
         request_depth_cap=5,
     )
     assert isinstance(outcome, DepthCapped)
-    assert ledger.tasks.get("c1") is None  # no child created
-    assert ledger.tasks.get("src").status is TaskStatus.BLOCKED  # type: ignore[union-attr]
+    assert ledger.tasks.get(uid("c1")) is None  # no child created
+    assert ledger.tasks.get(uid("src")).status is TaskStatus.BLOCKED  # type: ignore[union-attr]
 
 
-def test_fail_closed_opens_a_typed_recovery_naming_the_manager(ledger: SqliteLedger) -> None:
+def test_fail_closed_opens_a_typed_recovery_naming_the_manager(ledger: Ledger) -> None:
     _manager_with_source(ledger, request_depth=5)
     outcome = decompose(
         ledger,
-        source_task_id="src",
-        accepted_plan_revision_id="rev_1",
-        children=[ChildSpec(Task(id="c1", intent="part 1"))],
+        source_task_id=uid("src"),
+        accepted_plan_revision_id=uid("rev_1"),
+        children=[ChildSpec(Task(id=uid("c1"), intent="part 1"))],
         request_depth_cap=5,
     )
     assert isinstance(outcome, DepthCapped)
@@ -93,27 +98,27 @@ def test_fail_closed_opens_a_typed_recovery_naming_the_manager(ledger: SqliteLed
     assert recovery.owner_employee_id == "mgr"
     assert recovery.status is RecoveryStatus.ACTIVE
     assert recovery.evidence["cap"] == 5
-    assert ledger.recovery_actions.active_for_source("src") is not None
+    assert ledger.recovery_actions.active_for_source(uid("src")) is not None
 
 
-def test_fail_closed_is_idempotent_on_retry(ledger: SqliteLedger) -> None:
+def test_fail_closed_is_idempotent_on_retry(ledger: Ledger) -> None:
     _manager_with_source(ledger, request_depth=5)
     args = dict(
-        source_task_id="src",
-        children=[ChildSpec(Task(id="c1", intent="part 1"))],
+        source_task_id=uid("src"),
+        children=[ChildSpec(Task(id=uid("c1"), intent="part 1"))],
         request_depth_cap=5,
     )
-    first = decompose(ledger, accepted_plan_revision_id="rev_1", **args)  # type: ignore[arg-type]
-    second = decompose(ledger, accepted_plan_revision_id="rev_2", **args)  # type: ignore[arg-type]
+    first = decompose(ledger, accepted_plan_revision_id=uid("rev_1"), **args)  # type: ignore[arg-type]
+    second = decompose(ledger, accepted_plan_revision_id=uid("rev_2"), **args)  # type: ignore[arg-type]
     assert isinstance(first, DepthCapped) and isinstance(second, DepthCapped)
     assert first.recovery.id == second.recovery.id  # one recovery, not double-opened
 
 
-def test_decompose_unknown_source_raises(ledger: SqliteLedger) -> None:
+def test_decompose_unknown_source_raises(ledger: Ledger) -> None:
     with pytest.raises(KeyError):
         decompose(
             ledger,
-            source_task_id="ghost",
-            accepted_plan_revision_id="rev_1",
-            children=[ChildSpec(Task(id="c1", intent="x"))],
+            source_task_id=uid("ghost"),
+            accepted_plan_revision_id=uid("rev_1"),
+            children=[ChildSpec(Task(id=uid("c1"), intent="x"))],
         )

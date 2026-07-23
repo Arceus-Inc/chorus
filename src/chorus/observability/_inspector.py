@@ -17,8 +17,10 @@ from chorus.heartbeat import IntegrateContextPacket
 from chorus.ledger import ActivityVerb, RunStatus, TaskStatus
 from chorus.lifecycle import classify
 from chorus.observability._views import (
+    DelegationContractView,
     EmployeeView,
     IncidentView,
+    ManagementProfileView,
     OrgObservabilityReport,
     RoutineRunView,
     RoutineTriggerView,
@@ -27,11 +29,12 @@ from chorus.observability._views import (
     ScrumChildView,
     ScrumPacketView,
     TaskView,
+    TeamView,
     WorkforceStatus,
 )
 
 if False:  # pragma: no cover - typing only without runtime import cost
-    from chorus.ledger import SqliteLedger
+    from chorus.ledger import Ledger
     from chorus.ledger._models import Routine, Run, Task
 
 _RECENT_RUNS = 5  # how many of a routine's most-recent firings the read model surfaces
@@ -66,6 +69,18 @@ class Inspector(Protocol):
         """Combined manager + leaf observability rollup."""
         ...
 
+    def teams(self) -> list[TeamView]:
+        """Every durable Team, including archived history."""
+        ...
+
+    def delegation_contracts(self) -> list[DelegationContractView]:
+        """Every delegation contract, including completed history."""
+        ...
+
+    def management_profiles(self) -> list[ManagementProfileView]:
+        """Every current management profile, including inactive grants."""
+        ...
+
     def routine(self, routine_id: str) -> RoutineView:
         """One routine, resolved: definition + triggers + recent firings (spec 13 §7)."""
         ...
@@ -78,7 +93,7 @@ class Inspector(Protocol):
 class LedgerInspector:
     """The default :class:`Inspector` over the SQLite ledger + event log (spec 08 §3)."""
 
-    def __init__(self, ledger: SqliteLedger, *, clock: Callable[[], datetime] = _utc_now) -> None:
+    def __init__(self, ledger: Ledger, *, clock: Callable[[], datetime] = _utc_now) -> None:
         self._ledger = ledger
         self._clock = clock  # liveness compares run leases to ``now`` — injected for determinism
 
@@ -86,8 +101,9 @@ class LedgerInspector:
         now = self._clock()
         tasks = self._ledger.tasks.all()
         employees = tuple(
-            EmployeeView(id=employee.id, name=employee.name, role=employee.role,
-                         status=employee.status.value)
+            EmployeeView(
+                id=employee.id, name=employee.name, role=employee.role, status=employee.status.value
+            )
             for employee in self._ledger.employees.list()
         )
         running = sum(
@@ -151,6 +167,8 @@ class LedgerInspector:
             task_id=run.task_id,
             employee_id=run.employee_id,
             status=run.status.value,
+            principal_kind=run.principal_kind,
+            principal_id=run.principal_id,
             liveness_state=run.liveness_state,
             started_at=run.started_at,
             finished_at=run.finished_at,
@@ -159,15 +177,24 @@ class LedgerInspector:
     def _open_incidents(self) -> tuple[IncidentView, ...]:
         """The decisions a human owes: open budget incidents + open recovery actions (spec 08 §3)."""
         incidents = [
-            IncidentView(id=incident.id, kind="budget", subject_id=incident.policy_id,
-                         cause=incident.threshold_type.value,
-                         next_action="raise the budget to resume")
+            IncidentView(
+                id=incident.id,
+                kind="budget",
+                subject_id=incident.policy_id,
+                cause=incident.threshold_type.value,
+                next_action="raise the budget to resume",
+            )
             for policy in self._ledger.budget_policies.all()
             for incident in self._ledger.budget_incidents.open_for_policy(policy.id)
         ]
         incidents.extend(
-            IncidentView(id=action.id, kind="recovery", subject_id=action.source_task_id,
-                         cause=action.kind.value, owner=action.owner_employee_id)
+            IncidentView(
+                id=action.id,
+                kind="recovery",
+                subject_id=action.source_task_id,
+                cause=action.kind.value,
+                owner=action.owner_employee_id,
+            )
             for action in self._ledger.recovery_actions.all_open()
         )
         return tuple(incidents)
@@ -188,7 +215,9 @@ class LedgerInspector:
                     if activity.payload.get("reassigned") is True:
                         reassignment_count += 1
         parent_edges = len(self._ledger.dependencies.blockers(parent_task_id))
-        child_edges = sum(len(child.blockers) for child in packet.children)
+        child_edges = sum(
+            len(self._ledger.dependencies.blockers(child.task_id)) for child in packet.children
+        )
         completed = sum(1 for child in packet.children if child.status in _TERMINAL_STATUS_VALUES)
         blocked = sum(1 for child in packet.children if child.blockers)
         total = len(packet.children)
@@ -224,11 +253,15 @@ class LedgerInspector:
 
     def org_report(self) -> OrgObservabilityReport:
         employees = self._ledger.employees.list()
-        manager_ids = {employee.reports_to for employee in employees if employee.reports_to is not None}
+        manager_ids = {
+            employee.reports_to for employee in employees if employee.reports_to is not None
+        }
         tasks = self._ledger.tasks.all()
         activities = self._ledger.activity.all()
         assignment_activities = [a for a in activities if a.verb is ActivityVerb.ASSIGNED]
-        packets = tuple(self.scrum_packet(task.id) for task in tasks if self._ledger.tasks.has_children(task.id))
+        packets = tuple(
+            self.scrum_packet(task.id) for task in tasks if self._ledger.tasks.has_children(task.id)
+        )
         runs = [run for task in tasks for run in self._ledger.runs.for_task(task.id)]
         done = sum(1 for task in tasks if task.status is TaskStatus.DONE)
         return OrgObservabilityReport(
@@ -243,10 +276,69 @@ class LedgerInspector:
             completion_rate=_rate(done, len(tasks)),
             decomposition_count=sum(1 for a in activities if a.verb is ActivityVerb.DECOMPOSED),
             assignment_count=len(assignment_activities),
-            reassignment_count=sum(1 for a in assignment_activities if a.payload.get("reassigned") is True),
-            dependency_edges=sum(len(self._ledger.dependencies.blockers(task.id)) for task in tasks),
+            reassignment_count=sum(
+                1 for a in assignment_activities if a.payload.get("reassigned") is True
+            ),
+            dependency_edges=sum(
+                len(self._ledger.dependencies.blockers(task.id)) for task in tasks
+            ),
             manager_packets=packets,
         )
+
+    def teams(self) -> list[TeamView]:
+        return [
+            TeamView(
+                id=team.id,
+                name=team.name,
+                lead_employee_id=team.lead_employee_id,
+                status=team.status,
+                policy_version=team.policy_version,
+                created_by=team.created_by,
+                goal_id=team.goal_id,
+                parent_team_id=team.parent_team_id,
+                member_employee_ids=tuple(
+                    member.employee_id for member in self._ledger.team_members.members_of(team.id)
+                ),
+            )
+            for team in self._ledger.teams.list()
+        ]
+
+    def delegation_contracts(self) -> list[DelegationContractView]:
+        return [
+            DelegationContractView(
+                task_id=contract.task_id,
+                team_id=contract.team_id,
+                lead_employee_id=contract.lead_employee_id,
+                management_profile_version=contract.management_profile_version,
+                objective_rubric=contract.objective_rubric,
+                status=contract.status,
+                parent_contract_task_id=contract.parent_contract_task_id,
+                can_subdelegate=contract.can_subdelegate,
+                max_depth=contract.max_depth,
+                max_team_size=contract.max_team_size,
+                max_direct_children=contract.max_direct_children,
+                spend_limit_cents=contract.spend_limit_cents,
+                accepted_run_id=contract.accepted_run_id,
+            )
+            for contract in self._ledger.delegation_contracts.list()
+        ]
+
+    def management_profiles(self) -> list[ManagementProfileView]:
+        return [
+            ManagementProfileView(
+                employee_id=profile.employee_id,
+                granted_by_user_id=profile.granted_by_user_id,
+                active=profile.active,
+                can_lead=profile.can_lead,
+                can_subdelegate=profile.can_subdelegate,
+                max_delegation_depth=profile.max_delegation_depth,
+                max_team_size=profile.max_team_size,
+                allowed_professions=profile.allowed_professions,
+                spend_limit_cents=profile.spend_limit_cents,
+                version=profile.version,
+            )
+            for profile in self._ledger.management_profiles.list()
+        ]
 
     def routine(self, routine_id: str) -> RoutineView:
         routine = self._ledger.routines.get(routine_id)

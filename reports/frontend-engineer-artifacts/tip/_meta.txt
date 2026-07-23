@@ -1,0 +1,8 @@
+key=tip
+beat_passed=True
+reverify_unit_exit=0
+reverify_e2e_exit=0
+truly_passed=True
+intent=Build a single-page bill-splitting helper. Someone enters the bill amount, chooses or types a tip percentage, and sets how many people are sharing the bill; the page immediately shows the tip in money, the grand total including tip, and the amount each person pays. It should behave sensibly when the inputs are still empty or not yet valid rather than showing broken or nonsensical numbers.
+working_dir=q:\projects\inspired-arc\chorus\.chorus\work\frontend-eng-hard-tip\worktrees\finn
+summary=plan complete: 1/1 steps done

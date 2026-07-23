@@ -1,0 +1,14 @@
+
+> budget-tracker@0.0.0 test
+> vitest run
+
+
+[1m[46m RUN [49m[22m [36mv3.2.4 [39m[90mq:/projects/inspired-arc/chorus/.chorus/work/frontend-eng-hard-budget/worktrees/finn[39m
+
+ [32m✓[39m src/domain/transactions.test.js [2m([22m[2m8 tests[22m[2m)[22m[32m 8[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m1 passed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[32m8 passed[39m[22m[90m (8)[39m
+[2m   Start at [22m 21:16:37
+[2m   Duration [22m 1.80s[2m (transform 71ms, setup 215ms, collect 46ms, tests 8ms, environment 891ms, prepare 280ms)[22m
+

@@ -21,6 +21,9 @@ from __future__ import annotations
 import asyncio
 import html
 import os
+import uuid
+
+_EXAMPLE_COMPANY = str(uuid.uuid5(uuid.NAMESPACE_URL, "chorus-example"))  # one stable demo org
 import subprocess
 import sys
 import tempfile
@@ -30,7 +33,7 @@ from pathlib import Path
 from chorus.budgets import BudgetEnforcer
 from chorus.facade import Caps, Chorus
 from chorus.heartbeat import Scheduler
-from chorus.ledger import Artifact, RoutineRun, RoutineRunStatus, SqliteLedger, Task, TaskStatus
+from chorus.ledger import Artifact, Ledger, RoutineRun, RoutineRunStatus, Task, TaskStatus
 from chorus.observability import LedgerInspector, RoutineView
 from chorus.roles import RoleRegistry, default_roles
 from chorus.workforce import Employee, LedgerWorkforce
@@ -67,13 +70,24 @@ def _seed_repo(path: Path) -> None:
     )
     subprocess.run(["git", "-C", str(path), "add", "-A"], check=True, capture_output=True)
     subprocess.run(
-        ["git", "-C", str(path), "-c", "user.name=s", "-c", "user.email=s@x", "commit", "-m", "init"],
+        [
+            "git",
+            "-C",
+            str(path),
+            "-c",
+            "user.name=s",
+            "-c",
+            "user.email=s@x",
+            "commit",
+            "-m",
+            "init",
+        ],
         check=True,
         capture_output=True,
     )
 
 
-def _facade(ledger: SqliteLedger, registry: RoleRegistry) -> Chorus:
+def _facade(ledger: Ledger, registry: RoleRegistry) -> Chorus:
     """A facade over the ledger — used only to create the routine through the public API."""
     return Chorus(
         ledger=ledger,
@@ -101,12 +115,20 @@ def main() -> int:
     seed = base / "source"
     _seed_repo(seed)
 
-    ledger = SqliteLedger.open(":memory:")
+    ledger = Ledger.open(
+        os.environ.get("CHORUS_LEDGER_DSN", "postgresql://localhost/chorus"),
+        company_id=_EXAMPLE_COMPANY,
+    )
     try:
         registry = RoleRegistry.from_plugins(default_roles())
         factory = EmployeeHarnessFactory(
-            api_key=api_key, base_url=base_url, deployment=deployment,
-            company_id="acme", roles=registry, pricing=default_pricing_from_env(), seed=seed,
+            api_key=api_key,
+            base_url=base_url,
+            deployment=deployment,
+            company_id="acme",
+            roles=registry,
+            pricing=default_pricing_from_env(),
+            seed=seed,
         )
         # An engineer to own the routine + a reviewer (the engineer's DoD is a reviewed build, so a
         # firing carries the work into the real M3 engineer→reviewer pipeline).
@@ -123,7 +145,9 @@ def main() -> int:
         assert edge is not None
         _log("=" * 72)
         _log("1. ROUTINE CREATED (facade.add_routine)")
-        _log(f"   {view.id}  owner=ada  schedule={_SCHEDULE}  concurrency={view.concurrency_policy.value}")
+        _log(
+            f"   {view.id}  owner=ada  schedule={_SCHEDULE}  concurrency={view.concurrency_policy.value}"
+        )
         _log(f"   next_run_at={edge.isoformat()}")
 
         # 2. TICK — the CRON step fires the routine, then dispatch runs the engineer beat.
@@ -132,10 +156,15 @@ def main() -> int:
         # A frozen clock also gives exact-once for free — fire_routine advances the edge past `edge`,
         # so the trigger is never due again on a later tick.
         scheduler = Scheduler(
-            ledger=ledger, workforce=LedgerWorkforce(ledger.employees),
-            beat_runner_for=factory, budget_enforcer=BudgetEnforcer(ledger, company_id="acme"),
-            roles=registry, landers=default_landers(factory.company_root, ledger=ledger),
-            clock=lambda: edge, max_concurrent_runs=2, max_review_rounds=1,
+            ledger=ledger,
+            workforce=LedgerWorkforce(ledger.employees),
+            beat_runner_for=factory,
+            budget_enforcer=BudgetEnforcer(ledger, company_id="acme"),
+            roles=registry,
+            landers=default_landers(factory.company_root, ledger=ledger),
+            clock=lambda: edge,
+            max_concurrent_runs=2,
+            max_review_rounds=1,
         )
 
         # Tick to terminal: fire → engineer build → (parks blocked for review) → reviewer verdict →
@@ -160,8 +189,10 @@ def main() -> int:
                 t = ledger.tasks.get(spawned_now[0].linked_task_id)
                 beats = ledger.runs.for_task(spawned_now[0].linked_task_id)
                 last = beats[-1] if beats else None
-                _log(f"     task={t.status.value if t else '?'}  "
-                     f"beats={len(beats)}  last={last.status.value if last else '-'}/{last.outcome if last else '-'}")
+                _log(
+                    f"     task={t.status.value if t else '?'}  "
+                    f"beats={len(beats)}  last={last.status.value if last else '-'}/{last.outcome if last else '-'}"
+                )
 
         # 3. WHAT FIRED — exact-once, typed origin, linked task.
         runs = ledger.routine_runs.by_routine(view.id)
@@ -175,13 +206,17 @@ def main() -> int:
         if run is not None:
             _log(f"   run {run.id}: status={run.status.value} linked_task={run.linked_task_id}")
         if task is not None:
-            _log(f"   task {task.id}: status={task.status.value} origin_kind={task.origin_kind.value}")
+            _log(
+                f"   task {task.id}: status={task.status.value} origin_kind={task.origin_kind.value}"
+            )
             _log(f"     origin_id={task.origin_id}  origin_fingerprint={task.origin_fingerprint}")
 
         artifacts = ledger.artifacts.list_for_task(spawned) if spawned else []
         beats_ran = len(ledger.runs.for_task(spawned)) if spawned else 0
         if artifacts:
-            _log(f"   ★ ARTIFACT LANDED: type={artifacts[0].type.value} ref={artifacts[0].resource_ref}")
+            _log(
+                f"   ★ ARTIFACT LANDED: type={artifacts[0].type.value} ref={artifacts[0].resource_ref}"
+            )
         _log(f"   engineer beats executed: {beats_ran}")
 
         # The S1 bar is "recurring work is creatable + the firing engine carries it into a real beat":
@@ -189,15 +224,24 @@ def main() -> int:
         # (Reaching DONE depends on the live reviewed-build pipeline — reported as a bonus, not the bar.)
         s1_ok = (
             len(runs) == 1
-            and run is not None and run.status is RoutineRunStatus.DISPATCHED
-            and task is not None and task.origin_kind.value == "routine_execution"
+            and run is not None
+            and run.status is RoutineRunStatus.DISPATCHED
+            and task is not None
+            and task.origin_kind.value == "routine_execution"
             and beats_ran >= 1
         )
 
         _REPORT.parent.mkdir(parents=True, exist_ok=True)
         _REPORT.write_text(
-            _render(factory, view=view, run=run, task=task, runs=runs,
-                    artifacts=artifacts, beats_ran=beats_ran),
+            _render(
+                factory,
+                view=view,
+                run=run,
+                task=task,
+                runs=runs,
+                artifacts=artifacts,
+                beats_ran=beats_ran,
+            ),
             encoding="utf-8",
         )
         _log("")
@@ -236,19 +280,25 @@ def _render(
     origin_detail = task.origin_kind.value if task is not None else "-"
     task_status_detail = task.status.value if task is not None else "-"
     # The S1 acceptance bar — what this slice actually adds (the firing engine already existed).
-    checks = "\n".join([
-        row("routine created (facade.add_routine)", True, view.id),
-        row("fired exact-once across ticks", exact_once, f"{len(runs)} routine_run(s)"),
-        row("firing dispatched + linked a task", fired, run_detail),
-        row("task carries routine_execution origin", from_routine, origin_detail),
-        row("a real engineer beat was dispatched + ran", beats_ran >= 1, f"{beats_ran} beat(s)"),
-    ])
+    checks = "\n".join(
+        [
+            row("routine created (facade.add_routine)", True, view.id),
+            row("fired exact-once across ticks", exact_once, f"{len(runs)} routine_run(s)"),
+            row("firing dispatched + linked a task", fired, run_detail),
+            row("task carries routine_execution origin", from_routine, origin_detail),
+            row(
+                "a real engineer beat was dispatched + ran", beats_ran >= 1, f"{beats_ran} beat(s)"
+            ),
+        ]
+    )
     # Beyond S1 — the firing flowed into the live M3 reviewed-build pipeline (reliability is M3's, not S1's).
-    bonus = "\n".join([
-        row("task reached done via reviewed-build", done, task_status_detail),
-        row("artifact landed (PR)", landed, str(artifacts[0].resource_ref) if landed else "-"),
-        row("shipped to company main", integrated, f"subtract() in main: {integrated}"),
-    ])
+    bonus = "\n".join(
+        [
+            row("task reached done via reviewed-build", done, task_status_detail),
+            row("artifact landed (PR)", landed, str(artifacts[0].resource_ref) if landed else "-"),
+            row("shipped to company main", integrated, f"subtract() in main: {integrated}"),
+        ]
+    )
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><title>M4 S1 — recurring work (live)</title>
 <style>
@@ -263,7 +313,7 @@ def _render(
 </style></head><body>
 <h1>M4 S1 — recurring work, live 🟨</h1>
 <p class="lead">A cron <b>routine</b> created through <code>Chorus.add_routine</code> fired on the
-heartbeat's CRON step and spawned a task that a real engineer beat (Azure {esc(os.environ.get('AZURE_OPENAI_DEPLOYMENT', '?'))})
+heartbeat's CRON step and spawned a task that a real engineer beat (Azure {esc(os.environ.get("AZURE_OPENAI_DEPLOYMENT", "?"))})
 carried to done — the firing engine already existed; S1 made routines <i>creatable</i>.</p>
 
 <h2>The S1 chain, asserted</h2>

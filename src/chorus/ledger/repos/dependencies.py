@@ -8,12 +8,10 @@ A ``cancelled`` blocker does **not** count as resolved (spec 02 §2) — only ``
 
 from __future__ import annotations
 
-import sqlite3
-import uuid
-
 from chorus.errors import ChorusError
+from chorus.ids import mint_id
 from chorus.ledger._models import TaskDependency
-from chorus.ledger.repos._base import from_iso, utcnow_iso
+from chorus.ledger.repos._base import LedgerConnection, from_iso, utcnow_iso
 
 
 class DependencyCycleError(ChorusError):
@@ -23,7 +21,7 @@ class DependencyCycleError(ChorusError):
 class DependencyRepo:
     """Create/read/remove ``task_dependency`` edges + the blocker-resolution queries."""
 
-    def __init__(self, conn: sqlite3.Connection) -> None:
+    def __init__(self, conn: LedgerConnection) -> None:
         self._conn = conn
 
     def add(self, task_id: str, depends_on_id: str) -> TaskDependency:
@@ -35,7 +33,7 @@ class DependencyRepo:
                 f"{task_id!r} depends on {depends_on_id!r} would create a cycle"
             )
         now = utcnow_iso()
-        edge_id = f"dep_{uuid.uuid4().hex[:12]}"
+        edge_id = mint_id()
         self._conn.execute(
             "INSERT INTO task_dependency (id, task_id, depends_on_id, created_at) "
             "VALUES (?, ?, ?, ?) ON CONFLICT (task_id, depends_on_id) DO NOTHING",
@@ -69,7 +67,7 @@ class DependencyRepo:
             "SELECT depends_on_id FROM task_dependency WHERE task_id = ? ORDER BY created_at, id",
             (task_id,),
         ).fetchall()
-        return [str(row[0]) for row in rows]
+        return [str(row["depends_on_id"]) for row in rows]
 
     def dependents(self, depends_on_id: str) -> list[str]:
         """Ids of the tasks that depend on ``depends_on_id`` (in insertion order)."""
@@ -77,7 +75,7 @@ class DependencyRepo:
             "SELECT task_id FROM task_dependency WHERE depends_on_id = ? ORDER BY created_at, id",
             (depends_on_id,),
         ).fetchall()
-        return [str(row[0]) for row in rows]
+        return [str(row["task_id"]) for row in rows]
 
     def unresolved_blockers(self, task_id: str) -> list[str]:
         """Blockers of ``task_id`` not yet ``done`` (``cancelled`` is not resolved)."""
@@ -87,7 +85,7 @@ class DependencyRepo:
             "WHERE d.task_id = ? AND b.status <> 'done' ORDER BY d.created_at, d.id",
             (task_id,),
         ).fetchall()
-        return [str(row[0]) for row in rows]
+        return [str(row["depends_on_id"]) for row in rows]
 
     def newly_unblocked_dependents(self, done_task_id: str) -> list[str]:
         """Dependents of ``done_task_id`` whose blockers are now *all* ``done`` (resolution wakes)."""
@@ -99,7 +97,7 @@ class DependencyRepo:
             ") ORDER BY d.created_at, d.id",
             (done_task_id,),
         ).fetchall()
-        return [str(row[0]) for row in rows]
+        return [str(row["task_id"]) for row in rows]
 
     def _reaches(self, start: str, target: str) -> bool:
         """True if ``target`` is reachable from ``start`` along blocker edges (cycle check)."""

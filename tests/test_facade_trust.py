@@ -5,16 +5,17 @@ from __future__ import annotations
 import pytest
 
 from chorus.facade import Caps, Chorus
-from chorus.ledger import SqliteLedger, Task
+from chorus.ledger import Ledger, Task
 from chorus.observability import EventBus, LedgerInspector
 from chorus.roles import RoleRegistry, default_roles
+from chorus.testing import open_test_ledger, uid
 from chorus.trust import TrustPreset
 from chorus.workforce import LedgerWorkforce
 
 pytestmark = pytest.mark.integration
 
 
-def _chorus(ledger: SqliteLedger) -> Chorus:
+def _chorus(ledger: Ledger) -> Chorus:
     return Chorus(
         ledger=ledger,
         workforce=LedgerWorkforce(ledger.employees),
@@ -29,14 +30,15 @@ def _chorus(ledger: SqliteLedger) -> Chorus:
 
 
 def test_set_task_trust_round_trips() -> None:
-    ledger = SqliteLedger.open(":memory:")
+    ledger = open_test_ledger()
     try:
-        ledger.tasks.submit(Task(id="t1", intent="review an external PR"))
+        ledger.tasks.submit(Task(id=uid("t1"), intent="review an external PR"))
         _chorus(ledger).trust.set_task(
-            "t1", preset=TrustPreset.LOW_TRUST_REVIEW,
+            uid("t1"),
+            preset=TrustPreset.LOW_TRUST_REVIEW,
             boundary={"secret_ref_allowlist": ["ref:github_token"]},
         )
-        stored = ledger.tasks.get("t1")
+        stored = ledger.tasks.get(uid("t1"))
         assert stored is not None
         assert stored.trust_preset == TrustPreset.LOW_TRUST_REVIEW
         assert stored.trust_boundary == {"secret_ref_allowlist": ["ref:github_token"]}
@@ -45,7 +47,7 @@ def test_set_task_trust_round_trips() -> None:
 
 
 def test_submit_sets_trust_at_creation() -> None:
-    ledger = SqliteLedger.open(":memory:")
+    ledger = open_test_ledger()
     try:
         task = _chorus(ledger).submit(
             "review an external PR",

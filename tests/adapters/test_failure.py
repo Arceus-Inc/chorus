@@ -28,7 +28,9 @@ class _Cancelled(Exception):
 
 
 def test_head_parse_error_is_errored_but_retryable() -> None:
-    outcome = failure_outcome(PlannerHeadParseError("planner reply missing <spec>...</spec> section"))
+    outcome = failure_outcome(
+        PlannerHeadParseError("planner reply missing <spec>...</spec> section")
+    )
     assert outcome.disposition is BeatDisposition.ERRORED
     assert outcome.retryable is True
     assert "PlannerHeadParseError" in str(outcome.outcome["error"])

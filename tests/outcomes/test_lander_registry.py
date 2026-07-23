@@ -12,6 +12,7 @@ from typing import Any
 import pytest
 
 from chorus.outcomes import Artifact, ArtifactType, LanderRegistry
+from chorus.testing import uid
 
 pytestmark = pytest.mark.unit
 
@@ -23,7 +24,7 @@ class _FakeLander:
         self.outcome_kind = outcome_kind
 
     async def land(self, task: Any, result: Any) -> Artifact:
-        return Artifact(task_id="t", type=ArtifactType.PR)
+        return Artifact(task_id=uid("t"), type=ArtifactType.PR)
 
 
 def test_register_then_get_by_outcome_kind() -> None:
@@ -36,11 +37,11 @@ def test_register_then_get_by_outcome_kind() -> None:
 
 def test_get_unknown_kind_returns_none() -> None:
     registry = LanderRegistry()
-    assert registry.get("verdict") is None
-    assert "verdict" not in registry
+    assert registry.get(uid("verdict")) is None
+    assert uid("verdict") not in registry
 
 
 def test_from_landers_builds_a_registry() -> None:
-    registry = LanderRegistry.from_landers([_FakeLander("pr"), _FakeLander("verdict")])
+    registry = LanderRegistry.from_landers([_FakeLander("pr"), _FakeLander(uid("verdict"))])
     assert registry.get("pr") is not None
-    assert registry.get("verdict") is not None
+    assert registry.get(uid("verdict")) is not None

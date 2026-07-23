@@ -7,17 +7,23 @@ edge wins, so two ticks can't fire the same trigger.
 
 from __future__ import annotations
 
-import sqlite3
 from datetime import datetime
 
 from chorus.ledger._models import RoutineTrigger, TriggerKind
-from chorus.ledger.repos._base import from_iso, to_iso, utcnow_iso
+from chorus.ledger.repos._base import (
+    LedgerConnection,
+    LedgerRow,
+    from_iso,
+    require_persisted,
+    to_iso,
+    utcnow_iso,
+)
 
 
 class RoutineTriggerRepo:
     """Create, scan, and atomically fire ``routine_trigger`` rows."""
 
-    def __init__(self, conn: sqlite3.Connection) -> None:
+    def __init__(self, conn: LedgerConnection) -> None:
         self._conn = conn
 
     def create(self, trigger: RoutineTrigger) -> RoutineTrigger:
@@ -37,8 +43,7 @@ class RoutineTriggerRepo:
             ),
         )
         self._conn.commit()
-        created = self.get(trigger.id)
-        assert created is not None  # just inserted in this transaction
+        created = require_persisted(self.get(trigger.id), trigger.id)
         return created
 
     def get(self, trigger_id: str) -> RoutineTrigger | None:
@@ -81,10 +86,10 @@ class RoutineTriggerRepo:
             (to_iso(new_next_run_at), utcnow_iso(), trigger_id, to_iso(expected_next_run_at)),
         )
         self._conn.commit()
-        return cur.rowcount == 1
+        return bool(cur.rowcount == 1)
 
 
-def _row_to_trigger(row: sqlite3.Row) -> RoutineTrigger:
+def _row_to_trigger(row: LedgerRow) -> RoutineTrigger:
     return RoutineTrigger(
         id=row["id"],
         routine_id=row["routine_id"],

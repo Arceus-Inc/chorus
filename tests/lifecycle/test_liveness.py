@@ -13,7 +13,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from chorus.ledger import SqliteLedger, Task, TaskStatus
+from chorus.ledger import Ledger, Task, TaskStatus
 from chorus.ledger._models import (
     Approval,
     ApprovalSubjectKind,
@@ -24,6 +24,7 @@ from chorus.ledger._models import (
     WakeReason,
 )
 from chorus.lifecycle import Health, Liveness, classify
+from chorus.testing import uid
 from chorus.workforce import Employee
 
 NOW = datetime(2026, 6, 15, 12, 0, 0, tzinfo=UTC)
@@ -32,15 +33,15 @@ PAST = NOW - timedelta(seconds=60)
 
 
 @pytest.fixture
-def emp(ledger: SqliteLedger) -> Employee:
+def emp(ledger: Ledger) -> Employee:
     return ledger.employees.create(Employee(id="emp_1", name="alice", role="engineer"))
 
 
 def _task(
-    ledger: SqliteLedger,
+    ledger: Ledger,
     status: TaskStatus,
     *,
-    task_id: str = "t1",
+    task_id: str = uid("t1"),
     assignee_employee_id: str | None = "emp_1",
     assignee_user_id: str | None = None,
 ) -> Task:
@@ -55,10 +56,10 @@ def _task(
     )
 
 
-def _running_run(ledger: SqliteLedger, task_id: str, *, lease: datetime) -> Run:
+def _running_run(ledger: Ledger, task_id: str, *, lease: datetime) -> Run:
     return ledger.runs.create(
         Run(
-            id=f"run_{task_id}",
+            id=uid(f"run_{task_id}"),
             employee_id="emp_1",
             task_id=task_id,
             status=RunStatus.RUNNING,
@@ -71,21 +72,21 @@ def _running_run(ledger: SqliteLedger, task_id: str, *, lease: datetime) -> Run:
 
 
 @pytest.mark.parametrize("status", [TaskStatus.DONE, TaskStatus.CANCELLED])
-def test_terminal_is_healthy(ledger: SqliteLedger, emp: Employee, status: TaskStatus) -> None:
+def test_terminal_is_healthy(ledger: Ledger, emp: Employee, status: TaskStatus) -> None:
     task = _task(ledger, status)
     result = classify(task, ledger, now=NOW)
     assert result.healthy
     assert result.reason == "terminal"
 
 
-def test_human_owned_is_healthy(ledger: SqliteLedger) -> None:
-    task = _task(ledger, TaskStatus.TODO, assignee_employee_id=None, assignee_user_id="u_1")
+def test_human_owned_is_healthy(ledger: Ledger) -> None:
+    task = _task(ledger, TaskStatus.TODO, assignee_employee_id=None, assignee_user_id=uid("u_1"))
     result = classify(task, ledger, now=NOW)
     assert result.healthy
     assert result.reason == "human_owner"
 
 
-def test_backlog_is_parked_healthy(ledger: SqliteLedger, emp: Employee) -> None:
+def test_backlog_is_parked_healthy(ledger: Ledger, emp: Employee) -> None:
     task = _task(ledger, TaskStatus.BACKLOG)
     assert classify(task, ledger, now=NOW) == Liveness(Health.HEALTHY, "backlog_parked")
 
@@ -93,17 +94,22 @@ def test_backlog_is_parked_healthy(ledger: SqliteLedger, emp: Employee) -> None:
 # -- todo: resting vs stranded ------------------------------------------------
 
 
-def test_todo_with_queued_wake_is_healthy(ledger: SqliteLedger, emp: Employee) -> None:
+def test_todo_with_queued_wake_is_healthy(ledger: Ledger, emp: Employee) -> None:
     task = _task(ledger, TaskStatus.TODO)
     ledger.wakes.enqueue(
-        Wake(id="w1", employee_id="emp_1", reason=WakeReason.TASK_ASSIGNED, payload={"task_id": "t1"})
+        Wake(
+            id=uid("w1"),
+            employee_id="emp_1",
+            reason=WakeReason.TASK_ASSIGNED,
+            payload={"task_id": uid("t1")},
+        )
     )
     result = classify(task, ledger, now=NOW)
     assert result.healthy
     assert result.reason == "queued_wake"
 
 
-def test_fresh_todo_is_resting_healthy(ledger: SqliteLedger, emp: Employee) -> None:
+def test_fresh_todo_is_resting_healthy(ledger: Ledger, emp: Employee) -> None:
     # No runs, no wake: not yet dispatched — eligible, not stalled.
     task = _task(ledger, TaskStatus.TODO)
     result = classify(task, ledger, now=NOW)
@@ -111,10 +117,10 @@ def test_fresh_todo_is_resting_healthy(ledger: SqliteLedger, emp: Employee) -> N
     assert result.reason == "resting"
 
 
-def test_todo_after_succeeded_run_is_resting_healthy(ledger: SqliteLedger, emp: Employee) -> None:
+def test_todo_after_succeeded_run_is_resting_healthy(ledger: Ledger, emp: Employee) -> None:
     task = _task(ledger, TaskStatus.TODO)
     ledger.runs.create(
-        Run(id="run_ok", employee_id="emp_1", task_id="t1", status=RunStatus.SUCCEEDED)
+        Run(id=uid("run_ok"), employee_id="emp_1", task_id=uid("t1"), status=RunStatus.SUCCEEDED)
     )
     result = classify(task, ledger, now=NOW)
     assert result.healthy
@@ -123,22 +129,26 @@ def test_todo_after_succeeded_run_is_resting_healthy(ledger: SqliteLedger, emp: 
 
 @pytest.mark.parametrize("bad", [RunStatus.FAILED, RunStatus.TIMED_OUT, RunStatus.CANCELLED])
 def test_todo_with_interrupted_dispatch_is_stalled(
-    ledger: SqliteLedger, emp: Employee, bad: RunStatus
+    ledger: Ledger, emp: Employee, bad: RunStatus
 ) -> None:
     task = _task(ledger, TaskStatus.TODO)
-    ledger.runs.create(Run(id="run_bad", employee_id="emp_1", task_id="t1", status=bad))
+    ledger.runs.create(Run(id=uid("run_bad"), employee_id="emp_1", task_id=uid("t1"), status=bad))
     result = classify(task, ledger, now=NOW)
     assert result.stalled
     assert result.reason == "stranded_todo"
 
 
-def test_stranded_todo_with_open_recovery_is_healthy(ledger: SqliteLedger, emp: Employee) -> None:
+def test_stranded_todo_with_open_recovery_is_healthy(ledger: Ledger, emp: Employee) -> None:
     from chorus.ledger._models import RecoveryAction, RecoveryKind
 
     task = _task(ledger, TaskStatus.TODO)
-    ledger.runs.create(Run(id="run_bad", employee_id="emp_1", task_id="t1", status=RunStatus.FAILED))
+    ledger.runs.create(
+        Run(id=uid("run_bad"), employee_id="emp_1", task_id=uid("t1"), status=RunStatus.FAILED)
+    )
     ledger.recovery_actions.open(
-        RecoveryAction(id="rec_1", source_task_id="t1", kind=RecoveryKind.STRANDED, max_attempts=3)
+        RecoveryAction(
+            id=uid("rec_1"), source_task_id=uid("t1"), kind=RecoveryKind.STRANDED, max_attempts=3
+        )
     )
     result = classify(task, ledger, now=NOW)
     assert result.healthy
@@ -148,40 +158,43 @@ def test_stranded_todo_with_open_recovery_is_healthy(ledger: SqliteLedger, emp: 
 # -- in_progress: continuity --------------------------------------------------
 
 
-def test_in_progress_with_active_run_is_healthy(ledger: SqliteLedger, emp: Employee) -> None:
+def test_in_progress_with_active_run_is_healthy(ledger: Ledger, emp: Employee) -> None:
     task = _task(ledger, TaskStatus.IN_PROGRESS)
-    _running_run(ledger, "t1", lease=FUTURE)
+    _running_run(ledger, uid("t1"), lease=FUTURE)
     result = classify(task, ledger, now=NOW)
     assert result.healthy
     assert result.reason == "active_run"
 
 
-def test_in_progress_with_expired_lease_is_stalled(ledger: SqliteLedger, emp: Employee) -> None:
+def test_in_progress_with_expired_lease_is_stalled(ledger: Ledger, emp: Employee) -> None:
     # A running row whose lease has passed is NOT an action path (the beat stopped renewing).
     task = _task(ledger, TaskStatus.IN_PROGRESS)
-    _running_run(ledger, "t1", lease=PAST)
+    _running_run(ledger, uid("t1"), lease=PAST)
     result = classify(task, ledger, now=NOW)
     assert result.stalled
     assert result.reason == "stranded_in_progress"
 
 
-def test_in_progress_with_queued_continuation_is_healthy(
-    ledger: SqliteLedger, emp: Employee
-) -> None:
+def test_in_progress_with_queued_continuation_is_healthy(ledger: Ledger, emp: Employee) -> None:
     task = _task(ledger, TaskStatus.IN_PROGRESS)
-    _running_run(ledger, "t1", lease=PAST)  # dead run...
+    _running_run(ledger, uid("t1"), lease=PAST)  # dead run...
     ledger.wakes.enqueue(  # ...but a continuation is queued
-        Wake(id="w1", employee_id="emp_1", reason=WakeReason.DEPS_RESOLVED, payload={"task_id": "t1"})
+        Wake(
+            id=uid("w1"),
+            employee_id="emp_1",
+            reason=WakeReason.DEPS_RESOLVED,
+            payload={"task_id": uid("t1")},
+        )
     )
     result = classify(task, ledger, now=NOW)
     assert result.healthy
     assert result.reason == "queued_continuation"
 
 
-def test_in_progress_with_active_monitor_is_healthy(ledger: SqliteLedger, emp: Employee) -> None:
+def test_in_progress_with_active_monitor_is_healthy(ledger: Ledger, emp: Employee) -> None:
     task = _task(ledger, TaskStatus.IN_PROGRESS)
     ledger.monitors.arm(
-        Monitor(id="m1", task_id="t1", employee_id="emp_1", next_check_at=FUTURE)
+        Monitor(id=uid("m1"), task_id=uid("t1"), employee_id="emp_1", next_check_at=FUTURE)
     )
     result = classify(task, ledger, now=NOW)
     assert result.healthy
@@ -191,17 +204,22 @@ def test_in_progress_with_active_monitor_is_healthy(ledger: SqliteLedger, emp: E
 # -- in_review: the review path -----------------------------------------------
 
 
-def test_in_review_with_pending_approval_is_healthy(ledger: SqliteLedger, emp: Employee) -> None:
+def test_in_review_with_pending_approval_is_healthy(ledger: Ledger, emp: Employee) -> None:
     task = _task(ledger, TaskStatus.IN_REVIEW)
     ledger.approvals.request(
-        Approval(id="ap1", subject_kind=ApprovalSubjectKind.TASK, subject_id="t1", reason="sign off")
+        Approval(
+            id=uid("ap1"),
+            subject_kind=ApprovalSubjectKind.TASK,
+            subject_id=uid("t1"),
+            reason="sign off",
+        )
     )
     result = classify(task, ledger, now=NOW)
     assert result.healthy
     assert result.reason == "pending_approval"
 
 
-def test_in_review_with_no_path_is_stalled(ledger: SqliteLedger, emp: Employee) -> None:
+def test_in_review_with_no_path_is_stalled(ledger: Ledger, emp: Employee) -> None:
     # "Assign back to the same employee with a 'please review' comment" is not a structured path.
     task = _task(ledger, TaskStatus.IN_REVIEW)
     result = classify(task, ledger, now=NOW)
@@ -209,10 +227,15 @@ def test_in_review_with_no_path_is_stalled(ledger: SqliteLedger, emp: Employee) 
     assert result.reason == "stranded_in_review"
 
 
-def test_in_review_with_queued_wake_is_healthy(ledger: SqliteLedger, emp: Employee) -> None:
+def test_in_review_with_queued_wake_is_healthy(ledger: Ledger, emp: Employee) -> None:
     task = _task(ledger, TaskStatus.IN_REVIEW)
     ledger.wakes.enqueue(
-        Wake(id="w1", employee_id="emp_1", reason=WakeReason.MESSAGE, payload={"task_id": "t1"})
+        Wake(
+            id=uid("w1"),
+            employee_id="emp_1",
+            reason=WakeReason.MESSAGE,
+            payload={"task_id": uid("t1")},
+        )
     )
     assert classify(task, ledger, now=NOW).healthy
 
@@ -220,38 +243,45 @@ def test_in_review_with_queued_wake_is_healthy(ledger: SqliteLedger, emp: Employ
 # -- blocked: surface the first stalled leaf ----------------------------------
 
 
-def test_blocked_on_healthy_leaf_is_healthy(ledger: SqliteLedger, emp: Employee) -> None:
-    parent = _task(ledger, TaskStatus.BLOCKED, task_id="t1")
-    _task(ledger, TaskStatus.IN_PROGRESS, task_id="t2")  # blocker, itself live
-    _running_run(ledger, "t2", lease=FUTURE)
-    ledger.dependencies.add("t1", "t2")
+def test_blocked_on_healthy_leaf_is_healthy(ledger: Ledger, emp: Employee) -> None:
+    parent = _task(ledger, TaskStatus.BLOCKED, task_id=uid("t1"))
+    _task(ledger, TaskStatus.IN_PROGRESS, task_id=uid("t2"))  # blocker, itself live
+    _running_run(ledger, uid("t2"), lease=FUTURE)
+    ledger.dependencies.add(uid("t1"), uid("t2"))
     result = classify(parent, ledger, now=NOW)
     assert result.healthy
     assert result.reason == "healthy_blocker"
 
 
-def test_blocked_on_stalled_leaf_surfaces_it(ledger: SqliteLedger, emp: Employee) -> None:
-    parent = _task(ledger, TaskStatus.BLOCKED, task_id="t1")
+def test_blocked_on_stalled_leaf_surfaces_it(ledger: Ledger, emp: Employee) -> None:
+    parent = _task(ledger, TaskStatus.BLOCKED, task_id=uid("t1"))
     # blocker is a stranded todo (interrupted dispatch, nothing queued)
-    _task(ledger, TaskStatus.TODO, task_id="t2")
-    ledger.runs.create(Run(id="run_bad", employee_id="emp_1", task_id="t2", status=RunStatus.FAILED))
-    ledger.dependencies.add("t1", "t2")
+    _task(ledger, TaskStatus.TODO, task_id=uid("t2"))
+    ledger.runs.create(
+        Run(id=uid("run_bad"), employee_id="emp_1", task_id=uid("t2"), status=RunStatus.FAILED)
+    )
+    ledger.dependencies.add(uid("t1"), uid("t2"))
     result = classify(parent, ledger, now=NOW)
     assert result.stalled
-    assert "t2" in result.reason
+    assert uid("t2") in result.reason
 
 
-def test_blocked_with_open_recovery_is_healthy(ledger: SqliteLedger, emp: Employee) -> None:
+def test_blocked_with_open_recovery_is_healthy(ledger: Ledger, emp: Employee) -> None:
     from chorus.ledger._models import RecoveryAction, RecoveryKind
 
     task = _task(ledger, TaskStatus.BLOCKED)
     ledger.recovery_actions.open(
-        RecoveryAction(id="rec_1", source_task_id="t1", kind=RecoveryKind.GRAPH_LIVENESS, max_attempts=3)
+        RecoveryAction(
+            id=uid("rec_1"),
+            source_task_id=uid("t1"),
+            kind=RecoveryKind.GRAPH_LIVENESS,
+            max_attempts=3,
+        )
     )
     assert classify(task, ledger, now=NOW).healthy
 
 
-def test_blocked_with_no_blocker_is_stalled(ledger: SqliteLedger, emp: Employee) -> None:
+def test_blocked_with_no_blocker_is_stalled(ledger: Ledger, emp: Employee) -> None:
     # blocked but nothing names the blocker or owner → stalled (spec 02 §3 blocked).
     task = _task(ledger, TaskStatus.BLOCKED)
     result = classify(task, ledger, now=NOW)
@@ -259,13 +289,18 @@ def test_blocked_with_no_blocker_is_stalled(ledger: SqliteLedger, emp: Employee)
     assert result.reason == "blocked_no_blocker"
 
 
-def test_blocked_with_a_live_wake_is_healthy(ledger: SqliteLedger, emp: Employee) -> None:
+def test_blocked_with_a_live_wake_is_healthy(ledger: Ledger, emp: Employee) -> None:
     # A parked manager (M3): once its children land, its blockers resolve but it stays `blocked` with a
     # queued `children_done` wake pending the integrate beat. That is healthy — about to be dispatched —
     # not a stalled leaf. (Without this, the recovery sweep strands the parent before it integrates.)
     task = _task(ledger, TaskStatus.BLOCKED)
     ledger.wakes.enqueue(
-        Wake(id="w1", employee_id="emp_1", reason=WakeReason.CHILDREN_DONE, payload={"task_id": "t1"})
+        Wake(
+            id=uid("w1"),
+            employee_id="emp_1",
+            reason=WakeReason.CHILDREN_DONE,
+            payload={"task_id": uid("t1")},
+        )
     )
     result = classify(task, ledger, now=NOW)
     assert result.healthy

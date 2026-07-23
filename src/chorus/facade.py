@@ -1,9 +1,9 @@
 """The ``Chorus`` facade — the composition root (spec 10 §1).
 
 One object, built once, wires the concrete backends and is the **only** thing
-that imports dream (the "wiring"). ``build()`` news-up the ``SqliteLedger``, the
+that imports dream (the "wiring"). ``build()`` news-up the ``Ledger``, the
 ``LedgerWorkforce`` (the single live org store), the ``GitMemoryStore`` +
-``AppendOnlyMemoryWriter``, the dream board ``ClaimManager``, the ``Scheduler``,
+``EpisodicStore``, the dream board ``ClaimManager``, the ``Scheduler``,
 the ``EventBus``, and the ``Inspector``, and injects them — nothing else creates
 concrete classes.
 
@@ -14,14 +14,16 @@ below; the behavior is stubbed pending implementation (M1+, spec 11 build plan).
 from __future__ import annotations
 
 import asyncio
-import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass
+from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 from chorus.budgets import BudgetEnforcer
 from chorus.cron import reconcile_declared_routines
-from chorus.errors import OrgInvariantViolation
+from chorus.errors import OrgInvariantViolation, UnknownEmployee
+from chorus.events import Event, EventKind
 from chorus.governance import GovernancePolicy
 from chorus.groups import (
     BudgetsFacade,
@@ -41,18 +43,27 @@ from chorus.heartbeat import (
     Wake,
     runner_from,
 )
+from chorus.ids import mint_id
 from chorus.ledger import (
+    ActivityVerb,
+    DelegationContract,
+    DelegationContractStatus,
+    ExecutionMode,
+    Ledger,
+    LedgerIntegrityError,
     Message,
-    SqliteLedger,
+    OriginKind,
     Task,
     TaskPriority,
 )
 from chorus.lifecycle import (
     DEFAULT_REQUEST_DEPTH_CAP,
+    MissionTeamPolicy,
     assign_task,
     deliver_message,
+    record_activity,
 )
-from chorus.memory import AppendOnlyMemoryWriter
+from chorus.memory import EpisodicStore
 from chorus.observability import EventBus, LedgerInspector, WorkforceStatus
 from chorus.outcomes import LanderRegistry, Verifier
 from chorus.roles import RolePlugin, RoleRegistry, default_roles
@@ -74,15 +85,20 @@ class Caps:
     tick_interval_s: float = 1.0
 
 
+def _bounded_limit(profile_limit: int | None, request_limit: int | None) -> int | None:
+    limits = [limit for limit in (profile_limit, request_limit) if limit is not None]
+    return min(limits) if limits else None
+
+
 class Chorus:
     """The org kernel facade (spec 10 §1)."""
 
     def __init__(
         self,
         *,
-        ledger: SqliteLedger,
+        ledger: Ledger,
         workforce: Workforce,
-        memory_writer: AppendOnlyMemoryWriter,
+        memory_writer: EpisodicStore,
         scheduler: Scheduler,
         event_bus: EventBus,
         inspector: LedgerInspector,
@@ -110,7 +126,9 @@ class Chorus:
         self._routines = RoutinesFacade(ledger, workforce, inspector)
         self._workforce_grp = WorkforceFacade(workforce, roles)
         self._dod = DodFacade(ledger)
-        self._heartbeat: asyncio.Task[None] | None = None  # the managed always-on runner (start/stop)
+        self._heartbeat: asyncio.Task[None] | None = (
+            None  # the managed always-on runner (start/stop)
+        )
 
     # -- construction ---------------------------------------------------------
 
@@ -118,8 +136,8 @@ class Chorus:
     def build(
         cls,
         *,
-        db_path: str | None = None,
-        ledger: SqliteLedger | None = None,
+        dsn: str | None = None,
+        ledger: Ledger | None = None,
         org_repo: str,
         memory_repo: str,
         dream: Any,
@@ -138,14 +156,14 @@ class Chorus:
         ticks (recover/cron/monitors/dispatch) but cannot execute a beat. ``landers`` is the
         symmetric *landing* seam — the registry the kernel lands a passed beat's deliverable
         through (the consumer passes ``factory.landers``); unset, a passed beat still completes
-        but records no role artifact. Pass **exactly one** of ``db_path`` (open a fresh store) or
+        but records no role artifact. Pass **exactly one** of ``dsn`` (open the Postgres store, RLS-scoped to ``company_id``) or
         ``ledger`` (share an already-open store with the harness factory, so a reviewer's verdict
         and the factory's capability tools land in *one* ledger, not two). ``roles`` defaults to
         :func:`chorus.roles.default_roles`; extra roles register through the same validated path
         (spec 09 §1).
         """
-        if db_path is not None and ledger is not None:
-            raise ValueError("provide either db_path or ledger, not both")
+        if dsn is not None and ledger is not None:
+            raise ValueError("provide either dsn or ledger, not both")
         the_caps = caps or Caps()
         registry = RoleRegistry.from_plugins(roles if roles is not None else default_roles())
         # The seam accepts either the resolver object or its bound method (the §0 front-door form,
@@ -157,15 +175,26 @@ class Chorus:
             resolved_runner_for = runner_from(beat_runner_for)
         if ledger is not None:
             store = ledger
-        elif db_path is not None:
-            store = SqliteLedger.open(db_path)
+        elif dsn is not None:
+            import uuid as _uuid
+
+            try:
+                _uuid.UUID(company_id)
+            except ValueError as exc:
+                # The ledger's RLS policies cast the company GUC to uuid — fail at build time.
+                raise ValueError(
+                    f"company_id must be canonical uuid text to open a ledger by dsn, "
+                    f"got {company_id!r}"
+                ) from exc
+            store = Ledger.open(dsn, company_id=company_id)
         else:
-            raise ValueError("provide exactly one of db_path or ledger")
+            raise ValueError("provide exactly one of dsn or ledger")
         # The live workforce is the ledger employee table — the single source of truth every
         # assignment FK points at (spec 06 §3). ``org_repo`` is the portable git-markdown
         # export/import location (spec 09 §3, the GitWorkforce codec), not a second live store.
         workforce = LedgerWorkforce(store.employees)
         event_bus = EventBus()
+        memory_writer = EpisodicStore(memory_repo)
         scheduler = Scheduler(
             tick_interval_s=the_caps.tick_interval_s,
             max_concurrent_runs=the_caps.max_concurrent_runs,
@@ -174,15 +203,17 @@ class Chorus:
             beat_runner=beat_runner,
             beat_runner_for=resolved_runner_for,  # role-faithful per-employee runners (spec 06 §2)
             event_bus=event_bus,
+            company_root=Path(memory_repo).parent,  # lattice beat-end gate root (memory/ sibling)
             # budgets are inert until a policy is created — injecting the enforcer just arms the gates
             budget_enforcer=BudgetEnforcer(store, company_id=company_id),
             roles=registry,  # a task inherits its assignee role's DoD at intake (spec 04 §1 / 06 §2)
             landers=landers,  # the landing seam — a passed beat lands its role artifact (spec 04 §2)
+            memory_writer=memory_writer,  # every beat's SprintDelta lands in the episodic store
         )
         return cls(
             ledger=store,
             workforce=workforce,
-            memory_writer=AppendOnlyMemoryWriter(memory_repo),
+            memory_writer=memory_writer,
             scheduler=scheduler,
             event_bus=event_bus,
             inspector=LedgerInspector(store),
@@ -202,8 +233,15 @@ class Chorus:
         dod: Verifier | None = None,
         depends_on: Sequence[str] = (),
         priority: TaskPriority = TaskPriority.MEDIUM,
+        goal_id: str | None = None,
+        origin_kind: OriginKind = OriginKind.MANUAL,
+        origin_fingerprint: str = "default",
         trust_preset: TrustPreset | None = None,
         trust_boundary: dict[str, object] | None = None,
+        execution_mode: ExecutionMode = ExecutionMode.DELIVERY,
+        delegation_max_team_size: int | None = None,
+        delegation_max_direct_children: int | None = None,
+        delegation_spend_limit_cents: int | None = None,
     ) -> Task:
         """Create a flat ``depth=0`` intake task, optionally wired in one call (spec 10 §5 / 14 §3).
 
@@ -211,14 +249,53 @@ class Chorus:
         sets its DoD + dependencies if given, and hands it to its owner (``backlog`` → ``todo`` + a
         wake). ``assignee`` is resolved by slug and fail-closed (an unknown employee raises
         ``UnknownEmployee`` before anything is written). The reserved intake seam: when horizon ships
-        it drives this same path — chorus never grows a second intake door.
+        it drives this same path — chorus never grows a second intake door. ``goal_id`` links the task to
+        its OKR node (the alignment tree horizon authors); ``origin_kind`` / ``origin_fingerprint`` stamp
+        provenance so horizon's idempotent intake (``horizon_intake`` + a fingerprint) can dedup.
         """
-        employee_id = self._workforce.get(slugify(assignee)).id if assignee is not None else None
+        if assignee is None:
+            employee = None
+        else:
+            try:
+                # Exact id first: plan-materialized employees keep the CEO's refs
+                # (e.g. ``new_backend_lead_1``), which are not slugs.
+                employee = self._workforce.get(assignee)
+            except UnknownEmployee:
+                employee = self._workforce.get(slugify(assignee))
+        if execution_mode is ExecutionMode.DELEGATION:
+            if employee is None:
+                raise ValueError("root delegation requires an assignee lead")
+            if goal_id is None or self._ledger.goals.get(goal_id) is None:
+                raise ValueError("root delegation requires an existing goal_id")
+            if delegation_max_team_size is not None and delegation_max_team_size < 1:
+                raise ValueError("delegation_max_team_size must be at least 1")
+            if delegation_spend_limit_cents is not None and delegation_spend_limit_cents < 0:
+                raise ValueError("delegation_spend_limit_cents cannot be negative")
+            return self._submit_root_delegation(
+                intent,
+                lead=employee,
+                dod=dod,
+                depends_on=depends_on,
+                priority=priority,
+                goal_id=goal_id,
+                origin_kind=origin_kind,
+                origin_fingerprint=origin_fingerprint,
+                trust_preset=trust_preset,
+                trust_boundary=trust_boundary,
+                delegation_max_team_size=delegation_max_team_size,
+                delegation_max_direct_children=delegation_max_direct_children,
+                delegation_spend_limit_cents=delegation_spend_limit_cents,
+            )
+
+        employee_id = employee.id if employee is not None else None
         task = self._ledger.tasks.submit(
             Task(
-                id=f"task_{uuid.uuid4().hex[:12]}",
+                id=mint_id(),
                 intent=intent,
                 priority=priority,
+                goal_id=goal_id,
+                origin_kind=origin_kind,
+                origin_fingerprint=origin_fingerprint,
                 trust_preset=trust_preset.value if trust_preset is not None else None,
                 trust_boundary=trust_boundary,
             )
@@ -227,9 +304,141 @@ class Chorus:
             self._ledger.dod.create(task.id, dod)
         for blocker in depends_on:
             self._ledger.dependencies.add(task.id, blocker)
-        if employee_id is not None:
-            assign_task(self._ledger, task.id, employee_id)
+        wake = assign_task(self._ledger, task.id, employee_id) if employee_id is not None else None
+        self._emit_intake(task, assignee_id=employee_id, wake=wake)
         return task
+
+    def _submit_root_delegation(
+        self,
+        intent: str,
+        *,
+        lead: Employee,
+        dod: Verifier | None,
+        depends_on: Sequence[str],
+        priority: TaskPriority,
+        goal_id: str,
+        origin_kind: OriginKind,
+        origin_fingerprint: str,
+        trust_preset: TrustPreset | None,
+        trust_boundary: dict[str, object] | None,
+        delegation_max_team_size: int | None,
+        delegation_max_direct_children: int | None,
+        delegation_spend_limit_cents: int | None,
+    ) -> Task:
+        if origin_kind is OriginKind.HORIZON_INTAKE:
+            existing = self._ledger.tasks.find_by_origin(origin_kind, origin_fingerprint)
+            if existing is not None:
+                return existing
+        policy = MissionTeamPolicy(self._ledger)
+        try:
+            with self._ledger.transaction():
+                team = policy.create_for_root(lead, goal_id)
+                profile = self._ledger.management_profiles.get(lead.id)
+                if profile is None:
+                    raise RuntimeError("eligible delegation lead has no management profile")
+                task = self._ledger.tasks.submit(
+                    Task(
+                        id=mint_id(),
+                        intent=intent,
+                        priority=priority,
+                        execution_mode=ExecutionMode.DELEGATION,
+                        team_id=team.id,
+                        goal_id=goal_id,
+                        origin_kind=origin_kind,
+                        origin_fingerprint=origin_fingerprint,
+                        trust_preset=trust_preset.value if trust_preset is not None else None,
+                        trust_boundary=trust_boundary,
+                    )
+                )
+                self._ledger.delegation_contracts.create(
+                    DelegationContract(
+                        task_id=task.id,
+                        team_id=team.id,
+                        lead_employee_id=lead.id,
+                        management_profile_version=profile.version,
+                        can_subdelegate=profile.can_subdelegate,
+                        max_depth=min(
+                            profile.max_delegation_depth,
+                            self._caps.request_depth_cap,
+                        ),
+                        max_team_size=min(
+                            profile.max_team_size,
+                            delegation_max_team_size
+                            if delegation_max_team_size is not None
+                            else profile.max_team_size,
+                        ),
+                        max_direct_children=delegation_max_direct_children,
+                        spend_limit_cents=_bounded_limit(
+                            profile.spend_limit_cents,
+                            delegation_spend_limit_cents,
+                        ),
+                        objective_rubric=intent,
+                        status=DelegationContractStatus.DELEGATED,
+                    )
+                )
+                record_activity(
+                    self._ledger,
+                    verb=ActivityVerb.DELEGATION_CREATED,
+                    subject_kind="delegation_contract",
+                    subject_id=task.id,
+                    actor_employee_id=lead.id,
+                    payload={"team_id": team.id, "root": True},
+                )
+                policy.activate(team.id)
+                if dod is not None:
+                    self._ledger.dod.create(task.id, dod)
+                for blocker in depends_on:
+                    self._ledger.dependencies.add(task.id, blocker)
+                wake = assign_task(self._ledger, task.id, lead.id)
+        except LedgerIntegrityError:
+            if origin_kind is not OriginKind.HORIZON_INTAKE:
+                raise
+            existing = self._ledger.tasks.find_by_origin(origin_kind, origin_fingerprint)
+            if existing is None:
+                raise
+            return existing
+        self._emit_intake(task, assignee_id=lead.id, wake=wake)
+        return task
+
+    def _emit_intake(self, task: Task, *, assignee_id: str | None, wake: Wake | None) -> None:
+        """Mirror intake onto the bus (OBS P6) — an intake task is its own lineage root."""
+        at = datetime.now(UTC)
+        self._event_bus.emit(
+            Event(
+                kind=EventKind.TASK_CREATED,
+                at=at,
+                trace_id=task.id,
+                task_id=task.id,
+                employee_id=assignee_id,
+                payload={
+                    "intent_excerpt": task.intent[:200],
+                    "priority": task.priority.value,
+                    "execution_mode": task.execution_mode.value,
+                },
+            )
+        )
+        if assignee_id is not None:
+            self._event_bus.emit(
+                Event(
+                    kind=EventKind.TASK_ASSIGNED,
+                    at=at,
+                    trace_id=task.id,
+                    task_id=task.id,
+                    employee_id=assignee_id,
+                    payload={},
+                )
+            )
+        if wake is not None:
+            self._event_bus.emit(
+                Event(
+                    kind=EventKind.WAKE_ENQUEUED,
+                    at=at,
+                    trace_id=task.id,
+                    task_id=task.id,
+                    employee_id=wake.employee_id,
+                    payload={"reason": wake.reason.value},
+                )
+            )
 
     def assign(
         self, task_id: str, employee_id: str, *, assigned_by: str | None = None

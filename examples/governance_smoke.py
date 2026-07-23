@@ -9,10 +9,29 @@ an **acceptance** gate (approve → the task is *done*, its dependents unblock) 
 
 from __future__ import annotations
 
+from chorus.ids import derive_id
+
+_demo_salt = {"n": 0}  # bumped per ledger open — scenario reruns in one database can't collide
+
+
+def _bump_demo_salt() -> None:
+    _demo_salt["n"] += 1
+
+
+def _id(name: str) -> str:
+    """A readable per-scenario entity id (deterministic within a scenario, unique across them)."""
+    return derive_id("demo", str(_demo_salt["n"]), name)
+
+
+import os
+import uuid
+
+_EXAMPLE_COMPANY = str(uuid.uuid5(uuid.NAMESPACE_URL, "chorus-example"))  # one stable demo org
+
 from datetime import UTC, datetime
 
 from chorus.governance import ApprovalDecision, GovernanceResolver
-from chorus.ledger import ApprovalGate, SqliteLedger, Task, TaskStatus
+from chorus.ledger import ApprovalGate, Ledger, Task, TaskStatus
 from chorus.workforce import Employee
 
 _NOW = datetime(2026, 6, 16, 12, 0, tzinfo=UTC)
@@ -20,37 +39,62 @@ _USER = "operator"
 
 
 def main() -> int:
-    ledger = SqliteLedger.open(":memory:")
+    _bump_demo_salt()
+    ledger = Ledger.open(
+        os.environ.get("CHORUS_LEDGER_DSN", "postgresql://localhost/chorus"),
+        company_id=str(uuid.uuid4()),  # fresh org per open — slugs reset
+    )
     try:
         resolver = GovernanceResolver(ledger)
         ledger.employees.create(Employee(id="alice", name="Alice", role="engineer"))
 
         # Acceptance gate: a human sign-off IS the task's done-ness; a dependent waits on it.
-        ledger.tasks.submit(Task(id="spec", intent="write the spec",
-                                 status=TaskStatus.IN_PROGRESS, assignee_employee_id="alice"))
-        ledger.tasks.submit(Task(id="build", intent="build from the spec",
-                                 assignee_employee_id="alice"))
-        ledger.dependencies.add("build", "spec")  # build depends on spec
+        ledger.tasks.submit(
+            Task(
+                id=_id("spec"),
+                intent="write the spec",
+                status=TaskStatus.IN_PROGRESS,
+                assignee_employee_id="alice",
+            )
+        )
+        ledger.tasks.submit(
+            Task(id=_id("build"), intent="build from the spec", assignee_employee_id="alice")
+        )
+        ledger.dependencies.add(_id("build"), _id("spec"))  # build depends on spec
 
-        gate = resolver.open_task_gate("spec", gate_kind=ApprovalGate.ACCEPTANCE,
-                                       reason="board signs off the spec")
-        print(f"opened {gate.id} — 'spec' is now {ledger.tasks.get('spec').status.value}")  # type: ignore[union-attr]
-        accept = resolver.resolve(gate.id, decision=ApprovalDecision.APPROVE, decided_by_user_id=_USER, now=_NOW)
-        print(f"approved → 'spec' is {accept.subject_status}; "
-              f"{accept.wakes_fired} downstream wake(s) fired (build can start)")
+        gate = resolver.open_task_gate(
+            _id("spec"), gate_kind=ApprovalGate.ACCEPTANCE, reason="board signs off the spec"
+        )
+        print(f"opened {gate.id} — 'spec' is now {ledger.tasks.get(_id('spec')).status.value}")  # type: ignore[union-attr]
+        accept = resolver.resolve(
+            gate.id, decision=ApprovalDecision.APPROVE, decided_by_user_id=_USER, now=_NOW
+        )
+        print(
+            f"approved → 'spec' is {accept.subject_status}; "
+            f"{accept.wakes_fired} downstream wake(s) fired (build can start)"
+        )
 
         # Authorization gate: sign-off BEFORE doing the work; denied → the task is cancelled.
-        ledger.tasks.submit(Task(id="risky", intent="ship to prod on Friday",
-                                 status=TaskStatus.IN_PROGRESS, assignee_employee_id="alice"))
-        gate2 = resolver.open_task_gate("risky", gate_kind=ApprovalGate.AUTHORIZATION,
-                                        reason="authorise a Friday deploy")
-        deny = resolver.resolve(gate2.id, decision=ApprovalDecision.DENY, decided_by_user_id=_USER, now=_NOW)
+        ledger.tasks.submit(
+            Task(
+                id=_id("risky"),
+                intent="ship to prod on Friday",
+                status=TaskStatus.IN_PROGRESS,
+                assignee_employee_id="alice",
+            )
+        )
+        gate2 = resolver.open_task_gate(
+            _id("risky"), gate_kind=ApprovalGate.AUTHORIZATION, reason="authorise a Friday deploy"
+        )
+        deny = resolver.resolve(
+            gate2.id, decision=ApprovalDecision.DENY, decided_by_user_id=_USER, now=_NOW
+        )
         print(f"denied  → 'risky' is {deny.subject_status}")
 
         ok = (
-            ledger.tasks.get("spec").status is TaskStatus.DONE  # type: ignore[union-attr]
+            ledger.tasks.get(_id("spec")).status is TaskStatus.DONE  # type: ignore[union-attr]
             and accept.wakes_fired == 1
-            and ledger.tasks.get("risky").status is TaskStatus.CANCELLED  # type: ignore[union-attr]
+            and ledger.tasks.get(_id("risky")).status is TaskStatus.CANCELLED  # type: ignore[union-attr]
         )
         print("RESULT:", "PASS — gates resolved into task outcomes" if ok else "FAIL")
         return 0 if ok else 1

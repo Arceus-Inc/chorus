@@ -6,7 +6,7 @@ A manager tightening applies now; a loosening opens a §5 governance gate. Migra
 
 from __future__ import annotations
 
-from chorus.ledger import SqliteLedger
+from chorus.ledger import Ledger
 from chorus.lifecycle import ReviseOutcome, revise_dod
 from chorus.outcomes import Verifier
 
@@ -14,7 +14,7 @@ from chorus.outcomes import Verifier
 class DodFacade:
     """The ``org.dod`` surface — revise a task's DoD."""
 
-    def __init__(self, ledger: SqliteLedger) -> None:
+    def __init__(self, ledger: Ledger) -> None:
         self._ledger = ledger
 
     def revise(self, task_id: str, new_verifier: Verifier, *, by: str) -> ReviseOutcome:

@@ -11,15 +11,16 @@ import pytest
 
 from chorus.cron import RoutineRevisionAuthorityError
 from chorus.facade import Caps, Chorus
-from chorus.ledger import SqliteLedger
+from chorus.ledger import Ledger
 from chorus.observability import LedgerInspector
 from chorus.roles import RoleRegistry, default_roles
+from chorus.testing import open_test_ledger
 from chorus.workforce import LedgerWorkforce
 
 pytestmark = pytest.mark.integration
 
 
-def _chorus(ledger: SqliteLedger) -> Chorus:
+def _chorus(ledger: Ledger) -> Chorus:
     return Chorus(
         ledger=ledger,
         workforce=LedgerWorkforce(ledger.employees),
@@ -33,15 +34,15 @@ def _chorus(ledger: SqliteLedger) -> Chorus:
     )
 
 
-def _org(ledger: SqliteLedger) -> Chorus:
+def _org(ledger: Ledger) -> Chorus:
     chorus = _chorus(ledger)
-    chorus.hire(name="Moe", role="manager")
+    chorus.hire(name="Moe", role="frontend_engineer")
     chorus.hire(name="Ada", role="pm", reports_to="moe")
     return chorus
 
 
 def test_add_seeds_revision_one() -> None:
-    ledger = SqliteLedger.open(":memory:")
+    ledger = open_test_ledger()
     try:
         chorus = _org(ledger)
         view = chorus.routines.add(
@@ -62,12 +63,10 @@ def test_add_seeds_revision_one() -> None:
 
 
 def test_revise_then_restore_through_the_facade() -> None:
-    ledger = SqliteLedger.open(":memory:")
+    ledger = open_test_ledger()
     try:
         chorus = _org(ledger)
-        view = chorus.routines.add(
-            employee="Ada", intent_template="v1", schedule="0 9 * * 1"
-        )
+        view = chorus.routines.add(employee="Ada", intent_template="v1", schedule="0 9 * * 1")
 
         revised = chorus.routines.revise(view.id, by="Ada", intent_template="v2")
         assert revised.latest_revision_no == 2
@@ -83,7 +82,7 @@ def test_revise_then_restore_through_the_facade() -> None:
 
 
 def test_a_stranger_may_not_revise() -> None:
-    ledger = SqliteLedger.open(":memory:")
+    ledger = open_test_ledger()
     try:
         chorus = _org(ledger)
         chorus.hire(name="Eve", role="pm")

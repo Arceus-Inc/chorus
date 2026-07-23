@@ -18,7 +18,6 @@ from chorus.outcomes._verifier import (
     AgentReview,
     Command,
     HumanApproval,
-    ReviewedBuild,
     Verifier,
 )
 
@@ -46,9 +45,6 @@ def _obligations(verifier: Verifier) -> frozenset[Obligation]:
         return frozenset({("review", spec.reviewer_role)})
     if isinstance(spec, HumanApproval):
         return frozenset({("human", spec.approver)})
-    if isinstance(spec, ReviewedBuild):
-        # a reviewed build is a review *plus* the kernel-run objective build — strictly more than review.
-        return frozenset({("review", spec.reviewer_role), ("build", "")})
     return frozenset()  # unknown spec → empty → any change reads as a loosen (fail-closed)
 
 

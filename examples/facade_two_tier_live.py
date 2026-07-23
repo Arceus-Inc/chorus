@@ -4,7 +4,7 @@ The whole point of spec 14: ``from chorus import Chorus`` gives a two-tier kerne
 top* (anyone can operate a company) and *complete underneath* (every niche capability under its group).
 This script proves both against a real model — the front door reads exactly like §0:
 
-    ledger = SqliteLedger.open("company.db")
+    ledger = Ledger.open("company.db")
     factory = EmployeeHarnessFactory(..., ledger=ledger)          # the execution layer (dream + creds)
     org = Chorus.build(ledger=ledger, org_repo=..., memory_repo=..., dream=dream,
                        beat_runner_for=factory, landers=factory.landers)
@@ -58,7 +58,7 @@ from chorus import (
     WorkforceStatus,
     default_roles,
 )
-from chorus.ledger import SqliteLedger
+from chorus.ledger import Ledger
 from chorus.roles import RoleRegistry
 from chorus_cli._beats import default_pricing_from_env
 from chorus_harness import EmployeeHarnessFactory
@@ -92,7 +92,18 @@ def _seed_repo(path: Path) -> None:
     )
     subprocess.run(["git", "-C", str(path), "add", "-A"], check=True, capture_output=True)
     subprocess.run(
-        ["git", "-C", str(path), "-c", "user.name=s", "-c", "user.email=s@x", "commit", "-m", "init"],
+        [
+            "git",
+            "-C",
+            str(path),
+            "-c",
+            "user.name=s",
+            "-c",
+            "user.email=s@x",
+            "commit",
+            "-m",
+            "init",
+        ],
         check=True,
         capture_output=True,
     )
@@ -151,12 +162,18 @@ def main() -> int:
     org_repo = str(base / "org")
 
     # ── one ledger, shared by the execution layer and the kernel ──────────────────────────────────
-    ledger = SqliteLedger.open(str(base / "company.db"))
+    ledger = Ledger.open(str(base / "company.db"))
     registry = RoleRegistry.from_plugins(default_roles())
     factory = EmployeeHarnessFactory(
-        api_key=api_key, base_url=base_url, deployment=deployment,
-        company_id="acme", roles=registry, pricing=default_pricing_from_env(),
-        seed=seed, work_root=base / "work", ledger=ledger,
+        api_key=api_key,
+        base_url=base_url,
+        deployment=deployment,
+        company_id="acme",
+        roles=registry,
+        pricing=default_pricing_from_env(),
+        seed=seed,
+        work_root=base / "work",
+        ledger=ledger,
     )
 
     # ── the front door (spec 14 §0): build once, then operate with flat verbs ─────────────────────
@@ -165,8 +182,8 @@ def main() -> int:
         org_repo=org_repo,
         memory_repo=str(base / "memory"),
         dream=dream,
-        beat_runner_for=factory,          # how a beat runs (+ how a reviewer reads the author's worktree)
-        landers=factory.landers,          # how the deliverable lands
+        beat_runner_for=factory,  # how a beat runs (+ how a reviewer reads the author's worktree)
+        landers=factory.landers,  # how the deliverable lands
         caps=Caps(tick_interval_s=0.5),
         company_id="acme",
     )
@@ -178,7 +195,9 @@ def main() -> int:
     org.hire(name="moe", role="manager")
     org.hire(name="eng1", role="engineer", reports_to="moe")
     org.hire(name="ria", role="reviewer", reports_to="moe")
-    task = org.submit(_INTENT, assignee="eng1")  # no operator DoD — the engineer's role IS reviewed_build
+    task = org.submit(
+        _INTENT, assignee="eng1"
+    )  # no operator DoD — the engineer's role IS reviewed_build
     _log(f"   hired moe/eng1/ria; submitted {task.id} → eng1 (role DoD = reviewed_build)")
 
     final = asyncio.run(_run_until_terminal(org, task.id, max_pulses=12))
@@ -188,15 +207,19 @@ def main() -> int:
     company_main = factory.company_root / "repo"
     calc = company_main / "calc.py"
     landed = calc.exists() and "subtract" in calc.read_text(encoding="utf-8")
-    _log(f"   final: status={final.status.value} dod={_dod_kind(final)} "
-         f"beat_ran={beat_ran} landed_to_main={landed}")
-    _log(f"   status(): {len(status.employees)} employees, {status.open_tasks} open, "
-         f"{status.running_beats} running")
+    _log(
+        f"   final: status={final.status.value} dod={_dod_kind(final)} "
+        f"beat_ran={beat_ran} landed_to_main={landed}"
+    )
+    _log(
+        f"   status(): {len(status.employees)} employees, {status.open_tasks} open, "
+        f"{status.running_beats} running"
+    )
 
     # ── the groups (spec 14 §2.2): one verb each, after the heartbeat is stopped (no new beats) ───
     _log("")
     _log("LOW-LEVEL GROUPS — one verb on each of the seven accessors")
-    gate_target = org.submit("authorize the staging deploy")          # a backlog task to gate
+    gate_target = org.submit("authorize the staging deploy")  # a backlog task to gate
     dod_target = org.submit("tidy the changelog", assignee="eng1", dod=Verifier.command("true"))
 
     def _governance() -> str:
@@ -229,10 +252,15 @@ def main() -> int:
         return f"revised DoD of {dod_target.id}"
 
     probes = [
-        _probe("org.inspect", "task / stuck / org_report",
-               lambda: f"task={org.inspect.task(task.id).status.value}, "
-                       f"stuck={len(org.inspect.stuck())}, "
-                       f"done_rate={org.inspect.org_report().completion_rate:.0%}"),
+        _probe(
+            "org.inspect",
+            "task / stuck / org_report",
+            lambda: (
+                f"task={org.inspect.task(task.id).status.value}, "
+                f"stuck={len(org.inspect.stuck())}, "
+                f"done_rate={org.inspect.org_report().completion_rate:.0%}"
+            ),
+        ),
         _probe("org.governance", "open_gate → approvals → resolve", _governance),
         _probe("org.budgets", "set(EMPLOYEE, …)", _budgets),
         _probe("org.trust", "set_task(preset=…)", _trust),
@@ -244,13 +272,22 @@ def main() -> int:
         _log(f"   {'✅' if p.ok else '❌'} {p.group:<16} {p.verb:<34} {p.detail}")
 
     groups_ok = all(p.ok for p in probes)
-    accepted = beat_ran and groups_ok  # the F7 bar: front door ran a real beat + every group reachable
+    accepted = (
+        beat_ran and groups_ok
+    )  # the F7 bar: front door ran a real beat + every group reachable
 
     _REPORT.parent.mkdir(parents=True, exist_ok=True)
     _REPORT.write_text(
         _render(
-            deployment=deployment, status=status, final=final, beat_ran=beat_ran, done=done,
-            landed=landed, company_main=company_main, probes=probes, accepted=accepted,
+            deployment=deployment,
+            status=status,
+            final=final,
+            beat_ran=beat_ran,
+            done=done,
+            landed=landed,
+            company_main=company_main,
+            probes=probes,
+            accepted=accepted,
         ),
         encoding="utf-8",
     )
@@ -282,18 +319,33 @@ def _render(
     def row(label: str, ok: bool, detail: str) -> str:
         return f"<tr><td>{'✅' if ok else '❌'}</td><td>{esc(label)}</td><td><code>{esc(detail)}</code></td></tr>"
 
-    front = "\n".join([
-        row("Chorus.build(ledger=…, beat_runner_for=factory, landers=…)", True, "two-tier kernel"),
-        row("hire (flat)", len(status.employees) >= 3, f"{len(status.employees)} employees"),
-        row("submit (flat) — no operator DoD, the role defines it", True,
-            f"{esc(final.id)} → {esc(final.assignee or '-')} · DoD={_dod_kind(final)}"),
-        row("run_forever (flat) ran a real reviewed build", beat_ran,
-            final.latest_run.status if final.latest_run is not None else "-"),
-        row("task reached done (build → review → integrate)", done, final.status.value),
-        row("build landed to company main", landed, f"subtract() in calc.py: {landed}"),
-        row("status() (flat glance)", True,
-            f"{len(status.employees)} employees · {status.open_tasks} open · {status.running_beats} running"),
-    ])
+    front = "\n".join(
+        [
+            row(
+                "Chorus.build(ledger=…, beat_runner_for=factory, landers=…)",
+                True,
+                "two-tier kernel",
+            ),
+            row("hire (flat)", len(status.employees) >= 3, f"{len(status.employees)} employees"),
+            row(
+                "submit (flat) — no operator DoD, the role defines it",
+                True,
+                f"{esc(final.id)} → {esc(final.assignee or '-')} · DoD={_dod_kind(final)}",
+            ),
+            row(
+                "run_forever (flat) ran a real reviewed build",
+                beat_ran,
+                final.latest_run.status if final.latest_run is not None else "-",
+            ),
+            row("task reached done (build → review → integrate)", done, final.status.value),
+            row("build landed to company main", landed, f"subtract() in calc.py: {landed}"),
+            row(
+                "status() (flat glance)",
+                True,
+                f"{len(status.employees)} employees · {status.open_tasks} open · {status.running_beats} running",
+            ),
+        ]
+    )
     groups = "\n".join(row(f"{p.group} — {p.verb}", p.ok, p.detail) for p in probes)
     log = _git(company_main, "log", "--oneline", "-4") or "(no commits on company main yet)"
     facade = "PASS ✅" if accepted else "INCOMPLETE ❌"

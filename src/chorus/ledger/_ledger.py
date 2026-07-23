@@ -1,20 +1,36 @@
-"""The ledger facade (spec 01) — opens the store, applies migrations, composes the repos.
+"""The ledger (spec 01, spec 12 §6) — Postgres, the only store. SQLite is retired.
 
-``SqliteLedger`` is the durable source of truth for "what work exists and where it is." The kernel
-reads/writes only through the per-aggregate repos it exposes (B2.2); every transition is a durable
-write. The same repo code runs on Postgres later behind the same ``Ledger`` shape (spec 12) — only
-``open`` (connection setup) and the migration DDL are dialect-specific.
+``Ledger`` opens a psycopg connection (RLS-scoped to a company), bootstraps the checked-in native
+per-table schema (``schema/*.sql``, FK-ordered at load) under an advisory lock, wires one repo per
+aggregate, and owns the cross-aggregate atomics (``transaction`` batching, ``finalize_beat``, ``create_child``). The kernel
+types against this class directly — one driver, no protocol indirection.
+
+Schema versioning: the baseline's checksum is recorded in ``chorus_schema_migrations``. A checksum
+mismatch on open means the schema evolved after this database was created — with no released
+deployments the correct move is a fresh bootstrap; once deployments exist, authored Postgres
+migrations take over from the baseline (the applied-set model is already in place for them).
 """
 
 from __future__ import annotations
 
-import sqlite3
-import uuid
+import hashlib
+import re
 from collections.abc import Iterator
-from contextlib import AbstractContextManager, contextmanager
-from typing import Protocol, runtime_checkable
+from contextlib import contextmanager
+from datetime import UTC, datetime
+from importlib.resources import files
+from typing import Any
 
-from chorus.ledger._migrations import MigrationRunner
+from chorus.ids import mint_id
+from chorus.ledger._connection import LedgerConnection
+from chorus.ledger._errors import LedgerIntegrityError
+from chorus.ledger._migrations import (
+    LedgerAheadError,
+    Migration,
+    MigrationDriftError,
+    load_migrations,
+    split_statements,
+)
 from chorus.ledger._models import (
     DecompositionClaim,
     DecompositionStatus,
@@ -24,7 +40,6 @@ from chorus.ledger._models import (
     Wake,
     WakeReason,
 )
-from chorus.ledger.migrations import MIGRATIONS
 from chorus.ledger.repos import (
     ActivityRepo,
     ApprovalRepo,
@@ -32,12 +47,16 @@ from chorus.ledger.repos import (
     ArtifactRevisionRepo,
     BudgetIncidentRepo,
     BudgetPolicyRepo,
+    ClaimRepo,
     CostEventRepo,
+    DecisionRepo,
     DecompositionClaimRepo,
+    DelegationContractRepo,
     DependencyRepo,
     DodRepo,
     EmployeeRepo,
     GoalRepo,
+    ManagementProfileRepo,
     MessageRepo,
     MonitorRepo,
     RecoveryActionRepo,
@@ -46,104 +65,123 @@ from chorus.ledger.repos import (
     RoutineRunRepo,
     RoutineTriggerRepo,
     RunRepo,
+    SkillRepo,
+    SkillRevisionRepo,
+    StaffingRequestRepo,
     TaskRepo,
+    TeamMemberRepo,
+    TeamRepo,
     WakeRepo,
+    WorkforcePlanRepo,
 )
+
+_BASELINE_ID = "0001_baseline"
+_ADVISORY_LOCK_KEY = 0x43484F52  # 'CHOR' — serialises concurrent bootstrap attempts
+
+_SCHEMA_MIGRATIONS_DDL = """
+CREATE TABLE IF NOT EXISTS chorus_schema_migrations (
+    id         text PRIMARY KEY,
+    checksum   text NOT NULL,
+    applied_at timestamptz NOT NULL
+)
+"""
+
+
+class SchemaDriftError(RuntimeError):
+    """The baseline schema changed after this database was baselined (checksum mismatch)."""
+
+
+_CREATE_TABLE = re.compile(r"CREATE TABLE (\w+)", re.I)
+_REFERENCES = re.compile(r"REFERENCES\s+(\w+)\s*\(", re.I)
+
+
+def _dependency_order(tables: dict[str, str]) -> list[str]:
+    """Table names topologically sorted by their REFERENCES edges (Kahn; name-stable).
+
+    Postgres validates FK targets at CREATE TABLE, so per-table files can't just load
+    alphabetically. The routine⇄routine_revision reference cycle is already broken in the DDL
+    itself (one edge is an ALTER TABLE ADD FOREIGN KEY, sequenced after the tables)."""
+    deps: dict[str, set[str]] = {}
+    for name, statement in tables.items():
+        targets = {match.group(1) for match in _REFERENCES.finditer(statement)}
+        deps[name] = {target for target in targets if target != name and target in tables}
+    ordered: list[str] = []
+    remaining = dict(deps)
+    while remaining:
+        ready = sorted(name for name, waiting in remaining.items() if waiting <= set(ordered))
+        if not ready:
+            raise ValueError(f"circular REFERENCES among ledger tables: {sorted(remaining)}")
+        ordered.extend(ready)
+        for name in ready:
+            del remaining[name]
+    return ordered
+
+
+def postgres_ddl() -> list[str]:
+    """Every ledger DDL statement from the per-table ``schema/*.sql`` files (Postgres-native),
+    sequenced for a fresh database: tables in FK-dependency order, then deferred FK constraints,
+    RLS, and indexes."""
+    tables: dict[str, str] = {}
+    trailing: list[str] = []  # ALTERs / policies / indexes — valid only after their tables exist
+    schema_dir = files("chorus.ledger.schema")
+    for entry in sorted(schema_dir.iterdir(), key=lambda item: item.name):
+        if not entry.name.endswith(".sql"):
+            continue
+        for statement in split_statements(entry.read_text()):
+            match = _CREATE_TABLE.match(statement)
+            if match is not None:
+                tables[match.group(1)] = statement
+            else:
+                trailing.append(statement)
+    return [tables[name] for name in _dependency_order(tables)] + trailing
+
+
+def ledger_table_names() -> list[str]:
+    """Every ledger table name, creation order — for deployments that grant a runtime role."""
+    names: list[str] = []
+    for statement in postgres_ddl():
+        if statement.upper().startswith("CREATE TABLE "):
+            names.append(statement.split(None, 2)[2].split("(", 1)[0].strip())
+    return names
+
+
+def baseline() -> tuple[str, str, list[str]]:
+    """(baseline id, checksum, DDL statements) — for deployments that apply the schema in their
+    own migration stream (e.g. podium's alembic). Writing the returned id+checksum into
+    ``chorus_schema_migrations`` makes every later :meth:`Ledger.open` probe and skip DDL."""
+    statements = postgres_ddl()
+    digest = hashlib.sha256()
+    for statement in statements:
+        digest.update(statement.encode("utf-8"))
+        digest.update(b"\x00")
+    return _BASELINE_ID, digest.hexdigest(), statements
 
 
 def _wake_id() -> str:
-    return f"wake_{uuid.uuid4().hex[:12]}"
+    return mint_id()
 
 
-class _LedgerConnection(sqlite3.Connection):
-    """A ``sqlite3.Connection`` that lets the facade batch repo writes into one transaction.
+class Ledger:
+    """The durable store the scheduler reads and writes — repos wired over one RLS-scoped
+    connection, plus the cross-aggregate atomic operations."""
 
-    Repos call ``execute``/``commit``/``rollback`` exactly as on a real connection. Outside a
-    transaction each repo write is its own unit (``commit`` passes through). Inside
-    :meth:`SqliteLedger.transaction` intermediate commits are *deferred* — the facade commits once on
-    success or rolls back on error — so cross-aggregate operations land atomically (spec 01 Cluster F).
-    """
-
-    _defer_depth: int = 0  # >0 while a facade transaction is batching writes
-    _tx_aborted: bool = False  # latched if any (even nested, caught) block raised
-
-    def commit(self) -> None:
-        if self._defer_depth == 0:
-            super().commit()
-
-
-@runtime_checkable
-class Ledger(Protocol):
-    """The durable store the scheduler reads and writes (spec 01) — the swappable seam.
-
-    Implemented by :class:`SqliteLedger` now and a Postgres-backed ledger in Arceus (spec 12);
-    the kernel depends on this shape, never on a concrete driver.
-    """
-
-    employees: EmployeeRepo
-    goals: GoalRepo
-    tasks: TaskRepo
-    decomposition_claims: DecompositionClaimRepo
-    dependencies: DependencyRepo
-    wakes: WakeRepo
-    messages: MessageRepo
-    approvals: ApprovalRepo
-    activity: ActivityRepo
-    monitors: MonitorRepo
-    recovery_actions: RecoveryActionRepo
-    routines: RoutineRepo
-    routine_revisions: RoutineRevisionRepo
-    routine_triggers: RoutineTriggerRepo
-    routine_runs: RoutineRunRepo
-    runs: RunRepo
-    dod: DodRepo
-    artifacts: ArtifactRepo
-    artifact_revisions: ArtifactRevisionRepo
-    budget_policies: BudgetPolicyRepo
-    budget_incidents: BudgetIncidentRepo
-    cost_events: CostEventRepo
-
-    def schema_version(self) -> str | None: ...
-
-    def transaction(self) -> AbstractContextManager[None]: ...
-
-    def finalize_beat(
-        self,
-        *,
-        task_id: str,
-        run_id: str | None,
-        dod_status: DodStatus,
-        verdict: dict[str, object] | None = None,
-    ) -> list[Wake]: ...
-
-    def create_child(self, claim_id: str, child: Task) -> DecompositionClaim: ...
-
-    def close(self) -> None: ...
-
-
-class SqliteLedger:
-    """The file-backed default :class:`Ledger` (spec 01, spec 12).
-
-    ``open`` connects, enables foreign keys, applies any pending migrations (the applied-set runner,
-    spec 01 §schema-versioning), and wires one repo per aggregate onto the shared connection.
-    """
-
-    def __init__(self, conn: sqlite3.Connection) -> None:
-        if not isinstance(conn, _LedgerConnection):
-            raise TypeError(
-                "SqliteLedger requires a connection from SqliteLedger.open() "
-                "(transaction batching depends on it); a plain sqlite3.Connection won't do"
-            )
-        self._conn: _LedgerConnection = conn
-        self._runner = MigrationRunner(MIGRATIONS)
+    def __init__(self, conn: LedgerConnection) -> None:
+        self._conn: LedgerConnection = conn
+        self._schema_version: str | None = None
         self.employees = EmployeeRepo(conn)
         self.goals = GoalRepo(conn)
         self.tasks = TaskRepo(conn)
+        self.management_profiles = ManagementProfileRepo(conn)
+        self.teams = TeamRepo(conn)
+        self.team_members = TeamMemberRepo(conn)
+        self.delegation_contracts = DelegationContractRepo(conn)
         self.decomposition_claims = DecompositionClaimRepo(conn)
         self.dependencies = DependencyRepo(conn)
         self.wakes = WakeRepo(conn)
         self.messages = MessageRepo(conn)
         self.approvals = ApprovalRepo(conn)
+        self.decisions = DecisionRepo(conn)
+        self.claims = ClaimRepo(conn)
         self.activity = ActivityRepo(conn)
         self.monitors = MonitorRepo(conn)
         self.recovery_actions = RecoveryActionRepo(conn)
@@ -152,26 +190,132 @@ class SqliteLedger:
         self.routine_triggers = RoutineTriggerRepo(conn)
         self.routine_runs = RoutineRunRepo(conn)
         self.runs = RunRepo(conn)
+        self.skills = SkillRepo(conn)
+        self.skill_revisions = SkillRevisionRepo(conn)
         self.dod = DodRepo(conn)
         self.artifacts = ArtifactRepo(conn)
         self.artifact_revisions = ArtifactRevisionRepo(conn)
         self.budget_policies = BudgetPolicyRepo(conn)
         self.budget_incidents = BudgetIncidentRepo(conn)
         self.cost_events = CostEventRepo(conn)
+        self.workforce_plans = WorkforcePlanRepo(conn)
+        self.staffing_requests = StaffingRequestRepo(conn)
 
     @classmethod
-    def open(cls, db_path: str) -> SqliteLedger:
-        """Open (creating + migrating) the ledger at ``db_path`` (use ``":memory:"`` for tests)."""
-        conn = sqlite3.connect(db_path, factory=_LedgerConnection)
-        conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA foreign_keys = ON")
+    def open(cls, conninfo: str, *, company_id: str | None = None) -> Ledger:
+        """Connect, bootstrap (idempotent, advisory-locked), and wire the repos.
+
+        ``company_id`` pins the session's tenancy context: FORCE RLS scopes every read/write to
+        that company and the ``company_id`` DEFAULT stamps every insert. Without it the ledger is
+        read-only-empty and write-refusing (fail closed) under a non-superuser role — pass it for
+        any real work; omit it only for bootstrap/administrative opens.
+        """
+        conn = LedgerConnection.connect(conninfo, company_id=company_id)
         ledger = cls(conn)
-        ledger._runner.apply(conn)
+        ledger._bootstrap()
+        if company_id is not None:
+            ledger._seed_system_principals()
         return ledger
 
+    def _seed_system_principals(self) -> None:
+        """The built-in non-workforce actors, seeded once per company (idempotent).
+
+        Lived in a schema migration in the SQLite era; with company-scoped principals the seed
+        needs the session's company context, so it runs on the first company-scoped open.
+        """
+        self._conn.execute(
+            "INSERT INTO system_principal (id, kind, display_name, purpose, created_at) "
+            "VALUES (?, ?, ?, ?, ?) ON CONFLICT (company_id, id) DO NOTHING",
+            (
+                "system-verifier",
+                "verification",
+                "System Verifier",
+                "Independent read-only verification of employee-authored work",
+                "1970-01-01T00:00:00+00:00",
+            ),
+        )
+        self._conn.commit()
+
+    def _bootstrap(self) -> None:
+        import psycopg
+
+        baseline_id, checksum, statements = baseline()
+        pg = self._conn._pg
+        # One explicit transaction for the whole bootstrap; the advisory lock is transaction-scoped,
+        # so two processes opening together serialise and the loser sees the recorded baseline.
+        with pg.transaction():
+            pg.execute("SELECT pg_advisory_xact_lock(%s)", (_ADVISORY_LOCK_KEY,))
+            # Probe before creating: a non-owner runtime role (SELECT-granted, no schema CREATE)
+            # must be able to open an already-bootstrapped database. The savepoint contains the
+            # UndefinedTable error on a genuinely fresh database.
+            try:
+                with pg.transaction():
+                    row = pg.execute(
+                        "SELECT checksum FROM chorus_schema_migrations WHERE id = %s",
+                        (baseline_id,),
+                    ).fetchone()
+            except psycopg.errors.UndefinedTable:
+                row = None
+                pg.execute(_SCHEMA_MIGRATIONS_DDL)  # fresh database — needs an owner/DDL role
+            if row is not None:
+                if row["checksum"] != checksum:
+                    raise SchemaDriftError(
+                        "the ledger baseline changed after this database was baselined; "
+                        "author a migration in chorus/ledger/migrations/ instead of editing "
+                        "the baseline (schema/*.sql is frozen once databases exist)"
+                    )
+            else:
+                for statement in statements:
+                    pg.execute(statement)
+                pg.execute(
+                    "INSERT INTO chorus_schema_migrations (id, checksum, applied_at) "
+                    "VALUES (%s, %s, %s)",
+                    (baseline_id, checksum, datetime.now(UTC)),
+                )
+            shipped = load_migrations()
+            self._apply_pending_migrations(pg, baseline_id, shipped)
+        # The display version: the newest applied id (the baseline when no deltas shipped yet).
+        self._schema_version = shipped[-1].id if shipped else baseline_id
+
+    def _apply_pending_migrations(
+        self, pg: Any, baseline_id: str, shipped: list[Migration]
+    ) -> None:
+        """Apply the authored delta stream (applied-set model) inside the bootstrap transaction.
+
+        Runs under the advisory lock, so concurrent opens serialise. Refuses a database that is
+        AHEAD of the SDK (applied id we do not ship) and a shipped migration whose checksum
+        DRIFTED from its applied row — both mean human intervention, never guessing.
+        """
+        applied = {
+            row["id"]: row["checksum"]
+            for row in pg.execute("SELECT id, checksum FROM chorus_schema_migrations").fetchall()
+        }
+        shipped_ids = {migration.id for migration in shipped} | {baseline_id}
+        ahead = sorted(set(applied) - shipped_ids)
+        if ahead:
+            raise LedgerAheadError(
+                f"database has applied migrations this SDK does not ship: {', '.join(ahead)} — "
+                "upgrade the SDK"
+            )
+        for migration in shipped:
+            recorded = applied.get(migration.id)
+            if recorded is not None:
+                if recorded != migration.checksum:
+                    raise MigrationDriftError(
+                        f"migration {migration.id} was edited after it was applied "
+                        "(deployed migrations are immutable — author a new migration)"
+                    )
+                continue
+            for statement in migration.statements():
+                pg.execute(statement)
+            pg.execute(
+                "INSERT INTO chorus_schema_migrations (id, checksum, applied_at) "
+                "VALUES (%s, %s, %s)",
+                (migration.id, migration.checksum, datetime.now(UTC)),
+            )
+
     def schema_version(self) -> str | None:
-        """The highest applied migration id — presentation only (spec 01 §schema-versioning)."""
-        return self._runner.display_version(self._conn)
+        return self._schema_version
 
     @contextmanager
     def transaction(self) -> Iterator[None]:
@@ -268,16 +412,16 @@ class SqliteLedger:
         ):
             parent = self.tasks.get(task.parent_id)
             if parent is not None and parent.assignee_employee_id is not None:
-                    fired.append(
-                        self.wakes.enqueue(
-                            Wake(
-                                id=_wake_id(),
-                                employee_id=parent.assignee_employee_id,
-                                reason=WakeReason.CHILDREN_DONE,
-                                payload={"task_id": task.parent_id},
-                            )
+                fired.append(
+                    self.wakes.enqueue(
+                        Wake(
+                            id=_wake_id(),
+                            employee_id=parent.assignee_employee_id,
+                            reason=WakeReason.CHILDREN_DONE,
+                            payload={"task_id": task.parent_id},
                         )
                     )
+                )
         return fired
 
     def close(self) -> None:
@@ -286,5 +430,9 @@ class SqliteLedger:
 
 __all__ = [
     "Ledger",
-    "SqliteLedger",
+    "LedgerIntegrityError",
+    "SchemaDriftError",
+    "baseline",
+    "ledger_table_names",
+    "postgres_ddl",
 ]

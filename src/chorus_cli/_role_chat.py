@@ -15,8 +15,8 @@ from chorus.adapters import TokenPricing
 from chorus.budgets import BudgetEnforcer
 from chorus.errors import UnknownEmployee
 from chorus.heartbeat import Scheduler
-from chorus.ledger import SqliteLedger
-from chorus.memory import AppendOnlyMemoryWriter
+from chorus.ledger import Ledger
+from chorus.memory import EpisodicStore
 from chorus.observability import EventBus, FanoutBus
 from chorus.roles import RoleRegistry, default_roles
 from chorus.workforce import LedgerWorkforce
@@ -26,7 +26,7 @@ from chorus_harness import EmployeeHarnessFactory
 
 
 def build_role_chat_service(
-    ledger: SqliteLedger,
+    ledger: Ledger,
     *,
     employee_id: str,
     api_key: str,
@@ -71,8 +71,12 @@ def build_role_chat_service(
         budget_enforcer=BudgetEnforcer(ledger, company_id=company_id),
         event_bus=FanoutBus(render_bus, EventBus(log_path=factory.company_root / "events.jsonl")),
         roles=registry,  # a chat task inherits the employee role's DoD at intake (spec 04 §1)
-        landers=default_landers(factory.company_root, ledger=ledger),  # a passed beat lands its role artifact (§2)
-        memory_writer=AppendOnlyMemoryWriter(factory.company_root / "memory"),  # one episodic delta/beat (§7)
+        landers=default_landers(
+            factory.company_root, ledger=ledger
+        ),  # a passed beat lands its role artifact (§2)
+        memory_writer=EpisodicStore(
+            factory.company_root / "memory"
+        ),  # one episodic delta/beat (§7)
         max_concurrent_runs=1,
     )
     return ChatBeatService(

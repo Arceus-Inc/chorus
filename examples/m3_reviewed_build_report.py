@@ -17,6 +17,11 @@ command it picks, which the deterministic tests + the live keyed reviewer cover 
 
 from __future__ import annotations
 
+import os
+import uuid
+
+_EXAMPLE_COMPANY = str(uuid.uuid5(uuid.NAMESPACE_URL, "chorus-example"))  # one stable demo org
+
 import asyncio
 import html
 import sys
@@ -26,7 +31,7 @@ from pathlib import Path
 
 from chorus.heartbeat import Scheduler
 from chorus.heartbeat._beat import BeatOutcome
-from chorus.ledger import SqliteLedger, Task, TaskStatus
+from chorus.ledger import Ledger, Task, TaskStatus
 from chorus.lifecycle import CapabilityService, assign_task
 from chorus.outcomes import Verifier
 from chorus.roles import RoleRegistry, default_roles
@@ -43,33 +48,62 @@ class _Worker:
     def __init__(self, worktree: Path) -> None:
         self.working_dir = worktree
 
-    async def run_task(self, *, task_id: str, intent: str, verification: object = (),
-                       rubric: object = "", observer: object = None, run_id: str | None = None) -> BeatOutcome:
+    async def run_task(
+        self,
+        *,
+        task_id: str,
+        intent: str,
+        verification: object = (),
+        rubric: object = "",
+        observer: object = None,
+        run_id: str | None = None,
+    ) -> BeatOutcome:
         return BeatOutcome(passed=True, outcome={}, summary="built", model="scripted")
 
 
 class _Reviewer:
     """A scripted reviewer: judges the diff (``approve``) and reports the project's ``verify_command``."""
 
-    def __init__(self, ledger: SqliteLedger, worktree: Path, *, reviewer_id: str, approve: bool,
-                 verify_command: str) -> None:
+    def __init__(
+        self,
+        ledger: Ledger,
+        worktree: Path,
+        *,
+        reviewer_id: str,
+        approve: bool,
+        verify_command: str,
+    ) -> None:
         self._ledger = ledger
         self.working_dir = worktree
         self._id = reviewer_id
         self._approve = approve
         self._cmd = verify_command
 
-    async def run_task(self, *, task_id: str, intent: str, verification: object = (),
-                       rubric: object = "", observer: object = None, run_id: str | None = None) -> BeatOutcome:
+    async def run_task(
+        self,
+        *,
+        task_id: str,
+        intent: str,
+        verification: object = (),
+        rubric: object = "",
+        observer: object = None,
+        run_id: str | None = None,
+    ) -> BeatOutcome:
         CapabilityService(self._ledger).record_verdict(
-            task_id=task_id, run_id=str(run_id), reviewer_id=self._id, approve=self._approve,
-            feedback="looks good" if self._approve else "needs work", verify_command=self._cmd,
+            task_id=task_id,
+            run_id=str(run_id),
+            reviewer_id=self._id,
+            approve=self._approve,
+            feedback="looks good" if self._approve else "needs work",
+            verify_command=self._cmd,
         )
         return BeatOutcome(passed=True, outcome={}, summary="reviewed", model="scripted")
 
 
 class _Org:
-    def __init__(self, ledger: SqliteLedger, worktree: Path, *, approve: bool, verify_command: str) -> None:
+    def __init__(
+        self, ledger: Ledger, worktree: Path, *, approve: bool, verify_command: str
+    ) -> None:
         self._ledger = ledger
         self._worktree = worktree
         self._approve = approve
@@ -78,13 +112,20 @@ class _Org:
     def runner_for(self, employee: Employee, *, task_id: str | None = None) -> object:
         return self._for(employee)
 
-    def review_runner_for(self, reviewer: Employee, *, task_id: str, worktree_owner_id: str) -> object:
+    def review_runner_for(
+        self, reviewer: Employee, *, task_id: str, worktree_owner_id: str
+    ) -> object:
         return self._for(reviewer)
 
     def _for(self, employee: Employee) -> object:
         if employee.role == "reviewer":
-            return _Reviewer(self._ledger, self._worktree, reviewer_id=employee.id,
-                             approve=self._approve, verify_command=self._cmd)
+            return _Reviewer(
+                self._ledger,
+                self._worktree,
+                reviewer_id=employee.id,
+                approve=self._approve,
+                verify_command=self._cmd,
+            )
         return _Worker(self._worktree)
 
 
@@ -106,18 +147,27 @@ async def _run_scenario(s: Scenario, *, base: Path) -> Scenario:
     worktree.mkdir(parents=True)
     (worktree / "app.py").write_text(s.code, encoding="utf-8")
 
-    ledger = SqliteLedger.open(":memory:")
+    ledger = Ledger.open(
+        os.environ.get("CHORUS_LEDGER_DSN", "postgresql://localhost/chorus"),
+        company_id=_EXAMPLE_COMPANY,
+    )
     try:
         ledger.employees.create(Employee(id="dev", name="Dev", role="engineer"))
         ledger.employees.create(Employee(id="rob", name="Rob", role="reviewer"))
         ledger.tasks.submit(Task(id="code", intent=f"implement: {s.name}", status=TaskStatus.TODO))
         assign_task(ledger, "code", "dev")
-        ledger.dod.create("code", Verifier.reviewed_build(artifact_class="pr"))  # the engineer's gate
+        ledger.dod.create(
+            "code", Verifier.reviewed_build(artifact_class="pr")
+        )  # the engineer's gate
         org = _Org(ledger, worktree, approve=s.approve, verify_command=s.verify_command)
         sched = Scheduler(
-            ledger=ledger, workforce=LedgerWorkforce(ledger.employees), beat_runner_for=org,  # type: ignore[arg-type]
+            ledger=ledger,
+            workforce=LedgerWorkforce(ledger.employees),
+            beat_runner_for=org,  # type: ignore[arg-type]
             roles=RoleRegistry.from_plugins(default_roles()),
-            landers=default_landers(base, ledger=ledger), clock=lambda: _NOW, max_review_rounds=0,
+            landers=default_landers(base, ledger=ledger),
+            clock=lambda: _NOW,
+            max_review_rounds=0,
         )
         await sched.tick_once()
         await sched.drain()
@@ -180,9 +230,18 @@ def main() -> int:
 
     base = Path(tempfile.mkdtemp(prefix="chorus-rb-"))
     scenarios = [
-        Scenario("approve + passing build", 'print("ok")\n', approve=True, verify_command="python3 app.py"),
-        Scenario("approve + failing build", "import sys\nsys.exit(1)\n", approve=True,
-                 verify_command="python3 app.py"),
+        Scenario(
+            "approve + passing build",
+            'print("ok")\n',
+            approve=True,
+            verify_command="python3 app.py",
+        ),
+        Scenario(
+            "approve + failing build",
+            "import sys\nsys.exit(1)\n",
+            approve=True,
+            verify_command="python3 app.py",
+        ),
         Scenario("quality block", 'print("ok")\n', approve=False, verify_command="python3 app.py"),
     ]
     done = [asyncio.run(_run_scenario(s, base=base)) for s in scenarios]
@@ -196,11 +255,16 @@ def main() -> int:
     sys.stdout.write(f"\nHTML report: {_REPORT}\n")
     # the gate is correct iff: approve+pass → done; approve+fail → not done; quality-block → not done
     ok = (
-        done[0].status == "done" and done[0].build_passed is True
-        and done[1].status != "done" and done[1].build_passed is False
-        and done[2].status != "done" and done[2].build_passed is None
+        done[0].status == "done"
+        and done[0].build_passed is True
+        and done[1].status != "done"
+        and done[1].build_passed is False
+        and done[2].status != "done"
+        and done[2].build_passed is None
     )
-    sys.stdout.write("\n✅ reviewed-build gate behaves correctly\n" if ok else "\n❌ gate misbehaved\n")
+    sys.stdout.write(
+        "\n✅ reviewed-build gate behaves correctly\n" if ok else "\n❌ gate misbehaved\n"
+    )
     return 0 if ok else 1
 
 

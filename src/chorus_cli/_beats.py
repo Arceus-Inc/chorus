@@ -17,8 +17,8 @@ from pathlib import Path
 from chorus.adapters import ModelRate, TokenPricing
 from chorus.budgets import BudgetEnforcer
 from chorus.heartbeat import Scheduler, TickReport
-from chorus.ledger import SqliteLedger
-from chorus.memory import AppendOnlyMemoryWriter
+from chorus.ledger import Ledger
+from chorus.memory import EpisodicStore
 from chorus.observability import EventBus
 from chorus.roles import (
     RolePlugin,
@@ -76,7 +76,7 @@ def default_pricing_from_env() -> TokenPricing:
 
 
 def default_roles_from_env() -> tuple[RolePlugin, ...]:
-    """Default role plugins with optional Engineer harness-surface activation.
+    """Default role plugins with optional Backend Engineer harness-surface activation.
 
     ``CHORUS_ENGINEER_SURFACES=skills,mcp,plugins`` is a CLI/demo switch only; the SDK helper it uses
     is reusable by other front ends that need to opt a role into the same Dream surfaces.
@@ -91,7 +91,7 @@ def default_roles_from_env() -> tuple[RolePlugin, ...]:
     return apply_role_surface_overrides(
         default_roles(),
         RoleSurfaceOverride(
-            role="engineer",
+            role="backend_engineer",
             skills=True if "skills" in surfaces else None,
             mcp=True if "mcp" in surfaces else None,
             plugins=True if "plugins" in surfaces else None,
@@ -125,7 +125,7 @@ class SchedulerTickRunner:
 
 
 def build_beat_service(
-    ledger: SqliteLedger,
+    ledger: Ledger,
     *,
     api_key: str,
     base_url: str,
@@ -163,8 +163,12 @@ def build_beat_service(
         beat_runner_for=factory,  # resolve a role-faithful runner per dispatched employee
         budget_enforcer=BudgetEnforcer(ledger, company_id=company_id),
         roles=registry,  # tasks inherit the assignee role's DoD at intake (spec 04 §1)
-        landers=default_landers(factory.company_root, ledger=ledger),  # a passed beat lands its role artifact (§2)
-        memory_writer=AppendOnlyMemoryWriter(factory.company_root / "memory"),  # one episodic delta/beat (§7)
+        landers=default_landers(
+            factory.company_root, ledger=ledger
+        ),  # a passed beat lands its role artifact (§2)
+        memory_writer=EpisodicStore(
+            factory.company_root / "memory"
+        ),  # one episodic delta/beat (§7)
         event_bus=EventBus(log_path=factory.company_root / "events.jsonl"),
         max_concurrent_runs=max_concurrent_runs,
     )
@@ -172,7 +176,7 @@ def build_beat_service(
 
 
 def chat_service_from_env(
-    ledger: SqliteLedger,
+    ledger: Ledger,
     *,
     employee_id: str,
     render_bus: ChatRenderBus,

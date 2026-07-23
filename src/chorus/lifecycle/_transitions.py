@@ -24,12 +24,15 @@ from chorus.ledger._models import TaskStatus
 # The legal transitions (spec 02 §2). Terminal states map to an empty set.
 LEGAL_TRANSITIONS: dict[TaskStatus, frozenset[TaskStatus]] = {
     TaskStatus.BACKLOG: frozenset({TaskStatus.TODO, TaskStatus.CANCELLED}),
-    TaskStatus.TODO: frozenset(
-        {TaskStatus.IN_PROGRESS, TaskStatus.BLOCKED, TaskStatus.CANCELLED}
-    ),
+    TaskStatus.TODO: frozenset({TaskStatus.IN_PROGRESS, TaskStatus.BLOCKED, TaskStatus.CANCELLED}),
     TaskStatus.IN_PROGRESS: frozenset(
-        {TaskStatus.IN_REVIEW, TaskStatus.BLOCKED, TaskStatus.DONE, TaskStatus.CANCELLED,
-         TaskStatus.REJECTED}
+        {
+            TaskStatus.IN_REVIEW,
+            TaskStatus.BLOCKED,
+            TaskStatus.DONE,
+            TaskStatus.CANCELLED,
+            TaskStatus.REJECTED,
+        }
     ),
     TaskStatus.IN_REVIEW: frozenset(
         {TaskStatus.IN_PROGRESS, TaskStatus.DONE, TaskStatus.CANCELLED, TaskStatus.REJECTED}
@@ -73,9 +76,7 @@ def is_legal(current: TaskStatus, target: TaskStatus) -> bool:
     return target in LEGAL_TRANSITIONS[current]
 
 
-def assert_legal(
-    current: TaskStatus, target: TaskStatus, *, via_checkout: bool = False
-) -> None:
+def assert_legal(current: TaskStatus, target: TaskStatus, *, via_checkout: bool = False) -> None:
     """Raise :class:`IllegalTransition` unless ``current → target`` is allowed.
 
     Beyond edge-legality, enforces the checkout rule: entering ``in_progress`` is
@@ -83,9 +84,7 @@ def assert_legal(
     ``in_progress`` is rejected even though the edge itself is legal (spec 02 §2).
     """
     if not is_legal(current, target):
-        raise IllegalTransition(
-            f"illegal transition {current.value} → {target.value}"
-        )
+        raise IllegalTransition(f"illegal transition {current.value} → {target.value}")
     if target is TaskStatus.IN_PROGRESS and not via_checkout:
         raise IllegalTransition(
             f"{current.value} → in_progress must go through checkout, not a bare status PATCH"

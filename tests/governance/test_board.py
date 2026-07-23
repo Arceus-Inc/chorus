@@ -20,11 +20,12 @@ from chorus.ledger import (
     ApprovalSubjectKind,
     Artifact,
     ArtifactType,
-    SqliteLedger,
+    Ledger,
     Task,
     TaskStatus,
 )
 from chorus.roles import RoleRegistry, default_roles
+from chorus.testing import uid
 from chorus.workforce import Employee, LedgerWorkforce
 
 pytestmark = pytest.mark.integration
@@ -33,25 +34,29 @@ _NOW = datetime(2026, 6, 19, 12, 0, tzinfo=UTC)
 _USER = "chair"
 
 
-def _landed_artifact(ledger: SqliteLedger) -> str:
+def _landed_artifact(ledger: Ledger) -> str:
     ledger.employees.create(Employee(id="ada", name="ada", role="engineer"))
     ledger.tasks.submit(
-        Task(id="t1", intent="ship the pr", status=TaskStatus.DONE, assignee_employee_id="ada")
+        Task(id=uid("t1"), intent="ship the pr", status=TaskStatus.DONE, assignee_employee_id="ada")
     )
-    ledger.artifacts.create(Artifact(id="ar1", task_id="t1", type=ArtifactType.PR))
-    return "ar1"
+    ledger.artifacts.create(Artifact(id=uid("ar1"), task_id=uid("t1"), type=ArtifactType.PR))
+    return uid("ar1")
 
 
-def _open_board_gate(ledger: SqliteLedger, artifact_id: str) -> str:
-    return GovernanceResolver(ledger).open(
-        action=ApprovalAction.BOARD_APPROVAL,
-        subject_kind=ApprovalSubjectKind.ARTIFACT,
-        subject_id=artifact_id,
-        reason="promote",
-    ).id
+def _open_board_gate(ledger: Ledger, artifact_id: str) -> str:
+    return (
+        GovernanceResolver(ledger)
+        .open(
+            action=ApprovalAction.BOARD_APPROVAL,
+            subject_kind=ApprovalSubjectKind.ARTIFACT,
+            subject_id=artifact_id,
+            reason="promote",
+        )
+        .id
+    )
 
 
-def test_approve_records_a_promoted_activity(ledger: SqliteLedger) -> None:
+def test_approve_records_a_promoted_activity(ledger: Ledger) -> None:
     gate = _open_board_gate(ledger, _landed_artifact(ledger))
 
     outcome = GovernanceResolver(ledger).resolve(
@@ -59,22 +64,22 @@ def test_approve_records_a_promoted_activity(ledger: SqliteLedger) -> None:
     )
 
     assert outcome.subject_status == "promoted"
-    verbs = [a.verb for a in ledger.activity.by_subject("artifact", "ar1")]
+    verbs = [a.verb for a in ledger.activity.by_subject("artifact", uid("ar1"))]
     assert ActivityVerb.PROMOTED in verbs
 
 
-def test_deny_does_not_promote(ledger: SqliteLedger) -> None:
+def test_deny_does_not_promote(ledger: Ledger) -> None:
     gate = _open_board_gate(ledger, _landed_artifact(ledger))
 
     GovernanceResolver(ledger).resolve(
         gate, decision=ApprovalDecision.DENY, decided_by_user_id=_USER, now=_NOW
     )
 
-    verbs = [a.verb for a in ledger.activity.by_subject("artifact", "ar1")]
+    verbs = [a.verb for a in ledger.activity.by_subject("artifact", uid("ar1"))]
     assert ActivityVerb.PROMOTED not in verbs
 
 
-def test_revise_wakes_the_author(ledger: SqliteLedger) -> None:
+def test_revise_wakes_the_author(ledger: Ledger) -> None:
     gate = _open_board_gate(ledger, _landed_artifact(ledger))
 
     outcome = GovernanceResolver(ledger).resolve(
@@ -85,19 +90,19 @@ def test_revise_wakes_the_author(ledger: SqliteLedger) -> None:
     assert {w.employee_id for w in ledger.wakes.queued()} == {"ada"}
 
 
-def test_resolve_unknown_action_subject_passes_through_dispatch(ledger: SqliteLedger) -> None:
+def test_resolve_unknown_action_subject_passes_through_dispatch(ledger: Ledger) -> None:
     # a board_approval approval with no real artifact still resolves (revise just fires no wake).
     ledger.approvals.request(
         Approval(
-            id="a1",
+            id=uid("a1"),
             subject_kind=ApprovalSubjectKind.ARTIFACT,
-            subject_id="ghost",
+            subject_id=uid("ghost"),
             reason="x",
             action=ApprovalAction.BOARD_APPROVAL,
         )
     )
     outcome = GovernanceResolver(ledger).resolve(
-        "a1", decision=ApprovalDecision.REQUEST_REVISION, decided_by_user_id=_USER, now=_NOW
+        uid("a1"), decision=ApprovalDecision.REQUEST_REVISION, decided_by_user_id=_USER, now=_NOW
     )
     assert outcome.wakes_fired == 0
 
@@ -105,7 +110,7 @@ def test_resolve_unknown_action_subject_passes_through_dispatch(ledger: SqliteLe
 # -- through the facade ------------------------------------------------------------------------------
 
 
-def _chorus(ledger: SqliteLedger, policy: GovernancePolicy) -> Chorus:
+def _chorus(ledger: Ledger, policy: GovernancePolicy) -> Chorus:
     return Chorus(
         ledger=ledger,
         workforce=LedgerWorkforce(ledger.employees),
@@ -120,18 +125,18 @@ def _chorus(ledger: SqliteLedger, policy: GovernancePolicy) -> Chorus:
     )
 
 
-def test_facade_request_promotion_gated_opens_a_board_gate(ledger: SqliteLedger) -> None:
+def test_facade_request_promotion_gated_opens_a_board_gate(ledger: Ledger) -> None:
     _landed_artifact(ledger)
     chorus = _chorus(ledger, GovernancePolicy(board_artifact_classes=frozenset({"pr"})))
 
-    approval = chorus.governance.request_promotion("ar1")
+    approval = chorus.governance.request_promotion(uid("ar1"))
 
     assert approval is not None and approval.action is ApprovalAction.BOARD_APPROVAL
 
 
-def test_facade_request_promotion_ungated_returns_none(ledger: SqliteLedger) -> None:
+def test_facade_request_promotion_ungated_returns_none(ledger: Ledger) -> None:
     _landed_artifact(ledger)
     chorus = _chorus(ledger, GovernancePolicy())  # "pr" not in board classes
 
-    assert chorus.governance.request_promotion("ar1") is None
+    assert chorus.governance.request_promotion(uid("ar1")) is None
     assert ledger.approvals.pending() == []

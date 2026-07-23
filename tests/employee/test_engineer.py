@@ -2,8 +2,7 @@
 
 These tests pin the engineer as the first employee to own a dedicated package
 (``chorus_employee/engineer/``). They assert the config carries *every*
-``build_harness`` component, and that the engineer the kernel registers by default
-is exactly the one defined here (single source — no drift between the two).
+``build_harness`` component, and that the legacy plugin remains available for explicit registration.
 """
 
 from __future__ import annotations
@@ -24,12 +23,19 @@ def test_engineer_declares_every_build_harness_component() -> None:
         "write_file",
         "run_command",
         "git",
+        "todo_write",
+        "skill",
         "memory_search",
         "memory_get",
         "working_memory_read",
         "working_memory_write",
         "working_memory_append",
         "memory_propose",
+        "recall",
+        "lattice_context",
+        "lattice_packet",
+        "lattice_apply",
+        "skill_manage",
     )
     assert manifest.permission_mode.value == "acceptEdits"  # can write under its own posture
     assert manifest.memory_scope.value == "project"
@@ -58,13 +64,13 @@ def test_engineer_ships_its_dod_and_outcome() -> None:
     assert verifier is not None  # a typed Verifier, not None/str
 
 
-def test_default_roles_sources_the_engineer_from_its_package() -> None:
-    # The kernel's default engineer IS the one defined in chorus_employee (single source).
-    kernel_engineer = next(r for r in default_roles() if r.name == "engineer")
-    assert kernel_engineer.manifest == engineer_plugin().manifest
+def test_legacy_engineer_plugin_remains_available_for_explicit_registration() -> None:
+    assert engineer_plugin().name == "engineer"
+    assert "engineer" not in {role.name for role in default_roles()}
 
 
-def test_default_employees_includes_the_engineer_plus_the_rest() -> None:
+def test_default_employees_uses_specific_engineering_professions() -> None:
     names = {r.name for r in default_employees()}
-    assert "engineer" in names
-    assert {"reviewer", "manager", "pm", "analyst"} <= names
+    assert {"backend_engineer", "frontend_engineer", "pm", "analyst"} <= names
+    assert names.isdisjoint({"engineer", "reviewer"})
+    assert "manager" not in names

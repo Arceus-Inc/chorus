@@ -15,6 +15,9 @@ from __future__ import annotations
 import asyncio
 import html
 import os
+import uuid
+
+_EXAMPLE_COMPANY = str(uuid.uuid5(uuid.NAMESPACE_URL, "chorus-example"))  # one stable demo org
 import subprocess
 import sys
 import tempfile
@@ -22,9 +25,9 @@ from pathlib import Path
 
 from chorus.budgets import BudgetEnforcer
 from chorus.heartbeat import Scheduler
-from chorus.ledger import SqliteLedger, Task, TaskStatus
+from chorus.ledger import Ledger, Task, TaskStatus
 from chorus.lifecycle import assign_task
-from chorus.memory import AppendOnlyMemoryWriter
+from chorus.memory import EpisodicStore
 from chorus.roles import RoleRegistry, default_roles
 from chorus.workforce import Employee, LedgerWorkforce
 from chorus_cli._beats import default_pricing_from_env
@@ -47,8 +50,20 @@ def _seed_repo(path: Path) -> None:
     (path / "README.md").write_text("# project\n", encoding="utf-8")
     subprocess.run(["git", "-C", str(path), "add", "-A"], check=True, capture_output=True)
     subprocess.run(
-        ["git", "-C", str(path), "-c", "user.name=s", "-c", "user.email=s@x", "commit", "-m", "init"],
-        check=True, capture_output=True,
+        [
+            "git",
+            "-C",
+            str(path),
+            "-c",
+            "user.name=s",
+            "-c",
+            "user.email=s@x",
+            "commit",
+            "-m",
+            "init",
+        ],
+        check=True,
+        capture_output=True,
     )
 
 
@@ -86,12 +101,20 @@ def main() -> int:
     seed = base / "source"
     _seed_repo(seed)
 
-    ledger = SqliteLedger.open(":memory:")
+    ledger = Ledger.open(
+        os.environ.get("CHORUS_LEDGER_DSN", "postgresql://localhost/chorus"),
+        company_id=_EXAMPLE_COMPANY,
+    )
     try:
         registry = RoleRegistry.from_plugins(default_roles())
         factory = EmployeeHarnessFactory(
-            api_key=api_key, base_url=base_url, deployment=deployment,
-            company_id="acme", roles=registry, pricing=default_pricing_from_env(), seed=seed,
+            api_key=api_key,
+            base_url=base_url,
+            deployment=deployment,
+            company_id="acme",
+            roles=registry,
+            pricing=default_pricing_from_env(),
+            seed=seed,
         )
         ledger.employees.create(Employee(id="ada", name="Ada", role="engineer"))
         ledger.employees.create(Employee(id="bob", name="Bob", role="engineer"))
@@ -102,10 +125,13 @@ def main() -> int:
         assign_task(ledger, "B", "bob")  # B assigned + woken, but blocked
 
         scheduler = Scheduler(
-            ledger=ledger, workforce=LedgerWorkforce(ledger.employees),
-            beat_runner_for=factory, budget_enforcer=BudgetEnforcer(ledger, company_id="acme"),
-            roles=registry, landers=default_landers(factory.company_root),
-            memory_writer=AppendOnlyMemoryWriter(factory.company_root / "memory"),
+            ledger=ledger,
+            workforce=LedgerWorkforce(ledger.employees),
+            beat_runner_for=factory,
+            budget_enforcer=BudgetEnforcer(ledger, company_id="acme"),
+            roles=registry,
+            landers=default_landers(factory.company_root),
+            memory_writer=EpisodicStore(factory.company_root / "memory"),
             max_concurrent_runs=2,
         )
 
@@ -117,7 +143,12 @@ def main() -> int:
         for n in range(1, 7):
             a = ledger.tasks.get("A")
             b = ledger.tasks.get("B")
-            if a and b and a.status in (TaskStatus.DONE, TaskStatus.BLOCKED) and b.status in (TaskStatus.DONE, TaskStatus.BLOCKED):
+            if (
+                a
+                and b
+                and a.status in (TaskStatus.DONE, TaskStatus.BLOCKED)
+                and b.status in (TaskStatus.DONE, TaskStatus.BLOCKED)
+            ):
                 break
 
             async def _pulse() -> None:
@@ -141,12 +172,23 @@ def main() -> int:
 
         a_done = ledger.tasks.get("A").status is TaskStatus.DONE  # type: ignore[union-attr]
         checks: list[tuple[str, bool, str]] = [
-            ("A dispatched first (has a run)", bool(ledger.runs.for_task("A")), f"A_runs={len(ledger.runs.for_task('A'))}"),
-            ("B never ran before A was done (dependency gate)", not b_ever_ran_before_a_done,
-             f"a_done_tick={a_done_tick} b_first_run_tick={b_first_run_tick}"),
+            (
+                "A dispatched first (has a run)",
+                bool(ledger.runs.for_task("A")),
+                f"A_runs={len(ledger.runs.for_task('A'))}",
+            ),
+            (
+                "B never ran before A was done (dependency gate)",
+                not b_ever_ran_before_a_done,
+                f"a_done_tick={a_done_tick} b_first_run_tick={b_first_run_tick}",
+            ),
             ("A reached done", a_done, str(ledger.tasks.get("A").status.value)),  # type: ignore[union-attr]
-            ("B dispatched only after A done", (b_first_run_tick is None) or (a_done_tick is not None and b_first_run_tick >= a_done_tick),
-             f"A done @ tick {a_done_tick}, B first ran @ tick {b_first_run_tick}"),
+            (
+                "B dispatched only after A done",
+                (b_first_run_tick is None)
+                or (a_done_tick is not None and b_first_run_tick >= a_done_tick),
+                f"A done @ tick {a_done_tick}, B first ran @ tick {b_first_run_tick}",
+            ),
         ]
         _write_report(checks, timeline)
 

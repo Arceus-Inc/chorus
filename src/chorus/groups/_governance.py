@@ -7,12 +7,18 @@ through the tested :class:`GovernanceResolver` (atomic + audited, fail-closed on
 
 from __future__ import annotations
 
-import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from chorus.errors import OrgInvariantViolation
-from chorus.governance import ApprovalDecision, GovernancePolicy, GovernanceResolver, ResolveOutcome
+from chorus.governance import (
+    ApprovalDecision,
+    GovernancePolicy,
+    GovernanceResolver,
+    ResolveOutcome,
+    WorkforcePlanService,
+)
+from chorus.ids import mint_id
 from chorus.ledger import (
     Approval,
     ApprovalAction,
@@ -20,7 +26,11 @@ from chorus.ledger import (
     ApprovalSubjectKind,
     BudgetPolicy,
     BudgetScope,
-    SqliteLedger,
+    Ledger,
+    StaffingRequest,
+    StaffingRequestStatus,
+    WorkforcePlan,
+    WorkforcePlanDraft,
 )
 from chorus.roles import RoleRegistry
 from chorus.workforce import Employee, EmployeeStatus, Workforce
@@ -42,7 +52,7 @@ class GovernanceFacade:
 
     def __init__(
         self,
-        ledger: SqliteLedger,
+        ledger: Ledger,
         workforce: Workforce,
         roles: RoleRegistry,
         policy: GovernancePolicy,
@@ -52,9 +62,20 @@ class GovernanceFacade:
         self._roles = roles
         self._policy = policy
         self._resolver = GovernanceResolver(ledger)
+        self._workforce_plans = WorkforcePlanService(
+            ledger,
+            workforce=workforce,
+            roles=roles,
+            max_org_depth=2,
+        )
 
     def request_hire(
-        self, *, name: str, role: str, reports_to: str | None = None, budget_cents: int | None = None
+        self,
+        *,
+        name: str,
+        role: str,
+        reports_to: str | None = None,
+        budget_cents: int | None = None,
     ) -> HireRequest:
         """Hire an employee, gated by policy (spec 04 §5 ``hire_employee``).
 
@@ -116,10 +137,41 @@ class GovernanceFacade:
         """The open-gate inbox — every pending approval awaiting a decision."""
         return self._ledger.approvals.pending()
 
+    def workforce_plans(self) -> list[WorkforcePlan]:
+        """Return every durable workforce-plan revision for human inspection."""
+        return self._ledger.workforce_plans.list()
+
+    def staffing_requests(
+        self,
+        *,
+        open_only: bool = True,
+    ) -> list[StaffingRequest]:
+        """Return staffing gaps awaiting governed workforce amendments."""
+        status = StaffingRequestStatus.OPEN if open_only else None
+        return self._ledger.staffing_requests.list(status=status)
+
+    def revise_workforce_plan(
+        self,
+        plan_id: str,
+        draft: WorkforcePlanDraft,
+        *,
+        by: str,
+    ) -> WorkforcePlan:
+        """Persist a human-edited replacement revision without applying it."""
+        return self._workforce_plans.revise(plan_id, draft, revised_by_user_id=by)
+
+    def approve_workforce_plan(self, plan_id: str, *, by: str) -> WorkforcePlan:
+        """Atomically materialize the latest valid proposal as a human decision."""
+        return self._workforce_plans.approve(plan_id, approved_by_user_id=by)
+
+    def reject_workforce_plan(self, plan_id: str, *, by: str) -> WorkforcePlan:
+        """Reject the latest proposed revision without changing the workforce."""
+        return self._workforce_plans.reject(plan_id, rejected_by_user_id=by)
+
     def _create_employee_budget(self, employee_id: str, amount_cents: int) -> None:
         self._ledger.budget_policies.create(
             BudgetPolicy(
-                id=f"bp_{uuid.uuid4().hex[:12]}",
+                id=mint_id(),
                 scope_type=BudgetScope.EMPLOYEE,
                 scope_id=employee_id,
                 amount=amount_cents,

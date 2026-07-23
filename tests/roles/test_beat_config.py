@@ -28,7 +28,9 @@ def test_projects_the_manifest_fields_the_beat_needs() -> None:
     assert config.permission_mode == "acceptEdits"  # dream-compatible string, not the enum
     assert config.memory_scope == "project"
     assert config.isolation == "worktree"  # the containment posture, as a plain string
-    assert config.sandbox == "repo-write"  # the trust posture (dream sandbox tier), as a plain string
+    assert (
+        config.sandbox == "repo-write"
+    )  # the trust posture (dream sandbox tier), as a plain string
 
 
 def test_max_sprints_defaults_to_one_and_projects_from_the_manifest() -> None:

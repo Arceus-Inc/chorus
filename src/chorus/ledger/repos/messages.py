@@ -8,16 +8,20 @@ A message lands here and carries no execution of its own — the scheduler turns
 
 from __future__ import annotations
 
-import sqlite3
-
 from chorus.ledger._models import Message, MessageKind
-from chorus.ledger.repos._base import from_iso, utcnow_iso
+from chorus.ledger.repos._base import (
+    LedgerConnection,
+    LedgerRow,
+    from_iso,
+    require_persisted,
+    utcnow_iso,
+)
 
 
 class MessageRepo:
     """Send, read, and drain ``message`` rows."""
 
-    def __init__(self, conn: sqlite3.Connection) -> None:
+    def __init__(self, conn: LedgerConnection) -> None:
         self._conn = conn
 
     def send(self, message: Message) -> Message:
@@ -38,14 +42,11 @@ class MessageRepo:
             ),
         )
         self._conn.commit()
-        sent = self.get(message.id)
-        assert sent is not None  # just inserted in this transaction
+        sent = require_persisted(self.get(message.id), message.id)
         return sent
 
     def get(self, message_id: str) -> Message | None:
-        row = self._conn.execute(
-            "SELECT * FROM message WHERE id = ?", (message_id,)
-        ).fetchone()
+        row = self._conn.execute("SELECT * FROM message WHERE id = ?", (message_id,)).fetchone()
         return _row_to_message(row) if row is not None else None
 
     def inbox(self, employee_id: str) -> list[Message]:
@@ -57,6 +58,16 @@ class MessageRepo:
         ).fetchall()
         return [_row_to_message(row) for row in rows]
 
+    def for_task(self, task_id: str) -> list[Message]:
+        """The task's comment thread, oldest first — read or unread, any recipient (OM-3).
+
+        Task-anchored messages ARE the comments; the thread is shared context, not an inbox.
+        """
+        rows = self._conn.execute(
+            "SELECT * FROM message WHERE task_id = ? ORDER BY created_at, id", (task_id,)
+        ).fetchall()
+        return [_row_to_message(row) for row in rows]
+
     def mark_read(self, message_id: str) -> None:
         now = utcnow_iso()
         self._conn.execute(
@@ -65,7 +76,7 @@ class MessageRepo:
         self._conn.commit()
 
 
-def _row_to_message(row: sqlite3.Row) -> Message:
+def _row_to_message(row: LedgerRow) -> Message:
     return Message(
         id=row["id"],
         to_employee_id=row["to_employee_id"],

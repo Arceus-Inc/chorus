@@ -17,12 +17,15 @@ Skips cleanly (exit 0) when those env vars are unset.
 from __future__ import annotations
 
 import os
+import uuid
+
+_EXAMPLE_COMPANY = str(uuid.uuid5(uuid.NAMESPACE_URL, "chorus-example"))  # one stable demo org
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
 
-from chorus.ledger import SqliteLedger
+from chorus.ledger import Ledger
 from chorus.workforce import Employee
 from chorus_cli._beats import default_pricing_from_env
 from chorus_cli._chat import ChatRenderBus, ensure_task
@@ -41,7 +44,18 @@ def _make_seed_repo(path: Path) -> None:
     (path / "calc.py").write_text(_SEED_CALC, encoding="utf-8")
     subprocess.run(["git", "-C", str(path), "add", "-A"], check=True, capture_output=True)
     subprocess.run(
-        ["git", "-C", str(path), "-c", "user.name=seed", "-c", "user.email=s@x", "commit", "-m", "init"],
+        [
+            "git",
+            "-C",
+            str(path),
+            "-c",
+            "user.name=seed",
+            "-c",
+            "user.email=s@x",
+            "commit",
+            "-m",
+            "init",
+        ],
         check=True,
         capture_output=True,
     )
@@ -61,9 +75,12 @@ def main() -> int:
     seed = base / "source"
     _make_seed_repo(seed)
 
-    ledger = SqliteLedger.open(":memory:")
+    ledger = Ledger.open(
+        os.environ.get("CHORUS_LEDGER_DSN", "postgresql://localhost/chorus"),
+        company_id=_EXAMPLE_COMPANY,
+    )
     try:
-        ledger.employees.create(Employee(id="ada", name="Ada", role="engineer"))
+        ledger.employees.create(Employee(id="ada", name="Ada", role="backend_engineer"))
         render = ChatRenderBus(out=sys.stdout)
         service = build_role_chat_service(
             ledger,
@@ -95,21 +112,31 @@ def main() -> int:
         dod = ledger.dod.get_for_task(task_id)
         print(f"\n[intake DoD] kind={dod.kind if dod else None}")
 
-        wt_calc = (worktree / "calc.py").read_text(encoding="utf-8") if (worktree / "calc.py").exists() else ""
+        wt_calc = (
+            (worktree / "calc.py").read_text(encoding="utf-8")
+            if (worktree / "calc.py").exists()
+            else ""
+        )
         print(f"\n[worktree calc.py after]\n{wt_calc}")
 
         assert service.workspace is not None
         result = service.workspace.merge("ada")
-        print(f"\n[merge] merged={result.merged} conflicted={result.conflicted} :: {result.detail.splitlines()[:1]}")
+        print(
+            f"\n[merge] merged={result.merged} conflicted={result.conflicted} :: {result.detail.splitlines()[:1]}"
+        )
 
         main_calc = service.workspace.repo / "calc.py"
         merged = main_calc.read_text(encoding="utf-8") if main_calc.exists() else ""
         print(f"\n[company main calc.py]\n{merged}")
 
         if "def subtract" in merged and "def add" in merged:
-            print("\nOK: the engineer's change merged into company main, branch-isolated then integrated.")
+            print(
+                "\nOK: the engineer's change merged into company main, branch-isolated then integrated."
+            )
         else:
-            print("\nprobe: no subtract in main this run (model non-determinism or no edit). see output above.")
+            print(
+                "\nprobe: no subtract in main this run (model non-determinism or no edit). see output above."
+            )
         return 0
     finally:
         ledger.close()

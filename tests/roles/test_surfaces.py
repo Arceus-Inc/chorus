@@ -5,38 +5,43 @@ from __future__ import annotations
 import pytest
 
 from chorus.roles import RoleSurfaceOverride, apply_role_surface_overrides, default_roles
+from chorus_employee.engineer import engineer_plugin
 
 pytestmark = pytest.mark.unit
 
 
 def _engineer():
-    return next(plugin for plugin in default_roles() if plugin.name == "engineer")
+    return engineer_plugin()
 
 
 def test_skills_override_enables_discovery_and_skill_tool() -> None:
     (engineer,) = [
         plugin
         for plugin in apply_role_surface_overrides(
-            default_roles(), RoleSurfaceOverride(role="engineer", skills=True)
+            (_engineer(),), RoleSurfaceOverride(role="engineer", skills=True)
         )
         if plugin.name == "engineer"
     ]
 
-    assert engineer.manifest.skills == ("project",)
+    # The override's contract: skills discovery ON — the engineer ships default skills
+    # (cross-beat), so the override leaves the existing tuple untouched; the ("project",)
+    # placeholder only fills a previously-EMPTY tuple.
+    assert engineer.manifest.skills  # non-empty ⇒ dream skill discovery is enabled
+    assert engineer.manifest.skills == engineer_plugin().manifest.skills
     assert "skill" in engineer.manifest.tools
 
 
 def test_mcp_and_plugins_override_only_selected_role() -> None:
     roles = apply_role_surface_overrides(
-        default_roles(), RoleSurfaceOverride(role="engineer", mcp=True, plugins=True)
+        default_roles(), RoleSurfaceOverride(role="backend_engineer", mcp=True, plugins=True)
     )
-    engineer = next(plugin for plugin in roles if plugin.name == "engineer")
-    reviewer = next(plugin for plugin in roles if plugin.name == "reviewer")
+    engineer = next(plugin for plugin in roles if plugin.name == "backend_engineer")
+    analyst = next(plugin for plugin in roles if plugin.name == "analyst")
 
     assert engineer.manifest.mcp is True
     assert engineer.manifest.plugins is True
-    assert reviewer.manifest.mcp is False
-    assert reviewer.manifest.plugins is False
+    assert analyst.manifest.mcp is False
+    assert analyst.manifest.plugins is False
 
 
 def test_false_skills_override_removes_skill_tool() -> None:

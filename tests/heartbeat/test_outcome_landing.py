@@ -16,9 +16,10 @@ import pytest
 
 from chorus.heartbeat import Scheduler, Wake, WakeReason
 from chorus.heartbeat._beat import BeatOutcome
-from chorus.ledger import SqliteLedger, Task, TaskStatus
+from chorus.ledger import Ledger, Task, TaskStatus
 from chorus.outcomes import Artifact, ArtifactType, LanderRegistry, Verifier
 from chorus.roles import RoleRegistry, default_roles
+from chorus.testing import uid
 from chorus.workforce import Employee
 from chorus.workspace import CompanyWorkspace
 from chorus_employee import default_landers
@@ -30,7 +31,14 @@ _NOW = datetime.fromisoformat("2026-06-17T12:00:00+00:00")
 
 class _PassingBeat:
     async def run_task(
-        self, *, task_id: str, intent: str, verification: object = (), rubric: object = "", observer: object = None, run_id: str | None = None
+        self,
+        *,
+        task_id: str,
+        intent: str,
+        verification: object = (),
+        rubric: object = "",
+        observer: object = None,
+        run_id: str | None = None,
     ) -> BeatOutcome:
         return BeatOutcome(passed=True, outcome={}, summary="ok")
 
@@ -56,21 +64,26 @@ class _RecordingLander:
         return Artifact(task_id=task.id, type=ArtifactType.PR, resource_ref={"branch": "chorus/e1"})
 
 
-def _seed(ledger: SqliteLedger) -> Employee:
-    employee = ledger.employees.create(Employee(id="e1", name="e1", role="engineer"))
+def _seed(ledger: Ledger) -> Employee:
+    employee = ledger.employees.create(Employee(id="e1", name="e1", role="backend_engineer"))
     ledger.tasks.submit(
-        Task(id="t1", intent="ship", status=TaskStatus.TODO, assignee_employee_id="e1")
+        Task(id=uid("t1"), intent="ship", status=TaskStatus.TODO, assignee_employee_id="e1")
     )
     # An explicit objective DoD so the beat lands directly — these tests exercise the landing path, not
-    # the engineer's reviewed-build gate (that is covered in tests/heartbeat/test_m3_review.py).
-    ledger.dod.create("t1", Verifier.command("true"))
+    # the backend engineer's reviewed-build gate (covered in test_m3_review.py).
+    ledger.dod.create(uid("t1"), Verifier.command("true"))
     ledger.wakes.enqueue(
-        Wake(id="w1", employee_id="e1", reason=WakeReason.TASK_ASSIGNED, payload={"task_id": "t1"})
+        Wake(
+            id=uid("w1"),
+            employee_id="e1",
+            reason=WakeReason.TASK_ASSIGNED,
+            payload={"task_id": uid("t1")},
+        )
     )
     return employee
 
 
-async def _run(ledger: SqliteLedger, *, landers: LanderRegistry | None) -> None:
+async def _run(ledger: Ledger, *, landers: LanderRegistry | None) -> None:
     sched = Scheduler(
         ledger=ledger,
         workforce=_FakeWorkforce(_seed(ledger)),
@@ -83,28 +96,28 @@ async def _run(ledger: SqliteLedger, *, landers: LanderRegistry | None) -> None:
     await sched.drain()
 
 
-async def test_passed_beat_records_the_role_artifact(ledger: SqliteLedger) -> None:
+async def test_passed_beat_records_the_role_artifact(ledger: Ledger) -> None:
     lander = _RecordingLander()
     await _run(ledger, landers=LanderRegistry.from_landers([lander]))
 
-    assert lander.landed == ["t1"]  # the engineer's "pr" lander was called for the passed beat
-    artifacts = ledger.artifacts.list_for_task("t1")
+    assert lander.landed == [uid("t1")]
+    artifacts = ledger.artifacts.list_for_task(uid("t1"))
     assert len(artifacts) == 1 and artifacts[0].type.value == "pr"  # recorded on the ledger
     assert artifacts[0].resource_ref == {"branch": "chorus/e1"}
-    assert ledger.tasks.get("t1").status is TaskStatus.DONE  # type: ignore[union-attr]
+    assert ledger.tasks.get(uid("t1")).status is TaskStatus.DONE  # type: ignore[union-attr]
 
 
-async def test_no_lander_still_finalises_done(ledger: SqliteLedger) -> None:
+async def test_no_lander_still_finalises_done(ledger: Ledger) -> None:
     await _run(ledger, landers=None)  # back-compat: nothing to land
 
-    assert ledger.artifacts.list_for_task("t1") == []
-    assert ledger.tasks.get("t1").status is TaskStatus.DONE  # type: ignore[union-attr]
+    assert ledger.artifacts.list_for_task(uid("t1")) == []
+    assert ledger.tasks.get(uid("t1")).status is TaskStatus.DONE  # type: ignore[union-attr]
 
 
 async def test_real_engineer_lander_records_a_pr_with_a_real_commit(
-    ledger: SqliteLedger, tmp_path: Path
+    ledger: Ledger, tmp_path: Path
 ) -> None:
-    # the real EngineerLander over a real worktree — the full kernel landing path, no fakes
+    # the real engineering lander over a real worktree: full kernel landing, no fakes
     company_root = tmp_path / "acme"
     worktree = CompanyWorkspace(company_root).worktree_for("e1").path
     (worktree / "feature.py").write_text("def f():\n    return 1\n", encoding="utf-8")  # the work
@@ -114,20 +127,20 @@ async def test_real_engineer_lander_records_a_pr_with_a_real_commit(
         workforce=_FakeWorkforce(_seed(ledger)),
         beat_runner=_PassingBeat(),
         roles=RoleRegistry.from_plugins(default_roles()),
-        landers=default_landers(company_root),  # the engineer's real "pr" lander
+        landers=default_landers(company_root),
         max_concurrent_runs=1,
     )
     await sched.tick(_NOW)
     await sched.drain()
 
-    artifacts = ledger.artifacts.list_for_task("t1")
+    artifacts = ledger.artifacts.list_for_task(uid("t1"))
     assert len(artifacts) == 1
     pr = artifacts[0]
     assert pr.type.value == "pr"
     assert pr.resource_ref is not None
     assert pr.resource_ref["branch"] == "chorus/e1"
     assert pr.resource_ref["commit"]  # a real commit sha
-    # the engineer's work was committed on its branch (the "PR" has content)
+    # the employee's work was committed on its branch (the "PR" has content)
     tracked = subprocess.run(
         ["git", "-C", str(worktree), "ls-files"], check=True, capture_output=True, text=True
     ).stdout

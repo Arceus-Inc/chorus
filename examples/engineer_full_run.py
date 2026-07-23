@@ -14,6 +14,9 @@ Skips cleanly (exit 0) when those env vars are unset.
 from __future__ import annotations
 
 import os
+import uuid
+
+_EXAMPLE_COMPANY = str(uuid.uuid5(uuid.NAMESPACE_URL, "chorus-example"))  # one stable demo org
 import subprocess
 import sys
 import tempfile
@@ -22,7 +25,7 @@ from pathlib import Path
 from chorus.budgets import BudgetEnforcer
 from chorus.events import Event, EventKind
 from chorus.heartbeat import Scheduler
-from chorus.ledger import SqliteLedger, Task, TaskStatus
+from chorus.ledger import Ledger, Task, TaskStatus
 from chorus.lifecycle import assign_task
 from chorus.observability import EventBus
 from chorus.roles import RoleRegistry, default_roles, role_beat_config
@@ -105,7 +108,18 @@ def _seed_repo(path: Path) -> None:
     )
     subprocess.run(["git", "-C", str(path), "add", "-A"], check=True, capture_output=True)
     subprocess.run(
-        ["git", "-C", str(path), "-c", "user.name=s", "-c", "user.email=s@x", "commit", "-m", "init"],
+        [
+            "git",
+            "-C",
+            str(path),
+            "-c",
+            "user.name=s",
+            "-c",
+            "user.email=s@x",
+            "commit",
+            "-m",
+            "init",
+        ],
         check=True,
         capture_output=True,
     )
@@ -128,12 +142,20 @@ def main() -> int:
     seed = base / "source"
     _seed_repo(seed)
 
-    ledger = SqliteLedger.open(":memory:")
+    ledger = Ledger.open(
+        os.environ.get("CHORUS_LEDGER_DSN", "postgresql://localhost/chorus"),
+        company_id=_EXAMPLE_COMPANY,
+    )
     try:
         registry = RoleRegistry.from_plugins(default_roles())
         factory = EmployeeHarnessFactory(
-            api_key=api_key, base_url=base_url, deployment=deployment,
-            company_id="acme", roles=registry, pricing=default_pricing_from_env(), seed=seed,
+            api_key=api_key,
+            base_url=base_url,
+            deployment=deployment,
+            company_id="acme",
+            roles=registry,
+            pricing=default_pricing_from_env(),
+            seed=seed,
         )
         ledger.employees.create(Employee(id="ada", name="Ada", role="engineer"))
 
@@ -147,7 +169,9 @@ def main() -> int:
         _log(f"   permission: {cfg.permission_mode}   memory: {cfg.memory_scope}")
         _log(f"   worktree : {mat.working_dir}")
         _log(f"   branch   : chorus/ada   (seeded from {seed.name})")
-        _log(f"   DoD      : {cfg.tools and 'pytest -q && ruff check .'} (CI gate, auto-applied at intake)")
+        _log(
+            f"   DoD      : {cfg.tools and 'pytest -q && ruff check .'} (CI gate, auto-applied at intake)"
+        )
         _log(f"   seeded   : {_git(mat.working_dir, 'ls-files')!r}")
 
         # 2. The task.
@@ -159,10 +183,14 @@ def main() -> int:
 
         # 3. The kernel ticks — dispatch the beat, watch the run_task loop.
         scheduler = Scheduler(
-            ledger=ledger, workforce=LedgerWorkforce(ledger.employees),
-            beat_runner_for=factory, budget_enforcer=BudgetEnforcer(ledger, company_id="acme"),
-            roles=registry, landers=default_landers(factory.company_root),
-            event_bus=LoggingBus(), max_concurrent_runs=1,
+            ledger=ledger,
+            workforce=LedgerWorkforce(ledger.employees),
+            beat_runner_for=factory,
+            budget_enforcer=BudgetEnforcer(ledger, company_id="acme"),
+            roles=registry,
+            landers=default_landers(factory.company_root),
+            event_bus=LoggingBus(),
+            max_concurrent_runs=1,
         )
         import asyncio
 
@@ -208,7 +236,9 @@ def main() -> int:
             _log(f"   company main log:\n{_git(company_main, 'log', '--oneline', '-3')}")
             integrated = "subtract" in (company_main / "calc.py").read_text(encoding="utf-8")
             _log(f"   company main has subtract(): {integrated}")
-            _log("   → the engineer shipped: DoD green (pytest+ruff) → PR recorded → merged to main.")
+            _log(
+                "   → the engineer shipped: DoD green (pytest+ruff) → PR recorded → merged to main."
+            )
         else:
             _log("   no artifact landed (DoD not green this run — see run/DoD status above).")
         return 0

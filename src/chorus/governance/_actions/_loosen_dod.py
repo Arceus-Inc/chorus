@@ -13,7 +13,7 @@ from chorus.governance._types import ActionOutcome
 from chorus.ledger import Approval, ApprovalAction
 
 if TYPE_CHECKING:
-    from chorus.ledger import SqliteLedger
+    from chorus.ledger import Ledger
 
 _LOOSENED = "loosened"
 _UNCHANGED = "unchanged"
@@ -25,14 +25,16 @@ class LoosenDodAction:
 
     action = ApprovalAction.LOOSEN_DOD
 
-    def __init__(self, ledger: SqliteLedger) -> None:
+    def __init__(self, ledger: Ledger) -> None:
         self._ledger = ledger
 
     def on_open(self, approval: Approval) -> None:
         return None  # the task keeps running under the old DoD; the resolver audits the GATED event
 
     def on_approve(self, approval: Approval) -> ActionOutcome:
-        self._ledger.dod.apply_proposed_revision(approval.subject_id)  # swap + bump revision + clear
+        self._ledger.dod.apply_proposed_revision(
+            approval.subject_id
+        )  # swap + bump revision + clear
         return ActionOutcome(_LOOSENED)
 
     def on_deny(self, approval: Approval) -> ActionOutcome:

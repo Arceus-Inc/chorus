@@ -12,7 +12,8 @@ import pytest
 
 from chorus.heartbeat import Scheduler, Wake, WakeReason
 from chorus.heartbeat._beat import BeatDisposition, BeatOutcome
-from chorus.ledger import RunStatus, SqliteLedger, Task, TaskStatus
+from chorus.ledger import Ledger, RunStatus, Task, TaskStatus
+from chorus.testing import uid
 from chorus.workforce import Employee
 
 pytestmark = pytest.mark.integration
@@ -27,7 +28,14 @@ class _FlakyBeat:
         self.calls = 0
 
     async def run_task(
-        self, *, task_id: str, intent: str, verification: object = (), rubric: object = "", observer: object = None, run_id: str | None = None
+        self,
+        *,
+        task_id: str,
+        intent: str,
+        verification: object = (),
+        rubric: object = "",
+        observer: object = None,
+        run_id: str | None = None,
     ) -> BeatOutcome:
         self.calls += 1
         if self.calls <= self._fail_times:
@@ -48,11 +56,18 @@ class _FakeWorkforce:
         return self._by_id[employee_id]
 
 
-def _dispatch(ledger: SqliteLedger, beat: _FlakyBeat, *, transient_retries: int = 2) -> Scheduler:
-    employee = ledger.employees.create(Employee(id="e1", name="e1", role="engineer"))
-    ledger.tasks.submit(Task(id="t1", intent="x", status=TaskStatus.TODO, assignee_employee_id="e1"))
+def _dispatch(ledger: Ledger, beat: _FlakyBeat, *, transient_retries: int = 2) -> Scheduler:
+    employee = ledger.employees.create(Employee(id=uid("e1"), name=uid("e1"), role="engineer"))
+    ledger.tasks.submit(
+        Task(id=uid("t1"), intent="x", status=TaskStatus.TODO, assignee_employee_id=uid("e1"))
+    )
     ledger.wakes.enqueue(
-        Wake(id="w1", employee_id="e1", reason=WakeReason.MANUAL, payload={"task_id": "t1"})
+        Wake(
+            id=uid("w1"),
+            employee_id=uid("e1"),
+            reason=WakeReason.MANUAL,
+            payload={"task_id": uid("t1")},
+        )
     )
     return Scheduler(
         ledger=ledger,
@@ -63,30 +78,30 @@ def _dispatch(ledger: SqliteLedger, beat: _FlakyBeat, *, transient_retries: int 
     )
 
 
-async def test_retryable_fault_retries_until_it_passes(ledger: SqliteLedger) -> None:
+async def test_retryable_fault_retries_until_it_passes(ledger: Ledger) -> None:
     beat = _FlakyBeat(fail_times=2)  # two blips, then clean
     sched = _dispatch(ledger, beat, transient_retries=2)
     await sched.tick_once()
     await sched.drain()
     assert beat.calls == 3  # 1 attempt + 2 retries
-    assert ledger.runs.for_task("t1")[-1].status is RunStatus.SUCCEEDED
-    assert ledger.tasks.get("t1").status is TaskStatus.DONE  # type: ignore[union-attr]
+    assert ledger.runs.for_task(uid("t1"))[-1].status is RunStatus.SUCCEEDED
+    assert ledger.tasks.get(uid("t1")).status is TaskStatus.DONE  # type: ignore[union-attr]
 
 
-async def test_retryable_fault_strands_after_the_budget(ledger: SqliteLedger) -> None:
+async def test_retryable_fault_strands_after_the_budget(ledger: Ledger) -> None:
     beat = _FlakyBeat(fail_times=99)  # never recovers
     sched = _dispatch(ledger, beat, transient_retries=2)
     await sched.tick_once()
     await sched.drain()
     assert beat.calls == 3  # capped at 1 + 2 retries
-    assert ledger.runs.for_task("t1")[-1].status is RunStatus.FAILED
-    assert ledger.tasks.get("t1").status is TaskStatus.BLOCKED  # type: ignore[union-attr]
+    assert ledger.runs.for_task(uid("t1"))[-1].status is RunStatus.FAILED
+    assert ledger.tasks.get(uid("t1")).status is TaskStatus.BLOCKED  # type: ignore[union-attr]
 
 
-async def test_non_retryable_fault_is_not_retried(ledger: SqliteLedger) -> None:
+async def test_non_retryable_fault_is_not_retried(ledger: Ledger) -> None:
     beat = _FlakyBeat(fail_times=99, retryable=False)
     sched = _dispatch(ledger, beat, transient_retries=2)
     await sched.tick_once()
     await sched.drain()
     assert beat.calls == 1  # stranded on the first fault, no retry
-    assert ledger.tasks.get("t1").status is TaskStatus.BLOCKED  # type: ignore[union-attr]
+    assert ledger.tasks.get(uid("t1")).status is TaskStatus.BLOCKED  # type: ignore[union-attr]

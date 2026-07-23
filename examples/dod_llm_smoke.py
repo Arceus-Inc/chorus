@@ -17,6 +17,9 @@ from __future__ import annotations
 
 import asyncio
 import os
+import uuid
+
+_EXAMPLE_COMPANY = str(uuid.uuid5(uuid.NAMESPACE_URL, "chorus-example"))  # one stable demo org
 import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
@@ -26,7 +29,7 @@ import dream  # type: ignore[import-not-found]
 from chorus.adapters import DreamBeatRunner
 from chorus.governance import ApprovalDecision, GovernanceResolver
 from chorus.heartbeat import Scheduler
-from chorus.ledger import SqliteLedger, Task
+from chorus.ledger import Ledger, Task
 from chorus.lifecycle import assign_task
 from chorus.outcomes import Verifier
 from chorus.workforce import Employee
@@ -36,7 +39,7 @@ _INTENT = "Reply with the single word DONE."
 
 
 class _LedgerWorkforce:
-    def __init__(self, ledger: SqliteLedger) -> None:
+    def __init__(self, ledger: Ledger) -> None:
         self._ledger = ledger
 
     def get(self, employee_id: str) -> Employee:
@@ -59,16 +62,27 @@ def main() -> int:
         print("skipping: set AZURE_OPENAI_API_KEY, AZURE_OPENAI_BASE_URL, AZURE_OPENAI_DEPLOYMENT")
         return 0
 
-    ledger = SqliteLedger.open(":memory:")
+    ledger = Ledger.open(
+        os.environ.get("CHORUS_LEDGER_DSN", "postgresql://localhost/chorus"),
+        company_id=_EXAMPLE_COMPANY,
+    )
     try:
         with tempfile.TemporaryDirectory() as work_dir:
             harness = dream.build_harness(
-                model=deployment, api_key=api_key, base_url=base_url,
-                working_dir=Path(work_dir), skills=False, memory=False, mcp=False, plugins=False,
+                model=deployment,
+                api_key=api_key,
+                base_url=base_url,
+                working_dir=Path(work_dir),
+                skills=False,
+                memory=False,
+                mcp=False,
+                plugins=False,
             )
             scheduler = Scheduler(
-                ledger=ledger, workforce=_LedgerWorkforce(ledger),
-                beat_runner=DreamBeatRunner(harness), max_concurrent_runs=1,
+                ledger=ledger,
+                workforce=_LedgerWorkforce(ledger),
+                beat_runner=DreamBeatRunner(harness),
+                max_concurrent_runs=1,
             )
             ledger.employees.create(Employee(id="eng", name="alice", role="engineer"))
 
@@ -83,7 +97,10 @@ def main() -> int:
             if pending:
                 print(f"  beat ran → 'sign' is {sign_status}, approval {pending[0].id} opened")
                 GovernanceResolver(ledger).resolve(
-                    pending[0].id, decision=ApprovalDecision.APPROVE, decided_by_user_id="board", now=_NOW
+                    pending[0].id,
+                    decision=ApprovalDecision.APPROVE,
+                    decided_by_user_id="board",
+                    now=_NOW,
                 )
                 print(f"  board approved → 'sign' is {ledger.tasks.get('sign').status.value}")  # type: ignore[union-attr]
             else:

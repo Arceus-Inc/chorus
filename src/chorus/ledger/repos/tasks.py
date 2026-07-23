@@ -9,10 +9,16 @@ arrives with the M2 ``task_dependency`` table).
 
 from __future__ import annotations
 
-import sqlite3
-
-from chorus.ledger._models import OriginKind, Task, TaskPriority, TaskStatus
-from chorus.ledger.repos._base import dumps, from_iso, loads, to_iso, utcnow_iso
+from chorus.ledger._models import ExecutionMode, OriginKind, Task, TaskPriority, TaskStatus
+from chorus.ledger.repos._base import (
+    LedgerConnection,
+    LedgerRow,
+    dumps,
+    from_iso,
+    loads,
+    to_iso,
+    utcnow_iso,
+)
 from chorus.lifecycle._transitions import assert_legal
 
 # Statuses from which a task may be checked out into agent-owned in_progress (spec 02 §2). Includes
@@ -32,19 +38,20 @@ _STATUS_STAMP: dict[str, str] = {
 class TaskRepo:
     """Durable operations on ``task`` rows."""
 
-    def __init__(self, conn: sqlite3.Connection) -> None:
+    def __init__(self, conn: LedgerConnection) -> None:
         self._conn = conn
 
     def submit(self, task: Task) -> Task:
         """Insert a task. Exact-once for self-spawned work via the origin partial-unique indexes."""
         now = utcnow_iso()
         self._conn.execute(
-            "INSERT INTO task (id, parent_id, goal_id, intent, status, priority, "
+            "INSERT INTO task (id, parent_id, goal_id, intent, status, priority, execution_mode, "
+            "team_id, "
             "assignee_employee_id, assignee_user_id, checkout_run_id, execution_run_id, depth, "
             "request_depth, origin_kind, origin_id, origin_fingerprint, created_by_employee_id, "
             "created_by_user_id, created_at, updated_at, started_at, completed_at, cancelled_at, "
             "trust_preset, trust_boundary) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 task.id,
                 task.parent_id,
@@ -52,6 +59,8 @@ class TaskRepo:
                 task.intent,
                 task.status.value,
                 task.priority.value,
+                task.execution_mode.value,
+                task.team_id,
                 task.assignee_employee_id,
                 task.assignee_user_id,
                 task.checkout_run_id,
@@ -84,6 +93,19 @@ class TaskRepo:
         rows = self._conn.execute("SELECT * FROM task ORDER BY created_at, id").fetchall()
         return [_row_to_task(row) for row in rows]
 
+    def find_by_origin(self, origin_kind: OriginKind, origin_fingerprint: str) -> Task | None:
+        """The newest task with this origin + fingerprint — horizon's idempotent-intake dedup check.
+
+        A ``horizon_intake`` submitter checks this before opening a task so re-deriving the same
+        opportunity is a no-op (the fingerprint policy is horizon's; this is the read it needs).
+        """
+        row = self._conn.execute(
+            "SELECT * FROM task WHERE origin_kind = ? AND origin_fingerprint = ? "
+            "ORDER BY created_at DESC, id DESC LIMIT 1",
+            (origin_kind.value, origin_fingerprint),
+        ).fetchone()
+        return _row_to_task(row) if row is not None else None
+
     def checkout(self, task_id: str, *, employee_id: str, run_id: str) -> bool:
         """Atomically claim a task. Returns ``False`` (a 409) if a live owner already holds it."""
         now = utcnow_iso()
@@ -96,7 +118,7 @@ class TaskRepo:
             (run_id, run_id, employee_id, now, now, task_id, *_CLAIMABLE),
         )
         self._conn.commit()
-        return cursor.rowcount == 1
+        return bool(cursor.rowcount == 1)
 
     def release_locks(self, task_id: str, *, run_id: str) -> None:
         """Compare-and-clear: only release locks still pointing at ``run_id`` (spec 01 invariant 4)."""
@@ -121,6 +143,14 @@ class TaskRepo:
         self._conn.execute(
             "UPDATE task SET trust_preset = ?, trust_boundary = ?, updated_at = ? WHERE id = ?",
             (preset, dumps(boundary) if boundary is not None else None, utcnow_iso(), task_id),
+        )
+        self._conn.commit()
+
+    def set_priority(self, task_id: str, priority: TaskPriority) -> None:
+        """Reprioritise a task — a pure data write (no scheduling side effects)."""
+        self._conn.execute(
+            "UPDATE task SET priority = ?, updated_at = ? WHERE id = ?",
+            (priority.value, utcnow_iso(), task_id),
         )
         self._conn.commit()
 
@@ -171,7 +201,7 @@ class TaskRepo:
             (employee_id, now, task_id),
         )
         self._conn.commit()
-        return cursor.rowcount == 1
+        return bool(cursor.rowcount == 1)
 
     def has_children(self, parent_id: str) -> bool:
         """True iff ``parent_id`` has at least one child task (it delegated — spec M3 §5)."""
@@ -253,6 +283,15 @@ class TaskRepo:
         ).fetchone()
         return _row_to_task(row) if row is not None else None
 
+    def has_unresolved_for_assignee(self, employee_id: str) -> bool:
+        """Whether an employee still owns any nonterminal task, including parked work."""
+        row = self._conn.execute(
+            "SELECT 1 FROM task WHERE assignee_employee_id = ? "
+            "AND status NOT IN ('done', 'cancelled', 'rejected') LIMIT 1",
+            (employee_id,),
+        ).fetchone()
+        return row is not None
+
     def has_open_for_routine(self, routine_id: str) -> bool:
         """True iff a non-terminal task spawned by this routine is still live (spec 03 §4).
 
@@ -267,12 +306,14 @@ class TaskRepo:
         return row is not None
 
 
-def _row_to_task(row: sqlite3.Row) -> Task:
+def _row_to_task(row: LedgerRow) -> Task:
     return Task(
         id=row["id"],
         intent=row["intent"],
         status=TaskStatus(row["status"]),
         priority=TaskPriority(row["priority"]),
+        execution_mode=ExecutionMode(row["execution_mode"]),
+        team_id=row["team_id"],
         assignee_employee_id=row["assignee_employee_id"],
         assignee_user_id=row["assignee_user_id"],
         goal_id=row["goal_id"],

@@ -7,16 +7,20 @@ exact-once per non-null ``idempotency_key`` (a second firing with the same key r
 
 from __future__ import annotations
 
-import sqlite3
-
 from chorus.ledger._models import RoutineRun, RoutineRunStatus
-from chorus.ledger.repos._base import from_iso, utcnow_iso
+from chorus.ledger.repos._base import (
+    LedgerConnection,
+    LedgerRow,
+    from_iso,
+    require_persisted,
+    utcnow_iso,
+)
 
 
 class RoutineRunRepo:
     """Record, read, and dispatch ``routine_run`` rows."""
 
-    def __init__(self, conn: sqlite3.Connection) -> None:
+    def __init__(self, conn: LedgerConnection) -> None:
         self._conn = conn
 
     def record(self, run: RoutineRun) -> RoutineRun:
@@ -40,14 +44,11 @@ class RoutineRunRepo:
             ),
         )
         self._conn.commit()
-        recorded = self.get(run.id)
-        assert recorded is not None  # just inserted in this transaction
+        recorded = require_persisted(self.get(run.id), run.id)
         return recorded
 
     def get(self, run_id: str) -> RoutineRun | None:
-        row = self._conn.execute(
-            "SELECT * FROM routine_run WHERE id = ?", (run_id,)
-        ).fetchone()
+        row = self._conn.execute("SELECT * FROM routine_run WHERE id = ?", (run_id,)).fetchone()
         return _row_to_run(row) if row is not None else None
 
     def by_routine(self, routine_id: str) -> list[RoutineRun]:
@@ -67,7 +68,7 @@ class RoutineRunRepo:
         self._conn.commit()
 
 
-def _row_to_run(row: sqlite3.Row) -> RoutineRun:
+def _row_to_run(row: LedgerRow) -> RoutineRun:
     return RoutineRun(
         id=row["id"],
         routine_id=row["routine_id"],

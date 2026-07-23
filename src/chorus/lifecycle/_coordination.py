@@ -13,18 +13,18 @@ Both run in one ``ledger.transaction()`` so the write and its wake commit togeth
 
 from __future__ import annotations
 
-import uuid
 from typing import TYPE_CHECKING
 
+from chorus.ids import mint_id
 from chorus.ledger._models import ActivityVerb, Wake, WakeReason
 from chorus.lifecycle._audit import record_activity
 
 if TYPE_CHECKING:
-    from chorus.ledger import Message, SqliteLedger
+    from chorus.ledger import Ledger, Message
 
 
 def assign_task(
-    ledger: SqliteLedger, task_id: str, employee_id: str, *, assigned_by: str | None = None
+    ledger: Ledger, task_id: str, employee_id: str, *, assigned_by: str | None = None
 ) -> Wake | None:
     """Assign ``task_id`` to ``employee_id`` and wake them (spec 03 §2).
 
@@ -37,7 +37,7 @@ def assign_task(
             return None
         wake = ledger.wakes.enqueue(
             Wake(
-                id=f"wake_{uuid.uuid4().hex[:12]}",
+                id=mint_id(),
                 employee_id=employee_id,
                 reason=WakeReason.TASK_ASSIGNED,
                 payload={"task_id": task_id},
@@ -59,7 +59,7 @@ def assign_task(
     return wake
 
 
-def deliver_message(ledger: SqliteLedger, message: Message) -> Wake:
+def deliver_message(ledger: Ledger, message: Message) -> Wake:
     """Persist ``message`` and wake its recipient (spec 03 §2, spec 01 Cluster G).
 
     Atomic: the mailbox row and the ``message`` wake commit together. The wake coalesces per
@@ -70,7 +70,7 @@ def deliver_message(ledger: SqliteLedger, message: Message) -> Wake:
         sent = ledger.messages.send(message)
         wake = ledger.wakes.enqueue(
             Wake(
-                id=f"wake_{uuid.uuid4().hex[:12]}",
+                id=mint_id(),
                 employee_id=message.to_employee_id,
                 reason=WakeReason.MESSAGE,
                 payload={"message_id": sent.id},

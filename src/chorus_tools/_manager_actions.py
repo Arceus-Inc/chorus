@@ -8,16 +8,30 @@ from dream.tools._context import ToolExecutionContext
 from pydantic import BaseModel, Field
 
 from chorus.heartbeat import BeatContext
-from chorus.ledger import SqliteLedger
+from chorus.ledger import ExecutionMode, Ledger
 from chorus.lifecycle import CapabilityService, ChildPlan
 
 
 class SubmitTaskInput(BaseModel):
     """Arguments for ``submit_task`` — one follow-up child for the current parent task."""
 
-    label: str = Field(description="a short stable name for this child task, unique under the parent")
+    label: str = Field(
+        description="a short stable name for this child task, unique under the parent"
+    )
     intent: str = Field(description="what the follow-up task should accomplish")
     assignee: str = Field(description="the employee id of the direct report who will own this task")
+    execution_mode: ExecutionMode = Field(
+        default=ExecutionMode.DELIVERY,
+        description="delivery for specialist work, delegation for a nested management assignment",
+    )
+    can_subdelegate: bool = Field(
+        default=False,
+        description="explicitly grant this nested lead authority to sub-delegate",
+    )
+    replaces_task_id: str | None = Field(
+        default=None,
+        description="rejected or cancelled required child this corrective task replaces",
+    )
 
 
 class AssignTaskInput(BaseModel):
@@ -34,12 +48,13 @@ class SubmitTaskTool(BaseTool):
     description = (
         "Create one follow-up child task for the current manager task, assign it to a direct "
         "report, and make the current task wait on it. Use this during integration when exactly "
-        "one new piece of work is needed."
+        "one new piece of work is needed. Keep it a BIG chunk — a whole module or feature with its "
+        "own tests; do not split by function, file, or layer."
     )
     declaration = ToolDeclaration(risk="mutating", tier_required=1, timeout_seconds=30.0)
     input_model = SubmitTaskInput
 
-    def __init__(self, ledger: SqliteLedger) -> None:
+    def __init__(self, ledger: Ledger) -> None:
         self._service = CapabilityService(ledger)
 
     async def execute(self, input: dict[str, object], ctx: ToolExecutionContext) -> ToolResult:
@@ -48,7 +63,15 @@ class SubmitTaskTool(BaseTool):
         result = self._service.submit_one(
             parent_id=beat.task_id,
             revision=beat.run_id,
-            child=ChildPlan(label=args.label, intent=args.intent, assignee=args.assignee),
+            actor_employee_id=beat.employee_id,
+            child=ChildPlan(
+                label=args.label,
+                intent=args.intent,
+                assignee=args.assignee,
+                execution_mode=args.execution_mode,
+                can_subdelegate=args.can_subdelegate,
+                replaces_task_id=args.replaces_task_id,
+            ),
         )
         if result.reviewer_assignees:
             joined = ", ".join(result.reviewer_assignees)
@@ -73,6 +96,12 @@ class SubmitTaskTool(BaseTool):
                 structured={"depth_capped": True},
                 is_error=True,
             )
+        if result.authority_denied is not None:
+            return ToolResult(
+                content=f"refused: {result.authority_denied}; no task created",
+                structured={"authority_denied": result.authority_denied},
+                is_error=True,
+            )
         return ToolResult(
             content=f"created child task {result.child_id} and assigned it to {args.assignee}",
             structured={"child_id": result.child_id, "assignee": args.assignee},
@@ -90,7 +119,7 @@ class AssignTaskTool(BaseTool):
     declaration = ToolDeclaration(risk="mutating", tier_required=1, timeout_seconds=30.0)
     input_model = AssignTaskInput
 
-    def __init__(self, ledger: SqliteLedger) -> None:
+    def __init__(self, ledger: Ledger) -> None:
         self._service = CapabilityService(ledger)
 
     async def execute(self, input: dict[str, object], ctx: ToolExecutionContext) -> ToolResult:
@@ -118,6 +147,12 @@ class AssignTaskTool(BaseTool):
             return ToolResult(
                 content="refused: task is missing or terminal; no assignment changed",
                 structured={"terminal_or_missing": True},
+                is_error=True,
+            )
+        if result.authority_denied is not None:
+            return ToolResult(
+                content=f"refused: {result.authority_denied}; no assignment changed",
+                structured={"authority_denied": result.authority_denied},
                 is_error=True,
             )
         return ToolResult(

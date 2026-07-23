@@ -7,7 +7,8 @@ from collections.abc import Callable
 
 import pytest
 
-from chorus.ledger import SqliteLedger
+from chorus.ledger import Ledger
+from chorus.testing import uid
 from chorus_cli import (
     CliSession,
     CommandContext,
@@ -47,15 +48,13 @@ def test_unknown_verb_is_reported_not_fatal(session: CliSession) -> None:
 
 
 def test_unbalanced_quotes_are_reported_not_fatal(session: CliSession) -> None:
-    signal, out = _dispatch('submit t1 "unterminated', session)
+    signal, out = _dispatch(f'submit {uid("t1")} "unterminated', session)
     assert signal is LoopSignal.CONTINUE and "error:" in out
 
 
-def test_quoting_keeps_multiword_arguments_together(
-    session: CliSession, ledger: SqliteLedger
-) -> None:
-    _dispatch('submit t1 "ship the docs"', session)
-    task = ledger.tasks.get("t1")
+def test_quoting_keeps_multiword_arguments_together(session: CliSession, ledger: Ledger) -> None:
+    _dispatch(f'submit {uid("t1")} "ship the docs"', session)
+    task = ledger.tasks.get(uid("t1"))
     assert task is not None and task.intent == "ship the docs"
 
 
@@ -79,9 +78,7 @@ def test_a_handler_error_is_reported_not_fatal(session: CliSession) -> None:
 
 def test_run_repl_quits_on_quit_command(session: CliSession, make_input: MakeInput) -> None:
     out = io.StringIO()
-    code = run_repl(
-        session, REGISTRY, input_func=make_input(["quit"]), output=out, colour=False
-    )
+    code = run_repl(session, REGISTRY, input_func=make_input(["quit"]), output=out, colour=False)
     assert code == 0
     assert "chorus console" in out.getvalue()  # the banner printed
 
@@ -93,22 +90,22 @@ def test_run_repl_exits_cleanly_on_eof(session: CliSession, make_input: MakeInpu
 
 
 def test_run_repl_runs_commands_until_quit(
-    session: CliSession, ledger: SqliteLedger, make_input: MakeInput
+    session: CliSession, ledger: Ledger, make_input: MakeInput
 ) -> None:
     out = io.StringIO()
     run_repl(
         session,
         REGISTRY,
-        input_func=make_input(["hire Alice engineer", "submit t1 ship", "quit"]),
+        input_func=make_input(["hire Alice engineer", f"submit {uid('t1')} ship", "quit"]),
         output=out,
         colour=False,
     )
     assert ledger.employees.get("alice") is not None
-    assert ledger.tasks.get("t1") is not None
+    assert ledger.tasks.get(uid("t1")) is not None
 
 
 def test_run_repl_keeps_going_after_a_bad_command(
-    session: CliSession, ledger: SqliteLedger, make_input: MakeInput
+    session: CliSession, ledger: Ledger, make_input: MakeInput
 ) -> None:
     out = io.StringIO()
     run_repl(

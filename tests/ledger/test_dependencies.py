@@ -9,90 +9,95 @@ from __future__ import annotations
 
 import pytest
 
-from chorus.ledger import DependencyCycleError, SqliteLedger, Task, TaskStatus
+from chorus.ledger import DependencyCycleError, Ledger, Task, TaskStatus
+from chorus.testing import uid
 
 pytestmark = pytest.mark.integration
 
 
-def _task(ledger: SqliteLedger, tid: str, status: TaskStatus = TaskStatus.TODO) -> None:
+def _task(ledger: Ledger, tid: str, status: TaskStatus = TaskStatus.TODO) -> None:
     ledger.tasks.submit(Task(id=tid, intent=tid, status=status))
 
 
-def test_add_and_read_edges(ledger: SqliteLedger) -> None:
-    _task(ledger, "a")
-    _task(ledger, "b")
-    ledger.dependencies.add("b", "a")  # b depends on a
-    assert ledger.dependencies.blockers("b") == ["a"]
-    assert ledger.dependencies.dependents("a") == ["b"]
+def test_add_and_read_edges(ledger: Ledger) -> None:
+    _task(ledger, uid("a"))
+    _task(ledger, uid("b"))
+    ledger.dependencies.add(uid("b"), uid("a"))  # b depends on a
+    assert ledger.dependencies.blockers(uid("b")) == [uid("a")]
+    assert ledger.dependencies.dependents(uid("a")) == [uid("b")]
 
 
-def test_add_is_idempotent_and_returns_persisted_edge(ledger: SqliteLedger) -> None:
-    _task(ledger, "a")
-    _task(ledger, "b")
-    first = ledger.dependencies.add("b", "a")
-    second = ledger.dependencies.add("b", "a")  # duplicate — must return the persisted edge
-    assert ledger.dependencies.blockers("b") == ["a"]
+def test_add_is_idempotent_and_returns_persisted_edge(ledger: Ledger) -> None:
+    _task(ledger, uid("a"))
+    _task(ledger, uid("b"))
+    first = ledger.dependencies.add(uid("b"), uid("a"))
+    second = ledger.dependencies.add(
+        uid("b"), uid("a")
+    )  # duplicate — must return the persisted edge
+    assert ledger.dependencies.blockers(uid("b")) == [uid("a")]
     assert second.id == first.id  # not a freshly-generated, never-inserted id
     assert second.created_at == first.created_at
 
 
-def test_remove_edge(ledger: SqliteLedger) -> None:
-    _task(ledger, "a")
-    _task(ledger, "b")
-    ledger.dependencies.add("b", "a")
-    ledger.dependencies.remove("b", "a")
-    assert ledger.dependencies.blockers("b") == []
+def test_remove_edge(ledger: Ledger) -> None:
+    _task(ledger, uid("a"))
+    _task(ledger, uid("b"))
+    ledger.dependencies.add(uid("b"), uid("a"))
+    ledger.dependencies.remove(uid("b"), uid("a"))
+    assert ledger.dependencies.blockers(uid("b")) == []
 
 
-def test_self_dependency_rejected(ledger: SqliteLedger) -> None:
-    _task(ledger, "a")
+def test_self_dependency_rejected(ledger: Ledger) -> None:
+    _task(ledger, uid("a"))
     with pytest.raises(DependencyCycleError):
-        ledger.dependencies.add("a", "a")
+        ledger.dependencies.add(uid("a"), uid("a"))
 
 
-def test_cycle_rejected(ledger: SqliteLedger) -> None:
-    for tid in ("a", "b", "c"):
+def test_cycle_rejected(ledger: Ledger) -> None:
+    for tid in (uid("a"), uid("b"), uid("c")):
         _task(ledger, tid)
-    ledger.dependencies.add("b", "a")  # b <- a
-    ledger.dependencies.add("c", "b")  # c <- b
+    ledger.dependencies.add(uid("b"), uid("a"))  # b <- a
+    ledger.dependencies.add(uid("c"), uid("b"))  # c <- b
     with pytest.raises(DependencyCycleError):
-        ledger.dependencies.add("a", "c")  # a <- c would close a -> c -> b -> a
+        ledger.dependencies.add(uid("a"), uid("c"))  # a <- c would close a -> c -> b -> a
 
 
-def test_unresolved_blockers_excludes_done(ledger: SqliteLedger) -> None:
-    _task(ledger, "done_one", TaskStatus.DONE)
-    _task(ledger, "open_one", TaskStatus.TODO)
-    _task(ledger, "dep")
-    ledger.dependencies.add("dep", "done_one")
-    ledger.dependencies.add("dep", "open_one")
-    assert ledger.dependencies.unresolved_blockers("dep") == ["open_one"]
+def test_unresolved_blockers_excludes_done(ledger: Ledger) -> None:
+    _task(ledger, uid("done_one"), TaskStatus.DONE)
+    _task(ledger, uid("open_one"), TaskStatus.TODO)
+    _task(ledger, uid("dep"))
+    ledger.dependencies.add(uid("dep"), uid("done_one"))
+    ledger.dependencies.add(uid("dep"), uid("open_one"))
+    assert ledger.dependencies.unresolved_blockers(uid("dep")) == [uid("open_one")]
 
 
-def test_newly_unblocked_dependents(ledger: SqliteLedger) -> None:
-    _task(ledger, "a", TaskStatus.TODO)
-    _task(ledger, "dep", TaskStatus.TODO)
-    ledger.dependencies.add("dep", "a")
-    assert ledger.dependencies.newly_unblocked_dependents("a") == []  # a still open
-    ledger.tasks.set_status("a", TaskStatus.DONE)
-    assert ledger.dependencies.newly_unblocked_dependents("a") == ["dep"]
+def test_newly_unblocked_dependents(ledger: Ledger) -> None:
+    _task(ledger, uid("a"), TaskStatus.TODO)
+    _task(ledger, uid("dep"), TaskStatus.TODO)
+    ledger.dependencies.add(uid("dep"), uid("a"))
+    assert ledger.dependencies.newly_unblocked_dependents(uid("a")) == []  # a still open
+    ledger.tasks.set_status(uid("a"), TaskStatus.DONE)
+    assert ledger.dependencies.newly_unblocked_dependents(uid("a")) == [uid("dep")]
 
 
-def test_list_eligible_withholds_blocked_then_releases(ledger: SqliteLedger) -> None:
-    _task(ledger, "a", TaskStatus.TODO)
-    _task(ledger, "dep", TaskStatus.TODO)
-    ledger.dependencies.add("dep", "a")
+def test_list_eligible_withholds_blocked_then_releases(ledger: Ledger) -> None:
+    _task(ledger, uid("a"), TaskStatus.TODO)
+    _task(ledger, uid("dep"), TaskStatus.TODO)
+    ledger.dependencies.add(uid("dep"), uid("a"))
     before = [t.id for t in ledger.tasks.list_eligible(limit=10)]
-    assert "a" in before
-    assert "dep" not in before  # blocked by a (todo)
-    ledger.tasks.set_status("a", TaskStatus.DONE)
+    assert uid("a") in before
+    assert uid("dep") not in before  # blocked by a (todo)
+    ledger.tasks.set_status(uid("a"), TaskStatus.DONE)
     after = [t.id for t in ledger.tasks.list_eligible(limit=10)]
-    assert "dep" in after  # blocker resolved
+    assert uid("dep") in after  # blocker resolved
 
 
-def test_cancelled_blocker_keeps_dependent_blocked(ledger: SqliteLedger) -> None:
-    _task(ledger, "a", TaskStatus.TODO)
-    _task(ledger, "dep", TaskStatus.TODO)
-    ledger.dependencies.add("dep", "a")
-    ledger.tasks.set_status("a", TaskStatus.CANCELLED)  # cancelled is NOT resolved (spec 02 §2)
+def test_cancelled_blocker_keeps_dependent_blocked(ledger: Ledger) -> None:
+    _task(ledger, uid("a"), TaskStatus.TODO)
+    _task(ledger, uid("dep"), TaskStatus.TODO)
+    ledger.dependencies.add(uid("dep"), uid("a"))
+    ledger.tasks.set_status(
+        uid("a"), TaskStatus.CANCELLED
+    )  # cancelled is NOT resolved (spec 02 §2)
     eligible = [t.id for t in ledger.tasks.list_eligible(limit=10)]
-    assert "dep" not in eligible
+    assert uid("dep") not in eligible

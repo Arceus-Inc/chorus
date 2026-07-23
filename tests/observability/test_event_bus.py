@@ -9,6 +9,7 @@ import pytest
 
 from chorus.events import Event, EventKind
 from chorus.observability import EventBus, FanoutBus
+from chorus.testing import uid
 
 pytestmark = pytest.mark.unit
 
@@ -17,9 +18,9 @@ def _event(kind: EventKind = EventKind.RUN_STARTED) -> Event:
     return Event(
         kind=kind,
         at=datetime(2026, 6, 17, 18, 0, tzinfo=UTC),
-        task_id="task_1",
+        task_id=uid("task_1"),
         employee_id="employee",
-        run_id="run_1",
+        run_id=uid("run_1"),
         payload={"phase": "demo"},
     )
 
@@ -37,8 +38,8 @@ def test_event_bus_appends_jsonl_and_replays_events(tmp_path) -> None:  # type: 
             "employee_id": "employee",
             "kind": "run.started",
             "payload": {"phase": "demo"},
-            "run_id": "run_1",
-            "task_id": "task_1",
+            "run_id": uid("run_1"),
+            "task_id": uid("task_1"),
             "trace_id": None,
         }
     ]
@@ -57,7 +58,7 @@ def test_event_bus_subscribers_receive_events(tmp_path) -> None:  # type: ignore
     assert seen == [_event(EventKind.RUN_DONE)]
 
 
-def test_fanout_bus_isolates_sink_failures() -> None:
+def test_fanout_bus_isolates_sink_failures(caplog: pytest.LogCaptureFixture) -> None:
     seen: list[Event] = []
 
     class BrokenSink:
@@ -70,6 +71,9 @@ def test_fanout_bus_isolates_sink_failures() -> None:
 
     event = _event(EventKind.RUN_TOOL_USE)
 
-    FanoutBus(BrokenSink(), RecordingSink()).emit(event)
+    with caplog.at_level("WARNING"):
+        FanoutBus(BrokenSink(), RecordingSink()).emit(event)
 
     assert seen == [event]
+    # the failure is isolated but NOT silent — a dead sink must leave a log trail
+    assert "sink unavailable" in caplog.text

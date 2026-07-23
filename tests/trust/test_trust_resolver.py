@@ -57,7 +57,7 @@ def test_run_layer_can_clamp_further() -> None:
     assert out.sandbox is SandboxTier.READ_ONLY  # the run layer alone tightens it
 
 
-def test_low_trust_without_a_boundary_is_denied(  ) -> None:
+def test_low_trust_without_a_boundary_is_denied() -> None:
     with pytest.raises(TrustDenied):
         resolve_trust(
             role_sandbox=SandboxTier.REPO_WRITE,

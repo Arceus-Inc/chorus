@@ -10,15 +10,16 @@ from __future__ import annotations
 import pytest
 
 from chorus.facade import Caps, Chorus
-from chorus.ledger import SqliteLedger, Task, TaskStatus
+from chorus.ledger import Ledger, Task, TaskStatus
 from chorus.observability import EventBus, LedgerInspector, TaskView, WorkforceStatus
 from chorus.roles import RoleRegistry, default_roles
+from chorus.testing import open_test_ledger, uid
 from chorus.workforce import Employee, LedgerWorkforce
 
 pytestmark = pytest.mark.integration
 
 
-def _chorus(ledger: SqliteLedger) -> Chorus:
+def _chorus(ledger: Ledger) -> Chorus:
     return Chorus(
         ledger=ledger,
         workforce=LedgerWorkforce(ledger.employees),
@@ -32,14 +33,20 @@ def _chorus(ledger: SqliteLedger) -> Chorus:
     )
 
 
-def _seed(ledger: SqliteLedger) -> None:
+def _seed(ledger: Ledger) -> None:
     ledger.employees.create(Employee(id="ada", name="Ada", role="engineer"))
-    ledger.tasks.submit(Task(id="t1", intent="ship it", status=TaskStatus.IN_PROGRESS,
-                             assignee_employee_id="ada"))
+    ledger.tasks.submit(
+        Task(
+            id=uid("t1"),
+            intent="ship it",
+            status=TaskStatus.IN_PROGRESS,
+            assignee_employee_id="ada",
+        )
+    )
 
 
 def test_status_is_flat_and_projects_the_company() -> None:
-    ledger = SqliteLedger.open(":memory:")
+    ledger = open_test_ledger()
     try:
         _seed(ledger)
         status = _chorus(ledger).status()
@@ -51,10 +58,10 @@ def test_status_is_flat_and_projects_the_company() -> None:
 
 
 def test_inspect_group_task_resolves_a_view() -> None:
-    ledger = SqliteLedger.open(":memory:")
+    ledger = open_test_ledger()
     try:
         _seed(ledger)
-        view = _chorus(ledger).inspect.task("t1")
+        view = _chorus(ledger).inspect.task(uid("t1"))
         assert isinstance(view, TaskView)
         assert view.assignee == "Ada"
     finally:
@@ -62,16 +69,16 @@ def test_inspect_group_task_resolves_a_view() -> None:
 
 
 def test_inspect_group_stuck_lists_stalled_tasks() -> None:
-    ledger = SqliteLedger.open(":memory:")
+    ledger = open_test_ledger()
     try:
         _seed(ledger)  # t1 is in-progress with no live run → stalled
-        assert [v.id for v in _chorus(ledger).inspect.stuck()] == ["t1"]
+        assert [v.id for v in _chorus(ledger).inspect.stuck()] == [uid("t1")]
     finally:
         ledger.close()
 
 
 def test_inspect_group_events_replays_the_stream() -> None:
-    ledger = SqliteLedger.open(":memory:")
+    ledger = open_test_ledger()
     try:
         _seed(ledger)
         # no events emitted on this bus → empty replay, but the method is wired (no stub)
@@ -81,9 +88,9 @@ def test_inspect_group_events_replays_the_stream() -> None:
 
 
 def test_task_unknown_raises_through_the_group() -> None:
-    ledger = SqliteLedger.open(":memory:")
+    ledger = open_test_ledger()
     try:
         with pytest.raises(KeyError):
-            _chorus(ledger).inspect.task("nope")
+            _chorus(ledger).inspect.task(uid("nope"))
     finally:
         ledger.close()

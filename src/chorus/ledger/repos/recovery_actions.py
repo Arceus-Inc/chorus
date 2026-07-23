@@ -8,21 +8,28 @@ source); ``record_attempt`` bumps the bounded attempt counter.
 
 from __future__ import annotations
 
-import sqlite3
-
 from chorus.ledger._models import (
     RecoveryAction,
     RecoveryKind,
     RecoveryOutcome,
     RecoveryStatus,
 )
-from chorus.ledger.repos._base import dumps, from_iso, loads, to_iso, utcnow_iso
+from chorus.ledger.repos._base import (
+    LedgerConnection,
+    LedgerRow,
+    dumps,
+    from_iso,
+    loads_dict,
+    require_persisted,
+    to_iso,
+    utcnow_iso,
+)
 
 
 class RecoveryActionRepo:
     """Open, escalate, attempt, and resolve ``recovery_action`` rows."""
 
-    def __init__(self, conn: sqlite3.Connection) -> None:
+    def __init__(self, conn: LedgerConnection) -> None:
         self._conn = conn
 
     def open(self, action: RecoveryAction) -> RecoveryAction:
@@ -59,8 +66,7 @@ class RecoveryActionRepo:
             ),
         )
         self._conn.commit()
-        opened = self.get(action.id)
-        assert opened is not None  # just inserted in this transaction
+        opened = require_persisted(self.get(action.id), action.id)
         return opened
 
     def get(self, action_id: str) -> RecoveryAction | None:
@@ -102,9 +108,7 @@ class RecoveryActionRepo:
         if action is None:
             raise KeyError(action_id)
         if action.attempt_count >= action.max_attempts:
-            raise ValueError(
-                f"recovery {action_id} exhausted its {action.max_attempts} attempt(s)"
-            )
+            raise ValueError(f"recovery {action_id} exhausted its {action.max_attempts} attempt(s)")
         now = utcnow_iso()
         self._conn.execute(
             "UPDATE recovery_action SET attempt_count = attempt_count + 1, last_attempt_at = ? "
@@ -112,8 +116,7 @@ class RecoveryActionRepo:
             (now, action_id),
         )
         self._conn.commit()
-        updated = self.get(action_id)
-        assert updated is not None  # exists — we read it above
+        updated = require_persisted(self.get(action_id), action_id)
         return updated
 
     def resolve(
@@ -147,7 +150,7 @@ class RecoveryActionRepo:
         self._conn.commit()
 
 
-def _row_to_action(row: sqlite3.Row) -> RecoveryAction:
+def _row_to_action(row: LedgerRow) -> RecoveryAction:
     raw_outcome = row["outcome"]
     return RecoveryAction(
         id=row["id"],
@@ -161,10 +164,10 @@ def _row_to_action(row: sqlite3.Row) -> RecoveryAction:
         return_owner_employee_id=row["return_owner_employee_id"],
         cause=row["cause"],
         fingerprint=row["fingerprint"],
-        evidence=loads(row["evidence"]) or {},
+        evidence=loads_dict(row["evidence"]),
         next_action=row["next_action"],
-        wake_policy=loads(row["wake_policy"]) or {},
-        monitor_policy=loads(row["monitor_policy"]) or {},
+        wake_policy=loads_dict(row["wake_policy"]),
+        monitor_policy=loads_dict(row["monitor_policy"]),
         attempt_count=row["attempt_count"],
         max_attempts=row["max_attempts"],
         timeout_at=from_iso(row["timeout_at"]),

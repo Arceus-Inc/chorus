@@ -42,7 +42,7 @@ def test_hire_writes_role_md_with_frontmatter(repo: str) -> None:
 
 def test_hire_with_reports_to_records_the_edge(repo: str) -> None:
     wf = GitWorkforce(repo)
-    wf.hire(name="Boss", role="manager")
+    wf.hire(name="Boss", role="engineer")
     report = wf.hire(name="Alice", role="engineer", reports_to="boss")
     assert report.reports_to == "boss"
 
@@ -64,7 +64,7 @@ def test_hire_unknown_reports_to_raises(repo: str) -> None:
 def test_hire_self_edge_is_rejected(repo: str) -> None:
     # "Boss" slugs to "boss"; reporting to its own slug is a self-cycle.
     with pytest.raises(OrgInvariantViolation):
-        GitWorkforce(repo).hire(name="Boss", role="manager", reports_to="boss")
+        GitWorkforce(repo).hire(name="Boss", role="engineer", reports_to="boss")
 
 
 def test_hire_duplicate_slug_is_rejected(repo: str) -> None:
@@ -76,7 +76,7 @@ def test_hire_duplicate_slug_is_rejected(repo: str) -> None:
 
 def test_list_excludes_terminated(repo: str) -> None:
     wf = GitWorkforce(repo)
-    wf.hire(name="Boss", role="manager")
+    wf.hire(name="Boss", role="engineer")
     wf.hire(name="Alice", role="engineer", reports_to="boss")
     wf.terminate("alice")
     assert {e.id for e in wf.list()} == {"boss"}
@@ -84,7 +84,7 @@ def test_list_excludes_terminated(repo: str) -> None:
 
 def test_terminate_marks_terminated_irreversibly(repo: str) -> None:
     wf = GitWorkforce(repo)
-    wf.hire(name="Boss", role="manager")
+    wf.hire(name="Boss", role="engineer")
     wf.hire(name="Alice", role="engineer", reports_to="boss")
     wf.terminate("alice")
     assert wf.get("alice").status is EmployeeStatus.TERMINATED
@@ -92,7 +92,7 @@ def test_terminate_marks_terminated_irreversibly(repo: str) -> None:
 
 def test_terminate_is_idempotent(repo: str) -> None:
     wf = GitWorkforce(repo)
-    wf.hire(name="Boss", role="manager")
+    wf.hire(name="Boss", role="engineer")
     wf.hire(name="Alice", role="engineer", reports_to="boss")
     wf.terminate("alice")
     wf.terminate("alice")  # no raise — irreversible, not an error to repeat
@@ -101,7 +101,7 @@ def test_terminate_is_idempotent(repo: str) -> None:
 
 def test_terminate_root_is_rejected(repo: str) -> None:
     wf = GitWorkforce(repo)
-    wf.hire(name="Boss", role="manager")  # reports_to is None -> the org root
+    wf.hire(name="Boss", role="engineer")  # reports_to is None -> the org root
     with pytest.raises(OrgInvariantViolation):
         wf.terminate("boss")
 
@@ -113,7 +113,7 @@ def test_terminate_unknown_raises(repo: str) -> None:
 
 @pytest.mark.integration
 def test_org_persists_across_instances(repo: str) -> None:
-    GitWorkforce(repo).hire(name="Boss", role="manager")
+    GitWorkforce(repo).hire(name="Boss", role="engineer")
     GitWorkforce(repo).hire(name="Alice", role="engineer", reports_to="boss")
     fresh = GitWorkforce(repo)
     assert fresh.get("alice").reports_to == "boss"

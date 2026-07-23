@@ -7,34 +7,38 @@ event stream. :func:`record_activity` is the one writer the runtime calls so eve
 
 from __future__ import annotations
 
-import uuid
 from typing import TYPE_CHECKING, Any
 
+from chorus.ids import mint_id
 from chorus.ledger._models import Activity, ActivityVerb
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
-    from chorus.ledger import SqliteLedger
+    from chorus.ledger import Ledger
 
 
 def record_activity(
-    ledger: SqliteLedger,
+    ledger: Ledger,
     *,
     verb: ActivityVerb,
     subject_id: str,
     subject_kind: str = "task",
     actor_employee_id: str | None = None,
+    actor_user_id: str | None = None,
+    actor_system_principal_id: str | None = None,
     payload: Mapping[str, Any] | None = None,
 ) -> None:
     """Append one immutable governance-audit row (spec 08 §5). Kernel actor when ``actor`` is null."""
     ledger.activity.append(
         Activity(
-            id=f"act_{uuid.uuid4().hex[:12]}",
+            id=mint_id(),
             verb=verb,
             subject_kind=subject_kind,
             subject_id=subject_id,
             actor_employee_id=actor_employee_id,
+            actor_user_id=actor_user_id,
+            actor_system_principal_id=actor_system_principal_id,
             payload=payload or {},
         )
     )

@@ -11,17 +11,29 @@ import pytest
 
 from chorus.errors import UnknownEmployee
 from chorus.facade import Caps, Chorus
-from chorus.ledger import SqliteLedger, TaskPriority, TaskStatus
+from chorus.ledger import (
+    ActivityVerb,
+    DelegationContractStatus,
+    ExecutionMode,
+    Goal,
+    Ledger,
+    ManagementProfile,
+    OriginKind,
+    TaskPriority,
+    TaskStatus,
+    TeamStatus,
+)
 from chorus.ledger._models import WakeReason
 from chorus.observability import EventBus, LedgerInspector
 from chorus.outcomes import Verifier
 from chorus.roles import RoleRegistry, default_roles
+from chorus.testing import open_test_ledger, uid
 from chorus.workforce import Employee, LedgerWorkforce
 
 pytestmark = pytest.mark.integration
 
 
-def _chorus(ledger: SqliteLedger) -> Chorus:
+def _chorus(ledger: Ledger) -> Chorus:
     return Chorus(
         ledger=ledger,
         workforce=LedgerWorkforce(ledger.employees),
@@ -36,7 +48,7 @@ def _chorus(ledger: SqliteLedger) -> Chorus:
 
 
 def test_submit_creates_a_backlog_depth0_task() -> None:
-    ledger = SqliteLedger.open(":memory:")
+    ledger = open_test_ledger()
     try:
         task = _chorus(ledger).submit("build a login page")
         stored = ledger.tasks.get(task.id)
@@ -49,9 +61,9 @@ def test_submit_creates_a_backlog_depth0_task() -> None:
 
 
 def test_submit_with_assignee_assigns_and_wakes() -> None:
-    ledger = SqliteLedger.open(":memory:")
+    ledger = open_test_ledger()
     try:
-        ledger.employees.create(Employee(id="moe", name="Moe", role="manager"))
+        ledger.employees.create(Employee(id="moe", name="Moe", role="engineer"))
         task = _chorus(ledger).submit("build a login page", assignee="Moe")
         stored = ledger.tasks.get(task.id)
         assert stored is not None
@@ -63,8 +75,26 @@ def test_submit_with_assignee_assigns_and_wakes() -> None:
         ledger.close()
 
 
+def test_submit_resolves_plan_materialized_ids_exactly() -> None:
+    """A workforce-plan approval materializes employees under the CEO's refs (e.g.
+    ``new_backend_lead_1``), which are NOT slugs. Live finding (2026-07-17): submit's
+    slug-only lookup turned the underscores into hyphens and raised UnknownEmployee,
+    making the whole approved org unreachable. Exact id wins; slug stays the name path."""
+    ledger = open_test_ledger()
+    try:
+        ledger.employees.create(
+            Employee(id="new_backend_lead_1", name="Backend Engineer (Lead)", role="engineer")
+        )
+        task = _chorus(ledger).submit("ship the core", assignee="new_backend_lead_1")
+        stored = ledger.tasks.get(task.id)
+        assert stored is not None
+        assert stored.assignee_employee_id == "new_backend_lead_1"
+    finally:
+        ledger.close()
+
+
 def test_submit_unknown_assignee_is_fail_closed() -> None:
-    ledger = SqliteLedger.open(":memory:")
+    ledger = open_test_ledger()
     try:
         with pytest.raises(UnknownEmployee):
             _chorus(ledger).submit("x", assignee="ghost")
@@ -74,19 +104,19 @@ def test_submit_unknown_assignee_is_fail_closed() -> None:
 
 
 def test_submit_with_dod_sets_it() -> None:
-    ledger = SqliteLedger.open(":memory:")
+    ledger = open_test_ledger()
     try:
-        task = _chorus(ledger).submit("ship", dod=Verifier.command("pytest -q"))
+        task = _chorus(ledger).submit(uid("ship"), dod=Verifier.command("pytest -q"))
         assert ledger.dod.get_for_task(task.id) is not None
     finally:
         ledger.close()
 
 
 def test_submit_with_depends_on_adds_edges() -> None:
-    ledger = SqliteLedger.open(":memory:")
+    ledger = open_test_ledger()
     try:
         chorus = _chorus(ledger)
-        prereq = chorus.submit("prereq")
+        prereq = chorus.submit(uid("prereq"))
         task = chorus.submit("the work", depends_on=(prereq.id,))
         assert ledger.dependencies.unresolved_blockers(task.id) == [prereq.id]
     finally:
@@ -94,10 +124,169 @@ def test_submit_with_depends_on_adds_edges() -> None:
 
 
 def test_submit_honours_priority() -> None:
-    ledger = SqliteLedger.open(":memory:")
+    ledger = open_test_ledger()
     try:
-        task = _chorus(ledger).submit("urgent", priority=TaskPriority.HIGH)
+        task = _chorus(ledger).submit(uid("urgent"), priority=TaskPriority.HIGH)
         stored = ledger.tasks.get(task.id)
         assert stored is not None and stored.priority is TaskPriority.HIGH
+    finally:
+        ledger.close()
+
+
+def _seed_delegation_lead(ledger: Ledger) -> None:
+    ledger.employees.create(Employee(id="lead", name="Lead", role="engineer"))
+    ledger.goals.create(Goal(id=uid("goal-release"), title="Release"))
+    ledger.management_profiles.upsert(
+        ManagementProfile(
+            employee_id="lead",
+            granted_by_user_id="user-admin",
+            active=True,
+            can_lead=True,
+            can_subdelegate=True,
+            max_delegation_depth=2,
+            max_team_size=4,
+            allowed_professions=("engineer",),
+            spend_limit_cents=50_000,
+            version=1,
+        )
+    )
+
+
+def test_submit_root_delegation_atomically_wires_active_team_and_contract() -> None:
+    ledger = open_test_ledger()
+    try:
+        _seed_delegation_lead(ledger)
+
+        task = _chorus(ledger).submit(
+            "coordinate the release",
+            assignee="Lead",
+            goal_id=uid("goal-release"),
+            execution_mode=ExecutionMode.DELEGATION,
+            delegation_max_direct_children=2,
+        )
+
+        stored = ledger.tasks.get(task.id)
+        assert stored is not None
+        assert (stored.execution_mode, stored.assignee_employee_id, stored.status) == (
+            ExecutionMode.DELEGATION,
+            "lead",
+            TaskStatus.TODO,
+        )
+        assert stored.team_id is not None
+        team = ledger.teams.get(stored.team_id)
+        assert team is not None
+        assert (team.goal_id, team.lead_employee_id, team.status) == (
+            uid("goal-release"),
+            "lead",
+            TeamStatus.ACTIVE,
+        )
+        contract = ledger.delegation_contracts.get(task.id)
+        assert contract is not None
+        assert (
+            contract.status,
+            contract.management_profile_version,
+            contract.can_subdelegate,
+            contract.max_depth,
+            contract.max_team_size,
+            contract.max_direct_children,
+            contract.spend_limit_cents,
+            contract.objective_rubric,
+        ) == (
+            DelegationContractStatus.DELEGATED,
+            1,
+            True,
+            2,
+            4,
+            2,
+            50_000,
+            "coordinate the release",
+        )
+        assert [wake.reason for wake in ledger.wakes.queued(employee_id="lead")] == [
+            WakeReason.TASK_ASSIGNED
+        ]
+        contract_events = ledger.activity.by_subject("delegation_contract", task.id)
+        assert [event.verb for event in contract_events] == [ActivityVerb.DELEGATION_CREATED]
+        assert contract_events[0].payload == {"root": True, "team_id": stored.team_id}
+    finally:
+        ledger.close()
+
+
+def test_horizon_root_delegation_fingerprint_is_exact_once_at_facade_boundary() -> None:
+    ledger = open_test_ledger()
+    try:
+        _seed_delegation_lead(ledger)
+        chorus = _chorus(ledger)
+
+        first = chorus.submit(
+            "coordinate the release",
+            assignee="Lead",
+            goal_id=uid("goal-release"),
+            origin_kind=OriginKind.HORIZON_INTAKE,
+            origin_fingerprint="goal-release:v1",
+            execution_mode=ExecutionMode.DELEGATION,
+        )
+        retry = chorus.submit(
+            "coordinate the release",
+            assignee="Lead",
+            goal_id=uid("goal-release"),
+            origin_kind=OriginKind.HORIZON_INTAKE,
+            origin_fingerprint="goal-release:v1",
+            execution_mode=ExecutionMode.DELEGATION,
+        )
+
+        assert retry.id == first.id
+        assert len(ledger.tasks.all()) == 1
+        assert len(ledger.teams.list_active()) == 1
+        assert len(ledger.delegation_contracts.list()) == 1
+        assert len(ledger.wakes.queued(employee_id="lead")) == 1
+        assert len(ledger.activity.by_subject("delegation_contract", first.id)) == 1
+    finally:
+        ledger.close()
+
+
+def test_submit_root_delegation_rolls_back_the_whole_kickoff(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ledger = open_test_ledger()
+    try:
+        _seed_delegation_lead(ledger)
+
+        def fail_contract_create(contract: object) -> None:
+            raise RuntimeError("injected contract persistence failure")
+
+        monkeypatch.setattr(ledger.delegation_contracts, "create", fail_contract_create)
+
+        with pytest.raises(RuntimeError, match="injected contract persistence failure"):
+            _chorus(ledger).submit(
+                "coordinate the release",
+                assignee="Lead",
+                goal_id=uid("goal-release"),
+                execution_mode=ExecutionMode.DELEGATION,
+            )
+
+        assert ledger.tasks.all() == []
+        assert ledger.teams.for_goal(uid("goal-release")) is None
+        assert ledger.wakes.queued(employee_id="lead") == []
+        assert ledger.activity.all() == []
+
+        monkeypatch.undo()
+        task = _chorus(ledger).submit(
+            "coordinate the release",
+            assignee="Lead",
+            goal_id=uid("goal-release"),
+            execution_mode=ExecutionMode.DELEGATION,
+        )
+
+        team = ledger.teams.for_goal(uid("goal-release"))
+        assert team is not None
+        assert len(ledger.tasks.all()) == 1
+        assert ledger.delegation_contracts.get(task.id) is not None
+        assert [member.employee_id for member in ledger.team_members.members_of(team.id)] == [
+            "lead"
+        ]
+        assert [event.verb for event in ledger.activity.by_subject("team", team.id)] == [
+            ActivityVerb.TEAM_FORMED,
+            ActivityVerb.TEAM_ACTIVATED,
+        ]
     finally:
         ledger.close()

@@ -12,13 +12,14 @@ import pytest
 
 from chorus.facade import Chorus
 from chorus.outcomes import LanderRegistry
+from chorus.testing import open_test_ledger
 
 pytestmark = pytest.mark.integration
 
 
 def _build(**over: object) -> Chorus:
     base: dict[str, object] = {
-        "db_path": ":memory:",
+        "ledger": open_test_ledger(),
         "org_repo": "/tmp/chorus-f7-org",
         "memory_repo": "/tmp/chorus-f7-mem",
         "dream": None,
@@ -35,37 +36,50 @@ def test_build_threads_landers_into_the_scheduler() -> None:
 
 def test_build_defaults_to_no_landers() -> None:
     org = _build()
-    assert org._scheduler._landers is None  # unset → a passed beat lands without recording an artifact
+    assert (
+        org._scheduler._landers is None
+    )  # unset → a passed beat lands without recording an artifact
+
+
+def test_build_threads_the_memory_writer_into_the_scheduler(tmp_path) -> None:
+    """The store the facade opens must be the one the scheduler captures beats into — otherwise a
+    front-door org runs every beat with NO episodic memory (recall/lattice see an empty store)."""
+    org = _build(memory_repo=str(tmp_path / "mem"))
+    assert org._scheduler._memory_writer is org._memory_writer
 
 
 def test_build_shares_an_injected_ledger() -> None:
     """``ledger=`` lets the consumer hand build the *same* store the harness factory holds — so a
     reviewed-build reviewer (a capability tool) records its verdict into one ledger, not two."""
-    from chorus.ledger import SqliteLedger
 
-    store = SqliteLedger.open(":memory:")
+    store = open_test_ledger()
     try:
         org = Chorus.build(
-            ledger=store, org_repo="/tmp/chorus-f7-org", memory_repo="/tmp/chorus-f7-mem", dream=None
+            ledger=store,
+            org_repo="/tmp/chorus-f7-org",
+            memory_repo="/tmp/chorus-f7-mem",
+            dream=None,
         )
         assert org._ledger is store  # the injected store is the one the kernel uses
     finally:
         store.close()
 
 
-def test_build_rejects_both_db_path_and_ledger() -> None:
-    from chorus.ledger import SqliteLedger
-
-    store = SqliteLedger.open(":memory:")
+def test_build_rejects_both_dsn_and_ledger() -> None:
+    store = open_test_ledger()
     try:
-        with pytest.raises(ValueError, match="db_path"):
+        with pytest.raises(ValueError, match="dsn"):
             Chorus.build(
-                db_path=":memory:", ledger=store, org_repo="/tmp/o", memory_repo="/tmp/m", dream=None
+                dsn="postgresql://ignored/ignored",
+                ledger=store,
+                org_repo="/tmp/o",
+                memory_repo="/tmp/m",
+                dream=None,
             )
     finally:
         store.close()
 
 
-def test_build_requires_db_path_or_ledger() -> None:
-    with pytest.raises(ValueError, match="db_path"):
+def test_build_requires_dsn_or_ledger() -> None:
+    with pytest.raises(ValueError, match="dsn"):
         Chorus.build(org_repo="/tmp/o", memory_repo="/tmp/m", dream=None)

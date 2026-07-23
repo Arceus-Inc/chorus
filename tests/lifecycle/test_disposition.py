@@ -13,7 +13,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from chorus.ledger import SqliteLedger, Task, TaskStatus
+from chorus.ledger import Ledger, Task, TaskStatus
 from chorus.ledger._models import (
     Run,
     RunStatus,
@@ -21,6 +21,7 @@ from chorus.ledger._models import (
     WakeStatus,
 )
 from chorus.lifecycle import DispositionAction, reconcile_disposition
+from chorus.testing import uid
 from chorus.workforce import Employee
 
 NOW = datetime(2026, 6, 15, 12, 0, 0, tzinfo=UTC)
@@ -28,12 +29,12 @@ FUTURE = NOW + timedelta(seconds=60)
 
 
 @pytest.fixture(autouse=True)
-def emp(ledger: SqliteLedger) -> Employee:
+def emp(ledger: Ledger) -> Employee:
     return ledger.employees.create(Employee(id="emp_1", name="alice", role="engineer"))
 
 
 def _task(
-    ledger: SqliteLedger,
+    ledger: Ledger,
     status: TaskStatus = TaskStatus.IN_PROGRESS,
     *,
     assignee_employee_id: str | None = "emp_1",
@@ -41,7 +42,7 @@ def _task(
 ) -> Task:
     return ledger.tasks.submit(
         Task(
-            id="t1",
+            id=uid("t1"),
             intent="ship it",
             status=status,
             assignee_employee_id=assignee_employee_id,
@@ -50,10 +51,15 @@ def _task(
     )
 
 
-def _run(ledger: SqliteLedger, status: RunStatus, *, lease: datetime | None = None) -> Run:
+def _run(ledger: Ledger, status: RunStatus, *, lease: datetime | None = None) -> Run:
     return ledger.runs.create(
-        Run(id=f"run_{status.value}", employee_id="emp_1", task_id="t1", status=status,
-            lease_expires_at=lease)
+        Run(
+            id=uid(f"run_{status.value}"),
+            employee_id="emp_1",
+            task_id=uid("t1"),
+            status=status,
+            lease_expires_at=lease,
+        )
     )
 
 
@@ -61,7 +67,7 @@ def _run(ledger: SqliteLedger, status: RunStatus, *, lease: datetime | None = No
 
 
 def test_succeeded_run_left_in_progress_enqueues_one_finish_handoff(
-    ledger: SqliteLedger, emp: Employee
+    ledger: Ledger, emp: Employee
 ) -> None:
     task = _task(ledger)
     _run(ledger, RunStatus.SUCCEEDED)
@@ -72,12 +78,10 @@ def test_succeeded_run_left_in_progress_enqueues_one_finish_handoff(
     wake = queued[0]
     assert wake.reason is WakeReason.RECOVERY
     assert wake.payload.get("kind") == "finish_handoff"
-    assert wake.payload.get("task_id") == "t1"
+    assert wake.payload.get("task_id") == uid("t1")
 
 
-def test_finish_handoff_is_idempotent_while_pending(
-    ledger: SqliteLedger, emp: Employee
-) -> None:
+def test_finish_handoff_is_idempotent_while_pending(ledger: Ledger, emp: Employee) -> None:
     task = _task(ledger)
     _run(ledger, RunStatus.SUCCEEDED)
     reconcile_disposition(task, ledger, now=NOW)
@@ -90,22 +94,22 @@ def test_finish_handoff_is_idempotent_while_pending(
 # -- guards: when NOT to nag ---------------------------------------------------
 
 
-def test_human_owned_is_noop(ledger: SqliteLedger) -> None:
-    task = _task(ledger, assignee_employee_id=None, assignee_user_id="u_1")
+def test_human_owned_is_noop(ledger: Ledger) -> None:
+    task = _task(ledger, assignee_employee_id=None, assignee_user_id=uid("u_1"))
     _run(ledger, RunStatus.SUCCEEDED)
     result = reconcile_disposition(task, ledger, now=NOW)
     assert result.action is DispositionAction.NOOP
     assert result.reason == "human_owner"
 
 
-def test_active_run_is_noop(ledger: SqliteLedger, emp: Employee) -> None:
+def test_active_run_is_noop(ledger: Ledger, emp: Employee) -> None:
     task = _task(ledger)
     _run(ledger, RunStatus.RUNNING, lease=FUTURE)
     result = reconcile_disposition(task, ledger, now=NOW)
     assert result.action is DispositionAction.NOOP
 
 
-def test_crashed_run_is_not_disposition(ledger: SqliteLedger, emp: Employee) -> None:
+def test_crashed_run_is_not_disposition(ledger: Ledger, emp: Employee) -> None:
     # A failed run is continuity recovery (spec 02 §6), not a missing disposition.
     task = _task(ledger)
     _run(ledger, RunStatus.FAILED)
@@ -114,7 +118,7 @@ def test_crashed_run_is_not_disposition(ledger: SqliteLedger, emp: Employee) -> 
     assert result.reason == "no_successful_run"
 
 
-def test_not_in_progress_is_noop(ledger: SqliteLedger, emp: Employee) -> None:
+def test_not_in_progress_is_noop(ledger: Ledger, emp: Employee) -> None:
     task = _task(ledger, TaskStatus.IN_REVIEW)
     _run(ledger, RunStatus.SUCCEEDED)
     result = reconcile_disposition(task, ledger, now=NOW)
@@ -126,7 +130,7 @@ def test_not_in_progress_is_noop(ledger: SqliteLedger, emp: Employee) -> None:
 
 
 def test_delivered_handoff_still_stranded_escalates_to_blocked_recovery(
-    ledger: SqliteLedger, emp: Employee
+    ledger: Ledger, emp: Employee
 ) -> None:
     task = _task(ledger)
     _run(ledger, RunStatus.SUCCEEDED)
@@ -138,8 +142,8 @@ def test_delivered_handoff_still_stranded_escalates_to_blocked_recovery(
 
     result = reconcile_disposition(task, ledger, now=NOW)
     assert result.action is DispositionAction.ESCALATED
-    blocked = ledger.tasks.get("t1")
+    blocked = ledger.tasks.get(uid("t1"))
     assert blocked is not None and blocked.status is TaskStatus.BLOCKED
-    recovery = ledger.recovery_actions.active_for_source("t1")
+    recovery = ledger.recovery_actions.active_for_source(uid("t1"))
     assert recovery is not None
     assert recovery.owner_employee_id == "emp_1"

@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from chorus.ledger import SqliteLedger
+from chorus.testing import open_test_ledger
 from chorus_cli import CliSession, Console, LoopSignal, dispatch
 from chorus_cli._commands import REGISTRY
 
@@ -21,13 +21,13 @@ pytestmark = pytest.mark.integration
 
 def _run(line: str, session: CliSession) -> tuple[LoopSignal, str]:
     buffer = io.StringIO()
-    signal = dispatch(line, session=session, console=Console(out=buffer, colour=False), registry=REGISTRY)
+    signal = dispatch(
+        line, session=session, console=Console(out=buffer, colour=False), registry=REGISTRY
+    )
     return signal, buffer.getvalue()
 
 
-def test_export_writes_the_tree_and_reports_the_count(
-    session: CliSession, tmp_path: Path
-) -> None:
+def test_export_writes_the_tree_and_reports_the_count(session: CliSession, tmp_path: Path) -> None:
     _run("hire Boss manager", session)
     _run("hire Alice engineer boss", session)
     org = str(tmp_path / "org")
@@ -46,7 +46,7 @@ def test_export_then_import_round_trips_into_a_fresh_ledger(
     org = str(tmp_path / "org")
     _run(f"export {org}", session)
 
-    fresh_ledger = SqliteLedger.open(":memory:")
+    fresh_ledger = open_test_ledger()
     try:
         fresh = CliSession(ledger=fresh_ledger)
         _, out = _run(f"import {org}", fresh)

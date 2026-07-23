@@ -2,17 +2,24 @@
 
 from __future__ import annotations
 
-import sqlite3
 from datetime import datetime
 
 from chorus.ledger._models import Run, RunStatus
-from chorus.ledger.repos._base import dumps, from_iso, loads, to_iso, utcnow_iso
+from chorus.ledger.repos._base import (
+    LedgerConnection,
+    LedgerRow,
+    dumps,
+    from_iso,
+    loads_dict,
+    to_iso,
+    utcnow_iso,
+)
 
 
 class RunRepo:
     """Create + read + finish ``run`` rows."""
 
-    def __init__(self, conn: sqlite3.Connection) -> None:
+    def __init__(self, conn: LedgerConnection) -> None:
         self._conn = conn
 
     def create(self, run: Run) -> Run:
@@ -20,7 +27,8 @@ class RunRepo:
         self._conn.execute(
             "INSERT INTO run (id, employee_id, task_id, wake_id, status, lease_expires_at, "
             "liveness_state, continuation_attempt, outcome, usage, started_at, finished_at, "
-            "created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "created_at, principal_kind, system_principal_id) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 run.id,
                 run.employee_id,
@@ -35,6 +43,8 @@ class RunRepo:
                 to_iso(run.started_at),
                 to_iso(run.finished_at),
                 now,
+                run.principal_kind,
+                run.system_principal_id,
             ),
         )
         self._conn.commit()
@@ -68,6 +78,13 @@ class RunRepo:
             "SELECT DISTINCT employee_id FROM run WHERE status = 'running'"
         ).fetchall()
         return {row["employee_id"] for row in rows}
+
+    def running(self) -> list[Run]:
+        """Every live beat, oldest first — the allocation board's 'claimed' lane (OBS P6)."""
+        rows = self._conn.execute(
+            "SELECT * FROM run WHERE status = 'running' ORDER BY started_at, id"
+        ).fetchall()
+        return [_row_to_run(row) for row in rows]
 
     def running_with_expired_lease(self, now: datetime) -> list[Run]:
         """``running`` runs whose lease has passed (or was never set) - orphaned beats (spec 02 §7).
@@ -134,7 +151,7 @@ class RunRepo:
         self._conn.commit()
 
 
-def _row_to_run(row: sqlite3.Row) -> Run:
+def _row_to_run(row: LedgerRow) -> Run:
     return Run(
         id=row["id"],
         employee_id=row["employee_id"],
@@ -146,6 +163,8 @@ def _row_to_run(row: sqlite3.Row) -> Run:
         continuation_attempt=row["continuation_attempt"],
         started_at=from_iso(row["started_at"]),
         finished_at=from_iso(row["finished_at"]),
-        outcome=loads(row["outcome"]) or {},
-        usage=loads(row["usage"]) or {},
+        outcome=loads_dict(row["outcome"]),
+        usage=loads_dict(row["usage"]),
+        principal_kind=row["principal_kind"],
+        system_principal_id=row["system_principal_id"],
     )

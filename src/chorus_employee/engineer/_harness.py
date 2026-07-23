@@ -8,6 +8,8 @@ the dream component it drives, so the whole harness config reads top to bottom.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from chorus.roles._manifest import (
     Isolation,
     MemoryScope,
@@ -16,6 +18,8 @@ from chorus.roles._manifest import (
     SandboxTier,
 )
 from chorus_employee.engineer._brief import ENGINEER_BRIEF
+
+_SKILLS_ROOT = str(Path(__file__).parent / "skills")
 
 
 def engineer_manifest() -> RoleManifest:
@@ -30,16 +34,26 @@ def engineer_manifest() -> RoleManifest:
             "write_file",
             "run_command",
             "git",
+            "todo_write",
+            "skill",
             "memory_search",
             "memory_get",
             "working_memory_read",
             "working_memory_write",
             "working_memory_append",
             "memory_propose",
+            # read your own past episodic beats — recency/keyword, outcome attached
+            # (spec 07 §11). The reasoning-recall counterpart to memory_search's durable facts.
+            "recall",
+            "lattice_context",
+            "lattice_packet",
+            "lattice_apply",
+            "skill_manage",
         ),  # the wire toolset, including Dream's durable + task memory surfaces
         disallowed_tools=(),  # nothing additionally denied at the role level
-        # — build_harness(skills=…) —
-        skills=(),  # no Engineer skill playbooks yet → skills toggle stays off (follow-up)
+        # — build_harness(skills=…) — shared cross-beat skills merge in via factory —
+        skills=("cross-beat-resume", "cross-beat-recall"),
+        skills_root=_SKILLS_ROOT,
         # — build_harness(memory=…) + working_memory —
         memory_scope=MemoryScope.PROJECT,  # reads/writes the project memory partition
         working_memory=True,  # keeps an in-task scratchpad across turns

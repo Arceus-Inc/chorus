@@ -1,0 +1,159 @@
+intent: Build a to-do list page. A person can add a task, mark a task as done, and remove a task, and can switch the visible list between all tasks, only the ones still to do, and only the finished ones. Somewhere on screen there is always an accurate count of how many tasks are still unfinished, and it stays correct as tasks are added, completed, and removed.
+
+  [tool ->] skill  {'name': 'spec-to-working-app'}
+  [tool <-] skill
+  [tool ->] bash  {'command': 'cd /d q:\\projects\\inspired-arc\\chorus\\.chorus\\work\\frontend-eng-hard-tasks\\worktrees\\finn && dir'}
+  [tool <-] bash
+  [tool ->] bash  {'command': 'cd /d q:\\projects\\inspired-arc\\chorus\\.chorus\\work\\frontend-eng-hard-tasks\\worktrees\\finn && dir docs'}
+  [tool <-] bash
+  [tool ->] read_file  {'path': 'docs/exec-plans/run-tasks.md'}
+  [tool <-] read_file (ERROR)
+  [tool ->] bash  {'command': 'cd /d q:\\projects\\inspired-arc\\chorus\\.chorus\\work\\frontend-eng-hard-tasks\\worktrees\\finn && dir /a'}
+  [tool <-] bash
+  [tool ->] bash  {'command': 'cd /d q:\\projects\\inspired-arc\\chorus\\.chorus\\work\\frontend-eng-hard-tasks\\worktrees\\finn && dir docs\\exec-plans'}
+  [tool <-] bash
+  [tool ->] bash  {'command': 'cd /d q:\\projects\\inspired-arc\\chorus\\.chorus\\work\\frontend-eng-hard-tasks\\worktrees\\finn && dir docs\\exec-plans\\active'}
+  [tool <-] bash
+  [tool ->] read_file  {'path': 'docs/exec-plans/active/run-tasks.md'}
+  [tool <-] read_file
+  [tool ->] skill  {'name': 'state-driven-ui'}
+  [tool <-] skill
+  [tool ->] write_file  {'path': 'index.html', 'content': '<!doctype html>\n<html lang="en">\n  <head>\n    <meta charset="utf-8" />\n    <meta name="viewport" content="width=device-width, initial-scale=1" />\n    <title>To-do list</title>\n    <style>\n      :root {\n        color-scheme: light;\n        --bg: #ffffff;\n        --text: #111827;\n        --muted: #4b5563;\n        --border: #d1d5db;\n        --focus: #1d4ed8;\n        --danger: #b91c1c;\n        --surface: #f9fafb;\n      }\n\n      * { box-sizing: bor...
+  [tool <-] write_file
+  [tool ->] write_file  {'path': 'src/todoState.js', 'content': "const FILTERS = /** @type {const} */ ({\n  all: 'all',\n  todo: 'todo',\n  done: 'done',\n});\n\n/**\n * @typedef {{ id: string, title: string, done: boolean }} Task\n * @typedef {{ tasks: Task[], filter: keyof typeof FILTERS }} TodoState\n */\n\nexport function createInitialState() {\n  /** @type {TodoState} */\n  return { tasks: [], filter: FILTERS.all };\n}\n\nfunction makeId() {\n  // Small, collision-resistant enough for this slice.\n  return `${Date...
+  [tool <-] write_file
+  [tool ->] write_file  {'path': 'src/app.js', 'content': 'import {\n  addTask,\n  createInitialState,\n  FILTERS,\n  removeTask,\n  remainingLabel,\n  selectRemainingCount,\n  selectVisibleTasks,\n  setFilter,\n  toggleTask,\n} from \'./todoState.js\';\n\n/** @type {import(\'./todoState.js\').TodoState} */\nlet state = createInitialState();\n\nconst els = {\n  form: /** @type {HTMLFormElement} */ (document.getElementById(\'add-form\')),\n  title: /** @type {HTMLInputElement} */ (document.getElementById(\'task-title\')...
+  [tool <-] write_file
+  [tool ->] write_file  {'path': 'tests/todoState.test.js', 'content': 'import test from \'node:test\';\nimport assert from \'node:assert/strict\';\nimport {\n  addTask,\n  createInitialState,\n  removeTask,\n  selectRemainingCount,\n  selectVisibleTasks,\n  setFilter,\n  toggleTask,\n} from \'../src/todoState.js\';\n\ntest(\'addTask: adds a trimmed task (prepends) and increments remaining count\', () => {\n  let state = createInitialState();\n  state = addTask(state, \'  buy   milk  \');\n\n  assert.equal(state.tasks....
+  [tool <-] write_file
+  [tool ->] write_file  {'path': 'package.json', 'content': '{\n  "name": "todo-slice",\n  "private": true,\n  "type": "module",\n  "scripts": {\n    "test:unit": "node --test",\n    "test:e2e": "playwright test"\n  },\n  "devDependencies": {\n    "@playwright/test": "^1.55.0"\n  }\n}\n'}
+  [tool <-] write_file
+  [tool ->] write_file  {'path': 'playwright.config.js', 'content': "// @ts-check\nimport { defineConfig } from '@playwright/test';\n\nexport default defineConfig({\n  testDir: './e2e',\n  timeout: 30_000,\n  expect: { timeout: 5_000 },\n  use: {\n    baseURL: 'http://127.0.0.1:4173',\n    trace: 'on-first-retry',\n  },\n  webServer: {\n    command: 'python -m http.server 4173',\n    url: 'http://127.0.0.1:4173',\n    reuseExistingServer: !process.env.CI,\n  },\n});\n"}
+  [tool <-] write_file
+  [tool ->] write_file  {'path': 'e2e/todo.spec.js', 'content': 'import { test, expect } from \'@playwright/test\';\n\ntest(\'to-do flow: add, toggle, filter, remove, remaining count\', async ({ page }) => {\n  await page.goto(\'/\');\n\n  const title = page.getByLabel(\'New task\');\n  const add = page.getByRole(\'button\', { name: \'Add\' });\n  const remaining = page.getByLabel(\'Unfinished tasks count\');\n\n  // Add two tasks\n  await title.fill(\'Buy milk\');\n  await add.click();\n  await expect(page.getByText(\...
+  [tool <-] write_file
+  [tool ->] bash  {'command': 'cd /d q:\\projects\\inspired-arc\\chorus\\.chorus\\work\\frontend-eng-hard-tasks\\worktrees\\finn && npm install', 'timeout_seconds': 600}
+  [tool <-] bash
+  [tool ->] bash  {'command': 'cd /d q:\\projects\\inspired-arc\\chorus\\.chorus\\work\\frontend-eng-hard-tasks\\worktrees\\finn && if not exist test_evidence mkdir test_evidence && npm run test:unit > test_evidence\\unit.txt 2>&1', 'timeout_seconds': 600}
+  [tool <-] bash
+  [tool ->] bash  {'command': 'cd /d q:\\projects\\inspired-arc\\chorus\\.chorus\\work\\frontend-eng-hard-tasks\\worktrees\\finn && npm run test:e2e > test_evidence\\e2e.txt 2>&1', 'timeout_seconds': 600}
+  [tool <-] bash
+  [tool ->] read_file  {'path': 'test_evidence/unit.txt', 'limit': 200}
+  [tool <-] read_file
+  [tool ->] read_file  {'path': 'test_evidence/e2e.txt', 'limit': 200}
+  [tool <-] read_file
+  [tool ->] write_file  {'path': 'test_evidence/summary.md', 'content': '# Sprint 1 — Buildless to-do app slice (with tests + evidence)\n\n## What I built\nA dependency-light, buildless to-do list app that runs directly from `index.html` (served via `python -m http.server`). The UI supports:\n\n- Adding tasks via a labelled text input (“New task”) and an **Add** submit button.\n- Rendering each task row with:\n  - a checkbox toggle to mark done/undone,\n  - a visible text label (the task title),\n  - a **Remove** butto...
+  [tool <-] write_file
+  [tool ->] spawn_subagent  {'name': 'code_reviewer', 'prompt': 'Review the to-do app implementation in this worktree for correctness vs acceptance criteria, accessibility-by-construction, state-driven UI, maintainability, and whether the tests genuinely prove behavior. Call out blocker/major/minor issues.'}
+  [tool ->] test_evidence  {}
+  [tool <-] test_evidence
+  [tool ->] read_file  {'path': 'index.html'}
+  [tool <-] read_file
+  [tool ->] git  {'args': ['status', '--porcelain']}
+  [tool <-] git (ERROR)
+  [tool ->] read_file  {'path': '20260705-110039-read_file-c9ad9eb0a765.txt', 'limit': 2000}
+  [tool <-] read_file (ERROR)
+  [tool ->] read_file  {'path': 'test_evidence/summary.md'}
+  [tool <-] read_file
+  [tool ->] read_file  {'path': 'test_evidence/unit.txt'}
+  [tool <-] read_file
+  [tool ->] read_file  {'path': 'test_evidence/e2e.txt'}
+  [tool <-] read_file
+  [tool ->] read_file  {'path': 'src/app.js'}
+  [tool <-] read_file
+  [tool ->] read_file  {'path': 'src/todoState.js'}
+  [tool <-] read_file
+  [tool ->] read_file  {'path': 'tests/todoState.test.js'}
+  [tool <-] read_file
+  [tool ->] read_file  {'path': 'e2e/todo.spec.js'}
+  [tool <-] read_file
+  [tool ->] read_file  {'path': '20260705-110044-read_file-261c87106d75.txt', 'limit': 2500}
+  [tool <-] read_file (ERROR)
+  [tool ->] read_file  {'path': 'src/app.js', 'offset': 0, 'limit': 260}
+  [tool <-] read_file
+  [tool ->] read_file  {'path': 'src/app.js', 'offset': 0, 'limit': 2600}
+  [tool <-] read_file
+  [tool ->] read_file  {'path': 'src/app.js', 'offset': 20, 'limit': 2600}
+  [tool <-] read_file
+  [tool ->] read_file  {'path': 'index.html', 'offset': 0, 'limit': 2600}
+  [tool <-] read_file
+  [tool ->] read_file  {'path': 'index.html', 'offset': 70, 'limit': 260}
+  [tool <-] read_file
+  [tool ->] read_file  {'path': 'index.html', 'offset': 160, 'limit': 260}
+  [tool <-] read_file
+  [tool <-] spawn_subagent
+  [tool ->] spawn_subagent  {'name': 'ui_tester', 'prompt': 'Audit the Playwright e2e spec and captured evidence logs. Verify the e2e drives the real UI (not stubs), asserts user-visible outcomes (tasks visible/invisible + remaining count), and looks non-flaky. Return PASS/FAIL with blocker/major/minor issues.'}
+  [tool ->] test_evidence  {}
+  [tool <-] test_evidence
+  [tool ->] read_file  {'path': 'e2e/todo.spec.js'}
+  [tool <-] read_file
+  [tool ->] read_file  {'path': 'test_evidence/e2e.txt'}
+  [tool <-] read_file
+  [tool ->] read_file  {'path': 'index.html'}
+  [tool <-] read_file
+  [tool ->] read_file  {'path': 'playwright.config.js'}
+  [tool <-] read_file
+  [tool ->] read_file  {'path': '20260705-110112-read_file-fd1e5a2a2ee4.txt', 'offset': 1, 'limit': 260}
+  [tool <-] read_file (ERROR)
+  [tool ->] read_file  {'path': 'index.html', 'offset': 1, 'limit': 260}
+  [tool <-] read_file
+  [tool ->] read_file  {'path': '20260705-110116-read_file-3b5ee2cb6307.txt', 'offset': 240, 'limit': 260}
+  [tool <-] read_file (ERROR)
+  [tool ->] bash  {'command': 'dir /b'}
+  [tool <-] bash (ERROR)
+  [tool <-] spawn_subagent
+  [tool ->] write_file  {'path': 'src/app.js', 'content': 'import {\n  addTask,\n  createInitialState,\n  FILTERS,\n  removeTask,\n  remainingLabel,\n  selectRemainingCount,\n  selectVisibleTasks,\n  setFilter,\n  toggleTask,\n} from \'./todoState.js\';\n\n/** @type {import(\'./todoState.js\').TodoState} */\nlet state = createInitialState();\n\nconst els = {\n  form: /** @type {HTMLFormElement} */ (document.getElementById(\'add-form\')),\n  title: /** @type {HTMLInputElement} */ (document.getElementById(\'task-title\')...
+  [tool <-] write_file
+  [tool ->] write_file  {'path': 'tests/todoState.test.js', 'content': 'import test from \'node:test\';\nimport assert from \'node:assert/strict\';\nimport {\n  addTask,\n  createInitialState,\n  removeTask,\n  selectRemainingCount,\n  selectVisibleTasks,\n  setFilter,\n  toggleTask,\n} from \'../src/todoState.js\';\n\ntest(\'addTask: adds a trimmed task (prepends) and increments remaining count\', () => {\n  let state = createInitialState();\n  state = addTask(state, \'  buy   milk  \');\n\n  assert.equal(state.tasks....
+  [tool <-] write_file
+  [tool ->] write_file  {'path': 'e2e/todo.spec.js', 'content': 'import { test, expect } from \'@playwright/test\';\n\ntest(\'to-do flow: add, toggle, filter, remove, remaining count\', async ({ page }) => {\n  await page.goto(\'/\');\n\n  const title = page.getByLabel(\'New task\');\n  const add = page.getByRole(\'button\', { name: \'Add\' });\n  const remaining = page.getByLabel(\'Unfinished tasks count\');\n  const list = page.getByRole(\'list\');\n\n  // Add two tasks\n  await title.fill(\'Buy milk\');\n  await add...
+  [tool <-] write_file
+  [tool ->] bash  {'command': 'cd /d q:\\projects\\inspired-arc\\chorus\\.chorus\\work\\frontend-eng-hard-tasks\\worktrees\\finn && npm run test:unit > test_evidence\\unit.txt 2>&1', 'timeout_seconds': 600}
+  [tool <-] bash
+  [tool ->] bash  {'command': 'cd /d q:\\projects\\inspired-arc\\chorus\\.chorus\\work\\frontend-eng-hard-tasks\\worktrees\\finn && npm run test:e2e > test_evidence\\e2e.txt 2>&1', 'timeout_seconds': 600}
+  [tool <-] bash (ERROR)
+  [tool ->] read_file  {'path': 'test_evidence/unit.txt', 'limit': 120}
+  [tool <-] read_file
+  [tool ->] read_file  {'path': 'test_evidence/e2e.txt', 'limit': 80}
+  [tool <-] read_file
+  [tool ->] write_file  {'path': 'e2e/todo.spec.js', 'content': 'import { test, expect } from \'@playwright/test\';\n\ntest(\'to-do flow: add, toggle, filter, remove, remaining count\', async ({ page }) => {\n  await page.goto(\'/\');\n\n  const title = page.getByLabel(\'New task\');\n  const add = page.getByRole(\'button\', { name: \'Add\' });\n  const remaining = page.getByLabel(\'Unfinished tasks count\');\n  const list = page.getByRole(\'list\');\n\n  // Add two tasks\n  await title.fill(\'Buy milk\');\n  await add...
+  [tool <-] write_file
+  [tool ->] bash  {'command': 'cd /d q:\\projects\\inspired-arc\\chorus\\.chorus\\work\\frontend-eng-hard-tasks\\worktrees\\finn && npm run test:e2e > test_evidence\\e2e.txt 2>&1', 'timeout_seconds': 600}
+  [tool <-] bash
+  [tool ->] read_file  {'path': 'test_evidence/e2e.txt', 'limit': 60}
+  [tool <-] read_file
+  [tool ->] bash  {'command': 'cd /d q:\\projects\\inspired-arc\\chorus\\.chorus\\work\\frontend-eng-hard-tasks\\worktrees\\finn && Q:\\projects\\inspired-arc\\chorus\\.venv\\Scripts\\python.exe -c "import base64;exec(base64.b64decode(\'aW1wb3J0IG9zLCByZSwgc3lzCgpDSEVDS1MgPSBbeydraW5kJzogJ2V4aXN0cycsICdwYXRoJzogJ2luZGV4Lmh0bWwnfSwgeydraW5kJzogJ2dsb2JfbWluJywgJ3BhdHRlcm4nOiAndGVzdHMvKiovKi50ZXN0LionLCAnY291bnQnOiAxfSwgeydraW5kJzogJ2dsb2JfbWluJywgJ3BhdHRlcm4nOiAnZTJlLyoqLyouc3BlYy4qJywgJ2NvdW50JzogMX0sIHsna2luZCc6I...
+  [tool <-] bash
+  [tool ->] test_evidence  {}
+  [tool <-] test_evidence
+  [tool ->] read_file  {'path': 'index.html'}
+  [tool <-] read_file
+  [tool ->] read_file  {'path': 'test_evidence/summary.md'}
+  [tool <-] read_file
+  [tool ->] read_file  {'path': 'test_evidence/unit.txt', 'limit': 200}
+  [tool <-] read_file
+  [tool ->] read_file  {'path': 'test_evidence/e2e.txt', 'limit': 200}
+  [tool <-] read_file
+  [tool ->] bash  {'command': 'dir', 'timeout_seconds': 120}
+  [tool <-] bash (ERROR)
+  [tool ->] read_file  {'path': 'src/todoState.js'}
+  [tool <-] read_file
+  [tool ->] read_file  {'path': 'src/app.js'}
+  [tool <-] read_file
+  [tool ->] read_file  {'path': 'tests/todoState.test.js'}
+  [tool <-] read_file
+  [tool ->] read_file  {'path': 'e2e/todo.spec.js'}
+  [tool <-] read_file
+  [tool ->] read_file  {'path': 'playwright.config.js'}
+  [tool <-] read_file
+  [tool ->] read_file  {'path': '20260705-110305-read_file-025715099340.txt', 'limit': 260}
+  [tool <-] read_file (ERROR)
+  [tool ->] read_file  {'path': '20260705-110308-read_file-b9c5ab1d8352.txt', 'limit': 260}
+  [tool <-] read_file (ERROR)
+  [EVALUATED] {'sprint_number': 1, 'outcome': 'pass', 'score': 1.0, 'notes': 'All required to-do behaviors are implemented and covered by unit + Playwright e2e tests with captured passing evidence logs and a substantive summary.'}
+== beat done ==
+
+[verdict] dod_floor=pass
+[verdict] unit_reverify_exit=0
+[verdict] e2e_reverify_exit=0
+[verdict] truly_passed=True

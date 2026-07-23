@@ -17,11 +17,9 @@ from __future__ import annotations
 from chorus.budgets import BudgetWindow
 from chorus.cron import Schedule, Weekday, parse_cron
 from chorus.errors import (
-    BudgetBlocked,
     ChorusError,
     InvalidIntake,
     OrgInvariantViolation,
-    PackageImportError,
     RolePluginConflict,
     RolePluginInvalid,
     UnknownEmployee,
@@ -83,7 +81,6 @@ __all__ = [
     "Approval",
     "ApprovalDecision",
     "ApprovalGate",
-    "BudgetBlocked",
     # budgets (spec 14 §5.2)
     "BudgetScope",
     "BudgetWindow",
@@ -110,7 +107,6 @@ __all__ = [
     "InvalidIntake",
     "OrgInvariantViolation",
     "OrgObservabilityReport",
-    "PackageImportError",
     # roles
     "Role",
     "RoleManifest",

@@ -1,41 +1,35 @@
-"""Per-beat memory capture: every beat lands one provenance-stamped episodic delta (spec 07 §3).
+"""Per-beat memory capture: every beat lands one provenance-stamped episodic record (spec 07 §3).
 
-After a beat, the scheduler writes exactly one ``sprint_delta`` through the injected ``MemoryWriter`` —
+After a beat, the scheduler appends exactly one ``SprintDelta`` to the injected ``EpisodicStore`` —
 honest fields derived from the run (the disposition's outcome, the employee's scope, the run id as
 provenance), never authored by the worker. A cancelled beat (nothing happened) writes nothing. With no
-writer injected the kernel is unchanged (writer-agnostic).
+store injected the kernel is unchanged (writer-agnostic).
 """
 
 from __future__ import annotations
 
 import pytest
-from dream.contracts import MemoryDelta, MemoryRecord, MemoryScope, MemoryType
 
 from chorus.heartbeat import Scheduler, Wake, WakeReason
 from chorus.heartbeat._beat import BeatDisposition, BeatOutcome
-from chorus.ledger import SqliteLedger, Task, TaskStatus
+from chorus.ledger import Ledger, Task, TaskStatus
+from chorus.memory import SprintDelta
 from chorus.outcomes import Verifier
 from chorus.roles import RoleRegistry, default_roles
+from chorus.testing import uid
 from chorus.workforce import Employee, LedgerWorkforce
 
 pytestmark = pytest.mark.integration
 
 
-class _RecordingWriter:
-    """A fake ``MemoryWriter`` that records the deltas applied to it."""
+class _RecordingStore:
+    """A fake ``EpisodicStore`` that records the deltas appended to it."""
 
     def __init__(self) -> None:
-        self.applied: list[MemoryDelta] = []
+        self.appended: list[SprintDelta] = []
 
-    async def apply(self, delta: MemoryDelta) -> MemoryRecord:
-        self.applied.append(delta)
-        return MemoryRecord(
-            id=delta.target_id, scope=delta.scope, type=MemoryType.PROJECT,
-            content=delta.new_content or "",
-        )
-
-    async def rollback(self, record_id: str, to_version: str) -> MemoryRecord:  # pragma: no cover
-        raise NotImplementedError
+    def append(self, delta: SprintDelta) -> None:
+        self.appended.append(delta)
 
 
 class _Beat:
@@ -45,56 +39,79 @@ class _Beat:
         self._disposition = disposition
 
     async def run_task(
-        self, *, task_id: str, intent: str, verification: object = (), rubric: object = "", observer: object = None, run_id: str | None = None
+        self,
+        *,
+        task_id: str,
+        intent: str,
+        verification: object = (),
+        rubric: object = "",
+        observer: object = None,
+        run_id: str | None = None,
     ) -> BeatOutcome:
         passed = self._disposition is BeatDisposition.PASSED
         return BeatOutcome(
-            passed=passed, disposition=self._disposition,
+            passed=passed,
+            disposition=self._disposition,
             outcome={"score": 0.91} if passed else {"error": "boom"},
             summary="added subtract(); tests pass",
         )
 
 
-def _dispatch(ledger: SqliteLedger, beat: _Beat, writer: _RecordingWriter | None) -> Scheduler:
+def _dispatch(ledger: Ledger, beat: _Beat, store: _RecordingStore | None) -> Scheduler:
     ledger.employees.create(Employee(id="ada", name="Ada", role="engineer"))
-    ledger.tasks.submit(Task(id="t1", intent="add subtract", status=TaskStatus.TODO, assignee_employee_id="ada"))
-    ledger.dod.create("t1", Verifier.command("true"))  # objective DoD: land directly, not via review
-    ledger.wakes.enqueue(Wake(id="w1", employee_id="ada", reason=WakeReason.MANUAL, payload={"task_id": "t1"}))
+    ledger.tasks.submit(
+        Task(
+            id=uid("t1"), intent="add subtract", status=TaskStatus.TODO, assignee_employee_id="ada"
+        )
+    )
+    ledger.dod.create(
+        uid("t1"), Verifier.command("true")
+    )  # objective DoD: land directly, not via review
+    ledger.wakes.enqueue(
+        Wake(
+            id=uid("w1"),
+            employee_id="ada",
+            reason=WakeReason.MANUAL,
+            payload={"task_id": uid("t1")},
+        )
+    )
     return Scheduler(
-        ledger=ledger, workforce=LedgerWorkforce(ledger.employees), beat_runner=beat,
-        roles=RoleRegistry.from_plugins(default_roles()), memory_writer=writer,
+        ledger=ledger,
+        workforce=LedgerWorkforce(ledger.employees),
+        beat_runner=beat,
+        roles=RoleRegistry.from_plugins(default_roles()),
+        memory_writer=store,
         max_concurrent_runs=1,
     )
 
 
-async def test_a_passed_beat_captures_one_provenance_stamped_delta(ledger: SqliteLedger) -> None:
-    writer = _RecordingWriter()
-    sched = _dispatch(ledger, _Beat(), writer)
+async def test_a_passed_beat_captures_one_provenance_stamped_delta(ledger: Ledger) -> None:
+    store = _RecordingStore()
+    sched = _dispatch(ledger, _Beat(), store)
     await sched.tick_once()
     await sched.drain()
 
-    assert len(writer.applied) == 1
-    delta = writer.applied[0]
-    run_id = ledger.runs.for_task("t1")[-1].id
-    assert delta.target_id == run_id  # provenance: the record is named by the run that produced it
-    assert delta.scope is MemoryScope.PROJECT  # the engineer's memory scope
-    md = delta.metadata
-    assert md["task_id"] == "t1" and md["employee_id"] == "ada"
-    assert md["outcome"] == "done"  # disposition mirror
-    assert "subtract" in (delta.new_content or "")  # the beat's summary is the body
+    assert len(store.appended) == 1
+    delta = store.appended[0]
+    run_id = ledger.runs.for_task(uid("t1"))[-1].id
+    assert delta.run_id == run_id  # provenance: the record is named by the run that produced it
+    assert delta.scope == "project"  # the engineer's memory scope
+    assert delta.task_id == uid("t1") and delta.employee_id == "ada"
+    assert delta.outcome == "done"  # disposition mirror
+    assert "subtract" in delta.body  # the beat's summary is the body
 
 
-async def test_a_failed_beat_is_still_captured(ledger: SqliteLedger) -> None:
-    writer = _RecordingWriter()
-    sched = _dispatch(ledger, _Beat(disposition=BeatDisposition.DOD_FAILED), writer)
+async def test_a_failed_beat_is_still_captured(ledger: Ledger) -> None:
+    store = _RecordingStore()
+    sched = _dispatch(ledger, _Beat(disposition=BeatDisposition.DOD_FAILED), store)
     await sched.tick_once()
     await sched.drain()
-    assert len(writer.applied) == 1
-    assert writer.applied[0].metadata["outcome"] == "needs_changes"
+    assert len(store.appended) == 1
+    assert store.appended[0].outcome == "needs_changes"
 
 
-async def test_no_writer_is_a_noop(ledger: SqliteLedger) -> None:
-    sched = _dispatch(ledger, _Beat(), writer=None)  # kernel stays writer-agnostic
+async def test_no_store_is_a_noop(ledger: Ledger) -> None:
+    sched = _dispatch(ledger, _Beat(), store=None)  # kernel stays writer-agnostic
     await sched.tick_once()
     await sched.drain()
-    assert ledger.tasks.get("t1").status is TaskStatus.DONE  # type: ignore[union-attr]
+    assert ledger.tasks.get(uid("t1")).status is TaskStatus.DONE  # type: ignore[union-attr]

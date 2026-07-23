@@ -16,7 +16,7 @@ from chorus.lifecycle._audit import record_activity
 from chorus.outcomes import RevisionDirection, Verifier, classify
 
 if TYPE_CHECKING:
-    from chorus.ledger import SqliteLedger
+    from chorus.ledger import Ledger
 
 
 class RevisionAuthorityError(RuntimeError):
@@ -37,7 +37,7 @@ class ReviseOutcome:
 
 
 def revise_dod(
-    ledger: SqliteLedger, *, task_id: str, new_verifier: Verifier, revised_by: str
+    ledger: Ledger, *, task_id: str, new_verifier: Verifier, revised_by: str
 ) -> ReviseOutcome:
     """Revise ``task_id``'s DoD: a manager tighten applies now; a loosen is staged (gated in Slice 4)."""
     old = ledger.dod.verifier_for_task(task_id)
@@ -82,11 +82,13 @@ def revise_dod(
     return ReviseOutcome(direction, applied=False, approval_id=approval.id)
 
 
-def _require_manager_authority(ledger: SqliteLedger, task_id: str, revised_by: str) -> None:
+def _require_manager_authority(ledger: Ledger, task_id: str, revised_by: str) -> None:
     task = ledger.tasks.get(task_id)
     assignee_id = task.assignee_employee_id if task is not None else None
     if assignee_id is None:
-        raise RevisionAuthorityError(f"task {task_id!r} is unassigned — no manager to authorize a revision")
+        raise RevisionAuthorityError(
+            f"task {task_id!r} is unassigned — no manager to authorize a revision"
+        )
     assignee = ledger.employees.get(assignee_id)
     manager_id = assignee.reports_to if assignee is not None else None
     if manager_id is None or revised_by != manager_id:

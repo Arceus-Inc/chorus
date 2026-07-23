@@ -15,7 +15,7 @@ from chorus.ledger import Approval, ApprovalAction
 from chorus.workforce import EmployeeStatus
 
 if TYPE_CHECKING:
-    from chorus.ledger import SqliteLedger
+    from chorus.ledger import Ledger
 
 
 class HireError(GovernanceError):
@@ -27,15 +27,13 @@ class HireEmployeeAction:
 
     action = ApprovalAction.HIRE_EMPLOYEE
 
-    def __init__(self, ledger: SqliteLedger) -> None:
+    def __init__(self, ledger: Ledger) -> None:
         self._ledger = ledger
 
     def on_open(self, approval: Approval) -> None:
         employee = self._ledger.employees.get(approval.subject_id)
         if employee is None or employee.status is not EmployeeStatus.PENDING:
-            raise HireError(
-                f"hire gate subject {approval.subject_id!r} is not a pending employee"
-            )
+            raise HireError(f"hire gate subject {approval.subject_id!r} is not a pending employee")
 
     def on_approve(self, approval: Approval) -> ActionOutcome:
         self._ledger.employees.set_status(approval.subject_id, EmployeeStatus.ACTIVE)

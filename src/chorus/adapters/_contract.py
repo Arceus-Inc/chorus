@@ -51,7 +51,9 @@ def check_dream_contract(module: object, *, supported: str = SUPPORTED_DREAM_CON
     actual = _parse(version)
     want = _parse(supported)
     if want is None:  # defensive: a misconfigured SUPPORTED_DREAM_CONTRACT is a chorus bug
-        raise DreamContractError(f"chorus SUPPORTED_DREAM_CONTRACT {supported!r} is not valid semver.")
+        raise DreamContractError(
+            f"chorus SUPPORTED_DREAM_CONTRACT {supported!r} is not valid semver."
+        )
     if actual is None:
         raise DreamContractError(
             f"dream contract version {version!r} is not valid semver (expected MAJOR.MINOR.PATCH)."

@@ -12,7 +12,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from chorus.roles._manifest import RoleManifest
+from chorus.roles._manifest import McpServerSpec, RoleManifest
+from chorus.roles._subagent import SubagentSpec
 
 
 @dataclass(frozen=True)
@@ -44,7 +45,18 @@ class RoleBeatConfig:
     wake_model: str | None = None
     mcp: bool = False
     plugins: bool = False
+    # The MCP servers this role admits (→ ``.harness/mcp-allowlist.toml`` when ``mcp`` is True).
+    mcp_servers: tuple[McpServerSpec, ...] = ()
     env: tuple[tuple[str, str], ...] = ()
+    # Per-role beat time budget (``None`` → composition-root default). ``beat_timeout_s`` bounds the
+    # DreamBeatRunner's wall-clock; ``lease_ttl_s`` the scheduler's run lease before the reaper claims.
+    beat_timeout_s: float | None = None
+    lease_ttl_s: float | None = None
+    # Tier-1 role-owned subagents (carried through verbatim; the composition root projects them
+    # onto dream's ``Subagent``/``SubagentSet`` and intersects each one's tools with this config's.
+    subagents: tuple[SubagentSpec, ...] = ()
+    # Filesystem dir of this role's ``<slug>/SKILL.md`` playbooks (None = no role skills).
+    skills_root: str | None = None
 
 
 def role_beat_config(manifest: RoleManifest) -> RoleBeatConfig:
@@ -64,7 +76,12 @@ def role_beat_config(manifest: RoleManifest) -> RoleBeatConfig:
         wake_model=manifest.wake_model,
         mcp=manifest.mcp,
         plugins=manifest.plugins,
+        mcp_servers=manifest.mcp_servers,
         env=manifest.env,
+        beat_timeout_s=manifest.beat_timeout_s,
+        lease_ttl_s=manifest.lease_ttl_s,
+        subagents=manifest.subagents,
+        skills_root=manifest.skills_root,
     )
 
 

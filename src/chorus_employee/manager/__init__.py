@@ -14,6 +14,8 @@ that harness, one component per module:
 
 from __future__ import annotations
 
+import warnings
+
 from chorus.roles._plugin import RolePlugin
 from chorus_employee.manager._dod import manager_dod
 from chorus_employee.manager._harness import manager_manifest
@@ -23,6 +25,12 @@ from chorus_employee.manager._routines import MANAGER_ROUTINES
 
 def manager_plugin() -> RolePlugin:
     """The registrable Manager role — manifest + DoD + outcome kind (spec 06 §2)."""
+    warnings.warn(
+        "manager_plugin() is deprecated; migrate Manager employees with "
+        "'workforce specialize-manager' and use specialist role plugins",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     return RolePlugin(
         name="manager",
         manifest=manager_manifest(),

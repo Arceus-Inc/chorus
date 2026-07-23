@@ -3,7 +3,7 @@
 :func:`decompose` ties spec 01's durable primitives together into the manager-splits-work
 flow: open-or-resume the ``decomposition_claim`` keyed on
 ``(source_task_id, accepted_plan_revision_id)``, then for each child — one transaction each
-via :meth:`SqliteLedger.create_child` — set ``parent_id``, inherit the source goal, bump
+via :meth:`Ledger.create_child` — set ``parent_id``, inherit the source goal, bump
 ``request_depth``/``depth``, and (when the child *gates* the parent) add a first-class
 ``task_dependency`` of the parent. Sealing the claim ends the manager's run; it never blocks
 awaiting children (re-invocation is the ``children_done`` push, fired by ``finalize_beat``).
@@ -16,11 +16,11 @@ never double-fanned-out (spec 02 §4.2).
 
 from __future__ import annotations
 
-import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
+from chorus.ids import mint_id
 from chorus.ledger._models import (
     ActivityVerb,
     DecompositionClaim,
@@ -33,7 +33,7 @@ from chorus.ledger._models import (
 from chorus.lifecycle._audit import record_activity
 
 if TYPE_CHECKING:
-    from chorus.ledger import SqliteLedger
+    from chorus.ledger import Ledger
 
 # The delegation depth cap (spec 06 §4): the default number of hops from the intake root a manager
 # recursion may fan out. Mirrored by ``Caps.request_depth_cap`` (the per-workforce override).
@@ -81,7 +81,7 @@ class ChildSpec:
 
 
 def decompose(
-    ledger: SqliteLedger,
+    ledger: Ledger,
     *,
     source_task_id: str,
     accepted_plan_revision_id: str,
@@ -114,7 +114,7 @@ def decompose(
     if claim is None:
         claim = ledger.decomposition_claims.open(
             DecompositionClaim(
-                id=f"claim_{uuid.uuid4().hex[:12]}",
+                id=mint_id(),
                 source_task_id=source_task_id,
                 accepted_plan_revision_id=accepted_plan_revision_id,
                 owner_run_id=owner_run_id,
@@ -141,7 +141,8 @@ def decompose(
 
     ledger.decomposition_claims.complete(claim.id)
     sealed = ledger.decomposition_claims.get(claim.id)
-    assert sealed is not None  # just completed it in this call
+    if sealed is None:  # completed above in this call — a missing claim means the store is corrupt
+        raise RuntimeError(f"decomposition claim {claim.id} vanished immediately after complete()")
     # Governance audit (spec 08 §5): the manager split this task into a child tree.
     record_activity(
         ledger,
@@ -153,7 +154,7 @@ def decompose(
     return Fanned(sealed)
 
 
-def _fail_closed(ledger: SqliteLedger, source: Task, *, cap: int) -> DepthCapped:
+def _fail_closed(ledger: Ledger, source: Task, *, cap: int) -> DepthCapped:
     """Refuse the decomposition: block the source + open (or reuse) its depth-cap recovery."""
     ledger.tasks.set_status(source.id, TaskStatus.BLOCKED)
     existing = ledger.recovery_actions.active_for_source(source.id)
@@ -161,7 +162,7 @@ def _fail_closed(ledger: SqliteLedger, source: Task, *, cap: int) -> DepthCapped
         return DepthCapped(existing)  # already surfaced — a retry must not double-open
     recovery = ledger.recovery_actions.open(
         RecoveryAction(
-            id=f"rec_{uuid.uuid4().hex[:12]}",
+            id=mint_id(),
             source_task_id=source.id,
             kind=RecoveryKind.STRANDED,
             owner_employee_id=source.assignee_employee_id,

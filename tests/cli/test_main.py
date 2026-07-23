@@ -8,10 +8,19 @@ from pathlib import Path
 
 import pytest
 
-from chorus.ledger import SqliteLedger
+from chorus.testing import open_test_ledger
 from chorus_cli import main
 from chorus_cli.__main__ import _beat_service_from_env, build_parser
 from chorus_cli._beats import default_pricing_from_env
+
+
+def _dsn() -> str:
+    """A fresh test-cluster database DSN for a CLI invocation (bootstrapped from the template)."""
+    store = open_test_ledger()
+    conninfo = store._conn._pg.info.dsn
+    store.close()
+    return conninfo
+
 
 pytestmark = pytest.mark.integration
 
@@ -27,12 +36,12 @@ def _no_azure_env(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_parser_defaults_to_the_default_db() -> None:
     args = build_parser().parse_args([])
-    assert args.db == "chorus.db"
+    assert args.dsn == "postgresql://localhost/chorus"
 
 
 def test_parser_accepts_a_db_path() -> None:
-    args = build_parser().parse_args(["--db", ":memory:"])
-    assert args.db == ":memory:"
+    args = build_parser().parse_args(["--dsn", "postgresql://x/y"])
+    assert args.dsn == "postgresql://x/y"
 
 
 def test_parser_defaults_to_dotenv() -> None:
@@ -59,7 +68,7 @@ def test_main_loads_dotenv_and_wires_the_beat_service(
 
     monkeypatch.setattr("chorus_cli.__main__.run_repl", fake_run_repl)
 
-    code = main(["--db", ":memory:", "--env-file", str(env_file)], input_func=make_input([]))
+    code = main(["--dsn", _dsn(), "--env-file", str(env_file)], input_func=make_input([]))
     assert code == 0
     assert captured["beats"] is sentinel
 
@@ -67,7 +76,7 @@ def test_main_loads_dotenv_and_wires_the_beat_service(
 def test_main_runs_a_session_and_returns_zero(make_input: MakeInput) -> None:
     out = io.StringIO()
     code = main(
-        ["--db", ":memory:"],
+        ["--dsn", _dsn()],
         input_func=make_input(["hire Alice engineer", "employee alice", "quit"]),
         output=out,
     )
@@ -78,11 +87,11 @@ def test_main_runs_a_session_and_returns_zero(make_input: MakeInput) -> None:
 
 def test_main_exits_cleanly_on_eof(make_input: MakeInput) -> None:
     out = io.StringIO()
-    assert main(["--db", ":memory:"], input_func=make_input([]), output=out) == 0
+    assert main(["--dsn", _dsn()], input_func=make_input([]), output=out) == 0
 
 
 def test_beat_service_is_none_without_credentials() -> None:
-    ledger = SqliteLedger.open(":memory:")
+    ledger = open_test_ledger()
     try:
         assert _beat_service_from_env(ledger, company_id="acme") is None  # env cleared by fixture
     finally:
@@ -93,7 +102,9 @@ def test_pricing_defaults_when_env_unset(monkeypatch: pytest.MonkeyPatch) -> Non
     monkeypatch.delenv("CHORUS_PRICE_INPUT_CENTS_PER_MTOK", raising=False)
     monkeypatch.delenv("CHORUS_PRICE_OUTPUT_CENTS_PER_MTOK", raising=False)
     rate = default_pricing_from_env().rate_for("any-model")
-    assert rate is not None and rate.input_cents_per_mtok == 125 and rate.output_cents_per_mtok == 1000
+    assert (
+        rate is not None and rate.input_cents_per_mtok == 125 and rate.output_cents_per_mtok == 1000
+    )
 
 
 def test_pricing_reads_env_and_ignores_malformed(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -113,7 +124,7 @@ def test_beat_service_is_built_when_credentials_are_present(
     sentinel = object()
     monkeypatch.setattr("chorus_cli._beats.build_beat_service", lambda *a, **k: sentinel)
 
-    ledger = SqliteLedger.open(":memory:")
+    ledger = open_test_ledger()
     try:
         assert _beat_service_from_env(ledger, company_id="acme") is sentinel
     finally:

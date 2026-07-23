@@ -15,8 +15,9 @@ import pytest
 
 from chorus.heartbeat import Scheduler
 from chorus.heartbeat._beat import BeatOutcome
-from chorus.ledger import RunStatus, SqliteLedger, Task, TaskStatus
+from chorus.ledger import Ledger, RunStatus, Task, TaskStatus
 from chorus.ledger._models import Run
+from chorus.testing import uid
 from chorus.workforce import Employee, LedgerWorkforce
 
 pytestmark = pytest.mark.integration
@@ -32,30 +33,37 @@ class _RecoveryBeat:
         self.calls = 0
 
     async def run_task(
-        self, *, task_id: str, intent: str, verification: object = (), rubric: object = "", observer: object = None, run_id: str | None = None
+        self,
+        *,
+        task_id: str,
+        intent: str,
+        verification: object = (),
+        rubric: object = "",
+        observer: object = None,
+        run_id: str | None = None,
     ) -> BeatOutcome:
         self.calls += 1
         return BeatOutcome(passed=True, outcome={}, summary="recovered")
 
 
-async def test_crashed_beat_is_reaped_then_redispatched_to_done(ledger: SqliteLedger) -> None:
+async def test_crashed_beat_is_reaped_then_redispatched_to_done(ledger: Ledger) -> None:
     ledger.employees.create(Employee(id="ada", name="Ada", role="engineer"))
     # Durable post-crash state: t1 is in_progress, locked under a dead run whose lease has passed.
     ledger.tasks.submit(
         Task(
-            id="t1",
+            id=uid("t1"),
             intent="ship the fix",
             status=TaskStatus.IN_PROGRESS,
             assignee_employee_id="ada",
-            checkout_run_id="run_dead",
-            execution_run_id="run_dead",
+            checkout_run_id=uid("run_dead"),
+            execution_run_id=uid("run_dead"),
         )
     )
     ledger.runs.create(
         Run(
-            id="run_dead",
+            id=uid("run_dead"),
             employee_id="ada",
-            task_id="t1",
+            task_id=uid("t1"),
             status=RunStatus.RUNNING,
             lease_expires_at=_PAST,
         )
@@ -74,15 +82,15 @@ async def test_crashed_beat_is_reaped_then_redispatched_to_done(ledger: SqliteLe
     for _ in range(3):  # a few pulses for headroom; it should converge on the first
         await scheduler.tick_once()
         await scheduler.drain()
-        if ledger.tasks.get("t1").status is TaskStatus.DONE:  # type: ignore[union-attr]
+        if ledger.tasks.get(uid("t1")).status is TaskStatus.DONE:  # type: ignore[union-attr]
             break
 
     # the crash was recovered, not retried-as-the-same-run
-    dead = ledger.runs.get("run_dead")
+    dead = ledger.runs.get(uid("run_dead"))
     assert dead is not None and dead.status is RunStatus.TIMED_OUT  # reaped, not left RUNNING
     # exactly one retry beat ran, and the task completed
     assert beat.calls == 1
-    assert ledger.tasks.get("t1").status is TaskStatus.DONE  # type: ignore[union-attr]
+    assert ledger.tasks.get(uid("t1")).status is TaskStatus.DONE  # type: ignore[union-attr]
     # a fresh, succeeded run exists distinct from the dead one
-    runs = ledger.runs.for_task("t1")
-    assert any(r.status is RunStatus.SUCCEEDED and r.id != "run_dead" for r in runs)
+    runs = ledger.runs.for_task(uid("t1"))
+    assert any(r.status is RunStatus.SUCCEEDED and r.id != uid("run_dead") for r in runs)

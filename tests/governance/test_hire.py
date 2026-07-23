@@ -24,7 +24,7 @@ from chorus.ledger import (
     ApprovalStatus,
     ApprovalSubjectKind,
     BudgetScope,
-    SqliteLedger,
+    Ledger,
 )
 from chorus.roles import RoleRegistry, default_roles
 from chorus.workforce import EmployeeStatus, LedgerWorkforce
@@ -35,7 +35,7 @@ _NOW = datetime(2026, 6, 19, 12, 0, tzinfo=UTC)
 _USER = "founder"
 
 
-def _open_hire_gate(ledger: SqliteLedger, employee_id: str) -> str:
+def _open_hire_gate(ledger: Ledger, employee_id: str) -> str:
     approval = GovernanceResolver(ledger).open(
         action=ApprovalAction.HIRE_EMPLOYEE,
         subject_kind=ApprovalSubjectKind.EMPLOYEE,
@@ -45,9 +45,9 @@ def _open_hire_gate(ledger: SqliteLedger, employee_id: str) -> str:
     return approval.id
 
 
-def test_approve_activates_the_pending_employee(ledger: SqliteLedger) -> None:
+def test_approve_activates_the_pending_employee(ledger: Ledger) -> None:
     wf = LedgerWorkforce(ledger.employees)
-    wf.hire(name="Ada", role="engineer", status=EmployeeStatus.PENDING)
+    wf.hire(name="Ada", role="backend_engineer", status=EmployeeStatus.PENDING)
     gate = _open_hire_gate(ledger, "ada")
     assert ledger.employees.get("ada").status is EmployeeStatus.PENDING  # type: ignore[union-attr]
 
@@ -58,9 +58,9 @@ def test_approve_activates_the_pending_employee(ledger: SqliteLedger) -> None:
     assert ledger.employees.get("ada").status is EmployeeStatus.ACTIVE  # type: ignore[union-attr]
 
 
-def test_deny_terminates_the_pending_employee(ledger: SqliteLedger) -> None:
+def test_deny_terminates_the_pending_employee(ledger: Ledger) -> None:
     LedgerWorkforce(ledger.employees).hire(
-        name="Bo", role="engineer", status=EmployeeStatus.PENDING
+        name="Bo", role="backend_engineer", status=EmployeeStatus.PENDING
     )
     gate = _open_hire_gate(ledger, "bo")
 
@@ -71,9 +71,9 @@ def test_deny_terminates_the_pending_employee(ledger: SqliteLedger) -> None:
     assert ledger.employees.get("bo").status is EmployeeStatus.TERMINATED  # type: ignore[union-attr]
 
 
-def test_revision_keeps_the_employee_pending(ledger: SqliteLedger) -> None:
+def test_revision_keeps_the_employee_pending(ledger: Ledger) -> None:
     LedgerWorkforce(ledger.employees).hire(
-        name="Cy", role="engineer", status=EmployeeStatus.PENDING
+        name="Cy", role="backend_engineer", status=EmployeeStatus.PENDING
     )
     gate = _open_hire_gate(ledger, "cy")
 
@@ -85,8 +85,8 @@ def test_revision_keeps_the_employee_pending(ledger: SqliteLedger) -> None:
     assert ledger.employees.get("cy").status is EmployeeStatus.PENDING  # type: ignore[union-attr]
 
 
-def test_open_rejects_a_non_pending_subject(ledger: SqliteLedger) -> None:
-    LedgerWorkforce(ledger.employees).hire(name="Di", role="engineer")  # idle, not pending
+def test_open_rejects_a_non_pending_subject(ledger: Ledger) -> None:
+    LedgerWorkforce(ledger.employees).hire(name="Di", role="backend_engineer")  # idle, not pending
     with pytest.raises(HireError):
         _open_hire_gate(ledger, "di")
 
@@ -98,7 +98,7 @@ def test_handler_action_kind() -> None:
 # -- through the facade ------------------------------------------------------------------------------
 
 
-def _chorus(ledger: SqliteLedger, policy: GovernancePolicy) -> Chorus:
+def _chorus(ledger: Ledger, policy: GovernancePolicy) -> Chorus:
     return Chorus(
         ledger=ledger,
         workforce=LedgerWorkforce(ledger.employees),
@@ -113,10 +113,10 @@ def _chorus(ledger: SqliteLedger, policy: GovernancePolicy) -> Chorus:
     )
 
 
-def test_facade_request_hire_gated_opens_a_pending_hire_with_budget(ledger: SqliteLedger) -> None:
+def test_facade_request_hire_gated_opens_a_pending_hire_with_budget(ledger: Ledger) -> None:
     chorus = _chorus(ledger, GovernancePolicy(require_hire_approval=True))
 
-    req = chorus.governance.request_hire(name="Eve", role="engineer", budget_cents=5000)
+    req = chorus.governance.request_hire(name="Eve", role="backend_engineer", budget_cents=5000)
 
     assert req.approval is not None and req.approval.action is ApprovalAction.HIRE_EMPLOYEE
     assert req.employee.status is EmployeeStatus.PENDING
@@ -124,10 +124,10 @@ def test_facade_request_hire_gated_opens_a_pending_hire_with_budget(ledger: Sqli
     assert len(budgets) == 1 and budgets[0].amount == 5000
 
 
-def test_facade_request_hire_ungated_hires_directly(ledger: SqliteLedger) -> None:
+def test_facade_request_hire_ungated_hires_directly(ledger: Ledger) -> None:
     chorus = _chorus(ledger, GovernancePolicy())  # empty policy → no gate
 
-    req = chorus.governance.request_hire(name="Fae", role="engineer")
+    req = chorus.governance.request_hire(name="Fae", role="backend_engineer")
 
     assert req.approval is None
     assert req.employee.status is EmployeeStatus.IDLE

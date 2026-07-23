@@ -10,8 +10,10 @@ from __future__ import annotations
 from chorus.observability._bus import EventBus, EventSink, FanoutBus, Subscriber
 from chorus.observability._inspector import Inspector, LedgerInspector
 from chorus.observability._views import (
+    DelegationContractView,
     EmployeeView,
     IncidentView,
+    ManagementProfileView,
     OrgObservabilityReport,
     RoutineRunView,
     RoutineTriggerView,
@@ -20,10 +22,12 @@ from chorus.observability._views import (
     ScrumChildView,
     ScrumPacketView,
     TaskView,
+    TeamView,
     WorkforceStatus,
 )
 
 __all__ = [
+    "DelegationContractView",
     "EmployeeView",
     "EventBus",
     "EventSink",
@@ -31,6 +35,7 @@ __all__ = [
     "IncidentView",
     "Inspector",
     "LedgerInspector",
+    "ManagementProfileView",
     "OrgObservabilityReport",
     "RoutineRunView",
     "RoutineTriggerView",
@@ -40,5 +45,6 @@ __all__ = [
     "ScrumPacketView",
     "Subscriber",
     "TaskView",
+    "TeamView",
     "WorkforceStatus",
 ]

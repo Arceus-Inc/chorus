@@ -7,28 +7,36 @@ row's history oldest-first; ``recent`` returns the global tail newest-first.
 
 from __future__ import annotations
 
-import sqlite3
-
 from chorus.ledger._models import Activity, ActivityVerb
-from chorus.ledger.repos._base import dumps, from_iso, loads, utcnow_iso
+from chorus.ledger.repos._base import (
+    LedgerConnection,
+    LedgerRow,
+    dumps,
+    from_iso,
+    loads_dict,
+    require_persisted,
+    utcnow_iso,
+)
 
 
 class ActivityRepo:
     """Append + read ``activity`` rows."""
 
-    def __init__(self, conn: sqlite3.Connection) -> None:
+    def __init__(self, conn: LedgerConnection) -> None:
         self._conn = conn
 
     def append(self, activity: Activity) -> Activity:
         """Record one auditable transition; the single-actor XOR is enforced in the DB."""
         now = utcnow_iso()
         self._conn.execute(
-            "INSERT INTO activity (id, actor_employee_id, actor_user_id, verb, subject_kind, "
-            "subject_id, trace_id, payload, occurred_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO activity (id, actor_employee_id, actor_user_id, "
+            "actor_system_principal_id, verb, subject_kind, subject_id, trace_id, payload, "
+            "occurred_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 activity.id,
                 activity.actor_employee_id,
                 activity.actor_user_id,
+                activity.actor_system_principal_id,
                 activity.verb.value,
                 activity.subject_kind,
                 activity.subject_id,
@@ -38,14 +46,11 @@ class ActivityRepo:
             ),
         )
         self._conn.commit()
-        recorded = self.get(activity.id)
-        assert recorded is not None  # just inserted in this transaction
+        recorded = require_persisted(self.get(activity.id), activity.id)
         return recorded
 
     def get(self, activity_id: str) -> Activity | None:
-        row = self._conn.execute(
-            "SELECT * FROM activity WHERE id = ?", (activity_id,)
-        ).fetchone()
+        row = self._conn.execute("SELECT * FROM activity WHERE id = ?", (activity_id,)).fetchone()
         return _row_to_activity(row) if row is not None else None
 
     def by_subject(self, subject_kind: str, subject_id: str) -> list[Activity]:
@@ -76,7 +81,7 @@ class ActivityRepo:
         return [_row_to_activity(row) for row in rows]
 
 
-def _row_to_activity(row: sqlite3.Row) -> Activity:
+def _row_to_activity(row: LedgerRow) -> Activity:
     return Activity(
         id=row["id"],
         verb=ActivityVerb(row["verb"]),
@@ -84,7 +89,8 @@ def _row_to_activity(row: sqlite3.Row) -> Activity:
         subject_id=row["subject_id"],
         actor_employee_id=row["actor_employee_id"],
         actor_user_id=row["actor_user_id"],
+        actor_system_principal_id=row["actor_system_principal_id"],
         trace_id=row["trace_id"],
-        payload=loads(row["payload"]) or {},
+        payload=loads_dict(row["payload"]),
         occurred_at=from_iso(row["occurred_at"]),
     )

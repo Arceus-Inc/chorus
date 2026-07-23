@@ -1,0 +1,50 @@
+
+> test
+> node --test
+
+TAP version 13
+# Subtest: validateName requires at least 2 non-whitespace characters
+ok 1 - validateName requires at least 2 non-whitespace characters
+  ---
+  duration_ms: 1.2348
+  type: 'test'
+  ...
+# Subtest: validateEmail requires an @ and a plausible domain
+ok 2 - validateEmail requires an @ and a plausible domain
+  ---
+  duration_ms: 0.9948
+  type: 'test'
+  ...
+# Subtest: validateAttendees requires a whole number between 1 and MAX_ATTENDEES
+ok 3 - validateAttendees requires a whole number between 1 and MAX_ATTENDEES
+  ---
+  duration_ms: 0.2337
+  type: 'test'
+  ...
+# Subtest: validateVegetarian requires a yes/no choice
+ok 4 - validateVegetarian requires a yes/no choice
+  ---
+  duration_ms: 0.3534
+  type: 'test'
+  ...
+# Subtest: validateAll reports field-specific errors and isValid when no errors
+ok 5 - validateAll reports field-specific errors and isValid when no errors
+  ---
+  duration_ms: 1.0261
+  type: 'test'
+  ...
+# Subtest: normalizeSubmission trims strings and converts attendees/vegetarian types
+ok 6 - normalizeSubmission trims strings and converts attendees/vegetarian types
+  ---
+  duration_ms: 0.2294
+  type: 'test'
+  ...
+1..6
+# tests 6
+# suites 0
+# pass 6
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 145.3602

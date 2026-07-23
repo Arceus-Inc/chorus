@@ -13,11 +13,11 @@ task needing sign-off sits ``blocked``; resolving acts on it per its :class:`App
 
 from __future__ import annotations
 
-import uuid
 from typing import TYPE_CHECKING
 
 from chorus.governance._errors import GovernanceError
 from chorus.governance._types import ActionOutcome
+from chorus.ids import mint_id
 from chorus.ledger import (
     Approval,
     ApprovalAction,
@@ -29,7 +29,7 @@ from chorus.ledger import (
 )
 
 if TYPE_CHECKING:
-    from chorus.ledger import SqliteLedger
+    from chorus.ledger import Ledger
 
 
 class TaskGateError(GovernanceError):
@@ -41,7 +41,7 @@ class TaskGateAction:
 
     action = ApprovalAction.TASK_GATE
 
-    def __init__(self, ledger: SqliteLedger) -> None:
+    def __init__(self, ledger: Ledger) -> None:
         self._ledger = ledger
 
     def on_open(self, approval: Approval) -> None:
@@ -78,7 +78,7 @@ class TaskGateAction:
             return 0
         self._ledger.wakes.enqueue(
             Wake(
-                id=f"wake_{uuid.uuid4().hex[:12]}",
+                id=mint_id(),
                 employee_id=task.assignee_employee_id,
                 reason=WakeReason.TASK_ASSIGNED,
                 payload={"task_id": task_id},

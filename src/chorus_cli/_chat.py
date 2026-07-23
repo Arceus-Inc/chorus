@@ -16,14 +16,14 @@ through the small :class:`ChatBeatService` bridge, and is fully testable with a 
 from __future__ import annotations
 
 import asyncio
-import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import TextIO
 
 from chorus.events import Event, EventKind
 from chorus.heartbeat import Scheduler, TickReport, Wake, WakeReason
-from chorus.ledger import Message, MessageKind, SqliteLedger, Task
+from chorus.ids import mint_id
+from chorus.ledger import Ledger, Message, MessageKind, Task
 from chorus.lifecycle import assign_task
 from chorus.observability import EventBus
 from chorus.roles import RoleBeatConfig
@@ -146,12 +146,12 @@ class _ChatState:
     last_task_id: str | None = None
 
 
-def _wake_already_queued(ledger: SqliteLedger, task_id: str) -> bool:
+def _wake_already_queued(ledger: Ledger, task_id: str) -> bool:
     """True iff a wake referencing ``task_id`` is already queued (dedupe the steer re-wake)."""
     return any(w.payload.get("task_id") == task_id for w in ledger.wakes.queued())
 
 
-def ensure_task(ledger: SqliteLedger, employee_id: str, line: str) -> tuple[str, str]:
+def ensure_task(ledger: Ledger, employee_id: str, line: str) -> tuple[str, str]:
     """Record the line as a message and make sure a beat will run for it (spec: auto-promote).
 
     Returns ``(task_id, mode)`` where ``mode`` is ``"attach"`` (re-woke a live workable task) or
@@ -164,14 +164,14 @@ def ensure_task(ledger: SqliteLedger, employee_id: str, line: str) -> tuple[str,
         if not _wake_already_queued(ledger, open_task.id):
             ledger.wakes.enqueue(
                 Wake(
-                    id=f"wake_{uuid.uuid4().hex[:12]}",
+                    id=mint_id(),
                     employee_id=employee_id,
                     reason=WakeReason.RECOVERY,
                     payload={"task_id": open_task.id, "cause": "chat_steer"},
                 )
             )
         return open_task.id, "attach"
-    task_id = f"task_{uuid.uuid4().hex[:12]}"
+    task_id = mint_id()
     ledger.tasks.submit(Task(id=task_id, intent=line))
     ledger.messages.send(_message(employee_id, line, task_id=task_id))
     # No ``assigned_by`` — like the ``assign`` command; the activity actor FKs employees, and the
@@ -182,7 +182,7 @@ def ensure_task(ledger: SqliteLedger, employee_id: str, line: str) -> tuple[str,
 
 def _message(employee_id: str, body: str, *, task_id: str) -> Message:
     return Message(
-        id=f"msg_{uuid.uuid4().hex[:12]}",
+        id=mint_id(),
         to_employee_id=employee_id,
         body=body,
         kind=MessageKind.INSTRUCTION,
@@ -191,7 +191,7 @@ def _message(employee_id: str, body: str, *, task_id: str) -> Message:
     )
 
 
-def _turn_cost_cents(ledger: SqliteLedger, task_id: str) -> tuple[str, int | None]:
+def _turn_cost_cents(ledger: Ledger, task_id: str) -> tuple[str, int | None]:
     """Best-effort ``(run_status, cost_cents)`` for the most recent run of ``task_id``.
 
     ``cost`` is ``None`` when no run exists (the beat never started — e.g. a budget gate); otherwise
@@ -205,7 +205,7 @@ def _turn_cost_cents(ledger: SqliteLedger, task_id: str) -> tuple[str, int | Non
     return run.status.value, cost
 
 
-def _turn_failure_reason(ledger: SqliteLedger, task_id: str) -> str | None:
+def _turn_failure_reason(ledger: Ledger, task_id: str) -> str | None:
     """A short, human reason the turn failed — so a blocked turn is never a silent ``cost=0c``.
 
     Distinguishes the cases that need different responses: a *transient* planner/evaluator parse blip
@@ -222,9 +222,7 @@ def _turn_failure_reason(ledger: SqliteLedger, task_id: str) -> str | None:
     return "DoD not met"  # the beat ran but the acceptance gate (e.g. pytest/ruff) rejected it
 
 
-def _render_footer(
-    console: Console, *, task_id: str, report: TickReport, ledger: SqliteLedger
-) -> None:
+def _render_footer(console: Console, *, task_id: str, report: TickReport, ledger: Ledger) -> None:
     """Close the turn with a one-line verdict (task status, run status, spend) — dream-style."""
     task = ledger.tasks.get(task_id)
     status = task.status.value if task is not None else "?"
@@ -259,7 +257,7 @@ def _fmt_list(values: tuple[str, ...]) -> str:
 
 
 def _cmd_config(
-    console: Console, *, employee_id: str, service: ChatBeatService, ledger: SqliteLedger
+    console: Console, *, employee_id: str, service: ChatBeatService, ledger: Ledger
 ) -> None:
     """Show the employee's complete dream-harness config — every ``build_harness`` component.
 
@@ -269,7 +267,9 @@ def _cmd_config(
     """
     spec = service.harness_spec
     if spec is None:
-        console.line("no resolved role config (keys-free chat) — set Azure creds for a real harness")
+        console.line(
+            "no resolved role config (keys-free chat) — set Azure creds for a real harness"
+        )
         return
     employee = ledger.employees.get(employee_id)
     role = employee.role if employee is not None else "?"
@@ -309,13 +309,20 @@ def _cmd_merge(console: Console, *, service: ChatBeatService) -> None:
     if result.merged:
         console.line(f"  [merged {result.branch} → {result.into}]")
     elif result.conflicted:
-        console.error(f"merge conflict on {result.branch} (aborted) — resolve in {service.workspace.repo}")
+        console.error(
+            f"merge conflict on {result.branch} (aborted) — resolve in {service.workspace.repo}"
+        )
     else:
         console.error(f"merge failed: {result.detail}")
 
 
 def _cmd_info(
-    console: Console, *, employee_id: str, service: ChatBeatService, state: _ChatState, ledger: SqliteLedger
+    console: Console,
+    *,
+    employee_id: str,
+    service: ChatBeatService,
+    state: _ChatState,
+    ledger: Ledger,
 ) -> None:
     open_task = ledger.tasks.open_for_assignee(employee_id)
     console.kv(
@@ -329,7 +336,7 @@ def _cmd_info(
     )
 
 
-def _cmd_task(console: Console, *, state: _ChatState, ledger: SqliteLedger) -> None:
+def _cmd_task(console: Console, *, state: _ChatState, ledger: Ledger) -> None:
     if state.last_task_id is None:
         console.line("no task yet — send a line first")
         return
@@ -360,7 +367,7 @@ def _slash(
     employee_id: str,
     service: ChatBeatService,
     state: _ChatState,
-    ledger: SqliteLedger,
+    ledger: Ledger,
 ) -> bool:
     """Handle a ``/command``. Returns ``True`` to keep chatting, ``False`` to leave chat."""
     cmd = line.strip().split(maxsplit=1)[0].lower()
@@ -386,7 +393,7 @@ def _slash(
 def run_chat(
     employee_id: str,
     *,
-    ledger: SqliteLedger,
+    ledger: Ledger,
     service: ChatBeatService,
     render_bus: ChatRenderBus,
     console: Console,

@@ -1,0 +1,7 @@
+$ npx playwright test
+[exit 0]
+
+
+Running 4 tests using 2 workers
+····
+  4 passed (4.9s)

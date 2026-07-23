@@ -1,0 +1,233 @@
+{
+  "target_beats": 5,
+  "beat_timeout_s": 120.0,
+  "episodic_records": 7,
+  "beat_traces": 7,
+  "checks": [
+    {
+      "name": "five or more episodic records",
+      "pass": true,
+      "detail": "7 record(s)"
+    },
+    {
+      "name": "lattice gate opened or agent already consolidated",
+      "pass": true,
+      "detail": "gate_open=False agent_applied=True"
+    },
+    {
+      "name": "scheduler wrote lattice-beat-end.json (at least once)",
+      "pass": true,
+      "detail": "seen on prior beat trace"
+    },
+    {
+      "name": "lattice skills materialized in worktree",
+      "pass": true,
+      "detail": "skills bundle present"
+    },
+    {
+      "name": "heartbeat ticks observed",
+      "pass": true,
+      "detail": "7 beat trace(s)"
+    },
+    {
+      "name": "lattice tools never crashed the beat",
+      "pass": true,
+      "detail": "no lattice exceptions surfaced"
+    },
+    {
+      "name": "agent lattice tool usage (soft)",
+      "pass": true,
+      "detail": "5 lattice tool call(s)"
+    },
+    {
+      "name": "agent consolidated (lattice_apply) after gate teaser",
+      "pass": true,
+      "detail": "apply on ['t5-retry-docs']"
+    },
+    {
+      "name": "agent called lattice_packet",
+      "pass": true,
+      "detail": "1 call(s)"
+    },
+    {
+      "name": "agent called get_run for prose drill-down",
+      "pass": true,
+      "detail": "3 call(s)"
+    },
+    {
+      "name": "semantic atoms on disk after agent run",
+      "pass": true,
+      "detail": "/private/var/folders/74/m_l20tpx4qq_7svlx50hqm3r0000gn/T/chorus-lattice-5beat-3ry820z4/.chorus/work/acme/lattice/bex/semantic"
+    },
+    {
+      "name": "dedicated t6 beat (only when gate still open after 5 tasks)",
+      "pass": true,
+      "detail": "t6=0 trace(s); teaser_seen=True"
+    },
+    {
+      "name": "programmatic fallback skipped",
+      "pass": true,
+      "detail": "agent called lattice_apply"
+    }
+  ],
+  "t7_status": "done",
+  "t7_checks": [
+    {
+      "name": "t7 retrieval beat ran",
+      "pass": true,
+      "detail": "tick=1 outcome=pass"
+    },
+    {
+      "name": "t7 lattice_context called",
+      "pass": true,
+      "detail": "2 call(s); lattice=['lattice_context', 'lattice_context']"
+    },
+    {
+      "name": "t7 role.text mentions retry policy",
+      "pass": true,
+      "detail": "markers=['429', '503', 'backoff', 'exponential', '30', 'max_retries', 'max retries', 'retry'] texts=1"
+    },
+    {
+      "name": "t7 lattice_context informed run (soft)",
+      "pass": true,
+      "detail": "context=True get_run=0 markers=9"
+    },
+    {
+      "name": "t7 task completed (soft)",
+      "pass": true,
+      "detail": "status=done"
+    },
+    {
+      "name": "t7 lattice helped completed run (soft)",
+      "pass": true,
+      "detail": "context=True informed=True done=True"
+    }
+  ],
+  "t7_all_pass": true,
+  "retrieval_checks": [
+    {
+      "name": "context(design) excludes api.retry",
+      "pass": true,
+      "detail": "(empty)"
+    },
+    {
+      "name": "context(retry) includes api.retry",
+      "pass": false,
+      "detail": "## lattice patterns  - **api.client.retry_policy**  src/api/client.py implements retries for HTTP GET requests on status"
+    }
+  ],
+  "retrieval_all_pass": false,
+  "context_design_excludes_retry": true,
+  "all_pass": false,
+  "memory_md_path": "/private/var/folders/74/m_l20tpx4qq_7svlx50hqm3r0000gn/T/chorus-lattice-5beat-3ry820z4/.chorus/work/acme/lattice/bex/MEMORY.md",
+  "memory_md": "# MEMORY\n\n### api.client.retry_policy (rule, LCB 0.70)\n\nsrc/api/client.py implements retries for HTTP GET requests on status codes 429 and 503, up to max_retries=3, using exponential backoff starting at 0.2s and capped at 30s between attempts.\n",
+  "traces": [
+    {
+      "task_id": "t1-retry-skeleton",
+      "tick": 1,
+      "run_id": "",
+      "outcome": "pass",
+      "lattice_calls": [],
+      "recall_calls": 0,
+      "get_run_calls": 0,
+      "lattice_teaser": null,
+      "role_text_snippets": [
+        "<spec>\n\n## GoalImplement a tiny HTTP client package and a single unit test:\n- Create `src/api/client.py` defining `HttpClient` with `request(url: str) -> int`.\n- `request` must perform exactly one HTTP **GET** using Python\u2019s standard librar"
+      ],
+      "role_text_joined": "<spec> ## GoalImplement a tiny HTTP client package and a single unit test: - Create `src/api/client.py` defining `HttpClient` with `request(url: str) -> int`. - `request` must perform exactly one HTTP **GET** using Python\u2019s standard library `urllib` and return the HTTP **status code** as an `int`. - Add `tests/test_client.py` with **one** `pytest` test that asserts the behavior. - Use `todo_write` to maintain a durable `TODO.md` checklist during the work. - Ensure the test suite passes. ## Approach- Create package structure `src/api/` with `__init__.py` as needed so imports work reliably. - Implement `HttpClient.request` using `urllib.request` (e.g., `urllib.request.urlopen`) to issue a GET. - Return `response.status` (or equivalent) as `int`. - Keep implementation minimal and deterministic. - Write one pytest in `tests/test_client.py`. - Prefer a unit-style test that **mocks/stubs** the urllib call to avoid network dependence and flakiness. - Assert that: - The method returns the expected status code. - A GET was issued (implicitly via calling `urlopen` once with the URL; the default method is GET for a plain `Request`/URL). - Run the project\u2019s test command (likely `pytest`) and fix any import/package path issues so CI can execute tests consistently. ## Constraints / Do-Not\u2019s- Do not add extra endpoints, extra tests, or unrelated refactors. - Do not introduce non-stdlib HTTP libraries (requests/httpx). - Keep the change scoped to the requested files/paths and what\u2019s required for packaging/imports. - Ensure the tests are stable offline (no real external network calls). </spec> <ledger> { \"steps\": [ { \"id\": \"httpclient-urllib-get-with-pytest\", \"description\": \"Create src/api/client.py with HttpClient.request(url)->int using urllib GET, add a single pytest in tests/test_client.py (mocking urllib), track work in TODO.md via todo_write, and ensure tests pass.\", \"sprint_target\":1, \"notes\": \"Keep implementation stdlib-only and test offline-safe by mocking urlopen.\" } ], \"e"
+    },
+    {
+      "task_id": "t2-retry-count",
+      "tick": 1,
+      "run_id": "",
+      "outcome": "?",
+      "lattice_calls": [],
+      "recall_calls": 0,
+      "get_run_calls": 0,
+      "lattice_teaser": null,
+      "role_text_snippets": [
+        "<spec>\n\n## GoalExtend `src/api/client.py`\u2019s `HttpClient` so it supports a configurable `max_retries: int =3` attribute on the class and automatically retries failed HTTP requests up to that limit, while preserving all existing behavior for "
+      ],
+      "role_text_joined": "<spec> ## GoalExtend `src/api/client.py`\u2019s `HttpClient` so it supports a configurable `max_retries: int =3` attribute on the class and automatically retries failed HTTP requests up to that limit, while preserving all existing behavior for current users and tests. ## Intended behavior- `HttpClient` exposes `max_retries` (default `3`) as a constructor/class attribute (match the repo\u2019s existing style\u2014likely `__init__(..., max_retries: int =3, ...)` storing to `self.max_retries`). - When a request \u201cfails\u201d (as defined by existing semantics in `client.py`), the client retries the request up to `max_retries` times total (i.e., initial attempt + retries up to the cap). Clarify off-by-one explicitly in tests. - Retries should keep prior call signatures and defaults working; any existing code that instantiates `HttpClient()` with no new argument must behave as before, except now transient failures may succeed due to retries. - Preserve any existing error types raised, response objects returned, logging behavior, and timeouts unless the retry loop requires minor restructuring. Do not change public API beyond adding the optional `max_retries` parameter/attribute. ## Retry policy constraints (implementation guidance) - Only retry on failure modes that are already considered \u201cfailed requests\u201d in current logic (likely network exceptions and/or non-2xx responses depending on current behavior). Do not silently change what counts as success. - If the current client already has special handling for specific status codes or exceptions, integrate retries without weakening those rules. - Ensure the final raised exception (or returned error result) matches the pre-change behavior when all attempts fail. - Keep retry loop simple and deterministic; avoid adding new dependencies unless already present. - If the client supports idempotency-sensitive methods, do not add method-specific branching unless required by existing conventions in the file. The ticket asks for \u201cretry failed requests\u201d ge"
+    },
+    {
+      "task_id": "t2-retry-count",
+      "tick": 2,
+      "run_id": "",
+      "outcome": "pass",
+      "lattice_calls": [],
+      "recall_calls": 0,
+      "get_run_calls": 0,
+      "lattice_teaser": null,
+      "role_text_snippets": [
+        "<spec>\n\n## GoalExtend `src/api/client.py`\u2019s `HttpClient` to support a configurable `max_retries: int =3` on the class, and retry failed HTTP requests up to `max_retries`, while preserving existing behavior for all previously-green scenarios"
+      ],
+      "role_text_joined": "<spec> ## GoalExtend `src/api/client.py`\u2019s `HttpClient` to support a configurable `max_retries: int =3` on the class, and retry failed HTTP requests up to `max_retries`, while preserving existing behavior for all previously-green scenarios. Update/extend the test suite to cover the new retry behavior and to ensure prior behavior still works. ## Scope / expected behavior- Add `max_retries` as a class/constructor parameter (default `3`) on `HttpClient`. - For a single logical request, if it fails in a retry-eligible way, the client should attempt it again until: - the request succeeds, or - the number of attempts reaches `max_retries` (interpretation: \u201cretry up to max_retries\u201d means total attempts = `max_retries +1`, unless the existing codebase already has a different convention\u2014match existing conventions if present). - Preserve the existing request interface and return/exception behavior when `max_retries` is left at default and the request succeeds on the first attempt. - Do not change public method signatures/return shapes beyond introducing the optional `max_retries` parameter. ## Retry policy (implementation constraints) - Prefer retrying only for transient failures: - transport/network exceptions thrown by the underlying HTTP library (e.g., connection reset, timeouts), and/or - HTTP5xx responses (and possibly429 if the codebase already treats it as retryable). - Avoid retrying non-transient errors by default (e.g.,4xx other than429). - Keep the logic small and localized to `HttpClient` (no broad refactors). - If the repo already defines a notion of \u201cretryable\u201d (helpers/constants), reuse it rather than inventing a new policy. ## Testing constraints (must be test-first in generator execution) - Update/add unit tests to prove: - retries happen when a request fails transiently then succeeds (assert call count / attempts), - the client stops after exhausting retries and surfaces the final failure, - `max_retries=0` performs exactly one attempt (no retries), - existi"
+    },
+    {
+      "task_id": "t3-retry-backoff",
+      "tick": 1,
+      "run_id": "",
+      "outcome": "?",
+      "lattice_calls": [],
+      "recall_calls": 0,
+      "get_run_calls": 0,
+      "lattice_teaser": null,
+      "role_text_snippets": [
+        "<spec>\n\n## GoalImplement exponential backoff between retry attempts in `src/api/client.py`, using:\n- **base delay**: `0.2s`\n- **cap**: `30s` maximum delayAdd/adjust a **unit test** that proves the computed backoff delay is **capped at30s**,",
+        "=================================== FAILURES",
+        " ===================================\\n__________ test_request_sleeps_between_retries_count_is_failures[0-0] __________\\n...\\n> patch(\\\"src.api.client.time.sleep\\\") as sleep_mock,\\nE AttributeError: module 'src.api.client' has no attribute '"
+      ],
+      "role_text_joined": "<spec> ## GoalImplement exponential backoff between retry attempts in `src/api/client.py`, using: - **base delay**: `0.2s` - **cap**: `30s` maximum delayAdd/adjust a **unit test** that proves the computed backoff delay is **capped at30s**, and ensure the full test suite passes. ## Approach1. **Repo discovery (no assumptions):** - Inspect the repository manifests/lockfiles and CI/config to determine the stack (Python tooling, test runner, lint/type tooling). - Locate the retry loop in `src/api/client.py` and identify how retries are currently triggered (e.g., fixed sleep, no sleep, or external retry helper). 2. **Backoff implementation details:** - Compute delay per retry attempt using an exponential formula anchored on the base (e.g., `delay = min(cap, base * (2 ** attempt))`). - Ensure the delay applies **between retries only** (i.e., do not delay before the first attempt). - Keep behavior deterministic and testable by: - factoring delay calculation into a small pure function (preferred), or - exposing the delay value in a way tests can assert without relying on real sleeping. - Use `time.sleep(delay)` (or existing sleep mechanism) in the retry loop; in tests, patch/mocking should prevent real waiting. 3. **Unit test (cap behavior):** - Add a test that forces a retry attempt index large enough that the uncapped delay would exceed30s, and assert the effective delay is exactly `30.0` (or `<=30.0` depending on existing conventions). - Prefer asserting the value passed to `sleep()` (via mocking) or directly testing the pure delay-calculation helper. 4. **Quality + verification constraints (must respect):** - Do not modify unrelated source files. - Do not weaken existing tests. - Run the repo\u2019s native format/lint/type gates (as discovered) plus unit tests, and record durable evidence (`test_plan.json` from test_author RED run; `test_evidence/manifest.json` for GREEN gates). - Delegate test writing to the `test_author` subagent (tests only; must demonstrate RED first). -"
+    },
+    {
+      "task_id": "t4-retry-statuses",
+      "tick": 1,
+      "run_id": "",
+      "outcome": "?",
+      "lattice_calls": [],
+      "recall_calls": 0,
+      "get_run_calls": 0,
+      "lattice_teaser": "/private/var/folders/74/m_l20tpx4qq_7svlx50hqm3r0000gn/T/chorus-lattice-5beat-3ry820z4/.chorus/work/acme/worktrees/bex/.harness/lattice-beat-end.json",
+      "role_text_snippets": [
+        "<spec>\n## GoalUpdate `src/api/client.py` so the HTTP client retries requests when it receives **HTTP429 (Too Many Requests)** and **HTTP503 (Service Unavailable)** responses. Add/extend unit tests to specifically prove **retry-on-503** beha"
+      ],
+      "role_text_joined": "<spec> ## GoalUpdate `src/api/client.py` so the HTTP client retries requests when it receives **HTTP429 (Too Many Requests)** and **HTTP503 (Service Unavailable)** responses. Add/extend unit tests to specifically prove **retry-on-503** behavior, and ensure the full test suite passes. ## Approach- **Repo reconnaissance (generator must do first):** - Inspect project manifests/lockfiles (e.g., `pyproject.toml`, `requirements*.txt`, `package.json`, CI config) to determine the test runner and HTTP stack (e.g., `requests`, `httpx`, `aiohttp`) and existing retry/backoff utilities. - Locate existing tests around `src/api/client.py` and any current retry logic (e.g., retry on timeouts/5xx). - **Implementation details (client behavior):** - Extend existing retry decision logic (or add it if absent) to treat **429 and503** as retryable responses. - Keep changes minimal and consistent with existing patterns (same retry counts, sleep/backoff strategy, jitter, logging, and exception types already used). - If the client already respects `Retry-After` for429, preserve/extend that behavior; do not introduce new third-party retry libraries unless the repo already uses them. - Ensure retries terminate deterministically (max attempts) and that the final response/error behavior matches existing conventions (e.g., return last response vs raise). - **Tests (must be independent and prove retry-on-503):** - Add a unit test that simulates a **503 response followed by a success** (e.g.,200) and asserts: - the request was attempted more than once (exact call count if stable), - the returned value corresponds to the successful attempt, - optional: backoff/sleep is invoked (mocked so tests are fast and deterministic). - Follow existing test style and mocking approach (e.g., monkeypatching transport, mocking session/client, using `responses`/`respx`, etc.). - Tests must be written so they **fail before the implementation change** (RED evidence) and pass after (GREEN). ## Constraints / guardrails-"
+    },
+    {
+      "task_id": "t5-retry-docs",
+      "tick": 1,
+      "run_id": "",
+      "outcome": "pass",
+      "lattice_calls": [
+        "lattice_packet",
+        "lattice_apply",
+        "lattice_apply"
+      ],
+      "recall_calls": 0,
+      "get_run_calls": 3,
+      "lattice_teaser": null,
+      "role_text_snippets": [
+        "<spec>\n\n## GoalAdd a module-level docstring to `src/api/client.py` that clearly documents the client\u2019s retry policy, specifically:\n- **Maximum retries**\n- **Backoff cap**\n- **Which HTTP status codes are retried**\n\nThen add a unit test that "
+      ],
+      "role_text_joined": "<spec> ## GoalAdd a module-level docstring to `src/api/client.py` that clearly documents the client\u2019s retry policy, specifically: - **Maximum retries** - **Backoff cap** - **Which HTTP status codes are retried** Then add a unit test that **reads the module docstring** and asserts it contains the word **`backoff`** (case-insensitive is acceptable if the repo\u2019s conventions support it). Ensure the full test suite passes. ## Approach- Inspect the existing implementation in `src/api/client.py` to avoid inventing policy details. The docstring must match the actual behavior/configuration already implemented (or the minimal adjustments required by the ticket, if any). - Add a **module docstring at the top of the file** (before imports) describing the retry behavior in plain language, including concrete values (e.g., \u201cmax_retries=N\u201d, \u201cbackoff capped at X seconds\u201d) and enumerating the retryable status codes (e.g.,429/5xx) according to what the client actually retries. - Add a test (likely under the existing test framework layout) that imports `src.api.client` and checks `client.__doc__` includes `\"backoff\"`. The test should be resilient and not depend on network calls. ## Constraints / Guardrails- Do not modify unrelated source files or refactor the client; keep changes minimal and aligned to the intent. - The new test must be deterministic and run offline. - The resulting code must pass the repo\u2019s standard format/lint/type gates (as applicable) and all tests. </spec> <ledger> { \"steps\": [ { \"id\": \"docstring-retry-policy-and-test\", \"description\": \"Document the retry policy in src/api/client.py via a module docstring and add a unit test asserting the docstring contains 'backoff', ensuring all tests pass.\", \"sprint_target\":1, \"notes\": \"Docstring must reflect the existing retry implementation: max retries, backoff cap, and retryable HTTP status codes.\" } ], \"evaluator_enabled\": true} </ledger><proposal> [\"MUST add a top-level module docstring to src/api/client.py that documents "
+    },
+    {
+      "task_id": "t7-retry-policy-readme",
+      "tick": 1,
+      "run_id": "",
+      "outcome": "pass",
+      "lattice_calls": [
+        "lattice_context",
+        "lattice_context"
+      ],
+      "recall_calls": 0,
+      "get_run_calls": 0,
+      "lattice_teaser": null,
+      "role_text_snippets": [
+        "<spec>\n## GoalDocument the **existing** HTTP retry behavior by adding a short `RETRY_POLICY` section to `README.md` that **exactly matches** the implementation in `src/api/client.py` (no behavior changes). The section must state:\n- **Max re"
+      ],
+      "role_text_joined": "<spec> ## GoalDocument the **existing** HTTP retry behavior by adding a short `RETRY_POLICY` section to `README.md` that **exactly matches** the implementation in `src/api/client.py` (no behavior changes). The section must state: - **Max retries** - **Backoff strategy** (exponential) and **backoff cap** - **Which HTTP status codes** trigger retries## Required pre-check (before editing) Because the task requires it, the generator must first consult stored guidance for retry policy: - Query **lattice patterns** (`lattice_context`) for \u201cretry policy / backoff / max retries / status codes\u201d. - Query **project/workspace memory** (if available in this environment) for \u201cretry policy\u201d. If those stores contain guidance, it must be reconciled with `src/api/client.py`. **Source of truth is `src/api/client.py`**; stored patterns may explain intent but cannot override code. > Capability note: if this planner runtime cannot access lattice/memory tools, the generator must still perform this check in its runtime (or request the missing capability); do not skip the pre-check. ## Approach1. **Discover stack & test commands** from repo signals (e.g., `pyproject.toml`, `Makefile`, CI config) to know how tests are run. 2. Read `src/api/client.py` and extract the retry parameters: - retry count semantics (e.g., \u201cmax retries\u201d vs \u201cmax attempts\u201d) - retryable status codes list/range - backoff base factor and maximum delay cap3. Update `README.md` with a compact `## RETRY_POLICY` section reflecting exactly those parameters, with no behavioral claims beyond what the code does. 4. Run the repository test suite and ensure it passes. If tests fail due to documentation expectations, adjust README wording only\u2014**do not change `client.py` behavior**. ## Constraints- **Do not modify** retry behavior or any logic in `src/api/client.py`. - `README.md` change only: add `RETRY_POLICY` section (keep it short). - Final result must be verifiable by running the project\u2019s standard tests successfully. </spec> <"
+    }
+  ]
+}

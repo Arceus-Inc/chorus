@@ -14,12 +14,12 @@ One object over the budget repos, no stored pause flag — *paused* is derived f
 
 from __future__ import annotations
 
-import uuid
 from datetime import UTC, datetime
 from enum import StrEnum
 from typing import TYPE_CHECKING
 
 from chorus.budgets._window import BudgetWindow, window_start
+from chorus.ids import mint_id
 from chorus.ledger._models import (
     Approval,
     ApprovalSubjectKind,
@@ -30,7 +30,7 @@ from chorus.ledger._models import (
 )
 
 if TYPE_CHECKING:
-    from chorus.ledger import SqliteLedger
+    from chorus.ledger import Ledger
     from chorus.ledger._models import CostEvent
 
 _PERCENT = 100
@@ -50,7 +50,7 @@ class BlockReason(StrEnum):
 class BudgetEnforcer:
     """Enforces the two-gate hard-stop over a ledger's budget repos for one company (spec 04 §3)."""
 
-    def __init__(self, ledger: SqliteLedger, *, company_id: str) -> None:
+    def __init__(self, ledger: Ledger, *, company_id: str) -> None:
         self._ledger = ledger
         self._company_id = company_id
 
@@ -149,7 +149,7 @@ class BudgetEnforcer:
     ) -> BudgetIncident | None:
         if self._open_hard_incident(policy.id) is not None:
             return None  # already paused — the hard incident persists across windows (idempotent)
-        incident_id = _mint("inc")
+        incident_id = mint_id()
         self._ledger.budget_incidents.open(
             BudgetIncident(
                 id=incident_id,
@@ -160,7 +160,7 @@ class BudgetEnforcer:
                 window_start=self._incident_window(policy, now),
             )
         )
-        approval_id = _mint("ap")
+        approval_id = mint_id()
         self._ledger.approvals.request(
             Approval(
                 id=approval_id,
@@ -181,7 +181,7 @@ class BudgetEnforcer:
         for incident in self._ledger.budget_incidents.open_for_policy(policy.id):
             if incident.threshold_type is BudgetThreshold.SOFT and incident.window_start == window:
                 return None  # already warned for this window
-        incident_id = _mint("inc")
+        incident_id = mint_id()
         self._ledger.budget_incidents.open(
             BudgetIncident(
                 id=incident_id,
@@ -226,10 +226,6 @@ class BudgetEnforcer:
         if policy is None:
             raise KeyError(policy_id)
         return policy
-
-
-def _mint(prefix: str) -> str:
-    return f"{prefix}_{uuid.uuid4().hex[:12]}"
 
 
 __all__ = ["BlockReason", "BudgetEnforcer"]

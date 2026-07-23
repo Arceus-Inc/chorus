@@ -15,7 +15,7 @@ from enum import StrEnum
 from typing import Protocol, runtime_checkable
 
 from chorus.heartbeat import TickReport
-from chorus.ledger import SqliteLedger
+from chorus.ledger import Ledger
 from chorus_cli._render import Console
 
 
@@ -63,7 +63,7 @@ class CliSession:
     kernel can run a real beat (Azure keys present) — otherwise it stays ``None`` and ``tick`` says so.
     """
 
-    ledger: SqliteLedger
+    ledger: Ledger
     clock: Callable[[], datetime] = utc_now
     beats: BeatService | None = None
     db_path: str | None = None
