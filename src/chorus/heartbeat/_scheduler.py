@@ -29,6 +29,7 @@ from chorus.cron._fire import fire_routine
 from chorus.events import Event, EventKind
 from chorus.governance import GovernanceResolver
 from chorus.heartbeat._beat import BeatDisposition, BeatOutcome
+from chorus.heartbeat._landed_outcome import derive_landed_outcome
 from chorus.heartbeat._beat_context import IntegrateContextPacket
 from chorus.heartbeat._execution_profile import (
     ExecutionProfileResolver,
@@ -932,6 +933,14 @@ class Scheduler:
             else:
                 self._climb_repair_ladder(task_id, employee_id=employee.id, verifier=verifier)
 
+        self._emit_outcome_landed(
+            task=task,
+            result=result,
+            run_id=run_id,
+            employee=employee,
+            now=now,
+        )
+
         await self._capture_memory(
             ledger,
             run_id=run_id,
@@ -1011,6 +1020,52 @@ class Scheduler:
             orchestrated=orchestrated,
         )
         self._memory_writer.append(delta)
+
+    def _emit_outcome_landed(
+        self,
+        *,
+        task: Task,
+        result: BeatOutcome,
+        run_id: str,
+        employee: Employee,
+        now: datetime,
+    ) -> None:
+        """Publish the typed landed outcome once — bridge/horizon project it mechanically (Phase 0)."""
+        if self._event_bus is None:
+            return
+        ledger = self._require_ledger()
+        latest = ledger.tasks.get(task.id) or task
+        dod_row = ledger.dod.get_for_task(task.id)
+        dod_status = dod_row.status if dod_row is not None else None
+        orchestrated = (
+            latest.execution_mode is ExecutionMode.DELEGATION
+            and latest.status is TaskStatus.BLOCKED
+            and ledger.tasks.has_children(task.id)
+        )
+        try:
+            landed = derive_landed_outcome(
+                latest,
+                result,
+                dod_status,
+                orchestrated=orchestrated,
+            )
+        except ValueError:
+            return
+        self._event_bus.emit(
+            Event(
+                kind=EventKind.OUTCOME_LANDED,
+                at=now,
+                trace_id=trace_root(ledger, task.id),
+                task_id=task.id,
+                employee_id=employee.id,
+                run_id=run_id,
+                payload={
+                    **landed.to_dict(),
+                    "passed": landed.strategy_passed(),
+                    "recovery_hint": landed.recovery_hint().value,
+                },
+            )
+        )
 
     def _write_lattice_beat_end(
         self,
