@@ -22,6 +22,7 @@ from chorus.ledger import Ledger
 from chorus.memory import EpisodicStore
 from chorus.observability import EventBus
 from chorus.roles import (
+    DEFAULT_BEAT_TIMEOUT_S,
     RolePlugin,
     RoleRegistry,
     RoleSurfaceOverride,
@@ -188,7 +189,7 @@ def build_beat_service(
         pricing=pricing,
         seed=seed,
         work_root=work_root,
-        timeout_s=_env_float("CHORUS_DREAM_TIMEOUT_S", 90.0),
+        timeout_s=_env_float("CHORUS_DREAM_TIMEOUT_S", DEFAULT_BEAT_TIMEOUT_S),
         ledger=ledger,  # capability tools (e.g. the manager's decompose) mutate the live ledger
     )
     scheduler = Scheduler(
@@ -240,7 +241,7 @@ def chat_service_from_env(
         pricing=default_pricing_from_env(),
         roles=RoleRegistry.from_plugins(default_roles_from_env()),
         seed=os.environ.get("CHORUS_COMPANY_SEED") or None,
-        timeout_s=_env_float("CHORUS_DREAM_TIMEOUT_S", 90.0),
+        timeout_s=_env_float("CHORUS_DREAM_TIMEOUT_S", DEFAULT_BEAT_TIMEOUT_S),
     )
 
 

@@ -38,6 +38,7 @@ from chorus.heartbeat._todo_flush import (
     write_todo_flush_nudge,
 )
 from chorus.outcomes import VerificationStep
+from chorus.roles._manifest import DEFAULT_BEAT_TIMEOUT_S
 
 
 def _utc_now() -> datetime:
@@ -323,7 +324,7 @@ class DreamBeatRunner:
         *,
         pricing: TokenPricing | None = None,
         max_sprints: int | None = 1,
-        timeout_s: float | None = 90.0,
+        timeout_s: float | None = DEFAULT_BEAT_TIMEOUT_S,
         working_dir: str | Path | None = None,
         employee_id: str | None = None,
         clock: Callable[[], datetime] | None = None,

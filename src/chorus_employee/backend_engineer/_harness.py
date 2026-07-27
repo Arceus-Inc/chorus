@@ -13,6 +13,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from chorus.roles._manifest import (
+    DREAM_DEFAULT_MAX_SPRINTS,
     Isolation,
     MemoryScope,
     PermissionMode,
@@ -104,7 +105,7 @@ def backend_engineer_manifest() -> RoleManifest:
         # — build_harness(max_turns=…) — implement → install → run → test → fix is turn-hungry —
         max_turns=18,
         # — per-beat sprint budget (spec 05): a build cools to green over a few passes in one beat —
-        max_sprints=6,
+        max_sprints=DREAM_DEFAULT_MAX_SPRINTS,
         # — wall-clock per beat (DreamBeatRunner) — the heaviest beat of any role: it BUILDS a running
         # service, INSTALLS its real quality tools (ruff/mypy — no gaming), BOOTS it, RESTARTS it
         # (durability proof), and runs the full test sandwich (test_author + api_verifier + test_evidence),

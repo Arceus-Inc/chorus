@@ -16,7 +16,13 @@ from pathlib import Path
 import pytest
 
 from chorus.outcomes import DoDKind
-from chorus.roles._manifest import Isolation, MemoryScope, PermissionMode, SandboxTier
+from chorus.roles._manifest import (
+    DREAM_DEFAULT_MAX_SPRINTS,
+    Isolation,
+    MemoryScope,
+    PermissionMode,
+    SandboxTier,
+)
 
 pytestmark = pytest.mark.integration
 
@@ -124,6 +130,7 @@ class TestFrontendEngineerManifest:
     def test_budgets_are_widened_for_a_build_test_iterate_loop(self) -> None:
         manifest = self._manifest()
         assert manifest.max_turns >= 12
+        assert manifest.max_sprints == DREAM_DEFAULT_MAX_SPRINTS
         assert manifest.max_sprints >= 2
         assert manifest.beat_timeout_s is not None and manifest.beat_timeout_s >= 900
         assert manifest.lease_ttl_s is not None and manifest.lease_ttl_s >= manifest.beat_timeout_s

@@ -11,6 +11,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from chorus.roles._manifest import (
+    DREAM_DEFAULT_MAX_SPRINTS,
     Isolation,
     MemoryScope,
     PermissionMode,
@@ -106,7 +107,7 @@ def marketer_manifest() -> RoleManifest:
         # --- per-beat sprint budget ---
         # Brand convergence takes a few passes (the Brand-Critic is deliberately strict), so a content
         # beat needs more sprints than a code beat. 5 lets a hot first draft cool to on-brand.
-        max_sprints=5,
+        max_sprints=DREAM_DEFAULT_MAX_SPRINTS,
         # --- build_harness(mcp=...) / build_harness(plugins=...) ---
         mcp=False,  # MCP integrations (analytics, ad platforms) are a follow-up
         plugins=False,

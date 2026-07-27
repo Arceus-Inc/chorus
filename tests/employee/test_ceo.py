@@ -61,6 +61,8 @@ def test_ceo_authority_stays_narrow() -> None:
     assert manifest.working_memory is True
     assert manifest.max_turns >= 8  # a governance review is multi-step
     assert manifest.max_sprints > 1
+    assert manifest.beat_timeout_s is not None and manifest.beat_timeout_s >= 300.0
+    assert manifest.lease_ttl_s is not None and manifest.lease_ttl_s >= manifest.beat_timeout_s
     assert manifest.model is None  # uses the deployment model the composition root supplies
     assert manifest.mcp is False and manifest.plugins is False
 

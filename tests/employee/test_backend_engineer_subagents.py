@@ -14,7 +14,7 @@ import pytest
 from dream.skills import load_skill_registry
 from pydantic import ValidationError
 
-from chorus.roles import role_beat_config
+from chorus.roles import DREAM_DEFAULT_MAX_SPRINTS, role_beat_config
 from chorus_employee.backend_engineer import (
     API_VERIFIER_SUBAGENT,
     CODE_REVIEWER_SUBAGENT,
@@ -149,6 +149,10 @@ class TestCodeReviewerEvidenceDeclaration:
 
 
 class TestBackendEngineerBeatBudget:
+    def test_craft_sprint_budget_matches_dream_default(self) -> None:
+        manifest = backend_engineer_plugin().manifest
+        assert manifest.max_sprints == DREAM_DEFAULT_MAX_SPRINTS
+
     def test_beat_timeout_is_sized_for_the_full_sandwich(self) -> None:
         # The backend beat must leave room for one evaluator correction sprint and its terminal
         # independent re-review after the build, mutation, and durability gates complete.

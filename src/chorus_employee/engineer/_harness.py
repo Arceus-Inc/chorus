@@ -11,6 +11,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from chorus.roles._manifest import (
+    DREAM_DEFAULT_MAX_SPRINTS,
     Isolation,
     MemoryScope,
     PermissionMode,
@@ -66,7 +67,7 @@ def engineer_manifest() -> RoleManifest:
         # A build is multi-sprint (dream needs up to NEEDS_CHANGES_LIMIT sprints to land a step): widen
         # the budget so one engineer beat runs the build to pass, instead of stopping after one sprint
         # with `needs-changes` and depending on re-dispatch to continue.
-        max_sprints=6,
+        max_sprints=DREAM_DEFAULT_MAX_SPRINTS,
         # — build_harness(mcp=…) / build_harness(plugins=…) —
         mcp=False,  # admit the working dir's MCP allowlist only when explicitly enabled
         plugins=False,  # load repo-local plugins only when explicitly enabled
@@ -79,6 +80,9 @@ def engineer_manifest() -> RoleManifest:
         # commands), which dream otherwise gates behind an interactive approval the kernel can't supply.
         # dream's credential guard, command-deny list, and worktree confinement still apply.
         sandbox=SandboxTier.UNRESTRICTED,
+        # — beat time budget — code craft can hold install/build/test cycles (P0 #6) —
+        beat_timeout_s=1200.0,
+        lease_ttl_s=1500.0,
     )
 
 

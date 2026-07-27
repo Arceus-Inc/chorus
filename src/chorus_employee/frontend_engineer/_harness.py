@@ -20,6 +20,7 @@ import os
 from pathlib import Path
 
 from chorus.roles._manifest import (
+    DREAM_DEFAULT_MAX_SPRINTS,
     Isolation,
     McpServerSpec,
     MemoryScope,
@@ -145,7 +146,7 @@ def frontend_engineer_manifest() -> RoleManifest:
         # --- per-beat sprint budget ---
         # A working+tested build is multi-sprint (draft, wire, test, converge); 6 lets one beat run the
         # build all the way to green rather than stopping mid-way and depending on re-dispatch.
-        max_sprints=6,
+        max_sprints=DREAM_DEFAULT_MAX_SPRINTS,
         # --- build_harness(mcp=...) / build_harness(plugins=...) ---
         # mcp is ON: the engineer admits the Playwright MCP (declared in ``mcp_servers`` below), so it
         # can drive a real browser INTERACTIVELY mid-build — navigate the running app, inspect the

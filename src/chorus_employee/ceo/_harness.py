@@ -101,6 +101,9 @@ def ceo_manifest() -> RoleManifest:
             "stakeholder-communication",
         ),
         skills_root=_SKILLS_ROOT,
+        # — beat time budget — multi-step governance review (P0 #6) —
+        beat_timeout_s=900.0,
+        lease_ttl_s=1200.0,
     )
 
 
