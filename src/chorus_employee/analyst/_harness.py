@@ -13,6 +13,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from chorus.roles._manifest import (
+    DREAM_DEFAULT_MAX_SPRINTS,
     Isolation,
     MemoryScope,
     PermissionMode,
@@ -76,7 +77,10 @@ def analyst_manifest() -> RoleManifest:
         # — per-beat sprint budget (spec 05) —
         # a real investigation rarely lands in one sprint; widen so one Analyst beat runs to a finding
         # instead of stopping after the first sprint with `needs-changes` and waiting on re-dispatch.
-        max_sprints=4,
+        max_sprints=DREAM_DEFAULT_MAX_SPRINTS,
+        # — beat time budget — analysis scripts + fix/re-run cycles (P0 #6) —
+        beat_timeout_s=1200.0,
+        lease_ttl_s=1500.0,
         # — worktree containment (spec 04 §4) —
         isolation=Isolation.WORKTREE,
         # — trust posture (spec 04 §4) → .harness/sandbox.toml —

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from chorus.roles import default_roles, role_beat_config
+from chorus.roles import DREAM_DEFAULT_MAX_SPRINTS, default_roles, role_beat_config
 from chorus_employee import default_employees, engineer_plugin
 
 pytestmark = pytest.mark.unit
@@ -42,17 +42,23 @@ def test_engineer_declares_every_build_harness_component() -> None:
     assert manifest.system_prompt  # a real operating brief, not a placeholder
     # Engine scalars — every remaining build_harness knob is explicitly set.
     assert manifest.max_turns >= 8  # coding is multi-step; at least dream's default
+    assert manifest.max_sprints == DREAM_DEFAULT_MAX_SPRINTS
+    assert manifest.beat_timeout_s is not None and manifest.beat_timeout_s >= 900.0
+    assert manifest.lease_ttl_s is not None and manifest.lease_ttl_s >= manifest.beat_timeout_s
     assert manifest.working_memory is True  # the engineer keeps a task scratchpad
     assert manifest.model is None  # uses the deployment model the composition root supplies
     assert manifest.mcp is False and manifest.plugins is False  # opt-in surfaces, off by default
 
 
 def test_engineer_projects_to_a_beat_config_carrying_the_scalars() -> None:
-    config = role_beat_config(engineer_plugin().manifest)
+    manifest = engineer_plugin().manifest
+    config = role_beat_config(manifest)
     assert "memory_search" in config.tools
     assert "working_memory_write" in config.tools
     assert config.permission_mode == "acceptEdits"
     assert config.max_turns >= 8
+    assert config.max_sprints == DREAM_DEFAULT_MAX_SPRINTS
+    assert config.beat_timeout_s == manifest.beat_timeout_s
     assert config.working_memory is True
 
 

@@ -10,6 +10,8 @@ from __future__ import annotations
 from chorus.roles._beat_config import RoleBeatConfig, role_beat_config
 from chorus.roles._defaults import default_roles
 from chorus.roles._manifest import (
+    DREAM_DEFAULT_MAX_SPRINTS,
+    DEFAULT_BEAT_TIMEOUT_S,
     Isolation,
     McpServerSpec,
     MemoryScope,
@@ -25,6 +27,8 @@ from chorus.roles._subagent import SubagentSpec
 from chorus.roles._surfaces import RoleSurfaceOverride, apply_role_surface_overrides
 
 __all__ = [
+    "DEFAULT_BEAT_TIMEOUT_S",
+    "DREAM_DEFAULT_MAX_SPRINTS",
     "DoDGenerator",
     "Isolation",
     "ManifestOverlay",

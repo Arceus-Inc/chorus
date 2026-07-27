@@ -139,7 +139,17 @@ class RoleManifest:
     skills_root: str | None = None
 
 
+# Dream ``run_task`` default sprint budget — craft roles should match so one beat can
+# implement→verify→fix to green without waiting on re-dispatch (P0 #6).
+DREAM_DEFAULT_MAX_SPRINTS = 10
+# Composition-root fallback when a role manifest omits ``beat_timeout_s`` (the old 90s
+# default was far too tight for any multi-turn craft beat).
+DEFAULT_BEAT_TIMEOUT_S = 600.0
+
+
 __all__ = [
+    "DEFAULT_BEAT_TIMEOUT_S",
+    "DREAM_DEFAULT_MAX_SPRINTS",
     "Isolation",
     "McpServerSpec",
     "MemoryScope",

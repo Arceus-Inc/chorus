@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pytest
 
-from chorus.roles import default_roles, role_beat_config
+from chorus.roles import DREAM_DEFAULT_MAX_SPRINTS, default_roles, role_beat_config
 from chorus_employee import default_employees
 from chorus_employee.analyst import analyst_plugin
 
@@ -58,7 +58,9 @@ def test_analyst_authority_stays_narrow() -> None:
     # Engine scalars — a real investigation is multi-step and multi-sprint.
     assert manifest.working_memory is True  # an in-task scratchpad across turns
     assert manifest.max_turns >= 8  # deeper than dream's default for read→script→run→conclude
-    assert manifest.max_sprints > 1  # one beat runs the investigation to a finding
+    assert manifest.max_sprints == DREAM_DEFAULT_MAX_SPRINTS
+    assert manifest.beat_timeout_s is not None and manifest.beat_timeout_s >= 900.0
+    assert manifest.lease_ttl_s is not None and manifest.lease_ttl_s >= manifest.beat_timeout_s
     assert manifest.model is None  # uses the deployment model the composition root supplies
     assert manifest.mcp is False and manifest.plugins is False  # opt-in surfaces, off by default
 

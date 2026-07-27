@@ -13,6 +13,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from chorus.roles._manifest import (
+    DREAM_DEFAULT_MAX_SPRINTS,
     Isolation,
     MemoryScope,
     PermissionMode,
@@ -110,7 +111,7 @@ def designer_manifest() -> RoleManifest:
         # --- per-beat sprint budget ---
         # On-system convergence takes a few passes (the Design-Critic is deliberately strict), so a
         # design beat needs more sprints than a code beat. 5 lets a rough first draft cool to on-system.
-        max_sprints=5,
+        max_sprints=DREAM_DEFAULT_MAX_SPRINTS,
         # --- build_harness(mcp=...) / build_harness(plugins=...) ---
         mcp=False,  # the live Figma MCP connect layer (designer §07) is a follow-up slice
         plugins=False,

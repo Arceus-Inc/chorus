@@ -18,7 +18,7 @@ from chorus.heartbeat import Scheduler
 from chorus.ledger import Ledger
 from chorus.memory import EpisodicStore
 from chorus.observability import EventBus, FanoutBus
-from chorus.roles import RoleRegistry, default_roles
+from chorus.roles import DEFAULT_BEAT_TIMEOUT_S, RoleRegistry, default_roles
 from chorus.workforce import LedgerWorkforce
 from chorus_cli._chat import ChatBeatService, ChatRenderBus
 from chorus_employee import default_landers
@@ -38,7 +38,7 @@ def build_role_chat_service(
     roles: RoleRegistry | None = None,
     seed: str | Path | None = None,
     work_root: Path | None = None,
-    timeout_s: float | None = 90.0,
+    timeout_s: float | None = DEFAULT_BEAT_TIMEOUT_S,
 ) -> ChatBeatService:
     """Wire a chat beat service whose harness runs AS the employee's role (spec 06 §2 → dream).
 

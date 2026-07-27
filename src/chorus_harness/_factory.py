@@ -37,7 +37,7 @@ from chorus.outcomes import (
     runtime_brief_block,
 )
 from chorus.roles import RoleBeatConfig, RoleRegistry, role_beat_config
-from chorus.roles._manifest import McpServerSpec
+from chorus.roles._manifest import DEFAULT_BEAT_TIMEOUT_S, McpServerSpec
 from chorus.roles._subagent import SubagentSpec
 from chorus.trust import TrustPolicy
 from chorus.workforce import Employee
@@ -651,7 +651,7 @@ class EmployeeHarnessFactory:
         pricing: TokenPricing | None = None,
         seed: str | Path | None = None,
         work_root: Path | None = None,
-        timeout_s: float | None = 90.0,
+        timeout_s: float | None = DEFAULT_BEAT_TIMEOUT_S,
         ledger: Ledger | None = None,
         trust_policy: TrustPolicy | None = None,
         governance: GovernancePort | None = None,
