@@ -212,6 +212,7 @@ _CHORUS_TO_DREAM_TOOL: dict[str, str] = {
     # them. ``_role_registry`` still skips them (no built-in); the governance block in materialize binds
     # them to the injected port.
     "governance_read": "governance_read",
+    "roadmap_propose": "roadmap_propose",
     "proposal_approve": "proposal_approve",
     "proposal_reject": "proposal_reject",
     "goal_set_priority": "goal_set_priority",
@@ -681,6 +682,16 @@ class EmployeeHarnessFactory:
     def company_root(self) -> Path:
         """The org's workspace root (``.chorus/work/{org}/``) — where landers find the worktrees."""
         return self._company_root
+
+    def bind_governance(self, governance: GovernancePort) -> None:
+        """Wire the governance seam onto this factory after construction (composition-root use).
+
+        horizon's ``GovernancePort`` needs the ``org`` (hence this factory as its beat runner) to exist
+        first, so it cannot be passed at construction. Binding it here lets the ONE factory that runs the
+        beats give the CEO its governance tools (``governance_read`` / ``roadmap_propose`` / …). Non-CEO
+        roles are unaffected — governance tools are manifest-gated, so only the CEO ever receives them.
+        """
+        self._governance = governance
 
     @property
     def landers(self) -> LanderRegistry:

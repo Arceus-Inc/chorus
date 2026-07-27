@@ -17,6 +17,7 @@ import hashlib
 import re
 from collections.abc import Iterator
 from contextlib import contextmanager
+from dataclasses import replace
 from datetime import UTC, datetime
 from importlib.resources import files
 from typing import Any
@@ -35,6 +36,7 @@ from chorus.ledger._models import (
     DecompositionClaim,
     DecompositionStatus,
     DodStatus,
+    ExecutionMode,
     Task,
     TaskStatus,
     Wake,
@@ -212,9 +214,15 @@ class Ledger:
         """
         conn = LedgerConnection.connect(conninfo, company_id=company_id)
         ledger = cls(conn)
-        ledger._bootstrap()
-        if company_id is not None:
-            ledger._seed_system_principals()
+        try:
+            ledger._bootstrap()
+            if company_id is not None:
+                ledger._seed_system_principals()
+        except BaseException:
+            # Bootstrap/seed failed after the connection opened — release it so a failing open
+            # (e.g. migration drift) cannot leak a slot on every retry and exhaust the pool.
+            ledger.close()
+            raise
         return ledger
 
     def _seed_system_principals(self) -> None:
@@ -366,7 +374,28 @@ class Ledger:
             if dod_status is not DodStatus.PASSED:
                 return []
             self.tasks.set_status(task_id, TaskStatus.DONE)
+            self._complete_goal_if_root(task_id)
             return self._fire_downstream_wakes(task_id)
+
+    def _complete_goal_if_root(self, task_id: str) -> None:
+        """Roll a goal up to ``done`` when its delegation-root task lands ``done``.
+
+        The engine seeds goals ``active`` and never closed them, so a company's roadmap never
+        advanced no matter how much work landed. A goal's *top* task — ``parent_id is None``,
+        ``execution_mode = DELEGATION``, carrying the ``goal_id`` — reaching ``done`` *is* the goal
+        being achieved, so flip the goal here (atomically, inside the finalize transaction). Only the
+        goal-root flips it; a mid-tree child landing ``done`` carries the same ``goal_id`` but a
+        non-null ``parent_id`` and is ignored.
+        """
+        task = self.tasks.get(task_id)
+        if task is None or task.parent_id is not None or task.goal_id is None:
+            return
+        if task.execution_mode is not ExecutionMode.DELEGATION:
+            return
+        goal = self.goals.get(task.goal_id)
+        if goal is None or goal.status == "done":
+            return
+        self.goals.update(replace(goal, status="done"))
 
     def create_child(self, claim_id: str, child: Task) -> DecompositionClaim:
         """Create a decomposition child + record it on the claim in one transaction (spec 02 §4).

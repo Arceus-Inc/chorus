@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING, Any
 
 from chorus.outcomes import Artifact, ArtifactType
 from chorus.workspace import CompanyWorkspace
+from chorus_employee._authorship import author_for, commit_message
 from chorus_employee.pm._brief import PM_PLAN_DOC
 from chorus_employee.pm._decision import (
     DECISION_MIRROR_DOC,
@@ -59,13 +60,17 @@ class PmLander:
         present = doc.is_file() and doc.stat().st_size > 0
         self._write_decision_mirror(worktree, task.id)
         packet_written = self._write_packet(worktree, task.id)
-        commit = workspace.snapshot(employee_id)  # commit the plan (+ packet) on chorus/{employee}
+        author = author_for(employee_id, self._ledger)
+        message = commit_message(task)
+        commit = workspace.snapshot(
+            employee_id, author=author, message=message
+        )  # commit the plan (+ packet) on chorus/{employee}
         # A plan that never reaches ``main`` is invisible to the engineers who must build to it: like
         # the Engineer's PR, the PM's spec integrates into company ``main`` so a downstream task that
         # ``depends_on`` this one branches off a main that already carries the plan (conflict-safe —
         # a conflicting merge is recorded, not raised). This is what makes the plan a real, shared
         # contract rather than a dead artifact stranded on the PM's branch.
-        merge = workspace.merge(employee_id)
+        merge = workspace.merge(employee_id, author=author, message=message)
         return Artifact(
             task_id=task.id,
             type=ArtifactType.DOC,

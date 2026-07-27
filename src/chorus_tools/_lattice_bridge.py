@@ -7,6 +7,7 @@ do not enable lattice overlay patches for the chorus path.
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from lattice.compose import build_default
@@ -14,6 +15,17 @@ from lattice.contracts.episodic import RawEpisode
 from lattice.facade import Lattice
 
 from chorus.memory import EpisodicStore, SprintDelta
+
+
+def _env_int(name: str) -> int | None:
+    """An int env var, or None when unset/malformed (so the lattice default stands)."""
+    raw = os.environ.get(name)
+    if raw is None:
+        return None
+    try:
+        return int(raw)
+    except ValueError:
+        return None
 
 
 class ChorusEpisodicReader:
@@ -59,18 +71,32 @@ def build_lattice_for_chorus(
     Overlay patches stay off — procedural writes go through ``skill_manage``.
     ``canonical_skills_root`` is still passed so habit *validation* inside
     SkillManager can discover role skill slugs.
+
+    The consolidation gate is operator-tunable: the per-employee ``min_cluster``
+    of the lattice default means a single company build (one beat per employee
+    per goal) never accumulates the repeated pattern the gate needs, so learning
+    stays dark. An explicit argument wins; otherwise ``CHORUS_LATTICE_MIN_CLUSTER``
+    / ``CHORUS_LATTICE_MIN_NEW`` warm-start it (set MIN_CLUSTER=1 to consolidate
+    from a single strong episode early in a company's life); unset keeps the
+    repetition-based lattice default. No threshold is hardcoded here.
     """
     root = Path(company_root)
     store = EpisodicStore(root / "memory")
+    resolved_min_new = min_new_episodes if min_new_episodes is not None else _env_int(
+        "CHORUS_LATTICE_MIN_NEW"
+    )
+    resolved_min_cluster = min_cluster_size if min_cluster_size is not None else _env_int(
+        "CHORUS_LATTICE_MIN_CLUSTER"
+    )
     kwargs: dict[str, object] = {
         "consolidated_root": root / "lattice",
         "episodes": ChorusEpisodicReader(store),
         "enable_patches": False,
     }
-    if min_new_episodes is not None:
-        kwargs["min_new_episodes"] = min_new_episodes
-    if min_cluster_size is not None:
-        kwargs["min_cluster_size"] = min_cluster_size
+    if resolved_min_new is not None:
+        kwargs["min_new_episodes"] = resolved_min_new
+    if resolved_min_cluster is not None:
+        kwargs["min_cluster_size"] = resolved_min_cluster
     if canonical_skills_root is not None:
         kwargs["canonical_skills_root"] = Path(canonical_skills_root)
     return build_default(**kwargs)  # type: ignore[arg-type]

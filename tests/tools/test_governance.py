@@ -17,6 +17,7 @@ from dream.contracts import (
     GovernanceView,
     GovGoal,
     GovProposal,
+    ProfessionCapacity,
 )
 from dream.tools._context import ToolExecutionContext
 
@@ -29,6 +30,7 @@ from chorus_tools import (
     GovernanceReadTool,
     ProposalApproveTool,
     ProposalRejectTool,
+    RoadmapProposeTool,
     governance_tool,
 )
 
@@ -55,6 +57,7 @@ class FakeGovernance:
         self.rejected: list[tuple[str, str, str]] = []
         self.reprioritised: list[tuple[str, str]] = []
         self.archived: list[str] = []
+        self.roadmaps: list[tuple[str, list, str | None]] = []
 
     def read_direction(self) -> GovernanceView:
         goal = GovGoal(
@@ -86,6 +89,17 @@ class FakeGovernance:
                     status="approved",
                 ),
             ),
+            capacity=(
+                ProfessionCapacity(
+                    profession="frontend_engineer",
+                    eligible=3,
+                    running=1,
+                    assigned_nonterminal=2,
+                    queued_wakes=0,
+                    budget_blocked=0,
+                    budget_headroom_cents=100_000,
+                ),
+            ),
         )
 
     def approve_proposal(self, proposal_id: str, *, by: str) -> str:
@@ -102,6 +116,12 @@ class FakeGovernance:
     def archive_goal(self, goal_id: str) -> None:
         self.archived.append(goal_id)
 
+    def propose_roadmap(
+        self, statement: str, specs, *, by: str | None = None, rationale: str = ""
+    ) -> str:
+        self.roadmaps.append((statement, list(specs), by))
+        return "d3"
+
 
 def _beat(tmp_path: Path) -> None:
     BeatContext(task_id="C", run_id=REV, employee_id="ceo").write(tmp_path)
@@ -116,7 +136,9 @@ def test_governance_read_renders_the_direction(tmp_path: Path) -> None:
     # the decided proposal is surfaced so the CEO can cite it and a reviewer can confirm the work
     assert "RECENTLY DECIDED" in result.content
     assert "launch the loyalty program" in result.content
-    assert result.structured == {"decisions": 1, "proposals": 1, "decided": 1}
+    # the capacity snapshot is shown so the CEO can size the roadmap to it
+    assert "CAPACITY" in result.content and "frontend_engineer" in result.content
+    assert result.structured == {"decisions": 1, "proposals": 1, "decided": 1, "capacity": 1}
 
 
 def test_proposal_approve_reaches_the_port_with_the_ceo_identity(tmp_path: Path) -> None:
@@ -223,3 +245,68 @@ def test_governance_tool_maps_every_declared_name() -> None:
         tool = governance_tool(name, port)
         assert tool is not None and tool.name == name
     assert governance_tool("not_a_governance_tool", port) is None
+
+
+def test_roadmap_propose_reaches_the_port_with_the_ceo_identity(tmp_path: Path) -> None:
+    _beat(tmp_path)
+    port = FakeGovernance()
+    result = asyncio.run(
+        RoadmapProposeTool(port).execute(
+            {
+                "statement": "Ship the calm suite",
+                "goals": [
+                    {"title": "Notes app", "metric": "shipped", "target": "v1", "score": 0.8},
+                    {
+                        "title": "Timer",
+                        "metric": "shipped",
+                        "target": "v1",
+                        "score": 0.6,
+                        "key": "t",
+                        "rationale": "focus loop",
+                    },
+                ],
+            },
+            _ctx(tmp_path),
+        )
+    )
+    assert result.is_error is False
+    assert result.structured == {"decision_id": "d3", "goals": 2}
+    statement, specs, by = port.roadmaps[0]
+    assert (statement, by) == ("Ship the calm suite", "ceo")
+    assert specs[0] == {"title": "Notes app", "metric": "shipped", "target": "v1", "score": 0.8}
+    assert specs[1]["key"] == "t" and specs[1]["rationale"] == "focus loop"
+    ledger = (tmp_path / "governance-ledger.md").read_text(encoding="utf-8")
+    assert "PROPOSED roadmap → decision d3" in ledger
+
+
+def test_roadmap_propose_omits_empty_optional_fields(tmp_path: Path) -> None:
+    _beat(tmp_path)
+    port = FakeGovernance()
+    asyncio.run(
+        RoadmapProposeTool(port).execute(
+            {"statement": "M", "goals": [{"title": "A", "metric": "m", "target": "t", "score": 0.5}]},
+            _ctx(tmp_path),
+        )
+    )
+    _, specs, _ = port.roadmaps[0]
+    # a flat goal with no key/deps/rationale carries only the four core fields (no empty keys leak through)
+    assert specs == [{"title": "A", "metric": "m", "target": "t", "score": 0.5}]
+
+
+def test_roadmap_propose_wraps_a_ledger_rejection_cleanly(tmp_path: Path) -> None:
+    _beat(tmp_path)
+
+    class Boom(FakeGovernance):
+        def propose_roadmap(
+            self, statement: str, specs, *, by: str | None = None, rationale: str = ""
+        ) -> str:
+            raise ValueError("goal 'A' needs a target")
+
+    result = asyncio.run(
+        RoadmapProposeTool(Boom()).execute(
+            {"statement": "M", "goals": [{"title": "A", "metric": "m", "target": "t", "score": 0.5}]},
+            _ctx(tmp_path),
+        )
+    )
+    assert result.is_error is True
+    assert "refused" in result.content and "needs a target" in result.content

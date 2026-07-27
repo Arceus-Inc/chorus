@@ -29,6 +29,7 @@ from chorus.cron._fire import fire_routine
 from chorus.events import Event, EventKind
 from chorus.governance import GovernanceResolver
 from chorus.heartbeat._beat import BeatDisposition, BeatOutcome
+from chorus.heartbeat._landed_outcome import derive_landed_outcome
 from chorus.heartbeat._beat_context import IntegrateContextPacket
 from chorus.heartbeat._execution_profile import (
     ExecutionProfileResolver,
@@ -60,7 +61,7 @@ from chorus.ledger._models import (
 )
 from chorus.lifecycle import TERMINAL, record_activity
 from chorus.lifecycle._team_policy import MissionTeamPolicy
-from chorus.memory import EpisodicStore, SprintDelta, beat_fingerprint
+from chorus.memory import EpisodicStore, SprintDelta, beat_fingerprint, distilled_body
 from chorus.observability._trace import TraceStamper, trace_root
 from chorus.outcomes import DoDKind, Verifier
 from chorus.recovery import reconcile
@@ -158,6 +159,12 @@ def _episodic_outcome(result: BeatOutcome) -> str:
     return _OUTCOME_BY_DISPOSITION.get(result.disposition or BeatDisposition.ERRORED, "blocked")
 
 
+# Recall pulls the episodic body into a future beat's context, so it must stay small. A full
+# raw_record is 100k+ chars (the whole event stream); only the ``role.text`` prose is worth
+# recalling, and the full stream is durable in the run log + trace. Keep a bounded slice.
+_EPISODIC_BODY_MAX_CHARS = 6000
+
+
 def _artifact_ref(artifact: Artifact) -> str:
     """A stable string reference for the episodic record — the artifact's id-like fields, not its dict.
 
@@ -232,32 +239,52 @@ def _sprint_delta(
     now: datetime,
     files_touched: tuple[str, ...] = (),
     artifacts: tuple[str, ...] = (),
+    orchestrated: bool = False,
 ) -> SprintDelta:
-    """Build the beat's raw episodic record — honest fields derived from the run (spec 07 §3)."""
+    """Build the beat's raw episodic record — honest fields derived from the run (spec 07 §3).
+
+    ``orchestrated`` marks a beat that succeeded at *delegating* — a lead that decomposed and handed
+    off. Its own deliverable is the subtree it created, judged later at integrate, so scoring the
+    hand-off against the (not-yet-done) subtree rubric records a correct decomposition as a failure
+    (``needs_changes``/0.0). That both poisons the episodic learning signal and, once horizon's
+    outcome loop is driven, folds a false 0.0 onto a healthy goal. A clean hand-off records as
+    ``delegated``/1.0 (F5).
+    """
     verdict = result.outcome or {}
     raw_score = verdict.get("score")
     score = (
         float(raw_score) if isinstance(raw_score, int | float) else (1.0 if result.passed else 0.0)
     )
+    if orchestrated:
+        outcome, score = "delegated", 1.0
+    else:
+        outcome = _episodic_outcome(result)
     return SprintDelta(
         run_id=run_id,
         task_id=task.id,
         employee_id=employee.id,
         scope=scope,
         intent=task.intent,
-        outcome=_episodic_outcome(result),
+        outcome=outcome,
         score=score,
         created_at=now,
         role=employee.role,
         recorded_at=now,
         files_touched=files_touched,
         artifacts=artifacts,
-        body=result.raw_record or result.summary or "",
+        body=distilled_body(
+            result.raw_record, summary=result.summary, max_chars=_EPISODIC_BODY_MAX_CHARS
+        ),
     )
 
 
-def _to_ledger_artifact(artifact: OutcomeArtifact) -> Artifact:
-    """Map a lander's canonical :class:`~chorus.outcomes.Artifact` to a storable ledger row."""
+def _to_ledger_artifact(artifact: OutcomeArtifact, *, review_state: str | None = None) -> Artifact:
+    """Map a lander's canonical :class:`~chorus.outcomes.Artifact` to a storable ledger row.
+
+    ``review_state`` carries the beat's DoD verdict onto the artifact: a beat only lands its
+    deliverable on the pass path, so a landed artifact is verified — recording it lets the artifacts
+    index distinguish verified work from unreviewed rows (which stay ``None``).
+    """
     return Artifact(
         id=mint_id(),
         task_id=artifact.task_id,
@@ -266,6 +293,7 @@ def _to_ledger_artifact(artifact: OutcomeArtifact) -> Artifact:
         url=artifact.url,
         is_primary=artifact.is_primary,
         resource_ref=artifact.resource_ref,
+        review_state=review_state,
     )
 
 
@@ -905,6 +933,14 @@ class Scheduler:
             else:
                 self._climb_repair_ladder(task_id, employee_id=employee.id, verifier=verifier)
 
+        self._emit_outcome_landed(
+            task=task,
+            result=result,
+            run_id=run_id,
+            employee=employee,
+            now=now,
+        )
+
         await self._capture_memory(
             ledger,
             run_id=run_id,
@@ -963,6 +999,15 @@ class Scheduler:
             for artifact in ledger.artifacts.list_for_task(task.id)
             if (ref := _artifact_ref(artifact))
         )
+        # A delegation beat that decomposed and parked BLOCKED awaiting its subtree succeeded at its
+        # own job (the hand-off); the subtree it owns is judged later at integrate. Re-read the task
+        # so a transition during the beat is reflected.
+        latest = ledger.tasks.get(task.id) or task
+        orchestrated = (
+            latest.execution_mode is ExecutionMode.DELEGATION
+            and latest.status is TaskStatus.BLOCKED
+            and ledger.tasks.has_children(task.id)
+        )
         delta = _sprint_delta(
             run_id=run_id,
             employee=employee,
@@ -972,8 +1017,55 @@ class Scheduler:
             now=now,
             files_touched=files_touched,
             artifacts=artifacts,
+            orchestrated=orchestrated,
         )
         self._memory_writer.append(delta)
+
+    def _emit_outcome_landed(
+        self,
+        *,
+        task: Task,
+        result: BeatOutcome,
+        run_id: str,
+        employee: Employee,
+        now: datetime,
+    ) -> None:
+        """Publish the typed landed outcome once — bridge/horizon project it mechanically (Phase 0)."""
+        if self._event_bus is None:
+            return
+        ledger = self._require_ledger()
+        latest = ledger.tasks.get(task.id) or task
+        dod_row = ledger.dod.get_for_task(task.id)
+        dod_status = dod_row.status if dod_row is not None else None
+        orchestrated = (
+            latest.execution_mode is ExecutionMode.DELEGATION
+            and latest.status is TaskStatus.BLOCKED
+            and ledger.tasks.has_children(task.id)
+        )
+        try:
+            landed = derive_landed_outcome(
+                latest,
+                result,
+                dod_status,
+                orchestrated=orchestrated,
+            )
+        except ValueError:
+            return
+        self._event_bus.emit(
+            Event(
+                kind=EventKind.OUTCOME_LANDED,
+                at=now,
+                trace_id=trace_root(ledger, task.id),
+                task_id=task.id,
+                employee_id=employee.id,
+                run_id=run_id,
+                payload={
+                    **landed.to_dict(),
+                    "passed": landed.strategy_passed(),
+                    "recovery_hint": landed.recovery_hint().value,
+                },
+            )
+        )
 
     def _write_lattice_beat_end(
         self,
@@ -1232,11 +1324,61 @@ class Scheduler:
         iteration = IntegrateContextPacket.iteration_for(ledger, task.id)
         if iteration <= self.max_integrate_iterations:
             return False
+        verifier = ledger.dod.verifier_for_task(task.id)
+        beat_runner_for = self._require(self._beat_runner_for, "beat_runner")
+        beat_runner = beat_runner_for.runner_for(employee, task_id=task.id)
+        floor_ok = (
+            self._integrate_floor_verdict(task.id, verifier=verifier, beat_runner=beat_runner)
+            is not False
+        )
         if task.execution_mode is ExecutionMode.DELEGATION:
+            children = list(ledger.tasks.children(task.id))
+            done_children = [c for c in children if c.status is TaskStatus.DONE]
+            # Converge, don't strand: a capped delegation that produced REAL, verified output — at
+            # least one completed child deliverable AND a passing objective command floor — is
+            # accepted here so Phase 0 can roll the goal up to ``done``. This is the difference
+            # between a company that finishes work and one that loops until a human intervenes. Only
+            # strand for human review when nothing genuine converged (every child failed/was
+            # rejected, or the floor fails) — never fabricate a pass on empty or failed work.
+            if done_children and floor_ok:
+                ledger.runs.finish(run_id, RunStatus.SUCCEEDED, outcome=None)
+                ledger.delegation_contracts.accept_for_verification(task.id, run_id)
+                record_activity(
+                    ledger,
+                    verb=ActivityVerb.PARENT_VERIFIED,
+                    subject_kind="delegation_contract",
+                    subject_id=task.id,
+                    actor_employee_id=employee.id,
+                    payload={
+                        "capped_accept": True,
+                        "iteration": iteration,
+                        "deliverables": len(done_children),
+                    },
+                )
+                await self._land_passed(
+                    task.id,
+                    run_id=run_id,
+                    verifier=verifier,
+                    verdict=None,
+                    employee=employee,
+                    result=BeatOutcome(
+                        passed=True,
+                        outcome={},
+                        summary=f"integrated at cap ({len(done_children)} deliverables)",
+                    ),
+                    outcome_kind=(
+                        execution_profile.outcome_kind if execution_profile is not None else None
+                    ),
+                )
+                self._close_verified_delegation(task.id, run_id=run_id, recovered=False)
+                ledger.tasks.release_locks(task.id, run_id=run_id)
+                ledger.wakes.mark_done(wake.id)
+                return True
             evidence: dict[str, object] = {
                 "iteration": iteration,
                 "cap": self.max_integrate_iterations,
                 "contract_task_id": task.id,
+                "done_children": len(done_children),
             }
             with ledger.transaction():
                 ledger.runs.finish(run_id, RunStatus.FAILED, outcome=evidence)
@@ -1258,14 +1400,8 @@ class Scheduler:
             ledger.tasks.release_locks(task.id, run_id=run_id)
             ledger.wakes.mark_done(wake.id)
             return True
-        verifier = ledger.dod.verifier_for_task(task.id)
-        beat_runner_for = self._require(self._beat_runner_for, "beat_runner")
-        beat_runner = beat_runner_for.runner_for(employee, task_id=task.id)
         ledger.runs.finish(run_id, RunStatus.SUCCEEDED, outcome=None)
-        if (
-            self._integrate_floor_verdict(task.id, verifier=verifier, beat_runner=beat_runner)
-            is False
-        ):
+        if not floor_ok:
             # The cap bounds the MODEL loop (no further decompose/integrate beats), NOT the objective
             # gate: even here a parent does not land ``done`` while its ``command`` rollup floor fails —
             # record the failed verdict and park BLOCKED rather than fabricate a passing outcome.
@@ -1317,6 +1453,18 @@ class Scheduler:
         :class:`~chorus.outcomes.OutcomeLander` records the deliverable before the task is finalised ``done``.
         """
         ledger = self._require_ledger()
+        # A concurrent path (the completion daemon rolling a subtree up, or a duplicate integrate beat)
+        # can finalise this task before its own pass lands. Landing again is at best a redundant outcome
+        # write and at worst fatal: ``open_task_gate`` on a HUMAN_APPROVAL DoD raises on a terminal task,
+        # and that exception escapes ``run_beat`` unhandled — wedging the pulse (the run row it would have
+        # finished stays visible, slots never free). The outcome is already recorded, so short-circuit.
+        landed = ledger.tasks.get(task_id)
+        if landed is not None and landed.status in (
+            TaskStatus.DONE,
+            TaskStatus.CANCELLED,
+            TaskStatus.REJECTED,
+        ):
+            return
         # A gate opened *during* the beat (e.g. the marketer's ``stage_go_live`` tool) must win over the
         # DoD: a task carrying a pending approval is parked BLOCKED, not finalised ``done`` — resolving
         # the gate is what completes it. Explicitly (re-)block here rather than trusting the mid-run
@@ -1337,7 +1485,11 @@ class Scheduler:
             )
             return
         await self._land_outcome(
-            task_id, employee=employee, result=result, outcome_kind=outcome_kind
+            task_id,
+            employee=employee,
+            result=result,
+            outcome_kind=outcome_kind,
+            review_state="verified",  # F7: a beat lands only on the pass path, so this is verified
         )
         ledger.finalize_beat(
             task_id=task_id, run_id=run_id, dod_status=DodStatus.PASSED, verdict=verdict
@@ -1402,11 +1554,13 @@ class Scheduler:
         employee: Employee | None,
         result: BeatOutcome,
         outcome_kind: str | None = None,
+        review_state: str | None = None,
     ) -> None:
         """Record the role's deliverable as an artifact via its registered lander (spec 04 §2).
 
         A no-op when no lander registry is wired or the employee's role lands no artifact kind — the
         beat still finalises ``done``, so landing is purely additive (the strict-completion record).
+        ``review_state`` stamps the beat's DoD verdict onto the landed artifact (F7).
         """
         if self._landers is None:
             return
@@ -1422,7 +1576,7 @@ class Scheduler:
         if task is None:
             return
         artifact = await lander.land(task, result)
-        ledger.artifacts.create(_to_ledger_artifact(artifact))
+        ledger.artifacts.create(_to_ledger_artifact(artifact, review_state=review_state))
 
     def _climb_repair_ladder(
         self, task_id: str, *, employee_id: str, verifier: Verifier | None

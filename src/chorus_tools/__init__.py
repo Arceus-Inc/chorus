@@ -31,6 +31,7 @@ from chorus_tools._governance import (
     GovernanceReadTool,
     ProposalApproveTool,
     ProposalRejectTool,
+    RoadmapProposeTool,
     governance_tool,
 )
 from chorus_tools._manager_actions import AssignTaskTool, SubmitTaskTool
@@ -65,6 +66,7 @@ __all__ = [
     "RecallTool",
     "RecordDecisionTool",
     "RepoSearchTool",
+    "RoadmapProposeTool",
     "SecretScanTool",
     "StaffingRequestTool",
     "SubmitTaskTool",

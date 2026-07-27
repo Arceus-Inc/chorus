@@ -71,6 +71,8 @@ class EventKind(StrEnum):
     EMPLOYEE_PAUSED = "employee.paused"
     EMPLOYEE_TERMINATED = "employee.terminated"
     APPROVAL_DECIDED = "approval.decided"
+    # outcome — the scheduler's single authoritative landing phase (Phase 0)
+    OUTCOME_LANDED = "outcome.landed"
 
 
 @dataclass(frozen=True)

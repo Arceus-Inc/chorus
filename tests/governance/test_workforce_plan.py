@@ -221,14 +221,30 @@ def test_human_can_revise_fields_then_atomically_apply_the_latest_plan(
         "frontend_engineer",
         "backend_engineer",
     }
+    # The permanent employee id is derived from the person's NAME, not the CEO's in-plan ``ref``:
+    # "Product Designer" -> ``product-designer`` (ref was "designer"), "Frontend Engineer" ->
+    # ``frontend-engineer`` (ref was "frontend"). The in-plan refs never reach the ledger.
+    ids = {employee.id for employee in ledger.employees.list()}
+    assert ids == {
+        "ceo",
+        "product-lead",
+        "engineering-lead",
+        "launch-marketer",
+        "product-designer",
+        "feedback-analyst",
+        "frontend-engineer",
+        "backend-engineer",
+    }
+    assert ledger.employees.get("designer") is None  # the raw ref is not an id
     assert {profile.employee_id for profile in ledger.management_profiles.active_profiles()} == {
         "ceo",
         "product-lead",
         "engineering-lead",
     }
     assert ledger.management_profiles.get("ceo").spend_limit_cents == 90_000  # type: ignore[union-attr]
-    assert ledger.employees.get("designer").reports_to == "product-lead"  # type: ignore[union-attr]
-    assert ledger.employees.get("frontend").reports_to == "engineering-lead"  # type: ignore[union-attr]
+    # Reporting lines are remapped from refs to the minted ids.
+    assert ledger.employees.get("product-designer").reports_to == "product-lead"  # type: ignore[union-attr]
+    assert ledger.employees.get("frontend-engineer").reports_to == "engineering-lead"  # type: ignore[union-attr]
     assert ledger.teams.list() == []
 
 

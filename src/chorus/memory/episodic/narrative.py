@@ -36,6 +36,37 @@ def narrative(raw_record: str) -> str:
     return "\n".join(lines)
 
 
+def distilled_body(raw_record: str, *, summary: str = "", max_chars: int) -> str:
+    """The recall-worthy slice of a beat, bounded — the persisted episodic body.
+
+    A full ``raw_record`` is 100k+ chars: ``role.text`` prose plus tool-argument JSON and truncated
+    stdout previews. Only the prose is worth recalling (see module docstring), and the full stream is
+    already durable in the run log + trace, so the episodic body keeps only the ``role.text`` lines,
+    in the same JSONL shape :func:`narrative`/:func:`beat_summary` read, capped to ``max_chars`` by
+    whole lines. Falls back to the beat's ``summary`` as one ``role.text`` line when the record
+    carries no prose.
+    """
+    kept: list[str] = []
+    total = 0
+    for line in raw_record.splitlines():
+        if not line.strip():
+            continue
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if event.get("kind") != _NARRATIVE_KIND:
+            continue
+        if total + len(line) + 1 > max_chars:
+            break
+        kept.append(line)
+        total += len(line) + 1
+    if kept:
+        return "\n".join(kept)
+    prose = summary.strip()
+    return json.dumps({"kind": _NARRATIVE_KIND, "text": prose[:max_chars]}) if prose else ""
+
+
 def normalize_for_fts(text: str) -> str:
     """Strip XML-like tags and collapse whitespace before BM25 indexing."""
     if not text:
@@ -57,4 +88,4 @@ def beat_summary(body: str, *, intent: str) -> str:
     return sentence[: _SUMMARY_MAX - 1].rstrip() + "…"
 
 
-__all__ = ["beat_summary", "narrative", "normalize_for_fts"]
+__all__ = ["beat_summary", "distilled_body", "narrative", "normalize_for_fts"]

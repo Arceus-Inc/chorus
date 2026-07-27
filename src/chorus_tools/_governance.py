@@ -85,6 +85,21 @@ def _render(view: GovernanceView) -> str:
         lines.append("RECENTLY DECIDED PROPOSALS")
         for p in view.decided:
             lines.append(f"- [{p.proposal_id}] ({p.status}) {p.statement}")
+    # The current building power, by profession — what the CEO must SIZE the roadmap to. Free capacity
+    # is roughly ``eligible - assigned``; a profession with none free is a hiring signal, not a place to
+    # queue more goals.
+    if view.capacity:
+        lines.append("")
+        lines.append("CAPACITY (by profession)")
+        for c in view.capacity:
+            budget = (
+                "" if c.budget_headroom_cents is None
+                else f" budget_headroom_cents={c.budget_headroom_cents}"
+            )
+            lines.append(
+                f"- {c.profession}: eligible={c.eligible} running={c.running} "
+                f"assigned={c.assigned_nonterminal} queued={c.queued_wakes}{budget}"
+            )
     return "\n".join(lines)
 
 
@@ -115,6 +130,7 @@ class GovernanceReadTool(BaseTool):
                 "decisions": len(view.decisions),
                 "proposals": len(view.proposals),
                 "decided": len(view.decided),
+                "capacity": len(view.capacity),
             },
         )
 
@@ -337,8 +353,121 @@ class GoalArchiveTool(BaseTool):
         )
 
 
+class RoadmapGoalInput(BaseModel):
+    """One goal in a proposed roadmap — an outcome the company will build, sized to capacity."""
+
+    title: str = Field(description="the goal as an OUTCOME (not a task) — what shipping it achieves")
+    metric: str = Field(description="how success is measured — a concrete, checkable metric")
+    target: str = Field(description="the target value/threshold for the metric")
+    score: float = Field(ge=0.0, le=1.0, description="initial priority score in [0, 1]")
+    key: str | None = Field(
+        default=None, description="optional local id so other goals can declare a dependency on this one"
+    )
+    depends_on: list[str] = Field(
+        default_factory=list,
+        description="keys of goals that must land before this one (leave empty for a flat roadmap)",
+    )
+    rationale: str = Field(
+        default="", description="why this goal, grounded in the reality digest (evidence, numbers)"
+    )
+
+
+class RoadmapProposeInput(BaseModel):
+    """One complete roadmap the CEO reasoned from the mission + reality digest; the tool never submits it."""
+
+    statement: str = Field(
+        description="the decision this roadmap serves — the sprint's strategic anchor, one sentence"
+    )
+    rationale: str = Field(
+        default="",
+        description=(
+            "why THIS decision now — the reasoning behind the roadmap, grounded in the reality digest "
+            "(evidence, numbers, tradeoffs). This is recorded on the decision itself."
+        ),
+    )
+    goals: list[RoadmapGoalInput] = Field(
+        min_length=1,
+        description="the goals, sized to current capacity and sequenced by dependency",
+    )
+
+
+class RoadmapProposeTool(BaseTool):
+    """Propose the company's roadmap — a decision and its goals — for approval (never submits)."""
+
+    name = "roadmap_propose"
+    description = (
+        "Propose the company's roadmap: a strategic decision (`statement`) and the goals that realize "
+        "it, each with a measurable metric + target and an initial priority score. Reason the goals "
+        "yourself from the mission and the reality digest (governance_read), sizing them to current "
+        "capacity and sequencing dependencies with `key`/`depends_on`. This stores a PROPOSED decision "
+        "only — the ledger validates its structure and authors the goals, but nothing is submitted to "
+        "the workforce until the plan is approved. On success it returns the decision id; do not "
+        "propose the same roadmap again — read it back with governance_read."
+    )
+    declaration = ToolDeclaration(risk="mutating", tier_required=1, timeout_seconds=30.0)
+    input_model = RoadmapProposeInput
+
+    def __init__(self, port: GovernancePort) -> None:
+        self._port = port
+
+    async def execute(self, input: dict[str, object], ctx: ToolExecutionContext) -> ToolResult:
+        args = RoadmapProposeInput.model_validate(input)
+        beat = BeatContext.read(ctx.working_dir)
+        specs: list[dict[str, object]] = []
+        for goal in args.goals:
+            spec: dict[str, object] = {
+                "title": goal.title,
+                "metric": goal.metric,
+                "target": goal.target,
+                "score": goal.score,
+            }
+            if goal.key:
+                spec["key"] = goal.key
+            if goal.depends_on:
+                spec["depends_on"] = list(goal.depends_on)
+            if goal.rationale:
+                spec["rationale"] = goal.rationale
+            specs.append(spec)
+        try:
+            decision_id = self._port.propose_roadmap(
+                args.statement, specs, by=beat.employee_id, rationale=args.rationale
+            )
+        except Exception as exc:  # the ledger (horizon) rejects a structurally invalid roadmap
+            # Audit the refusal too: a silent failure lets a reviewer (and the model itself) mistake a
+            # rejected roadmap for an accepted one. The ledger is the artifact-side proof of what really
+            # happened, so a REFUSED line is as load-bearing as a PROPOSED one.
+            _audit(ctx, f"roadmap_propose REFUSED ({len(specs)} goals) — {exc}")
+            return ToolResult(
+                content=(
+                    f"refused: the roadmap was not accepted — {exc}. Fix the flagged goal(s) "
+                    "(a measurable metric + target, a score in [0,1], acyclic dependencies, and no "
+                    "goal that duplicates already-done work) and propose once more."
+                ),
+                structured={"statement": args.statement, "error": str(exc)},
+                is_error=True,
+            )
+        _audit(
+            ctx,
+            f"PROPOSED roadmap → decision {decision_id} ({len(specs)} goals) — {args.statement}",
+        )
+        return ToolResult(
+            content=(
+                f"proposed the roadmap as decision {decision_id} with {len(specs)} goals — "
+                "it awaits approval before any goal is submitted to the workforce"
+            ),
+            structured={"decision_id": decision_id, "goals": len(specs)},
+        )
+
+
 GOVERNANCE_TOOL_NAMES: frozenset[str] = frozenset(
-    {"governance_read", "proposal_approve", "proposal_reject", "goal_set_priority", "goal_archive"}
+    {
+        "governance_read",
+        "roadmap_propose",
+        "proposal_approve",
+        "proposal_reject",
+        "goal_set_priority",
+        "goal_archive",
+    }
 )
 
 
@@ -350,6 +479,8 @@ def governance_tool(name: str, port: GovernancePort) -> BaseTool | None:
     """
     if name == "governance_read":
         return GovernanceReadTool(port)
+    if name == "roadmap_propose":
+        return RoadmapProposeTool(port)
     if name == "proposal_approve":
         return ProposalApproveTool(port)
     if name == "proposal_reject":
@@ -368,5 +499,6 @@ __all__ = [
     "GovernanceReadTool",
     "ProposalApproveTool",
     "ProposalRejectTool",
+    "RoadmapProposeTool",
     "governance_tool",
 ]

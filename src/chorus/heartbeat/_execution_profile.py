@@ -16,6 +16,7 @@ from chorus.ledger import (
     TeamStatus,
 )
 from chorus.outcomes import Verifier
+from chorus.outcomes._deliverable import resolve_delivery_verifier
 from chorus.roles._beat_config import RoleBeatConfig, role_beat_config
 from chorus.roles._registry import RoleRegistry
 from chorus.workforce import Employee
@@ -101,10 +102,13 @@ class ExecutionProfileResolver:
         if task is None or task.execution_mode is ExecutionMode.DELIVERY:
             plugin = self._roles.get(employee.role)
             intent = task.intent if task is not None else ""
+            # DoD follows the deliverable the task asks for, not the assignee's role — so a lead can
+            # cross-assign (an analyst writing tests) without the acceptance test rejecting correct
+            # work. In-craft or ambiguous intents fall through to the role's own generator.
             return ResolvedExecutionProfile(
                 execution_mode=ExecutionMode.DELIVERY,
                 config=role_beat_config(plugin.manifest),
-                verifier=plugin.dod_generator(intent),
+                verifier=resolve_delivery_verifier(intent, plugin),
                 outcome_kind=plugin.outcome_kind,
             )
         return self._resolve_delegation(employee, task)
