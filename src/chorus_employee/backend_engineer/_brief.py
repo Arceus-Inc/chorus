@@ -1,9 +1,9 @@
 """The Backend Engineer's operating brief — craft-specific system prompt.
 
 Shared workforce invariants (identity as an AI Workforce employee, resume/recall,
-tool-choice matrix, worktree escalate) live in Dream core-beliefs.md standing
-orders. This file stays Bex-only: judgment, DoD, and subagent policy. Lean per
-docs/plans/2026-07-18-hooks-and-briefs-research.md §B.
+tool-choice matrix, worktree escalate) live in Dream's Base Prompt
+(``dream.prompts.employee_base``). This file stays Bex-only: judgment, DoD, and
+subagent policy. Lean per docs/plans/2026-07-18-hooks-and-briefs-research.md §B.
 """
 
 from __future__ import annotations

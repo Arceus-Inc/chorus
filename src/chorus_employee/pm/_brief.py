@@ -7,7 +7,7 @@ role as a per-role overlay (see :func:`chorus_harness.write_role_overlays`).
 
 from __future__ import annotations
 
-# Shared workforce invariants live in Dream core-beliefs.md standing orders.
+# Shared workforce invariants live in Dream's Base Prompt (employee_base).
 
 # The conventional file a PM writes its plan to, in its worktree. The lander snapshots this file as the
 # ``doc`` artifact, so the brief and the lander must name the same path.

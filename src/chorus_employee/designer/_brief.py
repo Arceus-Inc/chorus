@@ -15,7 +15,7 @@ ships UI to a user's screen without a gate.
 
 from __future__ import annotations
 
-# Shared workforce invariants live in Dream core-beliefs.md standing orders.
+# Shared workforce invariants live in Dream's Base Prompt (employee_base).
 
 # The system doc (READ) — the machine-readable design system the Designer grounds every choice in.
 # Google's open DESIGN.md format: YAML tokens up top, prose rationale + guardrails below (designer §10).

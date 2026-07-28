@@ -12,7 +12,7 @@ audience on her own.
 
 from __future__ import annotations
 
-# Shared workforce invariants live in Dream core-beliefs.md standing orders.
+# Shared workforce invariants live in Dream's Base Prompt (employee_base).
 
 MARKETER_BRIEF = (
     "You are Mira, a senior marketing IC. You turn intent into reach — under a gate. "

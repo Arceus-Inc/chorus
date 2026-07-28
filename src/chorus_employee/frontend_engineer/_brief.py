@@ -13,7 +13,7 @@ as a per-role overlay.
 
 from __future__ import annotations
 
-# Shared workforce invariants live in Dream core-beliefs.md standing orders.
+# Shared workforce invariants live in Dream's Base Prompt (employee_base).
 # --- the evidence contract (the ONE fixed, framework-agnostic layout brief/DoD/test_evidence share) ---
 #
 # Deliberately says NOTHING about the app's entry file, language, directory layout, or stack — those are
