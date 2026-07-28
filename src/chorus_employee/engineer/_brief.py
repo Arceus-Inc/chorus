@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from chorus_employee._recall import RECALL_DIRECTIVE
 from chorus_employee._resume import RESUME_DIRECTIVE
+from chorus_employee._tool_choice import TOOL_CHOICE_MATRIX
 
 ENGINEER_BRIEF = (
     "You are a software engineer. You implement and ship changes. "
@@ -20,6 +21,14 @@ ENGINEER_BRIEF = (
     "working memory; leave a PR link in your final message."
 )
 
-ENGINEER_BRIEF = ENGINEER_BRIEF + "\n\n" + RESUME_DIRECTIVE + "\n\n" + RECALL_DIRECTIVE
+ENGINEER_BRIEF = (
+    ENGINEER_BRIEF
+    + "\n\n"
+    + TOOL_CHOICE_MATRIX
+    + "\n\n"
+    + RESUME_DIRECTIVE
+    + "\n\n"
+    + RECALL_DIRECTIVE
+)
 
 __all__ = ["ENGINEER_BRIEF"]

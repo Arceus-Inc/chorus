@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from chorus_employee._recall import RECALL_DIRECTIVE
 from chorus_employee._resume import RESUME_DIRECTIVE
+from chorus_employee._tool_choice import TOOL_CHOICE_MATRIX
 
 # The conventional file an Analyst writes its findings to, in its worktree. The lander snapshots this
 # file as the ``finding`` artifact, so the brief and the lander must name the same path.
@@ -60,6 +61,14 @@ ANALYST_BRIEF = (
     "anything outside your working directory."
 )
 
-ANALYST_BRIEF = ANALYST_BRIEF + "\n\n" + RESUME_DIRECTIVE + "\n\n" + RECALL_DIRECTIVE
+ANALYST_BRIEF = (
+    ANALYST_BRIEF
+    + "\n\n"
+    + TOOL_CHOICE_MATRIX
+    + "\n\n"
+    + RESUME_DIRECTIVE
+    + "\n\n"
+    + RECALL_DIRECTIVE
+)
 
 __all__ = ["ANALYST_BRIEF", "ANALYST_FINDINGS_DOC"]

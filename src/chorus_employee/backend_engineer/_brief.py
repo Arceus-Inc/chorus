@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from chorus_employee._recall import RECALL_DIRECTIVE
 from chorus_employee._resume import RESUME_DIRECTIVE
+from chorus_employee._tool_choice import TOOL_CHOICE_MATRIX
 
 BACKEND_ENGINEER_BRIEF = (
     # — identity & mission —
@@ -68,6 +69,10 @@ BACKEND_ENGINEER_BRIEF = (
     # — pointer to procedures —
     "Your tools describe themselves; your skills carry the deep procedure — load them on demand via "
     "the `skill` tool."
+)
+
+BACKEND_ENGINEER_BRIEF = (
+    BACKEND_ENGINEER_BRIEF + "\n\n" + TOOL_CHOICE_MATRIX
 )
 
 __all__ = ["BACKEND_ENGINEER_BRIEF"]
