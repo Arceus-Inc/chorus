@@ -151,8 +151,22 @@ class TaskContextPacket:
         return not self.prior_beats
 
     def to_dict(self) -> dict[str, Any]:
-        """Plain JSON-able form — what gets written to the worktree for tools and snapshot tests."""
-        return asdict(self)
+        """Plain JSON-able form — what gets written to the worktree for tools and snapshot tests.
+
+        Returns JSON-*native* types: tuples become lists, so ``json.loads(json.dumps(p.to_dict()))``
+        equals ``p.to_dict()``. Without that a reader who compares the on-disk packet against a
+        freshly projected one gets a confusing mismatch on every sequence field, and the file stops
+        being a usable diff target — which is most of the reason it is written at all.
+        """
+        return dict(_jsonable(asdict(self)))
+
+
+def _jsonable(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {key: _jsonable(item) for key, item in value.items()}
+    if isinstance(value, tuple | list):
+        return [_jsonable(item) for item in value]
+    return value
 
 
 __all__ = [

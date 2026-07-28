@@ -25,6 +25,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol, TypeVar, runtime_checkable
 
 from chorus.adapters._failure import failure_outcome
+from chorus.context import tcp_enabled
 from chorus.cron._fire import fire_routine
 from chorus.events import Event, EventKind
 from chorus.governance import GovernanceResolver
@@ -202,8 +203,16 @@ def _baseline_sha(working_dir: Path | None) -> str | None:
 
 
 def _execution_intent(ledger: Ledger, task: Task) -> str:
-    """Carry ancestor objectives into a delegated beat without widening its assigned scope."""
-    if task.parent_id is None:
+    """Carry ancestor objectives into a delegated beat without widening its assigned scope.
+
+    Under ``CHORUS_TCP`` this returns the assigned intent alone. The ancestor chain and the scope
+    rule move to the packet's ``why`` and ``what`` sections, where they are a *typed* projection of
+    the goal and task trees rather than prose pasted into the user message. Two reasons that is the
+    right home: the user message should say what to do, not re-explain the org; and the chain is
+    identical for every beat on the task, so restating it per beat is duplication the packet already
+    carries once.
+    """
+    if task.parent_id is None or tcp_enabled():
         return task.intent
 
     ancestors: list[Task] = []

@@ -30,6 +30,13 @@ from dream.tools._registry import ToolRegistry, ToolSource
 from dream.tools.builtin import default_registry
 
 from chorus.adapters import DreamBeatRunner, TokenPricing
+from chorus.context import (
+    ContextAudience,
+    TaskContextPacket,
+    project_task_context,
+    render,
+    tcp_enabled,
+)
 from chorus.heartbeat import BeatRunner, ExecutionProfileResolver, IntegrateContextPacket
 from chorus.memory import EpisodicRecallService, EpisodicStore
 from chorus.outcomes import (
@@ -539,12 +546,24 @@ def _read_only_role_tools(
     return tuple(tools)
 
 
-def write_role_overlays(harness_dir: Path, config: RoleBeatConfig) -> None:
+def write_role_overlays(
+    harness_dir: Path,
+    config: RoleBeatConfig,
+    *,
+    task_context: TaskContextPacket | None = None,
+) -> None:
     """Write planner/generator/evaluator overlays so the whole harness runs as the employee.
 
     Each overlay **appends** the employee's brief to that dream role's base prompt (keeping the role's
     orchestration instructions) and sets the employee's permission posture. ``run_task`` loads these
     from ``{working_dir}/.harness/roles/{role}.toml``.
+
+    When a ``task_context`` packet is supplied it is rendered **per role**, because the three dream
+    roles need three different views of it. The planner is toolless and cannot fetch history even in
+    principle, so it is the role that most needs it pushed; the evaluator is deliberately not shown
+    prior verdicts, because a gate that knows an artifact is "attempt 3" judges it differently from
+    the same artifact submitted first — and that path-dependence is the one property a verifier must
+    not have. See :class:`chorus.context.ContextAudience`.
     """
     roles_dir = harness_dir / ".harness" / "roles"
     roles_dir.mkdir(parents=True, exist_ok=True)
@@ -560,6 +579,10 @@ def write_role_overlays(harness_dir: Path, config: RoleBeatConfig) -> None:
             )
         else:
             prompt = f"{base}\n\n## Operating brief (your role in the org)\n{config.system_prompt}"
+        if task_context is not None:
+            rendered = render(task_context, audience=ContextAudience(role)).text
+            if rendered:
+                prompt = f"{prompt}\n\n{rendered}"
         lines = [
             f'system_prompt = "{_toml_escape(prompt)}"',
             f'permission_mode = "{config.permission_mode}"',
@@ -576,6 +599,39 @@ def write_role_overlays(harness_dir: Path, config: RoleBeatConfig) -> None:
         elif role == "evaluator":
             lines.append(f"tools = {_toml_string_list(_read_only_role_tools(role, config))}")
         (roles_dir / f"{role}.toml").write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+TASK_CONTEXT_DOC = "task-context.json"
+"""The packet, persisted beside the role overlays for tools, operators and snapshot tests."""
+
+
+def write_task_context(harness_dir: Path, packet: TaskContextPacket) -> None:
+    """Persist the packet the beat was built from.
+
+    The rendered markdown is what the model reads; this is the same content in machine-readable form,
+    so a beat that behaved oddly can be diagnosed by diffing its packet rather than re-reading a
+    prompt. Sorted keys and an indent keep that diff legible.
+    """
+    path = harness_dir / ".harness" / TASK_CONTEXT_DOC
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(packet.to_dict(), indent=2, sort_keys=True), encoding="utf-8")
+
+
+def write_task_context_error(harness_dir: Path, *, error: BaseException) -> None:
+    """Breadcrumb for a failed projection — the beat continues on the pre-packet path.
+
+    Mirrors the lattice breadcrumb: context is load-bearing but a fault in assembling it must not be
+    the reason a company stops working. The file is what makes that degradation visible instead of
+    silent.
+    """
+    path = harness_dir / ".harness" / "task-context-error.json"
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            json.dumps({"error": f"{type(error).__name__}: {error}"}, indent=2), encoding="utf-8"
+        )
+    except OSError:  # a breadcrumb that cannot be written must not raise either
+        pass
 
 
 def write_sandbox_config(harness_dir: Path, sandbox: str) -> None:
@@ -711,6 +767,57 @@ class EmployeeHarnessFactory:
 
     def materialize(self, employee: Employee, *, task_id: str | None = None) -> EmployeeHarness:
         return self._materialize(employee, task_id=task_id)
+
+    def _task_context(
+        self,
+        *,
+        employee: Employee,
+        task: Task,
+        worktree: Path,
+    ) -> TaskContextPacket | None:
+        """Project this beat's packet, or ``None`` if projection fails.
+
+        ``run_id`` is read off the task rather than threaded through the ``BeatRunnerFor`` seam: the
+        checkout CAS has already stamped ``checkout_run_id`` with this beat's run by the time the
+        harness is materialized, so the value is available without widening a protocol every
+        implementer would have to follow. The current run is excluded from ``prior_beats`` on its own
+        merits anyway — it has not finished — so this is a label, not a filter.
+
+        Fail-soft with a breadcrumb: a fault here drops the beat back to the pre-packet path rather
+        than failing the beat outright.
+        """
+        if self._ledger is None:
+            return None
+        episodic: EpisodicStore | None
+        try:
+            episodic = EpisodicStore(self._company_root / "memory")
+        except Exception:  # a young or broken episodic store is not a reason to lose the packet
+            episodic = None
+        try:
+            return project_task_context(
+                self._ledger,
+                task_id=task.id,
+                run_id=task.checkout_run_id or "",
+                employee=employee,
+                episodic=episodic,
+                worktree=worktree,
+            )
+        except Exception as exc:
+            write_task_context_error(worktree, error=exc)
+            return None
+
+    def _consume_inbox(self, packet: TaskContextPacket) -> None:
+        """Mark the messages the packet just delivered as read.
+
+        The projector deliberately does not do this: it is a pure read, and consuming a message is a
+        side effect that belongs where the beat actually starts. Pairing it with injection is what
+        keeps the nudge from repeating every beat while the thread stays readable via
+        ``read_comments``.
+        """
+        if self._ledger is None:
+            return
+        for item in packet.inbox:
+            self._ledger.messages.mark_read(item.message_id)
 
     def _build_tool_registry(
         self,
@@ -851,6 +958,10 @@ class EmployeeHarnessFactory:
             if task_id is not None and self._ledger is not None
             else None
         )
+        # CHORUS_TCP: build this beat's context from the packet instead of the accreted concats.
+        # Requires a ledger and a task — a harness materialized without either (tests, the facade's
+        # single-harness injection) has nothing to project from and keeps the old path.
+        use_task_context = tcp_enabled() and self._ledger is not None and task is not None
         if self._ledger is None:
             config = role_beat_config(self._roles.get(employee.role).manifest)
         else:
@@ -908,12 +1019,16 @@ class EmployeeHarnessFactory:
         # (paperclip: inbox = assigned tasks + comments): unread messages land in the operating
         # brief and are consumed, so the thread stays readable via read_comments but the nudge
         # never repeats.
+        #
+        # Under CHORUS_TCP the packet carries the inbox as a typed section, so the concat is skipped
+        # here and the messages are consumed after the packet is projected — one writer of that text,
+        # not two.
         if self._ledger is not None and self._ledger.employees.get(employee.id) is not None:
             missing = tuple(t for t in ("comment", "read_comments") if t not in config.tools)
             if missing:
                 config = replace(config, tools=(*config.tools, *missing))
             inbox = self._ledger.messages.inbox(employee.id)
-            if inbox:
+            if inbox and not use_task_context:
                 lines = "\n".join(
                     f"- [task {m.task_id or '—'}] from {m.from_employee_id or m.from_user_id}: "
                     f"{m.body}"
@@ -926,7 +1041,9 @@ class EmployeeHarnessFactory:
                     + lines
                     + "\nRead the full thread with read_comments(task_id); reply with comment.",
                 )
-                for m in inbox:  # ponytail: consumed at injection; a crashed beat re-reads via read_comments
+                for m in (
+                    inbox
+                ):  # ponytail: consumed at injection; a crashed beat re-reads via read_comments
                     self._ledger.messages.mark_read(m.id)
         if _LATTICE_TOOLS.intersection(config.tools):
             config = replace(config, system_prompt=config.system_prompt + LATTICE_DIRECTIVES_BLOCK)
@@ -975,12 +1092,23 @@ class EmployeeHarnessFactory:
                     ),
                 )
         # Corrective replacement: a child whose same-assignee siblings already failed inherits
-        # their exact findings.
-        if self._ledger is not None and task is not None:
+        # their exact findings. Under CHORUS_TCP this is subsumed by the packet's ``prior_beats``,
+        # which carries the same evaluator findings for this task's *own* history rather than only a
+        # failed sibling's — a strictly wider fix for the same defect.
+        if self._ledger is not None and task is not None and not use_task_context:
             inheritance = _failure_inheritance(self._ledger, task, root)
             if inheritance:
                 config = replace(config, system_prompt=config.system_prompt + inheritance)
-        write_role_overlays(root, config)  # the employee's identity overlays the whole harness
+        packet = (
+            self._task_context(employee=employee, task=task, worktree=root)
+            if use_task_context and task is not None
+            else None
+        )
+        if packet is not None:
+            write_task_context(root, packet)
+            self._consume_inbox(packet)
+        # the employee's identity overlays the whole harness
+        write_role_overlays(root, config, task_context=packet)
         write_sandbox_config(
             root, config.sandbox
         )  # the role's trust posture → .harness/sandbox.toml
@@ -989,9 +1117,7 @@ class EmployeeHarnessFactory:
         if config.mcp and config.mcp_servers:
             write_mcp_allowlist(root, config.mcp_servers)
 
-        registry = self._build_tool_registry(
-            config, root=root, lattice=lattice
-        )
+        registry = self._build_tool_registry(config, root=root, lattice=lattice)
 
         # Subagents: project the role's Tier-1 declarations into dream's SubagentSet. The
         # spawn_subagent tool (already in the registry if "spawn_subagent" is in the role's tools)

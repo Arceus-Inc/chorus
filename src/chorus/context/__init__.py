@@ -16,6 +16,7 @@ from chorus.context._budget import (
     SECTION_ORDER,
     estimate_tokens,
 )
+from chorus.context._flag import TCP_ENV_VAR, tcp_enabled
 from chorus.context._packet import (
     DEFAULT_MAX_PRIOR_BEATS,
     PACKET_VERSION,
@@ -40,6 +41,7 @@ __all__ = [
     "SECTION_BUDGETS",
     "SECTION_ORDER",
     "SUMMARY_CAP_CHARS",
+    "TCP_ENV_VAR",
     "BudgetPosition",
     "ContextAudience",
     "Contract",
@@ -53,4 +55,5 @@ __all__ = [
     "project_task_context",
     "render",
     "sections_for",
+    "tcp_enabled",
 ]

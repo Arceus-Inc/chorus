@@ -284,13 +284,17 @@ def test_inbox_and_budget_are_projected() -> None:
 
 
 def test_packet_is_json_serialisable_and_versioned() -> None:
-    """The packet is written to the worktree, so it must survive a JSON round-trip."""
+    """The packet is written to the worktree, so it must survive a JSON round-trip unchanged.
+
+    Round-trip *equality* is the point, not merely "it serialises": the file's job is to be a diff
+    target against a freshly projected packet.
+    """
     tasks = {"t": Task(id="t", intent="ship", status=TaskStatus.TODO)}
     packet = _project(_FakeLedger(tasks=tasks), "t")
 
     payload = packet.to_dict()
     assert payload["packet_version"] == PACKET_VERSION
-    assert json.loads(json.dumps(payload))["task_id"] == "t"
+    assert json.loads(json.dumps(payload)) == payload
 
 
 def test_projection_is_pure() -> None:
