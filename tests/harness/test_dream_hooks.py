@@ -41,9 +41,21 @@ async def test_evidence_continue_when_missing(tmp_path: Path) -> None:
         (("code_reviewer", "review_verdict.json", {"cleared": True}),),
         working_dir=tmp_path,
     )
-    result = await hook(HookEvent.STOP, {"phase": "pre_seal", "verify_nudges": 0})
+    result = await hook(
+        HookEvent.STOP, {"phase": "pre_seal", "verify_nudges": 0, "role": "generator"}
+    )
     assert result.continue_message is not None
     assert "code_reviewer" in result.continue_message
+
+
+@pytest.mark.asyncio
+async def test_evidence_continue_skips_planner(tmp_path: Path) -> None:
+    hook = EvidenceContinueHook(
+        (("code_reviewer", "review_verdict.json", {"cleared": True}),),
+        working_dir=tmp_path,
+    )
+    result = await hook(HookEvent.STOP, {"phase": "pre_seal", "role": "planner"})
+    assert result.continue_message is None
 
 
 @pytest.mark.asyncio
@@ -54,5 +66,5 @@ async def test_evidence_continue_quiet_when_present(tmp_path: Path) -> None:
         (("code_reviewer", "review_verdict.json", {"cleared": True}),),
         working_dir=tmp_path,
     )
-    result = await hook(HookEvent.STOP, {"phase": "pre_seal"})
+    result = await hook(HookEvent.STOP, {"phase": "pre_seal", "role": "generator"})
     assert result.continue_message is None

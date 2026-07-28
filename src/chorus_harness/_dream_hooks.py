@@ -66,6 +66,9 @@ class EvidenceContinueHook:
     async def __call__(self, event: HookEvent, payload: dict[str, Any]) -> HookResult:
         if not self._requirements:
             return HookResult()
+        # Planner/evaluator share the harness hooks; only nudge the craft generator.
+        if payload.get("role") != "generator":
+            return HookResult()
         if payload.get("phase") not in (None, "pre_seal"):
             return HookResult()
         missing: list[str] = []

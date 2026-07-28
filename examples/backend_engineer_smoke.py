@@ -130,7 +130,8 @@ def main() -> int:
             pricing=default_pricing_from_env(),
             seed=seed,
         )
-        ledger.employees.create(Employee(id="bex", name="Bex", role="backend_engineer"))
+        if ledger.employees.get("bex") is None:
+            ledger.employees.create(Employee(id="bex", name="Bex", role="backend_engineer"))
 
         cfg = role_beat_config(registry.get("backend_engineer").manifest)
         mat = factory.materialize(ledger.employees.get("bex"))  # type: ignore[arg-type]
@@ -143,15 +144,16 @@ def main() -> int:
         _log(f"   worktree  : {mat.working_dir}")
         _log(f"   seeded    : {_git(mat.working_dir, 'ls-files')!r}")
 
-        ledger.tasks.submit(Task(id="t1", intent=_TASK))
-        assign_task(ledger, "t1", "bex")
+        task_id = str(uuid.uuid4())
+        ledger.tasks.submit(Task(id=task_id, intent=_TASK))
+        assign_task(ledger, task_id, "bex")
         # Slice 2 — the evidence floor. A single backend engineer lands SOLO, gated not on a transient
         # `pytest` run but on the DURABLE proof bundle: the DoD passes only when a `test_evidence/`
         # manifest exists in the worktree with an all-green verdict. So the model must call the
         # `test_evidence` tool (which runs the gates + writes the bundle) — "it was tested" is a file on
         # disk the DoD greps, not a claim. No reviewer needed — a single-beat Command DoD over the bundle.
         ledger.dod.create(
-            "t1",
+            task_id,
             Verifier.command(
                 "test -f test_evidence/manifest.json && "
                 'grep -q \'"verdict": "pass"\' test_evidence/manifest.json',
@@ -159,7 +161,7 @@ def main() -> int:
             ),
         )
         _log(
-            "\n2. TASK assigned (DoD: green test_evidence/ bundle, gates solo — no reviewer)\n   t1: "
+            f"\n2. TASK assigned (DoD: green test_evidence/ bundle, gates solo — no reviewer)\n   {task_id}: "
             + _TASK
         )
 
@@ -177,7 +179,7 @@ def main() -> int:
         for n in range(
             1, 4
         ):  # one deliverable beat gates on pytest + lands; headroom for self-repair
-            task = ledger.tasks.get("t1")
+            task = ledger.tasks.get(task_id)
             if task is None or task.status in (TaskStatus.DONE, TaskStatus.BLOCKED):
                 break
             _log(f"\n3.{n} TICK — kernel dispatches the backend_engineer beat")
@@ -187,14 +189,14 @@ def main() -> int:
                 await scheduler.drain()
 
             asyncio.run(_pulse())
-            run = ledger.runs.for_task("t1")[-1]
-            dod = ledger.dod.get_for_task("t1")
+            run = ledger.runs.for_task(task_id)[-1]
+            dod = ledger.dod.get_for_task(task_id)
             _log(f"   run: {run.status.value}   DoD: {dod.status.value if dod else '-'}")
 
         _log("\n" + "=" * 72 + "\n4. RESULT")
-        final = ledger.tasks.get("t1")
+        final = ledger.tasks.get(task_id)
         _log(f"   task status : {final.status.value if final else '?'}")
-        artifacts = ledger.artifacts.list_for_task("t1")
+        artifacts = ledger.artifacts.list_for_task(task_id)
         company_main = factory.company_root / "repo"
         landed = bool(artifacts)
         shipped = (company_main / "slugify.py").exists() and "slugify" in (
