@@ -150,6 +150,31 @@ class RunRepo:
         )
         self._conn.commit()
 
+    def record_landed(self, run_id: str, landed: dict[str, object]) -> None:
+        """Persist the typed landed outcome under ``outcome["landed"]`` (Phase 0 durability).
+
+        The scheduler derives the landed phase once at the beat choke point and publishes it on the
+        event bus. An event is **live-only**: a subscriber attached at the time sees it, but a later
+        beat on the same task never can, so the one signal that says *why* the previous attempt
+        landed as it did is lost the moment the bus call returns. Writing it here makes it durable
+        state — ``run.outcome["landed"]["phase"]`` / ``["recovery_hint"]`` are what a task-context
+        projector reads back to build the task's beat history.
+
+        Two deliberate choices:
+
+        - **Merge, don't replace** (``||``): :meth:`finish` has already written the raw dream verdict
+          into the same column. The two writes describe one beat from different angles and must
+          coexist.
+        - **Nest under one key**: the verdict dict is dream's free-form payload (``error``,
+          ``message``, ``sprint_outcomes``, …). Namespacing keeps a future dream key from silently
+          shadowing ``summary`` or ``disposition`` — and keeps the landed record readable as a unit.
+        """
+        self._conn.execute(
+            "UPDATE run SET outcome = outcome || ?::jsonb WHERE id = ?",
+            (dumps({"landed": landed}), run_id),
+        )
+        self._conn.commit()
+
 
 def _row_to_run(row: LedgerRow) -> Run:
     return Run(

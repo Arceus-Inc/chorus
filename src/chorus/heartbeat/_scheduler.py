@@ -29,13 +29,13 @@ from chorus.cron._fire import fire_routine
 from chorus.events import Event, EventKind
 from chorus.governance import GovernanceResolver
 from chorus.heartbeat._beat import BeatDisposition, BeatOutcome
-from chorus.heartbeat._landed_outcome import derive_landed_outcome
 from chorus.heartbeat._beat_context import IntegrateContextPacket
 from chorus.heartbeat._execution_profile import (
     ExecutionProfileResolver,
     ResolvedExecutionProfile,
 )
 from chorus.heartbeat._invokability import InvokabilityReason, invokability_block
+from chorus.heartbeat._landed_outcome import derive_landed_outcome
 from chorus.heartbeat._runner_for import single
 from chorus.heartbeat._wake import TickReport, Wake
 from chorus.hooks import OrgHook, default_org_hooks, run_org_hooks
@@ -933,7 +933,7 @@ class Scheduler:
             else:
                 self._climb_repair_ladder(task_id, employee_id=employee.id, verifier=verifier)
 
-        self._emit_outcome_landed(
+        self._persist_and_emit_landed_outcome(
             task=task,
             result=result,
             run_id=run_id,
@@ -1021,7 +1021,7 @@ class Scheduler:
         )
         self._memory_writer.append(delta)
 
-    def _emit_outcome_landed(
+    def _persist_and_emit_landed_outcome(
         self,
         *,
         task: Task,
@@ -1030,9 +1030,14 @@ class Scheduler:
         employee: Employee,
         now: datetime,
     ) -> None:
-        """Publish the typed landed outcome once — bridge/horizon project it mechanically (Phase 0)."""
-        if self._event_bus is None:
-            return
+        """Derive the typed landed outcome once, persist it, then publish it (Phase 0).
+
+        Persistence is **unconditional**; emission stays gated on an attached bus. The two are
+        different concerns wearing the same derivation: the event is observability (podium's bridge
+        → horizon's OutcomeFeed consume it live), while the row is durable state the *next beat on
+        this task* reads back. A company running without an event bus must still accumulate its own
+        history, so the write happens either way.
+        """
         ledger = self._require_ledger()
         latest = ledger.tasks.get(task.id) or task
         dod_row = ledger.dod.get_for_task(task.id)
@@ -1051,6 +1056,14 @@ class Scheduler:
             )
         except ValueError:
             return
+        payload: dict[str, object] = {
+            **landed.to_dict(),
+            "passed": landed.strategy_passed(),
+            "recovery_hint": landed.recovery_hint().value,
+        }
+        ledger.runs.record_landed(run_id, payload)
+        if self._event_bus is None:
+            return
         self._event_bus.emit(
             Event(
                 kind=EventKind.OUTCOME_LANDED,
@@ -1059,11 +1072,7 @@ class Scheduler:
                 task_id=task.id,
                 employee_id=employee.id,
                 run_id=run_id,
-                payload={
-                    **landed.to_dict(),
-                    "passed": landed.strategy_passed(),
-                    "recovery_hint": landed.recovery_hint().value,
-                },
+                payload=payload,
             )
         )
 
