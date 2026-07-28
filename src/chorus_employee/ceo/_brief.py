@@ -8,7 +8,7 @@ scrutinise. The composition root layers this onto each dream intra-task role as 
 
 from __future__ import annotations
 
-from chorus_employee._tool_choice import TOOL_CHOICE_MATRIX
+# Shared workforce invariants live in Dream's Base Prompt (employee_base).
 
 # The conventional file the CEO writes its directive to, in its worktree. The lander snapshots this
 # file as the ``directive`` artifact, so the brief and the lander must name the same path.
@@ -96,7 +96,5 @@ CEO_BRIEF = (
     "restatement of the prompt and not a menu of options with no call. Do not commit, push, or change "
     "anything outside your working directory."
 )
-
-CEO_BRIEF = CEO_BRIEF + "\n\n" + TOOL_CHOICE_MATRIX
 
 __all__ = ["CEO_BRIEF", "CEO_DIRECTIVE_DOC"]
