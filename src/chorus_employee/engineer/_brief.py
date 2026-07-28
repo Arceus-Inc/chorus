@@ -1,7 +1,7 @@
 """The Engineer's operating brief — craft-specific system prompt.
 
-Shared workforce invariants live in Dream's Base Prompt
-(``dream.prompts.employee_base``). This file is engineer-only.
+Shared workforce invariants live in Dream core-beliefs.md standing orders.
+This file is engineer-only.
 """
 
 from __future__ import annotations

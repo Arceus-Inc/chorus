@@ -1,4 +1,4 @@
-"""S0 #10 — Hermes-style tool-choice lives in Dream Base Prompt, not craft briefs."""
+"""Workforce tool-choice / resume / recall live in Dream core-beliefs, not craft briefs."""
 
 from __future__ import annotations
 
@@ -12,11 +12,7 @@ from chorus_employee.engineer._brief import ENGINEER_BRIEF
 from chorus_employee.frontend_engineer._brief import FRONTEND_ENGINEER_BRIEF
 from chorus_employee.marketer._brief import MARKETER_BRIEF
 from chorus_employee.pm._brief import PM_BRIEF
-from dream.prompts.employee_base import (
-    EMPLOYEE_BASE_PROMPT,
-    TOOL_CHOICE_MATRIX,
-    render_employee_base_prompt,
-)
+from dream.services.core_beliefs import extract_standing_orders, packaged_core_beliefs_path
 
 pytestmark = pytest.mark.unit
 
@@ -32,14 +28,12 @@ _CRAFT_BRIEFS = (
 )
 
 
-def test_matrix_lives_in_dream_base_prompt() -> None:
-    assert "TOOL CHOICE" in TOOL_CHOICE_MATRIX
-    assert "Use this" in TOOL_CHOICE_MATRIX
-    assert EMPLOYEE_BASE_PROMPT.startswith("You are an employee of a AI Workforce")
-    rendered = render_employee_base_prompt(
-        tool_names=("skill", "spawn_subagent", "todo_write", "recall")
-    )
-    assert TOOL_CHOICE_MATRIX in rendered
+def test_workforce_waist_lives_in_dream_core_beliefs() -> None:
+    orders = extract_standing_orders(packaged_core_beliefs_path())
+    joined = "\n".join(orders.always)
+    assert "You are an employee of a AI Workforce" in joined
+    assert "TOOL CHOICE" in joined
+    assert "todo_write" in joined
 
 
 @pytest.mark.parametrize(
@@ -56,9 +50,8 @@ def test_matrix_lives_in_dream_base_prompt() -> None:
         "ceo",
     ),
 )
-def test_craft_brief_is_employee_specific_not_shared_matrix(brief: str) -> None:
-    """Briefs stay craft-only; Dream injects the shared waist at session assemble."""
-    assert TOOL_CHOICE_MATRIX not in brief
+def test_craft_brief_is_employee_specific_not_shared_waist(brief: str) -> None:
     assert "You are an employee of a AI Workforce" not in brief
     assert "RESUME, DON'T RESTART" not in brief
     assert "EPISODIC MEMORY:" not in brief
+    assert "TOOL CHOICE" not in brief
