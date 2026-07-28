@@ -9,7 +9,6 @@ from __future__ import annotations
 
 from chorus_employee._recall import RECALL_DIRECTIVE
 from chorus_employee._resume import RESUME_DIRECTIVE
-from chorus_employee._tool_choice import TOOL_CHOICE_MATRIX
 
 # The conventional file a PM writes its plan to, in its worktree. The lander snapshots this file as the
 # ``doc`` artifact, so the brief and the lander must name the same path.
@@ -80,14 +79,6 @@ PM_BRIEF = (
     "one red-teamed, recorded decision plus its plan file IS the finished deliverable."
 )
 
-PM_BRIEF = (
-    PM_BRIEF
-    + "\n\n"
-    + TOOL_CHOICE_MATRIX
-    + "\n\n"
-    + RESUME_DIRECTIVE
-    + "\n\n"
-    + RECALL_DIRECTIVE
-)
+PM_BRIEF = PM_BRIEF + "\n\n" + RESUME_DIRECTIVE + "\n\n" + RECALL_DIRECTIVE
 
 __all__ = ["PM_BRIEF", "PM_PLAN_DOC"]

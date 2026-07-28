@@ -247,13 +247,13 @@ def test_dod_rubric_requires_tests_to_actually_run() -> None:
 
 
 def test_brief_fits_the_lean_token_budget() -> None:
-    """The brief stays under ~1050 tokens (words * 4/3 heuristic).
+    """The brief stays under ~900 tokens (words * 4/3 heuristic).
 
-    docs/plans/2026-07-18-hooks-and-briefs-research.md §B (podium repo): target <~600 tokens for
-    character/judgment; hard budget raised to 1050 to leave room for the Hermes-style tool-choice
-    matrix (S0 #10) — action-space teaching stays in the invariant brief, not in skills.
+    docs/plans/2026-07-18-hooks-and-briefs-research.md §B (podium repo): target <~600 tokens, hard
+    budget 900 — 250-375-token instruction blocks beat 1500+ on tool selection; briefs carry
+    character and judgment, gates carry law.
     """
-    assert len(BACKEND_ENGINEER_BRIEF.split()) * 4 / 3 <= 1050
+    assert len(BACKEND_ENGINEER_BRIEF.split()) * 4 / 3 <= 900
 
 
 def test_brief_keeps_the_anatomy_essentials() -> None:
