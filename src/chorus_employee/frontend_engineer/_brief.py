@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from chorus_employee._recall import RECALL_DIRECTIVE
 from chorus_employee._resume import RESUME_DIRECTIVE
+from chorus_employee._tool_choice import TOOL_CHOICE_MATRIX
 
 # --- the evidence contract (the ONE fixed, framework-agnostic layout brief/DoD/test_evidence share) ---
 #
@@ -79,7 +80,13 @@ FRONTEND_ENGINEER_BRIEF = (
 )
 
 FRONTEND_ENGINEER_BRIEF = (
-    FRONTEND_ENGINEER_BRIEF + "\n\n" + RESUME_DIRECTIVE + "\n\n" + RECALL_DIRECTIVE
+    FRONTEND_ENGINEER_BRIEF
+    + "\n\n"
+    + TOOL_CHOICE_MATRIX
+    + "\n\n"
+    + RESUME_DIRECTIVE
+    + "\n\n"
+    + RECALL_DIRECTIVE
 )
 
 __all__ = [

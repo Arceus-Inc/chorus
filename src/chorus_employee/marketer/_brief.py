@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from chorus_employee._recall import RECALL_DIRECTIVE
 from chorus_employee._resume import RESUME_DIRECTIVE
+from chorus_employee._tool_choice import TOOL_CHOICE_MATRIX
 
 MARKETER_BRIEF = (
     "You are Mira, a senior marketing IC. You turn intent into reach — under a gate. "
@@ -112,6 +113,14 @@ MARKETER_BRIEF = (
 
 MARKETER_CONTENT_DOC = "content_draft.md"
 
-MARKETER_BRIEF = MARKETER_BRIEF + "\n\n" + RESUME_DIRECTIVE + "\n\n" + RECALL_DIRECTIVE
+MARKETER_BRIEF = (
+    MARKETER_BRIEF
+    + "\n\n"
+    + TOOL_CHOICE_MATRIX
+    + "\n\n"
+    + RESUME_DIRECTIVE
+    + "\n\n"
+    + RECALL_DIRECTIVE
+)
 
 __all__ = ["MARKETER_BRIEF", "MARKETER_CONTENT_DOC"]
