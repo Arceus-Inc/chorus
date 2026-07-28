@@ -10,6 +10,12 @@ harness calls it rather than the other way round.
 
 from __future__ import annotations
 
+from chorus.context._budget import (
+    DEFAULT_BUDGET_TOKENS,
+    SECTION_BUDGETS,
+    SECTION_ORDER,
+    estimate_tokens,
+)
 from chorus.context._packet import (
     DEFAULT_MAX_PRIOR_BEATS,
     PACKET_VERSION,
@@ -24,18 +30,27 @@ from chorus.context._packet import (
     TaskContextPacket,
 )
 from chorus.context._project import project_task_context
+from chorus.context._render import ContextAudience, RenderedContext, render, sections_for
 
 __all__ = [
+    "DEFAULT_BUDGET_TOKENS",
     "DEFAULT_MAX_PRIOR_BEATS",
     "PACKET_VERSION",
     "SCOPE_GUARD",
+    "SECTION_BUDGETS",
+    "SECTION_ORDER",
     "SUMMARY_CAP_CHARS",
     "BudgetPosition",
+    "ContextAudience",
     "Contract",
     "GoalLink",
     "InboxItem",
     "PeerWork",
     "PriorBeat",
+    "RenderedContext",
     "TaskContextPacket",
+    "estimate_tokens",
     "project_task_context",
+    "render",
+    "sections_for",
 ]
