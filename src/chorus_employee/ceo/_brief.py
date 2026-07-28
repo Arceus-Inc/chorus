@@ -8,7 +8,7 @@ scrutinise. The composition root layers this onto each dream intra-task role as 
 
 from __future__ import annotations
 
-# Shared workforce invariants live in Dream's Base Prompt (employee_base).
+# Shared workforce invariants live in Dream core-beliefs.md standing orders.
 
 # The conventional file the CEO writes its directive to, in its worktree. The lander snapshots this
 # file as the ``directive`` artifact, so the brief and the lander must name the same path.
