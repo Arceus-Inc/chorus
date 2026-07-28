@@ -1050,6 +1050,10 @@ class EmployeeHarnessFactory:
             env=dict(config.env) or None,
             subagents=subagent_set,
         )
+        # S1 #2 / #11: powered dream hooks — dangerous-tool veto + evidence continue.
+        from chorus_harness._dream_hooks import register_employee_hooks
+
+        register_employee_hooks(harness, working_dir=root, subagents=config.subagents)
         return EmployeeHarness(
             runner=DreamBeatRunner(
                 harness,
