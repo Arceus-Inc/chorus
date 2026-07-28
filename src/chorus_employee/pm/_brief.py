@@ -7,7 +7,9 @@ role as a per-role overlay (see :func:`chorus_harness.write_role_overlays`).
 
 from __future__ import annotations
 
-# Shared workforce invariants live in Dream's Base Prompt (employee_base).
+from chorus_employee._recall import RECALL_DIRECTIVE
+from chorus_employee._resume import RESUME_DIRECTIVE
+from chorus_employee._tool_choice import TOOL_CHOICE_MATRIX
 
 # The conventional file a PM writes its plan to, in its worktree. The lander snapshots this file as the
 # ``doc`` artifact, so the brief and the lander must name the same path.
@@ -76,6 +78,16 @@ PM_BRIEF = (
     f"`record_decision` has succeeded AND `{PM_PLAN_DOC}` reflects the recorded decision, you are DONE — "
     f"write a one-line summary and end your turn. Do NOT keep editing `{PM_PLAN_DOC}` or record again: "
     "one red-teamed, recorded decision plus its plan file IS the finished deliverable."
+)
+
+PM_BRIEF = (
+    PM_BRIEF
+    + "\n\n"
+    + TOOL_CHOICE_MATRIX
+    + "\n\n"
+    + RESUME_DIRECTIVE
+    + "\n\n"
+    + RECALL_DIRECTIVE
 )
 
 __all__ = ["PM_BRIEF", "PM_PLAN_DOC"]

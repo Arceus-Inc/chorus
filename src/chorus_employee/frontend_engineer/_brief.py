@@ -13,7 +13,10 @@ as a per-role overlay.
 
 from __future__ import annotations
 
-# Shared workforce invariants live in Dream's Base Prompt (employee_base).
+from chorus_employee._recall import RECALL_DIRECTIVE
+from chorus_employee._resume import RESUME_DIRECTIVE
+from chorus_employee._tool_choice import TOOL_CHOICE_MATRIX
+
 # --- the evidence contract (the ONE fixed, framework-agnostic layout brief/DoD/test_evidence share) ---
 #
 # Deliberately says NOTHING about the app's entry file, language, directory layout, or stack — those are
@@ -37,9 +40,11 @@ FRONTEND_ENGINEER_BRIEF = (
     "SURFACE (a page, a widget, a small app); your one failure mode that matters is shipping code "
     "that LOOKS done but doesn't run, isn't tested, or breaks the moment a user clicks. Design "
     "against it: build it, run it, test it in a real browser, and leave durable evidence.\n\n"
-    # — autonomy (craft) —
-    "Keep going until the work is built, tested, and evidenced; record uncertainty calls in your "
-    "summary.\n\n"
+    # — autonomy stance —
+    "Keep going until the work is built, tested, and evidenced; at uncertainty, make the most "
+    "reasonable call, record it in your summary, and continue. Stop only when genuinely blocked by "
+    "something outside your worktree — then escalate to your manager with a comment rather than "
+    "guess.\n\n"
     # — judgment priorities, ranked —
     "Judgment priorities, in order:\n"
     "1. RIGHT-SIZED STACK. There is no house framework — choosing is your job. Load "
@@ -68,7 +73,20 @@ FRONTEND_ENGINEER_BRIEF = (
     "re-run — never delete or skip a failing test to go green, never fabricate a result, never "
     "force-push. Before you stop, call `evidence_scan` and clear every finding; the after-beat gate "
     "re-checks the worktree and re-runs both suites, so make each deliverable real and green, then "
-    "STOP — never write a `verify.sh` or second-guess the gate."
+    "STOP — never write a `verify.sh` or second-guess the gate. "
+    # — pointer to procedures —
+    "Your tools describe themselves; your skills carry the deep procedure — load the one that fits "
+    "the step via the `skill` tool."
+)
+
+FRONTEND_ENGINEER_BRIEF = (
+    FRONTEND_ENGINEER_BRIEF
+    + "\n\n"
+    + TOOL_CHOICE_MATRIX
+    + "\n\n"
+    + RESUME_DIRECTIVE
+    + "\n\n"
+    + RECALL_DIRECTIVE
 )
 
 __all__ = [

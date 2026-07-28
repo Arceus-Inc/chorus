@@ -15,7 +15,9 @@ ships UI to a user's screen without a gate.
 
 from __future__ import annotations
 
-# Shared workforce invariants live in Dream's Base Prompt (employee_base).
+from chorus_employee._recall import RECALL_DIRECTIVE
+from chorus_employee._resume import RESUME_DIRECTIVE
+from chorus_employee._tool_choice import TOOL_CHOICE_MATRIX
 
 # The system doc (READ) — the machine-readable design system the Designer grounds every choice in.
 # Google's open DESIGN.md format: YAML tokens up top, prose rationale + guardrails below (designer §10).
@@ -162,6 +164,16 @@ DESIGNER_BRIEF = (
     "artifact to prove. A human approves any handoff that ships UI to a user's screen. "
     "House rules: read the system first; design to the tokens; reach for the real component; specify "
     "every state; make it accessible by construction; cite every choice; escalate drift, never invent."
+)
+
+DESIGNER_BRIEF = (
+    DESIGNER_BRIEF
+    + "\n\n"
+    + TOOL_CHOICE_MATRIX
+    + "\n\n"
+    + RESUME_DIRECTIVE
+    + "\n\n"
+    + RECALL_DIRECTIVE
 )
 
 __all__ = ["DESIGNER_BRIEF", "DESIGN_SPEC_DOC", "DESIGN_SYSTEM_DOC"]

@@ -135,13 +135,13 @@ def test_brief_keeps_generated_runtime_state_out_of_the_diff() -> None:
     assert "git status" in brief
 
 
-def test_brief_keeps_todo_checklist_ending_discipline() -> None:
-    # Shared RESUME/todo_write directive lives in Dream's Base Prompt; the craft brief still
-    # names the terminal TODO.md quality sequence Bex must end with.
+def test_brief_has_the_resume_reconcile_directive() -> None:
+    # The cross-beat resumption protocol: keep a durable TODO.md via todo_write, read it FIRST and
+    # reconcile intent (the checklist) against reality (git + tests), resume rather than restart.
     brief = BACKEND_ENGINEER_BRIEF
+    assert "todo_write" in brief
     assert "TODO.md" in brief
-    assert "test_evidence" in brief
-    assert "code_reviewer" in brief
+    assert "resume" in brief.lower()
 
 
 def test_brief_resume_trusts_green_artifacts_and_skips_to_the_missing_one() -> None:
@@ -257,9 +257,10 @@ def test_brief_fits_the_lean_token_budget() -> None:
 
 
 def test_brief_keeps_the_anatomy_essentials() -> None:
-    """Identity survives the diet: subagents by name, deliverable class (shared escalate → Dream)."""
+    """Identity survives the diet: subagents by name, manager escalation, deliverable class."""
     brief = BACKEND_ENGINEER_BRIEF
     for subagent in ("test_author", "api_verifier", "code_reviewer"):
         assert subagent in brief, subagent
+    assert "manager" in brief.lower()  # escalate-to-manager communication norm
     assert "PR" in brief  # the deliverable artifact class it lands
     assert "test_evidence" in brief  # the durable evidence bundle it leaves

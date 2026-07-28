@@ -1049,9 +1049,6 @@ class EmployeeHarnessFactory:
             wake_model=config.wake_model,
             env=dict(config.env) or None,
             subagents=subagent_set,
-            # Hermes-style stable waist: workforce Base Prompt + tool-gated
-            # resume/recall/tool-choice live in Dream; craft briefs stay role-only.
-            employee_mode=True,
         )
         return EmployeeHarness(
             runner=DreamBeatRunner(

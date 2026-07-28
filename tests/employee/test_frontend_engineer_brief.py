@@ -26,9 +26,10 @@ def test_brief_fits_the_lean_token_budget() -> None:
 
 
 def test_brief_keeps_the_anatomy_essentials() -> None:
-    """Identity survives the diet: subagents by name, deliverable class (shared escalate → Dream)."""
+    """Identity survives the diet: subagents by name, manager escalation, deliverable class."""
     brief = FRONTEND_ENGINEER_BRIEF
     for subagent in ("code_reviewer", "ui_tester"):
         assert subagent in brief, subagent
+    assert "manager" in brief.lower()  # escalate-to-manager communication norm
     assert "PR" in brief  # the deliverable artifact class it lands
     assert "test_evidence" in brief  # the durable evidence bundle it leaves
