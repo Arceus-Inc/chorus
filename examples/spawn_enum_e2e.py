@@ -33,6 +33,8 @@ from chorus_harness._dream_hooks import (
     DangerousToolVetoHook,
     EvidenceContinueHook,
     EvidenceForgeVetoHook,
+    EvidenceRequirement,
+    ProtectedEvidencePath,
 )
 from chorus_harness._factory import _project_spec, dream_tool_names
 from dream import build_harness
@@ -103,14 +105,16 @@ def _build(workdir: Path, *, continue_hook: bool) -> Any:
         subagents=_subagent_set(),
     )
     harness.register_hook(DangerousToolVetoHook())
-    protected = {
-        s.evidence_path: s.name for s in _SPECS if s.evidence_path is not None
-    }
+    protected = tuple(
+        ProtectedEvidencePath(s.evidence_path, s.name)
+        for s in _SPECS
+        if s.evidence_path is not None
+    )
     if protected:
         harness.register_hook(EvidenceForgeVetoHook(protected))
     if continue_hook:
         evidence = tuple(
-            (s.name, s.evidence_path, dict(s.evidence_claim))
+            EvidenceRequirement(s.name, s.evidence_path, dict(s.evidence_claim))
             for s in _SPECS
             if s.evidence_path is not None and s.evidence_claim is not None
         )
