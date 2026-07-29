@@ -172,8 +172,13 @@ def register_employee_hooks(
     *,
     working_dir: Path,
     subagents: tuple[SubagentSpec, ...] = (),
+    stop_evidence_requirements: bool = False,
 ) -> None:
-    """Attach Chorus policy hooks to a dream Harness after ``build_harness``."""
+    """Attach Chorus policy hooks to a dream Harness after ``build_harness``.
+
+    By default registers forge veto only (not STOP continue). EvidenceContinue
+    nudges spawn when Spec claims are missing — opt in when a beat DoD requires it.
+    """
     register = getattr(harness, "register_hook", None)
     if not callable(register):
         return  # stub harnesses in unit tests have no hook rail
@@ -185,6 +190,8 @@ def register_employee_hooks(
     )
     if protected:
         register(EvidenceForgeVetoHook(protected))
+    if not stop_evidence_requirements:
+        return
     evidence = tuple(
         EvidenceRequirement(
             spec.name,
