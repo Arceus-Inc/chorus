@@ -234,7 +234,8 @@ class _ReasoningRecorder:
             self._events.append(event)
         if event.get("tool") == "spawn_subagent":
             if event.get("kind") == "role.tool.start":
-                name = str(dict(event.get("input") or {}).get("name", "subagent"))
+                _inp = dict(event.get("input") or {})
+                name = str(_inp.get("subagent_type") or _inp.get("name") or "subagent")
                 before_hash = (
                     _worktree_fingerprint(self._working_dir)
                     if name in self._evidence_subagents and self._working_dir is not None

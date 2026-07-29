@@ -23,11 +23,12 @@ TOOL_CHOICE_MATRIX = (
     "───────────────────────────────  ────────────────────────────────\n"
     "tool (read/write/run/lint/…)     spawn to wrap a single tool\n"
     "skill(name=…) for craft steps    invent procedure a skill covers\n"
-    "spawn_subagent for named         spawn when tools+skills suffice\n"
-    "  specialist / fresh judgment    spawn mechanical multi-step glue\n"
+    "spawn_subagent(subagent_type=…)  spawn when tools+skills suffice\n"
+    "  for enum specialist / GP       forge specialist evidence files\n"
     "just implement yourself          durable across beats → TODO.md\n"
     "Rules: tool > skill > spawn. Spawn only for a typed specialist\n"
-    "artifact you cannot honestly author alone."
+    "artifact you cannot honestly author alone. Pick subagent_type from\n"
+    "the tool enum (generalPurpose or a role specialist); pass goal=."
 )
 
 __all__ = ["TOOL_CHOICE_MATRIX"]

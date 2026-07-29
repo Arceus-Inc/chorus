@@ -291,10 +291,10 @@ def _subagent_set(config: RoleBeatConfig) -> SubagentSet | None:
 
     Each spec's chorus tool names are mapped to dream names and intersected with the parent role's
     own dream toolset, so a subagent can only ever *narrow* capability, never widen it (spec 06
-    §minimisation). Returns ``None`` when the role declares no subagents, so the harness's tool surface
-    stays byte-identical (``build_harness`` registers ``spawn_subagent`` only when a set is supplied).
+    §minimisation). Returns ``None`` when the role has neither Specs nor ``spawn_subagent`` (tool
+    surface stays byte-identical). Empty Specs + spawn tool → empty set (generalPurpose only).
     """
-    if not config.subagents:
+    if not config.subagents and "spawn_subagent" not in config.tools:
         return None
     parent_tools = frozenset(dream_tool_names(config.tools))
     agents = [_project_spec(spec, parent_tools) for spec in config.subagents]
@@ -369,7 +369,7 @@ def _capability_tool(
 # they ignore). They MUST register even in a ledger-free materialization (e.g. a standalone example
 # runner or any path that builds the factory without a live ledger); otherwise a role silently loses
 # them and the model, seeing them named in its brief but absent from its toolset, mis-routes (e.g.
-# ``spawn_subagent(name="design_lint")`` or a worktree ``read_file`` of the exemplar path) and errors.
+# ``spawn_subagent(subagent_type="design_lint")`` or a worktree ``read_file`` of the exemplar path) and errors.
 _LEDGER_FREE_CAPABILITY_TOOLS = frozenset(
     {"brand_lint", "design_lint", "design_exemplar", "evidence_scan"}
 )

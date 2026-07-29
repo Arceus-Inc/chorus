@@ -103,12 +103,25 @@ def _seed_service(path: Path) -> None:
 
 
 def main() -> int:
+    # File is authoritative (same as chorus CLI): ambient shell AZURE_* must not shadow .env.
+    from chorus_cli._env import load_env_file
+
+    conflicts: list[str] = []
+    load_env_file(
+        Path(__file__).resolve().parents[1] / ".env",
+        override=True,
+        on_conflict=conflicts.append,
+    )
+    if conflicts:
+        _log(f"note: .env overrode ambient: {', '.join(conflicts)}")
+
     api_key = os.environ.get("AZURE_OPENAI_API_KEY")
     base_url = os.environ.get("AZURE_OPENAI_BASE_URL")
     deployment = os.environ.get("AZURE_OPENAI_DEPLOYMENT")
     if not (api_key and base_url and deployment):
         _log("skipping: set AZURE_OPENAI_API_KEY, AZURE_OPENAI_BASE_URL, AZURE_OPENAI_DEPLOYMENT")
         return 0
+    _log(f"provider: deployment={deployment} base={base_url} key_len={len(api_key)}")
 
     base = Path(tempfile.mkdtemp(prefix="chorus-backend-eng-"))
     os.chdir(base)

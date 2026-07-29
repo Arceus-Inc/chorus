@@ -1,4 +1,4 @@
-"""Unit tests for Chorus dream hooks (dangerous veto + evidence continue)."""
+"""Unit tests for Chorus dream hooks (dangerous veto + evidence continue + forge)."""
 
 from __future__ import annotations
 
@@ -9,7 +9,11 @@ import pytest
 
 from dream.contracts.hook import HookEvent
 
-from chorus_harness._dream_hooks import DangerousToolVetoHook, EvidenceContinueHook
+from chorus_harness._dream_hooks import (
+    DangerousToolVetoHook,
+    EvidenceContinueHook,
+    EvidenceForgeVetoHook,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -36,6 +40,49 @@ async def test_dangerous_tool_veto_allows_pytest() -> None:
 
 
 @pytest.mark.asyncio
+async def test_forge_veto_blocks_parent_test_plan_write() -> None:
+    hook = EvidenceForgeVetoHook({"test_plan.json": "test_author"})
+    result = await hook(
+        HookEvent.PRE_TOOL_USE,
+        {
+            "tool_name": "write_file",
+            "tool_input": {"path": "test_plan.json", "content": '{"authored": true}'},
+            "subagent_name": None,
+        },
+    )
+    assert result.blocked is True
+    assert "test_author" in (result.feedback or "")
+    assert "spawn_subagent" in (result.feedback or "")
+
+
+@pytest.mark.asyncio
+async def test_forge_veto_allows_child_specialist() -> None:
+    hook = EvidenceForgeVetoHook({"test_plan.json": "test_author"})
+    result = await hook(
+        HookEvent.PRE_TOOL_USE,
+        {
+            "tool_name": "write_file",
+            "tool_input": {"path": "test_plan.json", "content": "{}"},
+            "subagent_name": "test_author",
+        },
+    )
+    assert result.blocked is False
+
+
+@pytest.mark.asyncio
+async def test_forge_veto_blocks_evidence_dir() -> None:
+    hook = EvidenceForgeVetoHook({"test_plan.json": "test_author"})
+    result = await hook(
+        HookEvent.PRE_TOOL_USE,
+        {
+            "tool_name": "write_file",
+            "tool_input": {"path": ".harness/subagent-evidence/test_author.json"},
+        },
+    )
+    assert result.blocked is True
+
+
+@pytest.mark.asyncio
 async def test_evidence_continue_when_missing(tmp_path: Path) -> None:
     hook = EvidenceContinueHook(
         (("code_reviewer", "review_verdict.json", {"cleared": True}),),
@@ -46,6 +93,7 @@ async def test_evidence_continue_when_missing(tmp_path: Path) -> None:
     )
     assert result.continue_message is not None
     assert "code_reviewer" in result.continue_message
+    assert "spawn_subagent" in result.continue_message
 
 
 @pytest.mark.asyncio
