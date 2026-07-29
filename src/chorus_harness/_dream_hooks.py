@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import json
 import re
+from dataclasses import dataclass
+from enum import StrEnum
 from pathlib import Path, PurePosixPath
 from typing import Any
 
@@ -20,6 +22,11 @@ __all__ = [
     "DangerousToolVetoHook",
     "EvidenceContinueHook",
     "EvidenceForgeVetoHook",
+    "EvidenceOwner",
+    "EvidenceRequirement",
+    "ProtectedEvidencePath",
+    "StopHookPhase",
+    "StopHookRole",
     "register_employee_hooks",
 ]
 
@@ -30,6 +37,31 @@ _DANGEROUS_BASH = re.compile(
 )
 _WRITE_TOOLS = frozenset({"write_file", "edit_file"})
 _EVIDENCE_DIR = ".harness/subagent-evidence"
+
+
+class StopHookRole(StrEnum):
+    GENERATOR = "generator"
+
+
+class StopHookPhase(StrEnum):
+    PRE_SEAL = "pre_seal"
+
+
+class EvidenceOwner(StrEnum):
+    ANY_SPECIALIST = "__any_specialist__"
+
+
+@dataclass(frozen=True)
+class ProtectedEvidencePath:
+    relative_path: str
+    owner_subagent: str | EvidenceOwner
+
+
+@dataclass(frozen=True)
+class EvidenceRequirement:
+    subagent_name: str
+    relative_path: str
+    claim: dict[str, object]
 
 
 class DangerousToolVetoHook:
@@ -60,9 +92,10 @@ class EvidenceForgeVetoHook:
     so test_author / code_reviewer can still write their own artifacts.
     """
 
-    def __init__(self, protected: dict[str, str]) -> None:
-        # normalized relative path → owning subagent_type
-        self._protected = { _norm_rel(p): owner for p, owner in protected.items() }
+    def __init__(self, protected: tuple[ProtectedEvidencePath, ...]) -> None:
+        self._protected = {
+            _norm_rel(entry.relative_path): entry.owner_subagent for entry in protected
+        }
         self.spec = HookSpec(events=(HookEvent.PRE_TOOL_USE,), allow_block=True, priority=90)
 
     async def __call__(self, event: HookEvent, payload: dict[str, Any]) -> HookResult:
@@ -76,16 +109,21 @@ class EvidenceForgeVetoHook:
             return HookResult()
         owner = self._protected.get(rel)
         if owner is None and (rel == _EVIDENCE_DIR or rel.startswith(_EVIDENCE_DIR + "/")):
-            owner = "the required specialist"
+            owner = EvidenceOwner.ANY_SPECIALIST
         if owner is None:
             return HookResult()
+        owner_label = (
+            "the required specialist"
+            if owner == EvidenceOwner.ANY_SPECIALIST
+            else owner
+        )
         return HookResult(
             blocked=True,
             feedback=(
                 f"Do not forge evidence at {rel!r}. "
-                f"Call spawn_subagent(subagent_type={owner!r}, goal=...) so provenance is recorded. "
+                f"Call spawn_subagent(subagent_type={owner_label!r}, goal=...) so provenance is recorded. "
                 f"root_cause: evidence_forge; "
-                f"safe_retry: spawn_subagent(subagent_type={owner!r}); "
+                f"safe_retry: spawn_subagent(subagent_type={owner_label!r}); "
                 f"stop_condition: parent must not write specialist evidence paths."
             ),
         )
@@ -96,7 +134,7 @@ class EvidenceContinueHook:
 
     def __init__(
         self,
-        requirements: tuple[tuple[str, str, dict[str, object]], ...],
+        requirements: tuple[EvidenceRequirement, ...],
         *,
         working_dir: Path,
     ) -> None:
@@ -108,15 +146,15 @@ class EvidenceContinueHook:
         if not self._requirements:
             return HookResult()
         # Planner/evaluator share the harness hooks; only nudge the craft generator.
-        if payload.get("role") != "generator":
+        if payload.get("role") != StopHookRole.GENERATOR:
             return HookResult()
-        if payload.get("phase") not in (None, "pre_seal"):
+        if payload.get("phase") not in (None, StopHookPhase.PRE_SEAL):
             return HookResult()
         missing: list[str] = []
-        for name, relative, claim in self._requirements:
-            path = self._working_dir / relative
-            if not _artifact_satisfies(path, claim):
-                missing.append(name)
+        for req in self._requirements:
+            path = self._working_dir / req.relative_path
+            if not _artifact_satisfies(path, req.claim):
+                missing.append(req.subagent_name)
         if not missing:
             return HookResult()
         return HookResult(
@@ -140,15 +178,19 @@ def register_employee_hooks(
     if not callable(register):
         return  # stub harnesses in unit tests have no hook rail
     register(DangerousToolVetoHook())
-    protected = {
-        spec.evidence_path: spec.name
+    protected = tuple(
+        ProtectedEvidencePath(spec.evidence_path, spec.name)
         for spec in subagents
         if spec.evidence_path is not None
-    }
+    )
     if protected:
         register(EvidenceForgeVetoHook(protected))
     evidence = tuple(
-        (spec.name, spec.evidence_path, dict(spec.evidence_claim))
+        EvidenceRequirement(
+            spec.name,
+            spec.evidence_path,
+            dict(spec.evidence_claim),
+        )
         for spec in subagents
         if spec.evidence_path is not None and spec.evidence_claim is not None
     )

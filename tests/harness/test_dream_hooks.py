@@ -13,6 +13,10 @@ from chorus_harness._dream_hooks import (
     DangerousToolVetoHook,
     EvidenceContinueHook,
     EvidenceForgeVetoHook,
+    EvidenceRequirement,
+    ProtectedEvidencePath,
+    StopHookPhase,
+    StopHookRole,
 )
 
 pytestmark = pytest.mark.unit
@@ -41,7 +45,9 @@ async def test_dangerous_tool_veto_allows_pytest() -> None:
 
 @pytest.mark.asyncio
 async def test_forge_veto_blocks_parent_test_plan_write() -> None:
-    hook = EvidenceForgeVetoHook({"test_plan.json": "test_author"})
+    hook = EvidenceForgeVetoHook(
+        (ProtectedEvidencePath("test_plan.json", "test_author"),)
+    )
     result = await hook(
         HookEvent.PRE_TOOL_USE,
         {
@@ -57,7 +63,9 @@ async def test_forge_veto_blocks_parent_test_plan_write() -> None:
 
 @pytest.mark.asyncio
 async def test_forge_veto_allows_child_specialist() -> None:
-    hook = EvidenceForgeVetoHook({"test_plan.json": "test_author"})
+    hook = EvidenceForgeVetoHook(
+        (ProtectedEvidencePath("test_plan.json", "test_author"),)
+    )
     result = await hook(
         HookEvent.PRE_TOOL_USE,
         {
@@ -71,7 +79,9 @@ async def test_forge_veto_allows_child_specialist() -> None:
 
 @pytest.mark.asyncio
 async def test_forge_veto_blocks_evidence_dir() -> None:
-    hook = EvidenceForgeVetoHook({"test_plan.json": "test_author"})
+    hook = EvidenceForgeVetoHook(
+        (ProtectedEvidencePath("test_plan.json", "test_author"),)
+    )
     result = await hook(
         HookEvent.PRE_TOOL_USE,
         {
@@ -85,11 +95,12 @@ async def test_forge_veto_blocks_evidence_dir() -> None:
 @pytest.mark.asyncio
 async def test_evidence_continue_when_missing(tmp_path: Path) -> None:
     hook = EvidenceContinueHook(
-        (("code_reviewer", "review_verdict.json", {"cleared": True}),),
+        (EvidenceRequirement("code_reviewer", "review_verdict.json", {"cleared": True}),),
         working_dir=tmp_path,
     )
     result = await hook(
-        HookEvent.STOP, {"phase": "pre_seal", "verify_nudges": 0, "role": "generator"}
+        HookEvent.STOP,
+        {"phase": StopHookPhase.PRE_SEAL, "verify_nudges": 0, "role": StopHookRole.GENERATOR},
     )
     assert result.continue_message is not None
     assert "code_reviewer" in result.continue_message
@@ -99,10 +110,10 @@ async def test_evidence_continue_when_missing(tmp_path: Path) -> None:
 @pytest.mark.asyncio
 async def test_evidence_continue_skips_planner(tmp_path: Path) -> None:
     hook = EvidenceContinueHook(
-        (("code_reviewer", "review_verdict.json", {"cleared": True}),),
+        (EvidenceRequirement("code_reviewer", "review_verdict.json", {"cleared": True}),),
         working_dir=tmp_path,
     )
-    result = await hook(HookEvent.STOP, {"phase": "pre_seal", "role": "planner"})
+    result = await hook(HookEvent.STOP, {"phase": StopHookPhase.PRE_SEAL, "role": "planner"})
     assert result.continue_message is None
 
 
@@ -111,8 +122,10 @@ async def test_evidence_continue_quiet_when_present(tmp_path: Path) -> None:
     path = tmp_path / "review_verdict.json"
     path.write_text(json.dumps({"cleared": True}), encoding="utf-8")
     hook = EvidenceContinueHook(
-        (("code_reviewer", "review_verdict.json", {"cleared": True}),),
+        (EvidenceRequirement("code_reviewer", "review_verdict.json", {"cleared": True}),),
         working_dir=tmp_path,
     )
-    result = await hook(HookEvent.STOP, {"phase": "pre_seal", "role": "generator"})
+    result = await hook(
+        HookEvent.STOP, {"phase": StopHookPhase.PRE_SEAL, "role": StopHookRole.GENERATOR}
+    )
     assert result.continue_message is None
