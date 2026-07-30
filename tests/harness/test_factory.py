@@ -168,6 +168,15 @@ def test_backend_engineer_materializes_a_writable_harness_in_its_worktree(
     assert mat.config.permission_mode == "acceptEdits"
     assert captured["max_turns"] == 18  # the engine scalars come from the role too
     assert captured["working_memory"] is True
+    assert mat.runner._subagent_evidence == {}
+
+
+def test_backend_engineer_materializes_subagent_evidence_when_opted_in(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, ledger: Ledger
+) -> None:
+    factory, _ = _factory(monkeypatch, tmp_path, ledger)
+    factory._stop_evidence_requirements = True
+    mat = factory.materialize(Employee(id="ada", name="Ada", role="backend_engineer"))
     assert mat.runner._subagent_evidence == {
         "test_author": ("test_plan.json", {"authored": True}, False),
         "code_reviewer": ("review_verdict.json", {"cleared": True}, True),
@@ -205,6 +214,8 @@ def test_engineer_role_overlays_admit_read_memory_for_read_only_heads(
     assert '"memory_search"' in evaluator
     assert '"memory_get"' in evaluator
     assert '"working_memory_read"' in evaluator
+    assert '"bash"' in evaluator  # in-session verify (no harness oracle)
+    assert '"write_file"' not in evaluator
     assert "tools =" not in generator
 
 

@@ -1,10 +1,10 @@
-"""Backend Engineer proof-bundle slice (backend-engineer spec §10 / §16 Slice 2) — one keyed LLM beat.
+"""Backend Engineer smoke — one keyed LLM beat (Hermes-style verify-on-stop).
 
-An end-to-end proof that the ``backend_engineer`` employee exists and proves its work: seed a tiny
-Python service, hire a Backend Engineer, assign a ticket, and tick the kernel. A real model probes the
-stack, implements the function + a test, runs the tests to green, then calls ``test_evidence`` to write
-a durable ``test_evidence/`` bundle; the evidence-floor DoD passes only on an all-green manifest, and a
-``pr`` artifact lands (the same ``pr`` lander the Engineer uses — outcome_kind matches). Solo: no reviewer.
+An end-to-end proof that the ``backend_engineer`` employee exists and ships: seed a tiny Python
+service, hire a Backend Engineer, assign a ticket, and tick the kernel. A real model implements the
+function + test and lands when the Command DoD passes — ``pytest -q`` exits 0 and the deliverable
+files exist. No ``test_evidence/`` bundle required (parent proves with tools; optional ``test_evidence``
+for harder tickets). Solo: no reviewer.
 
     AZURE_OPENAI_API_KEY=... AZURE_OPENAI_BASE_URL=... AZURE_OPENAI_DEPLOYMENT=...
     uv run python examples/backend_engineer_smoke.py
@@ -42,8 +42,13 @@ _TASK = (
     "In slugify.py add a function slugify(s: str) -> str that lowercases s, replaces every run of "
     "non-alphanumeric characters with a single '-', and strips any leading or trailing '-'. "
     "In test_slugify.py add a pytest test asserting slugify('Hello, World!') == 'hello-world'. "
-    "Keep the existing health() function and its test. Make the changes directly in those files and "
-    "make the tests pass."
+    "Keep the existing health() function and its test in app.py / test_app.py. Make the changes "
+    "directly in those files and make the tests pass."
+)
+
+# Hermes / Claude verify-on-stop: objective green tests + deliverable files — not a specialist bundle.
+_SMOKE_DOD_COMMAND = (
+    "test -f slugify.py && test -f test_slugify.py && pytest -q"
 )
 
 
@@ -149,9 +154,7 @@ def main() -> int:
         cfg = role_beat_config(registry.get("backend_engineer").manifest)
         mat = factory.materialize(ledger.employees.get("bex"))  # type: ignore[arg-type]
         _log("=" * 72)
-        _log(
-            "1. EMPLOYEE — materialized as backend_engineer (spec §16 Slice 2 — test_evidence floor)"
-        )
+        _log("1. EMPLOYEE — materialized as backend_engineer (verify-on-stop: pytest + files)")
         _log(f"   tools     : {', '.join(cfg.tools)}")
         _log(f"   sandbox   : {cfg.sandbox}   permission: {cfg.permission_mode}")
         _log(f"   worktree  : {mat.working_dir}")
@@ -160,21 +163,14 @@ def main() -> int:
         task_id = str(uuid.uuid4())
         ledger.tasks.submit(Task(id=task_id, intent=_TASK))
         assign_task(ledger, task_id, "bex")
-        # Slice 2 — the evidence floor. A single backend engineer lands SOLO, gated not on a transient
-        # `pytest` run but on the DURABLE proof bundle: the DoD passes only when a `test_evidence/`
-        # manifest exists in the worktree with an all-green verdict. So the model must call the
-        # `test_evidence` tool (which runs the gates + writes the bundle) — "it was tested" is a file on
-        # disk the DoD greps, not a claim. No reviewer needed — a single-beat Command DoD over the bundle.
+        # Verify-on-stop (Hermes/SOTA): the DoD is the cheapest sufficient gate — green pytest and the
+        # deliverable files on disk. No test_evidence/ manifest required for this micro ticket.
         ledger.dod.create(
             task_id,
-            Verifier.command(
-                "test -f test_evidence/manifest.json && "
-                'grep -q \'"verdict": "pass"\' test_evidence/manifest.json',
-                artifact_class="pr",
-            ),
+            Verifier.command(_SMOKE_DOD_COMMAND, artifact_class="pr"),
         )
         _log(
-            f"\n2. TASK assigned (DoD: green test_evidence/ bundle, gates solo — no reviewer)\n   {task_id}: "
+            f"\n2. TASK assigned (DoD: {_SMOKE_DOD_COMMAND!r})\n   {task_id}: "
             + _TASK
         )
 

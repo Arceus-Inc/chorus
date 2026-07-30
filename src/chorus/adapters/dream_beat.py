@@ -403,12 +403,15 @@ class DreamBeatRunner:
         steps: tuple[dict[str, str], ...] = tuple(
             {"kind": "eval", "command": step.command} for step in verification
         )
-        # dream gets a **fresh task identity per beat** (the chorus run_id), not the chorus task_id. Its
-        # planner refuses to re-plan a task it has already planned (``PlannerAlreadyRan``), so reusing
-        # the chorus task_id would make every self-repair re-dispatch error out and strand the task
-        # instead of repairing it. Each beat is its own run, so each is an independent planning pass; the
-        # worktree carries state across beats. Events still correlate via the bridge's chorus task_id.
-        dream_task_id = run_id if run_id is not None else task_id
+        # dream gets a **stable task identity** (the chorus task_id) with
+        # PlanAdmission.RESUME so a later tick on the same task continues
+        # needs-changes repair in-session (Hermes-simple). Fresh run_ids used to
+        # mint a new Dream task every beat, which cold-started the planner and
+        # dropped carry-forward. RESUME skips the planner when a ledger already
+        # exists; the first beat still plans once.
+        from dream.runner import PlanAdmission
+
+        dream_task_id = task_id
         nudge_task: asyncio.Task[None] | None = None
         if self._working_dir is not None:
             clear_todo_flush_nudge(self._working_dir)
@@ -423,6 +426,7 @@ class DreamBeatRunner:
                     observer=recorder,
                     max_sprints=self._max_sprints,
                     rubric=rubric,
+                    plan_admission=PlanAdmission.RESUME,
                 )
             else:
                 run = self._harness.run_task(
@@ -433,6 +437,7 @@ class DreamBeatRunner:
                     max_sprints=self._max_sprints,
                     harness_dir=self._working_dir / ".harness",
                     rubric=rubric,
+                    plan_admission=PlanAdmission.RESUME,
                 )
             result = await asyncio.wait_for(run, timeout=self._timeout_s)
         except TimeoutError as exc:

@@ -110,6 +110,7 @@ _DREAM_ROLES: tuple[Literal["planner", "generator", "evaluator"], ...] = (
 _CHORUS_TO_DREAM_TOOL: dict[str, str] = {
     "read_file": "read_file",
     "write_file": "write_file",
+    "edit_file": "edit_file",
     "run_command": "bash",
     "git": "git",
     "skill": "skill",
@@ -530,7 +531,10 @@ def _toml_string_list(values: tuple[str, ...]) -> str:
 def _read_only_role_tools(
     role: Literal["planner", "evaluator"], config: RoleBeatConfig
 ) -> tuple[str, ...]:
-    """Default read-only Dream role tools plus safe employee read surfaces."""
+    """Dream role tools for planner/evaluator plus safe employee read surfaces.
+
+    Evaluator defaults include ``bash`` for in-session verify (no harness oracle).
+    """
     base = default_role_manifest(role).tools or ()
     tools = list(base)
     for name in dream_tool_names(config.tools):
@@ -570,7 +574,7 @@ def write_role_overlays(harness_dir: Path, config: RoleBeatConfig) -> None:
         # (Verified directly against gpt-5.4-mini: tools+auto -> finish_reason=tool_calls, content
         # len 0; no tools / tool_choice=none -> a clean <spec>.) A toolless planner has nothing to
         # call, so it must emit the contract; the generator does the real exploration. The evaluator
-        # keeps its read-only surfaces (it needs them to verify).
+        # keeps reads + bash (in-session verify; no writers).
         if role == "planner":
             lines.append("tools = []")
         elif role == "evaluator":
@@ -655,6 +659,7 @@ class EmployeeHarnessFactory:
         ledger: Ledger | None = None,
         trust_policy: TrustPolicy | None = None,
         governance: GovernancePort | None = None,
+        stop_evidence_requirements: bool = False,
     ) -> None:
         self._api_key = api_key
         self._base_url = base_url
@@ -673,6 +678,8 @@ class EmployeeHarnessFactory:
         # wires this to horizon's control plane; chorus only ever sees the Port. Absent it, a role
         # asking for a governance tool simply gets it dropped — same fail-closed rule as the ledger.
         self._governance = governance
+        # Lean Bex / Hermes default: parent implements; specialist evidence gates are opt-in.
+        self._stop_evidence_requirements = stop_evidence_requirements
         # The org's workspace root: .chorus/work/{org}/ — shared by chat, tick, and the `company`
         # console command (one identity), via the single dream-free `default_work_root` convention.
         base = work_root if work_root is not None else default_work_root()
@@ -1053,7 +1060,25 @@ class EmployeeHarnessFactory:
         # S1 #2 / #11: powered dream hooks — dangerous-tool veto + evidence continue.
         from chorus_harness._dream_hooks import register_employee_hooks
 
-        register_employee_hooks(harness, working_dir=root, subagents=config.subagents)
+        register_employee_hooks(
+            harness,
+            working_dir=root,
+            subagents=config.subagents,
+            stop_evidence_requirements=self._stop_evidence_requirements,
+        )
+        evidence_specs = (
+            {
+                spec.name: (
+                    spec.evidence_path,
+                    spec.evidence_claim,
+                    spec.evidence_read_only,
+                )
+                for spec in config.subagents
+                if spec.evidence_path is not None and spec.evidence_claim is not None
+            }
+            if self._stop_evidence_requirements
+            else {}
+        )
         return EmployeeHarness(
             runner=DreamBeatRunner(
                 harness,
@@ -1065,15 +1090,7 @@ class EmployeeHarnessFactory:
                 else self._timeout_s,
                 working_dir=root,
                 employee_id=employee.id,  # stamped into each beat's context for capability tools
-                subagent_evidence={
-                    spec.name: (
-                        spec.evidence_path,
-                        spec.evidence_claim,
-                        spec.evidence_read_only,
-                    )
-                    for spec in config.subagents
-                    if spec.evidence_path is not None and spec.evidence_claim is not None
-                },
+                subagent_evidence=evidence_specs,
             ),
             workspace=workspace,
             working_dir=root,

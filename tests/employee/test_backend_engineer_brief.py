@@ -164,6 +164,27 @@ def test_brief_implement_first_matrix_wins() -> None:
     assert "do not spawn to wrap a single tool" in lower or "spawn to wrap a single tool" in lower
 
 
+def test_brief_routes_tdd_through_skill_not_spawn() -> None:
+    brief = BACKEND_ENGINEER_BRIEF
+    assert "test-driven-development" in brief
+    assert "RED→GREEN→REFACTOR" in brief or "RED" in brief
+    lower = brief.lower()
+    assert "prefer `test-driven-development`" in lower or "prefer test-driven-development" in lower
+    assert "delegate the failing tests via" not in lower
+
+
+def test_manifest_offers_tdd_and_honeycomb_skills() -> None:
+    manifest = backend_engineer_plugin().manifest
+    assert "test-driven-development" in manifest.skills
+    assert "testing-honeycomb-strategy" in manifest.skills
+    assert manifest.skills_root is not None
+    tdd = Path(manifest.skills_root) / "test-driven-development" / "SKILL.md"
+    assert tdd.is_file()
+    body = tdd.read_text(encoding="utf-8").lower()
+    assert "no production code without a failing test first" in body
+    assert "tool > skill > spawn" in body
+
+
 def test_brief_does_not_mandate_test_author_before_implement() -> None:
     lower = BACKEND_ENGINEER_BRIEF.lower()
     assert "delegate the failing tests via" not in lower

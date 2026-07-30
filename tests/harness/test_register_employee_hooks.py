@@ -45,6 +45,16 @@ def test_register_skips_evidence_continue_by_default(tmp_path: Path) -> None:
     assert not any(isinstance(h, EvidenceContinueHook) for h in harness.hooks)
 
 
+
+def test_factory_stop_evidence_requirements_defaults_false() -> None:
+    import inspect
+
+    from chorus_harness._factory import EmployeeHarnessFactory
+
+    sig = inspect.signature(EmployeeHarnessFactory.__init__)
+    assert sig.parameters["stop_evidence_requirements"].default is False
+
+
 def test_register_evidence_continue_when_opted_in(tmp_path: Path) -> None:
     harness = _HarnessStub()
     register_employee_hooks(

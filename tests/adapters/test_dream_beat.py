@@ -112,6 +112,7 @@ class _FakeHarness:
         self.observer: object = None
         self.max_sprints: int | None = None
         self.harness_dir: str | Path | None = None
+        self.plan_admission: object = None
         self.close_calls = 0
 
     async def aclose(self) -> None:
@@ -127,12 +128,14 @@ class _FakeHarness:
         max_sprints: int | None = None,
         harness_dir: str | Path | None = None,
         rubric: str | None = None,
+        plan_admission: object = None,
     ) -> _Result:
         self.calls.append(task_id)
         self.verification_steps = verification_steps
         self.observer = observer
         self.max_sprints = max_sprints
         self.harness_dir = harness_dir
+        self.plan_admission = plan_admission
         if observer is not None:
             for event in self._events:
                 observer.on_event(event)  # type: ignore[attr-defined]
@@ -197,21 +200,26 @@ async def test_run_task_passes_working_dir_as_harness_dir(tmp_path: Path) -> Non
     await DreamBeatRunner(harness, working_dir=tmp_path).run_task(task_id=uid("t1"), intent="x")
 
 
-async def test_dream_gets_a_per_beat_task_id_from_the_run_id(tmp_path: Path) -> None:
-    # dream's planner refuses to re-plan a task_id it already planned (PlannerAlreadyRan). Each beat is
-    # its own run, so dream must see the run_id as its task identity — a self-repair re-dispatch (new
-    # run_id) is then an independent planning pass, not a stranded PlannerAlreadyRan error.
+async def test_dream_uses_stable_chorus_task_id_with_resume(tmp_path: Path) -> None:
+    # Hermes-simple: reuse chorus task_id + PlanAdmission.RESUME so needs-changes
+    # carry-forward survives ticks. Fresh per-beat run_ids cold-started the planner.
+    from dream.runner import PlanAdmission
+
     harness = _FakeHarness(result=_result("done"))
     await DreamBeatRunner(harness, working_dir=tmp_path, employee_id=uid("e")).run_task(
         task_id="task_M", intent="x", run_id=uid("run_42")
     )
-    assert harness.calls == [uid("run_42")]  # dream saw the per-beat run id, not the chorus task id
+    assert harness.calls == ["task_M"]
+    assert harness.plan_admission is PlanAdmission.RESUME
 
 
-async def test_without_a_run_id_dream_falls_back_to_the_task_id(tmp_path: Path) -> None:
+async def test_without_a_run_id_dream_still_uses_the_task_id(tmp_path: Path) -> None:
+    from dream.runner import PlanAdmission
+
     harness = _FakeHarness(result=_result("done"))
     await DreamBeatRunner(harness, working_dir=tmp_path).run_task(task_id="task_M", intent="x")
-    assert harness.calls == ["task_M"]  # no run_id (e.g. a test/chat path) → the chorus task id
+    assert harness.calls == ["task_M"]
+    assert harness.plan_admission is PlanAdmission.RESUME
 
 
 async def test_run_task_writes_the_beat_context_for_capability_tools(tmp_path: Path) -> None:
