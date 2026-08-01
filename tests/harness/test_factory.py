@@ -146,27 +146,20 @@ def test_backend_engineer_materializes_a_writable_harness_in_its_worktree(
         "read_file",
         "read_offloaded",
         "write_file",
+        "edit_file",
         "bash",
         "git",
         "todo_write",
         "skill",
-        "memory_search",
-        "memory_get",
-        "recall",
-        "get_run",
         "test_evidence",
         "test_red",
         "secret_scan",
         "code_quality",
-        "lattice_context",
-        "lattice_packet",
-        "lattice_apply",
-        "skill_manage",
         # spawn_subagent is no longer factory-registered: the strict-TDD gate is unwired (operator
         # decision 2026-07-18); dream's build_harness registers it from config.subagents at build time.
     }
     assert mat.config.permission_mode == "acceptEdits"
-    assert captured["max_turns"] == 18  # the engine scalars come from the role too
+    assert captured["max_turns"] == 24  # the engine scalars come from the role too
     assert captured["working_memory"] is True
     assert mat.runner._subagent_evidence == {}
 
@@ -190,14 +183,12 @@ def test_role_registry_registers_the_read_file_offload_companion() -> None:
     assert names == {"read_file", "read_offloaded"}
 
 
-def test_engineer_role_overlays_admit_read_memory_for_read_only_heads(
+def test_engineer_role_overlays_keep_evaluator_read_only(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, ledger: Ledger
 ) -> None:
-    # The evaluator is the read-only head that keeps tools, so it admits the safe read-memory surfaces
-    # (memory_search/memory_get/working_memory_read) to verify with. The planner is deliberately
-    # TOOLLESS (`tools = []`) — given tools + tool_choice="auto", weaker models emit a tool call with
-    # zero text and `run_task` fails with "planner reply missing <spec>" (see write_role_overlays). The
-    # generator runs tools=null (no `tools =` line), so it sees the full role toolset.
+    # The evaluator keeps reads + bash but must treat generator-only tool instructions as evidence to
+    # inspect, not unavailable actions to attempt. The planner is deliberately TOOLLESS (`tools = []`)
+    # and the generator runs tools=null (no `tools =` line), so it sees the full role toolset.
     factory, _ = _factory(monkeypatch, tmp_path, ledger)
     mat = factory.materialize(Employee(id="ada", name="Ada", role="backend_engineer"))
 
@@ -211,11 +202,10 @@ def test_engineer_role_overlays_admit_read_memory_for_read_only_heads(
 
     assert "tools = []" in planner  # toolless on purpose
     assert "PLANNER PHASE" in planner
-    assert '"memory_search"' in evaluator
-    assert '"memory_get"' in evaluator
-    assert '"working_memory_read"' in evaluator
     assert '"bash"' in evaluator  # in-session verify (no harness oracle)
     assert '"write_file"' not in evaluator
+    assert "the sprint contract and review rubric are the acceptance authority" in evaluator
+    assert "not extra acceptance criteria" in evaluator
     assert "tools =" not in generator
 
 

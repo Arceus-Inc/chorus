@@ -25,10 +25,11 @@ One behavior at a time — not a pile of tests then a pile of code:
 
 Agent-green suites that skip the contract are FAIL:
 
-- Pin public APIs from TASK Intent (`JobQueue(db_path)`, `enqueue → job_id`, claim-by-id when specified, …).
+- Pin every public API from TASK Intent verbatim: constructor arguments, return values, and operation-specific semantics.
+- When an operation accepts an identifier, prove it selects that exact resource while another eligible resource exists.
 - Do not invent a thinner API to make tests easy.
 - Prefer real collaborators (temp SQLite, real HTTP) over mocks. For suite shape, load `testing-honeycomb-strategy`.
-- Do not name project modules after stdlib packages (e.g. a local `queue.py` that shadows `queue`); pick a domain name and import that.
+- Avoid stdlib module-name collisions when naming new files. An explicit task filename wins; keep its imports unambiguous and prove test collection from a clean environment.
 
 ## Tools
 

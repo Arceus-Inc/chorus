@@ -8,6 +8,7 @@ repo/ under-report deliverables and lie about quality.
 from __future__ import annotations
 
 import sys
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -16,10 +17,14 @@ EXAMPLES = Path(__file__).resolve().parents[2] / "examples"
 sys.path.insert(0, str(EXAMPLES))
 
 from backend_engineer_hard10_suite import (  # noqa: E402
+    ProbeStats,
+    _TraceBus,
     _agent_deliverable_root,
     _shipped,
 )
 from bex_hard10_catalog import HardTicket  # noqa: E402
+from chorus.events import Event, EventKind
+from hermes_vs_bex_hard10 import _collect_summary  # noqa: E402
 
 pytestmark = pytest.mark.unit
 
@@ -41,6 +46,42 @@ def test_agent_deliverable_root_is_working_dir(tmp_path: Path) -> None:
     wt = tmp_path / "employee-worktree"
     wt.mkdir()
     assert _agent_deliverable_root(wt) == wt
+
+
+def test_trace_bus_preserves_agent_output() -> None:
+    stats = ProbeStats()
+    bus = _TraceBus(stats)
+    bus.emit(
+        Event(
+            kind=EventKind.RUN_TEXT,
+            at=datetime.now(UTC),
+            payload={"role": "generator", "text": "Implemented and "},
+        )
+    )
+    bus.emit(
+        Event(
+            kind=EventKind.RUN_TEXT,
+            at=datetime.now(UTC),
+            payload={"role": "generator", "text": "verified the queue."},
+        )
+    )
+
+    assert stats.output == ["[generator] Implemented and verified the queue."]
+
+
+def test_collect_summary_keeps_prior_single_ticket_reports(tmp_path: Path) -> None:
+    for ticket_id in ("01-wal-kv", "03-hmac-token-rotate"):
+        report = tmp_path / ticket_id
+        report.mkdir()
+        (report / "compare.json").write_text(
+            '{"hermes":{"pytest_ok":true},"bex":{"ok":true},"gap":{}}',
+            encoding="utf-8",
+        )
+
+    summary = _collect_summary(tmp_path)
+
+    assert [ticket["id"] for ticket in summary] == ["01-wal-kv", "03-hmac-token-rotate"]
+    assert all(ticket["hermes_pytest"] and ticket["bex_ok"] for ticket in summary)
 
 
 def test_shipped_on_seed_repo_misses_worktree_files(tmp_path: Path) -> None:

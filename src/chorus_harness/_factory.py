@@ -562,6 +562,16 @@ def write_role_overlays(harness_dir: Path, config: RoleBeatConfig) -> None:
                 f"{base}\n\n## Operating brief (your role in the org)\n"
                 f"{PLANNER_TOOLLESS_NOTE}\n{config.system_prompt}"
             )
+        elif role == "evaluator":
+            prompt = (
+                f"{base}\n\n## Operating brief (your role in the org)\n"
+                "EVALUATOR PHASE: the sprint contract and review rubric are the acceptance authority. "
+                "Instructions below to create, edit, record, or scan are generator guidance, not "
+                "extra acceptance criteria. Do not call or require generator-only tools or artifacts "
+                "unless the contract or rubric explicitly requires them; verify directly with your "
+                "read-only tools and bash.\n"
+                f"{config.system_prompt}"
+            )
         else:
             prompt = f"{base}\n\n## Operating brief (your role in the org)\n{config.system_prompt}"
         lines = [

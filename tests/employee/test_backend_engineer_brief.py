@@ -183,6 +183,9 @@ def test_manifest_offers_tdd_and_honeycomb_skills() -> None:
     body = tdd.read_text(encoding="utf-8").lower()
     assert "no production code without a failing test first" in body
     assert "tool > skill > spawn" in body
+    assert "jobqueue" not in body and "queue.py" not in body
+    assert "explicit task filename wins" in body
+    assert "selects that exact resource" in body
 
 
 def test_brief_does_not_mandate_test_author_before_implement() -> None:
@@ -268,3 +271,32 @@ def test_brief_keeps_the_anatomy_essentials() -> None:
     assert "manager" in brief.lower()
     assert "PR" in brief
     assert "test_evidence" in brief
+
+
+def test_brief_requires_a_useful_final_handoff() -> None:
+    brief = BACKEND_ENGINEER_BRIEF.lower()
+    assert "what changed" in brief
+    assert "verification commands and results" in brief
+    assert "remaining caveats" in brief
+
+
+def test_brief_requires_adversarial_semantic_review() -> None:
+    brief = BACKEND_ENGINEER_BRIEF.lower()
+    assert "green authored tests as necessary but insufficient" in brief
+    assert "public state transition" in brief
+    assert "adversarial" in brief
+    assert "identifier-bearing operation" in brief
+    assert "another eligible resource exists" in brief
+
+
+def test_brief_requires_review_defects_to_reopen_green_work() -> None:
+    brief = BACKEND_ENGINEER_BRIEF.lower()
+    assert "needs-changes" in brief
+    assert "reopens named items" in brief
+    assert "before rerunning evidence" in brief
+
+
+def test_brief_preserves_required_paths() -> None:
+    brief = BACKEND_ENGINEER_BRIEF.lower()
+    assert "required paths are public api" in brief
+    assert "never rename them" in brief

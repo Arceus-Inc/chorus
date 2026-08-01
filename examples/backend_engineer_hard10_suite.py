@@ -58,6 +58,7 @@ _MAX_SPRINTS = int(os.environ.get("CHORUS_PROBE_MAX_SPRINTS", "6"))
 _OUTER = int(os.environ.get("CHORUS_PROBE_OUTER_RETRIES", "1"))
 _REPORTS = Path(__file__).resolve().parents[1] / "reports"
 _AZURE_LOCK = _REPORTS / ".azure-single-flight.lock"
+_TEST_GATE = "Benchmark test command: run exactly `python -m pytest -q` from the worktree root."
 
 
 def _log(msg: str = "") -> None:
@@ -81,6 +82,7 @@ class ProbeStats:
     tools: Counter = field(default_factory=Counter)
     ticks: list[TickRecord] = field(default_factory=list)
     spawns: int = 0
+    output: list[str] = field(default_factory=list)
 
 
 class _TraceBus(EventBus):
@@ -109,6 +111,15 @@ class _TraceBus(EventBus):
             if self._tick is not None:
                 self._tick.evaluated = outcome
             _log(f"    ⊢ evaluated: {outcome}")
+        elif event.kind is EventKind.RUN_TEXT:
+            text = str(p.get("text", ""))
+            if text:
+                role = str(p.get("role", "")).strip()
+                prefix = f"[{role}] " if role else ""
+                if self._stats.output and self._stats.output[-1].startswith(prefix):
+                    self._stats.output[-1] += text
+                else:
+                    self._stats.output.append(prefix + text)
 
 
 def _registry(max_turns: int, max_sprints: int) -> RoleRegistry:
@@ -267,7 +278,10 @@ def _run_one(
     log_path = out_dir / "run.log"
     stats = ProbeStats()
     bus = _TraceBus(stats)
-    dod = Verifier.agent_review(rubric=ticket.rubric, artifact_class="pr")
+    required_paths = "Required paths: " + ", ".join(ticket.ship_files) + "."
+    intent = f"{ticket.intent}\n\n{required_paths}\n{_TEST_GATE}"
+    rubric = f"{ticket.rubric}\n{required_paths}\n{_TEST_GATE}"
+    dod = Verifier.agent_review(rubric=rubric, artifact_class="pr")
 
     class _Tee:
         def __init__(self, *streams: object) -> None:
@@ -294,6 +308,7 @@ def _run_one(
             stats.tools = Counter()
             stats.ticks = []
             stats.spawns = 0
+            stats.output = []
             base = Path(tempfile.mkdtemp(prefix=f"chorus-bex-hard-{ticket.id}-"))
             os.chdir(base)
             seed = base / "source"
@@ -323,7 +338,7 @@ def _run_one(
                 _log(f"  max_sprints={cfg.max_sprints} max_turns={cfg.max_turns}")
                 _log(f"  worktree={mat.working_dir}")
                 task_id = str(uuid.uuid4())
-                ledger.tasks.submit(Task(id=task_id, intent=ticket.intent))
+                ledger.tasks.submit(Task(id=task_id, intent=intent))
                 assign_task(ledger, task_id, emp_id)
                 ledger.dod.create(task_id, dod)
                 scheduler = Scheduler(
@@ -395,8 +410,8 @@ def _run_one(
                     "id": ticket.id,
                     "title": ticket.title,
                     "skills": list(ticket.skills),
-                    "intent": ticket.intent,
-                    "rubric": ticket.rubric,
+                    "intent": intent,
+                    "rubric": rubric,
                     "ok": ok,
                     "attempts": attempts,
                     "wall_s": wall,
@@ -419,6 +434,7 @@ def _run_one(
                     "landed": landed,
                     "task_status": final.status.value if final else None,
                     "landed_files": landed_files,
+                    "output": "\n\n".join(part.strip() for part in stats.output),
                     "log": str(log_path),
                     "files_dir": str(files_dir),
                 }

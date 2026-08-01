@@ -224,6 +224,8 @@ def _run_bex(ticket_id: str) -> dict:
                 "shipped": run.get("shipped"),
                 "landed_files": run.get("landed_files"),
                 "task_status": run.get("task_status"),
+                "output": run.get("output", ""),
+                "stdout_tail": str(run.get("output", ""))[-3000:],
                 "run_json": str(dest / "run.json"),
                 "run_log": str(dest / "run.log"),
             }
@@ -247,6 +249,25 @@ def _gap(hermes: dict, bex: dict) -> dict:
     }
 
 
+def _collect_summary(out: Path = OUT) -> list[dict]:
+    """Return every persisted comparison in catalog order."""
+    tickets = []
+    for ticket in TICKETS:
+        path = out / ticket.id / "compare.json"
+        if not path.is_file():
+            continue
+        comparison = json.loads(path.read_text())
+        tickets.append(
+            {
+                "id": ticket.id,
+                "gap": comparison.get("gap", {}),
+                "hermes_pytest": comparison.get("hermes", {}).get("pytest_ok"),
+                "bex_ok": comparison.get("bex", {}).get("ok"),
+            }
+        )
+    return tickets
+
+
 def _clean_hard10_ledger() -> None:
     """Drop stuck runs/wakes for the hard10 company so ticks dispatch."""
     try:
@@ -262,7 +283,8 @@ def _clean_hard10_ledger() -> None:
         ledger.wakes.drop_queued()
         conn = ledger._conn
         for r in conn.execute(
-            "SELECT id, checkout_run_id FROM task WHERE status = 'in_progress'"
+            "SELECT id, checkout_run_id FROM task "
+            "WHERE status IN ('todo', 'in_progress', 'blocked')"
         ).fetchall():
             rid = r["checkout_run_id"] or "orphan"
             try:
@@ -314,7 +336,6 @@ def main() -> int:
         _write_hermes_config(dep, base)
 
     OUT.mkdir(parents=True, exist_ok=True)
-    overall = []
     rc = 0
     for tid in ids:
         t = by_id[tid]
@@ -326,13 +347,32 @@ def main() -> int:
         hermes: dict = {}
         if not args.skip_hermes:
             print(f"  → Hermes oneshot…", flush=True)
-            wt = _seed_hermes(tid, t.seed_readme, t.intent, t.rubric)
+            required_paths = "Required paths: " + ", ".join(t.ship_files) + "."
+            wt = _seed_hermes(
+                tid,
+                t.seed_readme,
+                f"{t.intent}\n\n{required_paths}",
+                f"{t.rubric}\n{required_paths}",
+            )
             hermes = _run_hermes(wt, _prompt(), dep, env)
             print(
                 f"  ← Hermes exit={hermes['exit_code']} wall={hermes['wall_s']}s "
                 f"pytest={hermes['pytest_ok']} files={len(hermes['landed_files'])}",
                 flush=True,
             )
+            previous = {}
+            if (ticket_dir / "compare.json").is_file():
+                previous = json.loads((ticket_dir / "compare.json").read_text())
+            previous.update(
+                {
+                    "id": tid,
+                    "title": t.title,
+                    "generated_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+                    "model": dep,
+                    "hermes": hermes,
+                }
+            )
+            (ticket_dir / "compare.json").write_text(json.dumps(previous, indent=2) + "\n")
         else:
             # reuse prior if present
             prev = ticket_dir / "compare.json"
@@ -350,6 +390,10 @@ def main() -> int:
                 f"ticks={bex.get('ticks_used')} spawns={bex.get('spawns')}",
                 flush=True,
             )
+        else:
+            prev = ticket_dir / "compare.json"
+            if prev.is_file():
+                bex = json.loads(prev.read_text()).get("bex") or {}
 
         gap = _gap(hermes, bex)
         compare = {
@@ -362,14 +406,19 @@ def main() -> int:
             "gap": gap,
         }
         (ticket_dir / "compare.json").write_text(json.dumps(compare, indent=2) + "\n")
-        overall.append({"id": tid, "gap": gap, "hermes_pytest": hermes.get("pytest_ok"), "bex_ok": bex.get("ok")})
         print(f"  gap: {json.dumps(gap)}", flush=True)
         print(f"  wrote {ticket_dir / 'compare.json'}", flush=True)
         if gap.get("bex_behind") or not bex.get("ok"):
             rc = 1
 
     (OUT / "summary.json").write_text(
-        json.dumps({"generated_at": time.strftime("%Y-%m-%dT%H:%M:%S"), "tickets": overall}, indent=2)
+        json.dumps(
+            {
+                "generated_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+                "tickets": _collect_summary(),
+            },
+            indent=2,
+        )
         + "\n"
     )
     print(f"SUMMARY {OUT / 'summary.json'} rc={rc}", flush=True)
