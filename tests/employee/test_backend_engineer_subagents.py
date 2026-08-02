@@ -145,6 +145,13 @@ class TestCodeReviewerEvidenceDeclaration:
         assert CODE_REVIEWER_SUBAGENT.evidence_claim == {"cleared": True}
 
 
+class TestSubagentExecutionPolicy:
+    def test_backend_specialists_all_use_delegation(self) -> None:
+        assert not hasattr(TEST_AUTHOR_SUBAGENT, "execution_mode")
+        assert not hasattr(CODE_REVIEWER_SUBAGENT, "execution_mode")
+        assert not hasattr(API_VERIFIER_SUBAGENT, "execution_mode")
+
+
 # --- the beat time budget (the heaviest beat: build a running service, boot it, restart it, verify) ---
 
 

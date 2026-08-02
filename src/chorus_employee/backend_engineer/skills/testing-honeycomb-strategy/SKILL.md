@@ -1,7 +1,7 @@
 ---
 name: testing-honeycomb-strategy
 description: How to write a change's tests TEST-FIRST and shape them like a honeycomb — integration-heavy against real dependencies, a thin e2e/contract cap, unit only for what hides below the boundary. The method the Test-Author forks instead of inventing one.
-when_to_use: Read before authoring tests for a change (the Test-Author's first move). Use it to write the FAILING test first, decide what to test at which layer, and pick assertions that survive a refactor. A test you did not watch fail proves nothing.
+when_to_use: Read after loading test-driven-development (or as test_author) before shaping the suite. Use it to decide what to test at which layer and pick assertions that survive a refactor. A test you did not watch fail proves nothing.
 ---
 
 # Testing, honeycomb-shaped — write it failing first, weight it in the middle

@@ -52,6 +52,11 @@ from chorus_employee._lattice import (
 from chorus_employee._recall import PLANNER_TOOLLESS_NOTE
 from chorus_employee._shared_skills import SHARED_SKILLS_ROOT
 from chorus_harness._company_state import write_company_state
+from chorus_harness._dream_hooks import (
+    BeatContextKind,
+    BeatContextSection,
+    VolatileBeatPacket,
+)
 from chorus_harness._env_capabilities import degrade_for_env
 from chorus_harness._skills import materialize_skills, materialize_versioned_skills_into
 from chorus_harness._trust import apply_trust
@@ -110,6 +115,7 @@ _DREAM_ROLES: tuple[Literal["planner", "generator", "evaluator"], ...] = (
 _CHORUS_TO_DREAM_TOOL: dict[str, str] = {
     "read_file": "read_file",
     "write_file": "write_file",
+    "edit_file": "edit_file",
     "run_command": "bash",
     "git": "git",
     "skill": "skill",
@@ -291,10 +297,10 @@ def _subagent_set(config: RoleBeatConfig) -> SubagentSet | None:
 
     Each spec's chorus tool names are mapped to dream names and intersected with the parent role's
     own dream toolset, so a subagent can only ever *narrow* capability, never widen it (spec 06
-    §minimisation). Returns ``None`` when the role declares no subagents, so the harness's tool surface
-    stays byte-identical (``build_harness`` registers ``spawn_subagent`` only when a set is supplied).
+    §minimisation). Returns ``None`` when the role has neither Specs nor ``spawn_subagent`` (tool
+    surface stays byte-identical). Empty Specs + spawn tool → empty set (generalPurpose only).
     """
-    if not config.subagents:
+    if not config.subagents and "spawn_subagent" not in config.tools:
         return None
     parent_tools = frozenset(dream_tool_names(config.tools))
     agents = [_project_spec(spec, parent_tools) for spec in config.subagents]
@@ -369,7 +375,7 @@ def _capability_tool(
 # they ignore). They MUST register even in a ledger-free materialization (e.g. a standalone example
 # runner or any path that builds the factory without a live ledger); otherwise a role silently loses
 # them and the model, seeing them named in its brief but absent from its toolset, mis-routes (e.g.
-# ``spawn_subagent(name="design_lint")`` or a worktree ``read_file`` of the exemplar path) and errors.
+# ``spawn_subagent(subagent_type="design_lint")`` or a worktree ``read_file`` of the exemplar path) and errors.
 _LEDGER_FREE_CAPABILITY_TOOLS = frozenset(
     {"brand_lint", "design_lint", "design_exemplar", "evidence_scan"}
 )
@@ -530,7 +536,10 @@ def _toml_string_list(values: tuple[str, ...]) -> str:
 def _read_only_role_tools(
     role: Literal["planner", "evaluator"], config: RoleBeatConfig
 ) -> tuple[str, ...]:
-    """Default read-only Dream role tools plus safe employee read surfaces."""
+    """Dream role tools for planner/evaluator plus safe employee read surfaces.
+
+    Evaluator defaults include ``bash`` for in-session verify (no harness oracle).
+    """
     base = default_role_manifest(role).tools or ()
     tools = list(base)
     for name in dream_tool_names(config.tools):
@@ -558,6 +567,16 @@ def write_role_overlays(harness_dir: Path, config: RoleBeatConfig) -> None:
                 f"{base}\n\n## Operating brief (your role in the org)\n"
                 f"{PLANNER_TOOLLESS_NOTE}\n{config.system_prompt}"
             )
+        elif role == "evaluator":
+            prompt = (
+                f"{base}\n\n## Operating brief (your role in the org)\n"
+                "EVALUATOR PHASE: the sprint contract and review rubric are the acceptance authority. "
+                "Instructions below to create, edit, record, or scan are generator guidance, not "
+                "extra acceptance criteria. Do not call or require generator-only tools or artifacts "
+                "unless the contract or rubric explicitly requires them; verify directly with your "
+                "read-only tools and bash.\n"
+                f"{config.system_prompt}"
+            )
         else:
             prompt = f"{base}\n\n## Operating brief (your role in the org)\n{config.system_prompt}"
         lines = [
@@ -570,7 +589,7 @@ def write_role_overlays(harness_dir: Path, config: RoleBeatConfig) -> None:
         # (Verified directly against gpt-5.4-mini: tools+auto -> finish_reason=tool_calls, content
         # len 0; no tools / tool_choice=none -> a clean <spec>.) A toolless planner has nothing to
         # call, so it must emit the contract; the generator does the real exploration. The evaluator
-        # keeps its read-only surfaces (it needs them to verify).
+        # keeps reads + bash (in-session verify; no writers).
         if role == "planner":
             lines.append("tools = []")
         elif role == "evaluator":
@@ -655,6 +674,7 @@ class EmployeeHarnessFactory:
         ledger: Ledger | None = None,
         trust_policy: TrustPolicy | None = None,
         governance: GovernancePort | None = None,
+        stop_evidence_requirements: bool = False,
     ) -> None:
         self._api_key = api_key
         self._base_url = base_url
@@ -673,6 +693,8 @@ class EmployeeHarnessFactory:
         # wires this to horizon's control plane; chorus only ever sees the Port. Absent it, a role
         # asking for a governance tool simply gets it dropped — same fail-closed rule as the ledger.
         self._governance = governance
+        # Lean Bex / Hermes default: parent implements; specialist evidence gates are opt-in.
+        self._stop_evidence_requirements = stop_evidence_requirements
         # The org's workspace root: .chorus/work/{org}/ — shared by chat, tick, and the `company`
         # console command (one identity), via the single dream-free `default_work_root` convention.
         base = work_root if work_root is not None else default_work_root()
@@ -860,6 +882,8 @@ class EmployeeHarnessFactory:
         # Env-capability degradation (H2): a tool this environment cannot back (web research with no
         # Tavily key) is dropped and disclosed in the brief — the beat still runs, on what's possible.
         config = degrade_for_env(config)
+        volatile_sections: list[BeatContextSection] = []
+        inbox_ids: tuple[str, ...] = ()
 
         # Persisted contract status selects the phase-specific management tools in the execution
         # profile. Child presence is retained only for worktree synchronization and the completed
@@ -888,7 +912,9 @@ class EmployeeHarnessFactory:
                 exclude=employee.id,
                 team_id=task.team_id if task is not None else None,
             )
-            config = replace(config, system_prompt=config.system_prompt + roster)
+            volatile_sections.append(
+                BeatContextSection(kind=BeatContextKind.ROSTER, content=roster)
+            )
 
         # Operating environment: a role that RUNS commands (a build engineer) gets a factual runtime
         # block appended to its brief — the OS, the shell run_command lands on, and which build runtimes
@@ -919,15 +945,18 @@ class EmployeeHarnessFactory:
                     f"{m.body}"
                     for m in inbox
                 )
-                config = replace(
-                    config,
-                    system_prompt=config.system_prompt
-                    + "\n\n## Inbox — unread comments for you\n"
-                    + lines
-                    + "\nRead the full thread with read_comments(task_id); reply with comment.",
+                volatile_sections.append(
+                    BeatContextSection(
+                        kind=BeatContextKind.INBOX,
+                        content=(
+                            "## Inbox — unread comments for you\n"
+                            + lines
+                            + "\nRead the full thread with read_comments(task_id); "
+                            "reply with comment."
+                        ),
+                    )
                 )
-                for m in inbox:  # ponytail: consumed at injection; a crashed beat re-reads via read_comments
-                    self._ledger.messages.mark_read(m.id)
+                inbox_ids = tuple(message.id for message in inbox)
         if _LATTICE_TOOLS.intersection(config.tools):
             config = replace(config, system_prompt=config.system_prompt + LATTICE_DIRECTIVES_BLOCK)
 
@@ -964,22 +993,23 @@ class EmployeeHarnessFactory:
                 write_lattice_error(root, site="materialize.adjudicate", error=exc)
             lattice_push = read_lattice_consolidation_push(root)
             if lattice_push:
-                config = replace(
-                    config,
-                    system_prompt=(
-                        config.system_prompt
-                        + "\n\n"
-                        + LATTICE_BEAT_START_HEADER
-                        + lattice_push
-                        + "\n"
-                    ),
+                volatile_sections.append(
+                    BeatContextSection(
+                        kind=BeatContextKind.LATTICE,
+                        content=LATTICE_BEAT_START_HEADER + lattice_push,
+                    )
                 )
         # Corrective replacement: a child whose same-assignee siblings already failed inherits
         # their exact findings.
         if self._ledger is not None and task is not None:
             inheritance = _failure_inheritance(self._ledger, task, root)
             if inheritance:
-                config = replace(config, system_prompt=config.system_prompt + inheritance)
+                volatile_sections.append(
+                    BeatContextSection(
+                        kind=BeatContextKind.FAILURE_EVIDENCE,
+                        content=inheritance,
+                    )
+                )
         write_role_overlays(root, config)  # the employee's identity overlays the whole harness
         write_sandbox_config(
             root, config.sandbox
@@ -989,9 +1019,7 @@ class EmployeeHarnessFactory:
         if config.mcp and config.mcp_servers:
             write_mcp_allowlist(root, config.mcp_servers)
 
-        registry = self._build_tool_registry(
-            config, root=root, lattice=lattice
-        )
+        registry = self._build_tool_registry(config, root=root, lattice=lattice)
 
         # Subagents: project the role's Tier-1 declarations into dream's SubagentSet. The
         # spawn_subagent tool (already in the registry if "spawn_subagent" is in the role's tools)
@@ -1050,6 +1078,34 @@ class EmployeeHarnessFactory:
             env=dict(config.env) or None,
             subagents=subagent_set,
         )
+        # S1 #2 / #11: powered dream hooks — dangerous-tool veto + evidence continue.
+        from chorus_harness._dream_hooks import register_employee_hooks
+
+        def consume_inbox() -> None:
+            if self._ledger is None:
+                return
+            for message_id in inbox_ids:
+                self._ledger.messages.mark_read(message_id)
+
+        register_employee_hooks(
+            harness,
+            working_dir=root,
+            subagents=config.subagents,
+            stop_evidence_requirements=self._stop_evidence_requirements,
+            volatile_packet=VolatileBeatPacket(
+                sections=tuple(volatile_sections),
+                on_injected=consume_inbox if inbox_ids else None,
+            ),
+        )
+        evidence_specs = {
+            spec.name: (
+                spec.evidence_path,
+                spec.evidence_claim,
+                spec.evidence_read_only,
+            )
+            for spec in config.subagents
+            if spec.evidence_path is not None and spec.evidence_claim is not None
+        }
         return EmployeeHarness(
             runner=DreamBeatRunner(
                 harness,
@@ -1061,15 +1117,7 @@ class EmployeeHarnessFactory:
                 else self._timeout_s,
                 working_dir=root,
                 employee_id=employee.id,  # stamped into each beat's context for capability tools
-                subagent_evidence={
-                    spec.name: (
-                        spec.evidence_path,
-                        spec.evidence_claim,
-                        spec.evidence_read_only,
-                    )
-                    for spec in config.subagents
-                    if spec.evidence_path is not None and spec.evidence_claim is not None
-                },
+                subagent_evidence=evidence_specs,
             ),
             workspace=workspace,
             working_dir=root,

@@ -156,62 +156,69 @@ def test_brief_resume_trusts_green_artifacts_and_skips_to_the_missing_one() -> N
     assert "do not re-run" in lower or "don't re-run" in lower or "do not redo" in lower
 
 
-def test_brief_initial_checklist_cannot_omit_independent_review() -> None:
+def test_brief_implement_first_matrix_wins() -> None:
     brief = BACKEND_ENGINEER_BRIEF
-    assert "every initial `todo.md`" in brief.lower()
-    assert "spawn `code_reviewer`" in brief
-    assert "do not return your final answer" in brief.lower()
-    assert "review_verdict.json" in brief
-
-
-def test_brief_invalidates_review_after_every_later_mutation() -> None:
-    lower = BACKEND_ENGINEER_BRIEF.lower()
-    assert "every git-visible mutation after review invalidates that review" in lower
-    assert "correction sprint" in lower
-    assert "rerun the configured gates" in lower
-    assert "spawn `code_reviewer` again" in lower
-
-
-def test_brief_mandates_test_first_tdd_via_the_test_author() -> None:
-    # TDD is not optional: the test_author writes the FAILING test FIRST (RED), before the engineer
-    # implements — delegation is mandatory, not "for non-trivial behaviour".
-    brief = BACKEND_ENGINEER_BRIEF
-    assert "test_author" in brief
-    assert "RED" in brief  # sees the test fail first
     lower = brief.lower()
-    assert (
-        "test-first" in lower or "before you implement" in lower or "before implementing" in lower
-    )
-    # the old optional phrasing is gone — delegation is required
-    assert "for non-trivial behaviour, delegate" not in lower
-    assert "test_red" in lower
-    # Per docs/plans/2026-07-18-hooks-and-briefs-research.md §B the RED-chronology prohibitions
-    # ("without writing a production file", "do not edit those test files after RED", the test-hash
-    # warning) left the brief: the test_red/test_evidence tools prove the chronology. Prose would
-    # only decay.
-    assert "quote the exact assigned behavior" in lower
-    assert "never ask it to infer" in lower
+    assert "tool > skill > spawn" in lower
+    assert "just implement yourself" in lower
+    assert "do not spawn to wrap a single tool" in lower or "spawn to wrap a single tool" in lower
 
 
-def test_brief_gates_done_on_the_subagent_artifacts() -> None:
-    # The compel: done requires the durable proofs the independent subagents write, not the model's
-    # word — test_plan.json (tests authored + seen RED) and api_verdict.json (the service booted).
+def test_brief_routes_tdd_through_skill_not_spawn() -> None:
+    brief = BACKEND_ENGINEER_BRIEF
+    assert "test-driven-development" in brief
+    assert "RED→GREEN→REFACTOR" in brief or "RED" in brief
+    lower = brief.lower()
+    assert "prefer `test-driven-development`" in lower or "prefer test-driven-development" in lower
+    assert "delegate the failing tests via" not in lower
+
+
+def test_manifest_offers_tdd_and_honeycomb_skills() -> None:
+    manifest = backend_engineer_plugin().manifest
+    assert "test-driven-development" in manifest.skills
+    assert "testing-honeycomb-strategy" in manifest.skills
+    assert manifest.skills_root is not None
+    tdd = Path(manifest.skills_root) / "test-driven-development" / "SKILL.md"
+    assert tdd.is_file()
+    body = tdd.read_text(encoding="utf-8").lower()
+    assert "no production code without a failing test first" in body
+    assert "tool > skill > spawn" in body
+    assert "jobqueue" not in body and "queue.py" not in body
+    assert "explicit task filename wins" in body
+    assert "selects that exact resource" in body
+
+
+def test_brief_does_not_mandate_test_author_before_implement() -> None:
+    lower = BACKEND_ENGINEER_BRIEF.lower()
+    assert "delegate the failing tests via" not in lower
+    assert "only then implement" not in lower
+    assert "code's author is never the sole author" not in lower
+
+
+def test_brief_does_not_require_terminal_code_reviewer() -> None:
+    lower = BACKEND_ENGINEER_BRIEF.lower()
+    assert "every initial `todo.md` checklist ends" not in lower
+    assert "spawn `code_reviewer`" not in lower
+
+
+def test_brief_spawn_when_not_language() -> None:
+    lower = BACKEND_ENGINEER_BRIEF.lower()
+    assert "re-delegate the whole ticket" in lower or "whole ticket" in lower
+    assert "trivial" in lower or "isolation" in lower
+
+
+def test_brief_api_verifier_only_for_running_service() -> None:
+    brief = BACKEND_ENGINEER_BRIEF
+    assert "api_verifier" in brief
+    assert "running service or API" in brief
+
+
+def test_brief_optional_specialist_evidence_paths() -> None:
+    """Forge paths named; not mandatory swarm ritual."""
     brief = BACKEND_ENGINEER_BRIEF
     assert "test_plan.json" in brief
-    assert "api_verdict.json" in brief
-    assert "`api_verdict.json` only when the deliverable is a running service or API" in brief
-
-
-def test_brief_mandates_the_code_reviewer_red_team() -> None:
-    # The §06 verification swarm's third leg: an independent red-team of the diff for the prod-failure
-    # classes tests miss — gated on a durable review_verdict.json (cleared).
-    brief = BACKEND_ENGINEER_BRIEF
-    assert "code_reviewer" in brief
     assert "review_verdict.json" in brief
-    lower = brief.lower()
-    assert "red-team" in lower or "red team" in lower
-    # names at least one prod-failure class it must hunt
-    assert "authz" in lower or "authorization" in lower or "n+1" in lower
+    assert "never write that specialist" in brief.lower() or "must not forge" in brief.lower()
 
 
 def test_dod_is_a_self_judged_agent_review_without_evidence_file_demands() -> None:
@@ -257,10 +264,39 @@ def test_brief_fits_the_lean_token_budget() -> None:
 
 
 def test_brief_keeps_the_anatomy_essentials() -> None:
-    """Identity survives the diet: subagents by name, manager escalation, deliverable class."""
+    """Identity survives the diet: specialists named, manager escalation, deliverable class."""
     brief = BACKEND_ENGINEER_BRIEF
-    for subagent in ("test_author", "api_verifier", "code_reviewer"):
+    for subagent in ("code_reviewer", "api_verifier", "generalPurpose"):
         assert subagent in brief, subagent
-    assert "manager" in brief.lower()  # escalate-to-manager communication norm
-    assert "PR" in brief  # the deliverable artifact class it lands
-    assert "test_evidence" in brief  # the durable evidence bundle it leaves
+    assert "manager" in brief.lower()
+    assert "PR" in brief
+    assert "test_evidence" in brief
+
+
+def test_brief_requires_a_useful_final_handoff() -> None:
+    brief = BACKEND_ENGINEER_BRIEF.lower()
+    assert "what changed" in brief
+    assert "verification commands and results" in brief
+    assert "remaining caveats" in brief
+
+
+def test_brief_requires_adversarial_semantic_review() -> None:
+    brief = BACKEND_ENGINEER_BRIEF.lower()
+    assert "green authored tests as necessary but insufficient" in brief
+    assert "public state transition" in brief
+    assert "adversarial" in brief
+    assert "identifier-bearing operation" in brief
+    assert "another eligible resource exists" in brief
+
+
+def test_brief_requires_review_defects_to_reopen_green_work() -> None:
+    brief = BACKEND_ENGINEER_BRIEF.lower()
+    assert "needs-changes" in brief
+    assert "reopens named items" in brief
+    assert "before rerunning evidence" in brief
+
+
+def test_brief_preserves_required_paths() -> None:
+    brief = BACKEND_ENGINEER_BRIEF.lower()
+    assert "required paths are public api" in brief
+    assert "never rename them" in brief

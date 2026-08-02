@@ -171,6 +171,7 @@ class TestTestingHoneycombSkill:
         from pathlib import Path
 
         assert "testing-honeycomb-strategy" in TEST_AUTHOR_SUBAGENT.description
+        assert "test-driven-development" in TEST_AUTHOR_SUBAGENT.description
         root = backend_engineer_plugin().manifest.skills_root
         assert root is not None
         skill = Path(root) / "testing-honeycomb-strategy" / "SKILL.md"

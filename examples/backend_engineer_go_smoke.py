@@ -1,11 +1,8 @@
-"""Backend Engineer stack-agnostic proof (backend-engineer spec §03 discover-not-assume) — one keyed beat.
+"""Backend Engineer Go smoke — stack-agnostic verify-on-stop (discover-not-assume).
 
 The twin of ``backend_engineer_smoke.py``, but seeded with a **Go module** instead of a Python package.
-Nothing about the employee changes — same brief, same ``test_evidence`` floor, same ``pr`` lander. The
-only difference is the repo it wakes up in. A real model must probe the manifest (``go.mod``), bind to
-Go rather than assume pytest, write Go + a Go ``_test.go``, run ``go test`` to green, then call
-``test_evidence`` with the Go verify command it discovered so the durable bundle proves it. If Go ships
-just like Python did, the "framework-agnostic, discover-not-assume" claim is real, not marketing.
+Same employee, same Hermes-style Command DoD: ``go test ./...`` exits 0 and deliverable files exist.
+No ``test_evidence/`` bundle required for this micro ticket.
 
     AZURE_OPENAI_API_KEY=... AZURE_OPENAI_BASE_URL=... AZURE_OPENAI_DEPLOYMENT=...
     uv run python examples/backend_engineer_go_smoke.py
@@ -47,6 +44,8 @@ _TASK = (
     "Keep the existing Health() function and its test. Make the changes directly in those files and "
     "make `go test ./...` pass."
 )
+
+_SMOKE_DOD_COMMAND = "test -f slugify.go && test -f slugify_test.go && go test ./..."
 
 
 def _log(msg: str = "") -> None:
@@ -152,18 +151,13 @@ def main() -> int:
 
         ledger.tasks.submit(Task(id="t1", intent=_TASK))
         assign_task(ledger, "t1", "bex")
-        # Same evidence floor as the Python twin — the DoD greps a green `test_evidence/` bundle. The
-        # employee had to DISCOVER that the gate command here is `go test ./...`, not `pytest`.
+        # Verify-on-stop: green go test and deliverable files — no test_evidence/ bundle for micro work.
         ledger.dod.create(
             "t1",
-            Verifier.command(
-                "test -f test_evidence/manifest.json && "
-                'grep -q \'"verdict": "pass"\' test_evidence/manifest.json',
-                artifact_class="pr",
-            ),
+            Verifier.command(_SMOKE_DOD_COMMAND, artifact_class="pr"),
         )
         _log(
-            "\n2. TASK assigned (DoD: green test_evidence/ bundle, gates solo — no reviewer)\n   t1: "
+            f"\n2. TASK assigned (DoD: {_SMOKE_DOD_COMMAND!r})\n   t1: "
             + _TASK
         )
 

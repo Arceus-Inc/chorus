@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from dream.contracts.hook import HookEvent
 
 from chorus.heartbeat import BeatRunner
 from chorus.ledger import (
@@ -33,16 +34,28 @@ from chorus.roles import RoleRegistry, default_roles
 from chorus.testing import open_test_ledger, uid
 from chorus.workforce import Employee
 from chorus_harness import _factory as _factory_mod
+from chorus_harness._dream_hooks import VolatileBeatPacketHook
 
 pytestmark = pytest.mark.integration
+
+
+class _HarnessStub:
+    def __init__(self) -> None:
+        self.hooks: list[object] = []
+
+    def register_hook(self, hook: object) -> None:
+        self.hooks.append(hook)
 
 
 def _factory(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, ledger: Ledger | None
 ) -> tuple[Any, dict[str, Any]]:
     captured: dict[str, Any] = {}
+    harness = _HarnessStub()
     monkeypatch.setattr(
-        _factory_mod.dream, "build_harness", lambda **kw: captured.update(kw) or object()
+        _factory_mod.dream,
+        "build_harness",
+        lambda **kw: captured.update(kw) or captured.update(harness=harness) or harness,
     )
     factory = _factory_mod.EmployeeHarnessFactory(
         api_key="k",
@@ -146,28 +159,33 @@ def test_backend_engineer_materializes_a_writable_harness_in_its_worktree(
         "read_file",
         "read_offloaded",
         "write_file",
+        "edit_file",
         "bash",
         "git",
         "todo_write",
         "skill",
-        "memory_search",
-        "memory_get",
-        "recall",
-        "get_run",
         "test_evidence",
         "test_red",
         "secret_scan",
         "code_quality",
-        "lattice_context",
-        "lattice_packet",
-        "lattice_apply",
-        "skill_manage",
         # spawn_subagent is no longer factory-registered: the strict-TDD gate is unwired (operator
         # decision 2026-07-18); dream's build_harness registers it from config.subagents at build time.
     }
     assert mat.config.permission_mode == "acceptEdits"
-    assert captured["max_turns"] == 18  # the engine scalars come from the role too
+    assert captured["max_turns"] == 24  # the engine scalars come from the role too
     assert captured["working_memory"] is True
+    assert mat.runner._subagent_evidence == {
+        "test_author": ("test_plan.json", {"authored": True}, False),
+        "code_reviewer": ("review_verdict.json", {"cleared": True}, True),
+    }
+
+
+def test_backend_engineer_materializes_subagent_evidence_when_opted_in(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, ledger: Ledger
+) -> None:
+    factory, _ = _factory(monkeypatch, tmp_path, ledger)
+    factory._stop_evidence_requirements = True
+    mat = factory.materialize(Employee(id="ada", name="Ada", role="backend_engineer"))
     assert mat.runner._subagent_evidence == {
         "test_author": ("test_plan.json", {"authored": True}, False),
         "code_reviewer": ("review_verdict.json", {"cleared": True}, True),
@@ -181,14 +199,12 @@ def test_role_registry_registers_the_read_file_offload_companion() -> None:
     assert names == {"read_file", "read_offloaded"}
 
 
-def test_engineer_role_overlays_admit_read_memory_for_read_only_heads(
+def test_engineer_role_overlays_keep_evaluator_read_only(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, ledger: Ledger
 ) -> None:
-    # The evaluator is the read-only head that keeps tools, so it admits the safe read-memory surfaces
-    # (memory_search/memory_get/working_memory_read) to verify with. The planner is deliberately
-    # TOOLLESS (`tools = []`) — given tools + tool_choice="auto", weaker models emit a tool call with
-    # zero text and `run_task` fails with "planner reply missing <spec>" (see write_role_overlays). The
-    # generator runs tools=null (no `tools =` line), so it sees the full role toolset.
+    # The evaluator keeps reads + bash but must treat generator-only tool instructions as evidence to
+    # inspect, not unavailable actions to attempt. The planner is deliberately TOOLLESS (`tools = []`)
+    # and the generator runs tools=null (no `tools =` line), so it sees the full role toolset.
     factory, _ = _factory(monkeypatch, tmp_path, ledger)
     mat = factory.materialize(Employee(id="ada", name="Ada", role="backend_engineer"))
 
@@ -202,9 +218,10 @@ def test_engineer_role_overlays_admit_read_memory_for_read_only_heads(
 
     assert "tools = []" in planner  # toolless on purpose
     assert "PLANNER PHASE" in planner
-    assert '"memory_search"' in evaluator
-    assert '"memory_get"' in evaluator
-    assert '"working_memory_read"' in evaluator
+    assert '"bash"' in evaluator  # in-session verify (no harness oracle)
+    assert '"write_file"' not in evaluator
+    assert "the sprint contract and review rubric are the acceptance authority" in evaluator
+    assert "not extra acceptance criteria" in evaluator
     assert "tools =" not in generator
 
 
@@ -407,7 +424,7 @@ def test_integrate_beat_over_a_complete_subtree_drops_all_mutating_tools(
         ledger.close()
 
 
-def test_delegation_brief_is_rehydrated_with_its_team(
+async def test_delegation_context_is_rehydrated_with_its_team(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, ledger: Ledger
 ) -> None:
     # A delegating role needs to name valid assignees: the factory appends the live workforce roster to
@@ -429,30 +446,27 @@ def test_delegation_brief_is_rehydrated_with_its_team(
                 membership_role=TeamMembershipRole.MEMBER,
             )
         )
-        captured: dict[str, Any] = {}
-        monkeypatch.setattr(
-            _factory_mod.dream, "build_harness", lambda **kw: captured.update(kw) or object()
-        )
-        factory = _factory_mod.EmployeeHarnessFactory(
-            api_key="k",
-            base_url="https://x/openai/v1",
-            deployment="gpt-x",
-            company_id="acme",
-            roles=RoleRegistry.from_plugins(default_roles()),
-            work_root=tmp_path,
-            ledger=ledger,
-        )
+        factory, captured = _factory(monkeypatch, tmp_path, ledger)
         mat = factory.materialize(lead, task_id=uid("goal"))
-        generator = (mat.working_dir / ".harness" / "roles" / "generator.toml").read_text("utf-8")
-        assert "ada (backend_engineer)" in generator
-        assert "bob (backend_engineer)" in generator
-        assert "eve (engineer)" not in generator
-        assert "moe" not in generator.split("Your reports")[1]  # the manager isn't its own report
+        generator = (mat.working_dir / ".harness" / "roles" / "generator.toml").read_text(
+            "utf-8"
+        )
+        assert "ada (backend_engineer)" not in generator
+        hook = next(
+            item
+            for item in captured["harness"].hooks
+            if isinstance(item, VolatileBeatPacketHook)
+        )
+        packet = (await hook(HookEvent.USER_PROMPT_SUBMIT, {"prompt": "work"})).inject_context or ""
+        assert "ada (backend_engineer)" in packet
+        assert "bob (backend_engineer)" in packet
+        assert "eve (engineer)" not in packet
+        assert "moe" not in packet.split("Your reports")[1]
     finally:
         ledger.close()
 
 
-def test_corrective_child_inherits_failed_sibling_evidence(
+async def test_corrective_child_inherits_failed_sibling_evidence(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """Live T3 (2026-07-18): corrective children re-failed on findings they never saw. The
@@ -496,7 +510,7 @@ def test_corrective_child_inherits_failed_sibling_evidence(
                 },
             )
         )
-        factory, _ = _factory(monkeypatch, tmp_path, ledger)
+        factory, captured = _factory(monkeypatch, tmp_path, ledger)
         # The first materialize creates the worktree; drop the evaluator record where dream
         # persists it (docs/evals/<run>/sprint-N.json), then materialize the corrective beat.
         first = factory.materialize(ic, task_id=corrective.id)
@@ -518,11 +532,18 @@ def test_corrective_child_inherits_failed_sibling_evidence(
         mat = factory.materialize(ic, task_id=corrective.id)
 
         generator = (mat.working_dir / ".harness" / "roles" / "generator.toml").read_text("utf-8")
-        assert "Inherited failure evidence" in generator
-        assert failed.id in generator
-        assert "contradicts the required 0-9,A-Z,a-z" in generator
-        assert "code_reviewer evidence does not carry the required claim" in generator
-        assert "AUTHORIZED to re-author" in generator
+        assert "Inherited failure evidence" not in generator
+        hook = [
+            item
+            for item in captured["harness"].hooks
+            if isinstance(item, VolatileBeatPacketHook)
+        ][-1]
+        packet = (await hook(HookEvent.USER_PROMPT_SUBMIT, {"prompt": "fix"})).inject_context or ""
+        assert "Inherited failure evidence" in packet
+        assert failed.id in packet
+        assert "contradicts the required 0-9,A-Z,a-z" in packet
+        assert "code_reviewer evidence does not carry the required claim" in packet
+        assert "AUTHORIZED to re-author" in packet
     finally:
         ledger.close()
 

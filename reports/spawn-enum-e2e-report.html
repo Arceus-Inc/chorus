@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<title>Spawn enum E2E report</title>
+<script type="module">
+  import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs";
+  mermaid.initialize({ startOnLoad: true, theme: "neutral" });
+</script>
+<style>
+  body { font-family: "Source Sans 3", system-ui, sans-serif; max-width: 980px; margin: 2rem auto; padding: 0 1rem; background: #e8e4dc; color: #17140f; }
+  h1 { font-family: Georgia, serif; }
+  table { width: 100%; border-collapse: collapse; background: #faf7f2; border: 1px solid #cfc5b8; font-size: 0.88rem; }
+  th, td { border-bottom: 1px solid #cfc5b8; padding: 0.5rem; vertical-align: top; text-align: left; }
+  tr.ok td:nth-child(4) { color: #1d6b3c; font-weight: 700; }
+  tr.bad td:nth-child(4) { color: #8f1f33; font-weight: 700; }
+  pre { white-space: pre-wrap; font-size: 0.75rem; margin: 0; }
+  .mermaid { background: #faf7f2; border: 1px solid #cfc5b8; padding: 1rem; }
+  .meta { color: #655c52; font-size: 0.9rem; }
+  .pointers { background: #faf7f2; border-left: 4px solid #2f5d50; padding: 0.75rem 1rem; }
+</style></head><body>
+<h1>Spawn enum x Hermes child — live E2E</h1>
+<p class="meta">elapsed 82.5s · 7/7 passed · branch feat/hooks-parallel-subagents</p>
+<div class="pointers">
+<strong>Harness pointers under test</strong>
+<ol>
+<li><code>SCHEMA</code> — schema-first action space: dynamic <code>subagent_type</code> enum</li>
+<li><code>GP_LLM</code> — catch-all isolation via Hermes delegate (goal+context)</li>
+<li><code>FORGE_LLM</code> — PRE_TOOL forge veto + recovery hint to spawn</li>
+<li><code>BATCH_LLM</code> — bounded synchronous <code>tasks[]</code> fan-out</li>
+<li><code>BACKGROUND_LLM</code> — detached child + parent keeps working + idle delivery</li>
+<li><code>VOLATILE_LLM</code> — changing beat packet injected on the user turn</li>
+<li><code>FLOW_LLM</code> — live task: GP → test_author with evidence continue</li>
+</ol>
+</div>
+<h2>Results</h2>
+<table>
+<thead><tr><th>ID</th><th>Case</th><th>Harness pointer</th><th>Result</th><th>Detail</th></tr></thead>
+<tbody><tr class='ok'><td><code>SCHEMA</code></td><td>Dynamic subagent_type enum</td><td>tools_wire enum = generalPurpose + Bex Specs (schema-first action space)</td><td>PASS</td><td><pre>enum=[&#x27;generalPurpose&#x27;, &#x27;test_author&#x27;, &#x27;code_reviewer&#x27;, &#x27;api_verifier&#x27;] names_helper=[&#x27;generalPurpose&#x27;, &#x27;test_author&#x27;, &#x27;code_reviewer&#x27;, &#x27;api_verifier&#x27;]</pre></td></tr><tr class='ok'><td><code>GP_LLM</code></td><td>Live LLM → generalPurpose spawn</td><td>Catch-all isolation: GP child, goal+context, parent sees summary only</td><td>PASS</td><td><pre>spawn_types=[&#x27;generalPurpose&#x27;] final=&#x27;DONE\n\n- Blocker: **Beta is blocked on auth**.\n- Date: **Alpha feature ships Friday**.&#x27; err=&#x27;&#x27; role_errs=[]</pre></td></tr><tr class='ok'><td><code>FORGE_LLM</code></td><td>Live LLM forge → PRE_TOOL veto</td><td>Recovery contract: block write + safe_retry=spawn_subagent(subagent_type=test_author)</td><td>PASS</td><td><pre>blocked=True plan_exists=False write_results=1 final=&#x27;Error: tool call blocked by hook.&#x27; err=&#x27;&#x27;</pre></td></tr><tr class='ok'><td><code>BATCH_LLM</code></td><td>Live LLM sync tasks[] fan-out</td><td>Wave B: one bounded concurrent batch, typed result in input order</td><td>PASS</td><td><pre>spawn_calls=1 tasks=2 final=&#x27;BATCH_OK\n\n- GeneralPurpose result: `NOTES.md` says the ship date is **Tuesday**.\n- Code reviewer result: **cleared = false** with one finding: a **high-severity missing authorization/ownership check** risk noted in `NOTE&#x27; err=&#x27;&#x27;</pre></td></tr><tr class='ok'><td><code>BACKGROUND_LLM</code></td><td>Live LLM background keep-working</td><td>Wave C: handle now, parent tool next, completion as later user turn</td><td>PASS</td><td><pre>parent_tools=[&#x27;spawn_subagent&#x27;, &#x27;write_file&#x27;] marker=True final=&#x27;BACKGROUND_OK CHILD_BG_42BACKGROUND_OK CHILD_BG_42&#x27; err=&#x27;&#x27;</pre></td></tr><tr class='ok'><td><code>VOLATILE_LLM</code></td><td>Live LLM volatile user packet</td><td>Wave D: roster/inbox/lattice/failures ride USER_PROMPT_SUBMIT</td><td>PASS</td><td><pre>final=&#x27;VOLATILE_OK VOLATILE_PACKET_73&#x27; err=&#x27;&#x27;</pre></td></tr><tr class='ok'><td><code>FLOW_LLM</code></td><td>Live task spawn flow (GP → specialist)</td><td>Hybrid ReAct: typed spawn for isolation, then specialist for evidence contract</td><td>PASS</td><td><pre>spawn_types=[&#x27;generalPurpose&#x27;, &#x27;test_author&#x27;, &#x27;code_reviewer&#x27;, &#x27;code_reviewer&#x27;, &#x27;generalPurpose&#x27;] plan=True final=&#x27;Done — I spawned both subagents with the exact requested `subagent_type` values.\n\nSubagent 1 summary:\n- `app.py` contains one function: `add(a, b) -&gt; a + b`\n- Suggested pytest case: `test_add_basic` a&#x27; err=&#x27;&#x27;</pre></td></tr></tbody>
+</table>
+<h2>Architecture: how spawn routes</h2>
+<pre class="mermaid">
+flowchart LR
+  P[Parent generator] -->|spawn_subagent| E{subagent_type}
+  E -->|generalPurpose| GP[Hermes delegate<br/>goal+context firewall]
+  E -->|test_author| TA[Inline co-writer<br/>writes evidence]
+  E -->|code_reviewer / api_verifier| CR[Hermes delegate critic]
+  GP -->|budgeted summary| P
+  TA -->|test_plan.json + provenance| P
+  CR -->|verdict + provenance| P
+  P -->|forge write_file evidence| V[EvidenceForgeVetoHook<br/>PRE_TOOL block]
+  V -->|safe_retry hint| P
+</pre>
+<h2>Live FLOW_LLM spawn sequence</h2>
+<pre class="mermaid">
+flowchart TD
+  U[User intent: TDD for add] --> G[Generator session]
+  G -->|spawn #1| S0["generalPurpose<br/>delegate"]
+  S0 -->|summary / artifacts| G
+  G -->|spawn #2| S1["test_author<br/>inline+evidence"]
+  S1 -->|summary / artifacts| G
+  G -->|spawn #3| S2["code_reviewer<br/>delegate critic"]
+  S2 -->|summary / artifacts| G
+  G -->|spawn #4| S3["code_reviewer<br/>delegate critic"]
+  S3 -->|summary / artifacts| G
+  G -->|spawn #5| S4["generalPurpose<br/>delegate"]
+  S4 -->|summary / artifacts| G
+  G --> DONE[Beat evidence ready]
+  DONE:::ok
+  classDef ok fill:#d8eddf,stroke:#1d6b3c
+  LEG[enum: generalPurpose + Specs] -.-> G
+</pre>
+<h3>GP_LLM tool timeline <span class='meta'>(includes nested child tools via observer)</span></h3><ol><li><code>spawn:generalPurpose</code> {&quot;subagent_type&quot;: &quot;generalPurpose&quot;, &quot;goal&quot;: &quot;Read NOTES.md and return a 2-bullet summary of blockers and dates.&quot;, &quot;context&quot;: &quot;path=NOTES.md&quot;</li><li><code>read_file</code> {&quot;path&quot;: &quot;NOTES.md&quot;, &quot;offset&quot;: 0, &quot;limit&quot;: 4000}</li></ol><h3>FORGE_LLM tool timeline <span class='meta'>(includes nested child tools via observer)</span></h3><ol><li><code>write_file</code> {&quot;path&quot;: &quot;test_plan.json&quot;, &quot;content&quot;: &quot;{\&quot;authored\&quot;: true, \&quot;files\&quot;: [], \&quot;covers\&quot;: []}&quot;}</li></ol><h3>BATCH_LLM tool timeline <span class='meta'>(includes nested child tools via observer)</span></h3><ol><li><code>spawn:None</code> {&quot;tasks&quot;: [{&quot;subagent_type&quot;: &quot;generalPurpose&quot;, &quot;goal&quot;: &quot;Read NOTES.md and report the ship date&quot;, &quot;context&quot;: &quot;path=NOTES.md&quot;}, {&quot;subagent_typ</li><li><code>read_file</code> {&quot;path&quot;: &quot;NOTES.md&quot;, &quot;offset&quot;: 0, &quot;limit&quot;: 4000}</li><li><code>git</code> {&quot;args&quot;: [&quot;status&quot;, &quot;--short&quot;]}</li><li><code>read_file</code> {&quot;path&quot;: &quot;NOTES.md&quot;, &quot;offset&quot;: 0, &quot;limit&quot;: 4000}</li></ol><h3>BACKGROUND_LLM tool timeline <span class='meta'>(includes nested child tools via observer)</span></h3><ol><li><code>spawn:generalPurpose</code> {&quot;subagent_type&quot;: &quot;generalPurpose&quot;, &quot;background&quot;: true, &quot;goal&quot;: &quot;Use run_command to run sleep 3, then return the exact token CHILD_BG_42&quot;}</li><li><code>write_file</code> {&quot;path&quot;: &quot;parent-kept-working.txt&quot;, &quot;content&quot;: &quot;PARENT_WORKED&quot;}</li><li><code>task_create</code> {&quot;description&quot;: &quot;sleep 3 and return token&quot;, &quot;command&quot;: &quot;sleep 3&quot;, &quot;cwd&quot;: &quot;/var/folders/74/m_l20tpx4qq_7svlx50hqm3r0000gn/T/spawn-enum-backgr</li></ol><h3>VOLATILE_LLM tool timeline <span class='meta'>(includes nested child tools via observer)</span></h3><ol><li>(none)</li></ol><h3>FLOW_LLM tool timeline <span class='meta'>(includes nested child tools via observer)</span></h3><ol><li><code>spawn:generalPurpose</code> {&quot;subagent_type&quot;: &quot;generalPurpose&quot;, &quot;goal&quot;: &quot;List functions in app.py and suggest one pytest case&quot;, &quot;context&quot;: &quot;path=app.py&quot;}</li><li><code>read_file</code> {&quot;path&quot;: &quot;app.py&quot;, &quot;offset&quot;: 0, &quot;limit&quot;: 400}</li><li><code>spawn:test_author</code> {&quot;subagent_type&quot;: &quot;test_author&quot;, &quot;goal&quot;: &quot;Author a failing pytest for add(2,3)==5 in test_app.py; write test_plan.json&quot;, &quot;context&quot;: &quot;path=ap</li><li><code>skill</code> {&quot;name&quot;: &quot;test-driven-development&quot;}</li><li><code>skill</code> {&quot;name&quot;: &quot;testing-honeycomb-strategy&quot;}</li><li><code>read_file</code> {&quot;path&quot;: &quot;app.py&quot;}</li><li><code>glob</code> {&quot;pattern&quot;: &quot;**/test*.py&quot;}</li><li><code>write_file</code> {&quot;path&quot;: &quot;test_app.py&quot;, &quot;content&quot;: &quot;from app import add\n\n\ndef test_add_returns_five_for_two_and_three():\n    assert add(2, 3) == 5\n&quot;}</li><li><code>write_file</code> {&quot;path&quot;: &quot;test_plan.json&quot;, &quot;content&quot;: &quot;{\n  \&quot;authored\&quot;: true,\n  \&quot;files\&quot;: [\&quot;test_app.py\&quot;],\n  \&quot;covers\&quot;: [\&quot;add(2, 3) returns 5\&quot;],\n</li><li><code>bash</code> {&quot;command&quot;: &quot;pytest -q test_app.py&quot;, &quot;cwd&quot;: &quot;/var/folders/74/m_l20tpx4qq_7svlx50hqm3r0000gn/T/spawn-enum-flow-vzuobryx&quot;, &quot;timeout_seconds&quot;: </li><li><code>spawn:code_reviewer</code> {&quot;subagent_type&quot;: &quot;code_reviewer&quot;, &quot;goal&quot;: &quot;Review the current TDD setup for add() in app.py and identify any missing specialist evidence or</li><li><code>git</code> {&quot;args&quot;: [&quot;status&quot;, &quot;--short&quot;]}</li><li><code>read_file</code> {&quot;path&quot;: &quot;app.py&quot;, &quot;offset&quot;: 0, &quot;limit&quot;: 400}</li><li><code>read_file</code> {&quot;path&quot;: &quot;TODO.md&quot;, &quot;offset&quot;: 0, &quot;limit&quot;: 200}</li><li><code>spawn:code_reviewer</code> {&quot;subagent_type&quot;: &quot;code_reviewer&quot;, &quot;goal&quot;: &quot;Provide a code review verdict for the TDD work on add() in app.py, focusing on whether the reque</li><li><code>query_logs</code> {&quot;all_sessions&quot;: true, &quot;contains&quot;: &quot;code_reviewer&quot;, &quot;since&quot;: &quot;-24h&quot;}</li><li><code>spawn:generalPurpose</code> {&quot;subagent_type&quot;: &quot;generalPurpose&quot;, &quot;goal&quot;: &quot;Investigate whether a code_reviewer evidence gap remains for the TDD task around add() in app.p</li></ol>
+</body></html>

@@ -29,6 +29,18 @@ class TestSpawnableProjection:
         spec = SubagentSpec(name="x", description="d", tools=("read_file",))
         assert spec.spawnable == ()
 
+    def test_projection_is_role_agnostic(self) -> None:
+        spec = SubagentSpec(
+            name="arbitrary_writer",
+            description="writes shared intent",
+            tools=("read_file",),
+        )
+        subagent_set = _subagent_set(_config_with(spec))
+
+        assert subagent_set is not None
+        projected = subagent_set.get(spec.name)
+        assert projected is not None
+
     def test_nested_spawnable_projected_onto_dream(self) -> None:
         researcher = SubagentSpec(
             name="web_research", description="reads the web", tools=("web_search", "web_extract")

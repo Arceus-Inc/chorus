@@ -13,22 +13,35 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from dream.contracts.hook import HookEvent
 
 from chorus.ledger import Message, Task
 from chorus.roles import RoleRegistry, default_roles
 from chorus.testing import open_test_ledger, uid
 from chorus.workforce import Employee
 from chorus_harness import _factory as _factory_mod
+from chorus_harness._dream_hooks import VolatileBeatPacketHook
 
 pytestmark = pytest.mark.integration
+
+
+class _HarnessStub:
+    def __init__(self) -> None:
+        self.hooks: list[object] = []
+
+    def register_hook(self, hook: object) -> None:
+        self.hooks.append(hook)
 
 
 def _factory(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, ledger: Any = None
 ) -> tuple[Any, dict[str, Any]]:
     captured: dict[str, Any] = {}
+    harness = _HarnessStub()
     monkeypatch.setattr(
-        _factory_mod.dream, "build_harness", lambda **kw: captured.update(kw) or object()
+        _factory_mod.dream,
+        "build_harness",
+        lambda **kw: captured.update(kw) or captured.update(harness=harness) or harness,
     )
     kwargs: dict[str, Any] = {}
     if ledger is not None:
@@ -68,7 +81,7 @@ def test_ledger_free_materialization_has_no_comment_verbs(
     assert "comment" not in names
 
 
-def test_unread_comments_are_injected_into_the_brief_and_consumed(
+async def test_unread_comments_are_injected_as_volatile_user_context_and_consumed(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """The inbox IS the brief (paperclip: inbox = assigned tasks + comments). Injection marks
@@ -89,14 +102,21 @@ def test_unread_comments_are_injected_into_the_brief_and_consumed(
                 body="parser must handle CRLF line endings",
             )
         )
-        factory, _ = _factory(monkeypatch, tmp_path, ledger)
+        factory, captured = _factory(monkeypatch, tmp_path, ledger)
         mat = factory.materialize(
             Employee(id="rex", name="Rex", role="backend_engineer"), task_id=task.id
         )
         generator = (mat.working_dir / ".harness" / "roles" / "generator.toml").read_text("utf-8")
-        assert "parser must handle CRLF line endings" in generator
-        assert "mia" in generator
-        assert ledger.messages.inbox("rex") == []  # consumed — the thread stays in for_task
+        assert "parser must handle CRLF line endings" not in generator
+        hook = next(
+            item
+            for item in captured["harness"].hooks
+            if isinstance(item, VolatileBeatPacketHook)
+        )
+        outcome = await hook(HookEvent.USER_PROMPT_SUBMIT, {"prompt": "work"})
+        assert "parser must handle CRLF line endings" in (outcome.inject_context or "")
+        assert "mia" in (outcome.inject_context or "")
+        assert ledger.messages.inbox("rex") == []
     finally:
         ledger.close()
 
