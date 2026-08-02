@@ -51,6 +51,7 @@ from chorus.ledger.repos import (
     BudgetPolicyRepo,
     ClaimRepo,
     CostEventRepo,
+    CredentialRepo,
     DecisionRepo,
     DecompositionClaimRepo,
     DelegationContractRepo,
@@ -200,6 +201,7 @@ class Ledger:
         self.budget_policies = BudgetPolicyRepo(conn)
         self.budget_incidents = BudgetIncidentRepo(conn)
         self.cost_events = CostEventRepo(conn)
+        self.credentials = CredentialRepo(conn)
         self.workforce_plans = WorkforcePlanRepo(conn)
         self.staffing_requests = StaffingRequestRepo(conn)
 

@@ -24,8 +24,8 @@ from dream.contracts.credentials import (
 from chorus.credentials import (
     AwsSecretsManagerSource,
     EnvironmentSecretSource,
-    InMemoryCredentialBroker,
     LayeredSecretSource,
+    PostgresCredentialBroker,
     SecretValue,
 )
 
@@ -46,8 +46,8 @@ def request(*, mode: CredentialGrantMode = CredentialGrantMode.ONCE) -> Credenti
 
 
 @pytest.mark.asyncio
-async def test_missing_access_creates_expiring_owner_approval_ask() -> None:
-    broker = InMemoryCredentialBroker(
+async def test_missing_access_creates_expiring_owner_approval_ask(ledger) -> None:
+    broker = PostgresCredentialBroker(ledger.credentials,
         LayeredSecretSource((EnvironmentSecretSource({"GITHUB_TOKEN": "never-in-model"}),))
     )
     broker.register(request=request(), source_name=CredentialName("GITHUB_TOKEN"))
@@ -61,8 +61,8 @@ async def test_missing_access_creates_expiring_owner_approval_ask() -> None:
 
 
 @pytest.mark.asyncio
-async def test_approved_once_grant_materializes_opaque_lease_and_records_use() -> None:
-    broker = InMemoryCredentialBroker(
+async def test_approved_once_grant_materializes_opaque_lease_and_records_use(ledger) -> None:
+    broker = PostgresCredentialBroker(ledger.credentials,
         LayeredSecretSource((EnvironmentSecretSource({"GITHUB_TOKEN": "never-in-model"}),))
     )
     req = request()
@@ -82,8 +82,8 @@ async def test_approved_once_grant_materializes_opaque_lease_and_records_use() -
 
 
 @pytest.mark.asyncio
-async def test_revocation_blocks_materialization() -> None:
-    broker = InMemoryCredentialBroker(
+async def test_revocation_blocks_materialization(ledger) -> None:
+    broker = PostgresCredentialBroker(ledger.credentials,
         LayeredSecretSource((EnvironmentSecretSource({"GITHUB_TOKEN": "value"}),))
     )
     req = request(mode=CredentialGrantMode.STANDING)
@@ -126,7 +126,7 @@ async def test_aws_secret_source_applies_prefix() -> None:
 
 
 @pytest.mark.asyncio
-async def test_broker_proxy_injects_secret_and_enforces_host_and_path() -> None:
+async def test_broker_proxy_injects_secret_and_enforces_host_and_path(ledger) -> None:
     calls: list[tuple[str, str, tuple[CredentialProxyHeader, ...], str | None]] = []
 
     class Client:
@@ -140,7 +140,7 @@ async def test_broker_proxy_injects_secret_and_enforces_host_and_path() -> None:
             calls.append((method, url, headers, body))
             return CredentialProxyResponse(status=200, body="ok")
 
-    broker = InMemoryCredentialBroker(
+    broker = PostgresCredentialBroker(ledger.credentials,
         EnvironmentSecretSource({"GITHUB_TOKEN": "never-in-model"}),
         http_client=Client(),
     )
@@ -170,14 +170,14 @@ async def test_broker_proxy_injects_secret_and_enforces_host_and_path() -> None:
 
 
 @pytest.mark.asyncio
-async def test_environment_delivery_injects_only_into_the_sandbox_target() -> None:
+async def test_environment_delivery_injects_only_into_the_sandbox_target(ledger) -> None:
     values: dict[str, str] = {}
 
     class Target:
         async def set_credential(self, name: str, value: str) -> None:
             values[name] = value
 
-    broker = InMemoryCredentialBroker(
+    broker = PostgresCredentialBroker(ledger.credentials,
         EnvironmentSecretSource({"GITHUB_TOKEN": "never-in-model"})
     )
     req = replace(

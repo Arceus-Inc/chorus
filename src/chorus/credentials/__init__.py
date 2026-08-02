@@ -1,6 +1,6 @@
 """Org-owned, employee-granted credential brokerage."""
 
-from chorus.credentials._broker import ASK_TTL, CredentialHttpClient, InMemoryCredentialBroker
+from chorus.credentials._broker import ASK_TTL, CredentialHttpClient, PostgresCredentialBroker
 from chorus.credentials._source import (
     AwsSecretsManagerClient,
     AwsSecretsManagerSource,
@@ -16,8 +16,8 @@ __all__ = [
     "AwsSecretsManagerSource",
     "CredentialHttpClient",
     "EnvironmentSecretSource",
-    "InMemoryCredentialBroker",
     "LayeredSecretSource",
+    "PostgresCredentialBroker",
     "SecretSource",
     "SecretValue",
 ]
