@@ -29,12 +29,10 @@ STRATEGIST_SUBAGENT = SubagentSpec(
         "1. Read `brand_spec.md` and the task brief in your working directory with `read_file` to "
         "understand the metric, the audience, and the positioning constraints.\n"
         "2. Ground the bet in REAL market facts — do NOT write competitor/funding/trend claims from "
-        "memory. Before you write the brief, you MUST dispatch the `web_research` subagent at least "
-        'once: `spawn_subagent(name="web_research", prompt="<one focused question naming the ACTUAL '
-        'company/metric>")`. It returns a cited JSON answer; every fact in your EVIDENCE section comes '
-        "from it, with its source. Ask one or two FOCUSED questions (a narrow question saturates fast); "
-        "never a placeholder. A strategy brief whose market claims aren't backed by a web_research "
-        "citation is incomplete — spawn it.\n"
+        "memory. When independent web evidence materially improves the bet, dispatch the "
+        'web_research subagent with one focused question naming the ACTUAL company/metric. '
+        "Otherwise proceed from supplied evidence and state the gaps honestly. Every market claim you "
+        "make must carry its source.\n"
         "3. Write `strategy_brief.md` — a tight brief the Creative/Copywriter can draft straight from:\n"
         "   - HYPOTHESIS: the bet, in one sentence ('we believe X audience will Y because Z').\n"
         "   - AUDIENCE: who, and the one insight about them that matters.\n"

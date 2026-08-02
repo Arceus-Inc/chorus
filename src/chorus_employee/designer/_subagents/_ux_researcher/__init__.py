@@ -29,13 +29,10 @@ UX_RESEARCHER_SUBAGENT = SubagentSpec(
         "1. Read `DESIGN.md` and the task brief in your working directory with `read_file` to "
         "understand the surface, the users, and the system constraints.\n"
         "2. Ground the approach in REAL UX evidence — do NOT write pattern/prior-art/accessibility "
-        "claims from memory. Before you write the brief, you MUST dispatch the `web_research` "
-        'subagent at least once: `spawn_subagent(name="web_research", prompt="<one focused question '
-        'naming the ACTUAL surface/pattern>")`. It returns a cited JSON answer; every fact in your '
-        "EVIDENCE section comes from it, with its source. Ask one or two FOCUSED questions (a narrow "
-        "question saturates fast) — e.g. established patterns for the surface, WCAG guidance for its "
-        "controls, common failure modes. A brief whose UX claims aren't backed by a web_research "
-        "citation is incomplete — spawn it.\n"
+        "claims from memory. When independent web evidence materially improves the decision, dispatch "
+        'the `web_research` subagent with one focused question naming the ACTUAL surface/pattern. '
+        "Otherwise proceed from supplied evidence and state the gaps honestly. Any web claims you make "
+        "must carry their source.\n"
         "3. Write `ux_brief.md` — a tight brief the Explorer can design straight from:\n"
         "   - APPROACH: the recommended direction, in one sentence ('users need X, so lead with Y').\n"
         "   - USER NEEDS: who the surface serves and the one need that matters most.\n"
