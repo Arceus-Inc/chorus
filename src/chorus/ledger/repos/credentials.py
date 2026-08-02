@@ -1,37 +1,34 @@
-"""CredentialRepo — durable credential brokerage aggregate (registration / ask / grant / lease / use).
+"""CredentialRepo — the credential brokerage aggregate (registration / ask / grant / lease / use).
 
-Policy and grant metadata only — plaintext secrets never land in these tables. Materialization
-reads an external :class:`~chorus.credentials.SecretSource`. Mirrors the house repo shape
-(``ApprovalRepo``, ``ArtifactRepo``): focused methods, multi-line SQL, ``_base`` helpers,
-``mint_id`` uuidv7 entity ids.
+Policy and grant metadata only: plaintext secrets never land in these tables, and materialization
+reads them from an external :class:`~chorus.credentials.SecretSource` at call time. Like every other
+repo this one speaks :mod:`chorus.ledger._models` rows and nothing else — owner checks, expiry, and
+delivery enforcement are the broker's job (:mod:`chorus.credentials`), not the store's.
+
+A grant never copies its registration's policy forward: :meth:`grant` returns a
+:class:`CredentialGrantView` joining the two, so tightening a registration applies to grants already
+approved against it.
 """
 
 from __future__ import annotations
 
-from dataclasses import replace
-from datetime import UTC, datetime
+import secrets
+from datetime import datetime
 from typing import cast
-from uuid import uuid4
-
-from dream.contracts.credentials import (
-    CredentialAsk,
-    CredentialAskId,
-    CredentialDelivery,
-    CredentialGrant,
-    CredentialGrantId,
-    CredentialGrantMode,
-    CredentialGrantStatus,
-    CredentialHttpMethod,
-    CredentialInjection,
-    CredentialLease,
-    CredentialName,
-    CredentialOwner,
-    CredentialRequest,
-    CredentialSession,
-    CredentialUse,
-)
 
 from chorus.ids import mint_id
+from chorus.ledger._models import (
+    CredentialAsk,
+    CredentialAskStatus,
+    CredentialDelivery,
+    CredentialGrant,
+    CredentialGrantMode,
+    CredentialGrantStatus,
+    CredentialGrantView,
+    CredentialLease,
+    CredentialRegistration,
+    CredentialUse,
+)
 from chorus.ledger.repos._base import (
     LedgerConnection,
     LedgerRow,
@@ -42,249 +39,248 @@ from chorus.ledger.repos._base import (
     to_iso,
 )
 
-# Grant rows join registration for the delivery policy; alias grant.mode so it does not
-# collide with registration.mode in the joined mapping.
+_REGISTRATION_COLUMNS = (
+    "credential, source_name, owner, audience, purpose, mode, delivery, environment_key, "
+    "allowed_host, injection_header, injection_scheme, allowed_methods, allowed_paths, requested_at"
+)
+
+# A grant is always read through its registration; alias the columns both tables share so the
+# joined mapping stays unambiguous.
 _GRANT_JOIN = (
     "SELECT g.id, g.status, g.mode AS grant_mode, g.purpose AS grant_purpose, "
     "g.audience AS grant_audience, g.granted_at, g.expires_at, "
     "r.credential, r.source_name, r.owner, r.audience, r.purpose, r.mode, r.delivery, "
     "r.environment_key, r.allowed_host, r.injection_header, r.injection_scheme, "
     "r.allowed_methods, r.allowed_paths, r.requested_at "
-    "FROM credential_grant g "
-    "JOIN credential_registration r USING (company_id, credential)"
+    "FROM credential_grant g JOIN credential_registration r USING (company_id, credential)"
 )
 
 
 class CredentialRepo:
-    """Postgres persistence for credential registrations, asks, grants, leases, and usage."""
+    """Durable registrations, asks, grants, opaque leases, and the used-at trail."""
 
     def __init__(self, conn: LedgerConnection) -> None:
         self._conn = conn
 
-    def register(self, request: CredentialRequest, source_name: CredentialName) -> None:
-        """Upsert the org registration for ``request.credential`` (policy only — no secret)."""
+    def register(self, registration: CredentialRegistration) -> None:
+        """Upsert the org policy for ``registration.credential`` (policy only — no secret)."""
         self._conn.execute(
-            "INSERT INTO credential_registration ("
-            "credential, source_name, owner, audience, purpose, mode, delivery, "
-            "environment_key, allowed_host, injection_header, injection_scheme, "
-            "allowed_methods, allowed_paths, requested_at"
-            ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+            f"INSERT INTO credential_registration ({_REGISTRATION_COLUMNS}) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
             "ON CONFLICT (company_id, credential) DO UPDATE SET "
-            "source_name = EXCLUDED.source_name, "
-            "owner = EXCLUDED.owner, "
-            "audience = EXCLUDED.audience, "
-            "purpose = EXCLUDED.purpose, "
-            "mode = EXCLUDED.mode, "
-            "delivery = EXCLUDED.delivery, "
-            "environment_key = EXCLUDED.environment_key, "
-            "allowed_host = EXCLUDED.allowed_host, "
-            "injection_header = EXCLUDED.injection_header, "
+            "source_name = EXCLUDED.source_name, owner = EXCLUDED.owner, "
+            "audience = EXCLUDED.audience, purpose = EXCLUDED.purpose, mode = EXCLUDED.mode, "
+            "delivery = EXCLUDED.delivery, environment_key = EXCLUDED.environment_key, "
+            "allowed_host = EXCLUDED.allowed_host, injection_header = EXCLUDED.injection_header, "
             "injection_scheme = EXCLUDED.injection_scheme, "
-            "allowed_methods = EXCLUDED.allowed_methods, "
-            "allowed_paths = EXCLUDED.allowed_paths, "
+            "allowed_methods = EXCLUDED.allowed_methods, allowed_paths = EXCLUDED.allowed_paths, "
             "requested_at = EXCLUDED.requested_at",
             (
-                request.credential.value,
-                source_name.value,
-                request.owner.value,
-                request.audience.value,
-                request.purpose,
-                request.mode.value,
-                request.delivery.value,
-                request.environment_key,
-                request.allowed_host,
-                request.injection.header,
-                request.injection.scheme,
-                dumps([method.value for method in request.allowed_methods]),
-                dumps(list(request.allowed_path_prefixes)),
-                to_iso(request.requested_at),
+                registration.credential,
+                registration.source_name,
+                registration.owner,
+                registration.audience,
+                registration.purpose,
+                registration.mode.value,
+                registration.delivery.value,
+                registration.environment_key,
+                registration.allowed_host,
+                registration.injection_header,
+                registration.injection_scheme,
+                dumps(list(registration.allowed_methods)),
+                dumps(list(registration.allowed_path_prefixes)),
+                to_iso(registration.requested_at),
             ),
         )
         self._conn.commit()
 
-    def registration(self, credential: CredentialName) -> tuple[CredentialRequest, CredentialName]:
+    def registration(self, credential: str) -> CredentialRegistration | None:
         row = self._conn.execute(
-            "SELECT * FROM credential_registration WHERE credential = ?",
-            (credential.value,),
+            f"SELECT {_REGISTRATION_COLUMNS} FROM credential_registration WHERE credential = ?",
+            (credential,),
         ).fetchone()
-        if row is None:
-            raise LookupError(f"credential {credential.value!r} is not registered")
-        return _row_to_request(row), CredentialName(str(row["source_name"]))
+        return _to_registration(row) if row is not None else None
 
-    def standing_grant(self, request: CredentialRequest, now: datetime) -> CredentialGrant | None:
-        """Active standing grant for this credential+audience, if one has not expired."""
+    def standing_grant(
+        self, credential: str, audience: str, now: datetime
+    ) -> CredentialGrantView | None:
+        """The live standing grant for this credential+audience, if one exists and has not expired."""
         row = self._conn.execute(
             f"{_GRANT_JOIN} "
             "WHERE g.credential = ? AND g.audience = ? AND g.mode = ? AND g.status = ? "
             "AND (g.expires_at IS NULL OR g.expires_at > ?)",
             (
-                request.credential.value,
-                request.audience.value,
+                credential,
+                audience,
                 CredentialGrantMode.STANDING.value,
                 CredentialGrantStatus.ACTIVE.value,
                 to_iso(now),
             ),
         ).fetchone()
-        return self._row_to_grant(row) if row is not None else None
+        return self._to_grant_view(row) if row is not None else None
 
-    def create_ask(self, request: CredentialRequest, expires_at: datetime) -> CredentialAsk:
+    def create_ask(
+        self,
+        *,
+        credential: str,
+        audience: str,
+        purpose: str,
+        requested_at: datetime,
+        expires_at: datetime,
+    ) -> CredentialAsk:
         ask_id = mint_id()
         self._conn.execute(
-            "INSERT INTO credential_ask ("
-            "id, credential, audience, purpose, requested_at, expires_at, status"
-            ") VALUES (?, ?, ?, ?, ?, ?, 'pending')",
+            "INSERT INTO credential_ask "
+            "(id, credential, audience, purpose, requested_at, expires_at, status) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
             (
                 ask_id,
-                request.credential.value,
-                request.audience.value,
-                request.purpose,
-                to_iso(request.requested_at),
+                credential,
+                audience,
+                purpose,
+                to_iso(requested_at),
                 to_iso(expires_at),
+                CredentialAskStatus.PENDING.value,
             ),
         )
         self._conn.commit()
-        return CredentialAsk(
-            CredentialAskId(ask_id),
-            request,
-            expires_at,
-        )
+        return require_persisted(self.ask(ask_id), ask_id)
 
-    def approve(
-        self,
-        ask: CredentialAskId,
-        owner: CredentialOwner,
-        mode: CredentialGrantMode,
-        now: datetime,
-    ) -> CredentialGrant:
+    def ask(self, ask_id: str) -> CredentialAsk | None:
         row = self._conn.execute(
-            "SELECT a.id AS ask_id, a.expires_at AS ask_expires_at, a.status AS ask_status, "
-            "r.* "
-            "FROM credential_ask a "
-            "JOIN credential_registration r USING (company_id, credential) "
-            "WHERE a.id = ?",
-            (ask.value,),
+            "SELECT id, credential, audience, purpose, requested_at, expires_at, status, grant_id "
+            "FROM credential_ask WHERE id = ?",
+            (ask_id,),
         ).fetchone()
-        if row is None:
-            raise LookupError(f"credential ask {ask.value!r} was not found")
-        if str(row["owner"]) != owner.value:
-            raise PermissionError("only the credential owner may approve an ask")
-        expires_at = from_iso(str(row["ask_expires_at"]))
-        if expires_at is None or now >= expires_at:
-            raise PermissionError("credential ask expired")
+        return _to_ask(row) if row is not None else None
 
-        request = replace(_row_to_request(row), mode=mode)
+    def approve(self, ask: CredentialAsk, mode: CredentialGrantMode, now: datetime) -> CredentialGrantView:
+        """Open an active grant for a pending ask and mark the ask approved.
+
+        Claiming the ask first makes approval exact-once: a second approval of the same ask finds
+        no pending row and raises before anything is written, so it can never mint a second grant.
+        """
+        claimed = self._conn.execute(
+            "UPDATE credential_ask SET status = ? WHERE id = ? AND status = ?",
+            (
+                CredentialAskStatus.APPROVED.value,
+                ask.id,
+                CredentialAskStatus.PENDING.value,
+            ),
+        )
+        if cast(int, claimed.rowcount) != 1:
+            raise PermissionError(f"credential ask {ask.id!r} is no longer pending")
         grant_id = mint_id()
         self._conn.execute(
-            "INSERT INTO credential_grant ("
-            "id, credential, audience, status, mode, purpose, granted_at, expires_at"
-            ") VALUES (?, ?, ?, 'active', ?, ?, ?, NULL)",
+            "INSERT INTO credential_grant "
+            "(id, credential, audience, status, mode, purpose, granted_at, expires_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, NULL)",
             (
                 grant_id,
-                request.credential.value,
-                request.audience.value,
+                ask.credential,
+                ask.audience,
+                CredentialGrantStatus.ACTIVE.value,
                 mode.value,
-                request.purpose,
+                ask.purpose,
                 to_iso(now),
             ),
         )
         self._conn.execute(
-            "UPDATE credential_ask SET status = 'approved', grant_id = ? WHERE id = ?",
-            (grant_id, ask.value),
+            "UPDATE credential_ask SET grant_id = ? WHERE id = ?",
+            (grant_id, ask.id),
         )
         self._conn.commit()
-        return require_persisted(self.grant(CredentialGrantId(grant_id)), grant_id)
+        return require_persisted(self.grant(grant_id), grant_id)
 
-    def grant(self, grant: CredentialGrantId) -> CredentialGrant:
-        row = self._conn.execute(
-            f"{_GRANT_JOIN} WHERE g.id = ?",
-            (grant.value,),
-        ).fetchone()
-        if row is None:
-            raise LookupError(f"credential grant {grant.value!r} was not found")
-        return self._row_to_grant(row)
+    def grant(self, grant_id: str) -> CredentialGrantView | None:
+        row = self._conn.execute(f"{_GRANT_JOIN} WHERE g.id = ?", (grant_id,)).fetchone()
+        return self._to_grant_view(row) if row is not None else None
 
-    def materialize(
-        self,
-        grant: CredentialGrantId,
-        session: CredentialSession,
-        now: datetime,
-    ) -> CredentialLease:
-        current = self.grant(grant)
-        handle = f"lease:{uuid4().hex}"
+    def materialize(self, grant_id: str, session: str, now: datetime) -> CredentialLease:
+        """Issue an opaque lease for one session and record the use; ``once`` grants burn here.
+
+        The used-at trail keeps one row per grant+session (its primary key), so a session that
+        materializes twice refreshes its timestamp rather than failing.
+        """
+        handle = f"lease:{secrets.token_urlsafe(32)}"
         self._conn.execute(
             "INSERT INTO credential_lease (handle, grant_id, session, issued_at) "
             "VALUES (?, ?, ?, ?)",
-            (handle, grant.value, session.value, to_iso(now)),
+            (handle, grant_id, session, to_iso(now)),
         )
         self._conn.execute(
-            "INSERT INTO credential_use (grant_id, session, used_at) VALUES (?, ?, ?)",
-            (grant.value, session.value, to_iso(now)),
+            "INSERT INTO credential_use (grant_id, session, used_at) VALUES (?, ?, ?) "
+            "ON CONFLICT (company_id, grant_id, session) DO UPDATE SET used_at = EXCLUDED.used_at",
+            (grant_id, session, to_iso(now)),
         )
-        if current.request.mode is CredentialGrantMode.ONCE:
-            self._conn.execute(
-                "UPDATE credential_grant SET status = 'used' WHERE id = ?",
-                (grant.value,),
-            )
+        self._conn.execute(
+            "UPDATE credential_grant SET status = ? WHERE id = ? AND mode = ?",
+            (
+                CredentialGrantStatus.USED.value,
+                grant_id,
+                CredentialGrantMode.ONCE.value,
+            ),
+        )
         self._conn.commit()
+        return require_persisted(self.lease(handle), handle)
+
+    def lease(self, handle: str) -> CredentialLease | None:
+        row = self._conn.execute(
+            "SELECT handle, grant_id, session, issued_at FROM credential_lease WHERE handle = ?",
+            (handle,),
+        ).fetchone()
+        if row is None:
+            return None
         return CredentialLease(
-            grant,
-            session,
-            current.request.delivery,
-            handle,
-            current.request.environment_key,
+            handle=str(row["handle"]),
+            grant_id=str(row["grant_id"]),
+            session=str(row["session"]),
+            issued_at=require_persisted(from_iso(str(row["issued_at"])), handle),
         )
 
-    def lease_grant(self, lease: CredentialLease) -> CredentialGrant:
-        row = self._conn.execute(
-            "SELECT grant_id FROM credential_lease WHERE handle = ? AND session = ?",
-            (lease.opaque_handle, lease.session.value),
-        ).fetchone()
-        if row is None or str(row["grant_id"]) != lease.grant.value:
-            raise PermissionError("credential lease is invalid")
-        current = self.grant(lease.grant)
-        if current.status is not CredentialGrantStatus.ACTIVE:
-            raise PermissionError(f"credential grant was {current.status.value}")
-        return current
-
-    def revoke(self, grant: CredentialGrantId) -> bool:
+    def revoke(self, grant_id: str) -> bool:
         cursor = self._conn.execute(
-            "UPDATE credential_grant SET status = 'revoked' "
-            "WHERE id = ? AND status <> 'revoked'",
-            (grant.value,),
+            "UPDATE credential_grant SET status = ? WHERE id = ? AND status = ?",
+            (
+                CredentialGrantStatus.REVOKED.value,
+                grant_id,
+                CredentialGrantStatus.ACTIVE.value,
+            ),
         )
         self._conn.commit()
         return cast(int, cursor.rowcount) == 1
 
-    def _row_to_grant(self, row: LedgerRow) -> CredentialGrant:
-        uses = self._conn.execute(
-            "SELECT session, used_at FROM credential_use "
-            "WHERE grant_id = ? ORDER BY used_at",
-            (str(row["id"]),),
+    def uses(self, grant_id: str) -> tuple[CredentialUse, ...]:
+        rows = self._conn.execute(
+            "SELECT session, used_at FROM credential_use WHERE grant_id = ? ORDER BY used_at",
+            (grant_id,),
         ).fetchall()
-        request = replace(
-            _row_to_request(row),
+        return tuple(
+            CredentialUse(
+                session=str(row["session"]),
+                used_at=require_persisted(from_iso(str(row["used_at"])), grant_id),
+            )
+            for row in rows
+        )
+
+    def _to_grant_view(self, row: LedgerRow) -> CredentialGrantView:
+        grant_id = str(row["id"])
+        grant = CredentialGrant(
+            id=grant_id,
+            credential=str(row["credential"]),
+            audience=str(row["grant_audience"]),
             mode=CredentialGrantMode(str(row["grant_mode"])),
-            purpose=str(row.get("grant_purpose", row["purpose"])),
-            audience=CredentialOwner(str(row.get("grant_audience", row["audience"]))),
-        )
-        return CredentialGrant(
-            id=CredentialGrantId(str(row["id"])),
-            request=request,
+            purpose=str(row["grant_purpose"]),
+            granted_at=require_persisted(from_iso(str(row["granted_at"])), grant_id),
             status=CredentialGrantStatus(str(row["status"])),
-            granted_at=from_iso(str(row["granted_at"])) or datetime.now(UTC),
             expires_at=from_iso(str(row["expires_at"])) if row["expires_at"] else None,
-            uses=tuple(
-                CredentialUse(
-                    CredentialSession(str(use["session"])),
-                    from_iso(str(use["used_at"])) or datetime.now(UTC),
-                )
-                for use in uses
-            ),
+            uses=self.uses(grant_id),
         )
+        return CredentialGrantView(grant=grant, registration=_to_registration(row))
 
 
 def _json_list(value: object) -> list[object]:
-    """Decode a jsonb list column whether the driver returned text or a parsed list."""
+    """Decode a jsonb list column whether the driver returned text or an already-parsed list."""
     if value is None:
         return []
     if isinstance(value, list):
@@ -292,25 +288,37 @@ def _json_list(value: object) -> list[object]:
     return loads_list(str(value))
 
 
-def _row_to_request(row: LedgerRow) -> CredentialRequest:
-    methods = _json_list(row["allowed_methods"])
-    paths = _json_list(row["allowed_paths"])
-    return CredentialRequest(
-        credential=CredentialName(str(row["credential"])),
-        owner=CredentialOwner(str(row["owner"])),
-        audience=CredentialOwner(str(row["audience"])),
+def _to_registration(row: LedgerRow) -> CredentialRegistration:
+    credential = str(row["credential"])
+    return CredentialRegistration(
+        credential=credential,
+        source_name=str(row["source_name"]),
+        owner=str(row["owner"]),
+        audience=str(row["audience"]),
         purpose=str(row["purpose"]),
         mode=CredentialGrantMode(str(row["mode"])),
         delivery=CredentialDelivery(str(row["delivery"])),
+        requested_at=require_persisted(from_iso(str(row["requested_at"])), credential),
         environment_key=str(row["environment_key"]) if row["environment_key"] else None,
         allowed_host=str(row["allowed_host"]) if row["allowed_host"] else None,
-        injection=CredentialInjection(
-            str(row["injection_header"]),
-            str(row["injection_scheme"]),
-        ),
-        allowed_methods=tuple(CredentialHttpMethod(str(value)) for value in methods),
-        allowed_path_prefixes=tuple(str(value) for value in paths),
-        requested_at=from_iso(str(row["requested_at"])) or datetime.now(UTC),
+        injection_header=str(row["injection_header"]),
+        injection_scheme=str(row["injection_scheme"]),
+        allowed_methods=tuple(str(value) for value in _json_list(row["allowed_methods"])),
+        allowed_path_prefixes=tuple(str(value) for value in _json_list(row["allowed_paths"])),
+    )
+
+
+def _to_ask(row: LedgerRow) -> CredentialAsk:
+    ask_id = str(row["id"])
+    return CredentialAsk(
+        id=ask_id,
+        credential=str(row["credential"]),
+        audience=str(row["audience"]),
+        purpose=str(row["purpose"]),
+        requested_at=require_persisted(from_iso(str(row["requested_at"])), ask_id),
+        expires_at=require_persisted(from_iso(str(row["expires_at"])), ask_id),
+        status=CredentialAskStatus(str(row["status"])),
+        grant_id=str(row["grant_id"]) if row["grant_id"] else None,
     )
 
 

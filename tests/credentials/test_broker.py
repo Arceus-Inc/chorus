@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from dream.contracts.credentials import (
@@ -22,6 +22,7 @@ from dream.contracts.credentials import (
 )
 
 from chorus.credentials import (
+    ASK_TTL,
     AwsSecretsManagerSource,
     EnvironmentSecretSource,
     LayeredSecretSource,
@@ -195,3 +196,158 @@ async def test_environment_delivery_injects_only_into_the_sandbox_target(ledger)
     await broker.inject_environment(lease, Target())
 
     assert values == {"GITHUB_TOKEN": "never-in-model"}
+
+
+@pytest.mark.asyncio
+async def test_lease_handle_alone_does_not_authorise_another_session(ledger) -> None:
+    """A lease binds one grant to one session — a forged pairing is refused before the secret."""
+
+    class Client:
+        async def request(self, method, url, headers, body) -> CredentialProxyResponse:
+            raise AssertionError("the proxy must not reach the wire for an invalid lease")
+
+    broker = PostgresCredentialBroker(
+        ledger.credentials,
+        EnvironmentSecretSource({"GITHUB_TOKEN": "never-in-model"}),
+        http_client=Client(),
+    )
+    req = request(mode=CredentialGrantMode.STANDING)
+    broker.register(request=req, source_name=CredentialName("GITHUB_TOKEN"))
+    ask = (await broker.request_access(req)).ask
+    assert ask is not None
+    grant = await broker.approve(ask.id, req.owner, CredentialGrantMode.STANDING)
+    lease = await broker.materialize(grant.id, CredentialSession("session-5"))
+
+    for forged in (
+        replace(lease, session=CredentialSession("session-6")),
+        replace(lease, opaque_handle="lease:guessed"),
+    ):
+        with pytest.raises(PermissionError, match="lease is invalid"):
+            await broker.proxy(
+                forged,
+                CredentialProxyRequest(
+                    CredentialHttpMethod.GET, "https://api.github.com/repos/acme/app/pulls"
+                ),
+            )
+
+
+@pytest.mark.asyncio
+async def test_revoking_a_grant_kills_leases_already_issued(ledger) -> None:
+    """Revocation is checked at use, not just at materialization — an issued lease goes dead."""
+
+    class Client:
+        async def request(self, method, url, headers, body) -> CredentialProxyResponse:
+            raise AssertionError("a revoked grant must never reach the wire")
+
+    broker = PostgresCredentialBroker(
+        ledger.credentials,
+        EnvironmentSecretSource({"GITHUB_TOKEN": "never-in-model"}),
+        http_client=Client(),
+    )
+    req = request(mode=CredentialGrantMode.STANDING)
+    broker.register(request=req, source_name=CredentialName("GITHUB_TOKEN"))
+    ask = (await broker.request_access(req)).ask
+    assert ask is not None
+    grant = await broker.approve(ask.id, req.owner, CredentialGrantMode.STANDING)
+    lease = await broker.materialize(grant.id, CredentialSession("session-7"))
+
+    assert await broker.revoke(grant.id, req.owner)
+
+    with pytest.raises(PermissionError, match="revoked"):
+        await broker.proxy(
+            lease,
+            CredentialProxyRequest(
+                CredentialHttpMethod.GET, "https://api.github.com/repos/acme/app/pulls"
+            ),
+        )
+
+
+@pytest.mark.asyncio
+async def test_only_the_owner_approves_or_revokes(ledger) -> None:
+    broker = PostgresCredentialBroker(
+        ledger.credentials, EnvironmentSecretSource({"GITHUB_TOKEN": "never-in-model"})
+    )
+    req = request()
+    broker.register(request=req, source_name=CredentialName("GITHUB_TOKEN"))
+    ask = (await broker.request_access(req)).ask
+    assert ask is not None
+
+    with pytest.raises(PermissionError, match="owner"):
+        await broker.approve(ask.id, CredentialOwner("employee:mallory"), CredentialGrantMode.ONCE)
+
+    grant = await broker.approve(ask.id, req.owner, CredentialGrantMode.ONCE)
+    with pytest.raises(PermissionError, match="owner"):
+        await broker.revoke(grant.id, CredentialOwner("employee:mallory"))
+
+
+@pytest.mark.asyncio
+async def test_an_expired_ask_can_no_longer_be_approved(ledger) -> None:
+    now = datetime.now(UTC)
+    broker = PostgresCredentialBroker(
+        ledger.credentials,
+        EnvironmentSecretSource({"GITHUB_TOKEN": "never-in-model"}),
+        now=lambda: now,
+    )
+    req = request()
+    broker.register(request=req, source_name=CredentialName("GITHUB_TOKEN"))
+    ask = (await broker.request_access(req)).ask
+    assert ask is not None
+
+    late = PostgresCredentialBroker(
+        ledger.credentials,
+        EnvironmentSecretSource({"GITHUB_TOKEN": "never-in-model"}),
+        now=lambda: now + ASK_TTL + timedelta(seconds=1),
+    )
+    with pytest.raises(PermissionError, match="expired"):
+        await late.approve(ask.id, req.owner, CredentialGrantMode.ONCE)
+
+
+@pytest.mark.asyncio
+async def test_a_standing_grant_short_circuits_the_next_ask(ledger) -> None:
+    broker = PostgresCredentialBroker(
+        ledger.credentials, EnvironmentSecretSource({"GITHUB_TOKEN": "never-in-model"})
+    )
+    req = request(mode=CredentialGrantMode.STANDING)
+    broker.register(request=req, source_name=CredentialName("GITHUB_TOKEN"))
+    first = (await broker.request_access(req)).ask
+    assert first is not None
+    await broker.approve(first.id, req.owner, CredentialGrantMode.STANDING)
+
+    again = await broker.request_access(req)
+
+    assert again.status is CredentialRequestStatus.GRANTED
+    assert again.grant is not None
+    assert again.ask is None
+
+
+@pytest.mark.asyncio
+async def test_tightening_the_registration_binds_a_live_grant(ledger) -> None:
+    """Re-registering narrower policy applies to grants already approved — no forward copy."""
+
+    class Client:
+        async def request(self, method, url, headers, body) -> CredentialProxyResponse:
+            return CredentialProxyResponse(status=200, body="ok")
+
+    broker = PostgresCredentialBroker(
+        ledger.credentials,
+        EnvironmentSecretSource({"GITHUB_TOKEN": "never-in-model"}),
+        http_client=Client(),
+    )
+    req = request(mode=CredentialGrantMode.STANDING)
+    broker.register(request=req, source_name=CredentialName("GITHUB_TOKEN"))
+    ask = (await broker.request_access(req)).ask
+    assert ask is not None
+    grant = await broker.approve(ask.id, req.owner, CredentialGrantMode.STANDING)
+    lease = await broker.materialize(grant.id, CredentialSession("session-8"))
+    call = CredentialProxyRequest(
+        CredentialHttpMethod.GET, "https://api.github.com/repos/acme/app/pulls"
+    )
+    assert (await broker.proxy(lease, call)).status == 200
+
+    broker.register(
+        request=replace(req, allowed_path_prefixes=("/repos/acme/other",)),
+        source_name=CredentialName("GITHUB_TOKEN"),
+    )
+
+    with pytest.raises(PermissionError, match="path"):
+        await broker.proxy(lease, call)
