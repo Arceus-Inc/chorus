@@ -45,6 +45,7 @@ def backend_engineer_manifest() -> RoleManifest:
             "write_file",
             "edit_file",
             "run_command",
+            "execute_code",
             "git",
             "test_evidence",
             "test_red",

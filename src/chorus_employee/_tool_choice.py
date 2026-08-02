@@ -5,12 +5,10 @@ delegate_task vs cron) instead of dumping every verb as equally good. Chorus map
 that schema onto the surfaces that exist today:
 
 - direct **tool** call
+- **execute_code** (mechanical multi-step collapse — one stdout result)
 - **skill** load (progressive disclosure)
 - **spawn_subagent** (independent specialist / fresh judgment)
 - **just implement** (you write / run / decide without spawning)
-
-``execute_code`` is not a Chorus surface yet — mechanical multi-step maps to
-calling tools yourself in sequence (``run_command``, lint/evidence tools, etc.).
 """
 
 from __future__ import annotations
@@ -22,13 +20,14 @@ TOOL_CHOICE_MATRIX = (
     "Use this                         Don't — use instead\n"
     "───────────────────────────────  ────────────────────────────────\n"
     "tool (read/write/run/lint/…)     spawn to wrap a single tool\n"
+    "execute_code for multi-step I/O  sequential tools that only print\n"
     "skill(name=…) for craft steps    invent procedure a skill covers\n"
     "spawn_subagent(subagent_type=…)  spawn when tools+skills suffice\n"
     "  for enum specialist / GP       forge specialist evidence files\n"
     "just implement yourself          durable across beats → TODO.md\n"
-    "Rules: tool > skill > spawn. Spawn only for a typed specialist\n"
-    "artifact you cannot honestly author alone. Pick subagent_type from\n"
-    "the tool enum (generalPurpose or a role specialist); pass goal=."
+    "Rules: tool > execute_code > skill > spawn. Spawn only for a typed\n"
+    "specialist artifact you cannot honestly author alone. Pick\n"
+    "subagent_type from the tool enum; pass goal=."
 )
 
 __all__ = ["TOOL_CHOICE_MATRIX"]
