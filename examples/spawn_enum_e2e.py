@@ -1,7 +1,7 @@
 """Live E2E for spawn_subagent enum + forge veto (lean W1 / W1b).
 
 Cases (pointers):
-  1. SCHEMA — tools_wire enum = generalPurpose ∪ Bex Specs
+  1. SCHEMA — tools_wire enum = generalPurpose + Bex Specs
   2. GP_LLM — model must spawn generalPurpose; child returns summary
   3. FORGE_LLM — model told to write test_plan.json without spawn → PRE_TOOL block
   4. FLOW_LLM — live task: GP scout → test_author (evidence) under continue hook
@@ -23,20 +23,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from chorus_cli._env import load_env_file
-from chorus_employee.backend_engineer._subagents import (
-    API_VERIFIER_SUBAGENT,
-    CODE_REVIEWER_SUBAGENT,
-    TEST_AUTHOR_SUBAGENT,
-)
-from chorus_harness._dream_hooks import (
-    DangerousToolVetoHook,
-    EvidenceContinueHook,
-    EvidenceForgeVetoHook,
-    EvidenceRequirement,
-    ProtectedEvidencePath,
-)
-from chorus_harness._factory import _project_spec, dream_tool_names
 from dream import build_harness
 from dream.roles._manifest import RoleManifest
 from dream.session import SessionOptions
@@ -45,6 +31,25 @@ from dream.subagents._projection import build_subagent_set
 from dream.tools._registry import ToolSource
 from dream.tools.builtin import default_registry
 from dream.tools.builtin.spawn_subagent import GENERAL_PURPOSE, SpawnSubagentTool
+
+from chorus_cli._env import load_env_file
+from chorus_employee.backend_engineer._subagents import (
+    API_VERIFIER_SUBAGENT,
+    CODE_REVIEWER_SUBAGENT,
+    TEST_AUTHOR_SUBAGENT,
+)
+from chorus_harness._dream_hooks import (
+    BeatContextKind,
+    BeatContextSection,
+    DangerousToolVetoHook,
+    EvidenceContinueHook,
+    EvidenceForgeVetoHook,
+    EvidenceRequirement,
+    ProtectedEvidencePath,
+    VolatileBeatPacket,
+    VolatileBeatPacketHook,
+)
+from chorus_harness._factory import _project_spec, dream_tool_names
 
 _REPORT = Path(__file__).resolve().parents[1] / "reports" / "spawn-enum-e2e-report.html"
 _SPECS = (TEST_AUTHOR_SUBAGENT, CODE_REVIEWER_SUBAGENT, API_VERIFIER_SUBAGENT)
@@ -89,7 +94,12 @@ def _subagent_set() -> SubagentSet:
     return build_subagent_set(tier1_agents=agents, parent_tools=parent)
 
 
-def _build(workdir: Path, *, continue_hook: bool) -> Any:
+def _build(
+    workdir: Path,
+    *,
+    continue_hook: bool,
+    volatile_token: str | None = None,
+) -> Any:
     registry = default_registry()
     if registry.get("spawn_subagent") is None:
         registry.register(SpawnSubagentTool(), source=ToolSource.DEFAULT)
@@ -122,6 +132,19 @@ def _build(workdir: Path, *, continue_hook: bool) -> Any:
             harness.register_hook(
                 EvidenceContinueHook(evidence, working_dir=workdir)
             )
+    if volatile_token is not None:
+        harness.register_hook(
+            VolatileBeatPacketHook(
+                VolatileBeatPacket(
+                    sections=(
+                        BeatContextSection(
+                            kind=BeatContextKind.INBOX,
+                            content=f"## Live checkpoint context\n{volatile_token}",
+                        ),
+                    )
+                )
+            )
+        )
     return harness
 
 
@@ -168,7 +191,7 @@ def case_schema() -> CaseResult:
     return CaseResult(
         id="SCHEMA",
         title="Dynamic subagent_type enum",
-        pointer="tools_wire enum = generalPurpose ∪ Bex Specs (schema-first action space)",
+        pointer="tools_wire enum = generalPurpose + Bex Specs (schema-first action space)",
         ok=ok,
         detail=f"enum={enum} names_helper={names}",
     )
@@ -200,7 +223,7 @@ async def case_gp_llm() -> CaseResult:
         )
         final = result.final_text or ""
         err = ""
-    except Exception as exc:  # noqa: BLE001 — surface LLM/session failures in report
+    except Exception as exc:
         final, err = "", f"{type(exc).__name__}: {exc}"
     types = _spawn_types(cap.events)
     spawn_errors = [
@@ -251,7 +274,7 @@ async def case_forge_llm() -> CaseResult:
         )
         final = result.final_text or ""
         err = ""
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         final, err = "", f"{type(exc).__name__}: {exc}"
     blocked = False
     write_results = 0
@@ -282,6 +305,138 @@ async def case_forge_llm() -> CaseResult:
     )
 
 
+async def case_batch_llm() -> CaseResult:
+    """Wave B: one tool call fans two typed tasks out concurrently."""
+    workdir = Path(tempfile.mkdtemp(prefix="spawn-enum-batch-"))
+    (workdir / "NOTES.md").write_text(
+        "# Release\nShip Tuesday. Risk: missing auth ownership check.\n",
+        encoding="utf-8",
+    )
+    harness = _build(workdir, continue_hook=False)
+    cap = _Capture()
+    prompt = (
+        "Call spawn_subagent exactly once with tasks=["
+        "{subagent_type:'generalPurpose', goal:'Read NOTES.md and report the ship date', "
+        "context:'path=NOTES.md'}, "
+        "{subagent_type:'code_reviewer', goal:'Review NOTES.md only and return your typed verdict', "
+        "context:'path=NOTES.md'}]. Do not call spawn_subagent separately. "
+        "After the batch result arrives, reply BATCH_OK and summarize both results."
+    )
+    try:
+        result = await harness.run_role(
+            _manifest(),
+            prompt,
+            options=SessionOptions(max_turns=12, metadata={}),
+            observer=cap,  # type: ignore[arg-type]
+        )
+        final = result.final_text or ""
+        err = ""
+    except Exception as exc:
+        final, err = "", f"{type(exc).__name__}: {exc}"
+    starts = _spawn_starts(cap.events)
+    tasks = starts[0].get("input", {}).get("tasks", []) if starts else []
+    spawn_errors = [
+        event
+        for event in cap.events
+        if event.get("kind") == "role.tool.result"
+        and event.get("tool") == "spawn_subagent"
+        and event.get("is_error")
+    ]
+    ok = len(starts) == 1 and len(tasks) == 2 and not spawn_errors and "BATCH_OK" in final and not err
+    await harness.aclose()
+    return CaseResult(
+        id="BATCH_LLM",
+        title="Live LLM sync tasks[] fan-out",
+        pointer="Wave B: one bounded concurrent batch, typed result in input order",
+        ok=ok,
+        detail=f"spawn_calls={len(starts)} tasks={len(tasks)} final={final[:220]!r} err={err!r}",
+        events=cap.events,
+    )
+
+
+async def case_background_llm() -> CaseResult:
+    """Wave C: parent writes a marker while a slow child remains detached."""
+    workdir = Path(tempfile.mkdtemp(prefix="spawn-enum-background-"))
+    harness = _build(workdir, continue_hook=False)
+    cap = _Capture()
+    prompt = (
+        "Follow this exact sequence. First call spawn_subagent with "
+        "subagent_type='generalPurpose', background=true, and goal='Use run_command to run "
+        "sleep 3, then return the exact token CHILD_BG_42'. When that tool returns dispatched, "
+        "immediately call write_file(path='parent-kept-working.txt', content='PARENT_WORKED') "
+        "without waiting or polling. Continue useful work until the child completion arrives as a "
+        "new user message. Then reply BACKGROUND_OK and include CHILD_BG_42."
+    )
+    try:
+        result = await harness.run_role(
+            _manifest(),
+            prompt,
+            options=SessionOptions(max_turns=14, metadata={}),
+            observer=cap,  # type: ignore[arg-type]
+        )
+        final = result.final_text or ""
+        err = ""
+    except Exception as exc:
+        final, err = "", f"{type(exc).__name__}: {exc}"
+    starts = [
+        event
+        for event in cap.events
+        if event.get("kind") == "role.tool.start"
+        and event.get("tool") in {"spawn_subagent", "write_file"}
+    ]
+    tools = [str(event.get("tool")) for event in starts]
+    ordered = "spawn_subagent" in tools and "write_file" in tools and tools.index(
+        "spawn_subagent"
+    ) < tools.index("write_file")
+    marker = workdir / "parent-kept-working.txt"
+    ok = (
+        ordered
+        and marker.is_file()
+        and marker.read_text(encoding="utf-8") == "PARENT_WORKED"
+        and "BACKGROUND_OK" in final
+        and "CHILD_BG_42" in final
+        and not err
+    )
+    await harness.aclose()
+    return CaseResult(
+        id="BACKGROUND_LLM",
+        title="Live LLM background keep-working",
+        pointer="Wave C: handle now, parent tool next, completion as later user turn",
+        ok=ok,
+        detail=f"parent_tools={tools} marker={marker.exists()} final={final[:240]!r} err={err!r}",
+        events=cap.events,
+    )
+
+
+async def case_volatile_llm() -> CaseResult:
+    """Wave D: a changing packet reaches the model through user-context injection."""
+    checkpoint_marker = "VOLATILE_PACKET_73"
+    workdir = Path(tempfile.mkdtemp(prefix="spawn-enum-volatile-"))
+    harness = _build(workdir, continue_hook=False, volatile_token=checkpoint_marker)
+    cap = _Capture()
+    try:
+        result = await harness.run_role(
+            _manifest(),
+            "Read the live checkpoint context attached to this user turn. Reply VOLATILE_OK and its exact token. Do not call tools.",
+            options=SessionOptions(max_turns=4, metadata={}),
+            observer=cap,  # type: ignore[arg-type]
+        )
+        final = result.final_text or ""
+        err = ""
+    except Exception as exc:
+        final, err = "", f"{type(exc).__name__}: {exc}"
+    ok = "VOLATILE_OK" in final and checkpoint_marker in final and not err
+    await harness.aclose()
+    return CaseResult(
+        id="VOLATILE_LLM",
+        title="Live LLM volatile user packet",
+        pointer="Wave D: roster/inbox/lattice/failures ride USER_PROMPT_SUBMIT",
+        ok=ok,
+        detail=f"final={final[:220]!r} err={err!r}",
+        events=cap.events,
+    )
+
+
 async def case_flow_llm() -> CaseResult:
     """Pointer: full mini flow — GP scout then test_author under evidence continue."""
     workdir = Path(tempfile.mkdtemp(prefix="spawn-enum-flow-"))
@@ -306,7 +461,7 @@ async def case_flow_llm() -> CaseResult:
         )
         final = result.final_text or ""
         err = ""
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         final, err = "", f"{type(exc).__name__}: {exc}"
     types = _spawn_types(cap.events)
     plan_ok = (workdir / "test_plan.json").exists()
@@ -361,7 +516,7 @@ def _live_flow_mermaid(flow: CaseResult | None) -> str:
     lines.append("  classDef ok fill:#d8eddf,stroke:#1d6b3c")
     # architecture legend
     lines.append(
-        f"  LEG[enum: {GENERAL_PURPOSE} ∪ Specs] -.-> G"
+        f"  LEG[enum: {GENERAL_PURPOSE} + Specs] -.-> G"
     )
     return "\n".join(lines)
 
@@ -436,7 +591,7 @@ def _write_html(cases: list[CaseResult], elapsed: float) -> None:
   .meta {{ color: #655c52; font-size: 0.9rem; }}
   .pointers {{ background: #faf7f2; border-left: 4px solid #2f5d50; padding: 0.75rem 1rem; }}
 </style></head><body>
-<h1>Spawn enum × Hermes child — live E2E</h1>
+<h1>Spawn enum x Hermes child — live E2E</h1>
 <p class="meta">elapsed {elapsed:.1f}s · {sum(1 for c in cases if c.ok)}/{len(cases)} passed · branch feat/hooks-parallel-subagents</p>
 <div class="pointers">
 <strong>Harness pointers under test</strong>
@@ -444,6 +599,9 @@ def _write_html(cases: list[CaseResult], elapsed: float) -> None:
 <li><code>SCHEMA</code> — schema-first action space: dynamic <code>subagent_type</code> enum</li>
 <li><code>GP_LLM</code> — catch-all isolation via Hermes delegate (goal+context)</li>
 <li><code>FORGE_LLM</code> — PRE_TOOL forge veto + recovery hint to spawn</li>
+<li><code>BATCH_LLM</code> — bounded synchronous <code>tasks[]</code> fan-out</li>
+<li><code>BACKGROUND_LLM</code> — detached child + parent keeps working + idle delivery</li>
+<li><code>VOLATILE_LLM</code> — changing beat packet injected on the user turn</li>
 <li><code>FLOW_LLM</code> — live task: GP → test_author with evidence continue</li>
 </ol>
 </div>
@@ -479,7 +637,14 @@ async def _main_async() -> int:
     cases: list[CaseResult] = [case_schema()]
     _log(f"[{cases[-1].id}] {'PASS' if cases[-1].ok else 'FAIL'} {cases[-1].detail}")
 
-    for runner in (case_gp_llm, case_forge_llm, case_flow_llm):
+    for runner in (
+        case_gp_llm,
+        case_forge_llm,
+        case_batch_llm,
+        case_background_llm,
+        case_volatile_llm,
+        case_flow_llm,
+    ):
         c = await runner()
         cases.append(c)
         _log(f"[{c.id}] {'PASS' if c.ok else 'FAIL'} {c.detail}")

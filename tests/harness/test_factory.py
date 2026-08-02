@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from dream.contracts.hook import HookEvent
 
 from chorus.heartbeat import BeatRunner
 from chorus.ledger import (
@@ -33,16 +34,28 @@ from chorus.roles import RoleRegistry, default_roles
 from chorus.testing import open_test_ledger, uid
 from chorus.workforce import Employee
 from chorus_harness import _factory as _factory_mod
+from chorus_harness._dream_hooks import VolatileBeatPacketHook
 
 pytestmark = pytest.mark.integration
+
+
+class _HarnessStub:
+    def __init__(self) -> None:
+        self.hooks: list[object] = []
+
+    def register_hook(self, hook: object) -> None:
+        self.hooks.append(hook)
 
 
 def _factory(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, ledger: Ledger | None
 ) -> tuple[Any, dict[str, Any]]:
     captured: dict[str, Any] = {}
+    harness = _HarnessStub()
     monkeypatch.setattr(
-        _factory_mod.dream, "build_harness", lambda **kw: captured.update(kw) or object()
+        _factory_mod.dream,
+        "build_harness",
+        lambda **kw: captured.update(kw) or captured.update(harness=harness) or harness,
     )
     factory = _factory_mod.EmployeeHarnessFactory(
         api_key="k",
@@ -408,7 +421,7 @@ def test_integrate_beat_over_a_complete_subtree_drops_all_mutating_tools(
         ledger.close()
 
 
-def test_delegation_brief_is_rehydrated_with_its_team(
+async def test_delegation_context_is_rehydrated_with_its_team(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, ledger: Ledger
 ) -> None:
     # A delegating role needs to name valid assignees: the factory appends the live workforce roster to
@@ -430,30 +443,27 @@ def test_delegation_brief_is_rehydrated_with_its_team(
                 membership_role=TeamMembershipRole.MEMBER,
             )
         )
-        captured: dict[str, Any] = {}
-        monkeypatch.setattr(
-            _factory_mod.dream, "build_harness", lambda **kw: captured.update(kw) or object()
-        )
-        factory = _factory_mod.EmployeeHarnessFactory(
-            api_key="k",
-            base_url="https://x/openai/v1",
-            deployment="gpt-x",
-            company_id="acme",
-            roles=RoleRegistry.from_plugins(default_roles()),
-            work_root=tmp_path,
-            ledger=ledger,
-        )
+        factory, captured = _factory(monkeypatch, tmp_path, ledger)
         mat = factory.materialize(lead, task_id=uid("goal"))
-        generator = (mat.working_dir / ".harness" / "roles" / "generator.toml").read_text("utf-8")
-        assert "ada (backend_engineer)" in generator
-        assert "bob (backend_engineer)" in generator
-        assert "eve (engineer)" not in generator
-        assert "moe" not in generator.split("Your reports")[1]  # the manager isn't its own report
+        generator = (mat.working_dir / ".harness" / "roles" / "generator.toml").read_text(
+            "utf-8"
+        )
+        assert "ada (backend_engineer)" not in generator
+        hook = next(
+            item
+            for item in captured["harness"].hooks
+            if isinstance(item, VolatileBeatPacketHook)
+        )
+        packet = (await hook(HookEvent.USER_PROMPT_SUBMIT, {"prompt": "work"})).inject_context or ""
+        assert "ada (backend_engineer)" in packet
+        assert "bob (backend_engineer)" in packet
+        assert "eve (engineer)" not in packet
+        assert "moe" not in packet.split("Your reports")[1]
     finally:
         ledger.close()
 
 
-def test_corrective_child_inherits_failed_sibling_evidence(
+async def test_corrective_child_inherits_failed_sibling_evidence(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """Live T3 (2026-07-18): corrective children re-failed on findings they never saw. The
@@ -497,7 +507,7 @@ def test_corrective_child_inherits_failed_sibling_evidence(
                 },
             )
         )
-        factory, _ = _factory(monkeypatch, tmp_path, ledger)
+        factory, captured = _factory(monkeypatch, tmp_path, ledger)
         # The first materialize creates the worktree; drop the evaluator record where dream
         # persists it (docs/evals/<run>/sprint-N.json), then materialize the corrective beat.
         first = factory.materialize(ic, task_id=corrective.id)
@@ -519,11 +529,18 @@ def test_corrective_child_inherits_failed_sibling_evidence(
         mat = factory.materialize(ic, task_id=corrective.id)
 
         generator = (mat.working_dir / ".harness" / "roles" / "generator.toml").read_text("utf-8")
-        assert "Inherited failure evidence" in generator
-        assert failed.id in generator
-        assert "contradicts the required 0-9,A-Z,a-z" in generator
-        assert "code_reviewer evidence does not carry the required claim" in generator
-        assert "AUTHORIZED to re-author" in generator
+        assert "Inherited failure evidence" not in generator
+        hook = [
+            item
+            for item in captured["harness"].hooks
+            if isinstance(item, VolatileBeatPacketHook)
+        ][-1]
+        packet = (await hook(HookEvent.USER_PROMPT_SUBMIT, {"prompt": "fix"})).inject_context or ""
+        assert "Inherited failure evidence" in packet
+        assert failed.id in packet
+        assert "contradicts the required 0-9,A-Z,a-z" in packet
+        assert "code_reviewer evidence does not carry the required claim" in packet
+        assert "AUTHORIZED to re-author" in packet
     finally:
         ledger.close()
 

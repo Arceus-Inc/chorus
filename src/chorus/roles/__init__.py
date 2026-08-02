@@ -10,8 +10,8 @@ from __future__ import annotations
 from chorus.roles._beat_config import RoleBeatConfig, role_beat_config
 from chorus.roles._defaults import default_roles
 from chorus.roles._manifest import (
-    DREAM_DEFAULT_MAX_SPRINTS,
     DEFAULT_BEAT_TIMEOUT_S,
+    DREAM_DEFAULT_MAX_SPRINTS,
     Isolation,
     McpServerSpec,
     MemoryScope,
@@ -23,7 +23,7 @@ from chorus.roles._overlay import ManifestOverlay, resolve_manifest
 from chorus.roles._plugin import DoDGenerator, Role, RolePlugin
 from chorus.roles._registry import RoleRegistry
 from chorus.roles._routine_declaration import RoutineDeclaration
-from chorus.roles._subagent import SubagentSpec
+from chorus.roles._subagent import SubagentExecutionMode, SubagentSpec
 from chorus.roles._surfaces import RoleSurfaceOverride, apply_role_surface_overrides
 
 __all__ = [
@@ -43,6 +43,7 @@ __all__ = [
     "RoleSurfaceOverride",
     "RoutineDeclaration",
     "SandboxTier",
+    "SubagentExecutionMode",
     "SubagentSpec",
     "apply_role_surface_overrides",
     "default_roles",

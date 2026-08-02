@@ -5,12 +5,17 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from dream.contracts.hook import HookEvent
 
 from chorus.roles._subagent import SubagentSpec
 from chorus_harness._dream_hooks import (
+    BeatContextKind,
+    BeatContextSection,
     DangerousToolVetoHook,
     EvidenceContinueHook,
     EvidenceForgeVetoHook,
+    VolatileBeatPacket,
+    VolatileBeatPacketHook,
     register_employee_hooks,
 )
 
@@ -64,3 +69,37 @@ def test_register_evidence_continue_when_opted_in(tmp_path: Path) -> None:
         stop_evidence_requirements=True,
     )
     assert any(isinstance(h, EvidenceContinueHook) for h in harness.hooks)
+
+
+async def test_volatile_packet_injects_each_session_and_consumes_once(
+    tmp_path: Path,
+) -> None:
+    consumed = 0
+
+    def consume() -> None:
+        nonlocal consumed
+        consumed += 1
+
+    packet = VolatileBeatPacket(
+        sections=(
+            BeatContextSection(
+                kind=BeatContextKind.INBOX,
+                content="## Inbox\nparser must handle CRLF",
+            ),
+        ),
+        on_injected=consume,
+    )
+    harness = _HarnessStub()
+    register_employee_hooks(
+        harness,
+        working_dir=tmp_path,
+        volatile_packet=packet,
+    )
+    hook = next(h for h in harness.hooks if isinstance(h, VolatileBeatPacketHook))
+
+    first = await hook(HookEvent.USER_PROMPT_SUBMIT, {"prompt": "one"})
+    second = await hook(HookEvent.USER_PROMPT_SUBMIT, {"prompt": "two"})
+
+    assert "parser must handle CRLF" in (first.inject_context or "")
+    assert first.inject_context == second.inject_context
+    assert consumed == 1

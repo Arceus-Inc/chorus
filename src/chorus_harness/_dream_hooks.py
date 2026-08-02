@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path, PurePosixPath
@@ -19,6 +20,8 @@ from dream.contracts.hook import HookEvent, HookResult, HookSpec
 from chorus.roles._subagent import SubagentSpec
 
 __all__ = [
+    "BeatContextKind",
+    "BeatContextSection",
     "DangerousToolVetoHook",
     "EvidenceContinueHook",
     "EvidenceForgeVetoHook",
@@ -27,6 +30,8 @@ __all__ = [
     "ProtectedEvidencePath",
     "StopHookPhase",
     "StopHookRole",
+    "VolatileBeatPacket",
+    "VolatileBeatPacketHook",
     "register_employee_hooks",
 ]
 
@@ -49,6 +54,50 @@ class StopHookPhase(StrEnum):
 
 class EvidenceOwner(StrEnum):
     ANY_SPECIALIST = "__any_specialist__"
+
+
+class BeatContextKind(StrEnum):
+    ROSTER = "roster"
+    INBOX = "inbox"
+    LATTICE = "lattice"
+    FAILURE_EVIDENCE = "failure_evidence"
+
+
+@dataclass(frozen=True)
+class BeatContextSection:
+    kind: BeatContextKind
+    content: str
+
+
+@dataclass(frozen=True)
+class VolatileBeatPacket:
+    """Changing beat facts injected as user context, outside the stable prompt."""
+
+    sections: tuple[BeatContextSection, ...]
+    on_injected: Callable[[], None] | None = None
+
+    def render(self) -> str:
+        return "\n\n".join(
+            section.content.strip() for section in self.sections if section.content.strip()
+        )
+
+
+class VolatileBeatPacketHook:
+    spec = HookSpec(events=(HookEvent.USER_PROMPT_SUBMIT,), priority=80)
+
+    def __init__(self, packet: VolatileBeatPacket) -> None:
+        self._packet = packet
+        self._consumed = False
+
+    async def __call__(self, event: HookEvent, payload: dict[str, Any]) -> HookResult:
+        content = self._packet.render()
+        if not content:
+            return HookResult()
+        if not self._consumed:
+            self._consumed = True
+            if self._packet.on_injected is not None:
+                self._packet.on_injected()
+        return HookResult(inject_context=content)
 
 
 @dataclass(frozen=True)
@@ -173,6 +222,7 @@ def register_employee_hooks(
     working_dir: Path,
     subagents: tuple[SubagentSpec, ...] = (),
     stop_evidence_requirements: bool = False,
+    volatile_packet: VolatileBeatPacket | None = None,
 ) -> None:
     """Attach Chorus policy hooks to a dream Harness after ``build_harness``.
 
@@ -183,6 +233,8 @@ def register_employee_hooks(
     if not callable(register):
         return  # stub harnesses in unit tests have no hook rail
     register(DangerousToolVetoHook())
+    if volatile_packet is not None and volatile_packet.sections:
+        register(VolatileBeatPacketHook(volatile_packet))
     protected = tuple(
         ProtectedEvidencePath(spec.evidence_path, spec.name)
         for spec in subagents
@@ -227,7 +279,4 @@ def _artifact_satisfies(path: Path, claim: dict[str, object]) -> bool:
         return False
     if not isinstance(data, dict):
         return False
-    for key, expected in claim.items():
-        if data.get(key) != expected:
-            return False
-    return True
+    return all(data.get(key) == expected for key, expected in claim.items())

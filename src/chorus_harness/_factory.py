@@ -23,7 +23,7 @@ from typing import TYPE_CHECKING, Literal
 import dream
 from dream.roles import default_role_manifest
 from dream.skills import load_skill_registry
-from dream.subagents import Subagent, SubagentSet
+from dream.subagents import Subagent, SubagentExecutionMode, SubagentSet
 from dream.subagents._projection import build_subagent_set
 from dream.tools._base import BaseTool
 from dream.tools._registry import ToolRegistry, ToolSource
@@ -52,6 +52,11 @@ from chorus_employee._lattice import (
 from chorus_employee._recall import PLANNER_TOOLLESS_NOTE
 from chorus_employee._shared_skills import SHARED_SKILLS_ROOT
 from chorus_harness._company_state import write_company_state
+from chorus_harness._dream_hooks import (
+    BeatContextKind,
+    BeatContextSection,
+    VolatileBeatPacket,
+)
 from chorus_harness._env_capabilities import degrade_for_env
 from chorus_harness._skills import materialize_skills, materialize_versioned_skills_into
 from chorus_harness._trust import apply_trust
@@ -282,6 +287,7 @@ def _project_spec(spec: SubagentSpec, parent_tools: frozenset[str]) -> Subagent:
         tools=tools,
         model=spec.model,
         max_turns=spec.max_turns,
+        execution_mode=SubagentExecutionMode(spec.execution_mode.value),
         output_schema=spec.output_schema,
         spawnable=tuple(_project_spec(child, own_tools) for child in spec.spawnable),
     )
@@ -877,6 +883,8 @@ class EmployeeHarnessFactory:
         # Env-capability degradation (H2): a tool this environment cannot back (web research with no
         # Tavily key) is dropped and disclosed in the brief — the beat still runs, on what's possible.
         config = degrade_for_env(config)
+        volatile_sections: list[BeatContextSection] = []
+        inbox_ids: tuple[str, ...] = ()
 
         # Persisted contract status selects the phase-specific management tools in the execution
         # profile. Child presence is retained only for worktree synchronization and the completed
@@ -905,7 +913,9 @@ class EmployeeHarnessFactory:
                 exclude=employee.id,
                 team_id=task.team_id if task is not None else None,
             )
-            config = replace(config, system_prompt=config.system_prompt + roster)
+            volatile_sections.append(
+                BeatContextSection(kind=BeatContextKind.ROSTER, content=roster)
+            )
 
         # Operating environment: a role that RUNS commands (a build engineer) gets a factual runtime
         # block appended to its brief — the OS, the shell run_command lands on, and which build runtimes
@@ -936,15 +946,18 @@ class EmployeeHarnessFactory:
                     f"{m.body}"
                     for m in inbox
                 )
-                config = replace(
-                    config,
-                    system_prompt=config.system_prompt
-                    + "\n\n## Inbox — unread comments for you\n"
-                    + lines
-                    + "\nRead the full thread with read_comments(task_id); reply with comment.",
+                volatile_sections.append(
+                    BeatContextSection(
+                        kind=BeatContextKind.INBOX,
+                        content=(
+                            "## Inbox — unread comments for you\n"
+                            + lines
+                            + "\nRead the full thread with read_comments(task_id); "
+                            "reply with comment."
+                        ),
+                    )
                 )
-                for m in inbox:  # ponytail: consumed at injection; a crashed beat re-reads via read_comments
-                    self._ledger.messages.mark_read(m.id)
+                inbox_ids = tuple(message.id for message in inbox)
         if _LATTICE_TOOLS.intersection(config.tools):
             config = replace(config, system_prompt=config.system_prompt + LATTICE_DIRECTIVES_BLOCK)
 
@@ -981,22 +994,23 @@ class EmployeeHarnessFactory:
                 write_lattice_error(root, site="materialize.adjudicate", error=exc)
             lattice_push = read_lattice_consolidation_push(root)
             if lattice_push:
-                config = replace(
-                    config,
-                    system_prompt=(
-                        config.system_prompt
-                        + "\n\n"
-                        + LATTICE_BEAT_START_HEADER
-                        + lattice_push
-                        + "\n"
-                    ),
+                volatile_sections.append(
+                    BeatContextSection(
+                        kind=BeatContextKind.LATTICE,
+                        content=LATTICE_BEAT_START_HEADER + lattice_push,
+                    )
                 )
         # Corrective replacement: a child whose same-assignee siblings already failed inherits
         # their exact findings.
         if self._ledger is not None and task is not None:
             inheritance = _failure_inheritance(self._ledger, task, root)
             if inheritance:
-                config = replace(config, system_prompt=config.system_prompt + inheritance)
+                volatile_sections.append(
+                    BeatContextSection(
+                        kind=BeatContextKind.FAILURE_EVIDENCE,
+                        content=inheritance,
+                    )
+                )
         write_role_overlays(root, config)  # the employee's identity overlays the whole harness
         write_sandbox_config(
             root, config.sandbox
@@ -1006,9 +1020,7 @@ class EmployeeHarnessFactory:
         if config.mcp and config.mcp_servers:
             write_mcp_allowlist(root, config.mcp_servers)
 
-        registry = self._build_tool_registry(
-            config, root=root, lattice=lattice
-        )
+        registry = self._build_tool_registry(config, root=root, lattice=lattice)
 
         # Subagents: project the role's Tier-1 declarations into dream's SubagentSet. The
         # spawn_subagent tool (already in the registry if "spawn_subagent" is in the role's tools)
@@ -1070,11 +1082,21 @@ class EmployeeHarnessFactory:
         # S1 #2 / #11: powered dream hooks — dangerous-tool veto + evidence continue.
         from chorus_harness._dream_hooks import register_employee_hooks
 
+        def consume_inbox() -> None:
+            if self._ledger is None:
+                return
+            for message_id in inbox_ids:
+                self._ledger.messages.mark_read(message_id)
+
         register_employee_hooks(
             harness,
             working_dir=root,
             subagents=config.subagents,
             stop_evidence_requirements=self._stop_evidence_requirements,
+            volatile_packet=VolatileBeatPacket(
+                sections=tuple(volatile_sections),
+                on_injected=consume_inbox if inbox_ids else None,
+            ),
         )
         evidence_specs = (
             {

@@ -13,8 +13,16 @@ never widen, what its parent can do.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import StrEnum
 from pathlib import Path
 from typing import Any
+
+
+class SubagentExecutionMode(StrEnum):
+    """Whether a specialist co-writes or receives an isolated delegation inlet."""
+
+    DELEGATE = "delegate"
+    INLINE = "inline"
 
 
 @dataclass(frozen=True)
@@ -36,6 +44,7 @@ class SubagentSpec:
     tools: tuple[str, ...] = ()
     model: str | None = None
     max_turns: int = 6
+    execution_mode: SubagentExecutionMode = SubagentExecutionMode.DELEGATE
     output_schema: dict[str, Any] | None = None
     evidence_path: str | None = None
     evidence_claim: dict[str, Any] | None = None
@@ -75,4 +84,4 @@ class SubagentSpec:
             )
 
 
-__all__ = ["SubagentSpec"]
+__all__ = ["SubagentExecutionMode", "SubagentSpec"]

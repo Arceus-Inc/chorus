@@ -14,7 +14,7 @@ import pytest
 from dream.skills import load_skill_registry
 from pydantic import ValidationError
 
-from chorus.roles import DREAM_DEFAULT_MAX_SPRINTS, role_beat_config
+from chorus.roles import DREAM_DEFAULT_MAX_SPRINTS, SubagentExecutionMode, role_beat_config
 from chorus_employee.backend_engineer import (
     API_VERIFIER_SUBAGENT,
     CODE_REVIEWER_SUBAGENT,
@@ -143,6 +143,13 @@ class TestCodeReviewerEvidenceDeclaration:
     def test_review_verdict_is_a_required_independent_artifact(self) -> None:
         assert CODE_REVIEWER_SUBAGENT.evidence_path == "review_verdict.json"
         assert CODE_REVIEWER_SUBAGENT.evidence_claim == {"cleared": True}
+
+
+class TestSubagentExecutionPolicy:
+    def test_test_author_is_the_only_inline_backend_specialist(self) -> None:
+        assert TEST_AUTHOR_SUBAGENT.execution_mode is SubagentExecutionMode.INLINE
+        assert CODE_REVIEWER_SUBAGENT.execution_mode is SubagentExecutionMode.DELEGATE
+        assert API_VERIFIER_SUBAGENT.execution_mode is SubagentExecutionMode.DELEGATE
 
 
 # --- the beat time budget (the heaviest beat: build a running service, boot it, restart it, verify) ---

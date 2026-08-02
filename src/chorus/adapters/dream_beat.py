@@ -24,7 +24,7 @@ from enum import StrEnum
 from hashlib import sha256
 from inspect import isawaitable
 from pathlib import Path
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 
 from chorus.adapters._failure import failure_outcome
 from chorus.adapters._observer import DreamObserverBridge
@@ -39,6 +39,9 @@ from chorus.heartbeat._todo_flush import (
 )
 from chorus.outcomes import VerificationStep
 from chorus.roles._manifest import DEFAULT_BEAT_TIMEOUT_S
+
+if TYPE_CHECKING:
+    from dream.runner import PlanAdmission
 
 
 def _utc_now() -> datetime:
@@ -199,6 +202,7 @@ class TaskHarness(Protocol):
         max_sprints: int | None = None,
         harness_dir: Path | None = None,
         rubric: str | None = None,
+        plan_admission: PlanAdmission | None = None,
     ) -> RunResult: ...
 
 
