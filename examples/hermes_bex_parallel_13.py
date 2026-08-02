@@ -211,7 +211,8 @@ CASES = (
             "tests/tools/test_delegate_summary_budget.py::test_batch_overflow_trimmed_and_spilled_losslessly"
         ),
         _d(
-            "tests/test_subagents/test_delegate.py::test_delegate_spills_full_summary_when_budgeted"
+            "tests/test_subagents/test_delegate.py::"
+            "test_over_budget_summary_spills_to_scratch_not_the_worktree"
         ),
     ),
 )
