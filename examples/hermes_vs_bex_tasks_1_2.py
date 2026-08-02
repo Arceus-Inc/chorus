@@ -54,8 +54,6 @@ def _hermes_env() -> tuple[dict[str, str], str, str]:
     # azure-foundry path (smoke-proven)
     env["AZURE_FOUNDRY_API_KEY"] = key
     env["AZURE_FOUNDRY_BASE_URL"] = base
-    env["OPENAI_API_KEY"] = key
-    env["OPENAI_BASE_URL"] = base
     return env, dep, base
 
 

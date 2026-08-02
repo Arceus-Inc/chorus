@@ -247,8 +247,6 @@ def _load_azure_env() -> tuple[dict[str, str], str, str]:
     env.update(
         AZURE_FOUNDRY_API_KEY=api_key,
         AZURE_FOUNDRY_BASE_URL=base_url,
-        OPENAI_API_KEY=api_key,
-        OPENAI_BASE_URL=base_url,
     )
     env.pop("VIRTUAL_ENV", None)
     return env, deployment, base_url

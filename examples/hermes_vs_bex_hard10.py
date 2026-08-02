@@ -60,8 +60,6 @@ def _hermes_env() -> tuple[dict[str, str], str, str]:
     env["HERMES_HOME"] = str(HERMES_HOME)
     env["AZURE_FOUNDRY_API_KEY"] = key
     env["AZURE_FOUNDRY_BASE_URL"] = base
-    env["OPENAI_API_KEY"] = key
-    env["OPENAI_BASE_URL"] = base
     return env, dep, base
 
 
