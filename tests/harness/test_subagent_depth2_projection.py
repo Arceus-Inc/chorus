@@ -10,7 +10,7 @@ from __future__ import annotations
 import pytest
 
 from chorus.roles import RoleBeatConfig
-from chorus.roles._subagent import SubagentExecutionMode, SubagentSpec
+from chorus.roles._subagent import SubagentSpec
 from chorus_harness._factory import _subagent_set
 
 pytestmark = pytest.mark.integration
@@ -28,21 +28,18 @@ class TestSpawnableProjection:
     def test_spec_spawnable_defaults_empty(self) -> None:
         spec = SubagentSpec(name="x", description="d", tools=("read_file",))
         assert spec.spawnable == ()
-        assert spec.execution_mode is SubagentExecutionMode.DELEGATE
 
-    def test_execution_mode_projects_without_role_name_knowledge(self) -> None:
+    def test_projection_is_role_agnostic(self) -> None:
         spec = SubagentSpec(
             name="arbitrary_writer",
             description="writes shared intent",
             tools=("read_file",),
-            execution_mode=SubagentExecutionMode.INLINE,
         )
         subagent_set = _subagent_set(_config_with(spec))
 
         assert subagent_set is not None
         projected = subagent_set.get(spec.name)
         assert projected is not None
-        assert projected.execution_mode.value == "inline"
 
     def test_nested_spawnable_projected_onto_dream(self) -> None:
         researcher = SubagentSpec(

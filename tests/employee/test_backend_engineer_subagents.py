@@ -14,7 +14,7 @@ import pytest
 from dream.skills import load_skill_registry
 from pydantic import ValidationError
 
-from chorus.roles import DREAM_DEFAULT_MAX_SPRINTS, SubagentExecutionMode, role_beat_config
+from chorus.roles import DREAM_DEFAULT_MAX_SPRINTS, role_beat_config
 from chorus_employee.backend_engineer import (
     API_VERIFIER_SUBAGENT,
     CODE_REVIEWER_SUBAGENT,
@@ -146,10 +146,10 @@ class TestCodeReviewerEvidenceDeclaration:
 
 
 class TestSubagentExecutionPolicy:
-    def test_test_author_is_the_only_inline_backend_specialist(self) -> None:
-        assert TEST_AUTHOR_SUBAGENT.execution_mode is SubagentExecutionMode.INLINE
-        assert CODE_REVIEWER_SUBAGENT.execution_mode is SubagentExecutionMode.DELEGATE
-        assert API_VERIFIER_SUBAGENT.execution_mode is SubagentExecutionMode.DELEGATE
+    def test_backend_specialists_all_use_delegation(self) -> None:
+        assert not hasattr(TEST_AUTHOR_SUBAGENT, "execution_mode")
+        assert not hasattr(CODE_REVIEWER_SUBAGENT, "execution_mode")
+        assert not hasattr(API_VERIFIER_SUBAGENT, "execution_mode")
 
 
 # --- the beat time budget (the heaviest beat: build a running service, boot it, restart it, verify) ---

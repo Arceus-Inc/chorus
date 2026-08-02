@@ -23,7 +23,7 @@ from typing import TYPE_CHECKING, Literal
 import dream
 from dream.roles import default_role_manifest
 from dream.skills import load_skill_registry
-from dream.subagents import Subagent, SubagentExecutionMode, SubagentSet
+from dream.subagents import Subagent, SubagentSet
 from dream.subagents._projection import build_subagent_set
 from dream.tools._base import BaseTool
 from dream.tools._registry import ToolRegistry, ToolSource
@@ -287,7 +287,6 @@ def _project_spec(spec: SubagentSpec, parent_tools: frozenset[str]) -> Subagent:
         tools=tools,
         model=spec.model,
         max_turns=spec.max_turns,
-        execution_mode=SubagentExecutionMode(spec.execution_mode.value),
         output_schema=spec.output_schema,
         spawnable=tuple(_project_spec(child, own_tools) for child in spec.spawnable),
     )

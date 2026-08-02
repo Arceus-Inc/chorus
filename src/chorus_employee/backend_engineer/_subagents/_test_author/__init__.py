@@ -15,7 +15,7 @@ and returns the same typed verdict (dream validates the final message against
 
 from __future__ import annotations
 
-from chorus.roles._subagent import SubagentExecutionMode, SubagentSpec
+from chorus.roles._subagent import SubagentSpec
 from chorus_employee.backend_engineer._subagents._test_author._schema import (
     TestPlanVerdict,
     plan_verdict_output_schema,
@@ -80,7 +80,6 @@ TEST_AUTHOR_SUBAGENT = SubagentSpec(
     tools=("read_file", "write_file", "run_command", "test_red", "skill"),
     # read + write the honeycomb tests + run them (+ maybe fix a flaky test) + write the plan.
     max_turns=10,
-    execution_mode=SubagentExecutionMode.INLINE,
     # Runtime-enforced return contract: the typed TestPlanVerdict (authored + files + covers + evidence).
     output_schema=plan_verdict_output_schema(),
     # This evidence producer is expected to mutate the worktree by authoring the independent tests.
