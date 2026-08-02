@@ -35,7 +35,18 @@ from dream.contracts.credentials import (
 
 from chorus.credentials import _records
 from chorus.credentials._source import SecretSource
-from chorus.ledger import _models as ledger_rows
+from chorus.ledger import (
+    CredentialGrantMode as GrantMode,
+)
+from chorus.ledger import (
+    CredentialGrantStatus as GrantStatus,
+)
+from chorus.ledger import (
+    CredentialGrantView as GrantRow,
+)
+from chorus.ledger import (
+    CredentialRegistration as RegistrationRow,
+)
 from chorus.ledger.repos.credentials import CredentialRepo
 
 ASK_TTL = timedelta(hours=24)
@@ -104,12 +115,12 @@ class PostgresCredentialBroker(CredentialBrokerPort):
             raise PermissionError("only the credential owner may approve an ask")
         if self._now() >= pending.expires_at:
             raise PermissionError("credential ask expired")
-        granted = self._repo.approve(
-            pending, ledger_rows.CredentialGrantMode(mode.value), self._now()
-        )
+        granted = self._repo.approve(pending, GrantMode(mode.value), self._now())
         return _records.to_grant(granted)
 
-    async def materialize(self, grant: CredentialGrantId, session: CredentialSession) -> CredentialLease:
+    async def materialize(
+        self, grant: CredentialGrantId, session: CredentialSession
+    ) -> CredentialLease:
         view = self._live_grant(grant)
         if await self._source.get(CredentialName(view.registration.source_name)) is None:
             raise LookupError("credential secret is unavailable")
@@ -139,10 +150,16 @@ class PostgresCredentialBroker(CredentialBrokerPort):
             f"{registration.injection_scheme} {secret}" if registration.injection_scheme else secret
         )
         headers = (
-            *(h for h in request.headers if h.name.lower() != registration.injection_header.lower()),
+            *(
+                h
+                for h in request.headers
+                if h.name.lower() != registration.injection_header.lower()
+            ),
             CredentialProxyHeader(registration.injection_header, value),
         )
-        return await self._http_client.request(request.method.value, request.url, headers, request.body)
+        return await self._http_client.request(
+            request.method.value, request.url, headers, request.body
+        )
 
     async def inject_environment(
         self, lease: CredentialLease, target: CredentialEnvironmentTarget
@@ -152,42 +169,48 @@ class PostgresCredentialBroker(CredentialBrokerPort):
         registration = self._lease_registration(lease)
         await target.set_credential(lease.env_key, await self._secret(registration))
 
-    def _registration(self, credential: CredentialName) -> ledger_rows.CredentialRegistration:
+    def _registration(self, credential: CredentialName) -> RegistrationRow:
         registration = self._repo.registration(credential.value)
         if registration is None:
             raise LookupError(f"credential {credential.value!r} is not registered")
         return registration
 
-    def _grant(self, grant: CredentialGrantId) -> ledger_rows.CredentialGrantView:
+    def _grant(self, grant: CredentialGrantId) -> GrantRow:
         view = self._repo.grant(grant.value)
         if view is None:
             raise LookupError(f"credential grant {grant.value!r} was not found")
         return view
 
-    def _live_grant(self, grant: CredentialGrantId) -> ledger_rows.CredentialGrantView:
+    def _live_grant(self, grant: CredentialGrantId) -> GrantRow:
         """A grant that may still be used: active, and not past its expiry."""
         view = self._grant(grant)
-        if view.grant.status is not ledger_rows.CredentialGrantStatus.ACTIVE:
+        if view.grant.status is not GrantStatus.ACTIVE:
             raise PermissionError(f"credential grant was {view.grant.status.value}")
         if view.grant.expires_at is not None and self._now() >= view.grant.expires_at:
             raise PermissionError("credential grant expired")
         return view
 
-    def _lease_registration(self, lease: CredentialLease) -> ledger_rows.CredentialRegistration:
+    def _lease_registration(self, lease: CredentialLease) -> RegistrationRow:
         """Resolve a lease handle back to a live grant — the handle alone authorises nothing."""
         issued = self._repo.lease(lease.opaque_handle)
-        if issued is None or issued.session != lease.session.value or issued.grant_id != lease.grant.value:
+        if (
+            issued is None
+            or issued.session != lease.session.value
+            or issued.grant_id != lease.grant.value
+        ):
             raise PermissionError("credential lease is invalid")
         return self._live_grant(lease.grant).registration
 
-    def _authorize(
-        self, registration: ledger_rows.CredentialRegistration, request: CredentialProxyRequest
-    ) -> None:
+    def _authorize(self, registration: RegistrationRow, request: CredentialProxyRequest) -> None:
         """Pin the outbound call to the registered host, methods, and path prefixes."""
         parsed = urlsplit(request.url)
         host = parsed.hostname.lower() if parsed.hostname else ""
         pinned = registration.allowed_host.lower() if registration.allowed_host else ""
-        if parsed.scheme != "https" or not pinned or not (host == pinned or host.endswith(f".{pinned}")):
+        if (
+            parsed.scheme != "https"
+            or not pinned
+            or not (host == pinned or host.endswith(f".{pinned}"))
+        ):
             raise PermissionError("credential proxy host is not allowed")
         if request.method.value not in registration.allowed_methods:
             raise PermissionError("credential proxy method is not allowed")
@@ -198,7 +221,7 @@ class PostgresCredentialBroker(CredentialBrokerPort):
         ):
             raise PermissionError("credential proxy path is not allowed")
 
-    async def _secret(self, registration: ledger_rows.CredentialRegistration) -> str:
+    async def _secret(self, registration: RegistrationRow) -> str:
         secret = await self._source.get(CredentialName(registration.source_name))
         if secret is None:
             raise LookupError("credential secret is unavailable")

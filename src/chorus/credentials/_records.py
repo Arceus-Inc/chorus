@@ -1,7 +1,7 @@
-"""Translation between the dream credential contract and the ledger's credential ledger_rows.
+"""Translation between the dream credential contract and the ledger's credential rows.
 
 The contract (``dream.contracts.credentials``) is the vocabulary the runtime sees: requests,
-grants, opaque leases. The ledger speaks ledger_rows. Keeping the mapping here is what lets
+grants, opaque leases. The ledger speaks rows. Keeping the mapping here is what lets
 ``CredentialRepo`` stay a plain chorus repo with no dream import, and gives one place to check that
 nothing on the way out carries a secret.
 """
@@ -26,20 +26,35 @@ from dream.contracts.credentials import (
     CredentialUse,
 )
 
-from chorus.ledger import _models as ledger_rows
+from chorus.ledger import (
+    CredentialAsk as AskRow,
+)
+from chorus.ledger import (
+    CredentialDelivery as DeliveryKind,
+)
+from chorus.ledger import (
+    CredentialGrantMode as GrantMode,
+)
+from chorus.ledger import (
+    CredentialGrantView as GrantRow,
+)
+from chorus.ledger import (
+    CredentialLease as LeaseRow,
+)
+from chorus.ledger import (
+    CredentialRegistration as RegistrationRow,
+)
 
 
-def to_registration(
-    request: CredentialRequest, source_name: CredentialName
-) -> ledger_rows.CredentialRegistration:
-    return ledger_rows.CredentialRegistration(
+def to_registration(request: CredentialRequest, source_name: CredentialName) -> RegistrationRow:
+    return RegistrationRow(
         credential=request.credential.value,
         source_name=source_name.value,
         owner=request.owner.value,
         audience=request.audience.value,
         purpose=request.purpose,
-        mode=ledger_rows.CredentialGrantMode(request.mode.value),
-        delivery=ledger_rows.CredentialDelivery(request.delivery.value),
+        mode=GrantMode(request.mode.value),
+        delivery=DeliveryKind(request.delivery.value),
         requested_at=request.requested_at,
         environment_key=request.environment_key,
         allowed_host=request.allowed_host,
@@ -51,11 +66,11 @@ def to_registration(
 
 
 def to_request(
-    registration: ledger_rows.CredentialRegistration,
+    registration: RegistrationRow,
     *,
     audience: str | None = None,
     purpose: str | None = None,
-    mode: ledger_rows.CredentialGrantMode | None = None,
+    mode: GrantMode | None = None,
 ) -> CredentialRequest:
     """The registered policy as a contract request, with the grant's own terms layered on.
 
@@ -71,9 +86,7 @@ def to_request(
         delivery=CredentialDelivery(registration.delivery.value),
         environment_key=registration.environment_key,
         allowed_host=registration.allowed_host,
-        injection=CredentialInjection(
-            registration.injection_header, registration.injection_scheme
-        ),
+        injection=CredentialInjection(registration.injection_header, registration.injection_scheme),
         allowed_methods=tuple(
             CredentialHttpMethod(method) for method in registration.allowed_methods
         ),
@@ -82,7 +95,7 @@ def to_request(
     )
 
 
-def to_ask(ask: ledger_rows.CredentialAsk, registration: ledger_rows.CredentialRegistration) -> CredentialAsk:
+def to_ask(ask: AskRow, registration: RegistrationRow) -> CredentialAsk:
     return CredentialAsk(
         id=CredentialAskId(ask.id),
         request=to_request(registration, audience=ask.audience, purpose=ask.purpose),
@@ -90,7 +103,7 @@ def to_ask(ask: ledger_rows.CredentialAsk, registration: ledger_rows.CredentialR
     )
 
 
-def to_grant(view: ledger_rows.CredentialGrantView) -> CredentialGrant:
+def to_grant(view: GrantRow) -> CredentialGrant:
     grant = view.grant
     return CredentialGrant(
         id=CredentialGrantId(grant.id),
@@ -109,7 +122,7 @@ def to_grant(view: ledger_rows.CredentialGrantView) -> CredentialGrant:
     )
 
 
-def to_lease(lease: ledger_rows.CredentialLease, registration: ledger_rows.CredentialRegistration) -> CredentialLease:
+def to_lease(lease: LeaseRow, registration: RegistrationRow) -> CredentialLease:
     return CredentialLease(
         grant=CredentialGrantId(lease.grant_id),
         session=CredentialSession(lease.session),
