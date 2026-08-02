@@ -23,6 +23,7 @@ import sys
 import time
 import uuid
 from pathlib import Path
+from statistics import median
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "examples"))
@@ -268,6 +269,32 @@ def _collect_summary(out: Path = OUT) -> list[dict]:
     return tickets
 
 
+def _scoreboard(tickets: list[dict]) -> dict[str, object]:
+    """Aggregate persisted ticket comparisons into a small benchmark scoreboard."""
+    hermes_pass = sum(bool(ticket.get("hermes_pytest")) for ticket in tickets)
+    bex_pass = sum(bool(ticket.get("bex_ok")) for ticket in tickets)
+    bex_walls = [
+        float(ticket["gap"]["bex_wall_s"])
+        for ticket in tickets
+        if isinstance(ticket.get("gap", {}).get("bex_wall_s"), (int, float))
+    ]
+    hermes_walls = [
+        float(ticket["gap"]["hermes_wall_s"])
+        for ticket in tickets
+        if isinstance(ticket.get("gap", {}).get("hermes_wall_s"), (int, float))
+    ]
+    return {
+        "tickets_compared": len(tickets),
+        "hermes_pass_at_1": hermes_pass,
+        "bex_pass_at_1": bex_pass,
+        "bex_completion_rate": (bex_pass / len(tickets)) if tickets else 0.0,
+        "bex_spawn_total": sum(int(ticket["gap"].get("bex_spawns") or 0) for ticket in tickets),
+        "bex_median_wall_s": median(bex_walls) if bex_walls else None,
+        "hermes_median_wall_s": median(hermes_walls) if hermes_walls else None,
+        "bex_slower_count": sum(bool(ticket["gap"].get("bex_slower")) for ticket in tickets),
+    }
+
+
 def _clean_hard10_ledger() -> None:
     """Drop stuck runs/wakes for the hard10 company so ticks dispatch."""
     try:
@@ -411,11 +438,13 @@ def main() -> int:
         if gap.get("bex_behind") or not bex.get("ok"):
             rc = 1
 
+    tickets = _collect_summary()
     (OUT / "summary.json").write_text(
         json.dumps(
             {
                 "generated_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
-                "tickets": _collect_summary(),
+                "scoreboard": _scoreboard(tickets),
+                "tickets": tickets,
             },
             indent=2,
         )
