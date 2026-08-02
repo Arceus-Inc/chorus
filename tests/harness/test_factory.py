@@ -9,9 +9,10 @@ from __future__ import annotations
 import json
 import subprocess
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
+from dream.contracts.credentials import CredentialBrokerPort
 from dream.contracts.hook import HookEvent
 
 from chorus.heartbeat import BeatRunner
@@ -190,6 +191,18 @@ def test_backend_engineer_materializes_subagent_evidence_when_opted_in(
         "test_author": ("test_plan.json", {"authored": True}, False),
         "code_reviewer": ("review_verdict.json", {"cleared": True}, True),
     }
+
+
+def test_factory_passes_credential_broker_to_dream(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, ledger: Ledger
+) -> None:
+    broker = cast(CredentialBrokerPort, object())
+    factory, captured = _factory(monkeypatch, tmp_path, ledger)
+    factory._credential_broker = broker
+
+    factory.materialize(Employee(id="ada", name="Ada", role="backend_engineer"))
+
+    assert captured["credential_broker"] is broker
 
 
 def test_role_registry_registers_the_read_file_offload_companion() -> None:

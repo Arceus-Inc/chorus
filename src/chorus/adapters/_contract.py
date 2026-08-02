@@ -12,7 +12,7 @@ from __future__ import annotations
 # The dream contract version chorus is built against. Compatible-release on MAJOR.MINOR: a dream
 # whose contract shares this MAJOR and is at least this version is accepted; a MAJOR bump (a breaking
 # Protocol change) or an older contract is rejected. Bump this in lockstep with a dream contract bump.
-SUPPORTED_DREAM_CONTRACT = "0.1.0"
+SUPPORTED_DREAM_CONTRACT = "0.7.0"
 
 
 class DreamContractError(RuntimeError):
