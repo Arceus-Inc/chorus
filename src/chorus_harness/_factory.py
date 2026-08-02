@@ -1097,19 +1097,15 @@ class EmployeeHarnessFactory:
                 on_injected=consume_inbox if inbox_ids else None,
             ),
         )
-        evidence_specs = (
-            {
-                spec.name: (
-                    spec.evidence_path,
-                    spec.evidence_claim,
-                    spec.evidence_read_only,
-                )
-                for spec in config.subagents
-                if spec.evidence_path is not None and spec.evidence_claim is not None
-            }
-            if self._stop_evidence_requirements
-            else {}
-        )
+        evidence_specs = {
+            spec.name: (
+                spec.evidence_path,
+                spec.evidence_claim,
+                spec.evidence_read_only,
+            )
+            for spec in config.subagents
+            if spec.evidence_path is not None and spec.evidence_claim is not None
+        }
         return EmployeeHarness(
             runner=DreamBeatRunner(
                 harness,

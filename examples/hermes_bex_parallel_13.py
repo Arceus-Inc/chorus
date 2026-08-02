@@ -254,6 +254,10 @@ def _load_azure_env() -> tuple[dict[str, str], str, str]:
     return env, deployment, base_url
 
 
+def _redact(text: str, secret: str) -> str:
+    return text.replace(secret, "[REDACTED]") if secret else text
+
+
 def _run_bex_live() -> LiveResult:
     artifact = ROOT / "reports" / "spawn-enum-e2e-report.html"
     started = time.monotonic()
@@ -328,7 +332,7 @@ def _run_hermes_live() -> LiveResult:
         timeout=600,
     )
     log = OUT / "hermes-live.log"
-    detail = process.stdout + "\n--- STDERR ---\n" + process.stderr
+    detail = _redact(process.stdout + "\n--- STDERR ---\n" + process.stderr, env["AZURE_FOUNDRY_API_KEY"])
     log.write_text(detail, encoding="utf-8")
     marker = workdir / "parent-kept-working.txt"
     marker_ok = (

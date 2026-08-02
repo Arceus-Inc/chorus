@@ -36,7 +36,7 @@ __all__ = [
 ]
 
 _DANGEROUS_BASH = re.compile(
-    r"(?:rm\s+-rf\s+/|mkfs\.|dd\s+if=.*of=/dev/|"
+    r"(?:rm\s+-rf\s+/(?:\s|$|\*|[;&|])|mkfs\.|dd\s+if=.*of=/dev/|"
     r"curl\s+[^\n]*\|\s*(?:ba)?sh|wget\s+[^\n]*\|\s*(?:ba)?sh)",
     re.IGNORECASE,
 )
@@ -141,7 +141,8 @@ class EvidenceForgeVetoHook:
     so test_author / code_reviewer can still write their own artifacts.
     """
 
-    def __init__(self, protected: tuple[ProtectedEvidencePath, ...]) -> None:
+    def __init__(self, protected: tuple[ProtectedEvidencePath, ...], *, working_dir: Path) -> None:
+        self._working_dir = working_dir.resolve()
         self._protected = {
             _norm_rel(entry.relative_path): entry.owner_subagent for entry in protected
         }
@@ -150,10 +151,22 @@ class EvidenceForgeVetoHook:
     async def __call__(self, event: HookEvent, payload: dict[str, Any]) -> HookResult:
         if payload.get("subagent_name"):
             return HookResult()  # specialist child writing its own evidence
-        if payload.get("tool_name") not in _WRITE_TOOLS:
+        tool_name = payload.get("tool_name")
+        if tool_name not in _WRITE_TOOLS and tool_name != "run_command":
             return HookResult()
         tool_input = payload.get("tool_input") or {}
-        rel = _norm_rel(str(tool_input.get("path") or ""))
+        paths = (
+            (str(tool_input.get("path") or ""),)
+            if tool_name in _WRITE_TOOLS
+            else tuple(match.group(1) for match in re.finditer(
+                r"(?:>>?|\|\s*tee\s+)\s*[\"']?([^\"'\s;|&]+)",
+                str(tool_input.get("command") or tool_input.get("cmd") or ""),
+            ))
+        )
+        rel = next(
+            (normalized for path in paths if (normalized := _norm_rel(path, self._working_dir))),
+            "",
+        )
         if not rel:
             return HookResult()
         owner = self._protected.get(rel)
@@ -241,7 +254,7 @@ def register_employee_hooks(
         if spec.evidence_path is not None
     )
     if protected:
-        register(EvidenceForgeVetoHook(protected))
+        register(EvidenceForgeVetoHook(protected, working_dir=working_dir))
     if not stop_evidence_requirements:
         return
     evidence = tuple(
@@ -257,17 +270,21 @@ def register_employee_hooks(
         register(EvidenceContinueHook(evidence, working_dir=working_dir))
 
 
-def _norm_rel(path: str) -> str:
+def _norm_rel(path: str, working_dir: Path | None = None) -> str:
     """Normalize a tool path to a repo-relative posix key (no leading ./)."""
     text = path.strip().replace("\\", "/")
     if not text:
         return ""
-    # Drop absolute / worktree prefixes best-effort — tools usually pass relative paths.
+    if working_dir is not None:
+        root = working_dir.resolve()
+        candidate = (root / text).resolve()
+        try:
+            return candidate.relative_to(root).as_posix()
+        except ValueError:
+            return ""
     pure = PurePosixPath(text)
     parts = [p for p in pure.parts if p not in ("", ".")]
-    while parts and parts[0] == "..":
-        parts = parts[1:]
-    return "/".join(parts)
+    return PurePosixPath(*parts).as_posix() if parts else ""
 
 
 def _artifact_satisfies(path: Path, claim: dict[str, object]) -> bool:

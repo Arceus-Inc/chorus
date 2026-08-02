@@ -6,7 +6,6 @@ import json
 from pathlib import Path
 
 import pytest
-
 from dream.contracts.hook import HookEvent
 
 from chorus_harness._dream_hooks import (
@@ -44,9 +43,9 @@ async def test_dangerous_tool_veto_allows_pytest() -> None:
 
 
 @pytest.mark.asyncio
-async def test_forge_veto_blocks_parent_test_plan_write() -> None:
+async def test_forge_veto_blocks_parent_test_plan_write(tmp_path: Path) -> None:
     hook = EvidenceForgeVetoHook(
-        (ProtectedEvidencePath("test_plan.json", "test_author"),)
+        (ProtectedEvidencePath("test_plan.json", "test_author"),), working_dir=tmp_path
     )
     result = await hook(
         HookEvent.PRE_TOOL_USE,
@@ -62,9 +61,9 @@ async def test_forge_veto_blocks_parent_test_plan_write() -> None:
 
 
 @pytest.mark.asyncio
-async def test_forge_veto_allows_child_specialist() -> None:
+async def test_forge_veto_allows_child_specialist(tmp_path: Path) -> None:
     hook = EvidenceForgeVetoHook(
-        (ProtectedEvidencePath("test_plan.json", "test_author"),)
+        (ProtectedEvidencePath("test_plan.json", "test_author"),), working_dir=tmp_path
     )
     result = await hook(
         HookEvent.PRE_TOOL_USE,
@@ -78,15 +77,43 @@ async def test_forge_veto_allows_child_specialist() -> None:
 
 
 @pytest.mark.asyncio
-async def test_forge_veto_blocks_evidence_dir() -> None:
+async def test_forge_veto_blocks_evidence_dir(tmp_path: Path) -> None:
     hook = EvidenceForgeVetoHook(
-        (ProtectedEvidencePath("test_plan.json", "test_author"),)
+        (ProtectedEvidencePath("test_plan.json", "test_author"),), working_dir=tmp_path
     )
     result = await hook(
         HookEvent.PRE_TOOL_USE,
         {
             "tool_name": "write_file",
             "tool_input": {"path": ".harness/subagent-evidence/test_author.json"},
+        },
+    )
+    assert result.blocked is True
+
+
+@pytest.mark.asyncio
+async def test_forge_veto_normalizes_absolute_and_parent_paths(tmp_path: Path) -> None:
+    hook = EvidenceForgeVetoHook(
+        (ProtectedEvidencePath("test_plan.json", "test_author"),), working_dir=tmp_path
+    )
+    for path in (tmp_path / "test_plan.json", tmp_path / "sub" / ".." / "test_plan.json"):
+        result = await hook(
+            HookEvent.PRE_TOOL_USE,
+            {"tool_name": "write_file", "tool_input": {"path": str(path)}},
+        )
+        assert result.blocked is True
+
+
+@pytest.mark.asyncio
+async def test_forge_veto_blocks_shell_redirect_to_protected_path(tmp_path: Path) -> None:
+    hook = EvidenceForgeVetoHook(
+        (ProtectedEvidencePath("test_plan.json", "test_author"),), working_dir=tmp_path
+    )
+    result = await hook(
+        HookEvent.PRE_TOOL_USE,
+        {
+            "tool_name": "run_command",
+            "tool_input": {"command": f"echo forged > {tmp_path / 'test_plan.json'}"},
         },
     )
     assert result.blocked is True

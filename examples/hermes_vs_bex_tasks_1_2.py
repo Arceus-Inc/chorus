@@ -59,6 +59,10 @@ def _hermes_env() -> tuple[dict[str, str], str, str]:
     return env, dep, base
 
 
+def _redact(text: str, secret: str) -> str:
+    return text.replace(secret, "[REDACTED]") if secret else text
+
+
 def _write_config(dep: str, base: str) -> None:
     HERMES_HOME.mkdir(parents=True, exist_ok=True)
     (HERMES_HOME / "config.yaml").write_text(
@@ -130,7 +134,7 @@ def _run_hermes(wt: Path, prompt: str, dep: str, env: dict[str, str]) -> dict:
         timeout=2400,
     )
     wall = round(time.time() - t0, 1)
-    log.write_text(proc.stdout + "\n---STDERR---\n" + proc.stderr)
+    log.write_text(_redact(proc.stdout + "\n---STDERR---\n" + proc.stderr, env["AZURE_FOUNDRY_API_KEY"]))
     landed = sorted(
         str(p.relative_to(wt))
         for p in wt.rglob("*")

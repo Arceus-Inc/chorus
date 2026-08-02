@@ -225,6 +225,7 @@ async def case_gp_llm() -> CaseResult:
         err = ""
     except Exception as exc:
         final, err = "", f"{type(exc).__name__}: {exc}"
+    await harness.aclose()
     types = _spawn_types(cap.events)
     spawn_errors = [
         e
@@ -276,6 +277,7 @@ async def case_forge_llm() -> CaseResult:
         err = ""
     except Exception as exc:
         final, err = "", f"{type(exc).__name__}: {exc}"
+    await harness.aclose()
     blocked = False
     write_results = 0
     for e in cap.events:
@@ -333,6 +335,7 @@ async def case_batch_llm() -> CaseResult:
         err = ""
     except Exception as exc:
         final, err = "", f"{type(exc).__name__}: {exc}"
+    await harness.aclose()
     starts = _spawn_starts(cap.events)
     tasks = starts[0].get("input", {}).get("tasks", []) if starts else []
     spawn_errors = [
@@ -343,7 +346,6 @@ async def case_batch_llm() -> CaseResult:
         and event.get("is_error")
     ]
     ok = len(starts) == 1 and len(tasks) == 2 and not spawn_errors and "BATCH_OK" in final and not err
-    await harness.aclose()
     return CaseResult(
         id="BATCH_LLM",
         title="Live LLM sync tasks[] fan-out",
@@ -463,6 +465,7 @@ async def case_flow_llm() -> CaseResult:
         err = ""
     except Exception as exc:
         final, err = "", f"{type(exc).__name__}: {exc}"
+    await harness.aclose()
     types = _spawn_types(cap.events)
     plan_ok = (workdir / "test_plan.json").exists()
     ok = GENERAL_PURPOSE in types and "test_author" in types and plan_ok and not err
