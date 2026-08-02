@@ -40,8 +40,7 @@ TICKETS: tuple[HardTicket, ...] = (
         seed_readme="# wal-kv stub\n",
         intent=(
             "Build a dependency-free crash-safe KV service (stdlib only).\n"
-            "Multi-sprint OK; keep TODO.md accurate. Prefer implement yourself; "
-            "spawn api_verifier only to probe a live server.\n\n"
+            "Multi-sprint OK; keep TODO.md accurate.\n\n"
             "Modules:\n"
             "1. wal.py — WriteAheadLog(path): append(record: dict), replay() -> list[dict], "
             "truncate_after(n: int). Records are one JSON object per line.\n"
@@ -449,7 +448,7 @@ TICKETS: tuple[HardTicket, ...] = (
             "HTTP tests must open real loopback requests (not call a dict/direct helper): drive "
             "/admin/fail-next for payment, then /book and /trips/{id} to prove compensation, "
             "and a second booking to prove fail_next was one-shot.\n"
-            "pytest -q. README. Prefer spawn test_author only if it helps plan cases."
+            "pytest -q. README."
         ),
         rubric=_rubric(
             "1. saga compensates in reverse order on failure.\n"

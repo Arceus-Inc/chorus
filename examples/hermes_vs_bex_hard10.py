@@ -124,7 +124,7 @@ def _run_hermes(wt: Path, prompt: str, dep: str, env: dict[str, str]) -> dict:
         "--provider",
         "azure-foundry",
         "-t",
-        "terminal,file",
+        "terminal,file,delegation",
         "--yolo",
         "--ignore-user-config",
     ]
