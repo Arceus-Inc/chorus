@@ -34,6 +34,7 @@ def engineer_manifest() -> RoleManifest:
             "read_file",
             "write_file",
             "run_command",
+            "execute_code",
             "git",
             "todo_write",
             "skill",

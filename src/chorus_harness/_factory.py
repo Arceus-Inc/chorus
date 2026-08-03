@@ -117,6 +117,7 @@ _CHORUS_TO_DREAM_TOOL: dict[str, str] = {
     "write_file": "write_file",
     "edit_file": "edit_file",
     "run_command": "bash",
+    "execute_code": "execute_code",
     "git": "git",
     "skill": "skill",
     "memory_search": "memory_search",

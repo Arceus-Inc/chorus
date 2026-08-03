@@ -78,6 +78,7 @@ def frontend_engineer_manifest() -> RoleManifest:
             "write_file",
             "todo_write",  # durable cross-beat checklist (TODO.md) — resume, don't restart
             "run_command",
+            "execute_code",
             "git",
             # deterministic read-only self-check of the test-evidence bundle before declaring done.
             "evidence_scan",

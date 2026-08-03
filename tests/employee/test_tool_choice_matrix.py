@@ -33,10 +33,11 @@ def test_matrix_is_hermes_use_dont_shape() -> None:
     assert "TOOL CHOICE" in TOOL_CHOICE_MATRIX
     assert "Use this" in TOOL_CHOICE_MATRIX
     assert "Don't" in TOOL_CHOICE_MATRIX
-    for surface in ("tool", "skill", "spawn_subagent", "just implement"):
+    for surface in ("tool", "execute_code", "skill", "spawn_subagent", "just implement"):
         assert surface in TOOL_CHOICE_MATRIX.lower()
     # Stay cache-friendly: action-space teaching, not procedure.
-    assert len(TOOL_CHOICE_MATRIX.split()) <= 100
+    assert len(TOOL_CHOICE_MATRIX.split()) <= 110
+    assert "tool > execute_code > skill > spawn" in TOOL_CHOICE_MATRIX
 
 
 @pytest.mark.parametrize(
@@ -55,4 +56,4 @@ def test_matrix_is_hermes_use_dont_shape() -> None:
 )
 def test_craft_brief_includes_tool_choice_matrix(brief: str) -> None:
     assert TOOL_CHOICE_MATRIX in brief
-    assert "tool > skill > spawn" in brief
+    assert "tool > execute_code > skill > spawn" in brief
