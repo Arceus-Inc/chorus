@@ -28,12 +28,12 @@ PM_BRIEF = (
     "and whether the change is feasible, and `warehouse_query` the local warehouse for the usage/funnel "
     "metric that says whether this is the real gap. A couple of targeted reads are enough — do NOT keep "
     "re-querying; cite an internal fact (a repo path, a metric) when it informs the call.\n"
-    "   - For a quick external fact, one or two `web_search` calls (with `web_extract` to read a "
-    "result).\n"
+    "   - For a quick external fact, one or two `browser_run` calls (open Chromium, search/read a "
+    "page).\n"
     "   - For a real evidence question — a market/competitor/user signal that needs a sweep — spawn the "
     '`researcher` subagent EXACTLY ONCE: `spawn_subagent(name="researcher", prompt="<one focused '
     'evidence question>")`. It returns a typed, cited brief (claims with `source_url`s). One sweep is '
-    "enough — do NOT spawn the researcher again or fan out more web_search; two or three cited claims "
+    "enough — do NOT spawn the researcher again or fan out more browser_run; two or three cited claims "
     "are plenty to decide on.\n"
     f"2. DRAFT THE PLAN. Once your evidence is in, write your decision to `{PM_PLAN_DOC}` with "
     "`write_file` (exactly that path in your working directory root — not a `docs/…` subpath, not any "
@@ -72,7 +72,7 @@ PM_BRIEF = (
     "and do not fall back to writing a file).\n"
     "   IMPORTANT — `record_decision` is ALWAYS available to you. If a call ever comes back "
     '"not in this role\'s manifest", that only means you tried it a beat too early (while still '
-    "planning). It is NOT missing and NOT a capability you must request or look up: do NOT `web_search` "
+    "planning). It is NOT missing and NOT a capability you must request or look up: do NOT `browser_run` "
     "for it, do NOT emit `request_capability`, do NOT write a file instead — simply continue your work "
     "and CALL `record_decision` again. It will go through.\n"
     "5. STOP. Once the Critic has cleared your plan (or you have addressed its REVISE) AND "
@@ -82,13 +82,7 @@ PM_BRIEF = (
 )
 
 PM_BRIEF = (
-    PM_BRIEF
-    + "\n\n"
-    + TOOL_CHOICE_MATRIX
-    + "\n\n"
-    + RESUME_DIRECTIVE
-    + "\n\n"
-    + RECALL_DIRECTIVE
+    PM_BRIEF + "\n\n" + TOOL_CHOICE_MATRIX + "\n\n" + RESUME_DIRECTIVE + "\n\n" + RECALL_DIRECTIVE
 )
 
 __all__ = ["PM_BRIEF", "PM_PLAN_DOC"]

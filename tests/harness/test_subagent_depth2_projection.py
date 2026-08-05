@@ -19,7 +19,7 @@ pytestmark = pytest.mark.integration
 def _config_with(spec: SubagentSpec) -> RoleBeatConfig:
     return RoleBeatConfig(
         system_prompt="s",
-        tools=("read_file", "web_search", "web_extract", "spawn_subagent"),
+        tools=("read_file", "browser_run", "spawn_subagent"),
         subagents=(spec,),
     )
 
@@ -43,13 +43,13 @@ class TestSpawnableProjection:
 
     def test_nested_spawnable_projected_onto_dream(self) -> None:
         researcher = SubagentSpec(
-            name="web_research", description="reads the web", tools=("web_search", "web_extract")
+            name="web_research", description="reads the web", tools=("browser_run",)
         )
         strategist = SubagentSpec(
             name="strategist",
             description="frames the bet",
             # A spawner must itself hold what it delegates (transitivity): it grants web tools down.
-            tools=("read_file", "web_search", "web_extract", "spawn_subagent"),
+            tools=("read_file", "browser_run", "spawn_subagent"),
             spawnable=(researcher,),
         )
         subagent_set = _subagent_set(_config_with(strategist))
@@ -59,17 +59,17 @@ class TestSpawnableProjection:
         assert projected is not None
         assert "spawn_subagent" in projected.tools
         assert [c.name for c in projected.spawnable] == ["web_research"]
-        assert projected.spawnable[0].tools == ("web_search", "web_extract")
+        assert projected.spawnable[0].tools == ("browser_run",)
 
     def test_grandchild_intersected_with_parent_spec_tools(self) -> None:
         """A spawnable child can only narrow: its tools ∩ the spawner spec's tools."""
         greedy = SubagentSpec(
-            name="web_research", description="d", tools=("web_search", "run_command")
+            name="web_research", description="d", tools=("browser_run", "run_command")
         )
         strategist = SubagentSpec(
             name="strategist",
             description="frames the bet",
-            tools=("read_file", "web_search", "spawn_subagent"),  # no run_command
+            tools=("read_file", "browser_run", "spawn_subagent"),  # no run_command
             spawnable=(greedy,),
         )
         subagent_set = _subagent_set(_config_with(strategist))
@@ -77,7 +77,7 @@ class TestSpawnableProjection:
         assert subagent_set is not None
         projected = subagent_set.get("strategist")
         assert projected is not None
-        assert projected.spawnable[0].tools == ("web_search",)  # run_command dropped
+        assert projected.spawnable[0].tools == ("browser_run",)  # run_command dropped
 
 
 class TestMarketerStrategistWiring:
@@ -96,4 +96,4 @@ class TestMarketerStrategistWiring:
         assert "spawn_subagent" in strategist.tools
         assert [c.name for c in strategist.spawnable] == ["web_research"]
         # the grandchild kept its web tools (Mira → strategist → web_research all hold them)
-        assert set(strategist.spawnable[0].tools) == {"web_search", "web_extract"}
+        assert set(strategist.spawnable[0].tools) == {"browser_run"}

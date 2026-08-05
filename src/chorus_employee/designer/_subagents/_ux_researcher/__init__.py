@@ -30,7 +30,7 @@ UX_RESEARCHER_SUBAGENT = SubagentSpec(
         "understand the surface, the users, and the system constraints.\n"
         "2. Ground the approach in REAL UX evidence — do NOT write pattern/prior-art/accessibility "
         "claims from memory. When independent web evidence materially improves the decision, dispatch "
-        'the `web_research` subagent with one focused question naming the ACTUAL surface/pattern. '
+        "the `web_research` subagent with one focused question naming the ACTUAL surface/pattern. "
         "Otherwise proceed from supplied evidence and state the gaps honestly. Any web claims you make "
         "must carry their source.\n"
         "3. Write `ux_brief.md` — a tight brief the Explorer can design straight from:\n"
@@ -55,7 +55,7 @@ UX_RESEARCHER_SUBAGENT = SubagentSpec(
     ),
     # Holds the web-read tools so it can delegate them to web_research (transitivity), plus
     # spawn_subagent to dispatch it and write_file for the brief. All ⊆ the Designer's shelf.
-    tools=("read_file", "write_file", "web_search", "web_extract", "spawn_subagent"),
+    tools=("read_file", "write_file", "browser_run", "spawn_subagent"),
     # Depth-2: the UX-Researcher dispatches the shared Web-Research Orchestrator for UX facts.
     spawnable=(WEB_RESEARCH_ORCHESTRATOR,),
     # read system + brief, spawn web_research once or twice, write the brief — 10 leaves headroom.

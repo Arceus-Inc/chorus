@@ -85,12 +85,12 @@ class TestMarketerManifestSubagents:
         plugin = marketer_plugin()
         assert any(sa.name == "web_research" for sa in plugin.manifest.subagents)
 
-    def test_manifest_grants_web_extract_for_the_researcher(self) -> None:
-        # web_research needs web_search + web_extract; the parent must hold both or narrower-wins strips
+    def test_manifest_grants_browser_run_for_the_researcher(self) -> None:
+        # web_research needs browser_run + browser_run; the parent must hold both or narrower-wins strips
         # them from the child at materialize.
         plugin = marketer_plugin()
-        assert "web_search" in plugin.manifest.tools
-        assert "web_extract" in plugin.manifest.tools
+        assert "browser_run" in plugin.manifest.tools
+        assert "browser_run" in plugin.manifest.tools
 
     def test_web_research_carries_a_runtime_output_schema(self) -> None:
         plugin = marketer_plugin()

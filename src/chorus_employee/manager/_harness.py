@@ -11,7 +11,7 @@ tools bound to the org ledger.
 
 from __future__ import annotations
 
-from chorus.roles._manifest import MemoryScope, PermissionMode, RoleManifest
+from chorus.roles._manifest import MemoryScope, PermissionMode, RoleManifest, SandboxTier
 from chorus_employee.manager._brief import MANAGER_BRIEF
 
 
@@ -22,9 +22,11 @@ def manager_manifest() -> RoleManifest:
         system_prompt=MANAGER_BRIEF,  # → roles/{planner,generator,evaluator}.toml system_prompt
         permission_mode=PermissionMode.DEFAULT,
         # — build_harness(registry=…) — manager capabilities + a read surface —
-        tools=("read_file", "decompose", "submit_task", "assign_task"),
+        tools=("read_file", "decompose", "submit_task", "assign_task", "browser_run"),
         # — build_harness(memory=…) — a manager reasons across its team —
         memory_scope=MemoryScope.TEAM,
+        # browser_run needs Chromium CDP egress (tier ≥ repo-write+net).
+        sandbox=SandboxTier.REPO_WRITE_NET,
     )
 
 

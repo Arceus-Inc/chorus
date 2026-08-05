@@ -107,8 +107,8 @@ class TestFrontendEngineerManifest:
 
     def test_holds_web_research_for_grounding(self) -> None:
         tools = self._manifest().tools
-        assert "web_search" in tools
-        assert "web_extract" in tools
+        assert "browser_run" in tools
+        assert "browser_run" in tools
 
     def test_holds_the_memory_shelf(self) -> None:
         tools = self._manifest().tools

@@ -47,6 +47,7 @@ def backend_engineer_manifest() -> RoleManifest:
             "run_command",
             "execute_code",
             "git",
+            "browser_run",
             "test_evidence",
             "test_red",
             "secret_scan",

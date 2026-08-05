@@ -64,13 +64,13 @@ ANALYST_SUBAGENTS: tuple[SubagentSpec, ...] = (
     SubagentSpec(
         name="scout",
         description=(
-            "Research the world. Use `web_search` to find current, external information and `web_extract` "
-            "to read a promising source in full, then return a concise, cited summary (claim + the URL "
-            "it came from). When a result says `Full output saved to: <file>`, read that full payload with "
-            "`read_offloaded` (not `read_file`) — it lives in session scratch, not your working dir. "
-            "Read-only; never invent a source or a URL."
+            "Research the world. Use `browser_run` to open a real Chromium browser (search, navigate, "
+            "read rendered pages), then return a concise, cited summary (claim + the URL it came from). "
+            "Helpers are pre-imported: new_tab, page_info, js, wait_for_load. End scripts with "
+            "print(json.dumps({...})). When a result says `Full output saved to: <file>`, read that "
+            "full payload with `read_offloaded` (not `read_file`). Never invent a source or a URL."
         ),
-        tools=("web_search", "web_extract", "read_file", "read_offloaded"),
+        tools=("browser_run", "read_file", "read_offloaded"),
     ),
     SubagentSpec(
         name="narrative",

@@ -1,14 +1,9 @@
 """``WEB_RESEARCH_ORCHESTRATOR`` — the reusable web-research subagent declaration.
 
 A single :class:`~chorus.roles.SubagentSpec` any employee can spawn to answer a research
-question from the live web. It is capability-minimized to exactly two tools — ``web_search``
-(discovery) and ``web_extract`` (fetch + clean read) — so it can read and cite the open web but
-can neither write files, run commands, nor drive a browser. Its whole operating contract (the
-policy, the saturation ladder, the triangulation rule, and the JSON output shape) lives in the
-brief, because ``SubagentSpec`` generates the child's system prompt from name + description.
-
-"Shared" by reuse, not by a tier-2 registry (chorus projects only Tier-1 subagents today): a role
-opts in by splicing this spec into its manifest via :func:`._optin.with_web_research`.
+question from the live web. It is capability-minimized to ``browser_run`` so it can drive
+Chromium (search, navigate, read rendered pages) but cannot write files or run shell.
+Its whole operating contract lives in the brief.
 """
 
 from __future__ import annotations
@@ -17,17 +12,16 @@ from chorus.roles._subagent import SubagentSpec
 from swarm.web_research_orchestrator._brief import _WEB_RESEARCH_BRIEF
 from swarm.web_research_orchestrator._schemas import web_research_output_schema
 
-# The subagent's tools — the ONLY two it may use. Kept as a module constant so the opt-in helper
-# can guarantee the parent grants a superset (narrower-wins would otherwise strip them).
-WEB_RESEARCH_SUBAGENT_TOOLS: tuple[str, ...] = ("web_search", "web_extract")
+# Kept as a module constant so the opt-in helper can guarantee the parent grants a superset
+# (narrower-wins would otherwise strip them).
+WEB_RESEARCH_SUBAGENT_TOOLS: tuple[str, ...] = ("browser_run",)
 
 WEB_RESEARCH_ORCHESTRATOR = SubagentSpec(
     name="web_research",
     description=_WEB_RESEARCH_BRIEF,
     tools=WEB_RESEARCH_SUBAGENT_TOOLS,
-    # Research is turn-hungry: a search->extract->cross-check cycle per sub-question, plus the
-    # saturation ladder. 10 keeps a focused sweep well within a parent beat's ~300s lease (a broad,
-    # many-sub-question sweep at 16 blew it) while still allowing real triangulation.
+    # Research is turn-hungry: navigate→read→cross-check per sub-question. 10 keeps a focused
+    # sweep within a parent beat while still allowing real triangulation.
     max_turns=10,
     # Runtime-enforced return contract: the brief instructs the JSON shape (soft); this makes it hard
     # — the inline executor validates + repair-loops + fails open with a warning (WebResearchOutput).
