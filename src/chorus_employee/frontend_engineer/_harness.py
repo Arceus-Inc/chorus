@@ -97,9 +97,8 @@ def frontend_engineer_manifest() -> RoleManifest:
             "lattice_packet",
             "lattice_apply",
             "skill_manage",
-            # read-only egress for grounding (MDN/WAI-ARIA/framework docs) — needs the net tier below.
-            "web_search",
-            "web_extract",
+            # Live web via Chromium CDP (docs, MDN, framework sites) — needs net tier below.
+            "browser_run",
             # loads the authored build/testing craft playbooks on demand (spec-to-code, a11y, testing).
             "skill",
         ),

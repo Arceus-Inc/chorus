@@ -50,7 +50,7 @@ them with the **`design_exemplar` tool** instead:
   exemplar's full `DESIGN.md`.
 
 If the tool is unavailable for some reason, you still have the inline catalog below, and you have
-`web_search` / `web_extract` to study the live site — or spawn the `ux_researcher` subagent. The
+`browser_run` to study the live site — or spawn the `ux_researcher` subagent. The
 upstream workflow is also valid: an operator can copy a chosen exemplar into the project root as a
 starting `DESIGN.md`, which you then read and adapt like any project design system.
 

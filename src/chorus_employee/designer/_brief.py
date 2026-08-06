@@ -78,7 +78,7 @@ DESIGNER_BRIEF = (
     "2. RESEARCH what you don't already know — never design a pattern from memory. There are two "
     "depths, and the depth follows the surface:\n"
     "   - For a FOCUSED fact (how a good date-picker behaves, the WCAG rule for a control, how one peer "
-    "solves a single screen), get a cited answer: call the `web_search` tool directly for a quick "
+    "solves a single screen), get a cited answer: call `browser_run` directly for a quick "
     "check, or spawn `web_research` for a deeper focused question — "
     '`spawn_subagent(name="web_research", prompt="<one focused question naming the ACTUAL '
     'pattern/surface>")`. One focused question per spawn, never a broad sweep; ground your choice in '

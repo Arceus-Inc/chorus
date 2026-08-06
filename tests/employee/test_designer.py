@@ -47,7 +47,7 @@ class TestDesignerManifest:
             "read_file",
             "write_file",
             "skill",
-            "web_search",
+            "browser_run",
         ):
             assert expected in tools
 

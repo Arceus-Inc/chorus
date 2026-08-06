@@ -171,8 +171,8 @@ class TestDesignerManifestSubagents:
 
     def test_manifest_grants_web_tools_for_the_researcher(self) -> None:
         plugin = designer_plugin()
-        assert "web_search" in plugin.manifest.tools
-        assert "web_extract" in plugin.manifest.tools
+        assert "browser_run" in plugin.manifest.tools
+        assert "browser_run" in plugin.manifest.tools
 
     def test_manifest_includes_spawn_subagent_tool(self) -> None:
         plugin = designer_plugin()

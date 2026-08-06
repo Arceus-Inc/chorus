@@ -20,17 +20,18 @@ CEO_SUBAGENTS: tuple[SubagentSpec, ...] = (
             "what would have to be true for this to fail. Return the specific weaknesses and the risks "
             "that most deserve a guardrail. Do not rewrite the decision — pressure-test it."
         ),
-        tools=("read_file", "read_offloaded", "web_search", "web_extract"),
+        tools=("read_file", "read_offloaded", "browser_run"),
     ),
     SubagentSpec(
         name="researcher",
         description=(
             "Gather the external context the CEO's decision needs. You work in the CEO's working "
-            "directory: use `web_search` to find current, credible sources and `web_extract` to read "
-            "one in full. Return the concrete facts with their exact source URLs — market size, "
-            "competitor moves, benchmarks, regulatory constraints — not opinion."
+            "directory: use `browser_run` to open Chromium, search/navigate, and read rendered pages. "
+            "Helpers are pre-imported (new_tab, page_info, js, wait_for_load). Return concrete facts "
+            "with exact source URLs — market size, competitor moves, benchmarks, regulatory "
+            "constraints — not opinion."
         ),
-        tools=("web_search", "web_extract", "read_file", "read_offloaded"),
+        tools=("browser_run", "read_file", "read_offloaded"),
     ),
 )
 

@@ -58,9 +58,9 @@ class TestMarketerPlugin:
         assert "write_file" in plugin.manifest.tools
         assert "memory_search" in plugin.manifest.tools
 
-    def test_manifest_includes_web_search_for_research(self) -> None:
-        # §06 Researcher / §07 read reach: Tavily-backed web search for market/audience research.
-        assert "web_search" in marketer_plugin().manifest.tools
+    def test_manifest_includes_browser_run_for_research(self) -> None:
+        # §06 Researcher / §07 read reach: Chromium CDP-backed web search for market/audience research.
+        assert "browser_run" in marketer_plugin().manifest.tools
 
     def test_manifest_tools_exclude_command_and_git(self) -> None:
         plugin = marketer_plugin()
@@ -76,7 +76,7 @@ class TestMarketerPlugin:
         assert plugin.manifest.isolation == Isolation.WORKTREE
 
     def test_manifest_sandbox_is_repo_write_net(self) -> None:
-        # REPO_WRITE_NET: drafts to her worktree + allowlisted egress (web_search → api.tavily.com).
+        # REPO_WRITE_NET: drafts to her worktree + allowlisted egress (browser_run → api.chromium-cdp.com).
         # No arbitrary network, no commands; the gated stage_go_live is her only outbound-write surface.
         plugin = marketer_plugin()
         assert plugin.manifest.sandbox == SandboxTier.REPO_WRITE_NET

@@ -1,9 +1,9 @@
 """Web-Research Orchestrator — a shared, reusable subagent for evidence-grounded web research.
 
 One :class:`~chorus.roles.SubagentSpec` any employee can spawn to answer a research question from
-the live web using exactly two tools — ``web_search`` (discovery) and ``web_extract`` (fetch +
-clean read). It plans a multi-source sweep, reads the sources, cross-checks claims, and returns a
-structured answer with a citation graph (:class:`WebResearchOutput`).
+the live web using ``browser_run`` (Chromium CDP via browser-harness). It plans a multi-source
+sweep, opens pages in a real browser, cross-checks claims, and returns a structured answer with a
+citation graph (:class:`WebResearchOutput`).
 
 - :data:`WEB_RESEARCH_ORCHESTRATOR` — the subagent declaration (brief, tools, turn budget).
 - :func:`with_web_research` — splice it (and the tools it needs) into any role's manifest.

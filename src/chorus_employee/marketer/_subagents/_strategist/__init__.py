@@ -30,7 +30,7 @@ STRATEGIST_SUBAGENT = SubagentSpec(
         "understand the metric, the audience, and the positioning constraints.\n"
         "2. Ground the bet in REAL market facts — do NOT write competitor/funding/trend claims from "
         "memory. When independent web evidence materially improves the bet, dispatch the "
-        'web_research subagent with one focused question naming the ACTUAL company/metric. '
+        "web_research subagent with one focused question naming the ACTUAL company/metric. "
         "Otherwise proceed from supplied evidence and state the gaps honestly. Every market claim you "
         "make must carry its source.\n"
         "3. Write `strategy_brief.md` — a tight brief the Creative/Copywriter can draft straight from:\n"
@@ -54,7 +54,7 @@ STRATEGIST_SUBAGENT = SubagentSpec(
     ),
     # Holds the web-read tools so it can delegate them to web_research (transitivity), plus
     # spawn_subagent to dispatch it and write_file for the brief. All ⊆ the marketer's shelf.
-    tools=("read_file", "write_file", "web_search", "web_extract", "spawn_subagent"),
+    tools=("read_file", "write_file", "browser_run", "spawn_subagent"),
     # Depth-2: the Strategist dispatches the shared Web-Research Orchestrator for market facts.
     spawnable=(WEB_RESEARCH_ORCHESTRATOR,),
     # read spec + brief, spawn web_research once or twice, write the brief — 10 leaves headroom.

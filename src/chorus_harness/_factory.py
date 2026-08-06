@@ -131,11 +131,13 @@ _CHORUS_TO_DREAM_TOOL: dict[str, str] = {
     # (not in-context), so a re-dispatched beat resumes from it. Identity-mapped so dream_tool_names keeps
     # it and _role_registry enables it from default_registry.
     "todo_write": "todo_write",
-    # Web research: reuse dream's native Tavily built-ins (in default_registry) — identity-mapped so
-    # dream_tool_names keeps them and _role_registry picks them up; the subagent projection carries them.
+    # Web research: first-class browser_run (Chromium CDP via browser-harness). Legacy Tavily
+    # web_search/web_extract stay mapped so old manifests don't hard-fail during migration, but
+    # employee roles grant browser_run only.
+    "browser_run": "browser_run",
     "web_search": "web_search",
     "web_extract": "web_extract",
-    # Reading spilled tool output: a large tool result (a web_extract page, a repo_search dump) is
+    # Reading spilled tool output: a large tool result (a browser_run dump, a repo_search dump) is
     # offloaded to the session scratch dir with a "Full output saved to: <file>" pointer — read_offloaded
     # (tier-0, scratch-confined) is how a role pulls that full payload back. Without it a role loops on
     # read_file (worktree-relative) and never reads the evidence it just fetched.
@@ -841,7 +843,7 @@ class EmployeeHarnessFactory:
         # Analysis tools (ledger-free, worktree-scoped): warehouse_query / repo_search / notebook_run /
         # chart_render. The generator runs tools=null, so registering them here is enough for the model
         # to see and call them; they are not dream built-ins, so _role_registry skipped them above.
-        # (Web tools web_search/web_extract ARE dream built-ins, so _role_registry already picked them up.)
+        # (browser_run / legacy web_* ARE dream built-ins, so _role_registry already picked them up.)
         for name in config.tools:
             atool = analysis_tool(name)
             if atool is not None and registry.get(name) is None:
@@ -880,8 +882,8 @@ class EmployeeHarnessFactory:
             profile = ExecutionProfileResolver(self._roles, self._ledger).resolve(employee, task)
             config = profile.config
         config = apply_trust(config, task=task, policy=self._trust_policy)
-        # Env-capability degradation (H2): a tool this environment cannot back (web research with no
-        # Tavily key) is dropped and disclosed in the brief — the beat still runs, on what's possible.
+        # Env-capability degradation (H2): a tool this environment cannot back (browser_run with no
+        # Chromium CDP endpoint) is dropped and disclosed in the brief — the beat still runs.
         config = degrade_for_env(config)
         volatile_sections: list[BeatContextSection] = []
         inbox_ids: tuple[str, ...] = ()

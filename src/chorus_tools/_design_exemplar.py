@@ -73,7 +73,7 @@ def _catalog(root: Path, *, prefix: str) -> ToolResult:
             is_error=True,
             metadata={
                 "root_cause": f"no exemplar library found at {root}",
-                "safe_retry": "author the DESIGN.md from the design-md-exemplars skill's inline catalog + web_search",
+                "safe_retry": "author the DESIGN.md from the design-md-exemplars skill's inline catalog + browser_run",
                 "stop_condition": "the vendored library is missing from this build",
             },
         )

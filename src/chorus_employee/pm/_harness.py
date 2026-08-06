@@ -1,7 +1,7 @@
 """The PM's dream-harness manifest — every ``build_harness`` component, in one place.
 
 A PM **reads context, researches evidence, and writes a plan doc**: it needs the file-read and
-file-write surfaces, a worktree it can write into, and Tavily-backed web reach to gather the cited
+file-write surfaces, a worktree it can write into, and Chromium CDP web reach to gather the cited
 evidence its grounding floor (``_dod``) demands — but no command execution and no open network. Each
 field below names the dream component it drives.
 """
@@ -42,12 +42,9 @@ def pm_manifest() -> RoleManifest:
             "read_file",
             "write_file",
             "todo_write",  # durable cross-beat checklist (TODO.md) — resume, don't restart
-            # Tavily-backed web search — an allowlisted-egress read (host: api.tavily.com); needs the
-            # net sandbox tier below. This is the PM's read reach onto the live web (§07/§08).
-            "web_search",
-            # web_extract (fetch + clean read) — read a candidate source in full to ground a claim,
-            # not just cite a search snippet. Same allowlisted host as web_search.
-            "web_extract",
+            # Live web via Chromium CDP (DREAM_CHROMIUM_CDP_URL); needs the net sandbox tier below.
+            # This is the PM's read reach onto the live web (§07/§08).
+            "browser_run",
             # Product-state read (§03 input ①) — the internal half of the evidence, beside the web:
             # repo_search reads the codebase (what's shipped / feasibility) and warehouse_query reads
             # usage/funnel metrics (is this the real gap?). Both tier-0 read-only, so they clear the
@@ -142,7 +139,7 @@ def pm_manifest() -> RoleManifest:
         isolation=Isolation.WORKTREE,
         # — trust posture (spec 04 §4) → .harness/sandbox.toml —
         # REPO_WRITE_NET: writes its plan within its worktree AND may reach the net through the
-        # *allowlist* — only hosts a registered tool declares (web_search/web_extract → api.tavily.com).
+        # *allowlist* — browser_run talks to Chromium CDP (DREAM_CHROMIUM_CDP_URL).
         # It runs no commands; research reach is read-only egress, not an open network.
         sandbox=SandboxTier.REPO_WRITE_NET,
     )

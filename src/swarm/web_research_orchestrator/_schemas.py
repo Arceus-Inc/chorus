@@ -58,7 +58,7 @@ class QueryTrace(BaseModel):
 
     query: str = Field(description="A search query that was run.")
     opened: list[str] = Field(
-        default_factory=list, description="URLs read (web_extract) off this query."
+        default_factory=list, description="URLs opened via browser_run off this query."
     )
 
 

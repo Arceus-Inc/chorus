@@ -58,12 +58,9 @@ def marketer_manifest() -> RoleManifest:
             "lattice_apply",
             "skill_manage",
             "spawn_subagent",
-            # market/audience research: Tavily-backed web search (§06 Researcher, §07 read reach).
-            # An allowlisted-egress read (its declared host is api.tavily.com) — needs the net tier below.
-            "web_search",
-            # web_extract (fetch + clean read) — the second tool the Web-Research Orchestrator needs;
-            # granted directly so narrower-wins doesn't strip it from that subagent at materialize.
-            "web_extract",
+            # market/audience research via Chromium CDP (§06 Researcher, §07 read reach).
+            # Granted so narrower-wins doesn't strip browser_run from web_research at materialize.
+            "browser_run",
             # the ONLY path to a live surface: stage publish/send/spend for human approval (§07/§11).
             # Its call opens a gate and never executes — reach is fail-closed by construction.
             "stage_go_live",
@@ -123,7 +120,7 @@ def marketer_manifest() -> RoleManifest:
         isolation=Isolation.WORKTREE,
         # --- trust posture ---
         # REPO_WRITE_NET: writes drafts within her worktree AND may reach the net through the
-        # *allowlist* — only hosts a registered tool declares (web_search → api.tavily.com). She runs
+        # *allowlist* — browser_run talks to Chromium CDP (DREAM_CHROMIUM_CDP_URL). She runs
         # no commands, and her only outbound-write surface (publish/send/spend) is still the gated
         # stage_go_live tool. Research reach is read-only egress, not an open network.
         sandbox=SandboxTier.REPO_WRITE_NET,
@@ -131,7 +128,7 @@ def marketer_manifest() -> RoleManifest:
         # The Brand-Critic: an adversarial reviewer Mira spawns mid-beat to validate content
         # against the voice spec. Read-only (can only inspect, never edit the draft).
         # The Web-Research Orchestrator: a shared specialist (declared once in src/swarm/) she spawns to
-        # answer a market/audience question from the live web (web_search + web_extract), returning a
+        # answer a market/audience question from the live web (browser_run), returning a
         # runtime-validated WebResearchOutput. Passed directly — no with_web_research indirection.
         # The Creative/Copywriter: a variation engine she spawns on a grounded seed to draft a set of
         # on-brand variants (§10 variety). Writes to her worktree (candidates/), never publishes or

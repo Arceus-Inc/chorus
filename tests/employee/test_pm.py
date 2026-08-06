@@ -76,7 +76,7 @@ class TestPmPlugin:
         assert manifest.permission_mode == PermissionMode.ACCEPT_EDITS
         assert manifest.isolation == Isolation.WORKTREE
         # REPO_WRITE_NET: the PM writes its plan in-worktree AND may reach the net through the
-        # allowlist a registered tool declares (web_search/web_extract → api.tavily.com). No commands.
+        # allowlist a registered tool declares (browser_run/browser_run → api.chromium-cdp.com). No commands.
         assert manifest.sandbox == SandboxTier.REPO_WRITE_NET
         assert manifest.memory_scope == MemoryScope.PROJECT
 
@@ -94,14 +94,14 @@ class TestPmWebResearch:
     """The grounding floor demands a source; §08's shelf lets the PM fetch one inline.
 
     §10's confidence policy is explicit — below the floor, *acquire evidence* rather than hedge. This
-    slice gives the PM the same Tavily-backed web reach the Marketer holds: search + extract, egress
+    slice gives the PM the same Chromium CDP-backed web reach the Marketer holds: search + extract, egress
     allowlisted by the net sandbox tier, with a widened beat so a live sweep isn't reaped mid-call.
     """
 
-    def test_manifest_grants_web_search_and_extract(self) -> None:
+    def test_manifest_grants_browser_run_and_extract(self) -> None:
         tools = pm_plugin().manifest.tools
-        assert "web_search" in tools  # §08 shelf: Tavily-backed search
-        assert "web_extract" in tools  # §08 shelf: fetch + clean-read a source to ground a claim
+        assert "browser_run" in tools  # §08 shelf: Chromium CDP-backed search
+        assert "browser_run" in tools  # §08 shelf: fetch + clean-read a source to ground a claim
 
     def test_web_reach_needs_the_net_sandbox_tier(self) -> None:
         # Egress is only reachable under REPO_WRITE_NET; without it the allowlisted call is blocked.
@@ -126,7 +126,7 @@ class TestPmWebResearch:
 
     def test_brief_points_the_pm_at_research_when_evidence_is_thin(self) -> None:
         # §10 confidence policy: weak evidence triggers acquisition, not a hedge.
-        assert "web_search" in PM_BRIEF
+        assert "browser_run" in PM_BRIEF
 
     def test_manifest_widens_the_beat_for_a_live_research_sweep(self) -> None:
         # A web sweep blocks the beat in one call; org defaults (90s beat / 300s lease) would reap it.

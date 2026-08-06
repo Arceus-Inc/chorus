@@ -60,10 +60,9 @@ def designer_manifest() -> RoleManifest:
             "lattice_apply",
             "skill_manage",
             "spawn_subagent",
-            # pattern/prior-art research: Tavily-backed web search + fetch (designer §06 UX-Researcher,
-            # §07 pattern research). Allowlisted-egress reads — need the net tier below.
-            "web_search",
-            "web_extract",
+            # pattern/prior-art research via Chromium CDP (designer §06 UX-Researcher,
+            # §07 pattern research). Needs the net tier below.
+            "browser_run",
             # the load-bearing primitive: the deterministic a11y/token scan the Critic grounds its
             # verdict on (designer §08/§10 — the exact analog of the Marketer's brand_lint).
             "design_lint",
@@ -126,7 +125,7 @@ def designer_manifest() -> RoleManifest:
         isolation=Isolation.WORKTREE,
         # --- trust posture ---
         # REPO_WRITE_NET: writes its spec within its worktree AND may reach the net through the
-        # *allowlist* — only hosts a registered tool declares (web_search → api.tavily.com). It runs no
+        # *allowlist* — browser_run talks to Chromium CDP (DREAM_CHROMIUM_CDP_URL). It runs no
         # commands; its only outbound-write surface (handoff/ship) is a gated tool added later. Pattern
         # research is read-only egress, not an open network.
         sandbox=SandboxTier.REPO_WRITE_NET,
@@ -139,8 +138,8 @@ def designer_manifest() -> RoleManifest:
         # (§10 variety). Writes to its worktree (variants/), never ships or selects; returns a typed
         # ExplorerManifest. It self-lints via design_lint.
         # The Web-Research Orchestrator: the shared specialist (declared once in src/swarm/) the
-        # UX-Researcher spawns to answer a UX/pattern question from the live web (web_search +
-        # web_extract), returning a runtime-validated WebResearchOutput. Passed directly.
+        # UX-Researcher spawns to answer a UX/pattern question from the live web (browser_run),
+        # returning a runtime-validated WebResearchOutput. Passed directly.
         subagents=(
             DESIGN_CRITIC_SUBAGENT,
             EXPLORER_SUBAGENT,

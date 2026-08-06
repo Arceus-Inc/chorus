@@ -31,11 +31,11 @@ class TestDeclaration:
         assert isinstance(WEB_RESEARCH_ORCHESTRATOR, SubagentSpec)
         assert WEB_RESEARCH_ORCHESTRATOR.name == "web_research"
 
-    def test_uses_only_the_two_web_tools(self) -> None:
-        assert WEB_RESEARCH_ORCHESTRATOR.tools == ("web_search", "web_extract")
+    def test_uses_only_browser_run(self) -> None:
+        assert WEB_RESEARCH_ORCHESTRATOR.tools == ("browser_run",)
 
-    def test_has_no_write_or_command_or_browser_tools(self) -> None:
-        for forbidden in ("write_file", "run_command", "read_file", "open", "get_text", "eval"):
+    def test_has_no_write_or_command_tools(self) -> None:
+        for forbidden in ("write_file", "run_command", "read_file"):
             assert forbidden not in WEB_RESEARCH_ORCHESTRATOR.tools
 
     def test_turn_budget_is_bounded(self) -> None:
@@ -49,8 +49,8 @@ class TestDeclaration:
 
     def test_brief_carries_policy_ladder_and_contract(self) -> None:
         desc = WEB_RESEARCH_ORCHESTRATOR.description
-        assert "web_search" in desc and "web_extract" in desc
-        assert "needs_render" in desc  # the escalation signal
+        assert "browser_run" in desc
+        assert "new_tab" in desc or "page_info" in desc
         assert "citation_graph" in desc  # the output contract
         assert "confidence" in desc
         low = desc.lower()
@@ -69,7 +69,7 @@ class TestWithWebResearch:
 
     def test_grants_the_required_tools(self) -> None:
         m = with_web_research(_base_manifest())
-        for tool in ("spawn_subagent", "web_search", "web_extract"):
+        for tool in ("spawn_subagent", "browser_run"):
             assert tool in m.tools
         assert "read_file" in m.tools  # original tools preserved
 
@@ -97,13 +97,12 @@ class TestWithWebResearch:
 
 
 class TestFactoryProjection:
-    def test_projects_into_a_subagent_set_with_both_tools(self) -> None:
+    def test_projects_into_a_subagent_set_with_browser_run(self) -> None:
         config = role_beat_config(with_web_research(_base_manifest()))
         sset = _subagent_set(config)
         assert sset is not None
         agent = next(a for a in sset.agents.values() if a.name == "web_research")
-        # the two web tools map to real dream builtins and survive the parent intersection
-        assert set(agent.tools) == set(dream_tool_names(("web_search", "web_extract")))
+        assert set(agent.tools) == set(dream_tool_names(("browser_run",)))
 
 
 # --- output contract -------------------------------------------------------
