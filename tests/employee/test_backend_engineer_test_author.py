@@ -164,6 +164,17 @@ class TestTestAuthorWiring:
         assert result is not None
         assert result.get("test_author") is not None
 
+    def test_test_author_is_strict_and_projects_strict(self) -> None:
+        assert TEST_AUTHOR_SUBAGENT.strict is True
+        assert TEST_AUTHOR_SUBAGENT.output_schema is not None
+        config = role_beat_config(backend_engineer_plugin().manifest)
+        result = _subagent_set(config)
+        assert result is not None
+        child = result.get("test_author")
+        assert child is not None
+        assert child.strict is True
+        assert child.output_schema == TEST_AUTHOR_SUBAGENT.output_schema
+
 
 class TestTestingHoneycombSkill:
     def test_the_skill_the_test_author_points_at_exists(self) -> None:
