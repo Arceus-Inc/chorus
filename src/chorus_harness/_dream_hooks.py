@@ -16,6 +16,12 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 from dream.contracts.hook import HookEvent, HookResult, HookSpec
+from dream.state.shadow import (
+    ShadowCheckpointConfig,
+    ShadowCheckpointHook,
+    ShadowCheckpointManager,
+    ShadowCheckpointStore,
+)
 
 from chorus.roles._subagent import SubagentSpec
 
@@ -23,6 +29,7 @@ __all__ = [
     "BeatContextKind",
     "BeatContextSection",
     "DangerousToolVetoHook",
+    "ShadowCheckpointHook",
     "EvidenceContinueHook",
     "EvidenceForgeVetoHook",
     "EvidenceOwner",
@@ -246,6 +253,15 @@ def register_employee_hooks(
     if not callable(register):
         return  # stub harnesses in unit tests have no hook rail
     register(DangerousToolVetoHook())
+    register(
+        ShadowCheckpointHook(
+            manager=ShadowCheckpointManager(
+                store=ShadowCheckpointStore(base_dir=_shadow_checkpoint_base(working_dir)),
+                config=ShadowCheckpointConfig(enabled=True),
+            ),
+            working_dir=working_dir,
+        )
+    )
     if volatile_packet is not None and volatile_packet.sections:
         register(VolatileBeatPacketHook(volatile_packet))
     protected = tuple(
@@ -297,3 +313,11 @@ def _artifact_satisfies(path: Path, claim: dict[str, object]) -> bool:
     if not isinstance(data, dict):
         return False
     return all(data.get(key) == expected for key, expected in claim.items())
+
+
+def _shadow_checkpoint_base(working_dir: Path) -> Path:
+    """Prefer Dream home checkpoints dir."""
+    from dream.config.paths import DreamPaths
+
+    return DreamPaths.resolve(working_dir).home / "checkpoints"
+

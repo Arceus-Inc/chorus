@@ -12,6 +12,7 @@ from chorus_harness._dream_hooks import (
     BeatContextKind,
     BeatContextSection,
     DangerousToolVetoHook,
+    ShadowCheckpointHook,
     EvidenceContinueHook,
     EvidenceForgeVetoHook,
     VolatileBeatPacket,
@@ -46,6 +47,7 @@ def test_register_skips_evidence_continue_by_default(tmp_path: Path) -> None:
         harness, working_dir=tmp_path, subagents=(_spec_with_evidence(),)
     )
     assert any(isinstance(h, DangerousToolVetoHook) for h in harness.hooks)
+    assert any(isinstance(h, ShadowCheckpointHook) for h in harness.hooks)
     assert any(isinstance(h, EvidenceForgeVetoHook) for h in harness.hooks)
     assert not any(isinstance(h, EvidenceContinueHook) for h in harness.hooks)
 
