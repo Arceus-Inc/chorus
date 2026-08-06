@@ -27,8 +27,8 @@ class SubagentSpec:
 
     ``output_schema`` is an optional JSON-schema dict the subagent's final message is validated against
     at runtime: the composition root passes it to dream, whose inline executor coerces + validates the
-    output, runs a bounded reformat loop on failure, and fails open with a warning. ``None`` = free-text
-    return (no enforcement).
+    output, runs a bounded reformat loop on failure, and fails open with a warning unless ``strict``
+    is True (DoD graders). ``None`` = free-text return (no enforcement).
     """
 
     name: str
@@ -37,6 +37,8 @@ class SubagentSpec:
     model: str | None = None
     max_turns: int = 6
     output_schema: dict[str, Any] | None = None
+    strict: bool = False
+    """When True with ``output_schema``, dream fail-closes on exhausted repairs (verifiers)."""
     evidence_path: str | None = None
     evidence_claim: dict[str, Any] | None = None
     evidence_read_only: bool = False
