@@ -174,6 +174,9 @@ def test_backend_engineer_materializes_a_writable_harness_in_its_worktree(
     assert mat.config.permission_mode == "acceptEdits"
     assert captured["max_turns"] == 24  # the engine scalars come from the role too
     assert captured["working_memory"] is True
+    assert captured["web"] is True
+    assert captured["browser"] is True
+    assert captured["code_intel"] is True
     assert mat.runner._subagent_evidence == {
         "test_author": ("test_plan.json", {"authored": True}, False),
         "code_reviewer": ("review_verdict.json", {"cleared": True}, True),
