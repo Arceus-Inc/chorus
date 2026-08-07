@@ -75,6 +75,16 @@ def test_shipped_migrations_load_in_id_order() -> None:
     assert "0002_skills" in {m.id for m in shipped}
 
 
+def test_agent_session_migration_reports_tables() -> None:
+    """0005_agent_session creates the three durable session tables."""
+    migration = next(m for m in load_migrations() if m.id == "0005_agent_session")
+    assert migration.table_names() == [
+        "agent_session",
+        "conversation_message",
+        "tool_call",
+    ]
+
+
 def test_fresh_bootstrap_applies_baseline_then_all_migrations(
     pg_database: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:

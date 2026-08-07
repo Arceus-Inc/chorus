@@ -49,6 +49,7 @@ exposed on the facade. The repos are wired in `_ledger.py`:
 | `ledger.wakes` | `WakeRepo` | `wake` (coalescing push inbox) |
 | `ledger.routines` / `routine_triggers` / `routine_runs` | routine repos | cron |
 | `ledger.runs` | `RunRepo` | `run` (one beat) |
+| `ledger.agent_sessions` | `AgentSessionRepo` | `agent_session`, `conversation_message`, `tool_call` (durable dream transcript — **not** in-memory) |
 | `ledger.skills` / `skill_revisions` | skill repos | `skill`, `skill_revision` (procedural memory HEAD + history) |
 | `ledger.employees` / `goals` | org repos | `employee`, `goal` |
 | `ledger.budget_policies` / `budget_incidents` / `cost_events` | budget repos | two-gate money |
@@ -58,6 +59,30 @@ exposed on the facade. The repos are wired in `_ledger.py`:
 The kernel types against the concrete `Ledger` class directly — one driver, no protocol
 indirection. The domain facades that ride it (`chorus.skills.SkillStore`) compose these repos
 rather than owning connections.
+
+### Agent sessions (conversation SoT)
+
+Dream may keep a **working buffer** for the live turn, but the **source of truth** for
+conversation history and tool-call history across beats is the ledger:
+
+```python
+from chorus.ledger import ensure_open_session, load_transcript, append_transcript
+
+session = ensure_open_session(
+    ledger,
+    employee_id=employee.id,
+    task_id=task.id,
+    dream_session_key=dream_key,
+    model="…",
+    system_prompt=None,
+    run_id=run.id,
+)
+prior = load_transcript(ledger, session.id)   # resume
+append_transcript(ledger, session.id, new_msgs)  # append-only — never replace
+```
+
+One **open** session per task (partial unique index). Seal/abort frees the slot for a fresh
+thread. Do not persist org session state in dream's process memory or a local file store.
 
 ### Cross-aggregate transactions
 

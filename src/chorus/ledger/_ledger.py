@@ -44,6 +44,7 @@ from chorus.ledger._models import (
 )
 from chorus.ledger.repos import (
     ActivityRepo,
+    AgentSessionRepo,
     ApprovalRepo,
     ArtifactRepo,
     ArtifactRevisionRepo,
@@ -171,6 +172,7 @@ class Ledger:
         self._conn: LedgerConnection = conn
         self._schema_version: str | None = None
         self.employees = EmployeeRepo(conn)
+        self.agent_sessions = AgentSessionRepo(conn)
         self.goals = GoalRepo(conn)
         self.tasks = TaskRepo(conn)
         self.management_profiles = ManagementProfileRepo(conn)

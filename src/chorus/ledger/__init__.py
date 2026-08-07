@@ -10,6 +10,11 @@ from __future__ import annotations
 
 from dream.contracts import ExecPlan, ExecPlanLedger, ExecPlanStatus
 
+from chorus.ledger._agent_session_store import (
+    append_transcript,
+    ensure_open_session,
+    load_transcript,
+)
 from chorus.ledger._connection import LedgerConnection
 from chorus.ledger._ledger import (
     Ledger,
@@ -28,6 +33,8 @@ from chorus.ledger._migrations import (
 from chorus.ledger._models import (
     Activity,
     ActivityVerb,
+    AgentSession,
+    AgentSessionStatus,
     Approval,
     ApprovalAction,
     ApprovalGate,
@@ -41,6 +48,9 @@ from chorus.ledger._models import (
     BudgetPolicy,
     BudgetScope,
     BudgetThreshold,
+    Claim,
+    ConversationMessage,
+    ConversationRole,
     CostEvent,
     DecompositionClaim,
     DecompositionStatus,
@@ -75,6 +85,7 @@ from chorus.ledger._models import (
     RoutineTrigger,
     Run,
     RunStatus,
+    SessionCost,
     Skill,
     SkillOrigin,
     SkillRevision,
@@ -90,6 +101,7 @@ from chorus.ledger._models import (
     TeamMember,
     TeamMembershipRole,
     TeamStatus,
+    ToolCall,
     TriggerKind,
     Wake,
     WakeReason,
@@ -100,6 +112,7 @@ from chorus.ledger._models import (
 )
 from chorus.ledger.repos import (
     ActivityRepo,
+    AgentSessionRepo,
     ApprovalRepo,
     ArtifactRepo,
     ArtifactRevisionRepo,
@@ -135,6 +148,9 @@ __all__ = [
     "Activity",
     "ActivityRepo",
     "ActivityVerb",
+    "AgentSession",
+    "AgentSessionRepo",
+    "AgentSessionStatus",
     "Approval",
     "ApprovalAction",
     "ApprovalGate",
@@ -153,6 +169,9 @@ __all__ = [
     "BudgetPolicyRepo",
     "BudgetScope",
     "BudgetThreshold",
+    "Claim",
+    "ConversationMessage",
+    "ConversationRole",
     "CostEvent",
     "CostEventRepo",
     "DecompositionClaim",
@@ -213,6 +232,7 @@ __all__ = [
     "RunRepo",
     "RunStatus",
     "SchemaDriftError",
+    "SessionCost",
     "Skill",
     "SkillOrigin",
     "SkillRepo",
@@ -234,6 +254,7 @@ __all__ = [
     "TeamMembershipRole",
     "TeamRepo",
     "TeamStatus",
+    "ToolCall",
     "TriggerKind",
     "Wake",
     "WakeReason",
@@ -243,8 +264,11 @@ __all__ = [
     "WorkforcePlanDraft",
     "WorkforcePlanRepo",
     "WorkforcePlanStatus",
+    "append_transcript",
     "baseline",
+    "ensure_open_session",
     "ledger_table_names",
     "load_migrations",
+    "load_transcript",
     "postgres_ddl",
 ]
