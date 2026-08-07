@@ -56,13 +56,15 @@ def pg_conninfo(tmp_path_factory: pytest.TempPathFactory) -> Iterator[str]:
         env=env,
     )
     port = _free_port()
+    socket_dir = tmp_path_factory.mktemp("chorus_pgsock")
     subprocess.run(
         [
             str(_PG_BIN / "pg_ctl"),
             "-D",
             str(data),
             "-o",
-            f"-p {port} -c listen_addresses=127.0.0.1 -c fsync=off",
+            f"-p {port} -c listen_addresses=127.0.0.1 -c fsync=off "
+            f"-c unix_socket_directories={socket_dir}",
             "-l",
             str(data / "log"),
             "-w",
