@@ -64,7 +64,7 @@ from chorus.lifecycle import (
     record_activity,
 )
 from chorus.memory import EpisodicStore
-from chorus.observability import EventBus, LedgerInspector, WorkforceStatus
+from chorus.observability import EventBus, LedgerInspector, WorkforceStatus, with_otel_export
 from chorus.outcomes import LanderRegistry, Verifier
 from chorus.roles import RolePlugin, RoleRegistry, default_roles
 from chorus.trust import TrustPreset
@@ -193,7 +193,7 @@ class Chorus:
         # assignment FK points at (spec 06 §3). ``org_repo`` is the portable git-markdown
         # export/import location (spec 09 §3, the GitWorkforce codec), not a second live store.
         workforce = LedgerWorkforce(store.employees)
-        event_bus = EventBus()
+        event_bus = with_otel_export(EventBus())
         memory_writer = EpisodicStore(memory_repo)
         scheduler = Scheduler(
             tick_interval_s=the_caps.tick_interval_s,

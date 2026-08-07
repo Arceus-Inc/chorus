@@ -17,7 +17,7 @@ from chorus.errors import UnknownEmployee
 from chorus.heartbeat import Scheduler
 from chorus.ledger import Ledger
 from chorus.memory import EpisodicStore
-from chorus.observability import EventBus, FanoutBus
+from chorus.observability import EventBus, FanoutBus, with_otel_export
 from chorus.roles import DEFAULT_BEAT_TIMEOUT_S, RoleRegistry, default_roles
 from chorus.workforce import LedgerWorkforce
 from chorus_cli._chat import ChatBeatService, ChatRenderBus
@@ -69,7 +69,9 @@ def build_role_chat_service(
         workforce=LedgerWorkforce(ledger.employees),
         beat_runner=materialized.runner,  # chat is one employee → one materialized runner
         budget_enforcer=BudgetEnforcer(ledger, company_id=company_id),
-        event_bus=FanoutBus(render_bus, EventBus(log_path=factory.company_root / "events.jsonl")),
+        event_bus=with_otel_export(
+            FanoutBus(render_bus, EventBus(log_path=factory.company_root / "events.jsonl"))
+        ),
         roles=registry,  # a chat task inherits the employee role's DoD at intake (spec 04 §1)
         landers=default_landers(
             factory.company_root, ledger=ledger
