@@ -145,6 +145,14 @@ class AgentSessionRepo:
         ).fetchone()
         return _row_to_session(row) if row is not None else None
 
+    def latest_for_task(self, task_id: str) -> AgentSession | None:
+        """Most recently updated session for the task (open or sealed)."""
+        row = self._conn.execute(
+            "SELECT * FROM agent_session WHERE task_id = ? ORDER BY updated_at DESC LIMIT 1",
+            (task_id,),
+        ).fetchone()
+        return _row_to_session(row) if row is not None else None
+
     def get_by_dream_key(self, dream_session_key: str) -> AgentSession | None:
         row = self._conn.execute(
             "SELECT * FROM agent_session WHERE dream_session_key = ?",
@@ -228,6 +236,17 @@ class AgentSessionRepo:
             (session_id,),
         ).fetchall()
         return [_row_to_message(row) for row in rows]
+
+    def last_message_seq(self, session_id: str) -> int:
+        """Highest transcript seq for the session, or ``0`` when empty (cursor seed)."""
+        row = self._conn.execute(
+            "SELECT seq FROM conversation_message WHERE session_id = ? "
+            "ORDER BY seq DESC LIMIT 1",
+            (session_id,),
+        ).fetchone()
+        if row is None:
+            return 0
+        return int(row["seq"])
 
     def record_tool_call(self, call: ToolCall) -> ToolCall:
         now = utcnow_iso()

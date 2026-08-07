@@ -29,18 +29,24 @@ from chorus.cron._fire import fire_routine
 from chorus.events import Event, EventKind
 from chorus.governance import GovernanceResolver
 from chorus.heartbeat._beat import BeatDisposition, BeatOutcome
-from chorus.heartbeat._landed_outcome import derive_landed_outcome
 from chorus.heartbeat._beat_context import IntegrateContextPacket
 from chorus.heartbeat._execution_profile import (
     ExecutionProfileResolver,
     ResolvedExecutionProfile,
 )
 from chorus.heartbeat._invokability import InvokabilityReason, invokability_block
+from chorus.heartbeat._landed_outcome import derive_landed_outcome
 from chorus.heartbeat._runner_for import single
 from chorus.heartbeat._wake import TickReport, Wake
 from chorus.hooks import OrgHook, default_org_hooks, run_org_hooks
 from chorus.ids import mint_id
-from chorus.ledger import ApprovalGate, TaskPriority
+from chorus.ledger import (
+    ApprovalGate,
+    TaskPriority,
+    begin_beat_session,
+    persist_beat_account,
+    resume_intent,
+)
 from chorus.ledger._models import (
     ActivityVerb,
     Artifact,
@@ -810,11 +816,24 @@ class Scheduler:
                 if verifier is not None and verifier.kind is DoDKind.AGENT_REVIEW
                 else ""
             )
+            # Ledger is the conversation / tool-call SoT — open or resume the task session, then
+            # inject prior transcript into the beat intent (dream run_task has no resume_messages).
+            agent_session = begin_beat_session(
+                ledger,
+                employee_id=employee.id,
+                task_id=task_id,
+                run_id=run_id,
+                model="",
+                system_prompt=None,
+            )
+            intent = resume_intent(
+                ledger, agent_session.id, _execution_intent(ledger, task)
+            )
             result = await self._run_beat_with_retry(
                 beat_runner,
                 run_id=run_id,
                 task_id=task_id,
-                intent=_execution_intent(ledger, task),
+                intent=intent,
                 verification=verification,
                 rubric=rubric,
                 observer=observer,
@@ -941,6 +960,13 @@ class Scheduler:
             now=now,
         )
 
+        self._persist_agent_session(
+            ledger,
+            task_id=task_id,
+            run_id=run_id,
+            employee_id=employee.id,
+            result=result,
+        )
         await self._capture_memory(
             ledger,
             run_id=run_id,
@@ -970,6 +996,38 @@ class Scheduler:
             trace_id=trace_id,
             result=result,
             now=now,
+        )
+
+    def _persist_agent_session(
+        self,
+        ledger: Ledger,
+        *,
+        task_id: str,
+        run_id: str,
+        employee_id: str,
+        result: BeatOutcome,
+    ) -> None:
+        """Append this beat's raw_record into agent_session rows — ledger SoT, never RAM."""
+        if result.disposition is BeatDisposition.CANCELLED:
+            return
+        session = begin_beat_session(
+            ledger,
+            employee_id=employee_id,
+            task_id=task_id,
+            run_id=run_id,
+        )
+        task = ledger.tasks.get(task_id)
+        seal = task is not None and task.status is TaskStatus.DONE
+        persist_beat_account(
+            ledger,
+            session.id,
+            raw_record=result.raw_record,
+            model=result.model or "",
+            input_tokens=result.input_tokens,
+            output_tokens=result.output_tokens,
+            cost_cents=result.cost_cents,
+            run_id=run_id,
+            seal=seal,
         )
 
     async def _capture_memory(

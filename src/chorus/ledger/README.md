@@ -84,6 +84,9 @@ append_transcript(ledger, session.id, new_msgs)  # append-only — never replace
 One **open** session per task (partial unique index). Seal/abort frees the slot for a fresh
 thread. Do not persist org session state in dream's process memory or a local file store.
 
+The scheduler wires this automatically: `begin_beat_session` + `resume_intent` before each beat,
+`persist_beat_account` from `BeatOutcome.raw_record` after. CLI `/transcript` reads the same rows.
+
 ### Cross-aggregate transactions
 
 A single repo write is atomic on its own (savepoint-per-write under the hood). When an operation

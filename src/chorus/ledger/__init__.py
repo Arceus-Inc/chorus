@@ -10,6 +10,16 @@ from __future__ import annotations
 
 from dream.contracts import ExecPlan, ExecPlanLedger, ExecPlanStatus
 
+from chorus.ledger._agent_session_beat import (
+    BeatSessionDelta,
+    append_user_turn,
+    begin_beat_session,
+    dream_session_key_for_task,
+    format_resume_context,
+    parse_raw_record,
+    persist_beat_account,
+    resume_intent,
+)
 from chorus.ledger._agent_session_store import (
     append_transcript,
     ensure_open_session,
@@ -162,6 +172,7 @@ __all__ = [
     "ArtifactRevision",
     "ArtifactRevisionRepo",
     "ArtifactType",
+    "BeatSessionDelta",
     "BudgetIncident",
     "BudgetIncidentRepo",
     "BudgetIncidentStatus",
@@ -265,10 +276,17 @@ __all__ = [
     "WorkforcePlanRepo",
     "WorkforcePlanStatus",
     "append_transcript",
+    "append_user_turn",
     "baseline",
+    "begin_beat_session",
+    "dream_session_key_for_task",
     "ensure_open_session",
+    "format_resume_context",
     "ledger_table_names",
     "load_migrations",
     "load_transcript",
+    "parse_raw_record",
+    "persist_beat_account",
     "postgres_ddl",
+    "resume_intent",
 ]
