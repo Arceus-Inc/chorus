@@ -89,6 +89,7 @@ API_VERIFIER_SUBAGENT = SubagentSpec(
     max_turns=10,
     # Runtime-enforced return contract: the typed ApiTestVerdict (passed + checks + evidence).
     output_schema=api_test_verdict_output_schema(),
+    strict=True,  # DoD grader — never fail-open a malformed verdict
 )
 
 __all__ = [

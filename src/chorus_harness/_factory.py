@@ -291,6 +291,7 @@ def _project_spec(spec: SubagentSpec, parent_tools: frozenset[str]) -> Subagent:
         model=spec.model,
         max_turns=spec.max_turns,
         output_schema=spec.output_schema,
+        strict=spec.strict,
         spawnable=tuple(_project_spec(child, own_tools) for child in spec.spawnable),
     )
 

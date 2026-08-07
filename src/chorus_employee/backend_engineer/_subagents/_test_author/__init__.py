@@ -82,6 +82,7 @@ TEST_AUTHOR_SUBAGENT = SubagentSpec(
     max_turns=10,
     # Runtime-enforced return contract: the typed TestPlanVerdict (authored + files + covers + evidence).
     output_schema=plan_verdict_output_schema(),
+    strict=True,  # DoD grader — never fail-open a malformed plan verdict
     # This evidence producer is expected to mutate the worktree by authoring the independent tests.
     evidence_path="test_plan.json",
     evidence_claim={"authored": True},

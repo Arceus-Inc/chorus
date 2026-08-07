@@ -213,6 +213,18 @@ class TestApiVerifierWiring:
         # the parent's live toolset, so the child carries the dream name here.
         assert "bash" in child.tools
 
+    def test_api_verifier_is_strict_and_projects_strict(self) -> None:
+        # DoD grader: malformed verdicts must fail closed, not fail-open with a warning.
+        assert API_VERIFIER_SUBAGENT.strict is True
+        assert API_VERIFIER_SUBAGENT.output_schema is not None
+        config = role_beat_config(backend_engineer_plugin().manifest)
+        result = _subagent_set(config)
+        assert result is not None
+        child = result.get("api_verifier")
+        assert child is not None
+        assert child.strict is True
+        assert child.output_schema == API_VERIFIER_SUBAGENT.output_schema
+
 
 class TestSubagentsCanLoadSkills:
     """The §06 subagents read the engineer's authored playbooks via the `skill` tool.
