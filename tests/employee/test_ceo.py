@@ -30,6 +30,7 @@ def test_ceo_declares_its_executive_toolset() -> None:
         "write_file",
         "run_command",
         "browser_run",
+        "web_fetch",
         "read_offloaded",
         "skill",
         "memory_search",

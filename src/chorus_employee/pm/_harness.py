@@ -45,6 +45,7 @@ def pm_manifest() -> RoleManifest:
             # Live web via Chromium CDP (DREAM_CHROMIUM_CDP_URL); needs the net sandbox tier below.
             # This is the PM's read reach onto the live web (§07/§08).
             "browser_run",
+            "web_fetch",
             # Product-state read (§03 input ①) — the internal half of the evidence, beside the web:
             # repo_search reads the codebase (what's shipped / feasibility) and warehouse_query reads
             # usage/funnel metrics (is this the real gap?). Both tier-0 read-only, so they clear the

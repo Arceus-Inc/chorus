@@ -96,4 +96,4 @@ class TestMarketerStrategistWiring:
         assert "spawn_subagent" in strategist.tools
         assert [c.name for c in strategist.spawnable] == ["web_research"]
         # the grandchild kept its web tools (Mira → strategist → web_research all hold them)
-        assert set(strategist.spawnable[0].tools) == {"browser_run"}
+        assert set(strategist.spawnable[0].tools) == {"browser_run", "web_fetch"}

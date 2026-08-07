@@ -21,8 +21,8 @@ pytestmark = pytest.mark.integration
 
 _NOTE = (
     "Note: browser research is unavailable in this environment (no Chromium CDP endpoint; "
-    "set DREAM_CHROMIUM_CDP_URL); ground claims in repo artifacts and say so rather than "
-    "inventing citations."
+    "set DREAM_CHROMIUM_CDP_URL). web_fetch still works for direct page reads; ground "
+    "claims in repo artifacts or fetched pages and say so rather than inventing citations."
 )
 _WEB_TOOLS = {"browser_run", "web_search", "web_extract"}
 
@@ -67,6 +67,8 @@ def test_web_role_without_cdp_drops_the_tools_and_discloses(
     mat = factory.materialize(Employee(id=uid("mel"), name="Mel", role="marketer"))
     names = {t.name for t in captured["registry"].list_tools()}
     assert not names & _WEB_TOOLS
+    # web_fetch needs only egress, so it is NOT degraded with the CDP-backed tools.
+    assert "web_fetch" in names
     assert _NOTE in _generator_overlay(mat)
 
 

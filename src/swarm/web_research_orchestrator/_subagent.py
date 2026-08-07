@@ -1,9 +1,10 @@
 """``WEB_RESEARCH_ORCHESTRATOR`` — the reusable web-research subagent declaration.
 
 A single :class:`~chorus.roles.SubagentSpec` any employee can spawn to answer a research
-question from the live web. It is capability-minimized to ``browser_run`` so it can drive
-Chromium (search, navigate, read rendered pages) but cannot write files or run shell.
-Its whole operating contract lives in the brief.
+question from the live web. It is capability-minimized: ``browser_run`` drives Chromium
+(search, navigate, read rendered pages) for JS-heavy pages, and ``web_fetch`` is the cheap
+no-browser read for simple pages — but it cannot write files or run shell. Its whole
+operating contract lives in the brief.
 """
 
 from __future__ import annotations
@@ -14,7 +15,7 @@ from swarm.web_research_orchestrator._schemas import web_research_output_schema
 
 # Kept as a module constant so the opt-in helper can guarantee the parent grants a superset
 # (narrower-wins would otherwise strip them).
-WEB_RESEARCH_SUBAGENT_TOOLS: tuple[str, ...] = ("browser_run",)
+WEB_RESEARCH_SUBAGENT_TOOLS: tuple[str, ...] = ("browser_run", "web_fetch")
 
 WEB_RESEARCH_ORCHESTRATOR = SubagentSpec(
     name="web_research",

@@ -70,7 +70,7 @@ ANALYST_SUBAGENTS: tuple[SubagentSpec, ...] = (
             "print(json.dumps({...})). When a result says `Full output saved to: <file>`, read that "
             "full payload with `read_offloaded` (not `read_file`). Never invent a source or a URL."
         ),
-        tools=("browser_run", "read_file", "read_offloaded"),
+        tools=("browser_run", "web_fetch", "read_file", "read_offloaded"),
     ),
     SubagentSpec(
         name="narrative",

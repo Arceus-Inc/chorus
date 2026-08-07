@@ -51,7 +51,7 @@ RESEARCHER_SUBAGENT = SubagentSpec(
     ),
     # Read to understand the ask, write the brief, and the web tools + spawn_subagent it delegates to
     # web_research (transitivity). All ⊆ the PM's shelf, so capability minimisation holds.
-    tools=("read_file", "write_file", "browser_run", "spawn_subagent"),
+    tools=("read_file", "write_file", "browser_run", "web_fetch", "spawn_subagent"),
     # Depth-2: the Researcher dispatches the shared Web-Research Orchestrator for cited facts.
     spawnable=(WEB_RESEARCH_ORCHESTRATOR,),
     # Read the ask, spawn web_research ONCE, write the brief — 6 keeps the sweep short (a wider budget

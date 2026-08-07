@@ -58,9 +58,11 @@ def marketer_manifest() -> RoleManifest:
             "lattice_apply",
             "skill_manage",
             "spawn_subagent",
-            # market/audience research via Chromium CDP (§06 Researcher, §07 read reach).
-            # Granted so narrower-wins doesn't strip browser_run from web_research at materialize.
+            # market/audience research via the web (§06 Researcher, §07 read reach).
+            # browser_run drives Chromium CDP; web_fetch is the cheap no-browser read.
+            # Granted so narrower-wins doesn't strip them from web_research at materialize.
             "browser_run",
+            "web_fetch",
             # the ONLY path to a live surface: stage publish/send/spend for human approval (§07/§11).
             # Its call opens a gate and never executes — reach is fail-closed by construction.
             "stage_go_live",

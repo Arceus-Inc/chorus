@@ -31,8 +31,8 @@ class TestDeclaration:
         assert isinstance(WEB_RESEARCH_ORCHESTRATOR, SubagentSpec)
         assert WEB_RESEARCH_ORCHESTRATOR.name == "web_research"
 
-    def test_uses_only_browser_run(self) -> None:
-        assert WEB_RESEARCH_ORCHESTRATOR.tools == ("browser_run",)
+    def test_uses_browser_and_fetch(self) -> None:
+        assert WEB_RESEARCH_ORCHESTRATOR.tools == ("browser_run", "web_fetch")
 
     def test_has_no_write_or_command_tools(self) -> None:
         for forbidden in ("write_file", "run_command", "read_file"):
@@ -50,6 +50,7 @@ class TestDeclaration:
     def test_brief_carries_policy_ladder_and_contract(self) -> None:
         desc = WEB_RESEARCH_ORCHESTRATOR.description
         assert "browser_run" in desc
+        assert "web_fetch" in desc
         assert "new_tab" in desc or "page_info" in desc
         assert "citation_graph" in desc  # the output contract
         assert "confidence" in desc
@@ -69,7 +70,7 @@ class TestWithWebResearch:
 
     def test_grants_the_required_tools(self) -> None:
         m = with_web_research(_base_manifest())
-        for tool in ("spawn_subagent", "browser_run"):
+        for tool in ("spawn_subagent", "browser_run", "web_fetch"):
             assert tool in m.tools
         assert "read_file" in m.tools  # original tools preserved
 
@@ -97,12 +98,12 @@ class TestWithWebResearch:
 
 
 class TestFactoryProjection:
-    def test_projects_into_a_subagent_set_with_browser_run(self) -> None:
+    def test_projects_into_a_subagent_set_with_browser_and_fetch(self) -> None:
         config = role_beat_config(with_web_research(_base_manifest()))
         sset = _subagent_set(config)
         assert sset is not None
         agent = next(a for a in sset.agents.values() if a.name == "web_research")
-        assert set(agent.tools) == set(dream_tool_names(("browser_run",)))
+        assert set(agent.tools) == set(dream_tool_names(("browser_run", "web_fetch")))
 
 
 # --- output contract -------------------------------------------------------

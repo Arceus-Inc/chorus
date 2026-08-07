@@ -54,7 +54,7 @@ STRATEGIST_SUBAGENT = SubagentSpec(
     ),
     # Holds the web-read tools so it can delegate them to web_research (transitivity), plus
     # spawn_subagent to dispatch it and write_file for the brief. All ⊆ the marketer's shelf.
-    tools=("read_file", "write_file", "browser_run", "spawn_subagent"),
+    tools=("read_file", "write_file", "browser_run", "web_fetch", "spawn_subagent"),
     # Depth-2: the Strategist dispatches the shared Web-Research Orchestrator for market facts.
     spawnable=(WEB_RESEARCH_ORCHESTRATOR,),
     # read spec + brief, spawn web_research once or twice, write the brief — 10 leaves headroom.

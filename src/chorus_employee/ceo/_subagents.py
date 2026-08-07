@@ -20,7 +20,7 @@ CEO_SUBAGENTS: tuple[SubagentSpec, ...] = (
             "what would have to be true for this to fail. Return the specific weaknesses and the risks "
             "that most deserve a guardrail. Do not rewrite the decision — pressure-test it."
         ),
-        tools=("read_file", "read_offloaded", "browser_run"),
+        tools=("read_file", "read_offloaded", "browser_run", "web_fetch"),
     ),
     SubagentSpec(
         name="researcher",
@@ -31,7 +31,7 @@ CEO_SUBAGENTS: tuple[SubagentSpec, ...] = (
             "with exact source URLs — market size, competitor moves, benchmarks, regulatory "
             "constraints — not opinion."
         ),
-        tools=("browser_run", "read_file", "read_offloaded"),
+        tools=("browser_run", "web_fetch", "read_file", "read_offloaded"),
     ),
 )
 

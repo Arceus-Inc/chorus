@@ -63,6 +63,7 @@ def designer_manifest() -> RoleManifest:
             # pattern/prior-art research via Chromium CDP (designer §06 UX-Researcher,
             # §07 pattern research). Needs the net tier below.
             "browser_run",
+            "web_fetch",
             # the load-bearing primitive: the deterministic a11y/token scan the Critic grounds its
             # verdict on (designer §08/§10 — the exact analog of the Marketer's brand_lint).
             "design_lint",
