@@ -69,16 +69,15 @@ ledger + event log. It holds no state. The surfaces (Paperclip's layered livenes
 
 ---
 
-## 4. Tracing (opt-in, from `observability.md`)
+## 4. Tracing (default-on OTLP)
 
-Distributed tracing is **opt-in and zero-cost when off** (Paperclip's rule): chorus loads OTel only
-when `OTEL_EXPORTER_OTLP_ENDPOINT` is set; otherwise no import, no overhead. **Traces only** (no
-metrics/logs in core). Graceful degradation: endpoint set but `chorus[otel]` packages missing → warn
-once + run untraced. Every span carries `service.name`/`service.version` (also via
-`OTEL_SERVICE_NAME` / `OTEL_SERVICE_VERSION`).
+Distributed tracing is **on by default**. Chorus always fans the EventBus to an
+`OtelSpanSink` (OTLP/HTTP + `BatchSpanProcessor`) unless `OTEL_SDK_DISABLED=true`.
+Endpoint defaults to `http://localhost:4318`; override with
+`OTEL_EXPORTER_OTLP_ENDPOINT`. Every span carries `service.name`/`service.version`
+(also via `OTEL_SERVICE_NAME` / `OTEL_SERVICE_VERSION`).
 
-**Implemented:** `with_otel_export(bus)` fans the EventBus to an `OtelSpanSink` (OTLP/HTTP +
-`BatchSpanProcessor`). Beat span tree keyed by `task_id`:
+**Span tree** keyed by `task_id`:
 
 | Event | Span |
 |---|---|
@@ -88,8 +87,8 @@ once + run untraced. Every span carries `service.name`/`service.version` (also v
 | `run.subagent_*` | child `subagent.{name}` |
 | `run.evaluated` | root attrs `chorus.eval.outcome` / `chorus.eval.score` |
 
-Install: `pip install 'chorus[otel]'`. Point the endpoint at any OTLP collector (Jaeger, Tempo,
-Langfuse OTLP, SigNoz, …). Ledger-op spans and full `trace_id` correlation (08 §6) remain follow-ups.
+Point the endpoint at any OTLP collector (Jaeger, Tempo, Langfuse OTLP, SigNoz, …).
+Ledger-op spans and full `trace_id` correlation (08 §6) remain follow-ups.
 
 ---
 

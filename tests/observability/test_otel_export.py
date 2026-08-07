@@ -1,4 +1,4 @@
-"""OTel OTLP export — env gate, span tree, zero-cost when off (spec 08 §4)."""
+"""OTel OTLP export — default-on beat span tree."""
 
 from __future__ import annotations
 
@@ -90,12 +90,18 @@ def _reset_otel_provider() -> None:
     reset_otel_provider_for_tests()
 
 
-def test_config_disabled_when_endpoint_unset() -> None:
-    assert not is_otel_enabled(environ={})
+def test_enabled_by_default() -> None:
+    assert is_otel_enabled(environ={})
     cfg = load_otel_config(environ={})
-    assert cfg.enabled is False
-    assert cfg.endpoint is None
+    assert cfg.enabled is True
+    assert cfg.endpoint == "http://localhost:4318"
     assert cfg.service_name == "chorus"
+
+
+def test_disabled_via_sdk_flag() -> None:
+    env = {"OTEL_SDK_DISABLED": "1"}
+    assert not is_otel_enabled(environ=env)
+    assert load_otel_config(environ=env).endpoint is None
 
 
 def test_config_module_does_not_import_opentelemetry() -> None:
@@ -107,16 +113,15 @@ def test_config_module_does_not_import_opentelemetry() -> None:
     assert not any(k.startswith("opentelemetry") for k in sys.modules)
 
 
-def test_otel_sink_if_configured_returns_none_when_unset(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("OTEL_EXPORTER_OTLP_ENDPOINT", raising=False)
+def test_otel_sink_none_when_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("OTEL_SDK_DISABLED", "true")
     from chorus.observability._otel import otel_sink_if_configured
 
     assert otel_sink_if_configured() is None
-    assert not any(k.startswith("opentelemetry") for k in sys.modules)
 
 
-def test_with_otel_export_unchanged_when_unset(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("OTEL_EXPORTER_OTLP_ENDPOINT", raising=False)
+def test_with_otel_export_unchanged_when_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("OTEL_SDK_DISABLED", "true")
     from chorus.observability import EventBus
     from chorus.observability._otel import with_otel_export
 
