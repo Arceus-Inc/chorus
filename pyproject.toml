@@ -41,6 +41,11 @@ dependencies = [
 
 [project.optional-dependencies]
 postgres = ["psycopg[binary]>=3.1"]  # Arceus distribution driver (spec 00 §7)
+otel = [
+  "opentelemetry-api>=1.27",
+  "opentelemetry-sdk>=1.27",
+  "opentelemetry-exporter-otlp-proto-http>=1.27",
+]
 dev = [
   "psycopg[binary]>=3.1",  # the Postgres ledger driver is type-checked + conformance-tested in dev
   "pytest>=8.2",
@@ -49,6 +54,9 @@ dev = [
   "ruff>=0.6",
   "mypy>=1.11",
   "types-pyyaml>=6.0",
+  "opentelemetry-api>=1.27",
+  "opentelemetry-sdk>=1.27",
+  "opentelemetry-exporter-otlp-proto-http>=1.27",
 ]
 
 [project.scripts]
@@ -96,6 +104,13 @@ disallow_untyped_defs = false
 
 [[tool.mypy.overrides]]
 module = ["croniter", "croniter.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = [
+  "opentelemetry",
+  "opentelemetry.*",
+]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
