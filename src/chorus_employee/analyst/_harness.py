@@ -47,6 +47,7 @@ def analyst_manifest() -> RoleManifest:
             "repo_search",
             "warehouse_query",
             "browser_run",
+            "web_fetch",
             "read_offloaded",
             "notebook_run",
             "chart_render",

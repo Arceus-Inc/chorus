@@ -49,6 +49,7 @@ def ceo_manifest() -> RoleManifest:
             "write_file",
             "run_command",
             "browser_run",
+            "web_fetch",
             "read_offloaded",
             "skill",
             "memory_search",

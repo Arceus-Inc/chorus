@@ -2,8 +2,8 @@
 
 chorus projects only **Tier-1** (role-owned) subagents today, so a "shared" subagent is realized
 by defining it once (:data:`WEB_RESEARCH_ORCHESTRATOR`) and adding it to each opted-in role's
-manifest. This helper also grants the parent ``browser_run`` — because narrower-wins intersects a
-subagent's tools with its parent's.
+manifest. This helper also grants the parent the orchestrator's tools (``browser_run`` /
+``web_fetch``) — because narrower-wins intersects a subagent's tools with its parent's.
 
 The grant is monotone: it only ever *widens* the manifest (adds tools, appends the subagent, and
 raises the sandbox to at least ``REPO_WRITE_NET`` for Chromium CDP egress). A role already at

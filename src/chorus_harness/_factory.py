@@ -131,10 +131,12 @@ _CHORUS_TO_DREAM_TOOL: dict[str, str] = {
     # (not in-context), so a re-dispatched beat resumes from it. Identity-mapped so dream_tool_names keeps
     # it and _role_registry enables it from default_registry.
     "todo_write": "todo_write",
-    # Web research: first-class browser_run (Chromium CDP via browser-harness). Legacy Tavily
-    # web_search/web_extract stay mapped so old manifests don't hard-fail during migration, but
-    # employee roles grant browser_run only.
+    # Web research: first-class browser_run (Chromium CDP via browser-harness), plus
+    # web_fetch (the lean direct-HTTP read — no CDP, no API key). Legacy Tavily
+    # web_search/web_extract stay mapped so old manifests don't hard-fail during
+    # migration, but employee roles grant browser_run / web_fetch only.
     "browser_run": "browser_run",
+    "web_fetch": "web_fetch",
     "web_search": "web_search",
     "web_extract": "web_extract",
     # Reading spilled tool output: a large tool result (a browser_run dump, a repo_search dump) is
