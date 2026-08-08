@@ -23,11 +23,11 @@ classifiers = [
 ]
 dependencies = [
   # chorus depends on dream; nothing depends sideways (spec 00 §5).
-  # Requires dream >= cb30e60 (on main): the capability-aware evaluator that judges on
-  # evidence instead of withholding a pass for being unable to run verification itself —
-  # without it, reviewed-build flows strand correct work on `needs-changes`. That commit
-  # also surfaces RunTaskResult.usage_by_model (c1ff39e), which the budget gates price;
-  # older pins degrade gracefully there (the field defaults to {}, so cost_cents = 0).
+  # Requires dream >= f22a037 (Dream PR #90 / feat/retries-infra): CredentialPool-wired
+  # FailoverStreamer, typed failure classifier (billing/model-not-found/overflow→compress),
+  # heartbeat coma→one substrate failover, and tool exact-failure circuit breaker (warn@2/block@5).
+  # Chorus inherits this via build_harness — no chorus-side streamer wiring. Still carries the
+  # earlier floor: capability-aware evaluator (cb30e60) + RunTaskResult.usage_by_model (c1ff39e).
   "dream",
   "croniter>=2.0",
   "pyyaml>=6.0",
