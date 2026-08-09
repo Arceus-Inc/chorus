@@ -85,6 +85,20 @@ def test_agent_session_migration_reports_tables() -> None:
     assert migration.table_names() == ["agent_session"]
 
 
+def test_lattice_selection_seal_outbox_migration_reports_tables() -> None:
+    migration = next(m for m in load_migrations() if m.id == "0006_lattice_selection_seal_outbox")
+    assert migration.table_names() == ["lattice_selection_seal_outbox"]
+
+
+def test_lattice_selection_seal_outbox_forces_rls(pg_database: str) -> None:
+    with psycopg.connect(pg_database) as db:
+        row = db.execute(
+            "SELECT relrowsecurity, relforcerowsecurity FROM pg_class "
+            "WHERE oid = 'lattice_selection_seal_outbox'::regclass"
+        ).fetchone()
+    assert row == (True, True)
+
+
 def test_fresh_bootstrap_applies_baseline_then_all_migrations(
     pg_database: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -133,8 +133,9 @@ class RunRepo:
         liveness_state: str | None = None,
         outcome: dict[str, object] | None = None,
         usage: dict[str, object] | None = None,
+        finished_at: datetime | None = None,
     ) -> None:
-        now = utcnow_iso()
+        now = to_iso(finished_at) or utcnow_iso()
         self._conn.execute(
             "UPDATE run SET status = ?, liveness_state = COALESCE(?, liveness_state), "
             "outcome = COALESCE(?, outcome), usage = COALESCE(?, usage), finished_at = ? "

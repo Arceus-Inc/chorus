@@ -59,6 +59,7 @@ from chorus.ledger.repos import (
     DodRepo,
     EmployeeRepo,
     GoalRepo,
+    LatticeSelectionSealRepo,
     ManagementProfileRepo,
     MessageRepo,
     MonitorRepo,
@@ -174,6 +175,7 @@ class Ledger:
         self.employees = EmployeeRepo(conn)
         self.agent_sessions = AgentSessionRepo(conn)
         self.goals = GoalRepo(conn)
+        self.lattice_selection_seals = LatticeSelectionSealRepo(conn)
         self.tasks = TaskRepo(conn)
         self.management_profiles = ManagementProfileRepo(conn)
         self.teams = TeamRepo(conn)

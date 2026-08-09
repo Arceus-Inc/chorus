@@ -10,6 +10,7 @@ Procedural memory is NOT written here — use ``skill_manage`` (Chorus SkillStor
 from __future__ import annotations
 
 import json
+import logging
 from typing import Any
 
 from dream.contracts.tool import ToolResult
@@ -22,6 +23,7 @@ from pydantic import BaseModel, Field, ValidationError
 from chorus.heartbeat import BeatContext
 
 _LATTICE_TOOLS = frozenset({"lattice_context", "lattice_packet", "lattice_apply"})
+_logger = logging.getLogger("chorus.tools.lattice")
 
 
 class LatticeContextInput(BaseModel):
@@ -53,12 +55,14 @@ class LatticeContextTool(BaseTool):
     declaration = ToolDeclaration(risk="safe", tier_required=0, timeout_seconds=10.0)
     input_model = LatticeContextInput
 
-    def __init__(self, lattice: Lattice) -> None:
+    def __init__(self, lattice: Lattice, *, durable_selection_journal: bool = False) -> None:
         self._lattice = lattice
-        # Per-materialize memo: (query, limit) → (call #, last rendered content). A repeat call whose
-        # content is unchanged returns a short note instead of re-rendering the identical block —
-        # the live 5+2 probe showed 5 identical calls in one beat, each re-spending the tokens.
-        self._seen: dict[tuple[str, int], tuple[int, str]] = {}
+        # True only for Podium's injected PostgreSQL runtime. The standalone file-backed fallback is
+        # explicitly non-durable and cannot become an authority for APPLIED outcome edges.
+        self._durable_selection_journal = durable_selection_journal
+        # Per-materialize memo: a repeat call in one run returns a short note without another Lattice
+        # query. The live 5+2 probe showed five identical calls re-spending the full pattern block.
+        self._seen: set[tuple[str, str, int]] = set()
 
     async def execute(self, input: dict[str, object], ctx: ToolExecutionContext) -> ToolResult:
         try:
@@ -73,7 +77,22 @@ class LatticeContextTool(BaseTool):
                 structured={"status": "error", "summary": "malformed input"},
             )
         beat = BeatContext.read(ctx.working_dir)
-        content = self._lattice.context(beat.employee_id, args.query, k=args.limit)
+        key = (beat.run_id, args.query, args.limit)
+        if key in self._seen:
+            return ToolResult(
+                content=(
+                    "unchanged since your first call this beat for the same query — "
+                    "reuse that result; do not re-query."
+                ),
+                structured={
+                    "status": "success",
+                    "summary": "unchanged from first call",
+                    "cached": True,
+                    "next_actions": ["reuse the earlier result", "proceed with the task"],
+                },
+            )
+        context = self._lattice.context_result(beat.employee_id, args.query, k=args.limit)
+        content = context.markdown
         if not content.strip():
             return ToolResult(
                 content="no distilled patterns matched. Try a broader query or recall().",
@@ -83,24 +102,44 @@ class LatticeContextTool(BaseTool):
                     "next_actions": ["recall(query=…)", "widen lattice_context query"],
                 },
             )
-        key = (args.query, args.limit)
-        seen = self._seen.get(key)
-        if seen is not None and seen[1] == content:
-            call_no = seen[0]
-            return ToolResult(
-                content=(
-                    f"unchanged since your call #{call_no} this beat for the same query — "
-                    "reuse that result; do not re-query."
-                ),
-                structured={
-                    "status": "success",
-                    "summary": f"unchanged from call #{call_no}",
-                    "cached": True,
-                    "next_actions": ["reuse the earlier result", "proceed with the task"],
-                },
-            )
-        call_no = (seen[0] if seen is not None else 0) + 1
-        self._seen[key] = (call_no, content)
+        if self._durable_selection_journal:
+            try:
+                capture = self._lattice.capture_context_selection(
+                    beat.employee_id,
+                    context,
+                    beat_run_id=beat.run_id,
+                )
+                if not capture.durable:
+                    raise RuntimeError("context selection journal did not confirm durability")
+                if capture.skipped_unversioned_hits:
+                    raise RuntimeError("context selection contains unversioned hits")
+            except Exception as exc:
+                _logger.exception(
+                    "lattice context selection capture failed for employee=%s run=%s",
+                    beat.employee_id,
+                    beat.run_id,
+                )
+                from chorus_tools._lattice_bridge import write_lattice_error
+
+                write_lattice_error(
+                    ctx.working_dir,
+                    site="lattice_context.capture_selection",
+                    error=exc,
+                )
+                return ToolResult(
+                    content=(
+                        "lattice_context unavailable: the exact selection could not be durably "
+                        "journaled, so no context was disclosed. Retry later."
+                    ),
+                    is_error=True,
+                    structured={
+                        "status": "error",
+                        "summary": "exact context selection was not durable",
+                        "retry": "retry lattice_context after PostgreSQL recovers",
+                        "stop": "do not act on context that was not durably journaled",
+                    },
+                )
+        self._seen.add(key)
         return ToolResult(
             content=content,
             structured={
@@ -316,9 +355,14 @@ def _parse_proposal(raw: dict[str, Any], *, employee_id: str) -> Proposal:
     return Proposal(employee_id=employee_id, patterns=tuple(patterns), habits=())
 
 
-def lattice_tool(name: str, lattice: Lattice) -> BaseTool | None:
+def lattice_tool(
+    name: str, lattice: Lattice, *, durable_selection_journal: bool = False
+) -> BaseTool | None:
     if name == "lattice_context":
-        return LatticeContextTool(lattice)
+        return LatticeContextTool(
+            lattice,
+            durable_selection_journal=durable_selection_journal,
+        )
     if name == "lattice_packet":
         return LatticePacketTool(lattice)
     if name == "lattice_apply":

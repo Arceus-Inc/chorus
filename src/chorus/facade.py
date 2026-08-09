@@ -44,6 +44,7 @@ from chorus.heartbeat import (
     runner_from,
 )
 from chorus.ids import mint_id
+from chorus.lattice import LatticeRuntime
 from chorus.ledger import (
     ActivityVerb,
     DelegationContract,
@@ -147,6 +148,7 @@ class Chorus:
         roles: Sequence[RolePlugin] | None = None,
         caps: Caps | None = None,
         company_id: str = "company",
+        lattice_runtime: LatticeRuntime | None = None,
     ) -> Chorus:
         """The composition root — wire the concrete backends and inject them (spec 10 §1).
 
@@ -160,7 +162,9 @@ class Chorus:
         ``ledger`` (share an already-open store with the harness factory, so a reviewer's verdict
         and the factory's capability tools land in *one* ledger, not two). ``roles`` defaults to
         :func:`chorus.roles.default_roles`; extra roles register through the same validated path
-        (spec 09 §1).
+        (spec 09 §1). ``lattice_runtime`` is the one PostgreSQL-backed Lattice instance; pass that
+        same public runtime to ``EmployeeHarnessFactory`` so exact context selections are durably
+        journaled before disclosure and sealed at this scheduler's landed-outcome choke point.
         """
         if dsn is not None and ledger is not None:
             raise ValueError("provide either dsn or ledger, not both")
@@ -209,6 +213,7 @@ class Chorus:
             roles=registry,  # a task inherits its assignee role's DoD at intake (spec 04 §1 / 06 §2)
             landers=landers,  # the landing seam — a passed beat lands its role artifact (spec 04 §2)
             memory_writer=memory_writer,  # every beat's SprintDelta lands in the episodic store
+            lattice_runtime=lattice_runtime,
         )
         return cls(
             ledger=store,

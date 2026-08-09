@@ -20,9 +20,14 @@ import json
 import logging
 import subprocess
 from collections.abc import Awaitable, Callable
+from contextlib import nullcontext
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol, TypeVar, runtime_checkable
+
+from dream.contracts.strategy import LandedOutcome
+from lattice.contracts.applied import AppliedEdgeConflictError, LandedOutcomePhase
+from lattice.contracts.selection import ContextSelectionConflictError
 
 from chorus.adapters._failure import failure_outcome
 from chorus.cron._fire import fire_routine
@@ -42,6 +47,8 @@ from chorus.hooks import OrgHook, default_org_hooks, run_org_hooks
 from chorus.ids import mint_id
 from chorus.ledger import (
     ApprovalGate,
+    LatticeSelectionSeal,
+    LatticeSelectionSealConflictError,
     TaskPriority,
     begin_beat_session,
     persist_beat_account,
@@ -75,6 +82,7 @@ if TYPE_CHECKING:
     from chorus.budgets import BudgetEnforcer
     from chorus.heartbeat._beat import BeatRunner
     from chorus.heartbeat._runner_for import BeatRunnerFor
+    from chorus.lattice import LatticeRuntime
     from chorus.ledger import Ledger, Task
     from chorus.observability import EventSink
     from chorus.outcomes import Artifact as OutcomeArtifact
@@ -108,6 +116,21 @@ _VERIFY_OUTPUT_TAIL = 4000
 # Exit codes the kernel synthesizes when the command never produces one of its own.
 _VERIFY_TIMEOUT_EXIT = 124
 _VERIFY_SPAWN_FAILED_EXIT = 127
+_LATTICE_RETRY_BASE_S = 1
+_LATTICE_RETRY_MAX_S = 300
+_LATTICE_SEAL_CLAIM_LEASE_S = 30
+_LATTICE_SEAL_RETRY_BATCH = 64
+
+
+def _lattice_seal_retry_delay(attempt_count: int) -> int:
+    exponent = min(max(attempt_count - 1, 0), 8)
+    return min(_LATTICE_RETRY_BASE_S * (1 << exponent), _LATTICE_RETRY_MAX_S)
+
+
+def _lattice_seal_error(error: Exception) -> str:
+    # Durable operational state must never become a secret-bearing exception dump. The full
+    # traceback remains in logs; the outbox retains only a bounded classification for operators.
+    return f"{type(error).__name__}: Lattice selection seal failed"[:160]
 
 
 def _run_verify_command(worktree: Path, command: str, *, timeout_s: int) -> tuple[int, str]:
@@ -343,6 +366,7 @@ class Scheduler:
         clock: Callable[[], datetime] | None = None,
         sleep: Callable[[float], Awaitable[None]] | None = None,
         org_hooks: tuple[OrgHook, ...] | None = None,
+        lattice_runtime: LatticeRuntime | None = None,
     ) -> None:
         self.tick_interval_s = tick_interval_s
         self.max_concurrent_runs = max_concurrent_runs
@@ -382,6 +406,7 @@ class Scheduler:
             memory_writer  # None = no episodic capture (the kernel is writer-agnostic)
         )
         self._company_root = company_root  # None = no lattice beat-end gate (lattice is optional)
+        self._lattice_runtime = lattice_runtime
         self._clock = clock or _utc_now  # the time source the run loop stamps each pulse with
         self._sleep = (
             sleep or asyncio.sleep
@@ -398,6 +423,7 @@ class Scheduler:
         (``SKIP LOCKED`` + the deterministic sort key, spec 03 §5).
         """
         ledger = self._require_ledger()
+        self._retry_pending_lattice_selection_seals(now=now)
 
         # (a) RECOVER — reap orphaned leases + reconcile stranded work before any new dispatch, so
         # a crashed beat's lock is freed and its slot returned to the budget this same pulse.
@@ -838,56 +864,112 @@ class Scheduler:
         except Exception as exc:
             result = failure_outcome(exc)
 
-        verdict = result.outcome or None
-        if result.disposition is BeatDisposition.CANCELLED:
-            # Cooperative cancel (caps/budget/operator): record a cancelled run and return the task
-            # to its pre-beat (dispatchable) state — no DoD verdict, no recovery card (spec 05 §5/§6).
-            ledger.runs.finish(run_id, RunStatus.CANCELLED, outcome=verdict)
-            ledger.tasks.set_status(task_id, TaskStatus.TODO)
-        elif profile_error is not None:
-            # Authority refused the beat BEFORE it ran (ExecutionProfileDenied — a revoked grant,
-            # a contract/Team mismatch, a resolver fault). Even for a parent with children this is
-            # never "success by delegating": recording SUCCEEDED here would walk the denial straight
-            # into lead acceptance. Fail the run and strand it so an operator sees the denial.
-            ledger.runs.finish(run_id, RunStatus.FAILED, outcome=verdict)
-            self._resume_or_strand(task_id, employee_id=employee.id, result=result)
-        elif ledger.tasks.has_children(task_id):
-            # The task delegated: its lifecycle is its subtree's, not its own dream verdict (spec M3 §5).
-            # This is the fifth beat outcome — the manager "succeeded by delegating".
-            ledger.runs.finish(run_id, RunStatus.SUCCEEDED, outcome=verdict)
-            if not ledger.tasks.all_children_terminal(task_id):
-                # PARK (delegated) — wait for the children; not done, not failed, no recovery ladder.
+        defer_run_finish = self._lattice_runtime is not None
+        landed_transaction = ledger.transaction() if defer_run_finish else nullcontext()
+        with landed_transaction:
+            verdict = result.outcome or None
+            if result.disposition is BeatDisposition.CANCELLED:
+                # Cooperative cancel (caps/budget/operator): record a cancelled run and return the task
+                # to its pre-beat (dispatchable) state — no DoD verdict, no recovery card (spec 05 §5/§6).
+                run_status = RunStatus.CANCELLED
+                if not defer_run_finish:
+                    ledger.runs.finish(run_id, run_status, outcome=verdict)
+                ledger.tasks.set_status(task_id, TaskStatus.TODO)
+            elif profile_error is not None:
+                # Authority refused the beat BEFORE it ran (ExecutionProfileDenied — a revoked grant,
+                # a contract/Team mismatch, a resolver fault). Even for a parent with children this is
+                # never "success by delegating": recording SUCCEEDED here would walk the denial straight
+                # into lead acceptance. Fail the run and strand it so an operator sees the denial.
+                run_status = RunStatus.FAILED
+                if not defer_run_finish:
+                    ledger.runs.finish(run_id, run_status, outcome=verdict)
+                self._resume_or_strand(task_id, employee_id=employee.id, result=result)
+            elif ledger.tasks.has_children(task_id):
+                # The task delegated: its lifecycle is its subtree's, not its own dream verdict (spec M3 §5).
+                # This is the fifth beat outcome — the manager "succeeded by delegating".
+                run_status = RunStatus.SUCCEEDED
+                if not defer_run_finish:
+                    ledger.runs.finish(run_id, run_status, outcome=verdict)
+                if not ledger.tasks.all_children_terminal(task_id):
+                    # PARK (delegated) — wait for the children; not done, not failed, no recovery ladder.
+                    ledger.tasks.set_status(task_id, TaskStatus.BLOCKED)
+                elif task.execution_mode is ExecutionMode.DELEGATION:
+                    await self._finish_delegation_parent(
+                        task=task,
+                        run_id=run_id,
+                        verifier=verifier,
+                        verdict=verdict,
+                        employee=employee,
+                        result=result,
+                        beat_runner=beat_runner,
+                        outcome_kind=(
+                            execution_profile.outcome_kind
+                            if execution_profile is not None
+                            else None
+                        ),
+                    )
+                elif (
+                    self._integrate_floor_verdict(
+                        task_id, verifier=verifier, beat_runner=beat_runner
+                    )
+                    is False
+                ):
+                    # ROLLUP GATE (run-18 false-`done` fix): the subtree is terminal, but the parent's
+                    # OBJECTIVE rollup DoD — a ``command`` floor, e.g. "every required deliverable exists and
+                    # the gate passes" — FAILED against the assembled company main. A delegated parent must
+                    # NOT mechanically claim ``done`` on a goal its own objective gate rejects: record the
+                    # failed verdict and park BLOCKED so the gap (a missing module / a dropped area) surfaces
+                    # honestly instead of being laundered into a false ``done``.
+                    ledger.finalize_beat(
+                        task_id=task_id, run_id=run_id, dod_status=DodStatus.FAILED, verdict=verdict
+                    )
+                    ledger.tasks.set_status(task_id, TaskStatus.BLOCKED)
+                else:
+                    # INTEGRATE — the whole subtree is terminal and the parent's objective floor passed (or
+                    # it declares none), so the parent is complete (spec M3 §5).
+                    await self._land_passed(
+                        task_id,
+                        run_id=run_id,
+                        verifier=verifier,
+                        verdict=verdict,
+                        employee=employee,
+                        result=result,
+                        outcome_kind=(
+                            execution_profile.outcome_kind
+                            if execution_profile is not None
+                            else None
+                        ),
+                    )
+            elif result.disposition is BeatDisposition.ERRORED:
+                # Engine/tool fault: the run failed. A wall-clock TIMEOUT is unfinished-not-wrong — resume it
+                # (re-dispatch from the persistent worktree + TODO.md, bounded); any other fault strands onto
+                # the recovery ladder with the phase on the evidence, owner preserved (§5).
+                run_status = RunStatus.FAILED
+                if not defer_run_finish:
+                    ledger.runs.finish(run_id, run_status, outcome=verdict)
+                self._resume_or_strand(task_id, employee_id=employee.id, result=result)
+            elif result.passed and task.execution_mode is ExecutionMode.DELEGATION:
+                # A delegation root that never fanned out cannot be done — its lifecycle is its
+                # subtree's, and the contract's acceptance/verification path only runs over children.
+                # (Found live 2026-07-18: a kickoff beat "passed" its in-beat evaluation without
+                # decomposing and landed DONE through the delivery path — zero children, contract
+                # never verified.) Park it and re-wake the lead to decompose.
+                run_status = RunStatus.SUCCEEDED
+                if not defer_run_finish:
+                    ledger.runs.finish(run_id, run_status, outcome=verdict)
                 ledger.tasks.set_status(task_id, TaskStatus.BLOCKED)
-            elif task.execution_mode is ExecutionMode.DELEGATION:
-                await self._finish_delegation_parent(
-                    task=task,
-                    run_id=run_id,
-                    verifier=verifier,
-                    verdict=verdict,
-                    employee=employee,
-                    result=result,
-                    beat_runner=beat_runner,
-                    outcome_kind=(
-                        execution_profile.outcome_kind if execution_profile is not None else None
-                    ),
+                ledger.wakes.enqueue(
+                    Wake(
+                        id=mint_id(),
+                        employee_id=employee.id,
+                        reason=WakeReason.CHILDREN_DONE,
+                        payload={"task_id": task_id, "cause": "delegation_root_never_decomposed"},
+                    )
                 )
-            elif (
-                self._integrate_floor_verdict(task_id, verifier=verifier, beat_runner=beat_runner)
-                is False
-            ):
-                # ROLLUP GATE (run-18 false-`done` fix): the subtree is terminal, but the parent's
-                # OBJECTIVE rollup DoD — a ``command`` floor, e.g. "every required deliverable exists and
-                # the gate passes" — FAILED against the assembled company main. A delegated parent must
-                # NOT mechanically claim ``done`` on a goal its own objective gate rejects: record the
-                # failed verdict and park BLOCKED so the gap (a missing module / a dropped area) surfaces
-                # honestly instead of being laundered into a false ``done``.
-                ledger.finalize_beat(
-                    task_id=task_id, run_id=run_id, dod_status=DodStatus.FAILED, verdict=verdict
-                )
-                ledger.tasks.set_status(task_id, TaskStatus.BLOCKED)
-            else:
-                # INTEGRATE — the whole subtree is terminal and the parent's objective floor passed (or
-                # it declares none), so the parent is complete (spec M3 §5).
+            elif result.passed:
+                run_status = RunStatus.SUCCEEDED
+                if not defer_run_finish:
+                    ledger.runs.finish(run_id, run_status, outcome=verdict)
                 await self._land_passed(
                     task_id,
                     run_id=run_id,
@@ -899,63 +981,72 @@ class Scheduler:
                         execution_profile.outcome_kind if execution_profile is not None else None
                     ),
                 )
-        elif result.disposition is BeatDisposition.ERRORED:
-            # Engine/tool fault: the run failed. A wall-clock TIMEOUT is unfinished-not-wrong — resume it
-            # (re-dispatch from the persistent worktree + TODO.md, bounded); any other fault strands onto
-            # the recovery ladder with the phase on the evidence, owner preserved (§5).
-            ledger.runs.finish(run_id, RunStatus.FAILED, outcome=verdict)
-            self._resume_or_strand(task_id, employee_id=employee.id, result=result)
-        elif result.passed and task.execution_mode is ExecutionMode.DELEGATION:
-            # A delegation root that never fanned out cannot be done — its lifecycle is its
-            # subtree's, and the contract's acceptance/verification path only runs over children.
-            # (Found live 2026-07-18: a kickoff beat "passed" its in-beat evaluation without
-            # decomposing and landed DONE through the delivery path — zero children, contract
-            # never verified.) Park it and re-wake the lead to decompose.
-            ledger.runs.finish(run_id, RunStatus.SUCCEEDED, outcome=verdict)
-            ledger.tasks.set_status(task_id, TaskStatus.BLOCKED)
-            ledger.wakes.enqueue(
-                Wake(
-                    id=mint_id(),
-                    employee_id=employee.id,
-                    reason=WakeReason.CHILDREN_DONE,
-                    payload={"task_id": task_id, "cause": "delegation_root_never_decomposed"},
-                )
-            )
-        elif result.passed:
-            ledger.runs.finish(run_id, RunStatus.SUCCEEDED, outcome=verdict)
-            await self._land_passed(
-                task_id,
-                run_id=run_id,
-                verifier=verifier,
-                verdict=verdict,
-                employee=employee,
-                result=result,
-                outcome_kind=(
-                    execution_profile.outcome_kind if execution_profile is not None else None
-                ),
-            )
-        else:
-            ledger.runs.finish(run_id, RunStatus.FAILED, outcome=verdict)
-            ledger.finalize_beat(
-                task_id=task_id, run_id=run_id, dod_status=DodStatus.FAILED, verdict=verdict
-            )
-            # A DoD failure on a *manager-parented* leaf escalates to the manager (mark REJECTED, wake it
-            # on children_done) so its integrate beat reacts (spec 15). Since spec 16 renders the
-            # ``agent_review`` verdict in-beat (no second Reviewer beat), the child block arrives here;
-            # routing it via ``_route_block`` keeps the manager loop intact. A standalone leaf climbs the
-            # bounded self-repair ladder (spec 04 §1) as before.
-            if self._manager_of(task) is not None:
-                self._route_block(task_id)
             else:
-                self._climb_repair_ladder(task_id, employee_id=employee.id, verifier=verifier)
+                run_status = RunStatus.FAILED
+                if not defer_run_finish:
+                    ledger.runs.finish(run_id, run_status, outcome=verdict)
+                ledger.finalize_beat(
+                    task_id=task_id, run_id=run_id, dod_status=DodStatus.FAILED, verdict=verdict
+                )
+                # A DoD failure on a *manager-parented* leaf escalates to the manager (mark REJECTED, wake it
+                # on children_done) so its integrate beat reacts (spec 15). Since spec 16 renders the
+                # ``agent_review`` verdict in-beat (no second Reviewer beat), the child block arrives here;
+                # routing it via ``_route_block`` keeps the manager loop intact. A standalone leaf climbs the
+                # bounded self-repair ladder (spec 04 §1) as before.
+                if self._manager_of(task) is not None:
+                    self._route_block(task_id)
+                else:
+                    self._climb_repair_ladder(task_id, employee_id=employee.id, verifier=verifier)
 
-        self._emit_outcome_landed(
-            task=task,
-            result=result,
-            run_id=run_id,
-            employee=employee,
-            now=now,
-        )
+            landed = self._derive_landed_outcome(
+                task=task,
+                result=result,
+            )
+            landed_at = self._clock()
+            selection_seal = (
+                LatticeSelectionSeal(
+                    employee_id=employee.id,
+                    beat_run_id=run_id,
+                    outcome_phase=landed.phase,
+                    landed_at=landed_at,
+                    next_attempt_at=landed_at,
+                )
+                if landed is not None and self._lattice_runtime is not None
+                else None
+            )
+            if defer_run_finish:
+                # The run's terminal state is the authoritative landed commit. When Lattice is active,
+                # its exact seal command enters the PostgreSQL outbox in that same transaction: a process
+                # can observe both after restart or neither, never a terminal run whose selection was
+                # forgotten.
+                ledger.runs.finish(
+                    run_id,
+                    run_status,
+                    outcome=verdict,
+                    finished_at=landed_at,
+                )
+                if selection_seal is not None:
+                    try:
+                        ledger.lattice_selection_seals.enqueue(selection_seal)
+                    except Exception:
+                        _logger.critical(
+                            "failed to durably enqueue Lattice selection seal for employee=%s run=%s",
+                            employee.id,
+                            run_id,
+                            exc_info=True,
+                        )
+                        raise
+
+        if landed is not None:
+            self._emit_outcome_landed(
+                task=task,
+                run_id=run_id,
+                employee=employee,
+                now=landed_at,
+                landed=landed,
+            )
+            if selection_seal is not None:
+                self._attempt_enqueued_lattice_selection(selection_seal, now=landed_at)
 
         self._persist_agent_session(
             ledger,
@@ -1078,18 +1169,13 @@ class Scheduler:
         )
         self._memory_writer.append(delta)
 
-    def _emit_outcome_landed(
+    def _derive_landed_outcome(
         self,
         *,
         task: Task,
         result: BeatOutcome,
-        run_id: str,
-        employee: Employee,
-        now: datetime,
-    ) -> None:
-        """Publish the typed landed outcome once — bridge/horizon project it mechanically (Phase 0)."""
-        if self._event_bus is None:
-            return
+    ) -> LandedOutcome | None:
+        """Derive the one typed terminal interpretation shared by every landing consumer."""
         ledger = self._require_ledger()
         latest = ledger.tasks.get(task.id) or task
         dod_row = ledger.dod.get_for_task(task.id)
@@ -1100,14 +1186,28 @@ class Scheduler:
             and ledger.tasks.has_children(task.id)
         )
         try:
-            landed = derive_landed_outcome(
+            return derive_landed_outcome(
                 latest,
                 result,
                 dod_status,
                 orchestrated=orchestrated,
             )
         except ValueError:
+            return None
+
+    def _emit_outcome_landed(
+        self,
+        *,
+        task: Task,
+        run_id: str,
+        employee: Employee,
+        now: datetime,
+        landed: LandedOutcome,
+    ) -> None:
+        """Publish the typed landed outcome once — bridge/horizon project it mechanically (Phase 0)."""
+        if self._event_bus is None:
             return
+        ledger = self._require_ledger()
         self._event_bus.emit(
             Event(
                 kind=EventKind.OUTCOME_LANDED,
@@ -1124,6 +1224,131 @@ class Scheduler:
             )
         )
 
+    def _attempt_enqueued_lattice_selection(
+        self,
+        seal: LatticeSelectionSeal,
+        *,
+        now: datetime,
+    ) -> None:
+        """Attempt a seal only after its exact command and landed run committed together."""
+        runtime = self._lattice_runtime
+        if runtime is None:
+            return
+        ledger = self._require_ledger()
+        try:
+            claimed = ledger.lattice_selection_seals.claim_one(
+                seal.beat_run_id,
+                now=now,
+                lease_until=now + timedelta(seconds=_LATTICE_SEAL_CLAIM_LEASE_S),
+            )
+        except Exception:
+            _logger.exception(
+                "Lattice selection seal is durable but its immediate claim failed for "
+                "employee=%s run=%s; a later tick can recover it",
+                seal.employee_id,
+                seal.beat_run_id,
+            )
+            return
+        if claimed is not None:
+            self._attempt_lattice_selection_seal(claimed, attempted_at=now)
+
+    def _retry_pending_lattice_selection_seals(self, *, now: datetime) -> None:
+        """Claim and retry one bounded PostgreSQL outbox batch."""
+        if self._lattice_runtime is None:
+            return
+        ledger = self._require_ledger()
+        claimed = ledger.lattice_selection_seals.claim_due(
+            now=now,
+            lease_until=now + timedelta(seconds=_LATTICE_SEAL_CLAIM_LEASE_S),
+            limit=_LATTICE_SEAL_RETRY_BATCH,
+        )
+        for seal in claimed:
+            self._attempt_lattice_selection_seal(seal, attempted_at=now)
+
+    def _attempt_lattice_selection_seal(
+        self,
+        seal: LatticeSelectionSeal,
+        *,
+        attempted_at: datetime,
+    ) -> None:
+        runtime = self._lattice_runtime
+        if runtime is None:
+            return
+        try:
+            runtime.lattice.record_landed_selection(
+                seal.employee_id,
+                seal.beat_run_id,
+                outcome_phase=LandedOutcomePhase(seal.outcome_phase.value),
+                landed_at=seal.landed_at,
+            )
+        except (AppliedEdgeConflictError, ContextSelectionConflictError) as exc:
+            error = _lattice_seal_error(exc)
+            _logger.critical(
+                "terminal Lattice selection seal conflict for employee=%s run=%s: %s",
+                seal.employee_id,
+                seal.beat_run_id,
+                error,
+            )
+            try:
+                self._require_ledger().lattice_selection_seals.mark_terminal(
+                    seal,
+                    error=error,
+                    terminal_at=attempted_at,
+                )
+            except Exception:
+                _logger.critical(
+                    "failed to mark terminal Lattice seal conflict for employee=%s run=%s",
+                    seal.employee_id,
+                    seal.beat_run_id,
+                    exc_info=True,
+                )
+                raise
+            return
+        except Exception as exc:
+            error = _lattice_seal_error(exc)
+            _logger.exception(
+                "lattice APPLIED selection sealing failed for employee=%s run=%s",
+                seal.employee_id,
+                seal.beat_run_id,
+            )
+            retry_at = attempted_at + timedelta(
+                seconds=_lattice_seal_retry_delay(seal.attempt_count)
+            )
+            try:
+                self._require_ledger().lattice_selection_seals.mark_retry(
+                    seal,
+                    error=error,
+                    next_attempt_at=retry_at,
+                )
+            except Exception:
+                _logger.exception(
+                    "failed to reschedule Lattice selection seal for employee=%s run=%s; "
+                    "the durable claim lease remains recoverable",
+                    seal.employee_id,
+                    seal.beat_run_id,
+                )
+            return
+        try:
+            self._require_ledger().lattice_selection_seals.mark_sealed(
+                seal,
+                sealed_at=attempted_at,
+            )
+        except LatticeSelectionSealConflictError:
+            _logger.critical(
+                "outbox identity conflict after Lattice sealed employee=%s run=%s",
+                seal.employee_id,
+                seal.beat_run_id,
+                exc_info=True,
+            )
+            raise
+        except Exception:
+            _logger.exception(
+                "Lattice selection sealed but outbox acknowledgement failed for employee=%s run=%s; "
+                "exact replay remains pending after the claim lease",
+                seal.employee_id,
+                seal.beat_run_id,
+            )
+
     def _write_lattice_beat_end(
         self,
         *,
@@ -1137,9 +1362,15 @@ class Scheduler:
         harness = working_dir / ".harness"
         path = harness / "lattice-beat-end.json"
         try:
-            from chorus_tools._lattice_bridge import build_lattice_for_chorus
+            runtime = self._lattice_runtime
+            if runtime is None:
+                from chorus_tools._lattice_bridge import build_lattice_for_chorus
 
-            lattice = build_lattice_for_chorus(self._company_root)
+                # Standalone local fallback only. Podium's injected LatticeRuntime remains the
+                # authority for all server-side context and APPLIED outcome recording.
+                lattice = build_lattice_for_chorus(self._company_root)
+            else:
+                lattice = runtime.lattice
             if not lattice.gate_open(employee.id):
                 if path.exists():
                     path.unlink()
@@ -1651,7 +1882,12 @@ class Scheduler:
         if verifier is None:
             ledger.tasks.set_status(task_id, TaskStatus.BLOCKED)
             return
-        failures = sum(1 for run in ledger.runs.for_task(task_id) if run.status is RunStatus.FAILED)
+        # With Lattice active, this beat's terminal update is deferred for the atomic outbox commit;
+        # include that current known failure even though the query cannot see it yet.
+        pending_failure = 1 if self._lattice_runtime is not None else 0
+        failures = pending_failure + sum(
+            1 for run in ledger.runs.for_task(task_id) if run.status is RunStatus.FAILED
+        )
         if failures <= self.max_repair_attempts:
             ledger.tasks.set_status(task_id, TaskStatus.TODO)  # dispatchable; not yet "stuck"
             ledger.wakes.enqueue(
@@ -1689,7 +1925,10 @@ class Scheduler:
         ledger = self._require_ledger()
         is_timeout = "TimeoutError" in str(result.outcome.get("error", ""))
         if is_timeout:
-            timeouts = sum(
+            # With Lattice active, the current timeout is deferred for the atomic outbox commit;
+            # count it explicitly even though the query cannot see it yet.
+            pending_timeout = 1 if self._lattice_runtime is not None else 0
+            timeouts = pending_timeout + sum(
                 1
                 for run in ledger.runs.for_task(task_id)
                 if run.status is RunStatus.FAILED and "TimeoutError" in str(run.outcome)
