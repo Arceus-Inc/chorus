@@ -16,9 +16,9 @@ CREATE TABLE eval_run (
     input_tokens          bigint NOT NULL CHECK (input_tokens >= 0),
     output_tokens         bigint NOT NULL CHECK (output_tokens >= 0),
     cost_usd              numeric NOT NULL CHECK (cost_usd >= 0),
-    status                text NOT NULL CHECK (status IN ('queued', 'running', 'completed', 'failed', 'cancelled')),
-    started_at            timestamptz,
-    completed_at          timestamptz,
+    status                text NOT NULL CHECK (status IN ('completed', 'failed', 'cancelled')),
+    started_at            timestamptz NOT NULL,
+    completed_at          timestamptz NOT NULL,
     created_at            timestamptz NOT NULL,
     CONSTRAINT eval_run_suite_revision_fk
         FOREIGN KEY (company_id, eval_suite_id, skill_revision_id)
@@ -33,8 +33,10 @@ ALTER TABLE eval_run ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE eval_run FORCE ROW LEVEL SECURITY;
 
-CREATE POLICY eval_run_company_isolation ON eval_run
-    USING (company_id = (SELECT (NULLIF(current_setting('app.company_id', true), ''))::uuid))
+CREATE POLICY eval_run_company_select ON eval_run FOR SELECT
+    USING (company_id = (SELECT (NULLIF(current_setting('app.company_id', true), ''))::uuid));
+
+CREATE POLICY eval_run_company_insert ON eval_run FOR INSERT
     WITH CHECK (company_id = (SELECT (NULLIF(current_setting('app.company_id', true), ''))::uuid));
 
 CREATE INDEX eval_run_suite_created_idx ON eval_run(company_id, eval_suite_id, created_at);
@@ -57,8 +59,10 @@ ALTER TABLE eval_run_artifact_revision ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE eval_run_artifact_revision FORCE ROW LEVEL SECURITY;
 
-CREATE POLICY eval_run_artifact_revision_company_isolation ON eval_run_artifact_revision
-    USING (company_id = (SELECT (NULLIF(current_setting('app.company_id', true), ''))::uuid))
+CREATE POLICY eval_run_artifact_revision_company_select ON eval_run_artifact_revision FOR SELECT
+    USING (company_id = (SELECT (NULLIF(current_setting('app.company_id', true), ''))::uuid));
+
+CREATE POLICY eval_run_artifact_revision_company_insert ON eval_run_artifact_revision FOR INSERT
     WITH CHECK (company_id = (SELECT (NULLIF(current_setting('app.company_id', true), ''))::uuid));
 
 CREATE UNIQUE INDEX eval_run_artifact_revision_position_uq

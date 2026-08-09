@@ -49,10 +49,8 @@ class EvalRunUsage:
 
 
 class EvalRunStatus(StrEnum):
-    """The recorded status of an evaluation run; records are never updated."""
+    """The terminal outcome captured by an immutable evaluation record."""
 
-    QUEUED = "queued"
-    RUNNING = "running"
     COMPLETED = "completed"
     FAILED = "failed"
     CANCELLED = "cancelled"
@@ -73,8 +71,8 @@ class EvalRun:
     usage: EvalRunUsage
     artifact_revision_ids: tuple[str, ...]
     status: EvalRunStatus
-    started_at: datetime | None = None
-    completed_at: datetime | None = None
+    started_at: datetime
+    completed_at: datetime
     created_at: datetime | None = None
 
     def __post_init__(self) -> None:
@@ -94,11 +92,7 @@ class EvalRun:
             raise ValueError("eval run artifact revision ids must not be blank")
         if len(self.artifact_revision_ids) != len(set(self.artifact_revision_ids)):
             raise ValueError("eval run artifact_revision_ids must not contain duplicates")
-        if (
-            self.started_at is not None
-            and self.completed_at is not None
-            and self.completed_at < self.started_at
-        ):
+        if self.completed_at < self.started_at:
             raise ValueError("eval run completed_at must not precede started_at")
 
 

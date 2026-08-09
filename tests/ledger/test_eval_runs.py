@@ -29,6 +29,9 @@ from chorus.ledger import (
 )
 from chorus.testing import uid
 
+_STARTED_AT = datetime(2026, 8, 9, 12, 0, tzinfo=UTC)
+_COMPLETED_AT = datetime(2026, 8, 9, 12, 1, tzinfo=UTC)
+
 
 def _suite(ledger: Ledger, *, suffix: str) -> tuple[EvalSuite, SkillRevision]:
     ledger.skills.insert(
@@ -97,8 +100,8 @@ def _run(
         usage=EvalRunUsage(input_tokens=12, output_tokens=34, cost_usd=Decimal("0.005001")),
         artifact_revision_ids=artifact_revision_ids,
         status=EvalRunStatus.COMPLETED,
-        started_at=datetime(2026, 8, 9, 12, 0, tzinfo=UTC),
-        completed_at=datetime(2026, 8, 9, 12, 1, tzinfo=UTC),
+        started_at=_STARTED_AT,
+        completed_at=_COMPLETED_AT,
     )
 
 
@@ -137,6 +140,8 @@ def test_eval_run_rejects_invalid_usage_and_duplicate_artifacts() -> None:
             usage=EvalRunUsage(0, 0, Decimal("0")),
             artifact_revision_ids=(uid("artifact-revision"), uid("artifact-revision")),
             status=EvalRunStatus.COMPLETED,
+            started_at=_STARTED_AT,
+            completed_at=_COMPLETED_AT,
         )
 
 
@@ -164,6 +169,8 @@ def test_eval_run_rejects_blank_identity_fields() -> None:
                 usage=EvalRunUsage(0, 0, Decimal("0")),
                 artifact_revision_ids=(),
                 status=EvalRunStatus.COMPLETED,
+                started_at=_STARTED_AT,
+                completed_at=_COMPLETED_AT,
             )
 
 
@@ -184,6 +191,27 @@ def test_eval_run_rejects_blank_agent_config_and_artifact_revision_references() 
             usage=EvalRunUsage(0, 0, Decimal("0")),
             artifact_revision_ids=("  ",),
             status=EvalRunStatus.COMPLETED,
+            started_at=_STARTED_AT,
+            completed_at=_COMPLETED_AT,
+        )
+
+
+def test_eval_run_rejects_reversed_terminal_timestamps() -> None:
+    with pytest.raises(ValueError, match="must not precede"):
+        EvalRun(
+            id=uid("reversed-eval-run"),
+            eval_suite_id=uid("suite"),
+            skill_revision_id=uid("revision"),
+            agent_config_revision=AgentConfigRevisionRef("agent-config@42"),
+            provider="provider",
+            model="model",
+            input_snapshot=EvalInputSnapshot("input"),
+            output_snapshot=EvalOutputSnapshot("output"),
+            usage=EvalRunUsage(0, 0, Decimal("0")),
+            artifact_revision_ids=(),
+            status=EvalRunStatus.FAILED,
+            started_at=_COMPLETED_AT,
+            completed_at=_STARTED_AT,
         )
 
 
@@ -216,3 +244,55 @@ def test_eval_run_rejects_artifacts_from_another_company(pg_database: str) -> No
         company_b._conn.rollback()
         company_a.close()
         company_b.close()
+
+
+def test_eval_run_evidence_is_append_only_for_the_runtime_role(pg_database: str) -> None:
+    import psycopg
+
+    company_id = str(uuid.uuid4())
+    ledger = Ledger.open(pg_database, company_id=company_id)
+    try:
+        suite, revision = _suite(ledger, suffix="append-only")
+        evidence = _artifact_revision(ledger, suffix="append-only")
+        run = ledger.eval_runs.create(_run(suite, revision, artifact_revision_ids=(evidence.id,)))
+    finally:
+        ledger.close()
+
+    with psycopg.connect(pg_database, autocommit=True) as admin:
+        admin.execute(
+            "DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'chorus_eval_app') "
+            "THEN CREATE ROLE chorus_eval_app LOGIN NOSUPERUSER NOBYPASSRLS; END IF; END $$"
+        )
+        admin.execute("GRANT USAGE ON SCHEMA public TO chorus_eval_app")
+        admin.execute(
+            "GRANT SELECT, INSERT, UPDATE, DELETE ON eval_run, eval_run_artifact_revision "
+            "TO chorus_eval_app"
+        )
+
+    app_conninfo = pg_database.replace("user=postgres", "user=chorus_eval_app")
+    with psycopg.connect(app_conninfo, autocommit=True) as app:
+        app.execute("SELECT set_config('app.company_id', %s, false)", (company_id,))
+        updated = app.execute(
+            "UPDATE eval_run SET output_snapshot = 'rewritten' WHERE id = %s RETURNING id",
+            (run.id,),
+        ).fetchall()
+        deleted_links = app.execute(
+            "DELETE FROM eval_run_artifact_revision WHERE eval_run_id = %s RETURNING eval_run_id",
+            (run.id,),
+        ).fetchall()
+        deleted_runs = app.execute(
+            "DELETE FROM eval_run WHERE id = %s RETURNING id", (run.id,)
+        ).fetchall()
+        persisted = app.execute(
+            "SELECT output_snapshot FROM eval_run WHERE id = %s", (run.id,)
+        ).fetchone()
+        persisted_links = app.execute(
+            "SELECT artifact_revision_id FROM eval_run_artifact_revision WHERE eval_run_id = %s",
+            (run.id,),
+        ).fetchall()
+
+    assert updated == []
+    assert deleted_links == []
+    assert deleted_runs == []
+    assert persisted == ("Assistant output\n",)
+    assert persisted_links == [(uuid.UUID(evidence.id),)]

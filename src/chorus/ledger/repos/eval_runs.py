@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from decimal import Decimal
 
 from chorus.ledger._models import (
@@ -14,6 +15,7 @@ from chorus.ledger._models import (
 )
 from chorus.ledger.repos._base import (
     LedgerConnection,
+    LedgerInvariantError,
     LedgerRow,
     from_iso,
     require_persisted,
@@ -104,7 +106,13 @@ def _row_to_eval_run(row: LedgerRow, artifact_revision_ids: tuple[str, ...]) -> 
         ),
         artifact_revision_ids=artifact_revision_ids,
         status=EvalRunStatus(row["status"]),
-        started_at=from_iso(row["started_at"]),
-        completed_at=from_iso(row["completed_at"]),
+        started_at=_required_datetime(from_iso(row["started_at"]), "started_at"),
+        completed_at=_required_datetime(from_iso(row["completed_at"]), "completed_at"),
         created_at=from_iso(row["created_at"]),
     )
+
+
+def _required_datetime(value: datetime | None, field_name: str) -> datetime:
+    if value is None:
+        raise LedgerInvariantError(f"persisted eval run has no {field_name}")
+    return value
