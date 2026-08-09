@@ -196,7 +196,9 @@ async def test_cancelled_task_does_not_start_a_claimed_beat(ledger: Ledger) -> N
 
     assert beat.calls == []
     assert ledger.runs.get(uid("r1")) is None
-    assert ledger.tasks.get(uid("t1")).status is TaskStatus.CANCELLED  # type: ignore[union-attr]
+    task = ledger.tasks.get(uid("t1"))
+    assert task is not None
+    assert task.status is TaskStatus.CANCELLED
 
 
 async def test_in_flight_cancellation_still_records_returned_usage(ledger: Ledger) -> None:
@@ -206,7 +208,9 @@ async def test_in_flight_cancellation_still_records_returned_usage(ledger: Ledge
         wake, run_id=uid("r1"), now=_NOW
     )
 
-    assert ledger.tasks.get(uid("t1")).status is TaskStatus.CANCELLED  # type: ignore[union-attr]
+    task = ledger.tasks.get(uid("t1"))
+    assert task is not None
+    assert task.status is TaskStatus.CANCELLED
     assert ledger.cost_events.spent_cents(uid("e1")) == 17
     events = ledger.cost_events.for_run(uid("r1"))
     assert len(events) == 1

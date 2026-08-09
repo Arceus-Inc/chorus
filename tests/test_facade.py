@@ -214,17 +214,33 @@ def test_cancel_task_terminalizes_only_its_live_work_and_is_idempotent() -> None
         assert task.cancelled_at is not None
         assert task.checkout_run_id is None
         assert task.execution_run_id is None
-        assert ledger.runs.get(run_id).status is RunStatus.CANCELLED  # type: ignore[union-attr]
-        assert ledger.agent_sessions.get(session.id).status is AgentSessionStatus.ABORTED  # type: ignore[union-attr]
-        assert ledger.recovery_actions.get(action.id).status is RecoveryStatus.FOLDED  # type: ignore[union-attr]
-        assert ledger.wakes.get(claimed.id).status is WakeStatus.DONE  # type: ignore[union-attr]
-        assert ledger.wakes.get(queued.id).status is WakeStatus.DONE  # type: ignore[union-attr]
-        assert ledger.wakes.get(other_wake.id).status is WakeStatus.QUEUED  # type: ignore[union-attr]
+        cancelled_run = ledger.runs.get(run_id)
+        cancelled_session = ledger.agent_sessions.get(session.id)
+        folded_recovery = ledger.recovery_actions.get(action.id)
+        finished_claimed_wake = ledger.wakes.get(claimed.id)
+        finished_queued_wake = ledger.wakes.get(queued.id)
+        other_wake_after_cancel = ledger.wakes.get(other_wake.id)
+        assert cancelled_run is not None
+        assert cancelled_session is not None
+        assert folded_recovery is not None
+        assert finished_claimed_wake is not None
+        assert finished_queued_wake is not None
+        assert other_wake_after_cancel is not None
+        assert cancelled_run.status is RunStatus.CANCELLED
+        assert cancelled_session.status is AgentSessionStatus.ABORTED
+        assert folded_recovery.status is RecoveryStatus.FOLDED
+        assert finished_claimed_wake.status is WakeStatus.DONE
+        assert finished_queued_wake.status is WakeStatus.DONE
+        assert other_wake_after_cancel.status is WakeStatus.QUEUED
 
         ledger.runs.finish(run_id, RunStatus.SUCCEEDED)
         ledger.tasks.set_status(task_id, TaskStatus.DONE)
-        assert ledger.runs.get(run_id).status is RunStatus.CANCELLED  # type: ignore[union-attr]
-        assert ledger.tasks.get(task_id).status is TaskStatus.CANCELLED  # type: ignore[union-attr]
+        run_after_late_finish = ledger.runs.get(run_id)
+        task_after_late_finish = ledger.tasks.get(task_id)
+        assert run_after_late_finish is not None
+        assert task_after_late_finish is not None
+        assert run_after_late_finish.status is RunStatus.CANCELLED
+        assert task_after_late_finish.status is TaskStatus.CANCELLED
     finally:
         ledger.close()
 
