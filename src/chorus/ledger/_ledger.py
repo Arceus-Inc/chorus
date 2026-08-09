@@ -44,6 +44,7 @@ from chorus.ledger._models import (
 )
 from chorus.ledger.repos import (
     ActivityRepo,
+    AgentConfigRevisionRepo,
     AgentSessionRepo,
     ApprovalRepo,
     ArtifactRepo,
@@ -200,6 +201,7 @@ class Ledger:
         self.runs = RunRepo(conn)
         self.skills = SkillRepo(conn)
         self.skill_revisions = SkillRevisionRepo(conn)
+        self.agent_config_revisions = AgentConfigRevisionRepo(conn)
         self.eval_cases = EvalCaseRepo(conn)
         self.eval_suites = EvalSuiteRepo(conn)
         self.eval_runs = EvalRunRepo(conn)

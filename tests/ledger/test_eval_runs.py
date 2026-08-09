@@ -3,13 +3,17 @@
 from __future__ import annotations
 
 import uuid
+from dataclasses import replace
 from datetime import UTC, datetime
 from decimal import Decimal
 
 import pytest
 
 from chorus.ledger import (
+    AgentConfigRevision,
     AgentConfigRevisionRef,
+    AgentIdentity,
+    AgentsMdReference,
     Artifact,
     ArtifactRevision,
     ArtifactType,
@@ -22,6 +26,8 @@ from chorus.ledger import (
     EvalSuite,
     Ledger,
     LedgerIntegrityError,
+    ProviderModelConfig,
+    SandboxProfile,
     Skill,
     SkillOrigin,
     SkillRevision,
@@ -83,16 +89,29 @@ def _artifact_revision(ledger: Ledger, *, suffix: str) -> ArtifactRevision:
 
 
 def _run(
+    ledger: Ledger,
     suite: EvalSuite,
     revision: SkillRevision,
     *,
     artifact_revision_ids: tuple[str, ...] = (),
 ) -> EvalRun:
+    agent_config_id = uid(f"eval-agent-config-{suite.id}")
+    if ledger.agent_config_revisions.get(agent_config_id) is None:
+        ledger.agent_config_revisions.create(
+            AgentConfigRevision(
+                id=agent_config_id,
+                agent=AgentIdentity(f"eval-agent-{suite.id}"),
+                revision_no=1,
+                agents_md=AgentsMdReference("agents-md@1", "instructions"),
+                provider_model=ProviderModelConfig("anthropic", "claude-sonnet"),
+                sandbox_profile=SandboxProfile("workspace-write"),
+            )
+        )
     return EvalRun(
         id=uid("eval-run"),
         eval_suite_id=suite.id,
         skill_revision_id=revision.id,
-        agent_config_revision=AgentConfigRevisionRef("agent-config@42"),
+        agent_config_revision=AgentConfigRevisionRef(agent_config_id),
         provider="anthropic",
         model="claude-sonnet",
         input_snapshot=EvalInputSnapshot("User input\n"),
@@ -110,17 +129,32 @@ def test_eval_run_is_pinned_and_lists_in_creation_order(ledger: Ledger) -> None:
     evidence = _artifact_revision(ledger, suffix="one")
     second_evidence = _artifact_revision(ledger, suffix="two")
     created = ledger.eval_runs.create(
-        _run(suite, revision, artifact_revision_ids=(second_evidence.id, evidence.id))
+        _run(ledger, suite, revision, artifact_revision_ids=(second_evidence.id, evidence.id))
     )
 
     assert created.created_at is not None
-    assert created.agent_config_revision == AgentConfigRevisionRef("agent-config@42")
+    assert created.agent_config_revision == AgentConfigRevisionRef(
+        uid(f"eval-agent-config-{suite.id}")
+    )
     assert created.input_snapshot == EvalInputSnapshot("User input\n")
     assert created.output_snapshot == EvalOutputSnapshot("Assistant output\n")
     assert created.usage == EvalRunUsage(12, 34, Decimal("0.005001"))
     assert created.artifact_revision_ids == (second_evidence.id, evidence.id)
     assert ledger.eval_runs.get(created.id) == created
     assert ledger.eval_runs.list(suite.id) == [created]
+
+
+def test_eval_run_provider_and_model_must_match_pinned_config(ledger: Ledger) -> None:
+    suite, revision = _suite(ledger, suffix="config-mismatch")
+    run = _run(ledger, suite, revision)
+
+    with pytest.raises(
+        ValueError,
+        match="eval run provider/model must match its pinned agent config revision",
+    ):
+        ledger.eval_runs.create(replace(run, provider="openai"))
+
+    assert ledger.eval_runs.get(run.id) is None
 
 
 def test_eval_run_rejects_invalid_usage_and_duplicate_artifacts() -> None:
@@ -220,7 +254,7 @@ def test_eval_run_rejects_suite_revision_mismatch(ledger: Ledger) -> None:
     _, foreign_revision = _suite(ledger, suffix="two")
 
     with pytest.raises(LedgerIntegrityError):
-        ledger.eval_runs.create(_run(suite, foreign_revision))
+        ledger.eval_runs.create(_run(ledger, suite, foreign_revision))
 
     assert ledger.eval_runs.get(uid("eval-run")) is None
 
@@ -234,12 +268,31 @@ def test_eval_run_rejects_artifacts_from_another_company(pg_database: str) -> No
 
         with pytest.raises(LedgerIntegrityError):
             company_b.eval_runs.create(
-                _run(suite, revision, artifact_revision_ids=(foreign_evidence.id,))
+                _run(company_b, suite, revision, artifact_revision_ids=(foreign_evidence.id,))
             )
 
         foreign_suite, foreign_revision = _suite(company_a, suffix="foreign-suite")
         with pytest.raises(LedgerIntegrityError):
-            company_b.eval_runs.create(_run(foreign_suite, foreign_revision))
+            company_b.eval_runs.create(_run(company_b, foreign_suite, foreign_revision))
+
+        foreign_config = company_a.agent_config_revisions.create(
+            AgentConfigRevision(
+                id=uid("foreign-agent-config"),
+                agent=AgentIdentity("foreign-agent"),
+                revision_no=1,
+                agents_md=AgentsMdReference("agents-md@1", "instructions"),
+                provider_model=ProviderModelConfig("anthropic", "claude-sonnet"),
+                sandbox_profile=SandboxProfile("workspace-write"),
+            )
+        )
+        with pytest.raises(LedgerIntegrityError):
+            company_b.eval_runs.create(
+                replace(
+                    _run(company_b, suite, revision),
+                    id=uid("foreign-agent-config-eval-run"),
+                    agent_config_revision=AgentConfigRevisionRef(foreign_config.id),
+                )
+            )
     finally:
         company_b._conn.rollback()
         company_a.close()
@@ -254,7 +307,9 @@ def test_eval_run_evidence_is_append_only_for_the_runtime_role(pg_database: str)
     try:
         suite, revision = _suite(ledger, suffix="append-only")
         evidence = _artifact_revision(ledger, suffix="append-only")
-        run = ledger.eval_runs.create(_run(suite, revision, artifact_revision_ids=(evidence.id,)))
+        run = ledger.eval_runs.create(
+            _run(ledger, suite, revision, artifact_revision_ids=(evidence.id,))
+        )
     finally:
         ledger.close()
 

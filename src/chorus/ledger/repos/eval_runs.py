@@ -31,6 +31,16 @@ class EvalRunRepo:
         self._conn = conn
 
     def create(self, run: EvalRun) -> EvalRun:
+        pinned_config = self._conn.execute(
+            "SELECT provider, model FROM agent_config_revision WHERE id = ?",
+            (run.agent_config_revision.value,),
+        ).fetchone()
+        if pinned_config is not None and (
+            run.provider != pinned_config["provider"] or run.model != pinned_config["model"]
+        ):
+            raise ValueError(
+                "eval run provider/model must match its pinned agent config revision"
+            )
         try:
             self._conn.execute(
                 "INSERT INTO eval_run ("

@@ -8,6 +8,7 @@ shared connection.
 from __future__ import annotations
 
 from chorus.ledger.repos.activity import ActivityRepo
+from chorus.ledger.repos.agent_config_revisions import AgentConfigRevisionRepo
 from chorus.ledger.repos.agent_sessions import AgentSessionRepo
 from chorus.ledger.repos.approvals import ApprovalRepo
 from chorus.ledger.repos.artifact_revisions import ArtifactRevisionRepo
@@ -45,6 +46,7 @@ from chorus.ledger.repos.workforce_plans import WorkforcePlanRepo
 
 __all__ = [
     "ActivityRepo",
+    "AgentConfigRevisionRepo",
     "AgentSessionRepo",
     "ApprovalRepo",
     "ArtifactRepo",

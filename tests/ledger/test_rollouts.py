@@ -9,7 +9,10 @@ from decimal import Decimal
 import pytest
 
 from chorus.ledger import (
+    AgentConfigRevision,
     AgentConfigRevisionRef,
+    AgentIdentity,
+    AgentsMdReference,
     Approval,
     ApprovalAction,
     ApprovalSubjectKind,
@@ -26,11 +29,13 @@ from chorus.ledger import (
     Ledger,
     LedgerIntegrityError,
     PromotionGates,
+    ProviderModelConfig,
     ReplayRegression,
     Rollout,
     RolloutDecision,
     RolloutStage,
     RolloutStatus,
+    SandboxProfile,
     Skill,
     SkillOrigin,
     SkillRevision,
@@ -96,12 +101,22 @@ def _artifact_revision(ledger: Ledger, suffix: str) -> ArtifactRevision:
 def _rollout(ledger: Ledger, suffix: str) -> Rollout:
     suite, revision = _suite(ledger, suffix)
     evidence = _artifact_revision(ledger, suffix)
+    agent_config = ledger.agent_config_revisions.create(
+        AgentConfigRevision(
+            id=uid(f"rollout-agent-config-{suffix}"),
+            agent=AgentIdentity(f"rollout-agent-{suffix}"),
+            revision_no=1,
+            agents_md=AgentsMdReference("agents-md@1", "instructions"),
+            provider_model=ProviderModelConfig("anthropic", "claude-sonnet"),
+            sandbox_profile=SandboxProfile("workspace-write"),
+        )
+    )
     run = ledger.eval_runs.create(
         EvalRun(
             id=uid(f"rollout-run-{suffix}"),
             eval_suite_id=suite.id,
             skill_revision_id=revision.id,
-            agent_config_revision=AgentConfigRevisionRef("agent-config@42"),
+            agent_config_revision=AgentConfigRevisionRef(agent_config.id),
             provider="anthropic",
             model="claude-sonnet",
             input_snapshot=EvalInputSnapshot("Input"),

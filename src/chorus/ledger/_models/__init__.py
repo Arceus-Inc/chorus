@@ -3,6 +3,15 @@ every name is re-exported here so `from chorus.ledger._models import X` is uncha
 
 from __future__ import annotations
 
+from chorus.ledger._models._agent_config_revisions import (
+    AgentConfigRevision,
+    AgentIdentity,
+    AgentsMdReference,
+    EffectiveToolPin,
+    ProviderModelConfig,
+    SandboxProfile,
+    SkillRevisionPin,
+)
 from chorus.ledger._models._agent_session import (
     AgentSession,
     AgentSessionStatus,
@@ -128,9 +137,12 @@ from chorus.ledger._models._workforce_plan import (
 __all__ = [
     "Activity",
     "ActivityVerb",
+    "AgentConfigRevision",
     "AgentConfigRevisionRef",
+    "AgentIdentity",
     "AgentSession",
     "AgentSessionStatus",
+    "AgentsMdReference",
     "Approval",
     "ApprovalAction",
     "ApprovalGate",
@@ -153,6 +165,7 @@ __all__ = [
     "DelegationContractStatus",
     "Dod",
     "DodStatus",
+    "EffectiveToolPin",
     "EvalCase",
     "EvalInputSnapshot",
     "EvalOutputSnapshot",
@@ -173,6 +186,7 @@ __all__ = [
     "OriginKind",
     "PlannedEmployee",
     "PromotionGates",
+    "ProviderModelConfig",
     "RecoveryAction",
     "RecoveryKind",
     "RecoveryOutcome",
@@ -194,10 +208,12 @@ __all__ = [
     "RoutineTrigger",
     "Run",
     "RunStatus",
+    "SandboxProfile",
     "SessionCost",
     "Skill",
     "SkillOrigin",
     "SkillRevision",
+    "SkillRevisionPin",
     "SkillState",
     "StaffingNeed",
     "StaffingRequest",
