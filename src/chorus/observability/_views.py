@@ -14,11 +14,19 @@ from datetime import datetime
 
 from chorus.ledger import DelegationContractStatus, TaskStatus, TeamStatus
 from chorus.ledger._models import (
+    Activity,
+    Artifact,
+    ArtifactRevision,
+    CostEvent,
+    Dod,
+    Goal,
     RoutineCatchUp,
     RoutineConcurrency,
     RoutineRunStatus,
     RoutineStatus,
     RoutineTarget,
+    Run,
+    Task,
     TriggerKind,
 )
 from chorus.outcomes import Verifier
@@ -86,6 +94,44 @@ class TaskView:
     latest_run: RunView | None = None
     liveness: str = "healthy"
     blockers: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class TaskThreadRunView:
+    """One run in a task thread, with matching and malformed spend rows separated."""
+
+    run: Run
+    cost_events: tuple[CostEvent, ...] = ()
+    mismatched_cost_events: tuple[CostEvent, ...] = ()
+
+
+@dataclass(frozen=True)
+class TaskThreadArtifactView:
+    """One task artifact, plus its optional revision history and audit trail."""
+
+    artifact: Artifact
+    revisions: tuple[ArtifactRevision, ...] = ()
+    activity: tuple[Activity, ...] = ()
+
+
+@dataclass(frozen=True)
+class TaskThreadTaskView:
+    """One task in a subtree, with its directly attached ledger rows."""
+
+    task: Task
+    runs: tuple[TaskThreadRunView, ...] = ()
+    task_only_cost_events: tuple[CostEvent, ...] = ()
+    dod: Dod | None = None
+    artifacts: tuple[TaskThreadArtifactView, ...] = ()
+    activity: tuple[Activity, ...] = ()
+
+
+@dataclass(frozen=True)
+class TaskThreadView:
+    """A task-centric subtree projection rooted at one requested task."""
+
+    goal: Goal | None = None
+    tasks: tuple[TaskThreadTaskView, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -258,6 +304,10 @@ __all__ = [
     "RunView",
     "ScrumChildView",
     "ScrumPacketView",
+    "TaskThreadArtifactView",
+    "TaskThreadRunView",
+    "TaskThreadTaskView",
+    "TaskThreadView",
     "TaskView",
     "TeamView",
     "WorkforceStatus",

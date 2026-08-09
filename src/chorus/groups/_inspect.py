@@ -15,6 +15,7 @@ from chorus.observability import (
     LedgerInspector,
     OrgObservabilityReport,
     ScrumPacketView,
+    TaskThreadView,
     TaskView,
 )
 
@@ -29,6 +30,10 @@ class InspectFacade:
     def task(self, task_id: str) -> TaskView:
         """One task, resolved (names + liveness + unresolved blockers). ``KeyError`` if unknown."""
         return self._inspector.task(task_id)
+
+    def task_thread(self, task_id: str) -> TaskThreadView:
+        """One rooted task subtree with its attached durable rows. ``KeyError`` if unknown."""
+        return self._inspector.task_thread(task_id)
 
     def stuck(self) -> list[TaskView]:
         """The blocked inbox — non-terminal tasks with no action-path primitive (spec 08 §2)."""

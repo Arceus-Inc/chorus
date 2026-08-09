@@ -49,7 +49,7 @@ class ArtifactRepo:
 
     def list_for_task(self, task_id: str) -> list[Artifact]:
         rows = self._conn.execute(
-            "SELECT * FROM artifact WHERE task_id = ? ORDER BY created_at", (task_id,)
+            "SELECT * FROM artifact WHERE task_id = ? ORDER BY created_at, id", (task_id,)
         ).fetchall()
         return [_row_to_artifact(row) for row in rows]
 

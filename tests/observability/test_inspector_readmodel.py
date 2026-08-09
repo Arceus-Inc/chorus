@@ -13,8 +13,22 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from chorus.ledger import Ledger, Run, RunStatus, Task, TaskStatus
+from chorus.ledger import (
+    Activity,
+    ActivityVerb,
+    Artifact,
+    ArtifactRevision,
+    ArtifactType,
+    CostEvent,
+    Goal,
+    Ledger,
+    Run,
+    RunStatus,
+    Task,
+    TaskStatus,
+)
 from chorus.observability import LedgerInspector
+from chorus.outcomes import Verifier
 from chorus.testing import open_test_ledger, uid
 from chorus.workforce import Employee
 
@@ -116,6 +130,232 @@ def test_task_done_blocker_is_not_a_blocker(ledger: Ledger) -> None:
     ledger.tasks.submit(Task(id=uid("t"), intent="the work", status=TaskStatus.TODO))
     ledger.dependencies.add(uid("t"), uid("blk"))
     assert _inspector(ledger).task(uid("t")).blockers == ()  # resolved → not surfaced
+
+
+def test_task_thread_walks_goal_subtree_and_attached_rows(ledger: Ledger) -> None:
+    ledger.employees.create(Employee(id="ada", name="Ada", role="engineer"))
+    ledger.goals.create(Goal(id=uid("goal"), title="Ship it"))
+    ledger.tasks.submit(
+        Task(
+            id=uid("parent"),
+            intent="parent work",
+            status=TaskStatus.IN_PROGRESS,
+            assignee_employee_id="ada",
+            goal_id=uid("goal"),
+        )
+    )
+    ledger.tasks.submit(
+        Task(
+            id=uid("child"),
+            intent="child work",
+            status=TaskStatus.TODO,
+            assignee_employee_id="ada",
+            goal_id=uid("goal"),
+            parent_id=uid("parent"),
+            depth=1,
+        )
+    )
+    ledger.tasks.submit(
+        Task(
+            id=uid("sibling"),
+            intent="second child",
+            status=TaskStatus.BACKLOG,
+            assignee_employee_id="ada",
+            goal_id=uid("goal"),
+            parent_id=uid("parent"),
+            depth=1,
+        )
+    )
+    ledger.dod.create(uid("parent"), Verifier.command("pytest -q", artifact_class="report"))
+    ledger.dod.create(uid("child"), Verifier.command("ruff check", artifact_class="patch"))
+    ledger.runs.create(
+        Run(
+            id=uid("run_parent"),
+            employee_id="ada",
+            task_id=uid("parent"),
+            status=RunStatus.RUNNING,
+            lease_expires_at=_NOW + timedelta(hours=1),
+        )
+    )
+    ledger.runs.create(
+        Run(id=uid("run_child"), employee_id="ada", task_id=uid("child"), status=RunStatus.QUEUED)
+    )
+    ledger.cost_events.record(
+        CostEvent(
+            id=uid("cost_parent"),
+            employee_id="ada",
+            task_id=uid("parent"),
+            run_id=uid("run_parent"),
+            provider="openai",
+            model="gpt-5",
+            cost_cents=11,
+        )
+    )
+    ledger.cost_events.record(
+        CostEvent(
+            id=uid("cost_child"),
+            employee_id="ada",
+            task_id=uid("child"),
+            run_id=uid("run_child"),
+            provider="openai",
+            model="gpt-5-mini",
+            cost_cents=7,
+        )
+    )
+    ledger.artifacts.create(
+        Artifact(id=uid("artifact_parent"), task_id=uid("parent"), type=ArtifactType.DOC)
+    )
+    ledger.artifacts.create(
+        Artifact(id=uid("artifact_child"), task_id=uid("child"), type=ArtifactType.DOC)
+    )
+    ledger.artifact_revisions.record(
+        ArtifactRevision(id=uid("rev_parent"), artifact_id=uid("artifact_parent"))
+    )
+    ledger.activity.append(
+        Activity(
+            id=uid("task_parent_activity"),
+            verb=ActivityVerb.ASSIGNED,
+            subject_kind="task",
+            subject_id=uid("parent"),
+            actor_employee_id="ada",
+        )
+    )
+    ledger.activity.append(
+        Activity(
+            id=uid("task_child_activity"),
+            verb=ActivityVerb.DECOMPOSED,
+            subject_kind="task",
+            subject_id=uid("child"),
+            actor_employee_id="ada",
+        )
+    )
+    ledger.activity.append(
+        Activity(
+            id=uid("artifact_parent_activity"),
+            verb=ActivityVerb.PROMOTED,
+            subject_kind="artifact",
+            subject_id=uid("artifact_parent"),
+            actor_employee_id="ada",
+        )
+    )
+    ledger.activity.append(
+        Activity(
+            id=uid("artifact_child_activity"),
+            verb=ActivityVerb.PROMOTED,
+            subject_kind="artifact",
+            subject_id=uid("artifact_child"),
+            actor_employee_id="ada",
+        )
+    )
+
+    thread = _inspector(ledger).task_thread(uid("parent"))
+
+    assert thread.goal is not None
+    assert thread.goal.id == uid("goal")
+    assert [entry.task.id for entry in thread.tasks] == [
+        uid("parent"),
+        uid("child"),
+        uid("sibling"),
+    ]
+    parent, child, sibling = thread.tasks
+    assert parent.dod is not None
+    assert parent.dod.task_id == uid("parent")
+    assert [run.run.id for run in parent.runs] == [uid("run_parent")]
+    assert [event.id for event in parent.runs[0].cost_events] == [uid("cost_parent")]
+    assert [activity.id for activity in parent.activity] == [uid("task_parent_activity")]
+    assert [artifact.artifact.id for artifact in parent.artifacts] == [uid("artifact_parent")]
+    assert [revision.id for revision in parent.artifacts[0].revisions] == [uid("rev_parent")]
+    assert [activity.id for activity in parent.artifacts[0].activity] == [
+        uid("artifact_parent_activity")
+    ]
+    assert child.dod is not None
+    assert child.dod.task_id == uid("child")
+    assert [run.run.id for run in child.runs] == [uid("run_child")]
+    assert [event.id for event in child.runs[0].cost_events] == [uid("cost_child")]
+    assert [activity.id for activity in child.activity] == [uid("task_child_activity")]
+    assert [artifact.artifact.id for artifact in child.artifacts] == [uid("artifact_child")]
+    assert child.artifacts[0].revisions == ()
+    assert [activity.id for activity in child.artifacts[0].activity] == [
+        uid("artifact_child_activity")
+    ]
+    assert sibling.runs == ()
+    assert sibling.artifacts == ()
+    assert sibling.activity == ()
+
+
+def test_task_thread_skips_self_parent_cycles(ledger: Ledger) -> None:
+    ledger.tasks.submit(Task(id=uid("loop"), intent="loop forever", parent_id=uid("loop")))
+
+    thread = _inspector(ledger).task_thread(uid("loop"))
+
+    assert [entry.task.id for entry in thread.tasks] == [uid("loop")]
+
+
+def test_task_thread_keeps_task_only_costs_and_marks_run_task_mismatches(ledger: Ledger) -> None:
+    ledger.employees.create(Employee(id="ada", name="Ada", role="engineer"))
+    ledger.tasks.submit(Task(id=uid("parent"), intent="parent work", assignee_employee_id="ada"))
+    ledger.tasks.submit(
+        Task(id=uid("child"), intent="child work", parent_id=uid("parent"), assignee_employee_id="ada")
+    )
+    ledger.runs.create(Run(id=uid("run_parent"), employee_id="ada", task_id=uid("parent")))
+    ledger.cost_events.record(
+        CostEvent(
+            id=uid("cost_matched"),
+            employee_id="ada",
+            task_id=uid("parent"),
+            run_id=uid("run_parent"),
+            provider="openai",
+            model="gpt-5",
+            cost_cents=11,
+            occurred_at=_NOW,
+        )
+    )
+    ledger.cost_events.record(
+        CostEvent(
+            id=uid("cost_task_only"),
+            employee_id="ada",
+            task_id=uid("parent"),
+            provider="openai",
+            model="gpt-5",
+            cost_cents=7,
+            occurred_at=_NOW + timedelta(seconds=1),
+        )
+    )
+    ledger.cost_events.record(
+        CostEvent(
+            id=uid("cost_mismatched"),
+            employee_id="ada",
+            task_id=uid("child"),
+            run_id=uid("run_parent"),
+            provider="openai",
+            model="gpt-5",
+            cost_cents=5,
+            occurred_at=_NOW + timedelta(seconds=2),
+        )
+    )
+
+    parent, child = _inspector(ledger).task_thread(uid("parent")).tasks
+
+    assert [event.id for event in parent.runs[0].cost_events] == [uid("cost_matched")]
+    assert [event.id for event in parent.runs[0].mismatched_cost_events] == [uid("cost_mismatched")]
+    assert [event.id for event in parent.task_only_cost_events] == [uid("cost_task_only")]
+    assert child.task_only_cost_events == ()
+
+
+def test_task_thread_orders_tied_artifacts_by_id(ledger: Ledger) -> None:
+    ledger.tasks.submit(Task(id=uid("task"), intent="work"))
+    first_id, second_id = uid("artifact_a"), uid("artifact_b")
+    ledger.artifacts.create(Artifact(id=second_id, task_id=uid("task"), type=ArtifactType.DOC))
+    ledger.artifacts.create(Artifact(id=first_id, task_id=uid("task"), type=ArtifactType.DOC))
+    for artifact_id in (first_id, second_id):
+        ledger._conn.execute(
+            "UPDATE artifact SET created_at = ? WHERE id = ?", (_NOW.isoformat(), artifact_id)
+        )
+    ledger._conn.commit()
+
+    task = _inspector(ledger).task_thread(uid("task")).tasks[0]
+
+    assert [view.artifact.id for view in task.artifacts] == sorted((first_id, second_id))
 
 
 def test_task_unknown_raises_keyerror(ledger: Ledger) -> None:
