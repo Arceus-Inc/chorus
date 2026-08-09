@@ -23,10 +23,13 @@ from chorus.ledger import (
     ApprovalAction,
     ApprovalGate,
     DodStatus,
+    Run,
+    RunStatus,
     TaskStatus,
     Wake,
     WakeReason,
 )
+from chorus.outcomes import DoDKind
 
 if TYPE_CHECKING:
     from chorus.ledger import Ledger
@@ -50,8 +53,29 @@ class TaskGateAction:
     def on_approve(self, approval: Approval) -> ActionOutcome:
         gate = _require_gate(approval)
         if gate is ApprovalGate.ACCEPTANCE:
+            if _is_strict_acceptance(self._ledger, approval.subject_id):
+                producer_run = _latest_succeeded_task_run(self._ledger, approval.subject_id)
+                if producer_run is None:
+                    raise TaskGateError(
+                        f"acceptance gate {approval.id!r} has no succeeded producer run"
+                    )
+                artifact = self._ledger.artifacts.mark_latest_pending_primary_non_verdict_verified(
+                    approval.subject_id
+                )
+                if artifact is None:
+                    raise TaskGateError(
+                        f"acceptance gate {approval.id!r} has no pending primary non-verdict artifact to verify"
+                    )
+                wakes = self._ledger.finalize_beat(
+                    task_id=approval.subject_id,
+                    run_id=producer_run.id,
+                    dod_status=DodStatus.PASSED,
+                )
+                return ActionOutcome(TaskStatus.DONE.value, len(wakes))
             wakes = self._ledger.finalize_beat(
-                task_id=approval.subject_id, run_id=None, dod_status=DodStatus.PASSED
+                task_id=approval.subject_id,
+                run_id=None,
+                dod_status=DodStatus.PASSED,
             )
             return ActionOutcome(TaskStatus.DONE.value, len(wakes))
         self._ledger.tasks.transition(approval.subject_id, TaskStatus.TODO)
@@ -91,6 +115,20 @@ def _require_gate(approval: Approval) -> ApprovalGate:
     if approval.gate_kind is None:
         raise TaskGateError(f"task gate {approval.id!r} has no gate_kind")
     return approval.gate_kind
+
+
+def _latest_succeeded_task_run(ledger: Ledger, task_id: str) -> Run | None:
+    for run in reversed(ledger.runs.for_task(task_id)):
+        if run.status is RunStatus.SUCCEEDED:
+            return run
+    return None
+
+
+def _is_strict_acceptance(ledger: Ledger, task_id: str) -> bool:
+    dod = ledger.dod.get_for_task(task_id)
+    if dod is not None and dod.kind == DoDKind.HUMAN_APPROVAL.value:
+        return True
+    return ledger.artifacts.has_pending_primary_non_verdict(task_id)
 
 
 __all__ = ["TaskGateAction", "TaskGateError"]

@@ -1522,6 +1522,9 @@ class Scheduler:
             TaskStatus.REJECTED,
         ):
             return
+        pending_approvals = tuple(
+            approval for approval in ledger.approvals.pending() if approval.subject_id == task_id
+        )
         # A gate opened *during* the beat (e.g. the marketer's ``stage_go_live`` tool) must win over the
         # DoD: a task carrying a pending approval is parked BLOCKED, not finalised ``done`` — resolving
         # the gate is what completes it. Explicitly (re-)block here rather than trusting the mid-run
@@ -1529,12 +1532,25 @@ class Scheduler:
         # ``in_progress``. Without this the DoD races the gate to ``done`` (or leaves it ``in_progress``)
         # and the gate's approval path (blocked → todo) then hits an illegal ``… → todo``. Checked
         # before the DoD branches so it guards every gated path.
-        if any(approval.subject_id == task_id for approval in ledger.approvals.pending()):
+        if any(approval.gate_kind is ApprovalGate.ACCEPTANCE for approval in pending_approvals):
+            await self._land_pending_acceptance_artifact(
+                task_id,
+                employee=employee,
+                result=result,
+                outcome_kind=outcome_kind,
+            )
+        if pending_approvals:
             task = ledger.tasks.get(task_id)
             if task is not None and task.status is not TaskStatus.BLOCKED:
                 ledger.tasks.transition(task_id, TaskStatus.BLOCKED)
             return
         if verifier is not None and verifier.kind is DoDKind.HUMAN_APPROVAL:
+            await self._land_pending_acceptance_artifact(
+                task_id,
+                employee=employee,
+                result=result,
+                outcome_kind=outcome_kind,
+            )
             GovernanceResolver(ledger).open_task_gate(
                 task_id,
                 gate_kind=ApprovalGate.ACCEPTANCE,
@@ -1550,6 +1566,22 @@ class Scheduler:
         )
         ledger.finalize_beat(
             task_id=task_id, run_id=run_id, dod_status=DodStatus.PASSED, verdict=verdict
+        )
+
+    async def _land_pending_acceptance_artifact(
+        self,
+        task_id: str,
+        *,
+        employee: Employee,
+        result: BeatOutcome,
+        outcome_kind: str | None,
+    ) -> None:
+        await self._land_outcome(
+            task_id,
+            employee=employee,
+            result=result,
+            outcome_kind=outcome_kind,
+            review_state="pending",
         )
 
     def _route_block(self, task_id: str) -> None:
