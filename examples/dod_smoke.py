@@ -10,7 +10,22 @@ repair budget is spent.
 
 from __future__ import annotations
 
+import asyncio
+import os
+import uuid
+from datetime import UTC, datetime
+
+from chorus.governance import (
+    ApprovalDecision,
+    GovernanceResolver,
+    HumanAuthorization,
+)
+from chorus.heartbeat import Scheduler, Wake, WakeReason
+from chorus.heartbeat._beat import BeatOutcome
 from chorus.ids import derive_id
+from chorus.ledger import AuthenticationMethod, Ledger, Task, TaskStatus
+from chorus.outcomes import Verifier
+from chorus.workforce import Employee
 
 _demo_salt = {"n": 0}  # bumped per ledger open — scenario reruns in one database can't collide
 
@@ -24,22 +39,22 @@ def _id(name: str) -> str:
     return derive_id("demo", str(_demo_salt["n"]), name)
 
 
-import os
-import uuid
-
 _EXAMPLE_COMPANY = str(uuid.uuid5(uuid.NAMESPACE_URL, "chorus-example"))  # one stable demo org
 
-import asyncio
-from datetime import UTC, datetime
-
-from chorus.governance import ApprovalDecision, GovernanceResolver
-from chorus.heartbeat import Scheduler, Wake, WakeReason
-from chorus.heartbeat._beat import BeatOutcome
-from chorus.ledger import Ledger, Task, TaskStatus
-from chorus.outcomes import Verifier
-from chorus.workforce import Employee
-
 _NOW = datetime(2026, 6, 16, 12, 0, tzinfo=UTC)
+
+
+def _authorization(label: str) -> HumanAuthorization:
+    return HumanAuthorization(
+        decision_id=_id(f"{label}-decision"),
+        user_id="board",
+        method=AuthenticationMethod.STEP_UP,
+        authenticated_at=_NOW,
+        nonce=_id(f"{label}-nonce"),
+        decided_at=_NOW,
+        request_id=f"dod-smoke-{label}",
+        request_hash=f"sha256:dod-smoke-{label}",
+    )
 
 
 class _FixedBeat:
@@ -115,8 +130,10 @@ def main() -> int:
             f"human-approval: beat ran → task 'spec' is "
             f"{ledger.tasks.get(_id('spec')).status.value}, approval {gate.id} opened"
         )  # type: ignore[union-attr]
-        GovernanceResolver(ledger).resolve(
-            gate.id, decision=ApprovalDecision.APPROVE, decided_by_user_id="board", now=_NOW
+        GovernanceResolver(ledger).resolve_authenticated(
+            gate.id,
+            decision=ApprovalDecision.APPROVE,
+            authorization=_authorization("accept-spec"),
         )
         print(f"  board approved → 'spec' is {ledger.tasks.get(_id('spec')).status.value}")  # type: ignore[union-attr]
 

@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import pytest
+from dream.contracts.strategy import LandedPhase, RecoveryHint
 
 from chorus.heartbeat._beat import BeatDisposition, BeatOutcome
 from chorus.heartbeat._landed_outcome import derive_landed_outcome
-from chorus.ledger import ExecutionMode, Task, TaskStatus
+from chorus.ledger import ExecutionMode, IntegrationVerdict, Task, TaskStatus
 from chorus.ledger._models._enums import DodStatus
-from dream.contracts.strategy import LandedPhase, RecoveryHint
 
 
 def _task(**overrides: object) -> Task:
@@ -118,6 +118,20 @@ def test_needs_rework_recovery_hint() -> None:
         DodStatus.FAILED,
     )
     assert landed.recovery_hint() is RecoveryHint.REWORK
+
+
+def test_derived_event_payload_carries_typed_integration_verdict() -> None:
+    integration = IntegrationVerdict(ok=False, note="objective floor did not pass")
+    landed = derive_landed_outcome(
+        _task(status=TaskStatus.BLOCKED, execution_mode=ExecutionMode.DELEGATION),
+        _result(passed=False, disposition=BeatDisposition.DOD_FAILED),
+        DodStatus.FAILED,
+        integration=integration,
+    )
+
+    assert landed.integration is integration
+    assert landed.to_dict()["integration_ok"] is False
+    assert landed.to_dict()["integration_note"] == "objective floor did not pass"
 
 
 def test_derive_rejects_unmapped_state() -> None:

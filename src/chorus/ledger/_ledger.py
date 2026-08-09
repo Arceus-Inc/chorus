@@ -37,6 +37,7 @@ from chorus.ledger._models import (
     DecompositionStatus,
     DodStatus,
     ExecutionMode,
+    IntegrationVerdict,
     Task,
     TaskStatus,
     Wake,
@@ -361,6 +362,7 @@ class Ledger:
         run_id: str | None,
         dod_status: DodStatus,
         verdict: dict[str, object] | None = None,
+        integration: IntegrationVerdict | None = None,
     ) -> list[Wake]:
         """Apply a beat's verdict atomically (spec 01 Cluster F, spec 03 ``fire_downstream_wakes``).
 
@@ -374,12 +376,27 @@ class Ledger:
         with self.transaction():
             dod = self.dod.get_for_task(task_id)
             if dod is not None:
-                self.dod.record_verdict(dod.id, dod_status, verdict=verdict, run_id=run_id)
+                self.dod.record_verdict(
+                    dod.id,
+                    dod_status,
+                    verdict=verdict,
+                    run_id=run_id,
+                    integration=integration,
+                )
             if dod_status is not DodStatus.PASSED:
                 return []
             self.tasks.set_status(task_id, TaskStatus.DONE)
             self._complete_goal_if_root(task_id)
             return self._fire_downstream_wakes(task_id)
+
+    def record_integration_verdict(
+        self, task_id: str, integration: IntegrationVerdict
+    ) -> None:
+        """Persist delegated-integration truth without resolving the task's DoD status."""
+        with self.transaction():
+            dod = self.dod.get_for_task(task_id)
+            if dod is not None:
+                self.dod.record_integration_verdict(dod.id, integration)
 
     def _complete_goal_if_root(self, task_id: str) -> None:
         """Roll a goal up to ``done`` when its delegation-root task lands ``done``.

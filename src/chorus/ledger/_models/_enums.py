@@ -310,6 +310,7 @@ class ActivityVerb(StrEnum):
     PROMOTED = "promoted"
     DOD_REVISED = "dod_revised"
     REVIEW_VERDICT = "review_verdict"
+    OUTCOME_LANDED = "outcome_landed"
 
 
 class ApprovalSubjectKind(StrEnum):

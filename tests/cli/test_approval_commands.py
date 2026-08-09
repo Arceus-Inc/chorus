@@ -7,7 +7,7 @@ from datetime import datetime
 
 import pytest
 
-from chorus.ledger import Ledger, Task, TaskStatus
+from chorus.ledger import ApprovalStatus, Ledger, Task, TaskStatus
 from chorus.testing import uid
 from chorus.workforce import Employee
 from chorus_cli import CliSession, Console, LoopSignal, dispatch
@@ -81,14 +81,14 @@ def test_open_twice_errors_cleanly(ledger: Ledger) -> None:
 # -- approve / deny ---------------------------------------------------------------------------------
 
 
-def test_acceptance_approve_marks_done(ledger: Ledger) -> None:
+def test_acceptance_approve_cannot_bypass_authenticated_resolution(ledger: Ledger) -> None:
     _task(ledger)
     session = _session(ledger)
     _run(f"approval open {uid('t1')} acceptance sign off", session)
     approval_id = ledger.approvals.pending()[0].id
     _, out = _run(f"approval approve {approval_id}", session)
-    assert "approved" in out and "done" in out
-    assert ledger.tasks.get(uid("t1")).status is TaskStatus.DONE  # type: ignore[union-attr]
+    assert "requires authenticated" in out
+    assert ledger.tasks.get(uid("t1")).status is TaskStatus.BLOCKED  # type: ignore[union-attr]
 
 
 def test_authorization_approve_cannot_bypass_authenticated_resolution(ledger: Ledger) -> None:
@@ -118,14 +118,16 @@ def test_approve_unknown_errors(ledger: Ledger) -> None:
     assert "error:" in out and uid("ghost") in out
 
 
-def test_approve_already_decided_errors(ledger: Ledger) -> None:
+def test_repeated_legacy_approve_keeps_acceptance_pending(ledger: Ledger) -> None:
     _task(ledger)
     session = _session(ledger)
     _run(f"approval open {uid('t1')} acceptance x", session)
     approval_id = ledger.approvals.pending()[0].id
     _run(f"approval approve {approval_id}", session)
     _, out = _run(f"approval approve {approval_id}", session)
-    assert "error:" in out and "already" in out
+    assert "error:" in out and "requires authenticated" in out
+    approval = ledger.approvals.get(approval_id)
+    assert approval is not None and approval.status is ApprovalStatus.PENDING
 
 
 def test_approve_wrong_arity_reports_usage(ledger: Ledger) -> None:

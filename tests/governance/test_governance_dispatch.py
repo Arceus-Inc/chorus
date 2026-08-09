@@ -16,6 +16,7 @@ from chorus.governance import (
     GovernanceError,
     GovernanceRegistry,
     GovernanceResolver,
+    HumanAuthorization,
     UnregisteredAction,
 )
 from chorus.governance._actions import TaskGateAction
@@ -25,6 +26,7 @@ from chorus.ledger import (
     ApprovalGate,
     ApprovalStatus,
     ApprovalSubjectKind,
+    AuthenticationMethod,
     Ledger,
     Task,
     TaskStatus,
@@ -36,6 +38,19 @@ pytestmark = pytest.mark.integration
 
 _NOW = datetime(2026, 6, 16, 12, 0, tzinfo=UTC)
 _USER = "operator"
+
+
+def _authorization() -> HumanAuthorization:
+    return HumanAuthorization(
+        decision_id=uid("revision-decision"),
+        user_id=_USER,
+        method=AuthenticationMethod.SESSION,
+        authenticated_at=_NOW,
+        nonce=uid("revision-nonce"),
+        decided_at=_NOW,
+        request_id="governance-dispatch",
+        request_hash="sha256:governance-dispatch",
+    )
 
 
 def test_registry_is_fail_closed_on_an_unregistered_action(ledger: Ledger) -> None:
@@ -78,11 +93,10 @@ def test_request_revision_sends_a_task_gate_back_to_todo_and_wakes_assignee(
     res = GovernanceResolver(ledger)
     approval = res.open_task_gate(uid("t1"), gate_kind=ApprovalGate.ACCEPTANCE, reason="needs work")
 
-    outcome = res.resolve(
+    outcome = res.resolve_authenticated(
         approval.id,
         decision=ApprovalDecision.REQUEST_REVISION,
-        decided_by_user_id=_USER,
-        now=_NOW,
+        authorization=_authorization(),
     )
 
     assert outcome.decision is ApprovalStatus.REVISION_REQUESTED

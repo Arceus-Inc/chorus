@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 
 import pytest
+from dream.contracts.strategy import LandedPhase
 
 from chorus.events import EventKind
 from chorus.heartbeat import Scheduler, Wake, WakeReason
@@ -13,7 +14,6 @@ from chorus.ledger import ExecutionMode, Ledger, Task, TaskStatus
 from chorus.outcomes import Verifier
 from chorus.testing import uid
 from chorus.workforce import Employee
-from dream.contracts.strategy import LandedPhase
 
 pytestmark = pytest.mark.integration
 

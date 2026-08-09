@@ -14,6 +14,7 @@ from datetime import UTC, datetime
 
 import pytest
 
+from chorus.events import Event, EventKind
 from chorus.heartbeat import IntegrateContextPacket, Scheduler
 from chorus.heartbeat._beat import BeatOutcome
 from chorus.ledger import (
@@ -44,6 +45,14 @@ _NOW = datetime(2026, 6, 18, 12, 0, tzinfo=UTC)
 class _PassingVerifier:
     async def run_task(self, **_: object) -> BeatOutcome:
         return BeatOutcome(passed=True, outcome={}, summary="independently verified", model="m")
+
+
+class _RecordingEvents:
+    def __init__(self) -> None:
+        self.events: list[Event] = []
+
+    def emit(self, event: Event) -> None:
+        self.events.append(event)
 
 
 class _RunnerFactory:
@@ -189,7 +198,13 @@ def _objective_roles() -> RoleRegistry:
     return RoleRegistry.from_plugins((*others, objective))
 
 
-def _sched(ledger: Ledger, beat: _TeamBeat, *, tmp_path: object = None) -> Scheduler:
+def _sched(
+    ledger: Ledger,
+    beat: _TeamBeat,
+    *,
+    tmp_path: object = None,
+    event_bus: object = None,
+) -> Scheduler:
     from pathlib import Path
 
     root = Path(str(tmp_path)) if tmp_path is not None else Path(".")
@@ -203,6 +218,7 @@ def _sched(ledger: Ledger, beat: _TeamBeat, *, tmp_path: object = None) -> Sched
             root, ledger=ledger
         ),  # the manager lands a subtree artifact on integrate
         clock=lambda: _NOW,
+        event_bus=event_bus,  # type: ignore[arg-type]
         max_concurrent_runs=4,
     )
 
@@ -446,7 +462,8 @@ async def test_integrate_blocks_when_the_goals_objective_rollup_floor_fails(
         uid("M"), Verifier.command(_PY_FAIL)
     )  # the goal's objective rollup floor FAILS
     beat = _TeamBeat(ledger, parent=uid("M"))
-    sched = _sched(ledger, beat, tmp_path=tmp_path)
+    events = _RecordingEvents()
+    sched = _sched(ledger, beat, tmp_path=tmp_path, event_bus=events)
 
     for _ in range(6):  # decompose → api → ui → children_done → integrate
         await sched.tick_once()
@@ -461,6 +478,15 @@ async def test_integrate_blocks_when_the_goals_objective_rollup_floor_fails(
     assert (
         dod is not None and dod.status is DodStatus.FAILED
     )  # the failing rollup verdict is recorded
+    assert dod.integration_ok is False
+    assert dod.integration_note == "delegation integration failed: objective floor did not pass"
+    landed = [
+        event
+        for event in events.events
+        if event.kind is EventKind.OUTCOME_LANDED and event.task_id == uid("M")
+    ]
+    assert landed[-1].payload["integration_ok"] is False
+    assert landed[-1].payload["integration_note"] == dod.integration_note
 
 
 async def test_integrate_lands_done_when_the_objective_rollup_floor_passes(
@@ -481,6 +507,8 @@ async def test_integrate_lands_done_when_the_objective_rollup_floor_passes(
 
     assert ledger.tasks.get(uid("M")).status is TaskStatus.DONE  # type: ignore[union-attr]  # floor passed → done
     assert ledger.tasks.all_children_terminal(uid("M"))
+    dod = ledger.dod.get_for_task(uid("M"))
+    assert dod is not None and dod.integration_ok is True
 
 
 async def test_delegation_parent_closes_verified_with_no_system_verifier_run(

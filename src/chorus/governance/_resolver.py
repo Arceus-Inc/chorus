@@ -11,6 +11,7 @@ action is one handler in :func:`~chorus.governance.default_actions`, never an ed
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
@@ -32,11 +33,15 @@ from chorus.ledger import (
     HumanAuthorizationProof,
     TaskStatus,
 )
+from chorus.outcomes import DoDKind
 
 if TYPE_CHECKING:
+    from chorus.heartbeat._landed_outcome import DerivedLandedOutcome
     from chorus.ledger import Ledger
+    from chorus.observability import EventSink
 
 _TERMINAL = frozenset({TaskStatus.DONE, TaskStatus.CANCELLED, TaskStatus.REJECTED})
+_logger = logging.getLogger("chorus.governance.resolver")
 
 _DECISION_VERB: dict[ApprovalDecision, ActivityVerb] = {
     ApprovalDecision.APPROVE: ActivityVerb.APPROVED,
@@ -60,14 +65,21 @@ class ResolveOutcome:
     decision: ApprovalStatus
     subject_status: str
     wakes_fired: int
+    landed: DerivedLandedOutcome | None = None
 
 
 class GovernanceResolver:
     """Open and resolve governed-action approvals over a ledger, dispatching to handlers (spec 04 §5)."""
 
-    def __init__(self, ledger: Ledger, registry: GovernanceRegistry | None = None) -> None:
+    def __init__(
+        self,
+        ledger: Ledger,
+        registry: GovernanceRegistry | None = None,
+        event_sink: EventSink | None = None,
+    ) -> None:
         self._ledger = ledger
         self._registry = registry or GovernanceRegistry.from_actions(default_actions(ledger))
+        self._event_sink = event_sink
 
     # -- opening ----------------------------------------------------------------------------------
 
@@ -239,6 +251,20 @@ class GovernanceResolver:
         """
         return self._ledger.human_authorization_proofs.get_by_nonce(nonce)
 
+    def get_landed_outcome(self, approval_id: str) -> DerivedLandedOutcome | None:
+        """Replay the exact-once landed receipt durably committed with an approval decision."""
+        from chorus.heartbeat._landed_outcome import DerivedLandedOutcome
+
+        activity = next(
+            (
+                row
+                for row in self._ledger.activity.by_subject("approval", approval_id)
+                if row.verb is ActivityVerb.OUTCOME_LANDED
+            ),
+            None,
+        )
+        return None if activity is None else DerivedLandedOutcome.from_dict(activity.payload)
+
     def _resolve(
         self,
         approval_id: str,
@@ -252,9 +278,13 @@ class GovernanceResolver:
             raise GovernanceError(f"no such approval: {approval_id!r}")
         if approval.status is not ApprovalStatus.PENDING:
             raise GovernanceError(f"approval {approval_id!r} already {approval.status.value}")
-        if proof is None and approval.gate_kind is ApprovalGate.AUTHORIZATION:
+        if (
+            proof is None
+            and approval.action is ApprovalAction.TASK_GATE
+            and approval.gate_kind in {ApprovalGate.ACCEPTANCE, ApprovalGate.AUTHORIZATION}
+        ):
             raise GovernanceError(
-                f"authorization approval {approval_id!r} requires authenticated resolution"
+                f"task-gate approval {approval_id!r} requires authenticated resolution"
             )
         handler = self._registry.get(approval.action)
         apply: dict[ApprovalDecision, Callable[[Approval], ActionOutcome]] = {
@@ -262,6 +292,7 @@ class GovernanceResolver:
             ApprovalDecision.DENY: handler.on_deny,
             ApprovalDecision.REQUEST_REVISION: handler.on_revise,
         }
+        landed: DerivedLandedOutcome | None = None
         with self._ledger.transaction():
             decided_at = proof.decided_at if proof is not None else None
             resolved = self._ledger.approvals.set_status(
@@ -276,13 +307,111 @@ class GovernanceResolver:
                 self._ledger.human_authorization_proofs.record(proof)
             outcome = apply[decision](approval)
             self._audit(_DECISION_VERB[decision], approval, actor=decided_by_user_id)
+            if proof is not None:
+                landed = self._persist_human_acceptance_landed(approval, decision, proof)
+        if proof is not None and landed is not None:
+            try:
+                self._emit_human_acceptance_landed(approval, proof, landed)
+            except Exception:
+                _logger.warning(
+                    "live outcome delivery failed for committed approval %s; durable receipt remains",
+                    approval.id,
+                    exc_info=True,
+                )
         return ResolveOutcome(
             approval_id=approval_id,
             subject_id=approval.subject_id,
             decision=decision.status,
             subject_status=outcome.subject_status,
             wakes_fired=outcome.wakes_fired,
+            landed=landed,
         )
+
+    def _persist_human_acceptance_landed(
+        self,
+        approval: Approval,
+        decision: ApprovalDecision,
+        proof: HumanAuthorizationProof,
+    ) -> DerivedLandedOutcome | None:
+        """Commit the sole landed receipt atomically with a HumanApproval decision."""
+        if (
+            approval.action is not ApprovalAction.TASK_GATE
+            or approval.gate_kind is not ApprovalGate.ACCEPTANCE
+        ):
+            return None
+        verifier = self._ledger.dod.verifier_for_task(approval.subject_id)
+        if verifier is None or verifier.kind is not DoDKind.HUMAN_APPROVAL:
+            return None
+        task = self._ledger.tasks.get(approval.subject_id)
+        if task is None:
+            return None
+
+        from chorus.heartbeat._beat import BeatDisposition, BeatOutcome
+        from chorus.heartbeat._landed_outcome import derive_landed_outcome
+
+        passed = decision is ApprovalDecision.APPROVE
+        dod = self._ledger.dod.get_for_task(task.id)
+        if dod is None:
+            return None
+        landed = derive_landed_outcome(
+            task,
+            BeatOutcome(
+                passed=passed,
+                summary=f"human acceptance {decision.value}",
+                disposition=(BeatDisposition.PASSED if passed else BeatDisposition.DOD_FAILED),
+            ),
+            dod.status,
+            orchestrated=False,
+            integration=dod.integration_verdict,
+        )
+        self._ledger.activity.append(
+            Activity(
+                id=mint_id(),
+                verb=ActivityVerb.OUTCOME_LANDED,
+                subject_kind="approval",
+                subject_id=approval.id,
+                actor_user_id=proof.user_id,
+                payload={
+                    **landed.to_dict(),
+                    "approval_id": approval.id,
+                    "decision_id": proof.decision_id,
+                    "task_id": task.id,
+                    "employee_id": task.assignee_employee_id,
+                    "run_id": self._accepted_run_id(task.id),
+                    "decided_at": proof.decided_at.isoformat(),
+                    "passed": landed.strategy_passed(),
+                    "recovery_hint": landed.recovery_hint().value,
+                },
+            )
+        )
+        return landed
+
+    def _emit_human_acceptance_landed(
+        self,
+        approval: Approval,
+        proof: HumanAuthorizationProof,
+        landed: DerivedLandedOutcome,
+    ) -> None:
+        """Project a committed landed receipt live; durable truth never depends on this sink."""
+        task = self._ledger.tasks.get(approval.subject_id)
+        if task is None:
+            return
+
+        from chorus.heartbeat._landed_event import emit_derived_landed_outcome
+
+        emit_derived_landed_outcome(
+            self._ledger,
+            self._event_sink,
+            task=task,
+            landed=landed,
+            at=proof.decided_at,
+            employee_id=task.assignee_employee_id,
+            run_id=self._accepted_run_id(task.id),
+        )
+
+    def _accepted_run_id(self, task_id: str) -> str | None:
+        contract = self._ledger.delegation_contracts.get(task_id)
+        return contract.accepted_run_id if contract is not None else None
 
     # -- audit ------------------------------------------------------------------------------------
 

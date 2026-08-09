@@ -10,7 +10,29 @@ scenario opens a real gate over a real :class:`Ledger` and resolves it through t
 
 from __future__ import annotations
 
+import html
+import os
+import sys
+import uuid
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from pathlib import Path
+
+from chorus.governance import ApprovalDecision, GovernanceResolver, HumanAuthorization
 from chorus.ids import derive_id
+from chorus.ledger import (
+    ApprovalAction,
+    ApprovalGate,
+    ApprovalSubjectKind,
+    Artifact,
+    ArtifactType,
+    AuthenticationMethod,
+    Ledger,
+    Task,
+    TaskStatus,
+)
+from chorus.lifecycle import CapabilityService, ChildPlan, assign_task
+from chorus.workforce import Employee, EmployeeStatus, LedgerWorkforce
 
 _demo_salt = {"n": 0}  # bumped per ledger open — scenario reruns in one database can't collide
 
@@ -24,34 +46,24 @@ def _id(name: str) -> str:
     return derive_id("demo", str(_demo_salt["n"]), name)
 
 
-import os
-import uuid
-
 _EXAMPLE_COMPANY = str(uuid.uuid5(uuid.NAMESPACE_URL, "chorus-example"))  # one stable demo org
-
-import html
-import sys
-from dataclasses import dataclass
-from datetime import UTC, datetime
-from pathlib import Path
-
-from chorus.governance import ApprovalDecision, GovernanceResolver
-from chorus.ledger import (
-    ApprovalAction,
-    ApprovalGate,
-    ApprovalSubjectKind,
-    Artifact,
-    ArtifactType,
-    Ledger,
-    Task,
-    TaskStatus,
-)
-from chorus.lifecycle import CapabilityService, ChildPlan, assign_task
-from chorus.workforce import Employee, EmployeeStatus, LedgerWorkforce
 
 _REPORT = Path(__file__).resolve().parents[1] / "reports" / "m3-governance.html"
 _NOW = datetime(2026, 6, 19, 12, 0, tzinfo=UTC)
 _USER = "founder"
+
+
+def _authorization(label: str) -> HumanAuthorization:
+    return HumanAuthorization(
+        decision_id=_id(f"{label}-decision"),
+        user_id=_USER,
+        method=AuthenticationMethod.STEP_UP,
+        authenticated_at=_NOW,
+        nonce=_id(f"{label}-nonce"),
+        decided_at=_NOW,
+        request_id=f"governance-suite-{label}",
+        request_hash=f"sha256:governance-suite-{label}",
+    )
 
 
 @dataclass
@@ -165,8 +177,10 @@ def _task_gate(decision: ApprovalDecision) -> Scenario:
         _id("t1"), gate_kind=ApprovalGate.ACCEPTANCE, reason="sign off"
     )
     before = lg.tasks.get(_id("t1")).status.value  # type: ignore[union-attr]
-    out = GovernanceResolver(lg).resolve(
-        gate.id, decision=decision, decided_by_user_id=_USER, now=_NOW
+    out = GovernanceResolver(lg).resolve_authenticated(
+        gate.id,
+        decision=decision,
+        authorization=_authorization(f"task-gate-{decision.value}"),
     )
     lg.close()
     return Scenario(

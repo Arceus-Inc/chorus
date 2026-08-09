@@ -204,8 +204,10 @@ async def test_human_approval_dod_opens_an_approval_instead_of_marking_done(
     pending = ledger.approvals.pending()
     assert len(pending) == 1 and pending[0].gate_kind is ApprovalGate.ACCEPTANCE
     # and a human signing off lands the task done
-    GovernanceResolver(ledger).resolve(
-        pending[0].id, decision=ApprovalDecision.APPROVE, decided_by_user_id=uid("board"), now=_NOW
+    GovernanceResolver(ledger).resolve_authenticated(
+        pending[0].id,
+        decision=ApprovalDecision.APPROVE,
+        authorization=_authorization(),
     )
     assert ledger.tasks.get(uid("t1")).status is TaskStatus.DONE  # type: ignore[union-attr]
 
