@@ -23,7 +23,6 @@ def test_eval_agent_session_handle_survives_reconnect(pg_database: str) -> None:
     company_id = str(uuid.uuid4())
     emp = uid("emp")
     task_id = uid("task")
-    dream_key = uid("dream")
 
     store = Ledger.open(pg_database, company_id=company_id)
     store.employees.create(Employee(id=emp, name=emp, role="engineer"))
@@ -32,12 +31,12 @@ def test_eval_agent_session_handle_survives_reconnect(pg_database: str) -> None:
         store,
         employee_id=emp,
         task_id=task_id,
-        dream_session_key=dream_key,
         model="claude-sonnet",
         run_id=None,
         working_dir="/srv/worktrees/ada",
     )
     session_id = session.id
+    dream_key = session.dream_session_key
     store.agent_sessions.touch_cost(
         session_id, SessionCost(input_tokens=120, output_tokens=40, cost_usd=0.02)
     )

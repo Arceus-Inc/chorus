@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from chorus.ledger._agent_session_store import ensure_open_session
 from chorus.ledger._ledger import Ledger
-from chorus.ledger._models import AgentSession, SessionCost
+from chorus.ledger._models import AgentSession, AgentSessionStatus, SessionCost
 
 
 def dream_session_key_for_task(task_id: str) -> str:
@@ -37,7 +37,6 @@ def begin_beat_session(
         ledger,
         employee_id=employee_id,
         task_id=task_id,
-        dream_session_key=dream_session_key_for_task(task_id),
         model=model,
         run_id=run_id,
         working_dir=working_dir,
@@ -73,13 +72,16 @@ def persist_beat_account(
         cache_write_tokens=prior.cache_write_tokens,
         cost_usd=prior.cost_usd + (max(0, cost_cents) / 100.0),
     )
-    ledger.agent_sessions.touch_cost(session_id, cost, run_id=run_id)
-    # A clean beat clears the previous failure: the thread proved itself usable.
-    if last_error != (session.last_error if session is not None else None):
-        ledger.agent_sessions.record_error(session_id, last_error)
-    if seal:
-        ledger.agent_sessions.seal(session_id)
-    return cost
+    if session is None or session.status is not AgentSessionStatus.OPEN:
+        return prior
+    accounted = ledger.agent_sessions.account_if_open(
+        session_id,
+        cost,
+        run_id=run_id,
+        last_error=last_error,
+        seal=seal,
+    )
+    return cost if accounted else prior
 
 
 __all__ = [

@@ -276,6 +276,17 @@ async def test_every_beat_on_a_task_addresses_the_same_dream_session(tmp_path: P
     assert harness.session_scope == first_scope
 
 
+async def test_bound_control_plane_session_scope_overrides_task_fallback(tmp_path: Path) -> None:
+    harness = _FakeHarness(result=_result("done"))
+    runner = DreamBeatRunner(harness, working_dir=tmp_path, employee_id=uid("e"))
+    scoped = runner.for_session_scope("session-control-plane-1")
+    assert scoped.working_dir == tmp_path
+
+    await scoped.run_task(task_id="task_M", intent="resume", run_id=uid("run_1"))
+
+    assert harness.session_scope == "session-control-plane-1"
+
+
 async def test_run_task_writes_the_beat_context_for_capability_tools(tmp_path: Path) -> None:
     # A capability tool (e.g. the manager's decompose) reads which task/run it acts for from the
     # per-beat context the runner drops into the worktree before invoking dream.

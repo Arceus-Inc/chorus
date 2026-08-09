@@ -156,6 +156,33 @@ class AgentSessionRepo:
             )
         self._conn.commit()
 
+    def account_if_open(
+        self,
+        session_id: str,
+        cost: SessionCost,
+        *,
+        run_id: str | None,
+        last_error: str | None,
+        seal: bool,
+    ) -> bool:
+        """Atomically account one beat only while its exact session handle remains open."""
+        status = AgentSessionStatus.SEALED if seal else AgentSessionStatus.OPEN
+        row = self._conn.execute(
+            "UPDATE agent_session SET cost = ?, run_id = COALESCE(?, run_id), last_error = ?, "
+            "status = ?, updated_at = ? WHERE id = ? AND status = ? RETURNING id",
+            (
+                _dump_cost(cost),
+                run_id,
+                last_error,
+                status.value,
+                utcnow_iso(),
+                session_id,
+                AgentSessionStatus.OPEN.value,
+            ),
+        ).fetchone()
+        self._conn.commit()
+        return row is not None
+
     def seal(self, session_id: str) -> None:
         now = utcnow_iso()
         self._conn.execute(

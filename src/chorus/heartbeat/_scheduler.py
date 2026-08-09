@@ -28,7 +28,7 @@ from chorus.adapters._failure import failure_outcome
 from chorus.cron._fire import fire_routine
 from chorus.events import Event, EventKind
 from chorus.governance import GovernanceResolver
-from chorus.heartbeat._beat import BeatDisposition, BeatOutcome
+from chorus.heartbeat._beat import BeatDisposition, BeatOutcome, SessionScopeFactory
 from chorus.heartbeat._beat_context import IntegrateContextPacket
 from chorus.heartbeat._execution_profile import (
     ExecutionProfileResolver,
@@ -787,6 +787,7 @@ class Scheduler:
         # worktree — a read-only beat leaves no fingerprint.
         working_dir: Path | None = None
         base_sha: str | None = None
+        agent_session_id: str | None = None
         try:
             if profile_error is not None:
                 raise profile_error
@@ -818,13 +819,16 @@ class Scheduler:
             # Open or resume the task's handle row. Continuity is dream's: the beat runner hands
             # the same session key back to ``run_task``, so the role threads pick up where the
             # last beat left them instead of being re-narrated into the prompt.
-            begin_beat_session(
+            session = begin_beat_session(
                 ledger,
                 employee_id=employee.id,
                 task_id=task_id,
                 run_id=run_id,
                 working_dir=str(working_dir) if working_dir is not None else None,
             )
+            agent_session_id = session.id
+            if isinstance(beat_runner, SessionScopeFactory):
+                beat_runner = beat_runner.for_session_scope(session.dream_session_key)
             intent = _execution_intent(ledger, task)
             result = await self._run_beat_with_retry(
                 beat_runner,
@@ -961,9 +965,8 @@ class Scheduler:
             ledger,
             task_id=task_id,
             run_id=run_id,
-            employee_id=employee.id,
+            session_id=agent_session_id,
             result=result,
-            working_dir=str(working_dir) if working_dir is not None else None,
         )
         await self._capture_memory(
             ledger,
@@ -1002,26 +1005,17 @@ class Scheduler:
         *,
         task_id: str,
         run_id: str,
-        employee_id: str,
+        session_id: str | None,
         result: BeatOutcome,
-        working_dir: str | None = None,
     ) -> None:
         """Meter this beat's spend onto the task's agent_session handle row."""
-        if result.disposition is BeatDisposition.CANCELLED:
+        if result.disposition is BeatDisposition.CANCELLED or session_id is None:
             return
-        session = begin_beat_session(
-            ledger,
-            employee_id=employee_id,
-            task_id=task_id,
-            run_id=run_id,
-            model=result.model or "",
-            working_dir=working_dir,
-        )
         task = ledger.tasks.get(task_id)
         seal = task is not None and task.status is TaskStatus.DONE
         persist_beat_account(
             ledger,
-            session.id,
+            session_id,
             input_tokens=result.input_tokens,
             output_tokens=result.output_tokens,
             cost_cents=result.cost_cents,

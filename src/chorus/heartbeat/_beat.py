@@ -90,8 +90,18 @@ class BeatRunner(Protocol):
         ...
 
 
+@runtime_checkable
+class SessionScopeFactory(Protocol):
+    """Optional runner capability that returns an invocation-local scoped runner."""
+
+    def for_session_scope(self, session_scope: str) -> BeatRunner:
+        """Return a runner whose next invocation uses exactly ``session_scope``."""
+        ...
+
+
 __all__ = [
     "BeatDisposition",
     "BeatOutcome",
     "BeatRunner",
+    "SessionScopeFactory",
 ]

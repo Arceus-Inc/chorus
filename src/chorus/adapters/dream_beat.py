@@ -18,7 +18,7 @@ import subprocess
 import tempfile
 from collections.abc import Callable, Mapping, Sequence
 from contextlib import suppress
-from dataclasses import asdict, replace
+from dataclasses import asdict, dataclass, replace
 from datetime import UTC, datetime
 from enum import StrEnum
 from hashlib import sha256
@@ -339,6 +339,39 @@ def _price_beat_outcome(
     )
 
 
+@dataclass(frozen=True)
+class ScopedDreamBeatRunner:
+    """One immutable provider scope bound to one Dream beat invocation."""
+
+    runner: DreamBeatRunner
+    session_scope: str
+
+    @property
+    def working_dir(self) -> Path | None:
+        """Project the wrapped runner capability used by integration and objective gates."""
+        return self.runner.working_dir
+
+    async def run_task(
+        self,
+        *,
+        task_id: str,
+        intent: str,
+        verification: tuple[VerificationStep, ...] = (),
+        rubric: str = "",
+        observer: Callable[[Event], None] | None = None,
+        run_id: str | None = None,
+    ) -> BeatOutcome:
+        return await self.runner._run_task(
+            task_id=task_id,
+            intent=intent,
+            verification=verification,
+            rubric=rubric,
+            observer=observer,
+            run_id=run_id,
+            session_scope=self.session_scope,
+        )
+
+
 class DreamBeatRunner:
     """Run a beat through a dream Harness and land its result as a :class:`BeatOutcome` (spec 03 §3).
 
@@ -387,6 +420,12 @@ class DreamBeatRunner:
         """The harness working directory where per-beat context files are written, if configured."""
         return self._working_dir
 
+    def for_session_scope(self, session_scope: str) -> ScopedDreamBeatRunner:
+        """Return a concurrency-safe runner bound to one persisted provider scope."""
+        if not session_scope:
+            raise ValueError("session_scope must be non-empty")
+        return ScopedDreamBeatRunner(self, session_scope)
+
     async def run_task(
         self,
         *,
@@ -396,6 +435,27 @@ class DreamBeatRunner:
         rubric: str = "",
         observer: Callable[[Event], None] | None = None,
         run_id: str | None = None,
+    ) -> BeatOutcome:
+        return await self._run_task(
+            task_id=task_id,
+            intent=intent,
+            verification=verification,
+            rubric=rubric,
+            observer=observer,
+            run_id=run_id,
+            session_scope=dream_session_key_for_task(task_id),
+        )
+
+    async def _run_task(
+        self,
+        *,
+        task_id: str,
+        intent: str,
+        verification: tuple[VerificationStep, ...],
+        rubric: str,
+        observer: Callable[[Event], None] | None,
+        run_id: str | None,
+        session_scope: str,
     ) -> BeatOutcome:
         # Drop the per-beat context the worktree's capability tools read (which task/run they act for).
         # Written before the harness runs so a tool firing mid-beat finds it (spec 06 §4, M3).
@@ -453,7 +513,6 @@ class DreamBeatRunner:
         # generator / evaluator threads it already has instead of starting the
         # conversation over. RESUME above keeps the *plan*; this keeps the
         # *conversation* that produced it.
-        session_scope = dream_session_key_for_task(task_id)
         nudge_task: asyncio.Task[None] | None = None
         if self._working_dir is not None:
             clear_todo_flush_nudge(self._working_dir)
