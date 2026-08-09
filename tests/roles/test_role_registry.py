@@ -44,6 +44,7 @@ def test_default_roles_register_cleanly() -> None:
         "designer",
         "frontend_engineer",
         "ceo",
+        "reflection_coach",
     }
     assert {"engineer", "reviewer"}.isdisjoint(reg.names())
 

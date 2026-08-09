@@ -143,8 +143,13 @@ def _validate_declaration(role: str, decl: RoutineDeclaration) -> None:
 
     from chorus.cron import parse_cron
     from chorus.errors import InvalidIntake
+    from chorus.ledger import RoutineStatus
     from chorus.trust import assert_no_inline_secrets
 
+    if not isinstance(decl.initial_status, RoutineStatus):
+        raise RolePluginInvalid(
+            f"role {role!r} routine {decl.routine_key!r} has an invalid initial_status"
+        )
     try:
         parse_cron(decl.schedule, base=datetime.now(UTC))
     except Exception as exc:

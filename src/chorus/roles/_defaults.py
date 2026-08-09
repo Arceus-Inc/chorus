@@ -25,6 +25,7 @@ from chorus_employee.designer import designer_plugin
 from chorus_employee.frontend_engineer import frontend_engineer_plugin
 from chorus_employee.marketer import marketer_plugin
 from chorus_employee.pm import pm_plugin
+from chorus_employee.reflection_coach._plugin import reflection_coach_plugin
 
 
 def default_roles() -> tuple[RolePlugin, ...]:
@@ -41,6 +42,7 @@ def default_roles() -> tuple[RolePlugin, ...]:
         designer_plugin(),
         frontend_engineer_plugin(),
         ceo_plugin(),
+        reflection_coach_plugin(),
     )
 
 

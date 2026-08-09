@@ -941,7 +941,12 @@ class EmployeeHarnessFactory:
         # brief and are consumed, so the thread stays readable via read_comments but the nudge
         # never repeats.
         if self._ledger is not None and self._ledger.employees.get(employee.id) is not None:
-            missing = tuple(t for t in ("comment", "read_comments") if t not in config.tools)
+            denied = frozenset(self._roles.get(employee.role).manifest.disallowed_tools)
+            missing = tuple(
+                tool
+                for tool in ("comment", "read_comments")
+                if tool not in config.tools and tool not in denied
+            )
             if missing:
                 config = replace(config, tools=(*config.tools, *missing))
             inbox = self._ledger.messages.inbox(employee.id)
@@ -957,8 +962,8 @@ class EmployeeHarnessFactory:
                         content=(
                             "## Inbox — unread comments for you\n"
                             + lines
-                            + "\nRead the full thread with read_comments(task_id); "
-                            "reply with comment."
+                            + "\nRead the full thread with read_comments(task_id)."
+                            + (" Reply with comment." if "comment" in config.tools else "")
                         ),
                     )
                 )
