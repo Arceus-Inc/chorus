@@ -30,6 +30,9 @@ from chorus.ledger.repos.management_profiles import ManagementProfileRepo
 from chorus.ledger.repos.messages import MessageRepo
 from chorus.ledger.repos.monitors import MonitorRepo
 from chorus.ledger.repos.recovery_actions import RecoveryActionRepo
+from chorus.ledger.repos.reflection_application_authorizations import (
+    ReflectionApplicationAuthorizationRepo,
+)
 from chorus.ledger.repos.reflection_proposal_reviews import ReflectionProposalReviewRepo
 from chorus.ledger.repos.reflection_proposals import ReflectionProposalRepo
 from chorus.ledger.repos.rollouts import RolloutRepo
@@ -72,6 +75,7 @@ __all__ = [
     "MessageRepo",
     "MonitorRepo",
     "RecoveryActionRepo",
+    "ReflectionApplicationAuthorizationRepo",
     "ReflectionProposalRepo",
     "ReflectionProposalReviewRepo",
     "RolloutRepo",

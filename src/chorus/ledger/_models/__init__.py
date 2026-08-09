@@ -92,6 +92,9 @@ from chorus.ledger._models._outcomes import (
     ArtifactRevision,
     Dod,
 )
+from chorus.ledger._models._reflection_application_authorizations import (
+    ReflectionApplicationAuthorization,
+)
 from chorus.ledger._models._reflection_proposals import (
     ReflectionProposal,
     ReflectionProposalTarget,
@@ -201,6 +204,7 @@ __all__ = [
     "RecoveryKind",
     "RecoveryOutcome",
     "RecoveryStatus",
+    "ReflectionApplicationAuthorization",
     "ReflectionProposal",
     "ReflectionProposalReview",
     "ReflectionProposalTarget",
