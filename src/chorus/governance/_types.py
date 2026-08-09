@@ -8,14 +8,24 @@ opening it parks/flags the subject, and what approving / denying / requesting-re
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Protocol, runtime_checkable
 
-from chorus.ledger import Approval, ApprovalAction, ApprovalStatus
+from chorus.ledger import (
+    Approval,
+    ApprovalAction,
+    ApprovalStatus,
+    AuthenticationMethod,
+)
 
 
 class ApprovalDecision(StrEnum):
-    """The three ways a human resolves a gate (spec 04 §5). Maps 1:1 to a terminal status."""
+    """The three ways a human resolves a gate (spec 04 §5). Maps 1:1 to a terminal status.
+
+    ``HOLD`` is intentionally not a decision: :meth:`GovernanceResolver.hold_authenticated` records
+    it as durable evidence while leaving the approval pending. These remain the terminal resolutions.
+    """
 
     APPROVE = "approve"
     DENY = "deny"
@@ -32,6 +42,30 @@ _DECISION_STATUS: dict[ApprovalDecision, ApprovalStatus] = {
     ApprovalDecision.DENY: ApprovalStatus.DENIED,
     ApprovalDecision.REQUEST_REVISION: ApprovalStatus.REVISION_REQUESTED,
 }
+
+
+@dataclass(frozen=True)
+class HumanAuthorization:
+    """Authenticated human context supplied to the public terminal-resolution API."""
+
+    decision_id: str
+    user_id: str
+    method: AuthenticationMethod
+    authenticated_at: datetime
+    nonce: str
+    decided_at: datetime
+    request_id: str
+    request_hash: str
+
+    def __post_init__(self) -> None:
+        for name, value in (
+            ("authenticated_at", self.authenticated_at),
+            ("decided_at", self.decided_at),
+        ):
+            if value.tzinfo is None or value.utcoffset() != UTC.utcoffset(value):
+                raise ValueError(f"{name} must be a UTC datetime")
+        if self.authenticated_at > self.decided_at:
+            raise ValueError("authenticated_at must be at or before decided_at")
 
 
 @dataclass(frozen=True)
@@ -68,4 +102,4 @@ class GovernedAction(Protocol):
     def on_revise(self, approval: Approval) -> ActionOutcome: ...
 
 
-__all__ = ["ActionOutcome", "ApprovalDecision", "GovernedAction"]
+__all__ = ["ActionOutcome", "ApprovalDecision", "GovernedAction", "HumanAuthorization"]

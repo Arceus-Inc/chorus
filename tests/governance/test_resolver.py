@@ -14,6 +14,7 @@ from chorus.governance import (
     ApprovalDecision,
     GovernanceError,
     GovernanceResolver,
+    HumanAuthorization,
     ResolveOutcome,
 )
 from chorus.ledger import (
@@ -21,6 +22,7 @@ from chorus.ledger import (
     ApprovalGate,
     ApprovalStatus,
     ApprovalSubjectKind,
+    AuthenticationMethod,
     DodStatus,
     Ledger,
     Task,
@@ -38,6 +40,19 @@ _USER = "operator"
 
 def _resolver(ledger: Ledger) -> GovernanceResolver:
     return GovernanceResolver(ledger)
+
+
+def _authorization() -> HumanAuthorization:
+    return HumanAuthorization(
+        decision_id=uid("decision"),
+        user_id=_USER,
+        method=AuthenticationMethod.SESSION,
+        authenticated_at=_NOW,
+        nonce=uid("nonce"),
+        decided_at=_NOW,
+        request_id="resolver-test",
+        request_hash="sha256:resolver-test",
+    )
 
 
 def _task(ledger: Ledger, task_id: str = uid("t1"), *, assignee: str | None = "alice") -> None:
@@ -130,29 +145,27 @@ def test_acceptance_deny_stays_blocked_and_records_failed(ledger: Ledger) -> Non
 # -- authorization gate -----------------------------------------------------------------------------
 
 
-def test_authorization_approve_unblocks_to_todo_and_wakes_assignee(ledger: Ledger) -> None:
+def test_legacy_authorization_approve_fails_closed(ledger: Ledger) -> None:
     _task(ledger, uid("t1"), assignee="alice")
     res = _resolver(ledger)
     approval = res.open_task_gate(
         uid("t1"), gate_kind=ApprovalGate.AUTHORIZATION, reason="board sign-off"
     )
 
-    outcome = res.resolve(
-        approval.id, decision=ApprovalDecision.APPROVE, decided_by_user_id=_USER, now=_NOW
-    )
+    with pytest.raises(GovernanceError, match="requires authenticated"):
+        res.resolve(approval.id, decision=ApprovalDecision.APPROVE, decided_by_user_id=_USER, now=_NOW)
 
-    assert outcome.subject_status == TaskStatus.TODO.value
-    assert ledger.tasks.get(uid("t1")).status is TaskStatus.TODO  # type: ignore[union-attr]
-    assert outcome.wakes_fired == 1
-    assert any(w.employee_id == "alice" for w in ledger.wakes.queued())
+    task = ledger.tasks.get(uid("t1"))
+    assert task is not None and task.status is TaskStatus.BLOCKED
+    assert ledger.wakes.queued() == []
 
 
 def test_authorization_approve_without_assignee_fires_no_wake(ledger: Ledger) -> None:
     _task(ledger, uid("t1"), assignee=None)
     res = _resolver(ledger)
     approval = res.open_task_gate(uid("t1"), gate_kind=ApprovalGate.AUTHORIZATION, reason="x")
-    outcome = res.resolve(
-        approval.id, decision=ApprovalDecision.APPROVE, decided_by_user_id=_USER, now=_NOW
+    outcome = res.resolve_authenticated(
+        approval.id, decision=ApprovalDecision.APPROVE, authorization=_authorization()
     )
     assert outcome.subject_status == TaskStatus.TODO.value and outcome.wakes_fired == 0
 
@@ -162,8 +175,8 @@ def test_authorization_deny_cancels(ledger: Ledger) -> None:
     res = _resolver(ledger)
     approval = res.open_task_gate(uid("t1"), gate_kind=ApprovalGate.AUTHORIZATION, reason="x")
 
-    outcome = res.resolve(
-        approval.id, decision=ApprovalDecision.DENY, decided_by_user_id=_USER, now=_NOW
+    outcome = res.resolve_authenticated(
+        approval.id, decision=ApprovalDecision.DENY, authorization=_authorization()
     )
 
     assert outcome.subject_status == TaskStatus.CANCELLED.value
@@ -184,7 +197,9 @@ def test_resolve_already_decided_errors(ledger: Ledger) -> None:
     _task(ledger, uid("t1"))
     res = _resolver(ledger)
     approval = res.open_task_gate(uid("t1"), gate_kind=ApprovalGate.AUTHORIZATION, reason="x")
-    res.resolve(approval.id, decision=ApprovalDecision.APPROVE, decided_by_user_id=_USER, now=_NOW)
+    res.resolve_authenticated(
+        approval.id, decision=ApprovalDecision.APPROVE, authorization=_authorization()
+    )
     with pytest.raises(GovernanceError):
         res.resolve(
             approval.id, decision=ApprovalDecision.APPROVE, decided_by_user_id=_USER, now=_NOW

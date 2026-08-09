@@ -7,6 +7,8 @@ it exact-once — a second pending request for the same subject raises ``Integri
 
 from __future__ import annotations
 
+from datetime import datetime
+
 from chorus.ledger._models import (
     Approval,
     ApprovalAction,
@@ -19,6 +21,7 @@ from chorus.ledger.repos._base import (
     LedgerRow,
     from_iso,
     require_persisted,
+    to_iso,
     utcnow_iso,
 )
 
@@ -59,19 +62,26 @@ class ApprovalRepo:
         self.set_status(approval_id, ApprovalStatus.DENIED, decided_by_user_id=decided_by_user_id)
 
     def set_status(
-        self, approval_id: str, status: ApprovalStatus, *, decided_by_user_id: str
-    ) -> None:
+        self,
+        approval_id: str,
+        status: ApprovalStatus,
+        *,
+        decided_by_user_id: str,
+        decided_at: datetime | None = None,
+    ) -> bool:
         """Resolve a pending gate to any terminal status (approved / denied / revision_requested).
 
         Stamps the decider + timestamp and only acts on a still-``pending`` row, so the resolution is
         idempotent and frees the subject's exact-once gate (spec 04 §5)."""
-        now = utcnow_iso()
-        self._conn.execute(
+        now = to_iso(decided_at) if decided_at is not None else utcnow_iso()
+        cursor = self._conn.execute(
             "UPDATE approval SET status = ?, decided_by_user_id = ?, decided_at = ? "
-            "WHERE id = ? AND status = 'pending'",
+            "WHERE id = ? AND status = 'pending' RETURNING id",
             (status.value, decided_by_user_id, now, approval_id),
         )
+        resolved = cursor.fetchone() is not None
         self._conn.commit()
+        return resolved
 
     def get(self, approval_id: str) -> Approval | None:
         row = self._conn.execute("SELECT * FROM approval WHERE id = ?", (approval_id,)).fetchone()

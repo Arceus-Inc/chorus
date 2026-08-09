@@ -5,6 +5,23 @@ from __future__ import annotations
 from enum import StrEnum
 
 
+class AuthenticationMethod(StrEnum):
+    """How the deciding human was authenticated for a durable authorization proof."""
+
+    SESSION = "session"
+    API_KEY = "api_key"
+    STEP_UP = "step_up"
+
+
+class AuthorizationVerdict(StrEnum):
+    """The human verdict recorded alongside an approval, separate from its terminal status."""
+
+    APPROVE = "approve"
+    DENY = "deny"
+    REQUEST_REVISION = "request_revision"
+    HOLD = "hold"
+
+
 class TaskStatus(StrEnum):
     """The universal work-unit lifecycle (spec 01 Cluster A)."""
 
@@ -289,6 +306,7 @@ class ActivityVerb(StrEnum):
     APPROVED = "approved"
     DENIED = "denied"
     REVISION_REQUESTED = "revision_requested"
+    HELD = "held"
     PROMOTED = "promoted"
     DOD_REVISED = "dod_revised"
     REVIEW_VERDICT = "review_verdict"

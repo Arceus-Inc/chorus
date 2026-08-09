@@ -6,10 +6,10 @@ from datetime import datetime
 
 import pytest
 
-from chorus.governance import ApprovalDecision, GovernanceResolver
+from chorus.governance import ApprovalDecision, GovernanceResolver, HumanAuthorization
 from chorus.heartbeat import Scheduler, Wake, WakeReason
 from chorus.heartbeat._beat import BeatOutcome
-from chorus.ledger import ApprovalGate, Ledger, Task, TaskStatus
+from chorus.ledger import ApprovalGate, AuthenticationMethod, Ledger, Task, TaskStatus
 from chorus.outcomes import VerificationStep, Verifier
 from chorus.testing import uid
 from chorus.workforce import Employee
@@ -17,6 +17,19 @@ from chorus.workforce import Employee
 pytestmark = pytest.mark.integration
 
 _NOW = datetime.fromisoformat("2026-06-16T12:00:00+00:00")
+
+
+def _authorization() -> HumanAuthorization:
+    return HumanAuthorization(
+        decision_id=uid("decision"),
+        user_id=uid("board"),
+        method=AuthenticationMethod.SESSION,
+        authenticated_at=_NOW,
+        nonce=uid("nonce"),
+        decided_at=_NOW,
+        request_id="dod-enforcement",
+        request_hash="sha256:dod-enforcement",
+    )
 
 
 class _RecordingBeat:
@@ -236,8 +249,8 @@ async def test_pending_gate_wins_over_the_dod_so_the_task_stays_blocked(
     pending = ledger.approvals.pending()
     assert len(pending) == 1
     # and approving now completes cleanly (blocked → todo), not the crashing `done → todo`
-    GovernanceResolver(ledger).resolve(
-        pending[0].id, decision=ApprovalDecision.APPROVE, decided_by_user_id=uid("board"), now=_NOW
+    GovernanceResolver(ledger).resolve_authenticated(
+        pending[0].id, decision=ApprovalDecision.APPROVE, authorization=_authorization()
     )
     assert ledger.tasks.get(uid("t1")).status is TaskStatus.TODO  # type: ignore[union-attr]
 

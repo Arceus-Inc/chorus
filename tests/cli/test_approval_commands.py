@@ -91,24 +91,26 @@ def test_acceptance_approve_marks_done(ledger: Ledger) -> None:
     assert ledger.tasks.get(uid("t1")).status is TaskStatus.DONE  # type: ignore[union-attr]
 
 
-def test_authorization_approve_unblocks_to_todo(ledger: Ledger) -> None:
+def test_authorization_approve_cannot_bypass_authenticated_resolution(ledger: Ledger) -> None:
     _task(ledger)
     session = _session(ledger)
     _run(f"approval open {uid('t1')} authorization board sign-off", session)
     approval_id = ledger.approvals.pending()[0].id
     _, out = _run(f"approval approve {approval_id}", session)
-    assert "todo" in out
-    assert ledger.tasks.get(uid("t1")).status is TaskStatus.TODO  # type: ignore[union-attr]
+    assert "requires authenticated" in out
+    task = ledger.tasks.get(uid("t1"))
+    assert task is not None and task.status is TaskStatus.BLOCKED
 
 
-def test_deny_authorization_cancels(ledger: Ledger) -> None:
+def test_authorization_deny_cannot_bypass_authenticated_resolution(ledger: Ledger) -> None:
     _task(ledger)
     session = _session(ledger)
     _run(f"approval open {uid('t1')} authorization x", session)
     approval_id = ledger.approvals.pending()[0].id
     _, out = _run(f"approval deny {approval_id}", session)
-    assert "denied" in out and "cancelled" in out
-    assert ledger.tasks.get(uid("t1")).status is TaskStatus.CANCELLED  # type: ignore[union-attr]
+    assert "requires authenticated" in out
+    task = ledger.tasks.get(uid("t1"))
+    assert task is not None and task.status is TaskStatus.BLOCKED
 
 
 def test_approve_unknown_errors(ledger: Ledger) -> None:
@@ -119,7 +121,7 @@ def test_approve_unknown_errors(ledger: Ledger) -> None:
 def test_approve_already_decided_errors(ledger: Ledger) -> None:
     _task(ledger)
     session = _session(ledger)
-    _run(f"approval open {uid('t1')} authorization x", session)
+    _run(f"approval open {uid('t1')} acceptance x", session)
     approval_id = ledger.approvals.pending()[0].id
     _run(f"approval approve {approval_id}", session)
     _, out = _run(f"approval approve {approval_id}", session)

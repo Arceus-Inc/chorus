@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING
 
 from chorus.governance._errors import GovernanceError
 from chorus.governance._registry import GovernanceRegistry, default_actions
-from chorus.governance._types import ActionOutcome, ApprovalDecision
+from chorus.governance._types import ActionOutcome, ApprovalDecision, HumanAuthorization
 from chorus.ids import mint_id
 from chorus.ledger import (
     Activity,
@@ -28,6 +28,8 @@ from chorus.ledger import (
     ApprovalGate,
     ApprovalStatus,
     ApprovalSubjectKind,
+    AuthorizationVerdict,
+    HumanAuthorizationProof,
     TaskStatus,
 )
 
@@ -40,6 +42,12 @@ _DECISION_VERB: dict[ApprovalDecision, ActivityVerb] = {
     ApprovalDecision.APPROVE: ActivityVerb.APPROVED,
     ApprovalDecision.DENY: ActivityVerb.DENIED,
     ApprovalDecision.REQUEST_REVISION: ActivityVerb.REVISION_REQUESTED,
+}
+
+_DECISION_VERDICT: dict[ApprovalDecision, AuthorizationVerdict] = {
+    ApprovalDecision.APPROVE: AuthorizationVerdict.APPROVE,
+    ApprovalDecision.DENY: AuthorizationVerdict.DENY,
+    ApprovalDecision.REQUEST_REVISION: AuthorizationVerdict.REQUEST_REVISION,
 }
 
 
@@ -150,11 +158,104 @@ class GovernanceResolver:
 
         Raises :class:`GovernanceError` for an unknown approval or one that is no longer pending."""
         del now  # stamping is the repo's job; kept for a stable governance-call signature
+        return self._resolve(
+            approval_id,
+            decision=decision,
+            decided_by_user_id=decided_by_user_id,
+            proof=None,
+        )
+
+    def resolve_authenticated(
+        self,
+        approval_id: str,
+        *,
+        decision: ApprovalDecision,
+        authorization: HumanAuthorization,
+    ) -> ResolveOutcome:
+        """Resolve a gate with durable proof of one authenticated, terminal human decision.
+
+        ``ApprovalDecision`` deliberately has no ``HOLD`` member. Use
+        :meth:`hold_authenticated` to evidence a hold while leaving the approval pending.
+        """
+        proof = HumanAuthorizationProof(
+            decision_id=authorization.decision_id,
+            approval_id=approval_id,
+            user_id=authorization.user_id,
+            method=authorization.method,
+            authenticated_at=authorization.authenticated_at,
+            nonce=authorization.nonce,
+            decided_at=authorization.decided_at,
+            request_id=authorization.request_id,
+            request_hash=authorization.request_hash,
+            verdict=_DECISION_VERDICT[decision],
+        )
+        return self._resolve(
+            approval_id,
+            decision=decision,
+            decided_by_user_id=authorization.user_id,
+            proof=proof,
+        )
+
+    def hold_authenticated(
+        self, approval_id: str, *, authorization: HumanAuthorization
+    ) -> HumanAuthorizationProof:
+        """Record an authenticated hold without resolving the approval or invoking its handler."""
         approval = self._ledger.approvals.get(approval_id)
         if approval is None:
             raise GovernanceError(f"no such approval: {approval_id!r}")
         if approval.status is not ApprovalStatus.PENDING:
             raise GovernanceError(f"approval {approval_id!r} already {approval.status.value}")
+        proof = HumanAuthorizationProof(
+            decision_id=authorization.decision_id,
+            approval_id=approval_id,
+            user_id=authorization.user_id,
+            method=authorization.method,
+            authenticated_at=authorization.authenticated_at,
+            nonce=authorization.nonce,
+            decided_at=authorization.decided_at,
+            request_id=authorization.request_id,
+            request_hash=authorization.request_hash,
+            verdict=AuthorizationVerdict.HOLD,
+        )
+        with self._ledger.transaction():
+            self._ledger.human_authorization_proofs.record(proof)
+            self._audit(ActivityVerb.HELD, approval, actor=authorization.user_id)
+        return proof
+
+    def get_authorization_proof(self, approval_id: str) -> HumanAuthorizationProof | None:
+        """Read an approval's immutable human authorization proof, if it has one."""
+        return self._ledger.human_authorization_proofs.get(approval_id)
+
+    def get_authorization_proofs(self, approval_id: str) -> list[HumanAuthorizationProof]:
+        """Read every immutable hold and terminal proof recorded for an approval."""
+        return self._ledger.human_authorization_proofs.for_approval(approval_id)
+
+    def get_authorization_proof_by_nonce(self, nonce: str) -> HumanAuthorizationProof | None:
+        """Read immutable evidence for a derived Idempotency-Key nonce in this tenant.
+
+        Podium compares this proof's canonical ``request_hash`` with the incoming body: equal hashes
+        are a replay; a different hash is Idempotency-Key reuse and must be refused. ``request_id``
+        remains the independent X-Request-ID audit correlation value.
+        """
+        return self._ledger.human_authorization_proofs.get_by_nonce(nonce)
+
+    def _resolve(
+        self,
+        approval_id: str,
+        *,
+        decision: ApprovalDecision,
+        decided_by_user_id: str,
+        proof: HumanAuthorizationProof | None,
+    ) -> ResolveOutcome:
+        approval = self._ledger.approvals.get(approval_id)
+        if approval is None:
+            raise GovernanceError(f"no such approval: {approval_id!r}")
+        if approval.status is not ApprovalStatus.PENDING:
+            raise GovernanceError(f"approval {approval_id!r} already {approval.status.value}")
+        if proof is None and approval.gate_kind is ApprovalGate.AUTHORIZATION:
+            raise GovernanceError(
+                f"authorization approval {approval_id!r} requires authenticated resolution"
+            )
         handler = self._registry.get(approval.action)
         apply: dict[ApprovalDecision, Callable[[Approval], ActionOutcome]] = {
             ApprovalDecision.APPROVE: handler.on_approve,
@@ -162,9 +263,17 @@ class GovernanceResolver:
             ApprovalDecision.REQUEST_REVISION: handler.on_revise,
         }
         with self._ledger.transaction():
-            self._ledger.approvals.set_status(
-                approval_id, decision.status, decided_by_user_id=decided_by_user_id
+            decided_at = proof.decided_at if proof is not None else None
+            resolved = self._ledger.approvals.set_status(
+                approval_id,
+                decision.status,
+                decided_by_user_id=decided_by_user_id,
+                decided_at=decided_at,
             )
+            if not resolved:
+                raise GovernanceError(f"approval {approval_id!r} is no longer pending")
+            if proof is not None:
+                self._ledger.human_authorization_proofs.record(proof)
             outcome = apply[decision](approval)
             self._audit(_DECISION_VERB[decision], approval, actor=decided_by_user_id)
         return ResolveOutcome(

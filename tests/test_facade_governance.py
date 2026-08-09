@@ -10,13 +10,19 @@ from __future__ import annotations
 import pytest
 
 from chorus.facade import Caps, Chorus
-from chorus.governance import ApprovalDecision, GovernancePolicy, WorkforcePlanService
+from chorus.governance import (
+    ApprovalDecision,
+    GovernanceError,
+    GovernancePolicy,
+    WorkforcePlanService,
+)
 from chorus.ledger import (
     ApprovalGate,
     Ledger,
     ManagementGrantDraft,
     PlannedEmployee,
     Task,
+    TaskStatus,
     WorkforcePlanDraft,
     WorkforcePlanStatus,
 )
@@ -83,6 +89,25 @@ def test_open_task_gate_then_resolve_clears_the_inbox() -> None:
         assert approval.id in {a.id for a in chorus.governance.approvals()}
         chorus.governance.resolve(approval.id, decision=ApprovalDecision.APPROVE, by="boss")
         assert chorus.governance.approvals() == []
+    finally:
+        ledger.close()
+
+
+def test_facade_resolve_cannot_bypass_an_authorization_gate() -> None:
+    ledger = open_test_ledger()
+    try:
+        chorus = _chorus(ledger)
+        ledger.tasks.submit(Task(id=uid("t1"), intent="risky deploy"))
+        approval = chorus.governance.open_gate(
+            uid("t1"), gate_kind=ApprovalGate.AUTHORIZATION, reason="requires real authentication"
+        )
+
+        with pytest.raises(GovernanceError, match="requires authenticated"):
+            chorus.governance.resolve(approval.id, decision=ApprovalDecision.APPROVE, by="boss")
+
+        task = ledger.tasks.get(uid("t1"))
+        assert task is not None and task.status is TaskStatus.BLOCKED
+        assert [pending.id for pending in chorus.governance.approvals()] == [approval.id]
     finally:
         ledger.close()
 

@@ -14,6 +14,7 @@ from chorus.ledger._models._authority import (
     Team,
     TeamMember,
 )
+from chorus.ledger._models._authorization import HumanAuthorizationProof
 from chorus.ledger._models._budget import (
     BudgetIncident,
     BudgetPolicy,
@@ -31,6 +32,8 @@ from chorus.ledger._models._enums import (
     ApprovalStatus,
     ApprovalSubjectKind,
     ArtifactType,
+    AuthenticationMethod,
+    AuthorizationVerdict,
     BudgetIncidentStatus,
     BudgetScope,
     BudgetThreshold,
@@ -115,6 +118,8 @@ __all__ = [
     "Artifact",
     "ArtifactRevision",
     "ArtifactType",
+    "AuthenticationMethod",
+    "AuthorizationVerdict",
     "BudgetIncident",
     "BudgetIncidentStatus",
     "BudgetPolicy",
@@ -132,6 +137,7 @@ __all__ = [
     "ExecutionMode",
     "Goal",
     "GoalLevel",
+    "HumanAuthorizationProof",
     "ManagementGrantDraft",
     "ManagementProfile",
     "Message",
