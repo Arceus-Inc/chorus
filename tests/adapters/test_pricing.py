@@ -21,6 +21,28 @@ class _Usage:
     cache_write_tokens: int = 0
 
 
+def test_pricing_from_env_if_configured_returns_none_when_unset(monkeypatch: pytest.MonkeyPatch) -> None:
+    from chorus.adapters import pricing_from_env_if_configured
+
+    for key in (
+        "CHORUS_PRICE_RATES",
+        "CHORUS_PRICE_INPUT_CENTS_PER_MTOK",
+        "CHORUS_PRICE_OUTPUT_CENTS_PER_MTOK",
+    ):
+        monkeypatch.delenv(key, raising=False)
+    assert pricing_from_env_if_configured() is None
+
+
+def test_pricing_from_env_if_configured_reads_flat_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    from chorus.adapters import pricing_from_env_if_configured
+
+    monkeypatch.setenv("CHORUS_PRICE_INPUT_CENTS_PER_MTOK", "200")
+    monkeypatch.setenv("CHORUS_PRICE_OUTPUT_CENTS_PER_MTOK", "800")
+    pricing = pricing_from_env_if_configured()
+    assert pricing is not None
+    assert pricing.rate_for("any-model") == ModelRate(200, 800)
+
+
 def test_prices_input_and_output_per_million() -> None:
     pricing = TokenPricing(rates={"gpt-x": ModelRate(125, 1000)})
     cost = pricing.cost_cents({"gpt-x": _Usage(input_tokens=1_000_000, output_tokens=1_000_000)})

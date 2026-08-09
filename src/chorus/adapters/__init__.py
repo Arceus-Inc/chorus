@@ -15,7 +15,13 @@ from chorus.adapters._contract import (
 )
 from chorus.adapters._delegated_intake import DelegatedIntakeAdapter
 from chorus.adapters._observer import DreamObserverBridge
-from chorus.adapters._pricing import ModelRate, TokenPricing, UsageView
+from chorus.adapters._pricing import (
+    ModelRate,
+    TokenPricing,
+    UsageView,
+    default_token_pricing,
+    pricing_from_env_if_configured,
+)
 from chorus.adapters.dream_beat import (
     DreamBeatRunner,
     DreamStepStatus,
@@ -38,5 +44,7 @@ __all__ = [
     "TokenPricing",
     "UsageView",
     "check_dream_contract",
+    "default_token_pricing",
+    "pricing_from_env_if_configured",
     "to_beat_outcome",
 ]

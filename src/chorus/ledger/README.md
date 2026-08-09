@@ -49,6 +49,7 @@ exposed on the facade. The repos are wired in `_ledger.py`:
 | `ledger.wakes` | `WakeRepo` | `wake` (coalescing push inbox) |
 | `ledger.routines` / `routine_triggers` / `routine_runs` | routine repos | cron |
 | `ledger.runs` | `RunRepo` | `run` (one beat) |
+| `ledger.agent_sessions` | `AgentSessionRepo` | `agent_session` (the handle pointing at a dream conversation) |
 | `ledger.skills` / `skill_revisions` | skill repos | `skill`, `skill_revision` (procedural memory HEAD + history) |
 | `ledger.employees` / `goals` | org repos | `employee`, `goal` |
 | `ledger.budget_policies` / `budget_incidents` / `cost_events` | budget repos | two-gate money |
@@ -58,6 +59,32 @@ exposed on the facade. The repos are wired in `_ledger.py`:
 The kernel types against the concrete `Ledger` class directly — one driver, no protocol
 indirection. The domain facades that ride it (`chorus.skills.SkillStore`) compose these repos
 rather than owning connections.
+
+### Agent sessions (the handle, not the transcript)
+
+dream is the runtime, so dream owns the conversation: messages and tool calls live in its
+session store and a beat continues a thread by handing back its key. What the ledger keeps is
+the control-plane row mapping `(employee, task)` to that key, plus the parts chorus is
+answerable for — spend against a budget, the last run to touch the thread, where it worked,
+and why a resume failed.
+
+```python
+from chorus.ledger import begin_beat_session, dream_session_key_for_task, persist_beat_account
+
+session = begin_beat_session(
+    ledger, employee_id=employee.id, task_id=task.id, run_id=run.id
+)
+# session.dream_session_key == dream_session_key_for_task(task.id)
+# The beat runner passes it as run_task(session_scope=...); dream derives one
+# session per role beneath it ({scope}-planner, -generator, -evaluator).
+persist_beat_account(ledger, session.id, input_tokens=…, output_tokens=…, cost_cents=…)
+```
+
+One **open** session per task (partial unique index). Seal/abort frees the slot for a fresh
+thread.
+
+Mirroring the messages here as well would give one conversation two sources of truth, and the
+copy in Postgres would always be the stale one. Read a transcript from dream.
 
 ### Cross-aggregate transactions
 
