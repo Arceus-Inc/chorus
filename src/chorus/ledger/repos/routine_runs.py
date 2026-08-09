@@ -67,6 +67,14 @@ class RoutineRunRepo:
         )
         self._conn.commit()
 
+    def complete(self, run_id: str) -> None:
+        """Mark a dispatched firing complete after its linked task succeeds."""
+        self._conn.execute(
+            "UPDATE routine_run SET status = 'completed' WHERE id = ? AND status = 'dispatched'",
+            (run_id,),
+        )
+        self._conn.commit()
+
 
 def _row_to_run(row: LedgerRow) -> RoutineRun:
     return RoutineRun(
