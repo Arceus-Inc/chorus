@@ -60,6 +60,14 @@ from chorus.ledger._models._enums import (
     WakeReason,
     WakeStatus,
 )
+from chorus.ledger._models._eval_runs import (
+    AgentConfigRevisionRef,
+    EvalInputSnapshot,
+    EvalOutputSnapshot,
+    EvalRun,
+    EvalRunStatus,
+    EvalRunUsage,
+)
 from chorus.ledger._models._governance import (
     Activity,
     Approval,
@@ -112,6 +120,7 @@ from chorus.ledger._models._workforce_plan import (
 __all__ = [
     "Activity",
     "ActivityVerb",
+    "AgentConfigRevisionRef",
     "AgentSession",
     "AgentSessionStatus",
     "Approval",
@@ -137,6 +146,11 @@ __all__ = [
     "Dod",
     "DodStatus",
     "EvalCase",
+    "EvalInputSnapshot",
+    "EvalOutputSnapshot",
+    "EvalRun",
+    "EvalRunStatus",
+    "EvalRunUsage",
     "EvalSuite",
     "ExecutionMode",
     "Goal",
