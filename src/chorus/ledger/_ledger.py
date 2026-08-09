@@ -58,6 +58,7 @@ from chorus.ledger.repos import (
     DependencyRepo,
     DodRepo,
     EmployeeRepo,
+    EvalCaseRepo,
     GoalRepo,
     ManagementProfileRepo,
     MessageRepo,
@@ -196,6 +197,7 @@ class Ledger:
         self.runs = RunRepo(conn)
         self.skills = SkillRepo(conn)
         self.skill_revisions = SkillRevisionRepo(conn)
+        self.eval_cases = EvalCaseRepo(conn)
         self.dod = DodRepo(conn)
         self.artifacts = ArtifactRepo(conn)
         self.artifact_revisions = ArtifactRevisionRepo(conn)

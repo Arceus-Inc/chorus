@@ -69,7 +69,20 @@ class SkillRevision:
         return list(data) if isinstance(data, list) else []
 
 
+@dataclass(frozen=True)
+class EvalCase:
+    """One reusable evaluation pinned to an immutable skill revision."""
+
+    id: str
+    skill_revision_id: str
+    name: str
+    input_text: str
+    expected_behavior: str
+    created_at: datetime | None = None
+
+
 __all__ = [
+    "EvalCase",
     "Skill",
     "SkillOrigin",
     "SkillRevision",
