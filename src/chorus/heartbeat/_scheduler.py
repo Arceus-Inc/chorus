@@ -841,19 +841,22 @@ class Scheduler:
         if result.disposition is BeatDisposition.CANCELLED:
             # Cooperative cancel (caps/budget/operator): record a cancelled run and return the task
             # to its pre-beat (dispatchable) state — no DoD verdict, no recovery card (spec 05 §5/§6).
-            ledger.runs.finish(run_id, RunStatus.CANCELLED, outcome=verdict)
+            if not ledger.runs.finish(run_id, RunStatus.CANCELLED, outcome=verdict):
+                return
             ledger.tasks.set_status(task_id, TaskStatus.TODO)
         elif profile_error is not None:
             # Authority refused the beat BEFORE it ran (ExecutionProfileDenied — a revoked grant,
             # a contract/Team mismatch, a resolver fault). Even for a parent with children this is
             # never "success by delegating": recording SUCCEEDED here would walk the denial straight
             # into lead acceptance. Fail the run and strand it so an operator sees the denial.
-            ledger.runs.finish(run_id, RunStatus.FAILED, outcome=verdict)
+            if not ledger.runs.finish(run_id, RunStatus.FAILED, outcome=verdict):
+                return
             self._resume_or_strand(task_id, employee_id=employee.id, result=result)
         elif ledger.tasks.has_children(task_id):
             # The task delegated: its lifecycle is its subtree's, not its own dream verdict (spec M3 §5).
             # This is the fifth beat outcome — the manager "succeeded by delegating".
-            ledger.runs.finish(run_id, RunStatus.SUCCEEDED, outcome=verdict)
+            if not ledger.runs.finish(run_id, RunStatus.SUCCEEDED, outcome=verdict):
+                return
             if not ledger.tasks.all_children_terminal(task_id):
                 # PARK (delegated) — wait for the children; not done, not failed, no recovery ladder.
                 ledger.tasks.set_status(task_id, TaskStatus.BLOCKED)
@@ -902,7 +905,8 @@ class Scheduler:
             # Engine/tool fault: the run failed. A wall-clock TIMEOUT is unfinished-not-wrong — resume it
             # (re-dispatch from the persistent worktree + TODO.md, bounded); any other fault strands onto
             # the recovery ladder with the phase on the evidence, owner preserved (§5).
-            ledger.runs.finish(run_id, RunStatus.FAILED, outcome=verdict)
+            if not ledger.runs.finish(run_id, RunStatus.FAILED, outcome=verdict):
+                return
             self._resume_or_strand(task_id, employee_id=employee.id, result=result)
         elif result.passed and task.execution_mode is ExecutionMode.DELEGATION:
             # A delegation root that never fanned out cannot be done — its lifecycle is its
@@ -910,7 +914,8 @@ class Scheduler:
             # (Found live 2026-07-18: a kickoff beat "passed" its in-beat evaluation without
             # decomposing and landed DONE through the delivery path — zero children, contract
             # never verified.) Park it and re-wake the lead to decompose.
-            ledger.runs.finish(run_id, RunStatus.SUCCEEDED, outcome=verdict)
+            if not ledger.runs.finish(run_id, RunStatus.SUCCEEDED, outcome=verdict):
+                return
             ledger.tasks.set_status(task_id, TaskStatus.BLOCKED)
             ledger.wakes.enqueue(
                 Wake(
@@ -921,7 +926,8 @@ class Scheduler:
                 )
             )
         elif result.passed:
-            ledger.runs.finish(run_id, RunStatus.SUCCEEDED, outcome=verdict)
+            if not ledger.runs.finish(run_id, RunStatus.SUCCEEDED, outcome=verdict):
+                return
             await self._land_passed(
                 task_id,
                 run_id=run_id,
@@ -934,7 +940,8 @@ class Scheduler:
                 ),
             )
         else:
-            ledger.runs.finish(run_id, RunStatus.FAILED, outcome=verdict)
+            if not ledger.runs.finish(run_id, RunStatus.FAILED, outcome=verdict):
+                return
             ledger.finalize_beat(
                 task_id=task_id, run_id=run_id, dod_status=DodStatus.FAILED, verdict=verdict
             )
@@ -1412,7 +1419,8 @@ class Scheduler:
             # strand for human review when nothing genuine converged (every child failed/was
             # rejected, or the floor fails) — never fabricate a pass on empty or failed work.
             if done_children and floor_ok:
-                ledger.runs.finish(run_id, RunStatus.SUCCEEDED, outcome=None)
+                if not ledger.runs.finish(run_id, RunStatus.SUCCEEDED, outcome=None):
+                    return True
                 ledger.delegation_contracts.accept_for_verification(task.id, run_id)
                 record_activity(
                     ledger,
@@ -1452,7 +1460,8 @@ class Scheduler:
                 "done_children": len(done_children),
             }
             with ledger.transaction():
-                ledger.runs.finish(run_id, RunStatus.FAILED, outcome=evidence)
+                if not ledger.runs.finish(run_id, RunStatus.FAILED, outcome=evidence):
+                    return True
                 ledger.tasks.set_status(task.id, TaskStatus.BLOCKED)
                 ledger.delegation_contracts.update_status(task.id, DelegationContractStatus.BLOCKED)
                 if ledger.recovery_actions.active_for_source(task.id) is None:
@@ -1471,7 +1480,8 @@ class Scheduler:
             ledger.tasks.release_locks(task.id, run_id=run_id)
             ledger.wakes.mark_done(wake.id)
             return True
-        ledger.runs.finish(run_id, RunStatus.SUCCEEDED, outcome=None)
+        if not ledger.runs.finish(run_id, RunStatus.SUCCEEDED, outcome=None):
+            return True
         if not floor_ok:
             # The cap bounds the MODEL loop (no further decompose/integrate beats), NOT the objective
             # gate: even here a parent does not land ``done`` while its ``command`` rollup floor fails —

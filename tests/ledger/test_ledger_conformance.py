@@ -232,7 +232,9 @@ def test_run_finish_coalesces_outcome_and_usage(any_ledger: Ledger) -> None:
     task = _task(any_ledger)
     run_id = mint_id()
     any_ledger.runs.create(Run(id=run_id, employee_id=employee.id, task_id=task.id))
-    any_ledger.runs.finish(run_id, RunStatus.SUCCEEDED, outcome={"ok": True}, usage={"tokens": 12})
+    assert any_ledger.runs.finish(
+        run_id, RunStatus.SUCCEEDED, outcome={"ok": True}, usage={"tokens": 12}
+    )
     got = any_ledger.runs.get(run_id)
     assert got is not None
     assert got.status is RunStatus.SUCCEEDED

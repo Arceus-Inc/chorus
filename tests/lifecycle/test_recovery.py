@@ -13,7 +13,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from chorus.ledger import Ledger, Task, TaskStatus
+from chorus.ledger import Ledger, Task, TaskStatus, Wake
 from chorus.ledger._models import (
     RecoveryAction,
     RecoveryKind,
@@ -22,8 +22,9 @@ from chorus.ledger._models import (
     Run,
     RunStatus,
     WakeReason,
+    WakeStatus,
 )
-from chorus.recovery import reconcile
+from chorus.recovery import _reap_orphaned_runs, reconcile
 from chorus.testing import uid
 from chorus.workforce import Employee
 
@@ -67,12 +68,14 @@ def _run(
     run_id: str | None = None,
     task_id: str = uid("t1"),
     lease: datetime | None = None,
+    wake_id: str | None = None,
 ) -> Run:
     return ledger.runs.create(
         Run(
             id=run_id or uid(f"run_{status.value}"),
             employee_id="emp_1",
             task_id=task_id,
+            wake_id=wake_id,
             status=status,
             lease_expires_at=lease,
         )
@@ -205,11 +208,36 @@ def test_reap_orphaned_running_run_releases_locks(ledger: Ledger) -> None:
         checkout_run_id=uid("run_dead"),
         execution_run_id=uid("run_dead"),
     )
-    _run(ledger, RunStatus.RUNNING, run_id=uid("run_dead"), lease=PAST)
+    ledger.wakes.enqueue(
+        Wake(
+            id=uid("wake_dead"),
+            employee_id="emp_1",
+            reason=WakeReason.TASK_ASSIGNED,
+            payload={"task_id": uid("t1")},
+        )
+    )
+    (claimed,) = ledger.wakes.claim(limit=1)
+    _run(
+        ledger,
+        RunStatus.RUNNING,
+        run_id=uid("run_dead"),
+        lease=PAST,
+        wake_id=claimed.id,
+    )
+    ledger.wakes.assign_run(claimed.id, uid("run_dead"))
+    ledger.wakes.enqueue(
+        Wake(
+            id=uid("wake_unrelated"),
+            employee_id="emp_1",
+            reason=WakeReason.MESSAGE,
+            payload={"task_id": uid("other")},
+        )
+    )
 
     report = reconcile(ledger, now=NOW)
 
     assert uid("run_dead") in report.reaped_runs
+    assert report.recovered == [uid("t1")]
     task = ledger.tasks.get(uid("t1"))
     assert task is not None
     assert task.checkout_run_id is None  # crash recovery: the lock is released
@@ -217,6 +245,83 @@ def test_reap_orphaned_running_run_releases_locks(ledger: Ledger) -> None:
     reaped = ledger.runs.get(uid("run_dead"))
     assert reaped is not None
     assert reaped.status is RunStatus.TIMED_OUT
+    assert ledger.wakes.get(claimed.id).status is WakeStatus.DONE  # type: ignore[union-attr]
+    assert ledger.wakes.get(uid("wake_unrelated")).status is WakeStatus.QUEUED  # type: ignore[union-attr]
+    recovery_wakes = [
+        wake
+        for wake in ledger.wakes.queued()
+        if wake.reason is WakeReason.RECOVERY and wake.payload.get("task_id") == uid("t1")
+    ]
+    assert len(recovery_wakes) == 1
+
+
+def test_late_completion_cannot_overwrite_a_reaped_timeout(ledger: Ledger) -> None:
+    _task(
+        ledger,
+        TaskStatus.IN_PROGRESS,
+        checkout_run_id=uid("run_dead"),
+        execution_run_id=uid("run_dead"),
+    )
+    _run(ledger, RunStatus.RUNNING, run_id=uid("run_dead"), lease=PAST)
+
+    report = reconcile(ledger, now=NOW)
+
+    assert report.reaped_runs == [uid("run_dead")]
+    assert ledger.runs.finish(uid("run_dead"), RunStatus.SUCCEEDED) is False
+    reaped = ledger.runs.get(uid("run_dead"))
+    assert reaped is not None
+    assert reaped.status is RunStatus.TIMED_OUT
+
+
+def test_stale_reaper_observation_that_loses_to_completion_keeps_locks(
+    ledger: Ledger, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _task(
+        ledger,
+        TaskStatus.IN_PROGRESS,
+        checkout_run_id=uid("run_dead"),
+        execution_run_id=uid("run_dead"),
+    )
+    ledger.wakes.enqueue(
+        Wake(
+            id=uid("wake_dead"),
+            employee_id="emp_1",
+            reason=WakeReason.TASK_ASSIGNED,
+            payload={"task_id": uid("t1")},
+        )
+    )
+    (claimed,) = ledger.wakes.claim(limit=1)
+    _run(
+        ledger,
+        RunStatus.RUNNING,
+        run_id=uid("run_dead"),
+        lease=PAST,
+        wake_id=claimed.id,
+    )
+    ledger.wakes.enqueue(
+        Wake(
+            id=uid("wake_unrelated"),
+            employee_id="emp_1",
+            reason=WakeReason.MESSAGE,
+            payload={"task_id": uid("other")},
+        )
+    )
+    stale_observation = ledger.runs.running_with_expired_lease(NOW)
+
+    assert ledger.runs.finish(uid("run_dead"), RunStatus.SUCCEEDED)
+
+    def expired_at(_: datetime) -> list[Run]:
+        return stale_observation
+
+    monkeypatch.setattr(ledger.runs, "running_with_expired_lease", expired_at)
+    assert _reap_orphaned_runs(ledger, now=NOW) == []
+
+    task = ledger.tasks.get(uid("t1"))
+    assert task is not None
+    assert task.checkout_run_id == uid("run_dead")
+    assert task.execution_run_id == uid("run_dead")
+    assert ledger.wakes.get(claimed.id).status is WakeStatus.CLAIMED  # type: ignore[union-attr]
+    assert ledger.wakes.get(uid("wake_unrelated")).status is WakeStatus.QUEUED  # type: ignore[union-attr]
 
 
 def test_running_run_with_future_lease_is_not_reaped(ledger: Ledger) -> None:

@@ -196,7 +196,7 @@ def test_run_create_and_finish(ledger: Ledger) -> None:
     ledger.tasks.submit(Task(id=uid("t1"), intent="x"))
     ledger.runs.create(Run(id=uid("r1"), employee_id=uid("e1"), task_id=uid("t1")))
     assert ledger.runs.get(uid("r1")).status is RunStatus.QUEUED  # type: ignore[union-attr]
-    ledger.runs.finish(
+    assert ledger.runs.finish(
         uid("r1"), RunStatus.SUCCEEDED, liveness_state="completed", outcome={"passed": True}
     )
     got = ledger.runs.get(uid("r1"))
@@ -333,13 +333,81 @@ def test_artifact_create_and_list(ledger: Ledger) -> None:
 def test_finish_preserves_liveness_when_omitted(ledger: Ledger) -> None:
     ledger.employees.create(Employee(id=uid("e1"), name="a", role="engineer"))
     ledger.tasks.submit(Task(id=uid("t1"), intent="x"))
-    ledger.runs.create(Run(id=uid("r1"), employee_id=uid("e1"), task_id=uid("t1")))
-    ledger.runs.finish(uid("r1"), RunStatus.RUNNING, liveness_state="advanced")
-    ledger.runs.finish(uid("r1"), RunStatus.SUCCEEDED)  # omit liveness_state
+    ledger.runs.create(
+        Run(
+            id=uid("r1"),
+            employee_id=uid("e1"),
+            task_id=uid("t1"),
+            status=RunStatus.RUNNING,
+        )
+    )
+    assert ledger.runs.finish(uid("r1"), RunStatus.RUNNING, liveness_state="advanced")
+    assert ledger.runs.get(uid("r1")).finished_at is None  # type: ignore[union-attr]
+    assert ledger.runs.finish(uid("r1"), RunStatus.SUCCEEDED)  # omit liveness_state
     got = ledger.runs.get(uid("r1"))
     assert got is not None
     assert got.status is RunStatus.SUCCEEDED
     assert got.liveness_state == "advanced"  # preserved, not erased
+
+
+@pytest.mark.parametrize(
+    ("terminal_status", "late_status"),
+    [
+        (RunStatus.SUCCEEDED, RunStatus.FAILED),
+        (RunStatus.FAILED, RunStatus.SUCCEEDED),
+        (RunStatus.CANCELLED, RunStatus.SUCCEEDED),
+        (RunStatus.TIMED_OUT, RunStatus.SUCCEEDED),
+    ],
+)
+def test_terminal_finish_cas_rejects_late_completion(
+    ledger: Ledger, terminal_status: RunStatus, late_status: RunStatus
+) -> None:
+    ledger.employees.create(Employee(id=uid("e1"), name="a", role="engineer"))
+    ledger.tasks.submit(Task(id=uid("t1"), intent="x"))
+    ledger.runs.create(
+        Run(
+            id=uid("r1"),
+            employee_id=uid("e1"),
+            task_id=uid("t1"),
+            status=RunStatus.RUNNING,
+        )
+    )
+
+    assert ledger.runs.finish(uid("r1"), terminal_status, liveness_state="terminal")
+    assert ledger.runs.finish(uid("r1"), late_status, liveness_state="late") is False
+    assert ledger.runs.finish(uid("r1"), RunStatus.RUNNING, liveness_state="renewed") is False
+
+    run = ledger.runs.get(uid("r1"))
+    assert run is not None
+    assert run.status is terminal_status
+    assert run.liveness_state == "terminal"
+
+
+def test_finish_rejects_queued_as_a_target(ledger: Ledger) -> None:
+    ledger.employees.create(Employee(id=uid("e1"), name="a", role="engineer"))
+    ledger.tasks.submit(Task(id=uid("t1"), intent="x"))
+    ledger.runs.create(
+        Run(
+            id=uid("r1"),
+            employee_id=uid("e1"),
+            task_id=uid("t1"),
+            status=RunStatus.RUNNING,
+        )
+    )
+
+    with pytest.raises(ValueError, match="queued"):
+        ledger.runs.finish(uid("r1"), RunStatus.QUEUED)
+
+    assert ledger.runs.get(uid("r1")).status is RunStatus.RUNNING  # type: ignore[union-attr]
+
+
+def test_reap_running_rejects_a_queued_run(ledger: Ledger) -> None:
+    ledger.employees.create(Employee(id=uid("e1"), name="a", role="engineer"))
+    ledger.tasks.submit(Task(id=uid("t1"), intent="x"))
+    ledger.runs.create(Run(id=uid("r1"), employee_id=uid("e1"), task_id=uid("t1")))
+
+    assert ledger.runs.reap_running(uid("r1")) is False
+    assert ledger.runs.get(uid("r1")).status is RunStatus.QUEUED  # type: ignore[union-attr]
 
 
 def test_checkout_of_user_owned_task_returns_false(ledger: Ledger) -> None:

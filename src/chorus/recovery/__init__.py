@@ -31,7 +31,6 @@ from chorus.ledger._models import (
     ActivityVerb,
     RecoveryAction,
     RecoveryKind,
-    RunStatus,
     Task,
     TaskStatus,
     Wake,
@@ -180,8 +179,13 @@ def _reap_orphaned_runs(ledger: Ledger, *, now: datetime) -> list[str]:
     reaped: list[str] = []
     for run in ledger.runs.running_with_expired_lease(now):
         with ledger.transaction():
-            ledger.tasks.release_locks(run.task_id, run_id=run.id)
-            ledger.runs.finish(run.id, RunStatus.TIMED_OUT, liveness_state="reaped")
+            reaped_run = ledger.runs.reap_running(run.id)
+            if reaped_run:
+                ledger.tasks.release_locks(run.task_id, run_id=run.id)
+                if run.wake_id is not None:
+                    ledger.wakes.mark_done(run.wake_id)
+        if not reaped_run:
+            continue
         reaped.append(run.id)
     return reaped
 
