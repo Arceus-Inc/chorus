@@ -258,6 +258,40 @@ class BudgetIncidentStatus(StrEnum):
     DISMISSED = "dismissed"
 
 
+class CredentialDelivery(StrEnum):
+    """How a materialized credential reaches the work (``0005_credentials``).
+
+    ``broker`` never lets the secret leave the core: the outbound request is stamped at the wire.
+    ``environment`` injects it into the sandbox for a CLI that can read nothing else.
+    """
+
+    ENVIRONMENT = "environment"
+    BROKER = "broker"
+
+
+class CredentialGrantMode(StrEnum):
+    """How long an owner's approval lasts."""
+
+    ONCE = "once"
+    STANDING = "standing"
+
+
+class CredentialGrantStatus(StrEnum):
+    """A grant's lifecycle; only ``active`` may materialize."""
+
+    ACTIVE = "active"
+    REVOKED = "revoked"
+    USED = "used"
+
+
+class CredentialAskStatus(StrEnum):
+    """An approval request's lifecycle. Expiry is read from ``expires_at``, not stamped."""
+
+    PENDING = "pending"
+    APPROVED = "approved"
+    DENIED = "denied"
+
+
 class ActivityVerb(StrEnum):
     """A state transition worth auditing (spec 01 Cluster G ``activity``, spec 08 §5)."""
 

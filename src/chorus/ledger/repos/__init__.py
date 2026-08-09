@@ -15,6 +15,7 @@ from chorus.ledger.repos.artifacts import ArtifactRepo
 from chorus.ledger.repos.budget_incidents import BudgetIncidentRepo
 from chorus.ledger.repos.budget_policies import BudgetPolicyRepo
 from chorus.ledger.repos.cost_events import CostEventRepo
+from chorus.ledger.repos.credentials import CredentialRepo
 from chorus.ledger.repos.decisions import ClaimRepo, DecisionRepo
 from chorus.ledger.repos.decomposition_claims import DecompositionClaimRepo
 from chorus.ledger.repos.delegation_contracts import DelegationContractRepo
@@ -49,6 +50,7 @@ __all__ = [
     "BudgetPolicyRepo",
     "ClaimRepo",
     "CostEventRepo",
+    "CredentialRepo",
     "DecisionRepo",
     "DecompositionClaimRepo",
     "DelegationContractRepo",

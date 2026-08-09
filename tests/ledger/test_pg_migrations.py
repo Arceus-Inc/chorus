@@ -66,6 +66,14 @@ def test_migration_reports_the_tables_it_creates() -> None:
     assert _FIXTURE.table_names() == ["widget"]
     skills = next(m for m in load_migrations() if m.id == "0002_skills")
     assert skills.table_names() == ["skill", "skill_revision"]
+    credentials = next(m for m in load_migrations() if m.id == "0005_credentials")
+    assert credentials.table_names() == [
+        "credential_registration",
+        "credential_grant",
+        "credential_ask",
+        "credential_lease",
+        "credential_use",
+    ]
 
 
 def test_shipped_migrations_load_in_id_order() -> None:
@@ -73,6 +81,7 @@ def test_shipped_migrations_load_in_id_order() -> None:
     shipped = load_migrations()
     assert [m.id for m in shipped] == sorted(m.id for m in shipped)
     assert "0002_skills" in {m.id for m in shipped}
+    assert "0005_credentials" in {m.id for m in shipped}
 
 
 def test_agent_session_migration_reports_tables() -> None:

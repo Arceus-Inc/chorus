@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
 import dream
+from dream.contracts.credentials import CredentialBrokerPort
 from dream.roles import default_role_manifest
 from dream.skills import load_skill_registry
 from dream.subagents import Subagent, SubagentSet
@@ -681,6 +682,7 @@ class EmployeeHarnessFactory:
         trust_policy: TrustPolicy | None = None,
         governance: GovernancePort | None = None,
         stop_evidence_requirements: bool = False,
+        credential_broker: CredentialBrokerPort | None = None,
     ) -> None:
         self._api_key = api_key
         self._base_url = base_url
@@ -701,6 +703,7 @@ class EmployeeHarnessFactory:
         self._governance = governance
         # Lean Bex / Hermes default: parent implements; specialist evidence gates are opt-in.
         self._stop_evidence_requirements = stop_evidence_requirements
+        self._credential_broker = credential_broker
         # The org's workspace root: .chorus/work/{org}/ — shared by chat, tick, and the `company`
         # console command (one identity), via the single dream-free `default_work_root` convention.
         base = work_root if work_root is not None else default_work_root()
@@ -1083,6 +1086,7 @@ class EmployeeHarnessFactory:
             wake_model=config.wake_model,
             env=dict(config.env) or None,
             subagents=subagent_set,
+            credential_broker=self._credential_broker,
         )
         # S1 #2 / #11: powered dream hooks — dangerous-tool veto + evidence continue.
         from chorus_harness._dream_hooks import register_employee_hooks
