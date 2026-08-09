@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING
 
 from chorus.cron._add import add_routine
 from chorus.cron._revise import NoRoutineRevision, revise_routine
+from chorus.ledger import LedgerIntegrityError
 
 if TYPE_CHECKING:
     from chorus.ledger import Ledger
@@ -47,19 +48,27 @@ def reconcile_declared_routines(
     for decl in declarations:
         existing = ledger.routines.by_key(employee_id, decl.routine_key)
         if existing is None:
-            add_routine(
-                ledger,
-                employee_id=employee_id,
-                intent_template=decl.intent_template,
-                schedule=decl.schedule,
-                target=decl.target,
-                concurrency=decl.concurrency,
-                catch_up=decl.catch_up,
-                env=decl.env,
-                routine_key=decl.routine_key,
-            )
-            created.append(decl.routine_key)
-            continue
+            try:
+                add_routine(
+                    ledger,
+                    employee_id=employee_id,
+                    intent_template=decl.intent_template,
+                    schedule=decl.schedule,
+                    target=decl.target,
+                    concurrency=decl.concurrency,
+                    catch_up=decl.catch_up,
+                    env=decl.env,
+                    routine_key=decl.routine_key,
+                    initial_status=decl.initial_status,
+                )
+            except LedgerIntegrityError:
+                # A concurrent reconciler may have won the unique employee/key insert.
+                existing = ledger.routines.by_key(employee_id, decl.routine_key)
+                if existing is None:
+                    raise
+            else:
+                created.append(decl.routine_key)
+                continue
         try:
             # The owner reconciles their own routine, so the owner-authority guard passes.
             revise_routine(

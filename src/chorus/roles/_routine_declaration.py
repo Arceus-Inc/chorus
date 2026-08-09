@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from chorus.ledger import RoutineCatchUp, RoutineConcurrency, RoutineTarget
+from chorus.ledger import RoutineCatchUp, RoutineConcurrency, RoutineStatus, RoutineTarget
 
 
 @dataclass(frozen=True)
@@ -25,6 +25,7 @@ class RoutineDeclaration:
     concurrency: RoutineConcurrency = RoutineConcurrency.COALESCE
     catch_up: RoutineCatchUp = RoutineCatchUp.SKIP_MISSED
     env: dict[str, str] | None = None
+    initial_status: RoutineStatus = RoutineStatus.ACTIVE
 
 
 __all__ = ["RoutineDeclaration"]

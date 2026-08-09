@@ -18,6 +18,7 @@ from chorus.ledger import (
     RoutineCatchUp,
     RoutineConcurrency,
     RoutineRevision,
+    RoutineStatus,
     RoutineTarget,
     RoutineTrigger,
     TriggerKind,
@@ -40,53 +41,58 @@ def add_routine(
     env: dict[str, str] | None = None,
     routine_key: str | None = None,
     timezone: str = "UTC",
+    initial_status: RoutineStatus = RoutineStatus.ACTIVE,
 ) -> Routine:
     """Create a routine owned by ``employee_id``, seed its revision 1, and add its due cron trigger.
 
     The cron is parsed *before* any write, so a bad schedule (or an inline secret in ``env``) leaves
     no orphan routine. The caller is responsible for having validated that ``employee_id`` exists."""
+    if not isinstance(initial_status, RoutineStatus):
+        raise TypeError("initial_status must be a RoutineStatus")
     assert_no_inline_secrets(env)  # fail-closed: env binds refs, never raw secrets (spec 13 §3)
     next_run_at = parse_cron(schedule, base=datetime.now(UTC), timezone=timezone)
 
-    routine = ledger.routines.create(
-        Routine(
-            id=mint_id(),
-            employee_id=employee_id,
-            intent_template=intent_template,
-            target=target,
-            concurrency_policy=concurrency,
-            catch_up_policy=catch_up,
-            env=env,
-            routine_key=routine_key,
+    with ledger.transaction():
+        routine = ledger.routines.create(
+            Routine(
+                id=mint_id(),
+                employee_id=employee_id,
+                intent_template=intent_template,
+                target=target,
+                concurrency_policy=concurrency,
+                catch_up_policy=catch_up,
+                status=initial_status,
+                env=env,
+                routine_key=routine_key,
+            )
         )
-    )
-    rev1 = ledger.routine_revisions.append(
-        RoutineRevision(
-            id=mint_id(),
-            routine_id=routine.id,
-            revision_no=1,
-            intent_template=intent_template,
-            target=target,
-            concurrency_policy=concurrency,
-            catch_up_policy=catch_up,
-            env=env,
-            change_summary="created",
+        rev1 = ledger.routine_revisions.append(
+            RoutineRevision(
+                id=mint_id(),
+                routine_id=routine.id,
+                revision_no=1,
+                intent_template=intent_template,
+                target=target,
+                concurrency_policy=concurrency,
+                catch_up_policy=catch_up,
+                env=env,
+                change_summary="created",
+            )
         )
-    )
-    ledger.routines.set_head(routine.id, rev1)
-    ledger.routine_triggers.create(
-        RoutineTrigger(
-            id=mint_id(),
-            routine_id=routine.id,
-            kind=TriggerKind.CRON,
-            cron_expression=schedule,
-            timezone=timezone,
-            next_run_at=next_run_at,
+        ledger.routines.set_head(routine.id, rev1)
+        ledger.routine_triggers.create(
+            RoutineTrigger(
+                id=mint_id(),
+                routine_id=routine.id,
+                kind=TriggerKind.CRON,
+                cron_expression=schedule,
+                timezone=timezone,
+                next_run_at=next_run_at,
+            )
         )
-    )
-    refreshed = ledger.routines.get(routine.id)
-    if refreshed is None:  # created above in this transaction — a None means the write was lost
-        raise RuntimeError(f"routine {routine.id} not found immediately after creation")
+        refreshed = ledger.routines.get(routine.id)
+        if refreshed is None:  # created above in this transaction — a None means the write was lost
+            raise RuntimeError(f"routine {routine.id} not found immediately after creation")
     return refreshed
 
 

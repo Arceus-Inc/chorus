@@ -146,6 +146,20 @@ def _seed_delegation(ledger: Ledger, *, child_status: TaskStatus | None = None) 
     return lead
 
 
+def test_reflection_coach_materialization_does_not_regrant_comment(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, ledger: Ledger
+) -> None:
+    factory, captured = _factory(monkeypatch, tmp_path, ledger)
+    coach = Employee(id="reflection-coach", name="Reflection Coach", role="reflection_coach")
+    ledger.employees.create(coach)
+
+    materialized = factory.materialize(coach)
+
+    assert "comment" not in materialized.config.tools
+    assert "read_comments" in materialized.config.tools
+    assert "comment" not in {tool.name for tool in captured["registry"].list_tools()}
+
+
 def test_backend_engineer_materializes_a_writable_harness_in_its_worktree(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, ledger: Ledger
 ) -> None:
@@ -451,14 +465,10 @@ async def test_delegation_context_is_rehydrated_with_its_team(
         )
         factory, captured = _factory(monkeypatch, tmp_path, ledger)
         mat = factory.materialize(lead, task_id=uid("goal"))
-        generator = (mat.working_dir / ".harness" / "roles" / "generator.toml").read_text(
-            "utf-8"
-        )
+        generator = (mat.working_dir / ".harness" / "roles" / "generator.toml").read_text("utf-8")
         assert "ada (backend_engineer)" not in generator
         hook = next(
-            item
-            for item in captured["harness"].hooks
-            if isinstance(item, VolatileBeatPacketHook)
+            item for item in captured["harness"].hooks if isinstance(item, VolatileBeatPacketHook)
         )
         packet = (await hook(HookEvent.USER_PROMPT_SUBMIT, {"prompt": "work"})).inject_context or ""
         assert "ada (backend_engineer)" in packet
@@ -537,9 +547,7 @@ async def test_corrective_child_inherits_failed_sibling_evidence(
         generator = (mat.working_dir / ".harness" / "roles" / "generator.toml").read_text("utf-8")
         assert "Inherited failure evidence" not in generator
         hook = [
-            item
-            for item in captured["harness"].hooks
-            if isinstance(item, VolatileBeatPacketHook)
+            item for item in captured["harness"].hooks if isinstance(item, VolatileBeatPacketHook)
         ][-1]
         packet = (await hook(HookEvent.USER_PROMPT_SUBMIT, {"prompt": "fix"})).inject_context or ""
         assert "Inherited failure evidence" in packet
