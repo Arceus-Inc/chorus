@@ -846,6 +846,14 @@ class Scheduler:
         if current is not None and current.status is TaskStatus.CANCELLED:
             ledger.tasks.release_locks(task_id, run_id=run_id)
             ledger.wakes.mark_done(wake.id)
+            self._record_cost(
+                employee.id,
+                task_id=task_id,
+                run_id=run_id,
+                trace_id=trace_id,
+                result=result,
+                now=now,
+            )
             return
         if result.disposition is BeatDisposition.CANCELLED:
             # Cooperative cancel (caps/budget/operator): record a cancelled run and return the task
