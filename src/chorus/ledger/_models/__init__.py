@@ -6,10 +6,7 @@ from __future__ import annotations
 from chorus.ledger._models._agent_session import (
     AgentSession,
     AgentSessionStatus,
-    ConversationMessage,
-    ConversationRole,
     SessionCost,
-    ToolCall,
 )
 from chorus.ledger._models._authority import (
     DelegationContract,
@@ -124,8 +121,6 @@ __all__ = [
     "BudgetScope",
     "BudgetThreshold",
     "Claim",
-    "ConversationMessage",
-    "ConversationRole",
     "CostEvent",
     "DecisionRecord",
     "DecompositionClaim",
@@ -178,7 +173,6 @@ __all__ = [
     "TeamMember",
     "TeamMembershipRole",
     "TeamStatus",
-    "ToolCall",
     "TriggerKind",
     "Wake",
     "WakeReason",

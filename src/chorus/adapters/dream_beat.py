@@ -37,6 +37,7 @@ from chorus.heartbeat._todo_flush import (
     clear_todo_flush_nudge,
     write_todo_flush_nudge,
 )
+from chorus.ledger import dream_session_key_for_task
 from chorus.outcomes import VerificationStep
 from chorus.roles._manifest import DEFAULT_BEAT_TIMEOUT_S
 
@@ -203,6 +204,7 @@ class TaskHarness(Protocol):
         harness_dir: Path | None = None,
         rubric: str | None = None,
         plan_admission: PlanAdmission | None = None,
+        session_scope: str | None = None,
     ) -> RunResult: ...
 
 
@@ -312,6 +314,31 @@ def to_beat_outcome(result: RunResult, *, pricing: TokenPricing | None = None) -
     )
 
 
+def _price_beat_outcome(
+    outcome: BeatOutcome,
+    usage_by_model: Mapping[str, UsageView],
+    *,
+    pricing: TokenPricing | None,
+) -> BeatOutcome:
+    """Attach priced token spend to a beat outcome (including timeout / fault paths)."""
+    if pricing is None or not usage_by_model:
+        return outcome
+    cost_cents = pricing.cost_cents(usage_by_model)
+    model = "+".join(sorted(usage_by_model))
+    input_tokens = sum(u.input_tokens for u in usage_by_model.values())
+    output_tokens = sum(u.output_tokens for u in usage_by_model.values())
+    merged = dict(outcome.outcome or {})
+    merged["cost_cents"] = cost_cents
+    return replace(
+        outcome,
+        outcome=merged,
+        cost_cents=cost_cents,
+        model=model or outcome.model,
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+    )
+
+
 class DreamBeatRunner:
     """Run a beat through a dream Harness and land its result as a :class:`BeatOutcome` (spec 03 §3).
 
@@ -385,14 +412,20 @@ class DreamBeatRunner:
         )
         # Record the agent's reasoning + actions for the episodic raw record, forwarding to the bridge
         # so liveness witnessing is unchanged (spec 07 §3). It is dream's observer for this beat.
+        from dream.runner._usage import UsageMeter
+
         recorder = _ReasoningRecorder(
             bridge.on_event if bridge is not None else None,
             working_dir=self._working_dir,
             evidence_subagents=frozenset(self._subagent_evidence),
         )
+        beat_meter = UsageMeter(recorder)
 
         def _with_record(outcome: BeatOutcome) -> BeatOutcome:
-            guarded = self._guard_subagent_evidence(outcome, recorder.subagent_results())
+            priced = _price_beat_outcome(
+                outcome, beat_meter.usage_by_model, pricing=self._pricing
+            )
+            guarded = self._guard_subagent_evidence(priced, recorder.subagent_results())
             return replace(guarded, raw_record=recorder.as_jsonl())
 
         # Snapshot existing sidecar traces so we can isolate *this* beat's trace afterwards and recover
@@ -416,6 +449,11 @@ class DreamBeatRunner:
         from dream.runner import PlanAdmission
 
         dream_task_id = task_id
+        # The same key every beat on this task, so dream reopens the planner /
+        # generator / evaluator threads it already has instead of starting the
+        # conversation over. RESUME above keeps the *plan*; this keeps the
+        # *conversation* that produced it.
+        session_scope = dream_session_key_for_task(task_id)
         nudge_task: asyncio.Task[None] | None = None
         if self._working_dir is not None:
             clear_todo_flush_nudge(self._working_dir)
@@ -427,21 +465,23 @@ class DreamBeatRunner:
                     task_id=dream_task_id,
                     intent=intent,
                     verification_steps=steps,
-                    observer=recorder,
+                    observer=beat_meter,
                     max_sprints=self._max_sprints,
                     rubric=rubric,
                     plan_admission=PlanAdmission.RESUME,
+                    session_scope=session_scope,
                 )
             else:
                 run = self._harness.run_task(
                     task_id=dream_task_id,
                     intent=intent,
                     verification_steps=steps,
-                    observer=recorder,
+                    observer=beat_meter,
                     max_sprints=self._max_sprints,
                     harness_dir=self._working_dir / ".harness",
                     rubric=rubric,
                     plan_admission=PlanAdmission.RESUME,
+                    session_scope=session_scope,
                 )
             result = await asyncio.wait_for(run, timeout=self._timeout_s)
         except TimeoutError as exc:

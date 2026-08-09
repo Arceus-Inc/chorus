@@ -1,16 +1,13 @@
-"""AgentSessionRepo — durable dream conversation + tool-call history (migration 0005)."""
+"""AgentSessionRepo — the handle rows pointing at dream sessions (migration 0005)."""
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 
 from chorus.ledger._models import (
     AgentSession,
     AgentSessionStatus,
-    ConversationMessage,
-    ConversationRole,
     SessionCost,
-    ToolCall,
 )
 from chorus.ledger.repos._base import (
     LedgerConnection,
@@ -19,7 +16,6 @@ from chorus.ledger.repos._base import (
     from_iso,
     loads,
     require_persisted,
-    to_iso,
     utcnow_iso,
 )
 
@@ -80,29 +76,8 @@ def _as_float(value: object, default: float) -> float:
     return default
 
 
-def _dump_content(content: tuple[Mapping[str, object], ...]) -> str:
-    return dumps([dict(block) for block in content])
-
-
-def _load_content(value: object) -> tuple[Mapping[str, object], ...]:
-    if value is None:
-        return ()
-    if isinstance(value, str):
-        parsed = loads(value)
-    elif isinstance(value, list):
-        parsed = value
-    else:
-        return ()
-    blocks: list[Mapping[str, object]] = []
-    if isinstance(parsed, list):
-        for item in parsed:
-            if isinstance(item, (Mapping, dict)):
-                blocks.append(item)
-    return tuple(blocks)
-
-
 class AgentSessionRepo:
-    """Open, resume, append, and seal ``agent_session`` rows and their transcript."""
+    """Open, look up, meter, and seal the ``agent_session`` handle rows."""
 
     def __init__(self, conn: LedgerConnection) -> None:
         self._conn = conn
@@ -112,8 +87,8 @@ class AgentSessionRepo:
         now = utcnow_iso()
         self._conn.execute(
             "INSERT INTO agent_session (id, dream_session_key, employee_id, task_id, run_id, "
-            "model, system_prompt, status, cost, created_at, updated_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "model, working_dir, last_error, status, cost, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 session.id,
                 session.dream_session_key,
@@ -121,7 +96,8 @@ class AgentSessionRepo:
                 session.task_id,
                 session.run_id,
                 session.model,
-                session.system_prompt,
+                session.working_dir,
+                session.last_error,
                 AgentSessionStatus.OPEN.value,
                 _dump_cost(session.cost),
                 now,
@@ -196,106 +172,21 @@ class AgentSessionRepo:
         )
         self._conn.commit()
 
-    def append_messages(self, messages: Sequence[ConversationMessage]) -> None:
-        """Batch-insert transcript rows; caller may wrap in ``ledger.transaction``."""
-        if not messages:
-            return
-        now = utcnow_iso()
-        for message in messages:
-            self._conn.execute(
-                "INSERT INTO conversation_message (id, session_id, seq, role, content, created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
-                (
-                    message.id,
-                    message.session_id,
-                    message.seq,
-                    message.role.value,
-                    _dump_content(message.content),
-                    now,
-                ),
-            )
-        self._conn.commit()
-
-    def messages_after(
-        self,
-        session_id: str,
-        *,
-        after_seq: int = 0,
-        limit: int = 500,
-    ) -> list[ConversationMessage]:
-        rows = self._conn.execute(
-            "SELECT * FROM conversation_message WHERE session_id = ? AND seq > ? "
-            "ORDER BY seq LIMIT ?",
-            (session_id, after_seq, limit),
-        ).fetchall()
-        return [_row_to_message(row) for row in rows]
-
-    def all_messages(self, session_id: str) -> list[ConversationMessage]:
-        rows = self._conn.execute(
-            "SELECT * FROM conversation_message WHERE session_id = ? ORDER BY seq",
-            (session_id,),
-        ).fetchall()
-        return [_row_to_message(row) for row in rows]
-
-    def last_message_seq(self, session_id: str) -> int:
-        """Highest transcript seq for the session, or ``0`` when empty (cursor seed)."""
-        row = self._conn.execute(
-            "SELECT seq FROM conversation_message WHERE session_id = ? "
-            "ORDER BY seq DESC LIMIT 1",
-            (session_id,),
-        ).fetchone()
-        if row is None:
-            return 0
-        return int(row["seq"])
-
-    def record_tool_call(self, call: ToolCall) -> ToolCall:
-        now = utcnow_iso()
+    def bind_working_dir(self, session_id: str, working_dir: str) -> None:
+        """Record where the thread works, the first time a beat runs it somewhere."""
         self._conn.execute(
-            "INSERT INTO tool_call (id, session_id, tool_use_id, tool_name, input, "
-            "result_content, is_error, created_at, completed_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (
-                call.id,
-                call.session_id,
-                call.tool_use_id,
-                call.tool_name,
-                dumps(dict(call.input)),
-                call.result_content,
-                call.is_error,
-                now,
-                to_iso(call.completed_at),
-            ),
-        )
-        self._conn.commit()
-        recorded = require_persisted(self._get_tool_call(call.id), call.id)
-        return recorded
-
-    def complete_tool_call(
-        self,
-        session_id: str,
-        tool_use_id: str,
-        *,
-        result_content: str,
-        is_error: bool,
-    ) -> None:
-        now = utcnow_iso()
-        self._conn.execute(
-            "UPDATE tool_call SET result_content = ?, is_error = ?, completed_at = ? "
-            "WHERE session_id = ? AND tool_use_id = ?",
-            (result_content, is_error, now, session_id, tool_use_id),
+            "UPDATE agent_session SET working_dir = ?, updated_at = ? WHERE id = ?",
+            (working_dir, utcnow_iso(), session_id),
         )
         self._conn.commit()
 
-    def tool_calls_for(self, session_id: str) -> list[ToolCall]:
-        rows = self._conn.execute(
-            "SELECT * FROM tool_call WHERE session_id = ? ORDER BY created_at, id",
-            (session_id,),
-        ).fetchall()
-        return [_row_to_tool_call(row) for row in rows]
-
-    def _get_tool_call(self, call_id: str) -> ToolCall | None:
-        row = self._conn.execute("SELECT * FROM tool_call WHERE id = ?", (call_id,)).fetchone()
-        return _row_to_tool_call(row) if row is not None else None
+    def record_error(self, session_id: str, last_error: str | None) -> None:
+        """Set or clear why this thread last failed to resume."""
+        self._conn.execute(
+            "UPDATE agent_session SET last_error = ?, updated_at = ? WHERE id = ?",
+            (last_error, utcnow_iso(), session_id),
+        )
+        self._conn.commit()
 
 
 def _row_to_session(row: LedgerRow) -> AgentSession:
@@ -306,34 +197,10 @@ def _row_to_session(row: LedgerRow) -> AgentSession:
         task_id=row["task_id"],
         run_id=row["run_id"],
         model=row["model"],
-        system_prompt=row["system_prompt"],
+        working_dir=row["working_dir"],
+        last_error=row["last_error"],
         status=AgentSessionStatus(row["status"]),
         cost=_load_cost(row["cost"]),
         created_at=from_iso(row["created_at"]),
         updated_at=from_iso(row["updated_at"]),
-    )
-
-
-def _row_to_message(row: LedgerRow) -> ConversationMessage:
-    return ConversationMessage(
-        id=row["id"],
-        session_id=row["session_id"],
-        seq=int(row["seq"]),
-        role=ConversationRole(row["role"]),
-        content=_load_content(row["content"]),
-        created_at=from_iso(row["created_at"]),
-    )
-
-
-def _row_to_tool_call(row: LedgerRow) -> ToolCall:
-    return ToolCall(
-        id=row["id"],
-        session_id=row["session_id"],
-        tool_use_id=row["tool_use_id"],
-        tool_name=row["tool_name"],
-        input=_coerce_json_dict(row["input"]),
-        result_content=row["result_content"],
-        is_error=row["is_error"],
-        created_at=from_iso(row["created_at"]),
-        completed_at=from_iso(row["completed_at"]),
     )

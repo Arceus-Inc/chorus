@@ -45,7 +45,6 @@ from chorus.ledger import (
     TaskPriority,
     begin_beat_session,
     persist_beat_account,
-    resume_intent,
 )
 from chorus.ledger._models import (
     ActivityVerb,
@@ -816,19 +815,17 @@ class Scheduler:
                 if verifier is not None and verifier.kind is DoDKind.AGENT_REVIEW
                 else ""
             )
-            # Ledger is the conversation / tool-call SoT — open or resume the task session, then
-            # inject prior transcript into the beat intent (dream run_task has no resume_messages).
-            agent_session = begin_beat_session(
+            # Open or resume the task's handle row. Continuity is dream's: the beat runner hands
+            # the same session key back to ``run_task``, so the role threads pick up where the
+            # last beat left them instead of being re-narrated into the prompt.
+            begin_beat_session(
                 ledger,
                 employee_id=employee.id,
                 task_id=task_id,
                 run_id=run_id,
-                model="",
-                system_prompt=None,
+                working_dir=str(working_dir) if working_dir is not None else None,
             )
-            intent = resume_intent(
-                ledger, agent_session.id, _execution_intent(ledger, task)
-            )
+            intent = _execution_intent(ledger, task)
             result = await self._run_beat_with_retry(
                 beat_runner,
                 run_id=run_id,
@@ -966,6 +963,7 @@ class Scheduler:
             run_id=run_id,
             employee_id=employee.id,
             result=result,
+            working_dir=str(working_dir) if working_dir is not None else None,
         )
         await self._capture_memory(
             ledger,
@@ -1006,8 +1004,9 @@ class Scheduler:
         run_id: str,
         employee_id: str,
         result: BeatOutcome,
+        working_dir: str | None = None,
     ) -> None:
-        """Append this beat's raw_record into agent_session rows — ledger SoT, never RAM."""
+        """Meter this beat's spend onto the task's agent_session handle row."""
         if result.disposition is BeatDisposition.CANCELLED:
             return
         session = begin_beat_session(
@@ -1015,14 +1014,14 @@ class Scheduler:
             employee_id=employee_id,
             task_id=task_id,
             run_id=run_id,
+            model=result.model or "",
+            working_dir=working_dir,
         )
         task = ledger.tasks.get(task_id)
         seal = task is not None and task.status is TaskStatus.DONE
         persist_beat_account(
             ledger,
             session.id,
-            raw_record=result.raw_record,
-            model=result.model or "",
             input_tokens=result.input_tokens,
             output_tokens=result.output_tokens,
             cost_cents=result.cost_cents,

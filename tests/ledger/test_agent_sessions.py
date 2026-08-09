@@ -1,4 +1,4 @@
-"""AgentSessionRepo — durable dream conversation + tool-call history (migration 0005)."""
+"""AgentSessionRepo — the handle rows pointing at dream sessions (migration 0005)."""
 
 from __future__ import annotations
 
@@ -7,14 +7,11 @@ import pytest
 from chorus.ledger import (
     AgentSession,
     AgentSessionStatus,
-    ConversationMessage,
-    ConversationRole,
     Ledger,
     LedgerIntegrityError,
     Run,
     SessionCost,
     Task,
-    ToolCall,
 )
 from chorus.testing import uid
 from chorus.workforce import Employee
@@ -47,7 +44,6 @@ def _session(
         employee_id=employee_id,
         task_id=task_id,
         model="claude-sonnet",
-        system_prompt="You are helpful.",
     )
 
 
@@ -86,7 +82,12 @@ def test_second_open_for_same_task_raises(ledger: Ledger) -> None:
         )
 
 
-def test_append_messages_and_all_messages_preserve_order(ledger: Ledger) -> None:
+def test_bind_working_dir_records_where_the_thread_works(ledger: Ledger) -> None:
+    """dream refuses to resume into another directory; chorus records the same fact.
+
+    Knowing the directory here lets the control plane see a mismatch coming
+    instead of learning about it from a failed resume mid-beat.
+    """
     emp = uid("emp")
     task_id = uid("task")
     _employee(ledger, emp)
@@ -94,31 +95,16 @@ def test_append_messages_and_all_messages_preserve_order(ledger: Ledger) -> None
     session = ledger.agent_sessions.open(
         _session(ledger, employee_id=emp, task_id=task_id, session_id=uid("s1"))
     )
-    messages = [
-        ConversationMessage(
-            id=uid("m1"),
-            session_id=session.id,
-            seq=1,
-            role=ConversationRole.USER,
-            content=({"type": "text", "text": "hello"},),
-        ),
-        ConversationMessage(
-            id=uid("m2"),
-            session_id=session.id,
-            seq=2,
-            role=ConversationRole.ASSISTANT,
-            content=({"type": "text", "text": "hi there"},),
-        ),
-    ]
-    ledger.agent_sessions.append_messages(messages)
-    loaded = ledger.agent_sessions.all_messages(session.id)
-    assert [m.id for m in loaded] == [uid("m1"), uid("m2")]
-    assert [m.seq for m in loaded] == [1, 2]
-    assert loaded[0].role is ConversationRole.USER
-    assert loaded[1].content[0]["text"] == "hi there"
+    assert session.working_dir is None
+
+    ledger.agent_sessions.bind_working_dir(session.id, "/srv/worktrees/ada")
+
+    bound = ledger.agent_sessions.get(session.id)
+    assert bound is not None
+    assert bound.working_dir == "/srv/worktrees/ada"
 
 
-def test_messages_after_cursor_pagination(ledger: Ledger) -> None:
+def test_record_error_sets_and_clears_the_resume_reason(ledger: Ledger) -> None:
     emp = uid("emp")
     task_id = uid("task")
     _employee(ledger, emp)
@@ -126,54 +112,16 @@ def test_messages_after_cursor_pagination(ledger: Ledger) -> None:
     session = ledger.agent_sessions.open(
         _session(ledger, employee_id=emp, task_id=task_id, session_id=uid("s1"))
     )
-    ledger.agent_sessions.append_messages(
-        [
-            ConversationMessage(
-                id=uid(f"m{i}"),
-                session_id=session.id,
-                seq=i,
-                role=ConversationRole.USER if i % 2 else ConversationRole.ASSISTANT,
-                content=({"type": "text", "text": f"msg-{i}"},),
-            )
-            for i in range(1, 6)
-        ]
-    )
-    page1 = ledger.agent_sessions.messages_after(session.id, after_seq=0, limit=2)
-    assert [m.seq for m in page1] == [1, 2]
-    page2 = ledger.agent_sessions.messages_after(session.id, after_seq=2, limit=2)
-    assert [m.seq for m in page2] == [3, 4]
-    page3 = ledger.agent_sessions.messages_after(session.id, after_seq=4, limit=10)
-    assert [m.seq for m in page3] == [5]
 
+    ledger.agent_sessions.record_error(session.id, "corrupt")
+    failed = ledger.agent_sessions.get(session.id)
+    assert failed is not None
+    assert failed.last_error == "corrupt"
 
-def test_record_complete_tool_calls(ledger: Ledger) -> None:
-    emp = uid("emp")
-    task_id = uid("task")
-    _employee(ledger, emp)
-    _task(ledger, task_id, assignee=emp)
-    session = ledger.agent_sessions.open(
-        _session(ledger, employee_id=emp, task_id=task_id, session_id=uid("s1"))
-    )
-    call = ToolCall(
-        id=uid("tc1"),
-        session_id=session.id,
-        tool_use_id=uid("use1"),
-        tool_name="grep",
-        input={"pattern": "foo"},
-    )
-    recorded = ledger.agent_sessions.record_tool_call(call)
-    assert recorded.tool_name == "grep"
-    ledger.agent_sessions.complete_tool_call(
-        session.id,
-        uid("use1"),
-        result_content="found 3 matches",
-        is_error=False,
-    )
-    calls = ledger.agent_sessions.tool_calls_for(session.id)
-    assert len(calls) == 1
-    assert calls[0].result_content == "found 3 matches"
-    assert calls[0].is_error is False
-    assert calls[0].completed_at is not None
+    ledger.agent_sessions.record_error(session.id, None)
+    recovered = ledger.agent_sessions.get(session.id)
+    assert recovered is not None
+    assert recovered.last_error is None
 
 
 def test_seal_allows_new_open_for_same_task(ledger: Ledger) -> None:

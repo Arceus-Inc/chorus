@@ -9,9 +9,13 @@ missing rate never raises — so a pricing gap can't crash a beat or silently bl
 
 from __future__ import annotations
 
+import os
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Protocol, runtime_checkable
+
+_DEFAULT_INPUT_CENTS_PER_MTOK = 125
+_DEFAULT_OUTPUT_CENTS_PER_MTOK = 1000
 
 _PER_MILLION = 1_000_000
 
@@ -81,8 +85,37 @@ class TokenPricing:
         return (micro + _PER_MILLION // 2) // _PER_MILLION
 
 
+def _env_int(name: str, default: int) -> int:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    try:
+        return int(raw)
+    except ValueError:
+        return default
+
+
+def default_token_pricing() -> TokenPricing:
+    """Illustrative GPT-5-class pricing (whole cents per million tokens).
+
+    Override via ``CHORUS_INPUT_CENTS_PER_MTOK`` / ``CHORUS_OUTPUT_CENTS_PER_MTOK``.
+    Used when a beat factory is constructed without an explicit table so scheduler
+    dispatches still accrue ``cost_cents`` on the agent_session handle row.
+    """
+    default_rate = ModelRate(
+        input_cents_per_mtok=_env_int("CHORUS_INPUT_CENTS_PER_MTOK", _DEFAULT_INPUT_CENTS_PER_MTOK),
+        output_cents_per_mtok=_env_int(
+            "CHORUS_OUTPUT_CENTS_PER_MTOK", _DEFAULT_OUTPUT_CENTS_PER_MTOK
+        ),
+    )
+    deployment = os.environ.get("AZURE_OPENAI_DEPLOYMENT", "").strip()
+    rates = {deployment: default_rate} if deployment else {}
+    return TokenPricing(rates=rates, default=default_rate)
+
+
 __all__ = [
     "ModelRate",
     "TokenPricing",
     "UsageView",
+    "default_token_pricing",
 ]

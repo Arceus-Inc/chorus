@@ -7,9 +7,9 @@ and dispatched through one scheduler ``tick`` — the real path, so budget / pau
 all apply. The employee's work streams back live (the :class:`ChatRenderBus` renders the beat's
 ``run.*`` event stream), and a verdict footer closes the turn.
 
-Continuity is the ledger ``agent_session`` transcript (conversation + tool-call SoT), plus the
-employee's episodic memory / stable worktree. The CLI display list is not authoritative — ``/transcript``
-reads from the ledger. This module holds no dream import — it drives a wired :class:`Scheduler`
+Continuity is the employee's **memory**: the chat beat service builds dream with ``memory=True`` and a
+stable per-employee working dir (see ``chorus_cli._beats.chat_service_from_env``), so the employee
+remembers earlier turns. This module holds no dream import — it drives a wired :class:`Scheduler`
 through the small :class:`ChatBeatService` bridge, and is fully testable with a fake beat runner.
 """
 
@@ -17,21 +17,13 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TextIO
 
 from chorus.events import Event, EventKind
 from chorus.heartbeat import Scheduler, TickReport, Wake, WakeReason
 from chorus.ids import mint_id
-from chorus.ledger import (
-    ConversationRole,
-    Ledger,
-    Message,
-    MessageKind,
-    Task,
-    append_user_turn,
-    load_transcript,
-)
+from chorus.ledger import Ledger, Message, MessageKind, Task
 from chorus.lifecycle import assign_task
 from chorus.observability import EventBus
 from chorus.roles import RoleBeatConfig
@@ -148,8 +140,9 @@ class ChatBeatService:
 
 @dataclass
 class _ChatState:
-    """Per-session chat UI state. Conversation SoT is ``agent_session`` in the ledger."""
+    """Per-session chat state: the in-memory transcript and the id of the turn's task."""
 
+    transcript: list[tuple[str, str]] = field(default_factory=list)
     last_task_id: str | None = None
 
 
@@ -162,13 +155,12 @@ def ensure_task(ledger: Ledger, employee_id: str, line: str) -> tuple[str, str]:
     """Record the line as a message and make sure a beat will run for it (spec: auto-promote).
 
     Returns ``(task_id, mode)`` where ``mode`` is ``"attach"`` (re-woke a live workable task) or
-    ``"promote"`` (created + assigned a fresh task from the line). The mailbox message stays for
-    coordination; the operator line is also appended to ``agent_session`` (conversation SoT).
+    ``"promote"`` (created + assigned a fresh task from the line). The message is linked to the task
+    either way, so the mailbox is the durable conversation record.
     """
     open_task = ledger.tasks.open_for_assignee(employee_id)
     if open_task is not None:
         ledger.messages.send(_message(employee_id, line, task_id=open_task.id))
-        _record_operator_turn(ledger, employee_id=employee_id, task_id=open_task.id, line=line)
         if not _wake_already_queued(ledger, open_task.id):
             ledger.wakes.enqueue(
                 Wake(
@@ -185,54 +177,7 @@ def ensure_task(ledger: Ledger, employee_id: str, line: str) -> tuple[str, str]:
     # No ``assigned_by`` — like the ``assign`` command; the activity actor FKs employees, and the
     # console operator is a user, not an employee.
     assign_task(ledger, task_id, employee_id)
-    _record_operator_turn(ledger, employee_id=employee_id, task_id=task_id, line=line)
     return task_id, "promote"
-
-
-def _record_operator_turn(
-    ledger: Ledger, *, employee_id: str, task_id: str, line: str
-) -> None:
-    """Append the console operator line into the task's durable agent_session transcript."""
-    from chorus.ledger import dream_session_key_for_task, ensure_open_session
-
-    session = ensure_open_session(
-        ledger,
-        employee_id=employee_id,
-        task_id=task_id,
-        dream_session_key=dream_session_key_for_task(task_id),
-        model="",
-        system_prompt=None,
-        run_id=None,
-    )
-    append_user_turn(ledger, session.id, line)
-
-
-def _transcript_lines(ledger: Ledger, task_id: str | None) -> list[tuple[str, str]]:
-    """Load display lines from the ledger agent_session for ``task_id``."""
-    if task_id is None:
-        return []
-    session = ledger.agent_sessions.get_open_for_task(task_id)
-    if session is None:
-        session = ledger.agent_sessions.latest_for_task(task_id)
-    if session is None:
-        return []
-    lines: list[tuple[str, str]] = []
-    for message in load_transcript(ledger, session.id):
-        text_parts = [
-            str(block.get("text", "")).strip()
-            for block in message.content
-            if isinstance(block.get("text"), str)
-        ]
-        text = "\n".join(p for p in text_parts if p)
-        if not text:
-            continue
-        who = _OPERATOR if message.role is ConversationRole.USER else "employee"
-        lines.append((who, text))
-    return lines
-
-
-def _transcript_turn_count(ledger: Ledger, task_id: str | None) -> int:
-    return len(_transcript_lines(ledger, task_id))
 
 
 def _message(employee_id: str, body: str, *, task_id: str) -> Message:
@@ -301,7 +246,7 @@ chat commands:
   /config            the employee's full harness config (every component)
   /merge             merge this employee's isolated worktree into company main
   /task              the current/last task with its runs
-  /transcript        ledger session transcript (SoT)
+  /transcript        this session's lines
 type anything else to send it to the employee as a turn.\
 """
 
@@ -386,7 +331,7 @@ def _cmd_info(
             "model": service.model,
             "working_dir": service.working_dir,
             "active_task": open_task.id if open_task is not None else "-",
-            "turns": _transcript_turn_count(ledger, state.last_task_id),
+            "turns": len(state.transcript),
         }
     )
 
@@ -407,13 +352,12 @@ def _cmd_task(console: Console, *, state: _ChatState, ledger: Ledger) -> None:
     )
 
 
-def _cmd_transcript(console: Console, *, state: _ChatState, ledger: Ledger) -> None:
-    lines = _transcript_lines(ledger, state.last_task_id)
-    if not lines:
+def _cmd_transcript(console: Console, *, state: _ChatState) -> None:
+    if not state.transcript:
         console.line("(no turns yet)")
         return
-    for who, body in lines:
-        console.line(f"  {who}: {body}")
+    for who, text in state.transcript:
+        console.line(f"  {who}: {text}")
 
 
 def _slash(
@@ -440,7 +384,7 @@ def _slash(
     elif cmd == "/task":
         _cmd_task(console, state=state, ledger=ledger)
     elif cmd == "/transcript":
-        _cmd_transcript(console, state=state, ledger=ledger)
+        _cmd_transcript(console, state=state)
     else:
         console.error(f"unknown command {cmd!r}; /help for the list")
     return True
@@ -484,6 +428,7 @@ def run_chat(
                 return
             continue
 
+        state.transcript.append((_OPERATOR, line))
         try:
             task_id, _ = ensure_task(ledger, employee_id, line)
             state.last_task_id = task_id
