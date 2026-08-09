@@ -18,7 +18,7 @@ from chorus.roles._manifest import (
     SandboxTier,
 )
 from chorus_employee.pm._brief import PM_BRIEF
-from chorus_employee.pm._subagents import CRITIC_SUBAGENT, RESEARCHER_SUBAGENT
+from chorus_employee.pm._subagents import CRITIC_SUBAGENT
 from swarm.web_research_orchestrator import WEB_RESEARCH_ORCHESTRATOR
 
 # The PM's authored playbooks live beside this package; the `skill` tool loads a body on demand (§08).
@@ -74,15 +74,9 @@ def pm_manifest() -> RoleManifest:
             "lattice_apply",
             "skill_manage",
         ),
-        # — build_harness(subagents=…) — the Tier-1 specialists Piper may dispatch mid-beat (§06).
-        # The Researcher gathers cited evidence (depth-2 over the shared web_research orchestrator) and
-        # hands back a typed ResearchBrief whose source URLs the PM cites — clearing its grounding floor.
-        # web_research is also exposed top-level (as the Marketer does) so Piper can run a direct sweep
-        # without the Researcher wrapper; it is the Researcher's depth-2 child either way.
-        # The Critic (read-only, adversarial) red-teams the drafted decision BEFORE record_decision —
-        # the qualitative pre-record check the deterministic grounding floor cannot make (the Marketer's
-        # Brand-Critic analog); it returns a typed DecisionCritique (PASS/REVISE + findings).
-        subagents=(RESEARCHER_SUBAGENT, WEB_RESEARCH_ORCHESTRATOR, CRITIC_SUBAGENT),
+        # Lean roster: web_research (noise isolation) + critic (adversarial firewall).
+        # Craft (evidence-brief etc.) stays on the main employee via skills — no researcher middleman.
+        subagents=(WEB_RESEARCH_ORCHESTRATOR, CRITIC_SUBAGENT),
         # — build_harness(skill_registry=…) — the PM's authored playbooks, discovered from this package's
         # ``skills/`` dir and offered via the `skill` tool (§08). Slice 1 ships the Decision-core group —
         # the method behind the Decision OS (evidence -> options -> decision -> recommendation); later

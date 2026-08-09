@@ -80,10 +80,10 @@ class TestSpawnableProjection:
         assert projected.spawnable[0].tools == ("browser_run",)  # run_command dropped
 
 
-class TestMarketerStrategistWiring:
-    """The marketer's projected set makes the Strategist a real depth-2 spawner of web_research."""
+class TestMarketerLeanRoster:
+    """Lean cut: brand_critic + web_research only (no strategist/creative middlemen)."""
 
-    def test_strategist_is_spawn_eligible_with_web_research_scoped(self) -> None:
+    def test_marketer_keeps_isolation_earners_only(self) -> None:
         from chorus.roles import role_beat_config
         from chorus_employee.marketer import marketer_plugin
 
@@ -91,9 +91,8 @@ class TestMarketerStrategistWiring:
         subagent_set = _subagent_set(config)
 
         assert subagent_set is not None
-        strategist = subagent_set.get("strategist")
-        assert strategist is not None
-        assert "spawn_subagent" in strategist.tools
-        assert [c.name for c in strategist.spawnable] == ["web_research"]
-        # the grandchild kept its web tools (Mira → strategist → web_research all hold them)
-        assert set(strategist.spawnable[0].tools) == {"browser_run", "web_fetch"}
+        assert set(subagent_set.names()) == {"brand_critic", "web_research"}
+        assert subagent_set.get("strategist") is None
+        web = subagent_set.get("web_research")
+        assert web is not None
+        assert web.spawnable == ()

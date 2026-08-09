@@ -281,6 +281,8 @@ def _project_spec(spec: SubagentSpec, parent_tools: frozenset[str]) -> Subagent:
     """
     tools = tuple(t for t in dream_tool_names(spec.tools) if t in parent_tools)
     own_tools = frozenset(tools)
+    from dream.subagents import IsolationMode as DreamIsolation
+
     return Subagent(
         name=spec.name,
         description=spec.description,
@@ -289,6 +291,7 @@ def _project_spec(spec: SubagentSpec, parent_tools: frozenset[str]) -> Subagent:
         max_turns=spec.max_turns,
         output_schema=spec.output_schema,
         strict=spec.strict,
+        isolation=DreamIsolation(spec.isolation.value),
         spawnable=tuple(_project_spec(child, own_tools) for child in spec.spawnable),
     )
 

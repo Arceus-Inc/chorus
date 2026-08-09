@@ -21,11 +21,7 @@ from chorus.roles._manifest import (
     SandboxTier,
 )
 from chorus_employee.designer._brief import DESIGNER_BRIEF
-from chorus_employee.designer._subagents import (
-    DESIGN_CRITIC_SUBAGENT,
-    EXPLORER_SUBAGENT,
-    UX_RESEARCHER_SUBAGENT,
-)
+from chorus_employee.designer._subagents import DESIGN_CRITIC_SUBAGENT
 from swarm.web_research_orchestrator import WEB_RESEARCH_ORCHESTRATOR
 
 # Authored playbooks discovered from this package's ``skills/`` dir and offered via the ``skill`` tool.
@@ -130,23 +126,9 @@ def designer_manifest() -> RoleManifest:
         # commands; its only outbound-write surface (handoff/ship) is a gated tool added later. Pattern
         # research is read-only egress, not an open network.
         sandbox=SandboxTier.REPO_WRITE_NET,
-        # --- subagents (Tier-1, role-owned) ---
-        # The UX-Researcher: frames the bet BEFORE exploring (§06) — reads DESIGN.md/brief and writes
-        # ux_brief.md. Depth-2: it itself dispatches the Web-Research Orchestrator for cited UX facts.
-        # The Design-Critic: an adversarial reviewer the Designer spawns mid-beat to validate the spec
-        # against DESIGN.md + the a11y floor. Read-only (can only inspect, never edit the spec).
-        # The Explorer: a variation engine it spawns on a seed to draft a set of on-system variants
-        # (§10 variety). Writes to its worktree (variants/), never ships or selects; returns a typed
-        # ExplorerManifest. It self-lints via design_lint.
-        # The Web-Research Orchestrator: the shared specialist (declared once in src/swarm/) the
-        # UX-Researcher spawns to answer a UX/pattern question from the live web (browser_run),
-        # returning a runtime-validated WebResearchOutput. Passed directly.
-        subagents=(
-            DESIGN_CRITIC_SUBAGENT,
-            EXPLORER_SUBAGENT,
-            UX_RESEARCHER_SUBAGENT,
-            WEB_RESEARCH_ORCHESTRATOR,
-        ),
+        # Lean roster: design_critic (adversarial PASS/FAIL) + web_research.
+        # UX framing / layout exploration → skills on the main employee.
+        subagents=(DESIGN_CRITIC_SUBAGENT, WEB_RESEARCH_ORCHESTRATOR),
     )
 
 

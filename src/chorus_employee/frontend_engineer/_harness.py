@@ -29,10 +29,7 @@ from chorus.roles._manifest import (
     SandboxTier,
 )
 from chorus_employee.frontend_engineer._brief import FRONTEND_ENGINEER_BRIEF
-from chorus_employee.frontend_engineer._subagents import (
-    CODE_REVIEWER_SUBAGENT,
-    UI_TESTER_SUBAGENT,
-)
+from chorus_employee.frontend_engineer._subagents import CODE_REVIEWER_SUBAGENT
 
 # Authored build/testing craft playbooks discovered from this package's ``skills/`` dir and offered on
 # demand via the ``skill`` tool (mirrors the Designer's §08 skill library).
@@ -191,15 +188,8 @@ def frontend_engineer_manifest() -> RoleManifest:
         # gates behind an interactive approval the kernel can't supply. dream's credential guard,
         # command-deny list, and worktree confinement still apply.
         sandbox=SandboxTier.UNRESTRICTED,
-        # --- subagents (Tier-1, role-owned) ---
-        # The post-build review layer: a Code-Reviewer (correctness / a11y / test integrity) and a
-        # UI-Tester (auditor of the PROOF — does the e2e genuinely drive + assert the real UI). Both are
-        # read-only (read_file / working_memory_read / test_evidence, all ⊆ this role's shelf), so the
-        # projection keeps every tool; neither can edit or run, so the engineer keeps ownership of fixes.
-        subagents=(
-            CODE_REVIEWER_SUBAGENT,
-            UI_TESTER_SUBAGENT,
-        ),
+        # Lean roster: code_reviewer only. UI proof audits → playwright/evidence skills on main.
+        subagents=(CODE_REVIEWER_SUBAGENT,),
     )
 
 
