@@ -125,6 +125,16 @@ class RunRepo:
         self._conn.commit()
         return [str(row["id"]) for row in rows]
 
+    def cancel_running_for_task(self, task_id: str) -> list[str]:
+        """Cancel every live run for one task, returning exactly those run ids."""
+        rows = self._conn.execute(
+            "UPDATE run SET status = 'cancelled', finished_at = ? "
+            "WHERE task_id = ? AND status = 'running' RETURNING id",
+            (utcnow_iso(), task_id),
+        ).fetchall()
+        self._conn.commit()
+        return [str(row["id"]) for row in rows]
+
     def finish(
         self,
         run_id: str,
@@ -138,7 +148,7 @@ class RunRepo:
         self._conn.execute(
             "UPDATE run SET status = ?, liveness_state = COALESCE(?, liveness_state), "
             "outcome = COALESCE(?, outcome), usage = COALESCE(?, usage), finished_at = ? "
-            "WHERE id = ?",
+            "WHERE id = ? AND status != 'cancelled'",
             (
                 status.value,
                 liveness_state,

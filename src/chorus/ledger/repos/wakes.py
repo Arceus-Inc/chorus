@@ -155,6 +155,16 @@ class WakeRepo:
         self._conn.commit()
         return int(cursor.rowcount)
 
+    def finish_for_task(self, task_id: str) -> int:
+        """Drain queued or claimed wakes for one task without touching its siblings."""
+        cursor = self._conn.execute(
+            "UPDATE wake SET status = 'done', finished_at = ? "
+            "WHERE task_id = ? AND status IN ('queued', 'claimed')",
+            (utcnow_iso(), task_id),
+        )
+        self._conn.commit()
+        return int(cursor.rowcount)
+
     def get(self, wake_id: str) -> Wake | None:
         row = self._conn.execute("SELECT * FROM wake WHERE id = ?", (wake_id,)).fetchone()
         return _row_to_wake(row) if row is not None else None

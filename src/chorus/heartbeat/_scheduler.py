@@ -716,6 +716,9 @@ class Scheduler:
         task = ledger.tasks.get(task_id)
         if task is None:
             raise KeyError(task_id)
+        if task.status is TaskStatus.CANCELLED:
+            ledger.wakes.mark_done(wake.id)
+            return
         employee = workforce.get(wake.employee_id)
 
         if task.execution_mode is ExecutionMode.DELEGATION and ledger.tasks.all_children_terminal(
@@ -839,6 +842,11 @@ class Scheduler:
             result = failure_outcome(exc)
 
         verdict = result.outcome or None
+        current = ledger.tasks.get(task_id)
+        if current is not None and current.status is TaskStatus.CANCELLED:
+            ledger.tasks.release_locks(task_id, run_id=run_id)
+            ledger.wakes.mark_done(wake.id)
+            return
         if result.disposition is BeatDisposition.CANCELLED:
             # Cooperative cancel (caps/budget/operator): record a cancelled run and return the task
             # to its pre-beat (dispatchable) state — no DoD verdict, no recovery card (spec 05 §5/§6).

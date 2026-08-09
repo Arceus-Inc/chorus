@@ -160,6 +160,18 @@ async def test_beat_marks_wake_done(ledger: Ledger) -> None:
     assert ledger.wakes.queued() == []
 
 
+async def test_cancelled_task_does_not_start_a_claimed_beat(ledger: Ledger) -> None:
+    wake = _setup_task(ledger)
+    assert ledger.cancel_task(uid("t1"))
+
+    beat = _FakeBeat(passed=True)
+    await _wired(ledger, beat).run_beat(wake, run_id=uid("r1"), now=_NOW)
+
+    assert beat.calls == []
+    assert ledger.runs.get(uid("r1")) is None
+    assert ledger.tasks.get(uid("t1")).status is TaskStatus.CANCELLED  # type: ignore[union-attr]
+
+
 async def test_passed_beat_records_dod_verdict(ledger: Ledger) -> None:
     eid, tid = uid("e1"), uid("t1")
     ledger.employees.create(Employee(id=eid, name=eid, role="engineer"))

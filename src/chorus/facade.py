@@ -455,6 +455,10 @@ class Chorus:
         """Deliver a mailbox message and wake the recipient (``message``, spec 03 §2)."""
         return deliver_message(self._ledger, message)
 
+    def cancel_task(self, task_id: str) -> bool:
+        """Durably cancel one task and its task-scoped queued or active work."""
+        return self._ledger.cancel_task(task_id)
+
     # -- the heartbeat (spec 03) ----------------------------------------------
 
     async def tick(self) -> TickReport:

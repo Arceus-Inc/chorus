@@ -6,6 +6,7 @@ forward to the injected ``Scheduler`` (a fake here) rather than re-implementing 
 
 from __future__ import annotations
 
+from collections import UserDict
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -14,8 +15,20 @@ import pytest
 from chorus.errors import OrgInvariantViolation
 from chorus.facade import Caps, Chorus
 from chorus.heartbeat import TickReport
-from chorus.ledger import Ledger, Message, Task
-from chorus.ledger._models import WakeReason
+from chorus.ledger import (
+    AgentSession,
+    AgentSessionStatus,
+    Ledger,
+    Message,
+    RecoveryAction,
+    RecoveryKind,
+    RecoveryStatus,
+    Run,
+    RunStatus,
+    Task,
+    TaskStatus,
+)
+from chorus.ledger._models import Wake, WakeReason, WakeStatus
 from chorus.roles import RoleRegistry, default_roles
 from chorus.testing import open_test_ledger, uid
 from chorus.workforce import Employee, GitWorkforce, LedgerWorkforce
@@ -134,6 +147,84 @@ def test_send_message_wakes_through_the_facade() -> None:
         )
         assert wake.reason is WakeReason.MESSAGE and wake.employee_id == uid("rep")
         assert [m.id for m in ledger.messages.inbox(uid("rep"))] == [uid("m1")]
+    finally:
+        ledger.close()
+
+
+def test_cancel_task_terminalizes_only_its_live_work_and_is_idempotent() -> None:
+    ledger = open_test_ledger()
+    try:
+        employee_id, task_id = uid("e1"), uid("t1")
+        ledger.employees.create(Employee(id=employee_id, name="a", role="engineer"))
+        ledger.tasks.submit(Task(id=task_id, intent="stop", assignee_employee_id=employee_id))
+        ledger.tasks.set_status(task_id, TaskStatus.TODO)
+        claimed = ledger.wakes.enqueue(
+            Wake(
+                id=uid("claimed"),
+                employee_id=employee_id,
+                reason=WakeReason.TASK_ASSIGNED,
+                payload=UserDict(task_id=task_id),
+            )
+        )
+        assert [wake.id for wake in ledger.wakes.claim(limit=1)] == [claimed.id]
+        queued = ledger.wakes.enqueue(
+            Wake(
+                id=uid("queued"),
+                employee_id=employee_id,
+                reason=WakeReason.MESSAGE,
+                payload=UserDict(task_id=task_id),
+            )
+        )
+        other_task_id = uid("t2")
+        ledger.tasks.submit(Task(id=other_task_id, intent="keep", assignee_employee_id=employee_id))
+        other_wake = ledger.wakes.enqueue(
+            Wake(
+                id=uid("other"),
+                employee_id=employee_id,
+                reason=WakeReason.TASK_ASSIGNED,
+                payload=UserDict(task_id=other_task_id),
+            )
+        )
+        run_id = uid("r1")
+        assert ledger.tasks.checkout(task_id, employee_id=employee_id, run_id=run_id)
+        ledger.runs.create(
+            Run(id=run_id, employee_id=employee_id, task_id=task_id, status=RunStatus.RUNNING)
+        )
+        session = ledger.agent_sessions.open(
+            AgentSession(
+                id=uid("s1"),
+                dream_session_key=uid("dream"),
+                employee_id=employee_id,
+                task_id=task_id,
+            )
+        )
+        action = ledger.recovery_actions.open(
+            RecoveryAction(
+                id=uid("recovery"), source_task_id=task_id, kind=RecoveryKind.STRANDED
+            )
+        )
+
+        chorus = _chorus_on(ledger)
+        assert chorus.cancel_task(task_id) is True
+        assert chorus.cancel_task(task_id) is True
+
+        task = ledger.tasks.get(task_id)
+        assert task is not None
+        assert task.status is TaskStatus.CANCELLED
+        assert task.cancelled_at is not None
+        assert task.checkout_run_id is None
+        assert task.execution_run_id is None
+        assert ledger.runs.get(run_id).status is RunStatus.CANCELLED  # type: ignore[union-attr]
+        assert ledger.agent_sessions.get(session.id).status is AgentSessionStatus.ABORTED  # type: ignore[union-attr]
+        assert ledger.recovery_actions.get(action.id).status is RecoveryStatus.FOLDED  # type: ignore[union-attr]
+        assert ledger.wakes.get(claimed.id).status is WakeStatus.DONE  # type: ignore[union-attr]
+        assert ledger.wakes.get(queued.id).status is WakeStatus.DONE  # type: ignore[union-attr]
+        assert ledger.wakes.get(other_wake.id).status is WakeStatus.QUEUED  # type: ignore[union-attr]
+
+        ledger.runs.finish(run_id, RunStatus.SUCCEEDED)
+        ledger.tasks.set_status(task_id, TaskStatus.DONE)
+        assert ledger.runs.get(run_id).status is RunStatus.CANCELLED  # type: ignore[union-attr]
+        assert ledger.tasks.get(task_id).status is TaskStatus.CANCELLED  # type: ignore[union-attr]
     finally:
         ledger.close()
 
