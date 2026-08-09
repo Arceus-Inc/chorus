@@ -28,6 +28,10 @@ from chorus.observability._views import (
     RunView,
     ScrumChildView,
     ScrumPacketView,
+    TaskThreadArtifactView,
+    TaskThreadRunView,
+    TaskThreadTaskView,
+    TaskThreadView,
     TaskView,
     TeamView,
     WorkforceStatus,
@@ -35,7 +39,7 @@ from chorus.observability._views import (
 
 if False:  # pragma: no cover - typing only without runtime import cost
     from chorus.ledger import Ledger
-    from chorus.ledger._models import Routine, Run, Task
+    from chorus.ledger._models import Artifact, Routine, Run, Task
 
 _RECENT_RUNS = 5  # how many of a routine's most-recent firings the read model surfaces
 _TERMINAL = frozenset({TaskStatus.DONE, TaskStatus.CANCELLED, TaskStatus.REJECTED})
@@ -55,6 +59,10 @@ class Inspector(Protocol):
 
     def task(self, task_id: str) -> TaskView:
         """One task, resolved (names + liveness + blockers)."""
+        ...
+
+    def task_thread(self, task_id: str) -> TaskThreadView:
+        """One rooted task subtree with its attached durable rows."""
         ...
 
     def stuck(self) -> list[TaskView]:
@@ -127,6 +135,15 @@ class LedgerInspector:
             raise KeyError(task_id)
         return self._task_view(task, self._clock())
 
+    def task_thread(self, task_id: str) -> TaskThreadView:
+        task = self._ledger.tasks.get(task_id)
+        if task is None:
+            raise KeyError(task_id)
+        goal = self._ledger.goals.get(task.goal_id) if task.goal_id is not None else None
+        tasks: list[TaskThreadTaskView] = []
+        self._collect_task_thread(task, tasks, set())
+        return TaskThreadView(goal=goal, tasks=tuple(tasks))
+
     def stuck(self) -> list[TaskView]:
         now = self._clock()
         return [
@@ -134,6 +151,49 @@ class LedgerInspector:
             for task in self._ledger.tasks.all()
             if self._is_stuck(task, now)
         ]
+
+    def _collect_task_thread(
+        self, task: Task, tasks: list[TaskThreadTaskView], visited: set[str]
+    ) -> None:
+        if task.id in visited:
+            return
+        visited.add(task.id)
+        runs = tuple(self._task_thread_run_view(run) for run in self._ledger.runs.for_task(task.id))
+        tasks.append(
+            TaskThreadTaskView(
+                task=task,
+                runs=runs,
+                task_only_cost_events=tuple(self._ledger.cost_events.task_only_for_task(task.id)),
+                dod=self._ledger.dod.get_for_task(task.id),
+                artifacts=tuple(
+                    self._task_thread_artifact_view(artifact)
+                    for artifact in self._ledger.artifacts.list_for_task(task.id)
+                ),
+                activity=tuple(self._ledger.activity.by_subject("task", task.id)),
+            )
+        )
+        # ponytail: O(tasks + runs + artifacts) indexed reads; batch only if profiling needs it.
+        for child in self._ledger.tasks.children(task.id):
+            self._collect_task_thread(child, tasks, visited)
+
+    def _task_thread_run_view(self, run: Run) -> TaskThreadRunView:
+        cost_events = self._ledger.cost_events.for_run(run.id)
+        return TaskThreadRunView(
+            run=run,
+            cost_events=tuple(
+                event for event in cost_events if event.task_id is None or event.task_id == run.task_id
+            ),
+            mismatched_cost_events=tuple(
+                event for event in cost_events if event.task_id is not None and event.task_id != run.task_id
+            ),
+        )
+
+    def _task_thread_artifact_view(self, artifact: Artifact) -> TaskThreadArtifactView:
+        return TaskThreadArtifactView(
+            artifact=artifact,
+            revisions=tuple(self._ledger.artifact_revisions.list(artifact.id)),
+            activity=tuple(self._ledger.activity.by_subject("artifact", artifact.id)),
+        )
 
     def _is_stuck(self, task: Task, now: datetime) -> bool:
         """Non-terminal and stalled — no action-path primitive (spec 08 §2), per ``classify``."""

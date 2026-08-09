@@ -68,6 +68,7 @@ EXPECTED_PUBLIC_API: frozenset[str] = frozenset(
         # read model
         "WorkforceStatus",
         "TaskView",
+        "TaskThreadView",
         "EmployeeView",
         "RunView",
         "IncidentView",

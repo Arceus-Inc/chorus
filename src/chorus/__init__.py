@@ -59,6 +59,7 @@ from chorus.observability import (
     RoutineView,
     RunView,
     ScrumPacketView,
+    TaskThreadView,
     TaskView,
     WorkforceStatus,
 )
@@ -129,6 +130,7 @@ __all__ = [
     "Task",
     "TaskPriority",
     "TaskStatus",
+    "TaskThreadView",
     "TaskView",
     "TickReport",
     "TrustFacade",
