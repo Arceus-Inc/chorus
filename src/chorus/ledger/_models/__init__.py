@@ -76,6 +76,7 @@ from chorus.ledger._models._outcomes import (
     Dod,
 )
 from chorus.ledger._models._scheduling import (
+    LatticeSelectionSeal,
     Routine,
     RoutineRevision,
     RoutineRun,
@@ -132,6 +133,7 @@ __all__ = [
     "ExecutionMode",
     "Goal",
     "GoalLevel",
+    "LatticeSelectionSeal",
     "ManagementGrantDraft",
     "ManagementProfile",
     "Message",

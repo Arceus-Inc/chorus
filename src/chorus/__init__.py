@@ -38,6 +38,7 @@ from chorus.groups import (
     WorkforceFacade,
 )
 from chorus.heartbeat import TickReport, Wake, WakeReason
+from chorus.lattice import LatticeRuntime
 from chorus.ledger import (
     Approval,
     ApprovalGate,
@@ -105,6 +106,7 @@ __all__ = [
     "IncidentView",
     "InspectFacade",
     "InvalidIntake",
+    "LatticeRuntime",
     "OrgInvariantViolation",
     "OrgObservabilityReport",
     # roles

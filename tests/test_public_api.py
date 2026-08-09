@@ -29,6 +29,8 @@ EXPECTED_PUBLIC_API: frozenset[str] = frozenset(
         "RolePlugin",
         "RoutineDeclaration",
         "default_roles",
+        # shared Lattice composition root
+        "LatticeRuntime",
         # ledger
         "Task",
         "TaskStatus",

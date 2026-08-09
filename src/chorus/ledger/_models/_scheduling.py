@@ -7,6 +7,8 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
+from dream.contracts.strategy import LandedPhase
+
 from chorus.ledger._models._enums import (
     RoutineCatchUp,
     RoutineConcurrency,
@@ -131,6 +133,22 @@ class Run:
         if self.principal_kind == "system" and self.system_principal_id is not None:
             return self.system_principal_id
         return self.employee_id
+
+
+@dataclass(frozen=True)
+class LatticeSelectionSeal:
+    """Durable command to seal one run's PostgreSQL-journaled Lattice selection."""
+
+    employee_id: str
+    beat_run_id: str
+    outcome_phase: LandedPhase
+    landed_at: datetime
+    attempt_count: int = 0
+    next_attempt_at: datetime | None = None
+    last_error: str | None = None
+    sealed_at: datetime | None = None
+    terminal_at: datetime | None = None
+    created_at: datetime | None = None
 
 
 @dataclass(frozen=True)

@@ -100,6 +100,7 @@ if TYPE_CHECKING:
     from dream.contracts import GovernancePort
     from lattice.facade import Lattice
 
+    from chorus.lattice import LatticeRuntime
     from chorus.ledger import Ledger, Task
 
 # dream runs these three intra-task roles per task; the employee's identity is overlaid onto each.
@@ -680,6 +681,7 @@ class EmployeeHarnessFactory:
         ledger: Ledger | None = None,
         trust_policy: TrustPolicy | None = None,
         governance: GovernancePort | None = None,
+        lattice_runtime: LatticeRuntime | None = None,
         stop_evidence_requirements: bool = False,
     ) -> None:
         self._api_key = api_key
@@ -699,6 +701,9 @@ class EmployeeHarnessFactory:
         # wires this to horizon's control plane; chorus only ever sees the Port. Absent it, a role
         # asking for a governance tool simply gets it dropped — same fail-closed rule as the ledger.
         self._governance = governance
+        # Podium's server composition injects one PostgreSQL-backed Lattice runtime here. Its durable
+        # selection journal is the authority shared by context disclosure and scheduler landing.
+        self._lattice_runtime = lattice_runtime
         # Lean Bex / Hermes default: parent implements; specialist evidence gates are opt-in.
         self._stop_evidence_requirements = stop_evidence_requirements
         # The org's workspace root: .chorus/work/{org}/ — shared by chat, tick, and the `company`
@@ -807,7 +812,12 @@ class EmployeeHarnessFactory:
         # adjudicated proposals. Reuses the lattice built (or not) at beat start above. Advisory like
         # the adjudicate step: a broken lattice skips these tools (with a breadcrumb), never the beat.
         if _LATTICE_TOOLS.intersection(config.tools):
+            authoritative_runtime = self._lattice_runtime
+            if authoritative_runtime is not None:
+                lattice = authoritative_runtime.lattice
             if lattice is None:
+                # Legacy file-backed fallback: advisory tools only. It intentionally has no durable
+                # selection journal and therefore cannot create authoritative APPLIED outcome edges.
                 try:
                     lattice = build_lattice_for_chorus(
                         self._company_root,
@@ -817,7 +827,11 @@ class EmployeeHarnessFactory:
                     write_lattice_error(root, site="materialize.tool_registration", error=exc)
             if lattice is not None:
                 for name in _LATTICE_TOOLS.intersection(config.tools):
-                    tool = lattice_tool(name, lattice)
+                    tool = lattice_tool(
+                        name,
+                        lattice,
+                        durable_selection_journal=authoritative_runtime is not None,
+                    )
                     if tool is not None:
                         registry.register(tool, source=ToolSource.DEFAULT)
         if "skill_manage" in config.tools and self._ledger is not None:
@@ -985,18 +999,25 @@ class EmployeeHarnessFactory:
         # Lattice sleep-as-verifier (integration §4.4): adjudicate fresh episodes at beat START, then
         # inject the prior beat's gate-open consolidation teaser (if any) so the model consolidates
         # FIRST this beat. Best-effort: a lattice failure never blocks the beat.
-        lattice = None
+        lattice = self._lattice_runtime.lattice if self._lattice_runtime is not None else None
         if _LATTICE_TOOLS.intersection(config.tools):
-            try:
-                lattice = build_lattice_for_chorus(
-                    self._company_root,
-                    canonical_skills_root=config.skills_root,
-                )
-                if lattice.has_fresh_episodes(employee.id):
-                    lattice.adjudicate(employee.id)
-            except Exception as exc:
-                lattice = None
-                write_lattice_error(root, site="materialize.adjudicate", error=exc)
+            if lattice is None:
+                # Non-authoritative local fallback for standalone harness use only. Server composition
+                # always supplies ``LatticeRuntime`` and never builds a second filesystem lattice.
+                try:
+                    lattice = build_lattice_for_chorus(
+                        self._company_root,
+                        canonical_skills_root=config.skills_root,
+                    )
+                except Exception as exc:
+                    write_lattice_error(root, site="materialize.legacy_lattice", error=exc)
+            if lattice is not None:
+                try:
+                    if lattice.has_fresh_episodes(employee.id):
+                        lattice.adjudicate(employee.id)
+                except Exception as exc:
+                    lattice = None
+                    write_lattice_error(root, site="materialize.adjudicate", error=exc)
             lattice_push = read_lattice_consolidation_push(root)
             if lattice_push:
                 volatile_sections.append(
