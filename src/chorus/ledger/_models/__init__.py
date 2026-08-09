@@ -92,6 +92,12 @@ from chorus.ledger._models._outcomes import (
     ArtifactRevision,
     Dod,
 )
+from chorus.ledger._models._reflection_proposals import (
+    ReflectionProposal,
+    ReflectionProposalTarget,
+    ReflectionTargetKind,
+    TrajectoryRef,
+)
 from chorus.ledger._models._rollouts import (
     PromotionGates,
     ReplayRegression,
@@ -191,6 +197,9 @@ __all__ = [
     "RecoveryKind",
     "RecoveryOutcome",
     "RecoveryStatus",
+    "ReflectionProposal",
+    "ReflectionProposalTarget",
+    "ReflectionTargetKind",
     "RejectedAlternative",
     "ReplayRegression",
     "Rollout",
@@ -226,6 +235,7 @@ __all__ = [
     "TeamMember",
     "TeamMembershipRole",
     "TeamStatus",
+    "TrajectoryRef",
     "TriggerKind",
     "Wake",
     "WakeReason",
