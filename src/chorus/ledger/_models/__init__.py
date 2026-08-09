@@ -98,6 +98,10 @@ from chorus.ledger._models._reflection_proposals import (
     ReflectionTargetKind,
     TrajectoryRef,
 )
+from chorus.ledger._models._reflection_reviews import (
+    ReflectionProposalReview,
+    ReflectionProposalVerdict,
+)
 from chorus.ledger._models._rollouts import (
     PromotionGates,
     ReplayRegression,
@@ -198,7 +202,9 @@ __all__ = [
     "RecoveryOutcome",
     "RecoveryStatus",
     "ReflectionProposal",
+    "ReflectionProposalReview",
     "ReflectionProposalTarget",
+    "ReflectionProposalVerdict",
     "ReflectionTargetKind",
     "RejectedAlternative",
     "ReplayRegression",
