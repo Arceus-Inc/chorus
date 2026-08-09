@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path, PurePosixPath
@@ -23,18 +23,19 @@ from dream.state.shadow import (
     ShadowCheckpointStore,
 )
 
+from chorus.context import ContextAudience, TaskContextPacket, render_task_context
 from chorus.roles._subagent import SubagentSpec
 
 __all__ = [
     "BeatContextKind",
     "BeatContextSection",
     "DangerousToolVetoHook",
-    "ShadowCheckpointHook",
     "EvidenceContinueHook",
     "EvidenceForgeVetoHook",
     "EvidenceOwner",
     "EvidenceRequirement",
     "ProtectedEvidencePath",
+    "ShadowCheckpointHook",
     "StopHookPhase",
     "StopHookRole",
     "VolatileBeatPacket",
@@ -47,8 +48,12 @@ _DANGEROUS_BASH = re.compile(
     r"curl\s+[^\n]*\|\s*(?:ba)?sh|wget\s+[^\n]*\|\s*(?:ba)?sh)",
     re.IGNORECASE,
 )
-_WRITE_TOOLS = frozenset({"write_file", "edit_file"})
+_WRITE_TOOLS = frozenset({"write_file", "edit_file", "apply_patch"})
+_DIRECT_PATH_WRITE_TOOLS = frozenset({"write_file", "edit_file"})
 _EVIDENCE_DIR = ".harness/subagent-evidence"
+_PATCH_FILE_TARGET = re.compile(
+    r"^\*\*\* (?:(?:Add|Update|Delete) File|Move to): (.+?)\s*$", re.MULTILINE
+)
 
 
 class StopHookRole(StrEnum):
@@ -65,15 +70,17 @@ class EvidenceOwner(StrEnum):
 
 class BeatContextKind(StrEnum):
     ROSTER = "roster"
-    INBOX = "inbox"
     LATTICE = "lattice"
-    FAILURE_EVIDENCE = "failure_evidence"
+    RUNTIME = "runtime"
 
 
 @dataclass(frozen=True)
 class BeatContextSection:
     kind: BeatContextKind
     content: str
+    audiences: frozenset[ContextAudience] = frozenset(
+        {ContextAudience.PLANNER, ContextAudience.GENERATOR}
+    )
 
 
 @dataclass(frozen=True)
@@ -81,12 +88,20 @@ class VolatileBeatPacket:
     """Changing beat facts injected as user context, outside the stable prompt."""
 
     sections: tuple[BeatContextSection, ...]
+    task_context: TaskContextPacket | None = None
     on_injected: Callable[[], None] | None = None
 
-    def render(self) -> str:
-        return "\n\n".join(
-            section.content.strip() for section in self.sections if section.content.strip()
-        )
+    def render(self, audience: ContextAudience | None) -> str:
+        if audience is None:
+            return ""
+        rendered = [
+            section.content.strip()
+            for section in self.sections
+            if section.content.strip() and audience in section.audiences
+        ]
+        if self.task_context is not None:
+            rendered.append(render_task_context(self.task_context, audience))
+        return "\n\n".join(rendered)
 
 
 class VolatileBeatPacketHook:
@@ -97,10 +112,11 @@ class VolatileBeatPacketHook:
         self._consumed = False
 
     async def __call__(self, event: HookEvent, payload: dict[str, Any]) -> HookResult:
-        content = self._packet.render()
+        audience = _audience_for(payload.get("role"))
+        content = self._packet.render(audience)
         if not content:
             return HookResult()
-        if not self._consumed:
+        if audience is ContextAudience.GENERATOR and not self._consumed:
             self._consumed = True
             if self._packet.on_injected is not None:
                 self._packet.on_injected()
@@ -162,40 +178,31 @@ class EvidenceForgeVetoHook:
         if tool_name not in _WRITE_TOOLS and tool_name != "run_command":
             return HookResult()
         tool_input = payload.get("tool_input") or {}
-        paths = (
-            (str(tool_input.get("path") or ""),)
-            if tool_name in _WRITE_TOOLS
-            else tuple(match.group(1) for match in re.finditer(
-                r"(?:>>?|\|\s*tee\s+)\s*[\"']?([^\"'\s;|&]+)",
-                str(tool_input.get("command") or tool_input.get("cmd") or ""),
-            ))
-        )
-        rel = next(
-            (normalized for path in paths if (normalized := _norm_rel(path, self._working_dir))),
-            "",
-        )
-        if not rel:
-            return HookResult()
-        owner = self._protected.get(rel)
-        if owner is None and (rel == _EVIDENCE_DIR or rel.startswith(_EVIDENCE_DIR + "/")):
-            owner = EvidenceOwner.ANY_SPECIALIST
-        if owner is None:
-            return HookResult()
-        owner_label = (
-            "the required specialist"
-            if owner == EvidenceOwner.ANY_SPECIALIST
-            else owner
-        )
-        return HookResult(
-            blocked=True,
-            feedback=(
-                f"Do not forge evidence at {rel!r}. "
-                f"Call spawn_subagent(subagent_type={owner_label!r}, goal=...) so provenance is recorded. "
-                f"root_cause: evidence_forge; "
-                f"safe_retry: spawn_subagent(subagent_type={owner_label!r}); "
-                f"stop_condition: parent must not write specialist evidence paths."
-            ),
-        )
+        for path in _write_paths(tool_name, tool_input):
+            rel = _norm_rel(path, self._working_dir)
+            if not rel:
+                continue
+            owner = self._protected.get(rel)
+            if owner is None and (rel == _EVIDENCE_DIR or rel.startswith(_EVIDENCE_DIR + "/")):
+                owner = EvidenceOwner.ANY_SPECIALIST
+            if owner is None:
+                continue
+            owner_label = (
+                "the required specialist"
+                if owner == EvidenceOwner.ANY_SPECIALIST
+                else owner
+            )
+            return HookResult(
+                blocked=True,
+                feedback=(
+                    f"Do not forge evidence at {rel!r}. "
+                    f"Call spawn_subagent(subagent_type={owner_label!r}, goal=...) so provenance is recorded. "
+                    f"root_cause: evidence_forge; "
+                    f"safe_retry: spawn_subagent(subagent_type={owner_label!r}); "
+                    f"stop_condition: parent must not write specialist evidence paths."
+                ),
+            )
+        return HookResult()
 
 
 class EvidenceContinueHook:
@@ -262,7 +269,7 @@ def register_employee_hooks(
             working_dir=working_dir,
         )
     )
-    if volatile_packet is not None and volatile_packet.sections:
+    if volatile_packet is not None and (volatile_packet.sections or volatile_packet.task_context):
         register(VolatileBeatPacketHook(volatile_packet))
     protected = tuple(
         ProtectedEvidencePath(spec.evidence_path, spec.name)
@@ -284,6 +291,21 @@ def register_employee_hooks(
     )
     if evidence:
         register(EvidenceContinueHook(evidence, working_dir=working_dir))
+
+
+def _write_paths(tool_name: object, tool_input: Mapping[str, object]) -> tuple[str, ...]:
+    """Return every repository path a mutation tool declares."""
+    if tool_name in _DIRECT_PATH_WRITE_TOOLS:
+        return (str(tool_input.get("path") or ""),)
+    if tool_name == "apply_patch":
+        return tuple(match.group(1) for match in _PATCH_FILE_TARGET.finditer(str(tool_input.get("patch") or "")))
+    return tuple(
+        match.group(1)
+        for match in re.finditer(
+            r"(?:>>?|\|\s*tee\s+)\s*[\"']?([^\"'\s;|&]+)",
+            str(tool_input.get("command") or tool_input.get("cmd") or ""),
+        )
+    )
 
 
 def _norm_rel(path: str, working_dir: Path | None = None) -> str:
@@ -321,3 +343,12 @@ def _shadow_checkpoint_base(working_dir: Path) -> Path:
 
     return DreamPaths.resolve(working_dir).home / "checkpoints"
 
+
+def _audience_for(value: object) -> ContextAudience | None:
+    if value == ContextAudience.PLANNER.value:
+        return ContextAudience.PLANNER
+    if value == ContextAudience.EVALUATOR.value:
+        return ContextAudience.EVALUATOR
+    if value == ContextAudience.GENERATOR.value:
+        return ContextAudience.GENERATOR
+    return None

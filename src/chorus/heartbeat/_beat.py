@@ -56,6 +56,9 @@ class BeatOutcome:
     # emitted unparseable structured output). The scheduler re-runs a retryable beat before stranding
     # it; a clean return or a hard engine fault is never retryable.
     retryable: bool = False
+    # Dream's typed EvaluationRecord is projected here by the adapter; Chorus never parses evaluator
+    # JSON files.
+    evaluator_notes: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if self.disposition is None:

@@ -60,6 +60,7 @@ from chorus.ledger._models import (
     RecoveryAction,
     RecoveryKind,
     Run,
+    RunCarryover,
     RunStatus,
     TaskStatus,
     WakeReason,
@@ -206,32 +207,15 @@ def _baseline_sha(working_dir: Path | None) -> str | None:
     return head or None
 
 
-def _execution_intent(ledger: Ledger, task: Task) -> str:
-    """Carry ancestor objectives into a delegated beat without widening its assigned scope."""
-    if task.parent_id is None:
-        return task.intent
-
-    ancestors: list[Task] = []
-    parent_id: str | None = task.parent_id
-    visited = {task.id}
-    while parent_id is not None and parent_id not in visited:
-        visited.add(parent_id)
-        parent = ledger.tasks.get(parent_id)
-        if parent is None:
-            break
-        ancestors.append(parent)
-        parent_id = parent.parent_id
-
-    if not ancestors:
-        return task.intent
-    context = "\n".join(f"- {ancestor.id}: {ancestor.intent}" for ancestor in reversed(ancestors))
-    return (
-        f"{task.intent}\n\n"
-        "Parent objective context (preserve its acceptance criteria):\n"
-        f"{context}\n\n"
-        "Do not expand beyond the assigned child scope. Use this context only to keep the child "
-        "contract faithful to the delegated objective."
-    )
+def _todo_digest(working_dir: Path | None) -> str:
+    """Return the exact durable checkpoint a later task reassignment can use."""
+    if working_dir is None:
+        return ""
+    try:
+        todo = (working_dir / "TODO.md").read_text(encoding="utf-8")
+    except OSError:
+        return ""
+    return todo
 
 
 def _sprint_delta(
@@ -825,12 +809,11 @@ class Scheduler:
                 run_id=run_id,
                 working_dir=str(working_dir) if working_dir is not None else None,
             )
-            intent = _execution_intent(ledger, task)
             result = await self._run_beat_with_retry(
                 beat_runner,
                 run_id=run_id,
                 task_id=task_id,
-                intent=intent,
+                intent=task.intent,
                 verification=verification,
                 rubric=rubric,
                 observer=observer,
@@ -955,6 +938,8 @@ class Scheduler:
             run_id=run_id,
             employee=employee,
             now=now,
+            files_touched=beat_fingerprint(working_dir, base_sha),
+            todo_digest=_todo_digest(working_dir),
         )
 
         self._persist_agent_session(
@@ -1086,10 +1071,10 @@ class Scheduler:
         run_id: str,
         employee: Employee,
         now: datetime,
+        files_touched: tuple[str, ...],
+        todo_digest: str,
     ) -> None:
         """Publish the typed landed outcome once — bridge/horizon project it mechanically (Phase 0)."""
-        if self._event_bus is None:
-            return
         ledger = self._require_ledger()
         latest = ledger.tasks.get(task.id) or task
         dod_row = ledger.dod.get_for_task(task.id)
@@ -1108,6 +1093,20 @@ class Scheduler:
             )
         except ValueError:
             return
+        recovery_hint = landed.recovery_hint().value
+        ledger.run_carryovers.append(
+            RunCarryover(
+                run_id=run_id,
+                phase=landed.phase,
+                recovery_hint=landed.recovery_hint(),
+                evaluator_notes=result.evaluator_notes,
+                files_touched=files_touched,
+                todo_digest=todo_digest,
+                summary=result.summary,
+            )
+        )
+        if self._event_bus is None:
+            return
         self._event_bus.emit(
             Event(
                 kind=EventKind.OUTCOME_LANDED,
@@ -1119,11 +1118,10 @@ class Scheduler:
                 payload={
                     **landed.to_dict(),
                     "passed": landed.strategy_passed(),
-                    "recovery_hint": landed.recovery_hint().value,
+                    "recovery_hint": recovery_hint,
                 },
             )
         )
-
     def _write_lattice_beat_end(
         self,
         *,

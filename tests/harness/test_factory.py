@@ -6,13 +6,13 @@ worktree side-effects run on real git in a temp dir.
 
 from __future__ import annotations
 
-import json
 import subprocess
 from pathlib import Path
 from typing import Any
 
 import pytest
 from dream.contracts.hook import HookEvent
+from dream.contracts.strategy import LandedPhase, RecoveryHint
 
 from chorus.heartbeat import BeatRunner
 from chorus.ledger import (
@@ -22,6 +22,7 @@ from chorus.ledger import (
     Ledger,
     ManagementProfile,
     Run,
+    RunCarryover,
     RunStatus,
     Task,
     TaskStatus,
@@ -460,7 +461,9 @@ async def test_delegation_context_is_rehydrated_with_its_team(
             for item in captured["harness"].hooks
             if isinstance(item, VolatileBeatPacketHook)
         )
-        packet = (await hook(HookEvent.USER_PROMPT_SUBMIT, {"prompt": "work"})).inject_context or ""
+        packet = (
+            await hook(HookEvent.USER_PROMPT_SUBMIT, {"role": "planner", "prompt": "work"})
+        ).inject_context or ""
         assert "ada (backend_engineer)" in packet
         assert "bob (backend_engineer)" in packet
         assert "eve (engineer)" not in packet
@@ -505,33 +508,20 @@ async def test_corrective_child_inherits_failed_sibling_evidence(
                 employee_id=ic.id,
                 task_id=failed.id,
                 status=RunStatus.FAILED,
-                outcome={
-                    "sprint_outcomes": ["needs-changes", "needs-changes"],
-                    "subagent_evidence_reason": (
-                        "code_reviewer evidence does not carry the required claim"
-                    ),
-                },
+            )
+        )
+        ledger.run_carryovers.append(
+            RunCarryover(
+                run_id=run_id,
+                phase=LandedPhase.TERMINAL_FAIL,
+                recovery_hint=RecoveryHint.REWORK,
+                evaluator_notes=(
+                    "base62 alphabet implementation contradicts the required 0-9,A-Z,a-z order",
+                    "code_reviewer evidence does not carry the required claim",
+                ),
             )
         )
         factory, captured = _factory(monkeypatch, tmp_path, ledger)
-        # The first materialize creates the worktree; drop the evaluator record where dream
-        # persists it (docs/evals/<run>/sprint-N.json), then materialize the corrective beat.
-        first = factory.materialize(ic, task_id=corrective.id)
-        evals = first.working_dir / "docs" / "evals" / run_id
-        evals.mkdir(parents=True, exist_ok=True)
-        (evals / "sprint-1.json").write_text(
-            json.dumps(
-                {
-                    "outcome": "needs-changes",
-                    "notes": (
-                        "base62 alphabet implementation contradicts the required 0-9,A-Z,a-z "
-                        "order and the tests themselves assert the wrong vectors"
-                    ),
-                }
-            ),
-            encoding="utf-8",
-        )
-
         mat = factory.materialize(ic, task_id=corrective.id)
 
         generator = (mat.working_dir / ".harness" / "roles" / "generator.toml").read_text("utf-8")
@@ -541,12 +531,13 @@ async def test_corrective_child_inherits_failed_sibling_evidence(
             for item in captured["harness"].hooks
             if isinstance(item, VolatileBeatPacketHook)
         ][-1]
-        packet = (await hook(HookEvent.USER_PROMPT_SUBMIT, {"prompt": "fix"})).inject_context or ""
-        assert "Inherited failure evidence" in packet
+        packet = (
+            await hook(HookEvent.USER_PROMPT_SUBMIT, {"role": "generator", "prompt": "fix"})
+        ).inject_context or ""
+        assert "Corrective sibling findings" in packet
         assert failed.id in packet
         assert "contradicts the required 0-9,A-Z,a-z" in packet
         assert "code_reviewer evidence does not carry the required claim" in packet
-        assert "AUTHORIZED to re-author" in packet
     finally:
         ledger.close()
 

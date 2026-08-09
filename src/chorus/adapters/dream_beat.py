@@ -168,6 +168,19 @@ class RunSprint(Protocol):
     @property
     def outcome(self) -> str | None: ...
 
+    @property
+    def evaluation(self) -> EvaluationView | None: ...
+
+
+class EvaluationView(Protocol):
+    """The typed evaluator record Dream exposes on a completed sprint."""
+
+    @property
+    def notes(self) -> str: ...
+
+    @property
+    def items(self) -> tuple[str, ...]: ...
+
 
 class RunResult(Protocol):
     """The minimal read-only surface of dream's ``RunTaskResult`` the adapter depends on."""
@@ -291,6 +304,11 @@ def to_beat_outcome(result: RunResult, *, pricing: TokenPricing | None = None) -
     model = "+".join(sorted(usage))  # "" / "gpt-5.2" / "gpt-4+gpt-5.2"
     input_tokens = sum(u.input_tokens for u in usage.values())
     output_tokens = sum(u.output_tokens for u in usage.values())
+    evaluator_notes = tuple(
+        note
+        for sprint in result.sprints
+        for note in _evaluation_notes(sprint.evaluation)
+    )
     outcome: dict[str, object] = {
         "steps_total": len(steps),
         "steps_done": done,
@@ -311,7 +329,15 @@ def to_beat_outcome(result: RunResult, *, pricing: TokenPricing | None = None) -
         model=model,
         input_tokens=input_tokens,
         output_tokens=output_tokens,
+        evaluator_notes=evaluator_notes,
     )
+
+
+def _evaluation_notes(evaluation: EvaluationView | None) -> tuple[str, ...]:
+    if evaluation is None:
+        return ()
+    notes = [evaluation.notes.strip(), *(item.strip() for item in evaluation.items)]
+    return tuple(note for note in notes if note)
 
 
 def _price_beat_outcome(
