@@ -8,11 +8,16 @@ vocabulary stays closed.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from datetime import datetime
 from typing import Any
 
 from chorus.events import Event, EventKind
+from chorus.heartbeat._beat import (
+    SessionRecoveryAction,
+    SessionRecoveryNotice,
+    SessionRecoveryReason,
+)
 
 # dream's observer emits plain dicts with a stable ``"kind"``; chorus witnesses the liveness subset
 # that maps 1:1 onto its closed ``run.*`` vocabulary. Macro lifecycle kinds (planner/sprint/contract)
@@ -34,6 +39,43 @@ _SPAWN_TOOL = "spawn_subagent"
 # In-beat memory readers: their structured hits become first-class memory.retrieved events
 # (OBS P5 — silent memory feeding a beat is invisible work; an empty result is signal too).
 _MEMORY_TOOLS = frozenset({"recall", "lattice_context"})
+
+
+def session_recovery_notice_from_dream_event(
+    event: Mapping[str, object],
+) -> SessionRecoveryNotice | None:
+    """Decode Dream's recovery event without letting malformed observer data affect a beat."""
+    if event.get("kind") != "role.session.recovered":
+        return None
+    role = event.get("role")
+    session_id = event.get("session_id")
+    requested_session_id = event.get("requested_session_id")
+    reason = event.get("reason")
+    action = event.get("action")
+    snapshot_preserved = event.get("snapshot_preserved")
+    if not (
+        isinstance(role, str)
+        and role
+        and isinstance(session_id, str)
+        and session_id
+        and isinstance(requested_session_id, str)
+        and requested_session_id
+        and isinstance(reason, str)
+        and isinstance(action, str)
+        and type(snapshot_preserved) is bool
+    ):
+        return None
+    try:
+        return SessionRecoveryNotice(
+            role=role,
+            session_id=session_id,
+            requested_session_id=requested_session_id,
+            reason=SessionRecoveryReason(reason),
+            action=SessionRecoveryAction(action),
+            snapshot_preserved=snapshot_preserved,
+        )
+    except ValueError:
+        return None
 
 
 class DreamObserverBridge:
@@ -61,6 +103,24 @@ class DreamObserverBridge:
 
     def on_event(self, event: dict[str, Any]) -> None:
         dream_kind = str(event.get("kind", ""))
+        recovery_notice = session_recovery_notice_from_dream_event(event)
+        if recovery_notice is not None:
+            self._emit(
+                Event(
+                    kind=EventKind.SESSION_RECOVERED,
+                    at=self._clock(),
+                    task_id=self._task_id,
+                    payload={
+                        "role": recovery_notice.role,
+                        "session_id": recovery_notice.session_id,
+                        "requested_session_id": recovery_notice.requested_session_id,
+                        "reason": recovery_notice.reason.value,
+                        "action": recovery_notice.action.value,
+                        "snapshot_preserved": recovery_notice.snapshot_preserved,
+                    },
+                )
+            )
+            return
         if dream_kind == "role.session.closed":
             self._emit_llm_call(event)
             return

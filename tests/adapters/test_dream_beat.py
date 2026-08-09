@@ -21,7 +21,12 @@ import pytest
 
 from chorus.adapters import DreamBeatRunner, ModelRate, TokenPricing, to_beat_outcome
 from chorus.events import Event, EventKind
-from chorus.heartbeat import BeatDisposition
+from chorus.heartbeat import (
+    BeatDisposition,
+    SessionRecoveryAction,
+    SessionRecoveryNotice,
+    SessionRecoveryReason,
+)
 from chorus.heartbeat._todo_flush import read_todo_flush_nudge
 from chorus.ledger import dream_session_key_for_task
 from chorus.outcomes import VerificationStep
@@ -523,6 +528,72 @@ async def test_run_task_records_the_account_even_without_a_chorus_observer() -> 
     )
     outcome = await DreamBeatRunner(harness).run_task(task_id=uid("t1"), intent="x")
     assert "picked X" in outcome.raw_record  # captured with no chorus observer wired
+
+
+async def test_run_task_captures_session_recovery_without_a_chorus_observer() -> None:
+    """Recovery remains observable even when a caller did not wire Chorus eventing."""
+    event = {
+        "kind": "role.session.recovered",
+        "role": "generator",
+        "session_id": "fresh-session",
+        "requested_session_id": "stale-session",
+        "reason": "corrupt",
+        "action": "reset",
+        "snapshot_preserved": True,
+    }
+    outcome = await DreamBeatRunner(
+        _FakeHarness(result=_result("done"), events=(event,))
+    ).run_task(task_id=uid("t1"), intent="x")
+
+    assert outcome.session_recovery == SessionRecoveryNotice(
+        role="generator",
+        session_id="fresh-session",
+        requested_session_id="stale-session",
+        reason=SessionRecoveryReason.CORRUPT,
+        action=SessionRecoveryAction.RESET,
+        snapshot_preserved=True,
+    )
+
+
+@pytest.mark.parametrize(
+    "event",
+    (
+        {
+            "kind": "role.session.recovered",
+            "role": "generator",
+            "session_id": "fresh-session",
+            "requested_session_id": "stale-session",
+            "reason": "unknown",
+            "action": "reset",
+            "snapshot_preserved": True,
+        },
+        {
+            "kind": "role.session.recovered",
+            "role": "generator",
+            "session_id": "fresh-session",
+            "requested_session_id": "stale-session",
+            "reason": "missing",
+            "action": "restart",
+            "snapshot_preserved": True,
+        },
+        {
+            "kind": "role.session.recovered",
+            "role": "generator",
+            "session_id": "fresh-session",
+            "requested_session_id": "stale-session",
+            "reason": "missing",
+            "action": "reset",
+            "snapshot_preserved": "true",
+        },
+    ),
+)
+async def test_run_task_ignores_malformed_session_recovery_events(event: dict[str, object]) -> None:
+    outcome = await DreamBeatRunner(
+        _FakeHarness(result=_result("done"), events=(event,))
+    ).run_task(task_id=uid("t1"), intent="x")
+
+    assert outcome.passed is True
+    assert outcome.session_recovery is None
 
 
 async def test_run_task_rejects_a_parent_replaced_subagent_artifact(tmp_path: Path) -> None:

@@ -45,6 +45,8 @@ class EventKind(StrEnum):
     RUN_TURN = "run.turn"
     RUN_EVALUATED = "run.evaluated"
     RUN_DONE = "run.done"
+    # session — dream's observed recovery of a role session within a beat
+    SESSION_RECOVERED = "session.recovered"
     # subagents — dream's intra-beat swarm (spawn_subagent)
     SUBAGENT_SPAWNED = "run.subagent_spawned"
     SUBAGENT_COMPLETED = "run.subagent_completed"

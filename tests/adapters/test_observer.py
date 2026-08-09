@@ -235,3 +235,29 @@ class TestLlmCall:
         assert call.payload["output_tokens"] == 340
         assert call.payload["cache_read_tokens"] == 800
         assert call.payload["cost_usd"] == 0.0123
+
+
+class TestSessionRecovery:
+    def test_session_recovery_maps_to_a_closed_chorus_event(self) -> None:
+        sink: list[Event] = []
+        _bridge(sink).on_event(
+            {
+                "kind": "role.session.recovered",
+                "role": "generator",
+                "session_id": "fresh-session",
+                "requested_session_id": "stale-session",
+                "reason": "schema_mismatch",
+                "action": "bypass",
+                "snapshot_preserved": False,
+            }
+        )
+
+        assert _kinds(sink) == [EventKind.SESSION_RECOVERED]
+        assert sink[0].payload == {
+            "role": "generator",
+            "session_id": "fresh-session",
+            "requested_session_id": "stale-session",
+            "reason": "schema_mismatch",
+            "action": "bypass",
+            "snapshot_preserved": False,
+        }

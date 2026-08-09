@@ -33,6 +33,34 @@ class BeatDisposition(StrEnum):
     CANCELLED = "cancelled"
 
 
+class SessionRecoveryReason(StrEnum):
+    """Why dream could not resume the requested role session."""
+
+    MISSING = "missing"
+    CORRUPT = "corrupt"
+    SCHEMA_MISMATCH = "schema_mismatch"
+    WORKING_DIR_MISMATCH = "working_dir_mismatch"
+
+
+class SessionRecoveryAction(StrEnum):
+    """How dream continued after it could not resume a role session."""
+
+    RESET = "reset"
+    BYPASS = "bypass"
+
+
+@dataclass(frozen=True)
+class SessionRecoveryNotice:
+    """One adapter-neutral record of dream recovering a role session during a beat."""
+
+    role: str
+    session_id: str
+    requested_session_id: str
+    reason: SessionRecoveryReason
+    action: SessionRecoveryAction
+    snapshot_preserved: bool
+
+
 @dataclass(frozen=True)
 class BeatOutcome:
     """A beat's landed verdict — the chorus projection of dream's ``RunTaskResult`` (spec 05)."""
@@ -56,6 +84,9 @@ class BeatOutcome:
     # emitted unparseable structured output). The scheduler re-runs a retryable beat before stranding
     # it; a clean return or a hard engine fault is never retryable.
     retryable: bool = False
+    # A valid session recovery Dream reported during this beat, if any. The adapter retains only the
+    # latest notice because this is the control-plane handle's current recovery state.
+    session_recovery: SessionRecoveryNotice | None = None
 
     def __post_init__(self) -> None:
         if self.disposition is None:
@@ -103,5 +134,8 @@ __all__ = [
     "BeatDisposition",
     "BeatOutcome",
     "BeatRunner",
+    "SessionRecoveryAction",
+    "SessionRecoveryNotice",
+    "SessionRecoveryReason",
     "SessionScopeFactory",
 ]

@@ -27,11 +27,11 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol
 
 from chorus.adapters._failure import failure_outcome
-from chorus.adapters._observer import DreamObserverBridge
+from chorus.adapters._observer import DreamObserverBridge, session_recovery_notice_from_dream_event
 from chorus.adapters._pricing import TokenPricing, UsageView
 from chorus.adapters._trace import beat_subagent_stats, sidecar_traces
 from chorus.events import Event
-from chorus.heartbeat import BeatContext, BeatDisposition, BeatOutcome
+from chorus.heartbeat import BeatContext, BeatDisposition, BeatOutcome, SessionRecoveryNotice
 from chorus.heartbeat._todo_flush import (
     TODO_FLUSH_REMAINING_FRACTION,
     clear_todo_flush_nudge,
@@ -234,8 +234,12 @@ class _ReasoningRecorder:
         self._evidence_subagents = evidence_subagents
         self._pending_subagents: list[tuple[str, str]] = []
         self._subagent_results: dict[str, tuple[str, bool, str, str]] = {}
+        self._session_recovery: SessionRecoveryNotice | None = None
 
     def on_event(self, event: dict[str, Any]) -> None:
+        recovery_notice = session_recovery_notice_from_dream_event(event)
+        if recovery_notice is not None:
+            self._session_recovery = recovery_notice
         if str(event.get("kind", "")) in self._KEPT_KINDS:
             self._events.append(event)
         if event.get("tool") == "spawn_subagent":
@@ -272,6 +276,11 @@ class _ReasoningRecorder:
     def subagent_results(self) -> dict[str, tuple[str, bool, str, str]]:
         """Return evidence results with their pre-run and completion worktree fingerprints."""
         return dict(self._subagent_results)
+
+    @property
+    def session_recovery(self) -> SessionRecoveryNotice | None:
+        """The latest valid role-session recovery Dream reported during this beat."""
+        return self._session_recovery
 
 
 def to_beat_outcome(result: RunResult, *, pricing: TokenPricing | None = None) -> BeatOutcome:
@@ -486,7 +495,11 @@ class DreamBeatRunner:
                 outcome, beat_meter.usage_by_model, pricing=self._pricing
             )
             guarded = self._guard_subagent_evidence(priced, recorder.subagent_results())
-            return replace(guarded, raw_record=recorder.as_jsonl())
+            return replace(
+                guarded,
+                raw_record=recorder.as_jsonl(),
+                session_recovery=recorder.session_recovery,
+            )
 
         # Snapshot existing sidecar traces so we can isolate *this* beat's trace afterwards and recover
         # the subagent counters dream drops before they reach the observer (see ``_trace``).
