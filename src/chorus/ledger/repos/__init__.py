@@ -29,6 +29,7 @@ from chorus.ledger.repos.management_profiles import ManagementProfileRepo
 from chorus.ledger.repos.messages import MessageRepo
 from chorus.ledger.repos.monitors import MonitorRepo
 from chorus.ledger.repos.recovery_actions import RecoveryActionRepo
+from chorus.ledger.repos.rollouts import RolloutRepo
 from chorus.ledger.repos.routine_revisions import RoutineRevisionRepo
 from chorus.ledger.repos.routine_runs import RoutineRunRepo
 from chorus.ledger.repos.routine_triggers import RoutineTriggerRepo
@@ -67,6 +68,7 @@ __all__ = [
     "MessageRepo",
     "MonitorRepo",
     "RecoveryActionRepo",
+    "RolloutRepo",
     "RoutineRepo",
     "RoutineRevisionRepo",
     "RoutineRunRepo",

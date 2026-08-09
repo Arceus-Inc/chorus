@@ -83,6 +83,14 @@ from chorus.ledger._models._outcomes import (
     ArtifactRevision,
     Dod,
 )
+from chorus.ledger._models._rollouts import (
+    PromotionGates,
+    ReplayRegression,
+    Rollout,
+    RolloutDecision,
+    RolloutStage,
+    RolloutStatus,
+)
 from chorus.ledger._models._scheduling import (
     Routine,
     RoutineRevision,
@@ -164,11 +172,17 @@ __all__ = [
     "MonitorStatus",
     "OriginKind",
     "PlannedEmployee",
+    "PromotionGates",
     "RecoveryAction",
     "RecoveryKind",
     "RecoveryOutcome",
     "RecoveryStatus",
     "RejectedAlternative",
+    "ReplayRegression",
+    "Rollout",
+    "RolloutDecision",
+    "RolloutStage",
+    "RolloutStatus",
     "Routine",
     "RoutineCatchUp",
     "RoutineConcurrency",

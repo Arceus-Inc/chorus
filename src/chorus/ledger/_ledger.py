@@ -66,6 +66,7 @@ from chorus.ledger.repos import (
     MessageRepo,
     MonitorRepo,
     RecoveryActionRepo,
+    RolloutRepo,
     RoutineRepo,
     RoutineRevisionRepo,
     RoutineRunRepo,
@@ -202,6 +203,7 @@ class Ledger:
         self.eval_cases = EvalCaseRepo(conn)
         self.eval_suites = EvalSuiteRepo(conn)
         self.eval_runs = EvalRunRepo(conn)
+        self.rollouts = RolloutRepo(conn)
         self.dod = DodRepo(conn)
         self.artifacts = ArtifactRepo(conn)
         self.artifact_revisions = ArtifactRevisionRepo(conn)
