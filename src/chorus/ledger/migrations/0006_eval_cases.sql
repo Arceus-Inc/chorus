@@ -1,14 +1,20 @@
 -- 0006_eval_cases — reusable expectations pinned to one immutable skill revision.
 -- Immutable once applied: author a new migration instead of editing this one.
 
+CREATE UNIQUE INDEX skill_revision_company_id_uq
+    ON skill_revision(company_id, id);
+
 CREATE TABLE eval_case (
     company_id uuid NOT NULL DEFAULT (NULLIF(current_setting('app.company_id', true), ''))::uuid,
     id                uuid PRIMARY KEY,
-    skill_revision_id uuid NOT NULL REFERENCES skill_revision(id) ON DELETE CASCADE,
+    skill_revision_id uuid NOT NULL,
     name              text NOT NULL,
     input_text        text NOT NULL,
     expected_behavior text NOT NULL,
-    created_at        timestamptz NOT NULL
+    created_at        timestamptz NOT NULL,
+    CONSTRAINT eval_case_skill_revision_fk
+        FOREIGN KEY (company_id, skill_revision_id)
+        REFERENCES skill_revision(company_id, id) ON DELETE CASCADE
 );
 
 ALTER TABLE eval_case ENABLE ROW LEVEL SECURITY;

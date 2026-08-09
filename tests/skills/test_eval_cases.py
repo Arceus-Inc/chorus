@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import uuid
+
 import pytest
 
 from chorus.ledger import EvalCase, Ledger, Skill, SkillOrigin, SkillRevision
@@ -55,3 +57,43 @@ def test_eval_case_pins_exact_skill_revision_after_head_advances(ledger: Ledger)
     assert ledger.eval_cases.get(case.id) == case
     assert ledger.eval_cases.by_skill_revision(revision_one.id) == [case]
     assert ledger.eval_cases.by_skill_revision(revision_two.id) == []
+
+
+def test_eval_case_cannot_reference_another_company_revision(pg_database: str) -> None:
+    company_a = Ledger.open(pg_database, company_id=str(uuid.uuid4()))
+    company_b = Ledger.open(pg_database, company_id=str(uuid.uuid4()))
+    try:
+        skill = company_a.skills.insert(
+            Skill(
+                id=uid("foreign-skill"),
+                employee_id="bex",
+                slug="foreign-skill",
+                name="Foreign Skill",
+                origin=SkillOrigin.CREATED,
+            )
+        )
+        revision = company_a.skill_revisions.append(
+            SkillRevision(
+                id=uid("foreign-revision"),
+                skill_id=skill.id,
+                revision_no=1,
+                action="create",
+                file_inventory="[]",
+                content_hash="foreign-v1",
+            )
+        )
+
+        with pytest.raises(Exception):
+            company_b.eval_cases.create(
+                EvalCase(
+                    id=uid("cross-company-case"),
+                    skill_revision_id=revision.id,
+                    name="must stay isolated",
+                    input_text="Attempt a cross-company reference.",
+                    expected_behavior="Reject it.",
+                )
+            )
+    finally:
+        company_b._conn.rollback()
+        company_a.close()
+        company_b.close()
