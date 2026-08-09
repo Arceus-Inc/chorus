@@ -65,6 +65,12 @@ from chorus.ledger._models import (
     WakeReason,
 )
 from chorus.lifecycle import TERMINAL, record_activity
+from chorus.lifecycle._file_scope import (
+    BlockerScope,
+    FileScopeViolation,
+    describe_file_scope_violation,
+    validate_file_scope,
+)
 from chorus.lifecycle._team_policy import MissionTeamPolicy
 from chorus.memory import EpisodicStore, SprintDelta, beat_fingerprint, distilled_body
 from chorus.observability._trace import TraceStamper, trace_root
@@ -183,6 +189,19 @@ def _artifact_ref(artifact: Artifact) -> str:
     if artifact.resource_ref:
         return json.dumps(artifact.resource_ref, sort_keys=True, default=str)
     return ""
+
+
+def _serialize_scope_violation(violation: FileScopeViolation) -> dict[str, str]:
+    row = {"code": violation.code.value}
+    if violation.task_id is not None:
+        row["task_id"] = violation.task_id
+    if violation.path is not None:
+        row["path"] = violation.path
+    if violation.other_task_id is not None:
+        row["other_task_id"] = violation.other_task_id
+    if violation.other_path is not None:
+        row["other_path"] = violation.other_path
+    return row
 
 
 def _baseline_sha(working_dir: Path | None) -> str | None:
@@ -544,6 +563,20 @@ class Scheduler:
                 )
                 continue
             task_id = str(wake.payload["task_id"])
+            scope_violations = self._task_scope_violations(task_id)
+            if scope_violations:
+                _logger.warning(
+                    "refusing dispatch for invalid files_to_touch on %s: %s",
+                    task_id,
+                    "; ".join(describe_file_scope_violation(violation) for violation in scope_violations),
+                )
+                self._block_invalid_scope_task(
+                    task_id,
+                    employee_id=wake.employee_id,
+                    violations=scope_violations,
+                )
+                ledger.wakes.mark_done(wake.id)
+                continue
             run_id = mint_id()
             # Dispatch CAS (spec 03 §5): checkout flips the task to ``in_progress`` under ``run_id``.
             # A False is a 409 — a live owner already holds it — so we release the wake and skip.
@@ -1732,6 +1765,76 @@ class Scheduler:
                 next_action="inspect the engine fault and resume or hand off the task",
             )
         )
+
+    def _task_scope_violations(self, task_id: str) -> tuple[FileScopeViolation, ...]:
+        ledger = self._require_ledger()
+        task = ledger.tasks.get(task_id)
+        if task is None:
+            return ()
+        if task.parent_id is None:
+            return validate_file_scope(
+                parent_files_to_touch=task.files_to_touch,
+                current_blockers=(BlockerScope(task_id=task.id, files_to_touch=task.files_to_touch),),
+                require_current_scope=False,
+                require_proposed_scope=False,
+            ).violations
+        parent = ledger.tasks.get(task.parent_id)
+        if parent is None:
+            return ()
+        blockers = tuple(
+            BlockerScope(task_id=blocker.id, files_to_touch=blocker.files_to_touch)
+            for blocker_id in ledger.dependencies.blockers(parent.id)
+            if (blocker := ledger.tasks.get(blocker_id)) is not None and blocker.parent_id == parent.id
+        )
+        if blockers and any(blocker.task_id == task.id for blocker in blockers):
+            scoped_plan = bool(parent.files_to_touch) or any(
+                blocker.files_to_touch for blocker in blockers
+            )
+            return validate_file_scope(
+                parent_files_to_touch=parent.files_to_touch,
+                current_blockers=blockers,
+                require_current_scope=scoped_plan,
+                require_proposed_scope=False,
+            ).violations
+        return validate_file_scope(
+            parent_files_to_touch=task.files_to_touch,
+            current_blockers=(BlockerScope(task_id=task.id, files_to_touch=task.files_to_touch),),
+            require_current_scope=bool(task.files_to_touch),
+            require_proposed_scope=False,
+        ).violations
+
+    def _block_invalid_scope_task(
+        self,
+        task_id: str,
+        *,
+        employee_id: str,
+        violations: tuple[FileScopeViolation, ...],
+    ) -> None:
+        ledger = self._require_ledger()
+        with ledger.transaction():
+            ledger.tasks.set_status(task_id, TaskStatus.BLOCKED)
+            task = ledger.tasks.get(task_id)
+            if task is not None and task.execution_mode is ExecutionMode.DELEGATION:
+                contract = ledger.delegation_contracts.get(task_id)
+                if contract is not None and contract.status is not DelegationContractStatus.BLOCKED:
+                    ledger.delegation_contracts.update_status(
+                        task_id, DelegationContractStatus.BLOCKED
+                    )
+            if ledger.recovery_actions.active_for_source(task_id) is None:
+                ledger.recovery_actions.open(
+                    RecoveryAction(
+                        id=mint_id(),
+                        source_task_id=task_id,
+                        kind=RecoveryKind.STRANDED,
+                        owner_employee_id=employee_id,
+                        cause="invalid_file_scope",
+                        fingerprint=violations[0].code.value,
+                        evidence={
+                            "violations": [_serialize_scope_violation(violation) for violation in violations]
+                        },
+                        next_action="repair files_to_touch so the child scope is valid before retrying",
+                    )
+                )
 
     def _emit_allocation(
         self,

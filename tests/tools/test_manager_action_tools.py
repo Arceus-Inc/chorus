@@ -97,7 +97,12 @@ def test_submit_task_tool_creates_one_child(ledger: Ledger, tmp_path: Path) -> N
 
     result = asyncio.run(
         SubmitTaskTool(ledger).execute(
-            {"label": "fix", "intent": "fix the integration gap", "assignee": "ada"},
+            {
+                "label": "fix",
+                "intent": "fix the integration gap",
+                "assignee": "ada",
+                "files_to_touch": ["src/fix.py"],
+            },
             _ctx(tmp_path),
         )
     )
@@ -118,7 +123,12 @@ def test_submit_task_tool_rejects_non_report(ledger: Ledger, tmp_path: Path) -> 
 
     result = asyncio.run(
         SubmitTaskTool(ledger).execute(
-            {"label": "fix", "intent": "fix", "assignee": "eve"},
+            {
+                "label": "fix",
+                "intent": "fix",
+                "assignee": "eve",
+                "files_to_touch": ["src/fix.py"],
+            },
             _ctx(tmp_path),
         )
     )
@@ -133,7 +143,12 @@ def test_assign_task_tool_routes_existing_child(ledger: Ledger, tmp_path: Path) 
     BeatContext(task_id=uid("M"), run_id=REV, employee_id="mgr").write(tmp_path)
     submit = asyncio.run(
         SubmitTaskTool(ledger).execute(
-            {"label": "fix", "intent": "fix", "assignee": "ada"},
+            {
+                "label": "fix",
+                "intent": "fix",
+                "assignee": "ada",
+                "files_to_touch": ["src/fix.py"],
+            },
             _ctx(tmp_path),
         )
     )
@@ -171,6 +186,20 @@ def test_assign_task_tool_rejects_non_child(ledger: Ledger, tmp_path: Path) -> N
     assert result.structured["not_child"] is True
 
 
+def test_submit_task_tool_rejects_empty_files_to_touch(ledger: Ledger, tmp_path: Path) -> None:
+    _seed(ledger)
+    BeatContext(task_id=uid("M"), run_id=REV, employee_id="mgr").write(tmp_path)
+
+    result = asyncio.run(
+        SubmitTaskTool(ledger).execute(
+            {"label": "fix", "intent": "fix", "assignee": "ada", "files_to_touch": []},
+            _ctx(tmp_path),
+        )
+    )
+
+    assert result.is_error is True
+
+
 def test_submit_tool_forwards_actor_and_execution_mode(
     ledger: Ledger, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -190,6 +219,7 @@ def test_submit_tool_forwards_actor_and_execution_mode(
                 "intent": "lead an area",
                 "assignee": "ada",
                 "execution_mode": "delegation",
+                "files_to_touch": ["src/area.py"],
             },
             _ctx(tmp_path),
         )
@@ -198,6 +228,7 @@ def test_submit_tool_forwards_actor_and_execution_mode(
     child = captured["child"]
     assert captured["actor_employee_id"] == "mgr"
     assert child.execution_mode is ExecutionMode.DELEGATION  # type: ignore[union-attr]
+    assert child.files_to_touch == ("src/area.py",)  # type: ignore[union-attr]
     assert result.is_error is False
 
 

@@ -50,8 +50,8 @@ class TaskRepo:
             "assignee_employee_id, assignee_user_id, checkout_run_id, execution_run_id, depth, "
             "request_depth, origin_kind, origin_id, origin_fingerprint, created_by_employee_id, "
             "created_by_user_id, created_at, updated_at, started_at, completed_at, cancelled_at, "
-            "trust_preset, trust_boundary) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "files_to_touch, trust_preset, trust_boundary) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 task.id,
                 task.parent_id,
@@ -77,6 +77,7 @@ class TaskRepo:
                 to_iso(task.started_at),
                 to_iso(task.completed_at),
                 to_iso(task.cancelled_at),
+                list(task.files_to_touch),
                 task.trust_preset,
                 dumps(task.trust_boundary) if task.trust_boundary is not None else None,
             ),
@@ -332,6 +333,7 @@ def _row_to_task(row: LedgerRow) -> Task:
         started_at=from_iso(row["started_at"]),
         completed_at=from_iso(row["completed_at"]),
         cancelled_at=from_iso(row["cancelled_at"]),
+        files_to_touch=tuple(row["files_to_touch"] or []),
         trust_preset=row["trust_preset"],
         trust_boundary=loads(row["trust_boundary"]),
     )

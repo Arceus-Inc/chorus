@@ -47,6 +47,12 @@ from chorus.lifecycle._decompose import (
     DepthCapped,
     decompose,
 )
+from chorus.lifecycle._file_scope import (
+    BlockerScope,
+    FileScopeViolation,
+    ProposedBlockerScope,
+    validate_file_scope,
+)
 from chorus.lifecycle._team_policy import MissionTeamPolicy
 
 if TYPE_CHECKING:
@@ -65,6 +71,7 @@ class ChildPlan:
     execution_mode: ExecutionMode = ExecutionMode.DELIVERY
     can_subdelegate: bool = False
     replaces_task_id: str | None = None
+    files_to_touch: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -81,6 +88,7 @@ class DecomposeResult:
     unknown_assignees: tuple[str, ...] = ()
     reviewer_assignees: tuple[str, ...] = ()
     authority_denied: str | None = None
+    scope_violations: tuple[FileScopeViolation, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -92,6 +100,7 @@ class SubmitTaskResult:
     depth_capped: bool = False
     unknown_assignees: tuple[str, ...] = ()
     authority_denied: str | None = None
+    scope_violations: tuple[FileScopeViolation, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -270,6 +279,29 @@ class CapabilityService:
             raise RuntimeError("authorized delegation wave has no effective limits")
 
         ids = {child.label: _child_id(parent.id, child.label) for child in children}
+        current_blockers = self._current_blocker_scopes(parent.id)
+        scoped_plan = bool(parent.files_to_touch) or any(
+            blocker.files_to_touch for blocker in current_blockers
+        )
+        validation = validate_file_scope(
+            parent_files_to_touch=parent.files_to_touch,
+            current_blockers=current_blockers,
+            proposed_blockers=tuple(
+                ProposedBlockerScope(
+                    task_id=ids[child.label],
+                    files_to_touch=child.files_to_touch,
+                    replaces_task_id=child.replaces_task_id,
+                )
+                for child in children
+            ),
+            require_current_scope=scoped_plan,
+            require_proposed_scope=scoped_plan,
+        )
+        if not validation.valid:
+            return DecomposeResult(scope_violations=validation.violations)
+        normalized_scope_by_id = {
+            child.task_id: child.files_to_touch for child in validation.proposed_blockers
+        }
         request_fingerprint = hashlib.sha256(
             json.dumps(
                 [
@@ -278,6 +310,7 @@ class CapabilityService:
                         "can_subdelegate": child.can_subdelegate,
                         "depends_on": list(child.depends_on),
                         "execution_mode": child.execution_mode.value,
+                        "files_to_touch": list(normalized_scope_by_id[ids[child.label]]),
                         "intent": child.intent,
                         "replaces_task_id": child.replaces_task_id,
                         "task_id": ids[child.label],
@@ -372,6 +405,7 @@ class CapabilityService:
                         origin_kind=OriginKind.DECOMPOSITION,
                         origin_id=parent.id,
                         origin_fingerprint=child.label,
+                        files_to_touch=normalized_scope_by_id[ids[child.label]],
                     ),
                     gates_parent=True,
                 )
@@ -541,6 +575,7 @@ class CapabilityService:
             depth_capped=outcome.depth_capped,
             unknown_assignees=outcome.unknown_assignees,
             authority_denied=outcome.authority_denied,
+            scope_violations=outcome.scope_violations,
         )
 
     def _replacement_denial(self, parent: Task, child: ChildPlan) -> DecomposeResult | None:
@@ -652,6 +687,15 @@ class CapabilityService:
                 return AssignTaskResult(terminal_or_missing=True)
             MissionTeamPolicy(self._ledger).add_member(parent.team_id, assignee)
         return AssignTaskResult(assigned=True)
+
+    def _current_blocker_scopes(self, parent_id: str) -> tuple[BlockerScope, ...]:
+        blockers: list[BlockerScope] = []
+        for blocker_id in self._ledger.dependencies.blockers(parent_id):
+            blocker = self._ledger.tasks.get(blocker_id)
+            if blocker is None or blocker.parent_id != parent_id:
+                continue
+            blockers.append(BlockerScope(task_id=blocker.id, files_to_touch=blocker.files_to_touch))
+        return tuple(blockers)
 
     def _phase_denial(
         self,

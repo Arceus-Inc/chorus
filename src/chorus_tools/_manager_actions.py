@@ -5,11 +5,12 @@ from __future__ import annotations
 from dream.contracts.tool import ToolResult
 from dream.tools._base import BaseTool, ToolDeclaration
 from dream.tools._context import ToolExecutionContext
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
 from chorus.heartbeat import BeatContext
 from chorus.ledger import ExecutionMode, Ledger
 from chorus.lifecycle import CapabilityService, ChildPlan
+from chorus.lifecycle._file_scope import FileScopeViolation, describe_file_scope_violation
 
 
 class SubmitTaskInput(BaseModel):
@@ -31,6 +32,10 @@ class SubmitTaskInput(BaseModel):
     replaces_task_id: str | None = Field(
         default=None,
         description="rejected or cancelled required child this corrective task replaces",
+    )
+    files_to_touch: list[str] = Field(
+        min_length=1,
+        description="declared repo-relative POSIX paths for this child's coordination scope",
     )
 
 
@@ -58,7 +63,10 @@ class SubmitTaskTool(BaseTool):
         self._service = CapabilityService(ledger)
 
     async def execute(self, input: dict[str, object], ctx: ToolExecutionContext) -> ToolResult:
-        args = SubmitTaskInput.model_validate(input)
+        try:
+            args = SubmitTaskInput.model_validate(input)
+        except ValidationError as exc:
+            return ToolResult(content=f"refused: malformed submit_task input — {exc}", is_error=True)
         beat = BeatContext.read(ctx.working_dir)
         result = self._service.submit_one(
             parent_id=beat.task_id,
@@ -71,6 +79,7 @@ class SubmitTaskTool(BaseTool):
                 execution_mode=args.execution_mode,
                 can_subdelegate=args.can_subdelegate,
                 replaces_task_id=args.replaces_task_id,
+                files_to_touch=tuple(args.files_to_touch),
             ),
         )
         if result.reviewer_assignees:
@@ -102,6 +111,12 @@ class SubmitTaskTool(BaseTool):
                 structured={"authority_denied": result.authority_denied},
                 is_error=True,
             )
+        if result.scope_violations:
+            return ToolResult(
+                content=_scope_refusal(result.scope_violations),
+                structured={"scope_violations": _serialize_scope_violations(result.scope_violations)},
+                is_error=True,
+            )
         return ToolResult(
             content=f"created child task {result.child_id} and assigned it to {args.assignee}",
             structured={"child_id": result.child_id, "assignee": args.assignee},
@@ -123,7 +138,10 @@ class AssignTaskTool(BaseTool):
         self._service = CapabilityService(ledger)
 
     async def execute(self, input: dict[str, object], ctx: ToolExecutionContext) -> ToolResult:
-        args = AssignTaskInput.model_validate(input)
+        try:
+            args = AssignTaskInput.model_validate(input)
+        except ValidationError as exc:
+            return ToolResult(content=f"refused: malformed assign_task input — {exc}", is_error=True)
         beat = BeatContext.read(ctx.working_dir)
         result = self._service.reassign(
             parent_id=beat.task_id,
@@ -162,3 +180,26 @@ class AssignTaskTool(BaseTool):
 
 
 __all__ = ["AssignTaskInput", "AssignTaskTool", "SubmitTaskInput", "SubmitTaskTool"]
+
+
+def _scope_refusal(violations: tuple[FileScopeViolation, ...]) -> str:
+    joined = "; ".join(describe_file_scope_violation(violation) for violation in violations)
+    return f"refused: invalid files_to_touch — {joined}. No task created."
+
+
+def _serialize_scope_violations(
+    violations: tuple[FileScopeViolation, ...],
+) -> list[dict[str, str]]:
+    payload: list[dict[str, str]] = []
+    for violation in violations:
+        row = {"code": violation.code.value}
+        if violation.task_id is not None:
+            row["task_id"] = violation.task_id
+        if violation.path is not None:
+            row["path"] = violation.path
+        if violation.other_task_id is not None:
+            row["other_task_id"] = violation.other_task_id
+        if violation.other_path is not None:
+            row["other_path"] = violation.other_path
+        payload.append(row)
+    return payload

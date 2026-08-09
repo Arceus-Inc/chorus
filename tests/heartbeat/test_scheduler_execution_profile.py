@@ -363,6 +363,146 @@ async def test_unmigrated_manager_is_blocked_before_dispatch(
     assert uid("legacy-manager") in caplog.text and "specialize-manager" in caplog.text
 
 
+async def test_invalid_scoped_child_is_blocked_before_dispatch(ledger: Ledger) -> None:
+    ledger.employees.create(Employee(id="lead", name="Lead", role="engineer"))
+    parent = ledger.tasks.submit(
+        Task(
+            id=uid("scope-parent"),
+            intent="ship the scoped work",
+            status=TaskStatus.BLOCKED,
+            files_to_touch=("src/parent.py",),
+            assignee_employee_id="lead",
+        )
+    )
+    worker = ledger.employees.create(Employee(id="scope-worker", name="Worker", role="engineer"))
+    child = ledger.tasks.submit(
+        Task(
+            id=uid("scope-child"),
+            parent_id=parent.id,
+            intent="touch the wrong file",
+            status=TaskStatus.TODO,
+            assignee_employee_id=worker.id,
+            files_to_touch=("src/other.py",),
+        )
+    )
+    ledger.dependencies.add(parent.id, child.id)
+    ledger.wakes.enqueue(
+        Wake(
+            id=uid("wake-scope-child"),
+            employee_id=worker.id,
+            reason=WakeReason.TASK_ASSIGNED,
+            payload={"task_id": child.id},
+        )
+    )
+    beat = _RecordingBeat()
+    scheduler = Scheduler(
+        ledger=ledger,
+        workforce=LedgerWorkforce(ledger.employees),
+        beat_runner=beat,
+        roles=RoleRegistry.from_plugins(default_roles()),
+        memory_writer=_RecordingMemory(),
+        landers=LanderRegistry.from_landers([_SubtreeLander()]),
+        max_concurrent_runs=1,
+    )
+
+    report = await scheduler.tick(_NOW)
+    await scheduler.drain()
+
+    assert report.beats_started == 0
+    assert beat.rubrics == []
+    assert ledger.wakes.queued() == []
+    blocked = ledger.tasks.get(child.id)
+    assert blocked is not None and blocked.status is TaskStatus.BLOCKED
+    recovery = ledger.recovery_actions.active_for_source(child.id)
+    assert recovery is not None and recovery.cause == "invalid_file_scope"
+
+
+async def test_invalid_scoped_delegation_blocks_the_contract_before_dispatch(ledger: Ledger) -> None:
+    lead = ledger.employees.create(Employee(id="scope-lead", name="Lead", role="backend_engineer"))
+    ledger.management_profiles.upsert(
+        ManagementProfile(
+            employee_id=lead.id,
+            granted_by_user_id="user-admin",
+            active=True,
+            can_lead=True,
+            max_delegation_depth=1,
+            max_team_size=2,
+            allowed_professions=("backend_engineer",),
+            version=1,
+        )
+    )
+    ledger.teams.create(
+        Team(
+            id=uid("scope-team"),
+            name="Scope Team",
+            lead_employee_id=lead.id,
+            created_by="user-admin",
+            status=TeamStatus.ACTIVE,
+        )
+    )
+    ledger.team_members.add(
+        TeamMember(
+            team_id=uid("scope-team"),
+            employee_id=lead.id,
+            source_manager_id=lead.id,
+            membership_role=TeamMembershipRole.LEAD,
+        )
+    )
+    ledger.tasks.submit(
+        Task(
+            id=uid("scope-delegation"),
+            intent="coordinate the release",
+            status=TaskStatus.TODO,
+            execution_mode=ExecutionMode.DELEGATION,
+            team_id=uid("scope-team"),
+            assignee_employee_id=lead.id,
+            files_to_touch=("/tmp/not-allowed",),
+        )
+    )
+    ledger.delegation_contracts.create(
+        DelegationContract(
+            task_id=uid("scope-delegation"),
+            team_id=uid("scope-team"),
+            lead_employee_id=lead.id,
+            management_profile_version=1,
+            max_depth=1,
+            max_team_size=2,
+            objective_rubric=_RUBRIC,
+            status=DelegationContractStatus.INTEGRATING,
+        )
+    )
+    ledger.wakes.enqueue(
+        Wake(
+            id=uid("wake-scope-delegation"),
+            employee_id=lead.id,
+            reason=WakeReason.TASK_ASSIGNED,
+            payload={"task_id": uid("scope-delegation")},
+        )
+    )
+    beat = _RecordingBeat()
+    scheduler = Scheduler(
+        ledger=ledger,
+        workforce=LedgerWorkforce(ledger.employees),
+        beat_runner=beat,
+        roles=RoleRegistry.from_plugins(default_roles()),
+        memory_writer=_RecordingMemory(),
+        landers=LanderRegistry.from_landers([_SubtreeLander()]),
+        max_concurrent_runs=1,
+    )
+
+    report = await scheduler.tick(_NOW)
+    await scheduler.drain()
+
+    assert report.beats_started == 0
+    assert beat.rubrics == []
+    task = ledger.tasks.get(uid("scope-delegation"))
+    assert task is not None and task.status is TaskStatus.BLOCKED
+    contract = ledger.delegation_contracts.get(uid("scope-delegation"))
+    assert contract is not None and contract.status is DelegationContractStatus.BLOCKED
+    recovery = ledger.recovery_actions.active_for_source(uid("scope-delegation"))
+    assert recovery is not None and recovery.cause == "invalid_file_scope"
+
+
 async def test_delegation_integrate_cap_accepts_completed_subtree(
     ledger: Ledger,
 ) -> None:

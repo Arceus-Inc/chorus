@@ -31,7 +31,12 @@ pytestmark = pytest.mark.integration
 REV = uid("run_mgr_1")  # the manager's beat (run_id) — the decompose idempotency key
 
 
-def _service(ledger: Ledger, *, request_depth: int = 0) -> CapabilityService:
+def _service(
+    ledger: Ledger,
+    *,
+    request_depth: int = 0,
+    parent_files_to_touch: tuple[str, ...] = (),
+) -> CapabilityService:
     lead = ledger.employees.create(Employee(id="mgr", name="Mgr", role="engineer"))
     ledger.management_profiles.upsert(
         ManagementProfile(
@@ -61,6 +66,7 @@ def _service(ledger: Ledger, *, request_depth: int = 0) -> CapabilityService:
             assignee_employee_id="mgr",
             goal_id=uid("goal-M"),
             request_depth=request_depth,
+            files_to_touch=parent_files_to_touch,
         )
     )
     ledger.delegation_contracts.create(
@@ -373,3 +379,101 @@ def test_depth_cap_fails_closed(ledger: Ledger) -> None:
     assert res.depth_capped is True
     assert res.child_ids == {}
     assert ledger.tasks.get(uid("M")).status is TaskStatus.BLOCKED  # type: ignore[union-attr]  # failed closed
+
+
+def test_legacy_unscoped_service_call_stays_unscoped(ledger: Ledger) -> None:
+    svc = _service(ledger)
+
+    result = svc.decompose(
+        parent_id=uid("M"),
+        revision=REV,
+        actor_employee_id="mgr",
+        children=[ChildPlan(label="api", intent="build the api", assignee="ada")],
+    )
+
+    child = ledger.tasks.get(result.child_ids["api"])
+    assert child is not None
+    assert child.files_to_touch == ()
+
+
+def test_scoped_parent_requires_scoped_children_even_for_direct_service_calls(ledger: Ledger) -> None:
+    svc = _service(ledger, parent_files_to_touch=("src/api.py",))
+
+    result = svc.decompose(
+        parent_id=uid("M"),
+        revision=REV,
+        actor_employee_id="mgr",
+        children=[ChildPlan(label="api", intent="build the api", assignee="ada")],
+    )
+
+    assert result.scope_violations
+    assert ledger.tasks.children(uid("M")) == []
+
+
+def test_mixed_proposed_wave_rejects_pre_mutation_for_direct_service_calls(ledger: Ledger) -> None:
+    svc = _service(ledger)
+
+    result = svc.decompose(
+        parent_id=uid("M"),
+        revision=REV,
+        actor_employee_id="mgr",
+        children=[
+            ChildPlan(
+                label="api",
+                intent="build the api",
+                assignee="ada",
+                files_to_touch=("src/api.py",),
+            ),
+            ChildPlan(label="ui", intent="build the ui", assignee="bob"),
+        ],
+    )
+
+    assert result.scope_violations
+    assert ledger.tasks.children(uid("M")) == []
+    assert ledger.dependencies.unresolved_blockers(uid("M")) == []
+
+
+def test_scope_changes_participate_in_exact_once_fingerprint(ledger: Ledger) -> None:
+    svc = _service(ledger, parent_files_to_touch=("src/api.py", "src/other.py"))
+    first = svc.decompose(
+        parent_id=uid("M"),
+        revision=REV,
+        actor_employee_id="mgr",
+        children=[
+            ChildPlan(
+                label="api",
+                intent="build the api",
+                assignee="ada",
+                files_to_touch=("src/api.py",),
+            ),
+            ChildPlan(
+                label="other",
+                intent="build the other path",
+                assignee="bob",
+                files_to_touch=("src/other.py",),
+            )
+        ],
+    )
+
+    second = svc.decompose(
+        parent_id=uid("M"),
+        revision=REV,
+        actor_employee_id="mgr",
+        children=[
+            ChildPlan(
+                label="api",
+                intent="build the api",
+                assignee="ada",
+                files_to_touch=("src/other.py",),
+            ),
+            ChildPlan(
+                label="other",
+                intent="build the other path",
+                assignee="bob",
+                files_to_touch=("src/api.py",),
+            )
+        ],
+    )
+
+    assert first.child_ids["api"]
+    assert second.authority_denied == "this manager beat already committed a different child wave"

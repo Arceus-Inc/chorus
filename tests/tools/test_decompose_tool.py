@@ -105,12 +105,18 @@ def test_tool_fans_out_and_assigns(ledger: Ledger, tmp_path: Path) -> None:
         tool.execute(
             {
                 "children": [
-                    {"label": "api", "intent": "build the api", "assignee": "ada"},
+                    {
+                        "label": "api",
+                        "intent": "build the api",
+                        "assignee": "ada",
+                        "files_to_touch": ["src/api.py"],
+                    },
                     {
                         "label": "tests",
                         "intent": "write tests",
                         "assignee": "bob",
                         "depends_on": ["api"],
+                        "files_to_touch": ["tests/test_api.py"],
                     },
                 ]
             },
@@ -156,7 +162,13 @@ def test_tool_rejects_unknown_dependency_label(ledger: Ledger, tmp_path: Path) -
         DecomposeTool(ledger).execute(
             {
                 "children": [
-                    {"label": "api", "intent": "x", "assignee": "ada", "depends_on": ["ghost"]}
+                    {
+                        "label": "api",
+                        "intent": "x",
+                        "assignee": "ada",
+                        "depends_on": ["ghost"],
+                        "files_to_touch": ["src/api.py"],
+                    }
                 ]
             },
             _ctx(tmp_path),
@@ -166,11 +178,43 @@ def test_tool_rejects_unknown_dependency_label(ledger: Ledger, tmp_path: Path) -
     assert ledger.tasks.get(uid("M")) is not None  # nothing fanned out
 
 
+def test_tool_rejects_empty_files_to_touch(ledger: Ledger, tmp_path: Path) -> None:
+    _seed(ledger)
+    BeatContext(task_id=uid("M"), run_id=REV, employee_id="mgr").write(tmp_path)
+
+    result = asyncio.run(
+        DecomposeTool(ledger).execute(
+            {
+                "children": [
+                    {
+                        "label": "api",
+                        "intent": "x",
+                        "assignee": "ada",
+                        "files_to_touch": [],
+                    }
+                ]
+            },
+            _ctx(tmp_path),
+        )
+    )
+
+    assert result.is_error is True
+
+
 def test_tool_is_idempotent_on_refire(ledger: Ledger, tmp_path: Path) -> None:
     _seed(ledger)
     BeatContext(task_id=uid("M"), run_id=REV, employee_id="mgr").write(tmp_path)
     tool = DecomposeTool(ledger)
-    payload = {"children": [{"label": "api", "intent": "build the api", "assignee": "ada"}]}
+    payload = {
+        "children": [
+            {
+                "label": "api",
+                "intent": "build the api",
+                "assignee": "ada",
+                "files_to_touch": ["src/api.py"],
+            }
+        ]
+    }
     first = asyncio.run(tool.execute(payload, _ctx(tmp_path)))
     second = asyncio.run(tool.execute(payload, _ctx(tmp_path)))  # the generator re-fired
     assert first.structured["children"] == second.structured["children"]
@@ -198,6 +242,7 @@ def test_tool_forwards_actor_and_explicit_child_execution_mode(
                         "intent": "lead an area",
                         "assignee": "ada",
                         "execution_mode": "delegation",
+                        "files_to_touch": ["src/area.py"],
                     }
                 ]
             },
@@ -208,4 +253,5 @@ def test_tool_forwards_actor_and_explicit_child_execution_mode(
     children = captured["children"]
     assert captured["actor_employee_id"] == "mgr"
     assert children[0].execution_mode is ExecutionMode.DELEGATION  # type: ignore[index]
+    assert children[0].files_to_touch == ("src/area.py",)  # type: ignore[index]
     assert result.is_error is False

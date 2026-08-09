@@ -19,6 +19,7 @@ from pydantic import BaseModel, Field, ValidationError
 from chorus.heartbeat import BeatContext
 from chorus.ledger import ExecutionMode, Ledger
 from chorus.lifecycle import CapabilityService, ChildPlan
+from chorus.lifecycle._file_scope import FileScopeViolation, describe_file_scope_violation
 
 
 class _ChildInput(BaseModel):
@@ -40,6 +41,10 @@ class _ChildInput(BaseModel):
     depends_on: list[str] = Field(
         default_factory=list,
         description="labels of sibling subtasks in this call that must finish before this one starts",
+    )
+    files_to_touch: list[str] = Field(
+        min_length=1,
+        description="declared repo-relative POSIX paths for this subtask's coordination scope",
     )
 
 
@@ -88,6 +93,7 @@ class DecomposeTool(BaseTool):
                 depends_on=tuple(child.depends_on),
                 execution_mode=child.execution_mode,
                 can_subdelegate=child.can_subdelegate,
+                files_to_touch=tuple(child.files_to_touch),
             )
             for child in args.children
         ]
@@ -132,6 +138,12 @@ class DecomposeTool(BaseTool):
                 structured={"authority_denied": result.authority_denied},
                 is_error=True,
             )
+        if result.scope_violations:
+            return ToolResult(
+                content=_scope_refusal(result.scope_violations),
+                structured={"scope_violations": _serialize_scope_violations(result.scope_violations)},
+                is_error=True,
+            )
         listing = ", ".join(f"{c.label}→{c.assignee}" for c in args.children)
         return ToolResult(
             content=f"created {len(plans)} subtasks: {listing}",
@@ -152,6 +164,29 @@ def _validate(args: DecomposeInput) -> str | None:
         if unknown:
             return f"subtask {child.label!r} depends on unknown label(s): {', '.join(unknown)}"
     return None
+
+
+def _scope_refusal(violations: tuple[FileScopeViolation, ...]) -> str:
+    joined = "; ".join(describe_file_scope_violation(violation) for violation in violations)
+    return f"refused: invalid files_to_touch — {joined}. No subtasks created."
+
+
+def _serialize_scope_violations(
+    violations: tuple[FileScopeViolation, ...],
+) -> list[dict[str, str]]:
+    payload: list[dict[str, str]] = []
+    for violation in violations:
+        row = {"code": violation.code.value}
+        if violation.task_id is not None:
+            row["task_id"] = violation.task_id
+        if violation.path is not None:
+            row["path"] = violation.path
+        if violation.other_task_id is not None:
+            row["other_task_id"] = violation.other_task_id
+        if violation.other_path is not None:
+            row["other_path"] = violation.other_path
+        payload.append(row)
+    return payload
 
 
 __all__ = ["DecomposeInput", "DecomposeTool"]
