@@ -1,8 +1,9 @@
 """Cross-cutting wiring invariants every employee must satisfy (post multi-employee merge).
 
-Two things the merge had to preserve across ALL employees:
+Two things the merge has to preserve across ALL employees:
 1. **todo_write** — the durable cross-beat checklist (TODO.md) so a re-dispatched beat resumes
-   instead of restarting. Every employee gets it, and the factory must map it to a real dream builtin.
+   instead of restarting. Every employee gets it, and the factory must map it to a real dream builtin;
+   Dream's generic standing orders direct its use.
 2. **Skill materialization** — every employee declares a ``skills_root``, and the factory materializes
    it into a dream ``skill_registry`` (so its authored playbooks are loadable via the ``skill`` tool).
 
@@ -43,12 +44,12 @@ def test_every_employee_gets_todo_write(registry: RoleRegistry, role: str) -> No
 
 
 @pytest.mark.parametrize("role", EMPLOYEES)
-def test_every_employee_brief_directs_todo_write_usage(registry: RoleRegistry, role: str) -> None:
-    # Granting the tool is not enough — without a brief directive the model never keeps a checklist
-    # (proven: the 5 non-backend employees had the tool but wrote no TODO.md). The brief must instruct it.
+def test_employee_briefs_leave_resume_guidance_to_dream(registry: RoleRegistry, role: str) -> None:
+    # Dream's generic standing-orders prompt owns the shared resume/recall/tool-choice waist. Craft
+    # briefs keep only role-specific judgment and must not duplicate those directives.
     brief = registry.get(role).manifest.system_prompt
-    assert "todo_write" in brief, f"{role} brief never mentions the todo_write tool"
-    assert "TODO.md" in brief, f"{role} brief never mentions the durable TODO.md checklist"
+    for marker in ("TOOL CHOICE", "RESUME, DON'T RESTART", "EPISODIC MEMORY"):
+        assert marker not in brief, f"{role} brief duplicates shared standing order: {marker}"
 
 
 def test_todo_write_maps_to_a_real_dream_builtin() -> None:

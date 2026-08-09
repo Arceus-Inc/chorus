@@ -115,7 +115,7 @@ _DREAM_ROLES: tuple[Literal["planner", "generator", "evaluator"], ...] = (
 _CHORUS_TO_DREAM_TOOL: dict[str, str] = {
     "read_file": "read_file",
     "write_file": "write_file",
-    "edit_file": "edit_file",
+    "edit_file": "apply_patch",
     "run_command": "bash",
     "execute_code": "execute_code",
     "git": "git",

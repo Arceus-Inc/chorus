@@ -159,7 +159,7 @@ def test_backend_engineer_materializes_a_writable_harness_in_its_worktree(
         "read_file",
         "read_offloaded",
         "write_file",
-        "edit_file",
+        "apply_patch",
         "bash",
         "git",
         "todo_write",

@@ -71,6 +71,9 @@ class TestPmPlugin:
         assert "run_command" not in manifest.tools
         assert "git" not in manifest.tools
 
+    def test_brief_does_not_name_the_unavailable_capability_tool(self) -> None:
+        assert "request_capability" not in PM_BRIEF
+
     def test_manifest_posture(self) -> None:
         manifest = pm_plugin().manifest
         assert manifest.permission_mode == PermissionMode.ACCEPT_EDITS
