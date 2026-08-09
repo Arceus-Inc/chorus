@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
+from chorus.ledger._models._agent_config_revisions import AgentConfigRevisionRef
 from chorus.ledger._models._enums import (
     RoutineCatchUp,
     RoutineConcurrency,
@@ -108,13 +109,14 @@ class RoutineRun:
 
 @dataclass(frozen=True)
 class Run:
-    """One beat — one ``dream.run_task`` invocation, kept THIN (spec 01 Cluster C ``run``)."""
+    """One beat — one ``dream.run_task`` invocation, optionally pinned to immutable config."""
 
     id: str
     employee_id: str
     task_id: str
     principal_kind: str = "employee"
     system_principal_id: str | None = None
+    agent_config_revision: AgentConfigRevisionRef | None = None
     wake_id: str | None = None
     status: RunStatus = RunStatus.QUEUED
     lease_expires_at: datetime | None = None

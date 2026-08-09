@@ -12,6 +12,16 @@ def _require_nonblank(value: str, label: str) -> None:
 
 
 @dataclass(frozen=True)
+class AgentConfigRevisionRef:
+    """A provider-neutral reference to one immutable agent configuration revision."""
+
+    value: str
+
+    def __post_init__(self) -> None:
+        _require_nonblank(self.value, "agent config revision reference")
+
+
+@dataclass(frozen=True)
 class AgentIdentity:
     """The stable identity whose configuration is being versioned."""
 
@@ -102,6 +112,7 @@ class AgentConfigRevision:
 
 __all__ = [
     "AgentConfigRevision",
+    "AgentConfigRevisionRef",
     "AgentIdentity",
     "AgentsMdReference",
     "EffectiveToolPin",

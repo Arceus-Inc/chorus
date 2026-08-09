@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from chorus.ledger._models import Run, RunStatus
+from chorus.ledger._models import AgentConfigRevisionRef, Run, RunStatus
 from chorus.ledger.repos._base import (
     LedgerConnection,
     LedgerRow,
@@ -23,16 +23,25 @@ class RunRepo:
         self._conn = conn
 
     def create(self, run: Run) -> Run:
+        if run.agent_config_revision is not None:
+            config = self._conn.execute(
+                "SELECT agent_id FROM agent_config_revision WHERE id = ?",
+                (run.agent_config_revision.value,),
+            ).fetchone()
+            if config is not None and config["agent_id"] != run.principal_id:
+                raise ValueError("agent config revision must belong to the run principal")
         now = utcnow_iso()
         self._conn.execute(
-            "INSERT INTO run (id, employee_id, task_id, wake_id, status, lease_expires_at, "
+            "INSERT INTO run (id, employee_id, task_id, agent_config_revision, wake_id, status, "
+            "lease_expires_at, "
             "liveness_state, continuation_attempt, outcome, usage, started_at, finished_at, "
             "created_at, principal_kind, system_principal_id) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 run.id,
                 run.employee_id,
                 run.task_id,
+                run.agent_config_revision.value if run.agent_config_revision is not None else None,
                 run.wake_id,
                 run.status.value,
                 to_iso(run.lease_expires_at),
@@ -156,6 +165,11 @@ def _row_to_run(row: LedgerRow) -> Run:
         id=row["id"],
         employee_id=row["employee_id"],
         task_id=row["task_id"],
+        agent_config_revision=(
+            AgentConfigRevisionRef(row["agent_config_revision"])
+            if row["agent_config_revision"] is not None
+            else None
+        ),
         wake_id=row["wake_id"],
         status=RunStatus(row["status"]),
         lease_expires_at=from_iso(row["lease_expires_at"]),
