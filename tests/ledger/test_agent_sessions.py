@@ -127,10 +127,17 @@ def test_record_error_sets_and_clears_the_resume_reason(ledger: Ledger) -> None:
 def test_seal_allows_new_open_for_same_task(ledger: Ledger) -> None:
     emp = uid("emp")
     task_id = uid("task")
+    dream_key = uid("dream-key")
     _employee(ledger, emp)
     _task(ledger, task_id, assignee=emp)
     first = ledger.agent_sessions.open(
-        _session(ledger, employee_id=emp, task_id=task_id, session_id=uid("s1"))
+        _session(
+            ledger,
+            employee_id=emp,
+            task_id=task_id,
+            session_id=uid("s1"),
+            dream_key=dream_key,
+        )
     )
     ledger.agent_sessions.seal(first.id)
     sealed = ledger.agent_sessions.get(first.id)
@@ -143,10 +150,11 @@ def test_seal_allows_new_open_for_same_task(ledger: Ledger) -> None:
             employee_id=emp,
             task_id=task_id,
             session_id=uid("s2"),
-            dream_key=uid("dream2"),
+            dream_key=dream_key,
         )
     )
     assert second.id == uid("s2")
+    assert second.dream_session_key == dream_key
     assert ledger.agent_sessions.get_open_for_task(task_id) == second
 
 

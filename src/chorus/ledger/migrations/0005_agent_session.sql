@@ -40,8 +40,9 @@ CREATE UNIQUE INDEX agent_session_open_task_uq
     ON agent_session (company_id, task_id)
     WHERE status = 'open';
 
-CREATE UNIQUE INDEX agent_session_dream_key_uq
-    ON agent_session (company_id, dream_session_key);
+CREATE UNIQUE INDEX agent_session_open_dream_key_uq
+    ON agent_session (company_id, dream_session_key)
+    WHERE status = 'open';
 
 CREATE INDEX agent_session_employee_updated_idx
     ON agent_session (company_id, employee_id, updated_at DESC);

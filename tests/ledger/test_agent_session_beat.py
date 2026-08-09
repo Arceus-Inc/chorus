@@ -23,9 +23,9 @@ from chorus.ledger import (
     TaskStatus,
     begin_beat_session,
     dream_session_key_for_task,
-    ensure_open_session,
     persist_beat_account,
 )
+from chorus.ledger._agent_session_store import ensure_open_session
 from chorus.outcomes import Verifier
 from chorus.roles import RoleRegistry, default_roles
 from chorus.testing import uid
@@ -170,7 +170,36 @@ def test_begin_beat_session_binds_working_dir(ledger: Ledger) -> None:
         working_dir="/srv/worktrees/ada",
     )
     assert session.working_dir == "/srv/worktrees/ada"
-    """dream names a sidecar directory after the scope and refuses ``:`` there.
+
+
+def test_ensure_open_session_after_seal_reuses_dream_key(ledger: Ledger) -> None:
+    """A sealed handle must not block the next open row with the same dream key."""
+    emp, task_id = _employee_with_task(ledger, "again")
+    dream_key = dream_session_key_for_task(task_id)
+    first = ensure_open_session(
+        ledger,
+        employee_id=emp,
+        task_id=task_id,
+        dream_session_key=dream_key,
+        model="",
+        run_id=None,
+    )
+    ledger.agent_sessions.seal(first.id)
+    second = ensure_open_session(
+        ledger,
+        employee_id=emp,
+        task_id=task_id,
+        dream_session_key=dream_key,
+        model="",
+        run_id=None,
+    )
+    assert second.id != first.id
+    assert second.dream_session_key == dream_key
+    assert second.status.value == "open"
+
+
+def test_dream_session_key_is_a_usable_path_segment() -> None:
+    """dream names a sidecar directory after the scope and rejects ``:`` there.
 
     A colon separator here failed every live beat with an "unsafe task_id"
     raised deep inside dream's engine construction, so the shape of this key is

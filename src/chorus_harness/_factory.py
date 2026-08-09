@@ -29,7 +29,7 @@ from dream.tools._base import BaseTool
 from dream.tools._registry import ToolRegistry, ToolSource
 from dream.tools.builtin import default_registry
 
-from chorus.adapters import DreamBeatRunner, TokenPricing, default_token_pricing
+from chorus.adapters import DreamBeatRunner, TokenPricing, pricing_from_env_if_configured
 from chorus.heartbeat import BeatRunner, ExecutionProfileResolver, IntegrateContextPacket
 from chorus.memory import EpisodicRecallService, EpisodicStore
 from chorus.outcomes import (
@@ -686,7 +686,7 @@ class EmployeeHarnessFactory:
         self._base_url = base_url
         self._deployment = deployment
         self._roles = roles
-        self._pricing = pricing if pricing is not None else default_token_pricing()
+        self._pricing = pricing if pricing is not None else pricing_from_env_if_configured()
         self._seed = seed
         self._timeout_s = timeout_s
         # §4 trust: the resolved per-beat preset narrows the harness at materialize (the empty default
