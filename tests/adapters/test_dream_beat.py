@@ -23,6 +23,7 @@ from chorus.adapters import DreamBeatRunner, ModelRate, TokenPricing, to_beat_ou
 from chorus.events import Event, EventKind
 from chorus.heartbeat import BeatDisposition
 from chorus.heartbeat._todo_flush import read_todo_flush_nudge
+from chorus.ledger import dream_session_key_for_task
 from chorus.outcomes import VerificationStep
 from chorus.testing import uid
 
@@ -113,6 +114,7 @@ class _FakeHarness:
         self.max_sprints: int | None = None
         self.harness_dir: str | Path | None = None
         self.plan_admission: object = None
+        self.session_scope: str | None = None
         self.close_calls = 0
 
     async def aclose(self) -> None:
@@ -129,6 +131,7 @@ class _FakeHarness:
         harness_dir: str | Path | None = None,
         rubric: str | None = None,
         plan_admission: object = None,
+        session_scope: str | None = None,
     ) -> _Result:
         self.calls.append(task_id)
         self.verification_steps = verification_steps
@@ -136,6 +139,7 @@ class _FakeHarness:
         self.max_sprints = max_sprints
         self.harness_dir = harness_dir
         self.plan_admission = plan_admission
+        self.session_scope = session_scope
         if observer is not None:
             for event in self._events:
                 observer.on_event(event)  # type: ignore[attr-defined]
@@ -149,6 +153,37 @@ class _HangingHarness:
     async def run_task(self, **kwargs: object) -> _Result:
         await asyncio.Event().wait()
         raise AssertionError("unreachable")
+
+
+class _MeteringHangingHarness:
+    """Hangs after emitting one meterable role.session.closed event."""
+
+    async def run_task(self, **kwargs: object) -> _Result:
+        observer = kwargs.get("observer")
+        if observer is not None:
+            observer.on_event(  # type: ignore[attr-defined]
+                {
+                    "kind": "role.session.closed",
+                    "model": "gpt-test",
+                    "usage": {"input_tokens": 1000, "output_tokens": 500},
+                }
+            )
+        await asyncio.Event().wait()
+        raise AssertionError("unreachable")
+
+
+async def test_run_task_timeout_prices_partial_usage() -> None:
+    pricing = TokenPricing(
+        rates={"gpt-test": ModelRate(input_cents_per_mtok=100, output_cents_per_mtok=1000)}
+    )
+    outcome = await DreamBeatRunner(
+        _MeteringHangingHarness(), timeout_s=0.05, pricing=pricing
+    ).run_task(task_id=uid("t1"), intent="x")
+
+    assert outcome.disposition is BeatDisposition.ERRORED
+    assert outcome.cost_cents > 0
+    assert outcome.input_tokens == 1000
+    assert outcome.output_tokens == 500
 
 
 async def test_run_task_timeout_is_an_errored_outcome() -> None:
@@ -220,6 +255,25 @@ async def test_without_a_run_id_dream_still_uses_the_task_id(tmp_path: Path) -> 
     await DreamBeatRunner(harness, working_dir=tmp_path).run_task(task_id="task_M", intent="x")
     assert harness.calls == ["task_M"]
     assert harness.plan_admission is PlanAdmission.RESUME
+
+
+async def test_every_beat_on_a_task_addresses_the_same_dream_session(tmp_path: Path) -> None:
+    """The beat hands dream the task's session key, and the same one every time.
+
+    ``PlanAdmission.RESUME`` above keeps the *plan* across beats; the scope keeps
+    the *conversation* that produced it. Without it each beat would re-open the
+    planner, generator, and evaluator on empty threads and re-derive what the
+    last beat already worked out.
+    """
+    harness = _FakeHarness(result=_result("done"))
+    runner = DreamBeatRunner(harness, working_dir=tmp_path, employee_id=uid("e"))
+
+    await runner.run_task(task_id="task_M", intent="first", run_id=uid("run_1"))
+    first_scope = harness.session_scope
+    await runner.run_task(task_id="task_M", intent="second", run_id=uid("run_2"))
+
+    assert first_scope == dream_session_key_for_task("task_M")
+    assert harness.session_scope == first_scope
 
 
 async def test_run_task_writes_the_beat_context_for_capability_tools(tmp_path: Path) -> None:

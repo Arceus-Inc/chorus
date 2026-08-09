@@ -10,6 +10,7 @@ Readable deterministic ids for fixtures live in `chorus.testing.uid`.
 from __future__ import annotations
 
 import os
+import shlex
 import shutil
 import socket
 import subprocess
@@ -57,6 +58,7 @@ def pg_conninfo(tmp_path_factory: pytest.TempPathFactory) -> Iterator[str]:
     )
     port = _free_port()
     socket_dir = tmp_path_factory.mktemp("chorus_pgsock")
+    socket_dirs = shlex.quote(str(socket_dir))
     subprocess.run(
         [
             str(_PG_BIN / "pg_ctl"),
@@ -64,7 +66,7 @@ def pg_conninfo(tmp_path_factory: pytest.TempPathFactory) -> Iterator[str]:
             str(data),
             "-o",
             f"-p {port} -c listen_addresses=127.0.0.1 -c fsync=off "
-            f"-c unix_socket_directories={socket_dir}",
+            f"-c unix_socket_directories={socket_dirs}",
             "-l",
             str(data / "log"),
             "-w",

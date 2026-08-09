@@ -9,9 +9,13 @@ missing rate never raises — so a pricing gap can't crash a beat or silently bl
 
 from __future__ import annotations
 
+import os
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Protocol, runtime_checkable
+
+_DEFAULT_INPUT_CENTS_PER_MTOK = 125
+_DEFAULT_OUTPUT_CENTS_PER_MTOK = 1000
 
 _PER_MILLION = 1_000_000
 
@@ -81,8 +85,81 @@ class TokenPricing:
         return (micro + _PER_MILLION // 2) // _PER_MILLION
 
 
+def _env_int(name: str, default: int) -> int:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    try:
+        return int(raw)
+    except ValueError:
+        return default
+
+
+def pricing_from_env_if_configured() -> TokenPricing | None:
+    """Return a pricing table only when the operator configured rates via env.
+
+    Without explicit configuration the beat is **unpriced** (tokens metered, cost 0)
+    so illustrative defaults never become authoritative ledger spend.
+    """
+    rates_raw = os.environ.get("CHORUS_PRICE_RATES")
+    if rates_raw:
+        try:
+            import json
+
+            parsed = json.loads(rates_raw)
+            if isinstance(parsed, dict) and parsed:
+                rates = {
+                    str(model): ModelRate(
+                        input_cents_per_mtok=int(entry.get("input", _DEFAULT_INPUT_CENTS_PER_MTOK)),
+                        output_cents_per_mtok=int(
+                            entry.get("output", _DEFAULT_OUTPUT_CENTS_PER_MTOK)
+                        ),
+                        cache_read_cents_per_mtok=int(entry.get("cache_read", 0)),
+                        cache_write_cents_per_mtok=int(entry.get("cache_write", 0)),
+                    )
+                    for model, entry in parsed.items()
+                    if isinstance(entry, dict)
+                }
+                if rates:
+                    return TokenPricing(rates=rates)
+        except (ValueError, TypeError, json.JSONDecodeError):
+            pass
+    if os.environ.get("CHORUS_PRICE_INPUT_CENTS_PER_MTOK") is not None or os.environ.get(
+        "CHORUS_PRICE_OUTPUT_CENTS_PER_MTOK"
+    ) is not None:
+        default_rate = ModelRate(
+            input_cents_per_mtok=_env_int(
+                "CHORUS_PRICE_INPUT_CENTS_PER_MTOK", _DEFAULT_INPUT_CENTS_PER_MTOK
+            ),
+            output_cents_per_mtok=_env_int(
+                "CHORUS_PRICE_OUTPUT_CENTS_PER_MTOK", _DEFAULT_OUTPUT_CENTS_PER_MTOK
+            ),
+            cache_read_cents_per_mtok=_env_int("CHORUS_PRICE_CACHE_READ_CENTS_PER_MTOK", 0),
+            cache_write_cents_per_mtok=_env_int("CHORUS_PRICE_CACHE_WRITE_CENTS_PER_MTOK", 0),
+        )
+        deployment = os.environ.get("AZURE_OPENAI_DEPLOYMENT", "").strip()
+        rates = {deployment: default_rate} if deployment else {}
+        return TokenPricing(rates=rates, default=default_rate)
+    return None
+
+
+def default_token_pricing() -> TokenPricing:
+    """Explicit illustrative pricing for demos — never applied implicitly by the factory."""
+    default_rate = ModelRate(
+        input_cents_per_mtok=_env_int("CHORUS_INPUT_CENTS_PER_MTOK", _DEFAULT_INPUT_CENTS_PER_MTOK),
+        output_cents_per_mtok=_env_int(
+            "CHORUS_OUTPUT_CENTS_PER_MTOK", _DEFAULT_OUTPUT_CENTS_PER_MTOK
+        ),
+    )
+    deployment = os.environ.get("AZURE_OPENAI_DEPLOYMENT", "").strip()
+    rates = {deployment: default_rate} if deployment else {}
+    return TokenPricing(rates=rates, default=default_rate)
+
+
 __all__ = [
     "ModelRate",
     "TokenPricing",
     "UsageView",
+    "default_token_pricing",
+    "pricing_from_env_if_configured",
 ]

@@ -10,6 +10,12 @@ from __future__ import annotations
 
 from dream.contracts import ExecPlan, ExecPlanLedger, ExecPlanStatus
 
+from chorus.ledger._agent_session_beat import (
+    begin_beat_session,
+    dream_session_key_for_task,
+    persist_beat_account,
+)
+from chorus.ledger._agent_session_store import ensure_open_session
 from chorus.ledger._connection import LedgerConnection
 from chorus.ledger._ledger import (
     Ledger,
@@ -28,6 +34,8 @@ from chorus.ledger._migrations import (
 from chorus.ledger._models import (
     Activity,
     ActivityVerb,
+    AgentSession,
+    AgentSessionStatus,
     Approval,
     ApprovalAction,
     ApprovalGate,
@@ -41,6 +49,7 @@ from chorus.ledger._models import (
     BudgetPolicy,
     BudgetScope,
     BudgetThreshold,
+    Claim,
     CostEvent,
     DecompositionClaim,
     DecompositionStatus,
@@ -75,6 +84,7 @@ from chorus.ledger._models import (
     RoutineTrigger,
     Run,
     RunStatus,
+    SessionCost,
     Skill,
     SkillOrigin,
     SkillRevision,
@@ -100,6 +110,7 @@ from chorus.ledger._models import (
 )
 from chorus.ledger.repos import (
     ActivityRepo,
+    AgentSessionRepo,
     ApprovalRepo,
     ArtifactRepo,
     ArtifactRevisionRepo,
@@ -135,6 +146,9 @@ __all__ = [
     "Activity",
     "ActivityRepo",
     "ActivityVerb",
+    "AgentSession",
+    "AgentSessionRepo",
+    "AgentSessionStatus",
     "Approval",
     "ApprovalAction",
     "ApprovalGate",
@@ -153,6 +167,7 @@ __all__ = [
     "BudgetPolicyRepo",
     "BudgetScope",
     "BudgetThreshold",
+    "Claim",
     "CostEvent",
     "CostEventRepo",
     "DecompositionClaim",
@@ -213,6 +228,7 @@ __all__ = [
     "RunRepo",
     "RunStatus",
     "SchemaDriftError",
+    "SessionCost",
     "Skill",
     "SkillOrigin",
     "SkillRepo",
@@ -244,7 +260,11 @@ __all__ = [
     "WorkforcePlanRepo",
     "WorkforcePlanStatus",
     "baseline",
+    "begin_beat_session",
+    "dream_session_key_for_task",
+    "ensure_open_session",
     "ledger_table_names",
     "load_migrations",
+    "persist_beat_account",
     "postgres_ddl",
 ]

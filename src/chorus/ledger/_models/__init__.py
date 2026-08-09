@@ -3,6 +3,11 @@ every name is re-exported here so `from chorus.ledger._models import X` is uncha
 
 from __future__ import annotations
 
+from chorus.ledger._models._agent_session import (
+    AgentSession,
+    AgentSessionStatus,
+    SessionCost,
+)
 from chorus.ledger._models._authority import (
     DelegationContract,
     ManagementProfile,
@@ -100,6 +105,8 @@ from chorus.ledger._models._workforce_plan import (
 __all__ = [
     "Activity",
     "ActivityVerb",
+    "AgentSession",
+    "AgentSessionStatus",
     "Approval",
     "ApprovalAction",
     "ApprovalGate",
@@ -150,6 +157,7 @@ __all__ = [
     "RoutineTrigger",
     "Run",
     "RunStatus",
+    "SessionCost",
     "Skill",
     "SkillOrigin",
     "SkillRevision",
