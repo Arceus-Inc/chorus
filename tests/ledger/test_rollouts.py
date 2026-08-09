@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from datetime import UTC, datetime
 from decimal import Decimal
 
 import pytest
@@ -36,6 +37,9 @@ from chorus.ledger import (
     Task,
 )
 from chorus.testing import uid
+
+_STARTED_AT = datetime(2026, 8, 9, 12, 0, tzinfo=UTC)
+_COMPLETED_AT = datetime(2026, 8, 9, 12, 1, tzinfo=UTC)
 
 
 def _suite(ledger: Ledger, suffix: str) -> tuple[EvalSuite, SkillRevision]:
@@ -105,6 +109,8 @@ def _rollout(ledger: Ledger, suffix: str) -> Rollout:
             usage=EvalRunUsage(12, 34, Decimal("0.005")),
             artifact_revision_ids=(evidence.id,),
             status=EvalRunStatus.COMPLETED,
+            started_at=_STARTED_AT,
+            completed_at=_COMPLETED_AT,
         )
     )
     return Rollout(
@@ -168,7 +174,9 @@ def test_rollout_pins_evidence_and_records_a_gated_full_promotion(ledger: Ledger
 
 
 def test_rollout_models_reject_invalid_evidence_and_stage_combinations() -> None:
-    with pytest.raises(ValueError, match="rollout evidence artifact revision ids must not be empty"):
+    with pytest.raises(
+        ValueError, match="rollout evidence artifact revision ids must not be empty"
+    ):
         Rollout(
             id=uid("invalid-rollout"),
             skill_revision_id=uid("revision"),
@@ -274,3 +282,53 @@ def test_rollout_rejects_repeated_stage_and_cross_tenant_evidence(pg_database: s
     finally:
         company_a.close()
         company_b.close()
+
+
+def test_rollout_records_are_append_only_for_the_runtime_role(pg_database: str) -> None:
+    import psycopg
+
+    company_id = str(uuid.uuid4())
+    ledger = Ledger.open(pg_database, company_id=company_id)
+    try:
+        rollout = ledger.rollouts.create(_rollout(ledger, "append-only"))
+        canary = ledger.rollouts.record_decision(_canary_decision(rollout, "append-only"))
+    finally:
+        ledger.close()
+
+    with psycopg.connect(pg_database, autocommit=True) as admin:
+        admin.execute(
+            "DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'chorus_rollout_app') "
+            "THEN CREATE ROLE chorus_rollout_app LOGIN NOSUPERUSER NOBYPASSRLS; END IF; END $$"
+        )
+        admin.execute("GRANT USAGE ON SCHEMA public TO chorus_rollout_app")
+        admin.execute(
+            "GRANT SELECT, INSERT, UPDATE, DELETE ON rollout, rollout_evidence, rollout_decision "
+            "TO chorus_rollout_app"
+        )
+
+    app_conninfo = pg_database.replace("user=postgres", "user=chorus_rollout_app")
+    with psycopg.connect(app_conninfo, autocommit=True) as app:
+        app.execute("SELECT set_config('app.company_id', %s, false)", (company_id,))
+        updated = app.execute(
+            "UPDATE rollout_decision SET status = 'promoted' WHERE id = %s RETURNING id",
+            (canary.id,),
+        ).fetchall()
+        deleted_evidence = app.execute(
+            "DELETE FROM rollout_evidence WHERE rollout_id = %s RETURNING rollout_id",
+            (rollout.id,),
+        ).fetchall()
+        deleted_rollouts = app.execute(
+            "DELETE FROM rollout WHERE id = %s RETURNING id", (rollout.id,)
+        ).fetchall()
+        persisted_decision = app.execute(
+            "SELECT status FROM rollout_decision WHERE id = %s", (canary.id,)
+        ).fetchone()
+        evidence_count = app.execute(
+            "SELECT COUNT(*) FROM rollout_evidence WHERE rollout_id = %s", (rollout.id,)
+        ).fetchone()
+
+    assert updated == []
+    assert deleted_evidence == []
+    assert deleted_rollouts == []
+    assert persisted_decision == ("completed",)
+    assert evidence_count == (1,)

@@ -24,8 +24,10 @@ ALTER TABLE rollout ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE rollout FORCE ROW LEVEL SECURITY;
 
-CREATE POLICY rollout_company_isolation ON rollout
-    USING (company_id = (SELECT (NULLIF(current_setting('app.company_id', true), ''))::uuid))
+CREATE POLICY rollout_company_select ON rollout FOR SELECT
+    USING (company_id = (SELECT (NULLIF(current_setting('app.company_id', true), ''))::uuid));
+
+CREATE POLICY rollout_company_insert ON rollout FOR INSERT
     WITH CHECK (company_id = (SELECT (NULLIF(current_setting('app.company_id', true), ''))::uuid));
 
 CREATE INDEX rollout_revision_created_idx ON rollout(company_id, skill_revision_id, created_at);
@@ -51,8 +53,10 @@ ALTER TABLE rollout_evidence ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE rollout_evidence FORCE ROW LEVEL SECURITY;
 
-CREATE POLICY rollout_evidence_company_isolation ON rollout_evidence
-    USING (company_id = (SELECT (NULLIF(current_setting('app.company_id', true), ''))::uuid))
+CREATE POLICY rollout_evidence_company_select ON rollout_evidence FOR SELECT
+    USING (company_id = (SELECT (NULLIF(current_setting('app.company_id', true), ''))::uuid));
+
+CREATE POLICY rollout_evidence_company_insert ON rollout_evidence FOR INSERT
     WITH CHECK (company_id = (SELECT (NULLIF(current_setting('app.company_id', true), ''))::uuid));
 
 CREATE UNIQUE INDEX rollout_evidence_position_uq
@@ -87,8 +91,10 @@ ALTER TABLE rollout_decision ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE rollout_decision FORCE ROW LEVEL SECURITY;
 
-CREATE POLICY rollout_decision_company_isolation ON rollout_decision
-    USING (company_id = (SELECT (NULLIF(current_setting('app.company_id', true), ''))::uuid))
+CREATE POLICY rollout_decision_company_select ON rollout_decision FOR SELECT
+    USING (company_id = (SELECT (NULLIF(current_setting('app.company_id', true), ''))::uuid));
+
+CREATE POLICY rollout_decision_company_insert ON rollout_decision FOR INSERT
     WITH CHECK (company_id = (SELECT (NULLIF(current_setting('app.company_id', true), ''))::uuid));
 
 CREATE UNIQUE INDEX rollout_decision_stage_uq ON rollout_decision(company_id, rollout_id, stage);

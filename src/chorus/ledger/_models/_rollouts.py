@@ -42,6 +42,8 @@ class PromotionGates:
             raise ValueError("promotion approval id must not be blank")
         if not self.reviewer_user_id.strip():
             raise ValueError("promotion reviewer user id must not be blank")
+        if not isinstance(self.replay_regression, ReplayRegression):
+            raise ValueError("promotion replay regression must be a ReplayRegression")
 
 
 @dataclass(frozen=True)
@@ -90,6 +92,10 @@ class RolloutDecision:
             raise ValueError("rollout decision id must not be blank")
         if not self.rollout_id.strip():
             raise ValueError("rollout decision rollout id must not be blank")
+        if not isinstance(self.stage, RolloutStage):
+            raise ValueError("rollout decision stage must be a RolloutStage")
+        if not isinstance(self.status, RolloutStatus):
+            raise ValueError("rollout decision status must be a RolloutStatus")
         if self.stage is RolloutStage.CANARY:
             if self.status is not RolloutStatus.COMPLETED or self.gates is not None:
                 raise ValueError("canary rollout decision must be completed without gates")
