@@ -292,6 +292,9 @@ def test_migration_backfills_legacy_eval_config_references(pg_database: str) -> 
     eval_run_id = str(uuid.uuid4())
     now = datetime(2026, 8, 9, tzinfo=UTC)
     with psycopg.connect(pg_database, autocommit=True) as admin:
+        admin.execute("ALTER TABLE run DROP CONSTRAINT run_agent_config_revision_fk")
+        admin.execute("ALTER TABLE run DROP COLUMN agent_config_revision")
+        admin.execute("DELETE FROM chorus_schema_migrations WHERE id = '0011_run_config_pins'")
         admin.execute(
             "ALTER TABLE eval_run DROP CONSTRAINT eval_run_agent_config_revision_fk"
         )

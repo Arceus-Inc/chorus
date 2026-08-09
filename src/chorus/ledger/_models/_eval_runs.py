@@ -7,16 +7,7 @@ from datetime import datetime
 from decimal import Decimal
 from enum import StrEnum
 
-
-@dataclass(frozen=True)
-class AgentConfigRevisionRef:
-    """A required, version-pinned reference to the agent configuration used for a run."""
-
-    value: str
-
-    def __post_init__(self) -> None:
-        if not self.value.strip():
-            raise ValueError("agent config revision reference must not be blank")
+from chorus.ledger._models._agent_config_revisions import AgentConfigRevisionRef
 
 
 @dataclass(frozen=True)

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from chorus.ledger._models._agent_config_revisions import (
     AgentConfigRevision,
+    AgentConfigRevisionRef,
     AgentIdentity,
     AgentsMdReference,
     EffectiveToolPin,
@@ -70,7 +71,6 @@ from chorus.ledger._models._enums import (
     WakeStatus,
 )
 from chorus.ledger._models._eval_runs import (
-    AgentConfigRevisionRef,
     EvalInputSnapshot,
     EvalOutputSnapshot,
     EvalRun,
