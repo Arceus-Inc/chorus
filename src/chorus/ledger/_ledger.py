@@ -67,6 +67,7 @@ from chorus.ledger.repos import (
     MessageRepo,
     MonitorRepo,
     RecoveryActionRepo,
+    ReflectionApplicationAuthorizationRepo,
     ReflectionProposalRepo,
     ReflectionProposalReviewRepo,
     RolloutRepo,
@@ -210,6 +211,7 @@ class Ledger:
         self.rollouts = RolloutRepo(conn)
         self.reflection_proposals = ReflectionProposalRepo(conn)
         self.reflection_proposal_reviews = ReflectionProposalReviewRepo(conn)
+        self.reflection_application_authorizations = ReflectionApplicationAuthorizationRepo(conn)
         self.dod = DodRepo(conn)
         self.artifacts = ArtifactRepo(conn)
         self.artifact_revisions = ArtifactRevisionRepo(conn)
