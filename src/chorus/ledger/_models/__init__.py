@@ -83,7 +83,14 @@ from chorus.ledger._models._scheduling import (
     Run,
     Wake,
 )
-from chorus.ledger._models._skills import EvalCase, Skill, SkillOrigin, SkillRevision, SkillState
+from chorus.ledger._models._skills import (
+    EvalCase,
+    EvalSuite,
+    Skill,
+    SkillOrigin,
+    SkillRevision,
+    SkillState,
+)
 from chorus.ledger._models._staffing import (
     StaffingNeed,
     StaffingRequest,
@@ -130,6 +137,7 @@ __all__ = [
     "Dod",
     "DodStatus",
     "EvalCase",
+    "EvalSuite",
     "ExecutionMode",
     "Goal",
     "GoalLevel",

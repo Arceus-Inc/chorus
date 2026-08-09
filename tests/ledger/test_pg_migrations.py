@@ -68,6 +68,8 @@ def test_migration_reports_the_tables_it_creates() -> None:
     assert skills.table_names() == ["skill", "skill_revision"]
     eval_cases = next(m for m in load_migrations() if m.id == "0006_eval_cases")
     assert eval_cases.table_names() == ["eval_case"]
+    eval_suites = next(m for m in load_migrations() if m.id == "0007_eval_suites")
+    assert eval_suites.table_names() == ["eval_suite", "eval_suite_case"]
 
 
 def test_shipped_migrations_load_in_id_order() -> None:

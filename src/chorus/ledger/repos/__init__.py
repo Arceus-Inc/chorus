@@ -22,6 +22,7 @@ from chorus.ledger.repos.dependencies import DependencyCycleError, DependencyRep
 from chorus.ledger.repos.dod import DodRepo
 from chorus.ledger.repos.employees import EmployeeRepo
 from chorus.ledger.repos.eval_cases import EvalCaseRepo
+from chorus.ledger.repos.eval_suites import EvalSuiteRepo
 from chorus.ledger.repos.goals import GoalRepo
 from chorus.ledger.repos.management_profiles import ManagementProfileRepo
 from chorus.ledger.repos.messages import MessageRepo
@@ -58,6 +59,7 @@ __all__ = [
     "DodRepo",
     "EmployeeRepo",
     "EvalCaseRepo",
+    "EvalSuiteRepo",
     "GoalRepo",
     "ManagementProfileRepo",
     "MessageRepo",
