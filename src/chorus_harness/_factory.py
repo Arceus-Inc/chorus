@@ -49,7 +49,6 @@ from chorus_employee._lattice import (
     LATTICE_SKILLS_ROOT,
     read_lattice_consolidation_push,
 )
-from chorus_employee._recall import PLANNER_TOOLLESS_NOTE
 from chorus_employee._shared_skills import SHARED_SKILLS_ROOT
 from chorus_harness._company_state import write_company_state
 from chorus_harness._dream_hooks import (
@@ -554,39 +553,33 @@ def _read_only_role_tools(
     return tuple(tools)
 
 
-def write_role_overlays(harness_dir: Path, config: RoleBeatConfig) -> None:
-    """Write planner/generator/evaluator overlays so the whole harness runs as the employee.
+def write_agents_md(harness_dir: Path, config: RoleBeatConfig) -> None:
+    """Materialize the employee brief as Dream context-tier ``AGENTS.md``.
 
-    Each overlay **appends** the employee's brief to that dream role's base prompt (keeping the role's
-    orchestration instructions) and sets the employee's permission posture. ``run_task`` loads these
-    from ``{working_dir}/.harness/roles/{role}.toml``.
+    Dream loads ``.harness/AGENTS.md`` into the session ``<context>`` block.
+    Phase identity (planner/generator/evaluator) lives in Dream standing orders.
+    """
+    harness = harness_dir / ".harness"
+    harness.mkdir(parents=True, exist_ok=True)
+    brief = (config.system_prompt or "").strip()
+    (harness / "AGENTS.md").write_text(brief + ("\n" if brief else ""), encoding="utf-8")
+
+
+def write_role_overlays(harness_dir: Path, config: RoleBeatConfig) -> None:
+    """Write planner/generator/evaluator tool/permission overlays only.
+
+    Employee craft identity is ``write_agents_md`` → ``.harness/AGENTS.md``.
+    Dream standing orders own phase protocol; overlays must not mash briefs into
+    ``system_prompt``. ``run_task`` loads these from
+    ``{working_dir}/.harness/roles/{role}.toml``.
     """
     roles_dir = harness_dir / ".harness" / "roles"
     roles_dir.mkdir(parents=True, exist_ok=True)
     for role in _DREAM_ROLES:
-        base = default_role_manifest(role).system_prompt
-        if role == "planner":
-            # The brief names tools (recall, todo_write, …) the generator uses later; without an
-            # explicit planner-only guard the model sometimes emits a tool call here and gets
-            # "tool-not-in-role-manifest" noise (planner is toolless on purpose).
-            prompt = (
-                f"{base}\n\n## Operating brief (your role in the org)\n"
-                f"{PLANNER_TOOLLESS_NOTE}\n{config.system_prompt}"
-            )
-        elif role == "evaluator":
-            prompt = (
-                f"{base}\n\n## Operating brief (your role in the org)\n"
-                "EVALUATOR PHASE: the sprint contract and review rubric are the acceptance authority. "
-                "Instructions below to create, edit, record, or scan are generator guidance, not "
-                "extra acceptance criteria. Do not call or require generator-only tools or artifacts "
-                "unless the contract or rubric explicitly requires them; verify directly with your "
-                "read-only tools and bash.\n"
-                f"{config.system_prompt}"
-            )
-        else:
-            prompt = f"{base}\n\n## Operating brief (your role in the org)\n{config.system_prompt}"
+        # Keep an empty system_prompt key so loaders that require the field stay happy;
+        # Dream packaged standing orders supply phase text.
         lines = [
-            f'system_prompt = "{_toml_escape(prompt)}"',
+            'system_prompt = ""',
             f'permission_mode = "{config.permission_mode}"',
         ]
         # The planner runs toolless on purpose. Given read-only tools and ``tool_choice="auto"``
@@ -1016,7 +1009,8 @@ class EmployeeHarnessFactory:
                         content=inheritance,
                     )
                 )
-        write_role_overlays(root, config)  # the employee's identity overlays the whole harness
+        write_agents_md(root, config)  # employee brief → Dream <context> AGENTS.md
+        write_role_overlays(root, config)  # tools / permission_mode only
         write_sandbox_config(
             root, config.sandbox
         )  # the role's trust posture → .harness/sandbox.toml
@@ -1138,5 +1132,6 @@ __all__ = [
     "EmployeeHarness",
     "EmployeeHarnessFactory",
     "dream_tool_names",
+    "write_agents_md",
     "write_role_overlays",
 ]

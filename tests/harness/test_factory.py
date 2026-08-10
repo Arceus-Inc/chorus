@@ -220,12 +220,15 @@ def test_engineer_role_overlays_keep_evaluator_read_only(
     )
 
     assert "tools = []" in planner  # toolless on purpose
-    assert "PLANNER PHASE" in planner
+    assert "PLANNER PHASE" not in planner  # phase text lives in Dream standing orders
     assert '"bash"' in evaluator  # in-session verify (no harness oracle)
     assert '"write_file"' not in evaluator
-    assert "the sprint contract and review rubric are the acceptance authority" in evaluator
-    assert "not extra acceptance criteria" in evaluator
+    assert "acceptance authority" not in evaluator  # Dream standing orders
     assert "tools =" not in generator
+
+    agents = (mat.working_dir / ".harness" / "AGENTS.md").read_text(encoding="utf-8")
+    assert agents.strip()  # employee brief materialised for Dream <context>
+    assert agents.strip() == mat.config.system_prompt.strip()
 
 
 def test_engineer_gets_an_unrestricted_sandbox_so_it_can_run_commands(
