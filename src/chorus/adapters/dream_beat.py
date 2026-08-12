@@ -24,9 +24,14 @@ from enum import StrEnum
 from hashlib import sha256
 from inspect import isawaitable
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Protocol
+from typing import TYPE_CHECKING, Protocol
 
 from chorus.adapters._failure import failure_outcome
+from chorus.adapters._dream_events import (
+    SPAWN_SUBAGENT_TOOL,
+    ReasoningRecordLine,
+    SpawnSubagentInput,
+)
 from chorus.adapters._observer import DreamObserverBridge
 from chorus.adapters._pricing import TokenPricing, UsageView
 from chorus.adapters._trace import beat_subagent_stats, sidecar_traces
@@ -43,6 +48,7 @@ from chorus.roles._manifest import DEFAULT_BEAT_TIMEOUT_S
 
 if TYPE_CHECKING:
     from dream.runner import PlanAdmission
+    from dream.runner.events import RunTaskEvent, RunTaskObserver
 
 
 def _utc_now() -> datetime:
@@ -168,6 +174,19 @@ class RunSprint(Protocol):
     @property
     def outcome(self) -> str | None: ...
 
+    @property
+    def evaluation(self) -> EvaluationView | None: ...
+
+
+class EvaluationView(Protocol):
+    """The typed evaluator record Dream exposes on a completed sprint."""
+
+    @property
+    def notes(self) -> str: ...
+
+    @property
+    def items(self) -> tuple[str, ...]: ...
+
 
 class RunResult(Protocol):
     """The minimal read-only surface of dream's ``RunTaskResult`` the adapter depends on."""
@@ -185,9 +204,9 @@ class RunResult(Protocol):
 
 
 class _DreamObserver(Protocol):
-    """dream's ``RunTaskObserver`` shape — a sink for the engine's dict event stream (spec 05 §4)."""
+    """dream's ``RunTaskObserver`` — a sink for the engine's typed event stream (spec 05 §4)."""
 
-    def on_event(self, event: dict[str, Any]) -> None: ...
+    def on_event(self, event: RunTaskEvent) -> None: ...
 
 
 class TaskHarness(Protocol):
@@ -199,7 +218,7 @@ class TaskHarness(Protocol):
         task_id: str | None = None,
         intent: str,
         verification_steps: tuple[dict[str, str], ...] | None = None,
-        observer: Any | None = None,
+        observer: RunTaskObserver | None = None,
         max_sprints: int | None = None,
         harness_dir: Path | None = None,
         rubric: str | None = None,
@@ -211,63 +230,60 @@ class TaskHarness(Protocol):
 class _ReasoningRecorder:
     """Capture the agent's account for the episodic raw record (spec 07 §3), then forward downstream.
 
-    dream calls ``on_event(dict)`` for every engine event. Its lifecycle/handoff kinds (``planner.*``,
-    ``handoff.*``) are structural noise; the *reasoning* lives in ``role.text`` (what the model
-    concluded) and its *actions* in ``role.tool.start`` / ``role.tool.result`` (the tool it called, its
-    args, and the output preview). We keep exactly those and drop the rest, so the record is the
-    agent's own account — not the orchestration log. Every event is still forwarded to the chorus
-    observer bridge (when present) so liveness/subagent witnessing is unaffected.
+    dream calls ``on_event(RunTaskEvent)`` for every engine event. Macro lifecycle kinds
+    (``PlannerStarted``, ``SprintCompleted``, …) are structural noise; the *reasoning* lives in
+    ``RoleText`` (what the model concluded) and its *actions* in ``RoleToolStart`` /
+    ``RoleToolResult`` (the tool it called, its args, and the output). We keep exactly those and
+    drop the rest, so the record is the agent's own account — not the orchestration log. Every event
+    is still forwarded to the chorus observer bridge (when present) so liveness/subagent witnessing
+    is unaffected.
     """
-
-    _KEPT_KINDS = frozenset({"role.text", "role.tool.start", "role.tool.result"})
 
     def __init__(
         self,
-        forward: Callable[[dict[str, Any]], None] | None,
+        forward: Callable[[RunTaskEvent], None] | None,
         *,
         working_dir: Path | None = None,
         evidence_subagents: frozenset[str] = frozenset(),
     ) -> None:
         self._forward = forward
-        self._events: list[dict[str, Any]] = []
+        self._events: list[ReasoningRecordLine] = []
         self._working_dir = working_dir
         self._evidence_subagents = evidence_subagents
         self._pending_subagents: list[tuple[str, str]] = []
         self._subagent_results: dict[str, tuple[str, bool, str, str]] = {}
 
-    def on_event(self, event: dict[str, Any]) -> None:
-        if str(event.get("kind", "")) in self._KEPT_KINDS:
-            self._events.append(event)
-        if event.get("tool") == "spawn_subagent":
-            if event.get("kind") == "role.tool.start":
-                _inp = dict(event.get("input") or {})
-                name = str(_inp.get("subagent_type") or _inp.get("name") or "subagent")
-                before_hash = (
-                    _worktree_fingerprint(self._working_dir)
-                    if name in self._evidence_subagents and self._working_dir is not None
-                    else ""
+    def on_event(self, event: RunTaskEvent) -> None:
+        from dream.runner.events import RoleToolResult, RoleToolStart
+
+        line = ReasoningRecordLine.from_event(event)
+        if line is not None:
+            self._events.append(line)
+        if isinstance(event, RoleToolStart) and event.tool == SPAWN_SUBAGENT_TOOL:
+            spawn = SpawnSubagentInput.parse(event.input)
+            before_hash = (
+                _worktree_fingerprint(self._working_dir)
+                if spawn.name in self._evidence_subagents and self._working_dir is not None
+                else ""
+            )
+            self._pending_subagents.append((spawn.name, before_hash))
+        elif isinstance(event, RoleToolResult) and event.tool == SPAWN_SUBAGENT_TOOL:
+            name, before_hash = (
+                self._pending_subagents.pop(0) if self._pending_subagents else ("subagent", "")
+            )
+            if name in self._evidence_subagents and self._working_dir is not None:
+                self._subagent_results[name] = (
+                    event.content,
+                    event.is_error,
+                    before_hash,
+                    _worktree_fingerprint(self._working_dir),
                 )
-                self._pending_subagents.append((name, before_hash))
-            elif event.get("kind") == "role.tool.result":
-                name, before_hash = (
-                    self._pending_subagents.pop(0) if self._pending_subagents else ("subagent", "")
-                )
-                if name in self._evidence_subagents and self._working_dir is not None:
-                    content = str(event.get("content", event.get("content_preview", "")))
-                    self._subagent_results[name] = (
-                        content,
-                        bool(event.get("is_error", False)),
-                        before_hash,
-                        _worktree_fingerprint(self._working_dir),
-                    )
         if self._forward is not None:
             self._forward(event)
 
     def as_jsonl(self) -> str:
         """The captured account as JSON lines — one reasoning/action event per line."""
-        return "\n".join(
-            json.dumps(event, default=str, ensure_ascii=False) for event in self._events
-        )
+        return "\n".join(line.to_json() for line in self._events)
 
     def subagent_results(self) -> dict[str, tuple[str, bool, str, str]]:
         """Return evidence results with their pre-run and completion worktree fingerprints."""
@@ -291,6 +307,11 @@ def to_beat_outcome(result: RunResult, *, pricing: TokenPricing | None = None) -
     model = "+".join(sorted(usage))  # "" / "gpt-5.2" / "gpt-4+gpt-5.2"
     input_tokens = sum(u.input_tokens for u in usage.values())
     output_tokens = sum(u.output_tokens for u in usage.values())
+    evaluator_notes = tuple(
+        note
+        for sprint in result.sprints
+        for note in _evaluation_notes(sprint.evaluation)
+    )
     outcome: dict[str, object] = {
         "steps_total": len(steps),
         "steps_done": done,
@@ -311,7 +332,15 @@ def to_beat_outcome(result: RunResult, *, pricing: TokenPricing | None = None) -
         model=model,
         input_tokens=input_tokens,
         output_tokens=output_tokens,
+        evaluator_notes=evaluator_notes,
     )
+
+
+def _evaluation_notes(evaluation: EvaluationView | None) -> tuple[str, ...]:
+    if evaluation is None:
+        return ()
+    notes = [evaluation.notes.strip(), *(item.strip() for item in evaluation.items)]
+    return tuple(note for note in notes if note)
 
 
 def _price_beat_outcome(
@@ -412,7 +441,7 @@ class DreamBeatRunner:
         )
         # Record the agent's reasoning + actions for the episodic raw record, forwarding to the bridge
         # so liveness witnessing is unchanged (spec 07 §3). It is dream's observer for this beat.
-        from dream.runner._usage import UsageMeter
+        from dream.runner import UsageMeter
 
         recorder = _ReasoningRecorder(
             bridge.on_event if bridge is not None else None,

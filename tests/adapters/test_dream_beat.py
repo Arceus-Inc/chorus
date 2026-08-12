@@ -26,6 +26,20 @@ from chorus.heartbeat._todo_flush import read_todo_flush_nudge
 from chorus.ledger import dream_session_key_for_task
 from chorus.outcomes import VerificationStep
 from chorus.testing import uid
+from dream.runner.events import RunTaskEvent
+from tests.adapters._dream_events import (
+    contract_written,
+    evaluator_completed,
+    planner_started,
+    role_session_closed,
+    role_text,
+    role_tool_result,
+    role_tool_start,
+    spawn_subagent_result,
+    spawn_subagent_start,
+    task_completed,
+    task_started,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -46,6 +60,13 @@ class _Ledger:
 @dataclass(frozen=True)
 class _Sprint:
     outcome: str | None
+    evaluation: object | None = None
+
+
+@dataclass(frozen=True)
+class _Evaluation:
+    notes: str
+    items: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -95,7 +116,7 @@ class _FakeHarness:
     """A stand-in dream Harness: returns a canned result, or raises a canned error.
 
     When ``events`` is given it replays them through the ``observer`` dream is handed, so the bridge's
-    dream-dict -> chorus-Event translation can be exercised without a real engine.
+    typed RunTaskEvent -> chorus-Event translation can be exercised without a real engine.
     """
 
     def __init__(
@@ -103,7 +124,7 @@ class _FakeHarness:
         *,
         result: _Result | None = None,
         error: BaseException | None = None,
-        events: tuple[dict[str, Any], ...] = (),
+        events: tuple[RunTaskEvent, ...] = (),
     ) -> None:
         self._result = result
         self._error = error
@@ -142,7 +163,7 @@ class _FakeHarness:
         self.session_scope = session_scope
         if observer is not None:
             for event in self._events:
-                observer.on_event(event)  # type: ignore[attr-defined]
+                observer.on_event(event)
         if self._error is not None:
             raise self._error
         assert self._result is not None
@@ -161,12 +182,8 @@ class _MeteringHangingHarness:
     async def run_task(self, **kwargs: object) -> _Result:
         observer = kwargs.get("observer")
         if observer is not None:
-            observer.on_event(  # type: ignore[attr-defined]
-                {
-                    "kind": "role.session.closed",
-                    "model": "gpt-test",
-                    "usage": {"input_tokens": 1000, "output_tokens": 500},
-                }
+            observer.on_event(
+                role_session_closed(model="gpt-test", input_tokens=1000, output_tokens=500)
             )
         await asyncio.Event().wait()
         raise AssertionError("unreachable")
@@ -304,14 +321,27 @@ def test_passed_when_every_step_done() -> None:
     assert outcome.outcome["sprint_outcomes"] == ["pass", "pass"]
 
 
+def test_typed_evaluation_notes_carry_into_the_beat_outcome() -> None:
+    result = _Result(
+        final_ledger=_Ledger((_Step("done"),)),
+        sprints=(
+            _Sprint("needs-changes", _Evaluation("cover retries", ("missing edge case",))),
+        ),
+    )
+
+    outcome = to_beat_outcome(result)
+
+    assert outcome.evaluator_notes == ("cover retries", "missing edge case")
+
+
 async def test_run_task_records_reasoning_and_actions_into_raw_record() -> None:
     harness = _FakeHarness(
         result=_result("done"),
         events=(
-            {"kind": "role.text", "text": "I chose a salted hashlib password hash"},
-            {"kind": "role.tool.start", "tool": "write_file", "input": {"path": "auth/service.py"}},
-            {"kind": "role.tool.result", "tool": "write_file", "content_preview": "wrote 42 lines"},
-            {"kind": "planner.run.completed"},  # lifecycle noise — must NOT be recorded
+            role_text(text="I chose a salted hashlib password hash"),
+            role_tool_start(tool="write_file", input={"path": "auth/service.py"}),
+            role_tool_result(tool="write_file", content="wrote 42 lines"),
+            planner_started(task_id=uid("t")),  # lifecycle noise — must NOT be recorded
         ),
     )
     outcome = await DreamBeatRunner(harness).run_task(
@@ -320,13 +350,13 @@ async def test_run_task_records_reasoning_and_actions_into_raw_record() -> None:
     assert "salted hashlib password hash" in outcome.raw_record  # the reasoning
     assert "auth/service.py" in outcome.raw_record  # the action + its args
     assert "wrote 42 lines" in outcome.raw_record  # the tool result
-    assert "planner.run.completed" not in outcome.raw_record  # lifecycle excluded
+    assert "planner.started" not in outcome.raw_record  # lifecycle excluded
 
 
 async def test_run_task_records_reasoning_even_on_failure() -> None:
     harness = _FakeHarness(
         error=_FakeRunTaskError("boom", phase="plan"),
-        events=({"kind": "role.text", "text": "tried the pool bump, it regressed"},),
+        events=(role_text(text="tried the pool bump, it regressed"),),
     )
     outcome = await DreamBeatRunner(harness).run_task(
         task_id=uid("t"), intent="x", run_id=uid("r1")
@@ -460,15 +490,15 @@ async def test_run_task_bounds_the_dream_sprint_loop_by_default() -> None:
 
 
 async def test_run_task_forwards_dream_events_to_the_observer() -> None:
-    # dream replays its dict event stream through the bridge; chorus witnesses the mapped run.* subset.
+    # dream replays its typed event stream through the bridge; chorus witnesses the mapped run.* subset.
     harness = _FakeHarness(
         result=_result("done"),
         events=(
-            {"kind": "task.started", "task_id": uid("t1"), "intent": "x"},
-            {"kind": "role.text", "role": "generator", "text": "hello"},
-            {"kind": "role.tool.start", "role": "generator", "tool": "bash"},
-            {"kind": "evaluator.completed", "sprint_number": 1, "outcome": "pass", "score": 1.0},
-            {"kind": "task.completed", "task_id": uid("t1"), "sprint_count": 1},
+            task_started(task_id=uid("t1"), intent="x"),
+            role_text(text="hello"),
+            role_tool_start(tool="bash"),
+            evaluator_completed(),
+            task_completed(task_id=uid("t1")),
         ),
     )
     seen: list[Event] = []
@@ -494,9 +524,9 @@ async def test_run_task_drops_dream_events_without_a_chorus_equivalent() -> None
     harness = _FakeHarness(
         result=_result("done"),
         events=(
-            {"kind": "planner.started", "task_id": uid("t1")},
-            {"kind": "contract.written", "sprint_number": 1, "path": "c.json"},
-            {"kind": "role.text", "text": "kept"},
+            planner_started(task_id=uid("t1")),
+            contract_written(),
+            role_text(text="kept"),
         ),
     )
     seen: list[Event] = []
@@ -508,7 +538,7 @@ async def test_run_task_records_the_account_even_without_a_chorus_observer() -> 
     # No chorus observer -> no liveness bridge, but the reasoning recorder is always handed to dream so
     # the episodic account is captured regardless of whether anyone is witnessing the run.
     harness = _FakeHarness(
-        result=_result("done"), events=({"kind": "role.text", "text": "picked X"},)
+        result=_result("done"), events=(role_text(text="picked X"),)
     )
     outcome = await DreamBeatRunner(harness).run_task(task_id=uid("t1"), intent="x")
     assert "picked X" in outcome.raw_record  # captured with no chorus observer wired
@@ -532,20 +562,8 @@ async def test_run_task_rejects_a_parent_replaced_subagent_artifact(tmp_path: Pa
         json.dumps({"cleared": True, "findings": [], "evidence": "parent replacement"})
     )
     events = (
-        {
-            "kind": "role.tool.start",
-            "role": "generator",
-            "tool": "spawn_subagent",
-            "input": {"name": "code_reviewer", "prompt": "Review"},
-        },
-        {
-            "kind": "role.tool.result",
-            "role": "generator",
-            "tool": "spawn_subagent",
-            "is_error": False,
-            "content": json.dumps(reviewer_output),
-            "content_preview": json.dumps(reviewer_output)[:240],
-        },
+        spawn_subagent_start(name="code_reviewer", prompt="Review"),
+        spawn_subagent_result(content=json.dumps(reviewer_output)),
     )
     harness = _FakeHarness(result=_result("done"), events=events)
 
@@ -564,20 +582,8 @@ async def test_run_task_rejects_a_parent_replaced_subagent_artifact(tmp_path: Pa
 async def test_run_task_records_and_reuses_valid_subagent_provenance(tmp_path: Path) -> None:
     reviewer_output = {"cleared": True, "findings": [], "evidence": "reviewed the diff"}
     events = (
-        {
-            "kind": "role.tool.start",
-            "role": "generator",
-            "tool": "spawn_subagent",
-            "input": {"name": "code_reviewer", "prompt": "Review"},
-        },
-        {
-            "kind": "role.tool.result",
-            "role": "generator",
-            "tool": "spawn_subagent",
-            "is_error": False,
-            "content": json.dumps(reviewer_output),
-            "content_preview": json.dumps(reviewer_output)[:40],
-        },
+        spawn_subagent_start(name="code_reviewer", prompt="Review"),
+        spawn_subagent_result(content=json.dumps(reviewer_output)),
     )
     requirement = {"code_reviewer": ("review_verdict.json", {"cleared": True})}
 
@@ -603,20 +609,8 @@ async def test_run_task_rejects_code_changed_after_independent_review(tmp_path: 
     (tmp_path / "links.py").write_text("VALUE = 1\n")
     (tmp_path / "review_verdict.json").write_text(json.dumps(reviewer_output))
     events = (
-        {
-            "kind": "role.tool.start",
-            "role": "generator",
-            "tool": "spawn_subagent",
-            "input": {"name": "code_reviewer", "prompt": "Review"},
-        },
-        {
-            "kind": "role.tool.result",
-            "role": "generator",
-            "tool": "spawn_subagent",
-            "is_error": False,
-            "content": json.dumps(reviewer_output),
-            "content_preview": json.dumps(reviewer_output),
-        },
+        spawn_subagent_start(name="code_reviewer", prompt="Review"),
+        spawn_subagent_result(content=json.dumps(reviewer_output)),
     )
 
     class _MutatesAfterReview(_FakeHarness):
@@ -642,25 +636,9 @@ async def test_run_task_rejects_evidence_subagent_mutating_worktree(tmp_path: Pa
     class _MutatesDuringReview(_FakeHarness):
         async def run_task(self, **kwargs: Any) -> _Result:
             observer = kwargs["observer"]
-            observer.on_event(
-                {
-                    "kind": "role.tool.start",
-                    "role": "generator",
-                    "tool": "spawn_subagent",
-                    "input": {"name": "code_reviewer", "prompt": "Review"},
-                }
-            )
+            observer.on_event(spawn_subagent_start(name="code_reviewer", prompt="Review"))
             (tmp_path / "review_verdict.old.json").write_text("{}\n")
-            observer.on_event(
-                {
-                    "kind": "role.tool.result",
-                    "role": "generator",
-                    "tool": "spawn_subagent",
-                    "is_error": False,
-                    "content": json.dumps(reviewer_output),
-                    "content_preview": json.dumps(reviewer_output),
-                }
-            )
+            observer.on_event(spawn_subagent_result(content=json.dumps(reviewer_output)))
             assert self._result is not None
             return self._result
 
@@ -686,27 +664,11 @@ async def test_run_task_accepts_mutating_test_author_provenance(tmp_path: Path) 
     class _AuthorsTestsThenProductionChanges(_FakeHarness):
         async def run_task(self, **kwargs: Any) -> _Result:
             observer = kwargs["observer"]
-            observer.on_event(
-                {
-                    "kind": "role.tool.start",
-                    "role": "generator",
-                    "tool": "spawn_subagent",
-                    "input": {"name": "test_author", "prompt": "Author tests"},
-                }
-            )
+            observer.on_event(spawn_subagent_start(name="test_author", prompt="Author tests"))
             tests = tmp_path / "tests"
             tests.mkdir()
             (tests / "test_links.py").write_text("def test_links():\n    assert True\n")
-            observer.on_event(
-                {
-                    "kind": "role.tool.result",
-                    "role": "generator",
-                    "tool": "spawn_subagent",
-                    "is_error": False,
-                    "content": json.dumps(author_output),
-                    "content_preview": json.dumps(author_output),
-                }
-            )
+            observer.on_event(spawn_subagent_result(content=json.dumps(author_output)))
             (tmp_path / "links.py").write_text("VALUE = 1\n")
             assert self._result is not None
             return self._result
@@ -746,22 +708,10 @@ async def test_rebeat_keeps_validated_test_author_evidence(tmp_path: Path) -> No
         "evidence": "python -m pytest -q -> 9 passed",
     }
 
-    def _events(output: dict[str, object]) -> tuple[dict[str, Any], ...]:
+    def _events(output: dict[str, object]) -> tuple[RunTaskEvent, ...]:
         return (
-            {
-                "kind": "role.tool.start",
-                "role": "generator",
-                "tool": "spawn_subagent",
-                "input": {"name": "test_author", "prompt": "Author tests"},
-            },
-            {
-                "kind": "role.tool.result",
-                "role": "generator",
-                "tool": "spawn_subagent",
-                "is_error": False,
-                "content": json.dumps(output),
-                "content_preview": json.dumps(output)[:60],
-            },
+            spawn_subagent_start(name="test_author", prompt="Author tests"),
+            spawn_subagent_result(content=json.dumps(output)),
         )
 
     first = await DreamBeatRunner(
@@ -793,20 +743,8 @@ async def test_first_beat_still_fails_without_authored_evidence(tmp_path: Path) 
         "evidence": "",
     }
     events = (
-        {
-            "kind": "role.tool.start",
-            "role": "generator",
-            "tool": "spawn_subagent",
-            "input": {"name": "test_author", "prompt": "Author tests"},
-        },
-        {
-            "kind": "role.tool.result",
-            "role": "generator",
-            "tool": "spawn_subagent",
-            "is_error": False,
-            "content": json.dumps(declined),
-            "content_preview": json.dumps(declined)[:60],
-        },
+        spawn_subagent_start(name="test_author", prompt="Author tests"),
+        spawn_subagent_result(content=json.dumps(declined)),
     )
     outcome = await DreamBeatRunner(
         _FakeHarness(result=_result("done"), events=events),
@@ -823,20 +761,8 @@ async def test_review_provenance_ignores_post_review_machine_bookkeeping(tmp_pat
     (tmp_path / "links.py").write_text("VALUE = 1\n")
     (tmp_path / "review_verdict.json").write_text(json.dumps(reviewer_output))
     events = (
-        {
-            "kind": "role.tool.start",
-            "role": "generator",
-            "tool": "spawn_subagent",
-            "input": {"name": "code_reviewer", "prompt": "Review"},
-        },
-        {
-            "kind": "role.tool.result",
-            "role": "generator",
-            "tool": "spawn_subagent",
-            "is_error": False,
-            "content": json.dumps(reviewer_output),
-            "content_preview": json.dumps(reviewer_output),
-        },
+        spawn_subagent_start(name="code_reviewer", prompt="Review"),
+        spawn_subagent_result(content=json.dumps(reviewer_output)),
     )
 
     class _WritesBookkeepingAfterReview(_FakeHarness):

@@ -1,10 +1,9 @@
-"""S0 #10 — Hermes-style tool-choice matrix is wired into craft briefs."""
+"""Workforce standing orders stay out of craft briefs."""
 
 from __future__ import annotations
 
 import pytest
 
-from chorus_employee._tool_choice import TOOL_CHOICE_MATRIX
 from chorus_employee.analyst._brief import ANALYST_BRIEF
 from chorus_employee.backend_engineer._brief import BACKEND_ENGINEER_BRIEF
 from chorus_employee.ceo._brief import CEO_BRIEF
@@ -28,18 +27,6 @@ _CRAFT_BRIEFS = (
 )
 
 
-def test_matrix_is_hermes_use_dont_shape() -> None:
-    """Matrix teaches when — not a dump of every verb."""
-    assert "TOOL CHOICE" in TOOL_CHOICE_MATRIX
-    assert "Use this" in TOOL_CHOICE_MATRIX
-    assert "Don't" in TOOL_CHOICE_MATRIX
-    for surface in ("tool", "execute_code", "skill", "spawn_subagent", "just implement"):
-        assert surface in TOOL_CHOICE_MATRIX.lower()
-    # Stay cache-friendly: action-space teaching, not procedure.
-    assert len(TOOL_CHOICE_MATRIX.split()) <= 110
-    assert "tool > execute_code > skill > spawn" in TOOL_CHOICE_MATRIX
-
-
 @pytest.mark.parametrize(
     "brief",
     _CRAFT_BRIEFS,
@@ -54,6 +41,6 @@ def test_matrix_is_hermes_use_dont_shape() -> None:
         "ceo",
     ),
 )
-def test_craft_brief_includes_tool_choice_matrix(brief: str) -> None:
-    assert TOOL_CHOICE_MATRIX in brief
-    assert "tool > execute_code > skill > spawn" in brief
+def test_craft_brief_excludes_the_shared_workforce_waist(brief: str) -> None:
+    for marker in ("TOOL CHOICE", "RESUME, DON'T RESTART", "EPISODIC MEMORY"):
+        assert marker not in brief

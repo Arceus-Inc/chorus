@@ -11,7 +11,7 @@ from dream.contracts.hook import HookEvent
 
 from chorus.roles import RoleRegistry, default_roles
 from chorus.workforce import Employee
-from chorus_employee._lattice import LATTICE_BEAT_START_HEADER, read_lattice_consolidation_push
+from chorus_employee._lattice import read_lattice_wake
 from chorus_harness import _factory as _factory_mod
 from chorus_harness._dream_hooks import VolatileBeatPacketHook
 
@@ -45,7 +45,7 @@ def _factory(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> tuple[Any, dict
     return factory, captured
 
 
-def test_read_lattice_consolidation_push_from_beat_end_file(tmp_path: Path) -> None:
+def test_read_lattice_wake_from_beat_end_file(tmp_path: Path) -> None:
     harness = tmp_path / "wt"
     harness.mkdir()
     payload = {
@@ -58,13 +58,15 @@ def test_read_lattice_consolidation_push_from_beat_end_file(tmp_path: Path) -> N
     path.parent.mkdir(parents=True)
     path.write_text(json.dumps(payload), encoding="utf-8")
 
-    push = read_lattice_consolidation_push(harness)
-    assert "Lattice gate open" in push
-    assert "lattice-consolidate" in push
-    assert "get_run" in push
+    wake = read_lattice_wake(harness)
+    assert wake is not None
+    assert wake.gate_open is True
+    assert "Lattice gate open" in wake.teaser
+    assert "lattice-consolidate" not in wake.teaser
+    assert "get_run" not in wake.teaser
 
 
-async def test_materialize_injects_lattice_push_when_gate_file_present(
+async def test_materialize_injects_lattice_wake_via_tcp(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     factory, captured = _factory(monkeypatch, tmp_path)
@@ -83,20 +85,23 @@ async def test_materialize_injects_lattice_push_when_gate_file_present(
         ),
         encoding="utf-8",
     )
-    push = read_lattice_consolidation_push(mat.working_dir)
-    monkeypatch.setattr(_factory_mod, "read_lattice_consolidation_push", lambda _root: push)
+    wake = read_lattice_wake(mat.working_dir)
+    assert wake is not None
+    monkeypatch.setattr(_factory_mod, "read_lattice_wake", lambda _root: wake)
 
     mat2 = factory.materialize(employee)
-    overlay = (mat2.working_dir / ".harness" / "roles" / "generator.toml").read_text(
-        encoding="utf-8"
-    )
-    assert "consolidate now" not in overlay
+    agents = (mat2.working_dir / ".harness" / "AGENTS.md").read_text(encoding="utf-8")
+    assert "consolidate now" not in agents
+    assert "lattice_packet" not in agents
     hook = [
         item
         for item in captured["harness"].hooks
         if isinstance(item, VolatileBeatPacketHook)
     ][-1]
-    packet = (await hook(HookEvent.USER_PROMPT_SUBMIT, {"prompt": "work"})).inject_context or ""
-    assert LATTICE_BEAT_START_HEADER.strip() in packet
+    packet = (
+        await hook(HookEvent.USER_PROMPT_SUBMIT, {"role": "generator", "prompt": "work"})
+    ).inject_context or ""
+    assert "### Lattice wake" in packet
     assert "consolidate now" in packet
-    assert "lattice_packet" in packet
+    assert "lattice-consolidate" in packet
+    assert "lattice_packet" not in packet

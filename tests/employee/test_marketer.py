@@ -67,6 +67,9 @@ class TestMarketerPlugin:
         assert "run_command" not in plugin.manifest.tools
         assert "git" not in plugin.manifest.tools
 
+    def test_brief_does_not_name_the_unavailable_command_tool(self) -> None:
+        assert "run_command" not in MARKETER_BRIEF
+
     def test_manifest_permission_mode_accepts_edits(self) -> None:
         plugin = marketer_plugin()
         assert plugin.manifest.permission_mode == PermissionMode.ACCEPT_EDITS

@@ -7,10 +7,6 @@ overlay (see :func:`chorus_harness.write_role_overlays`).
 
 from __future__ import annotations
 
-from chorus_employee._recall import RECALL_DIRECTIVE
-from chorus_employee._resume import RESUME_DIRECTIVE
-from chorus_employee._tool_choice import TOOL_CHOICE_MATRIX
-
 # The conventional file an Analyst writes its findings to, in its worktree. The lander snapshots this
 # file as the ``finding`` artifact, so the brief and the lander must name the same path.
 ANALYST_FINDINGS_DOC = "findings.md"
@@ -59,16 +55,6 @@ ANALYST_BRIEF = (
     "threshold — an independent held-out score is your Definition of Done, so never report a "
     "cross-validation number you tuned to the bar and call it done. Do not commit, push, or change "
     "anything outside your working directory."
-)
-
-ANALYST_BRIEF = (
-    ANALYST_BRIEF
-    + "\n\n"
-    + TOOL_CHOICE_MATRIX
-    + "\n\n"
-    + RESUME_DIRECTIVE
-    + "\n\n"
-    + RECALL_DIRECTIVE
 )
 
 __all__ = ["ANALYST_BRIEF", "ANALYST_FINDINGS_DOC"]

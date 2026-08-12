@@ -6,13 +6,13 @@ worktree side-effects run on real git in a temp dir.
 
 from __future__ import annotations
 
-import json
 import subprocess
 from pathlib import Path
 from typing import Any
 
 import pytest
 from dream.contracts.hook import HookEvent
+from dream.contracts.strategy import LandedPhase, RecoveryHint
 
 from chorus.heartbeat import BeatRunner
 from chorus.ledger import (
@@ -22,6 +22,7 @@ from chorus.ledger import (
     Ledger,
     ManagementProfile,
     Run,
+    RunCarryover,
     RunStatus,
     Task,
     TaskStatus,
@@ -159,7 +160,7 @@ def test_backend_engineer_materializes_a_writable_harness_in_its_worktree(
         "read_file",
         "read_offloaded",
         "write_file",
-        "edit_file",
+        "apply_patch",
         "bash",
         "git",
         "todo_write",
@@ -220,12 +221,15 @@ def test_engineer_role_overlays_keep_evaluator_read_only(
     )
 
     assert "tools = []" in planner  # toolless on purpose
-    assert "PLANNER PHASE" in planner
+    assert "PLANNER PHASE" not in planner  # phase text lives in Dream standing orders
     assert '"bash"' in evaluator  # in-session verify (no harness oracle)
     assert '"write_file"' not in evaluator
-    assert "the sprint contract and review rubric are the acceptance authority" in evaluator
-    assert "not extra acceptance criteria" in evaluator
+    assert "acceptance authority" not in evaluator  # Dream standing orders
     assert "tools =" not in generator
+
+    agents = (mat.working_dir / ".harness" / "AGENTS.md").read_text(encoding="utf-8")
+    assert agents.strip()  # employee brief materialised for Dream <context>
+    assert agents.strip() == mat.config.system_prompt.strip()
 
 
 def test_engineer_gets_an_unrestricted_sandbox_so_it_can_run_commands(
@@ -460,11 +464,16 @@ async def test_delegation_context_is_rehydrated_with_its_team(
             for item in captured["harness"].hooks
             if isinstance(item, VolatileBeatPacketHook)
         )
-        packet = (await hook(HookEvent.USER_PROMPT_SUBMIT, {"prompt": "work"})).inject_context or ""
+        packet = (
+            await hook(HookEvent.USER_PROMPT_SUBMIT, {"role": "planner", "prompt": "work"})
+        ).inject_context or ""
         assert "ada (backend_engineer)" in packet
         assert "bob (backend_engineer)" in packet
         assert "eve (engineer)" not in packet
-        assert "moe" not in packet.split("Your reports")[1]
+        assert "### Reports" in packet
+        assert "Mapping rule" not in packet
+        assert "You are a director" not in packet
+        assert "moe" not in packet.split("### Reports")[1]
     finally:
         ledger.close()
 
@@ -505,33 +514,20 @@ async def test_corrective_child_inherits_failed_sibling_evidence(
                 employee_id=ic.id,
                 task_id=failed.id,
                 status=RunStatus.FAILED,
-                outcome={
-                    "sprint_outcomes": ["needs-changes", "needs-changes"],
-                    "subagent_evidence_reason": (
-                        "code_reviewer evidence does not carry the required claim"
-                    ),
-                },
+            )
+        )
+        ledger.run_carryovers.append(
+            RunCarryover(
+                run_id=run_id,
+                phase=LandedPhase.TERMINAL_FAIL,
+                recovery_hint=RecoveryHint.REWORK,
+                evaluator_notes=(
+                    "base62 alphabet implementation contradicts the required 0-9,A-Z,a-z order",
+                    "code_reviewer evidence does not carry the required claim",
+                ),
             )
         )
         factory, captured = _factory(monkeypatch, tmp_path, ledger)
-        # The first materialize creates the worktree; drop the evaluator record where dream
-        # persists it (docs/evals/<run>/sprint-N.json), then materialize the corrective beat.
-        first = factory.materialize(ic, task_id=corrective.id)
-        evals = first.working_dir / "docs" / "evals" / run_id
-        evals.mkdir(parents=True, exist_ok=True)
-        (evals / "sprint-1.json").write_text(
-            json.dumps(
-                {
-                    "outcome": "needs-changes",
-                    "notes": (
-                        "base62 alphabet implementation contradicts the required 0-9,A-Z,a-z "
-                        "order and the tests themselves assert the wrong vectors"
-                    ),
-                }
-            ),
-            encoding="utf-8",
-        )
-
         mat = factory.materialize(ic, task_id=corrective.id)
 
         generator = (mat.working_dir / ".harness" / "roles" / "generator.toml").read_text("utf-8")
@@ -541,12 +537,13 @@ async def test_corrective_child_inherits_failed_sibling_evidence(
             for item in captured["harness"].hooks
             if isinstance(item, VolatileBeatPacketHook)
         ][-1]
-        packet = (await hook(HookEvent.USER_PROMPT_SUBMIT, {"prompt": "fix"})).inject_context or ""
-        assert "Inherited failure evidence" in packet
+        packet = (
+            await hook(HookEvent.USER_PROMPT_SUBMIT, {"role": "generator", "prompt": "fix"})
+        ).inject_context or ""
+        assert "Corrective sibling findings" in packet
         assert failed.id in packet
         assert "contradicts the required 0-9,A-Z,a-z" in packet
         assert "code_reviewer evidence does not carry the required claim" in packet
-        assert "AUTHORIZED to re-author" in packet
     finally:
         ledger.close()
 
@@ -579,12 +576,14 @@ def test_first_attempt_child_gets_no_inheritance_block(
 
 
 @pytest.mark.parametrize(
-    ("active", "can_lead", "expects_director_guidance"),
+    ("active", "can_lead", "expects_lead_flag"),
     ((True, True, True), (False, True, False), (True, False, False)),
 )
-def test_team_roster_uses_management_authority_to_identify_manager_reports(
-    active: bool, can_lead: bool, expects_director_guidance: bool
+def test_project_reports_marks_active_leads(
+    active: bool, can_lead: bool, expects_lead_flag: bool
 ) -> None:
+    from chorus.context import project_reports
+
     ledger = open_test_ledger()
     try:
         director = Employee(id="ceo", name="Casey", role="ceo")
@@ -608,10 +607,10 @@ def test_team_roster_uses_management_authority_to_identify_manager_reports(
             )
         )
 
-        roster = _factory_mod._team_roster(ledger, exclude=director.id)
-
-        assert ("You are a director" in roster) is expects_director_guidance
-        assert ("manager reports (backend-lead)" in roster) is expects_director_guidance
+        reports = project_reports(ledger, manager_id=director.id)
+        assert len(reports) == 1
+        assert reports[0].employee_id == "backend-lead"
+        assert reports[0].can_lead is expects_lead_flag
     finally:
         ledger.close()
 

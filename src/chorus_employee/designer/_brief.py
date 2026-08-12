@@ -15,10 +15,6 @@ ships UI to a user's screen without a gate.
 
 from __future__ import annotations
 
-from chorus_employee._recall import RECALL_DIRECTIVE
-from chorus_employee._resume import RESUME_DIRECTIVE
-from chorus_employee._tool_choice import TOOL_CHOICE_MATRIX
-
 # The system doc (READ) — the machine-readable design system the Designer grounds every choice in.
 # Google's open DESIGN.md format: YAML tokens up top, prose rationale + guardrails below (designer §10).
 DESIGN_SYSTEM_DOC = "DESIGN.md"
@@ -150,7 +146,7 @@ DESIGNER_BRIEF = (
     "8. VERIFICATION IS AUTOMATIC — do NOT try to run it yourself. The system checks the deliverables "
     "(that `DESIGN.md` and `design_spec.md` both exist, are substantive, and — for the spec — document "
     "its tokens/components, states, and accessibility) for you AFTER the beat, in the worktree. You "
-    "have NO shell/`run_command` and no verifier subagent, so never run `wc`/`test`/any shell, never "
+    "have no command shell and no verifier subagent, so never run `wc`/`test`/any shell, never "
     "write a `verify.sh`, and never spawn a subagent to 'run' the check. Just make the system and the "
     "spec substantive and on-system up front, reach a Design-Critic PASS, and STOP.\n\n"
     "Definition of done: TWO artifacts land, as SEPARATE files. (1) `DESIGN.md` — the design system the "
@@ -164,16 +160,6 @@ DESIGNER_BRIEF = (
     "artifact to prove. A human approves any handoff that ships UI to a user's screen. "
     "House rules: read the system first; design to the tokens; reach for the real component; specify "
     "every state; make it accessible by construction; cite every choice; escalate drift, never invent."
-)
-
-DESIGNER_BRIEF = (
-    DESIGNER_BRIEF
-    + "\n\n"
-    + TOOL_CHOICE_MATRIX
-    + "\n\n"
-    + RESUME_DIRECTIVE
-    + "\n\n"
-    + RECALL_DIRECTIVE
 )
 
 __all__ = ["DESIGNER_BRIEF", "DESIGN_SPEC_DOC", "DESIGN_SYSTEM_DOC"]

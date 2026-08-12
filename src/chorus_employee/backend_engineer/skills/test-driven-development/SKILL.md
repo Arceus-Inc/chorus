@@ -33,7 +33,7 @@ Agent-green suites that skip the contract are FAIL:
 
 ## Tools
 
-- `write_file` / `edit_file` — tests first, then production
+- `write_file` / `apply_patch` — tests first, then production
 - `test_red` / `run_command` — watch RED, then GREEN
 - `test_evidence` — record gates after the suite is honest
 - `skill(testing-honeycomb-strategy)` — integration-heavy honeycomb shape

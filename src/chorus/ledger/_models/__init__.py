@@ -19,6 +19,7 @@ from chorus.ledger._models._budget import (
     BudgetPolicy,
     CostEvent,
 )
+from chorus.ledger._models._context import RunCarryover
 from chorus.ledger._models._decision import (
     Claim,
     DecisionRecord,
@@ -156,6 +157,7 @@ __all__ = [
     "RoutineTarget",
     "RoutineTrigger",
     "Run",
+    "RunCarryover",
     "RunStatus",
     "SessionCost",
     "Skill",

@@ -6,15 +6,26 @@ from pathlib import Path
 
 import pytest
 from dream.contracts.hook import HookEvent
+from dream.contracts.strategy import LandedPhase, RecoveryHint
 
+from chorus.context import (
+    BudgetPosition,
+    Citation,
+    ContextAudience,
+    DoDRequirement,
+    InboxItem,
+    LatticeWake,
+    OperatingEnvironment,
+    PriorBeat,
+    TaskContextPacket,
+    TaskContract,
+)
 from chorus.roles._subagent import SubagentSpec
 from chorus_harness._dream_hooks import (
-    BeatContextKind,
-    BeatContextSection,
     DangerousToolVetoHook,
-    ShadowCheckpointHook,
     EvidenceContinueHook,
     EvidenceForgeVetoHook,
+    ShadowCheckpointHook,
     VolatileBeatPacket,
     VolatileBeatPacketHook,
     register_employee_hooks,
@@ -52,7 +63,6 @@ def test_register_skips_evidence_continue_by_default(tmp_path: Path) -> None:
     assert not any(isinstance(h, EvidenceContinueHook) for h in harness.hooks)
 
 
-
 def test_factory_stop_evidence_requirements_defaults_false() -> None:
     import inspect
 
@@ -83,11 +93,15 @@ async def test_volatile_packet_injects_each_session_and_consumes_once(
         consumed += 1
 
     packet = VolatileBeatPacket(
-        sections=(
-            BeatContextSection(
-                kind=BeatContextKind.INBOX,
-                content="## Inbox\nparser must handle CRLF",
-            ),
+        task_context=TaskContextPacket(
+            task_id="task-1",
+            contract=TaskContract(intent="ship"),
+            ancestry=(),
+            prior_beats=(),
+            inbox=(InboxItem("m1", "lead", "parser must handle CRLF", "task-1"),),
+            sibling_failures=(),
+            budget=BudgetPosition(0, None, 0),
+            citations=(),
         ),
         on_injected=consume,
     )
@@ -99,9 +113,70 @@ async def test_volatile_packet_injects_each_session_and_consumes_once(
     )
     hook = next(h for h in harness.hooks if isinstance(h, VolatileBeatPacketHook))
 
-    first = await hook(HookEvent.USER_PROMPT_SUBMIT, {"prompt": "one"})
-    second = await hook(HookEvent.USER_PROMPT_SUBMIT, {"prompt": "two"})
+    first = await hook(HookEvent.USER_PROMPT_SUBMIT, {"role": "generator", "prompt": "one"})
+    second = await hook(HookEvent.USER_PROMPT_SUBMIT, {"role": "generator", "prompt": "two"})
 
     assert "parser must handle CRLF" in (first.inject_context or "")
     assert first.inject_context == second.inject_context
     assert consumed == 1
+
+
+async def test_volatile_packet_keeps_evaluator_independent() -> None:
+    packet = VolatileBeatPacket(
+        task_context=TaskContextPacket(
+            task_id="task-1",
+            contract=TaskContract(intent="ship", dod=(DoDRequirement("command", "pytest -q"),)),
+            ancestry=(),
+            prior_beats=(
+                PriorBeat(
+                    run_id="run-1",
+                    phase=LandedPhase.NEEDS_REWORK,
+                    recovery_hint=RecoveryHint.REWORK,
+                    evaluator_notes=("fix the regression",),
+                    citation=Citation("ledger.run_carryover:run-1", "landed beat carryover"),
+                ),
+            ),
+            inbox=(),
+            sibling_failures=(),
+            budget=BudgetPosition(0, None, 1),
+            citations=(),
+            runtime=OperatingEnvironment("macOS (25)", "/bin/sh", ("Python 3.12",)),
+            lattice_wake=LatticeWake(True, "gate teaser private"),
+        ),
+    )
+    hook = VolatileBeatPacketHook(packet)
+
+    planner = await hook(HookEvent.USER_PROMPT_SUBMIT, {"role": "planner", "prompt": "plan"})
+    generator = await hook(HookEvent.USER_PROMPT_SUBMIT, {"role": "generator", "prompt": "work"})
+    evaluator = await hook(HookEvent.USER_PROMPT_SUBMIT, {"role": "evaluator", "prompt": "judge"})
+
+    assert "fix the regression" in (planner.inject_context or "")
+    assert "fix the regression" in (generator.inject_context or "")
+    assert "fix the regression" not in (evaluator.inject_context or "")
+    assert "gate teaser private" in (generator.inject_context or "")
+    assert "gate teaser private" not in (planner.inject_context or "")
+    assert "Operating environment" in (generator.inject_context or "")
+    assert "Operating environment" not in (planner.inject_context or "")
+    assert generator.inject_context == packet.render(ContextAudience.GENERATOR)
+
+
+async def test_volatile_packet_fails_closed_without_dream_role() -> None:
+    packet = VolatileBeatPacket(
+        task_context=TaskContextPacket(
+            task_id="task-1",
+            contract=TaskContract(intent="private state"),
+            ancestry=(),
+            prior_beats=(),
+            inbox=(),
+            sibling_failures=(),
+            budget=BudgetPosition(0, None, 0),
+            citations=(),
+            lattice_wake=LatticeWake(True, "private state"),
+        ),
+    )
+
+    outcome = await VolatileBeatPacketHook(packet)(
+        HookEvent.USER_PROMPT_SUBMIT, {"prompt": "work"}
+    )
+
+    assert outcome.inject_context is None

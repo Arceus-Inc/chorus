@@ -7,10 +7,6 @@ role as a per-role overlay (see :func:`chorus_harness.write_role_overlays`).
 
 from __future__ import annotations
 
-from chorus_employee._recall import RECALL_DIRECTIVE
-from chorus_employee._resume import RESUME_DIRECTIVE
-from chorus_employee._tool_choice import TOOL_CHOICE_MATRIX
-
 # The conventional file a PM writes its plan to, in its worktree. The lander snapshots this file as the
 # ``doc`` artifact, so the brief and the lander must name the same path.
 PM_PLAN_DOC = "plan.md"
@@ -72,17 +68,13 @@ PM_BRIEF = (
     "and do not fall back to writing a file).\n"
     "   IMPORTANT — `record_decision` is ALWAYS available to you. If a call ever comes back "
     '"not in this role\'s manifest", that only means you tried it a beat too early (while still '
-    "planning). It is NOT missing and NOT a capability you must request or look up: do NOT `browser_run` "
-    "for it, do NOT emit `request_capability`, do NOT write a file instead — simply continue your work "
+    "planning). It is NOT missing and not a capability you must seek or look up: do NOT `browser_run` "
+    "for it or write a file instead — simply continue your work "
     "and CALL `record_decision` again. It will go through.\n"
     "5. STOP. Once the Critic has cleared your plan (or you have addressed its REVISE) AND "
     f"`record_decision` has succeeded AND `{PM_PLAN_DOC}` reflects the recorded decision, you are DONE — "
     f"write a one-line summary and end your turn. Do NOT keep editing `{PM_PLAN_DOC}` or record again: "
     "one red-teamed, recorded decision plus its plan file IS the finished deliverable."
-)
-
-PM_BRIEF = (
-    PM_BRIEF + "\n\n" + TOOL_CHOICE_MATRIX + "\n\n" + RESUME_DIRECTIVE + "\n\n" + RECALL_DIRECTIVE
 )
 
 __all__ = ["PM_BRIEF", "PM_PLAN_DOC"]

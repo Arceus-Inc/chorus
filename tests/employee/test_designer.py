@@ -14,6 +14,7 @@ import pytest
 from chorus.ledger import RoutineConcurrency
 from chorus.outcomes import DoDKind
 from chorus.roles._manifest import Isolation, MemoryScope, PermissionMode
+from chorus_employee.designer import DESIGNER_BRIEF
 
 pytestmark = pytest.mark.integration
 
@@ -56,6 +57,9 @@ class TestDesignerManifest:
         tools = self._manifest().tools
         assert "run_command" not in tools
         assert "git" not in tools
+
+    def test_brief_does_not_name_the_unavailable_command_tool(self) -> None:
+        assert "run_command" not in DESIGNER_BRIEF
 
     def test_write_posture_is_worktree_isolated_accept_edits_project_memory(self) -> None:
         manifest = self._manifest()

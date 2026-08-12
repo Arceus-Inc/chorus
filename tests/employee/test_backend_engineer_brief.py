@@ -135,15 +135,6 @@ def test_brief_keeps_generated_runtime_state_out_of_the_diff() -> None:
     assert "git status" in brief
 
 
-def test_brief_has_the_resume_reconcile_directive() -> None:
-    # The cross-beat resumption protocol: keep a durable TODO.md via todo_write, read it FIRST and
-    # reconcile intent (the checklist) against reality (git + tests), resume rather than restart.
-    brief = BACKEND_ENGINEER_BRIEF
-    assert "todo_write" in brief
-    assert "TODO.md" in brief
-    assert "resume" in brief.lower()
-
-
 def test_brief_resume_trusts_green_artifacts_and_skips_to_the_missing_one() -> None:
     # Root cause of the stalled 4-domain run: on resume Bex re-verified already-green, artifact-backed
     # steps (re-ran api_verifier though api_verdict.json was already passed) and starved the terminal
@@ -154,14 +145,6 @@ def test_brief_resume_trusts_green_artifacts_and_skips_to_the_missing_one() -> N
     assert "artifact" in lower
     assert "missing" in lower  # advance to the first MISSING artifact
     assert "do not re-run" in lower or "don't re-run" in lower or "do not redo" in lower
-
-
-def test_brief_implement_first_matrix_wins() -> None:
-    brief = BACKEND_ENGINEER_BRIEF
-    lower = brief.lower()
-    assert "tool > skill > spawn" in lower
-    assert "just implement yourself" in lower
-    assert "do not spawn to wrap a single tool" in lower or "spawn to wrap a single tool" in lower
 
 
 def test_brief_routes_tdd_through_skill_not_spawn() -> None:
@@ -199,12 +182,6 @@ def test_brief_does_not_require_terminal_code_reviewer() -> None:
     lower = BACKEND_ENGINEER_BRIEF.lower()
     assert "every initial `todo.md` checklist ends" not in lower
     assert "spawn `code_reviewer`" not in lower
-
-
-def test_brief_spawn_when_not_language() -> None:
-    lower = BACKEND_ENGINEER_BRIEF.lower()
-    assert "re-delegate the whole ticket" in lower or "whole ticket" in lower
-    assert "trivial" in lower or "isolation" in lower
 
 
 def test_brief_api_verifier_only_for_running_service() -> None:
@@ -264,20 +241,12 @@ def test_brief_fits_the_lean_token_budget() -> None:
 
 
 def test_brief_keeps_the_anatomy_essentials() -> None:
-    """Identity survives the diet: specialists named, manager escalation, deliverable class."""
+    """Identity survives the diet: role specialists and deliverable class."""
     brief = BACKEND_ENGINEER_BRIEF
-    for subagent in ("code_reviewer", "api_verifier", "generalPurpose"):
+    for subagent in ("code_reviewer", "api_verifier"):
         assert subagent in brief, subagent
-    assert "manager" in brief.lower()
     assert "PR" in brief
     assert "test_evidence" in brief
-
-
-def test_brief_requires_a_useful_final_handoff() -> None:
-    brief = BACKEND_ENGINEER_BRIEF.lower()
-    assert "what changed" in brief
-    assert "verification commands and results" in brief
-    assert "remaining caveats" in brief
 
 
 def test_brief_requires_adversarial_semantic_review() -> None:
@@ -287,13 +256,6 @@ def test_brief_requires_adversarial_semantic_review() -> None:
     assert "adversarial" in brief
     assert "identifier-bearing operation" in brief
     assert "another eligible resource exists" in brief
-
-
-def test_brief_requires_review_defects_to_reopen_green_work() -> None:
-    brief = BACKEND_ENGINEER_BRIEF.lower()
-    assert "needs-changes" in brief
-    assert "reopens named items" in brief
-    assert "before rerunning evidence" in brief
 
 
 def test_brief_preserves_required_paths() -> None:
