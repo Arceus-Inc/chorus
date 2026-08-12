@@ -1,47 +1,50 @@
-"""Lattice directives — shared by every employee that carries lattice tools."""
+"""Lattice wake helpers — skills own standing craft; TCP carries the gate teaser only."""
 
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
+from dataclasses import dataclass
 from pathlib import Path
 
-from lattice.directive import LATTICE_CONSOLIDATE_DIRECTIVE, LATTICE_CONTEXT_DIRECTIVE
+from chorus.context._packet import LatticeWake
 
 # Bundled agent skills — materialized into each worktree's ``.harness/skills/`` at beat time.
 LATTICE_SKILLS_ROOT = Path(__file__).resolve().parent / "_lattice_skills"
 
-LATTICE_DIRECTIVES_BLOCK = "\n\n" + LATTICE_CONTEXT_DIRECTIVE + "\n" + LATTICE_CONSOLIDATE_DIRECTIVE
 
-LATTICE_BEAT_START_HEADER = "## Lattice consolidation (auto — gate was open last beat)\n"
-
-LATTICE_BEAT_START_FOOTER = (
-    "FIRST this beat (before other task work): load skill `lattice-consolidate`, "
-    "call `lattice_packet()`, `recall(query)` + `get_run(run_id)` per cited beat, "
-    "then `lattice_apply` with ≤10 patterns and `skill_manage(evolve|patch)` for procedures."
-)
+@dataclass(frozen=True)
+class _LatticeBeatEndRecord:
+    gate_open: bool
+    teaser: str
 
 
-def read_lattice_consolidation_push(harness_dir: Path) -> str:
-    """Read the prior beat's gate-open teaser for injection at materialize (integration §4.4 B)."""
+def read_lattice_wake(harness_dir: Path) -> LatticeWake | None:
+    """Read the prior beat's gate-open teaser for the TCP lattice_wake field."""
     path = harness_dir / ".harness" / "lattice-beat-end.json"
     if not path.is_file():
-        return ""
+        return None
     try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
+        raw: object = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
-        return ""
-    if payload.get("gate_open") is not True:
-        return ""
-    teaser = str(payload.get("teaser", "")).strip()
-    if not teaser:
-        return ""
-    return f"{teaser}\n{LATTICE_BEAT_START_FOOTER}"
+        return None
+    record = _parse_beat_end(raw)
+    if record is None or not record.gate_open or not record.teaser:
+        return None
+    return LatticeWake(gate_open=True, teaser=record.teaser)
+
+
+def _parse_beat_end(raw: object) -> _LatticeBeatEndRecord | None:
+    if not isinstance(raw, Mapping):
+        return None
+    gate = raw.get("gate_open")
+    teaser_raw = raw.get("teaser", "")
+    if not isinstance(teaser_raw, str):
+        return None
+    return _LatticeBeatEndRecord(gate_open=gate is True, teaser=teaser_raw.strip())
 
 
 __all__ = [
-    "LATTICE_BEAT_START_FOOTER",
-    "LATTICE_BEAT_START_HEADER",
-    "LATTICE_DIRECTIVES_BLOCK",
     "LATTICE_SKILLS_ROOT",
-    "read_lattice_consolidation_push",
+    "read_lattice_wake",
 ]

@@ -13,14 +13,15 @@ from chorus.context import (
     Citation,
     ContextAudience,
     DoDRequirement,
+    InboxItem,
+    LatticeWake,
+    OperatingEnvironment,
     PriorBeat,
     TaskContextPacket,
     TaskContract,
 )
 from chorus.roles._subagent import SubagentSpec
 from chorus_harness._dream_hooks import (
-    BeatContextKind,
-    BeatContextSection,
     DangerousToolVetoHook,
     EvidenceContinueHook,
     EvidenceForgeVetoHook,
@@ -62,7 +63,6 @@ def test_register_skips_evidence_continue_by_default(tmp_path: Path) -> None:
     assert not any(isinstance(h, EvidenceContinueHook) for h in harness.hooks)
 
 
-
 def test_factory_stop_evidence_requirements_defaults_false() -> None:
     import inspect
 
@@ -93,11 +93,15 @@ async def test_volatile_packet_injects_each_session_and_consumes_once(
         consumed += 1
 
     packet = VolatileBeatPacket(
-        sections=(
-            BeatContextSection(
-                kind=BeatContextKind.RUNTIME,
-                content="## Inbox\nparser must handle CRLF",
-            ),
+        task_context=TaskContextPacket(
+            task_id="task-1",
+            contract=TaskContract(intent="ship"),
+            ancestry=(),
+            prior_beats=(),
+            inbox=(InboxItem("m1", "lead", "parser must handle CRLF", "task-1"),),
+            sibling_failures=(),
+            budget=BudgetPosition(0, None, 0),
+            citations=(),
         ),
         on_injected=consume,
     )
@@ -119,7 +123,6 @@ async def test_volatile_packet_injects_each_session_and_consumes_once(
 
 async def test_volatile_packet_keeps_evaluator_independent() -> None:
     packet = VolatileBeatPacket(
-        sections=(),
         task_context=TaskContextPacket(
             task_id="task-1",
             contract=TaskContract(intent="ship", dod=(DoDRequirement("command", "pytest -q"),)),
@@ -137,6 +140,8 @@ async def test_volatile_packet_keeps_evaluator_independent() -> None:
             sibling_failures=(),
             budget=BudgetPosition(0, None, 1),
             citations=(),
+            runtime=OperatingEnvironment("macOS (25)", "/bin/sh", ("Python 3.12",)),
+            lattice_wake=LatticeWake(True, "gate teaser private"),
         ),
     )
     hook = VolatileBeatPacketHook(packet)
@@ -148,12 +153,26 @@ async def test_volatile_packet_keeps_evaluator_independent() -> None:
     assert "fix the regression" in (planner.inject_context or "")
     assert "fix the regression" in (generator.inject_context or "")
     assert "fix the regression" not in (evaluator.inject_context or "")
+    assert "gate teaser private" in (generator.inject_context or "")
+    assert "gate teaser private" not in (planner.inject_context or "")
+    assert "Operating environment" in (generator.inject_context or "")
+    assert "Operating environment" not in (planner.inject_context or "")
     assert generator.inject_context == packet.render(ContextAudience.GENERATOR)
 
 
 async def test_volatile_packet_fails_closed_without_dream_role() -> None:
     packet = VolatileBeatPacket(
-        sections=(BeatContextSection(BeatContextKind.LATTICE, "private state"),),
+        task_context=TaskContextPacket(
+            task_id="task-1",
+            contract=TaskContract(intent="private state"),
+            ancestry=(),
+            prior_beats=(),
+            inbox=(),
+            sibling_failures=(),
+            budget=BudgetPosition(0, None, 0),
+            citations=(),
+            lattice_wake=LatticeWake(True, "private state"),
+        ),
     )
 
     outcome = await VolatileBeatPacketHook(packet)(

@@ -470,7 +470,10 @@ async def test_delegation_context_is_rehydrated_with_its_team(
         assert "ada (backend_engineer)" in packet
         assert "bob (backend_engineer)" in packet
         assert "eve (engineer)" not in packet
-        assert "moe" not in packet.split("Your reports")[1]
+        assert "### Reports" in packet
+        assert "Mapping rule" not in packet
+        assert "You are a director" not in packet
+        assert "moe" not in packet.split("### Reports")[1]
     finally:
         ledger.close()
 
@@ -573,12 +576,14 @@ def test_first_attempt_child_gets_no_inheritance_block(
 
 
 @pytest.mark.parametrize(
-    ("active", "can_lead", "expects_director_guidance"),
+    ("active", "can_lead", "expects_lead_flag"),
     ((True, True, True), (False, True, False), (True, False, False)),
 )
-def test_team_roster_uses_management_authority_to_identify_manager_reports(
-    active: bool, can_lead: bool, expects_director_guidance: bool
+def test_project_reports_marks_active_leads(
+    active: bool, can_lead: bool, expects_lead_flag: bool
 ) -> None:
+    from chorus.context import project_reports
+
     ledger = open_test_ledger()
     try:
         director = Employee(id="ceo", name="Casey", role="ceo")
@@ -602,10 +607,10 @@ def test_team_roster_uses_management_authority_to_identify_manager_reports(
             )
         )
 
-        roster = _factory_mod._team_roster(ledger, exclude=director.id)
-
-        assert ("You are a director" in roster) is expects_director_guidance
-        assert ("manager reports (backend-lead)" in roster) is expects_director_guidance
+        reports = project_reports(ledger, manager_id=director.id)
+        assert len(reports) == 1
+        assert reports[0].employee_id == "backend-lead"
+        assert reports[0].can_lead is expects_lead_flag
     finally:
         ledger.close()
 

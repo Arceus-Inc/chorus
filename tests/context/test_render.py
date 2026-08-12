@@ -12,7 +12,10 @@ from chorus.context import (
     ContextAudience,
     DoDRequirement,
     InboxItem,
+    LatticeWake,
+    OperatingEnvironment,
     PriorBeat,
+    ReportRef,
     SiblingFailure,
     TaskContextPacket,
     TaskContract,
@@ -53,6 +56,9 @@ def _packet() -> TaskContextPacket:
             Citation("ledger.task:task-old", "same-assignee corrective sibling failure"),
         ),
         truncation=(Truncation("prior_beats", 1, "bounded deterministic projection"),),
+        reports=(ReportRef("bob", "backend_engineer", can_lead=True),),
+        runtime=OperatingEnvironment("macOS (25)", "/bin/sh", ("Python 3.12", "Node.js v22")),
+        lattice_wake=LatticeWake(True, "**Lattice gate open** — consolidate now."),
     )
 
 
@@ -75,3 +81,25 @@ def test_planner_and_generator_get_recovery_but_evaluator_does_not() -> None:
     assert "task-old" not in evaluator
     assert "ledger.run_carryover" not in evaluator
     assert "context truncated" not in evaluator
+
+
+def test_reports_runtime_and_lattice_wake_are_audience_filtered() -> None:
+    packet = _packet()
+
+    planner = render_task_context(packet, ContextAudience.PLANNER)
+    generator = render_task_context(packet, ContextAudience.GENERATOR)
+    evaluator = render_task_context(packet, ContextAudience.EVALUATOR)
+
+    assert "bob (backend_engineer, lead)" in planner
+    assert "bob (backend_engineer, lead)" in generator
+    assert "bob" not in evaluator
+    assert "Mapping rule" not in planner
+    assert "Operating environment" in generator
+    assert "Node.js v22" in generator
+    assert "Operating environment" not in planner
+    assert "### Lattice wake" in generator
+    assert "consolidate now" in generator
+    assert "lattice-consolidate" in generator
+    assert "lattice_packet" not in generator
+    assert "Lattice wake" not in planner
+    assert "Lattice wake" not in evaluator
