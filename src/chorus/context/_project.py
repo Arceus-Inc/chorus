@@ -12,14 +12,17 @@ from chorus.context._packet import (
     Citation,
     DoDRequirement,
     InboxItem,
+    LatticeWake,
+    OperatingEnvironment,
     PriorBeat,
+    ReportRef,
     SiblingFailure,
     TaskContextPacket,
     TaskContract,
     Truncation,
 )
 from chorus.ledger import BudgetScope, Ledger, Task, TaskStatus
-from chorus.outcomes import AgentReview, Command, HumanApproval
+from chorus.outcomes import AgentReview, Command, HumanApproval, PlatformInfo, detect_platform
 from chorus.workforce import Employee
 
 MAX_ANCESTRY = 32
@@ -28,7 +31,15 @@ MAX_PRIOR_BEATS = 4
 
 
 def project_task_context(
-    ledger: Ledger, *, task_id: str, employee: Employee, now: datetime | None = None
+    ledger: Ledger,
+    *,
+    task_id: str,
+    employee: Employee,
+    now: datetime | None = None,
+    include_reports: bool = False,
+    team_id: str | None = None,
+    runtime: OperatingEnvironment | None = None,
+    lattice_wake: LatticeWake | None = None,
 ) -> TaskContextPacket:
     """Return the bounded, task-keyed briefing for one employee's next beat."""
     task = ledger.tasks.get(task_id)
@@ -38,6 +49,7 @@ def project_task_context(
     prior, prior_truncation = _prior_beats(ledger, task_id)
     inbox, inbox_truncation = _inbox(ledger, employee)
     sibling_failures, sibling_truncation = _sibling_failures(ledger, task)
+    reports = project_reports(ledger, manager_id=employee.id, team_id=team_id) if include_reports else ()
     return TaskContextPacket(
         task_id=task.id,
         contract=_contract(ledger, task),
@@ -57,7 +69,112 @@ def project_task_context(
             for item in (ancestry_truncation, prior_truncation, inbox_truncation, sibling_truncation)
             if item is not None
         ),
+        reports=reports,
+        runtime=runtime,
+        lattice_wake=lattice_wake,
     )
+
+
+def project_employee_wake(
+    ledger: Ledger,
+    *,
+    employee: Employee,
+    now: datetime | None = None,
+    include_reports: bool = False,
+    team_id: str | None = None,
+    runtime: OperatingEnvironment | None = None,
+    lattice_wake: LatticeWake | None = None,
+) -> TaskContextPacket:
+    """Beat facts for a materialize with no assigned task (chat / config)."""
+    inbox, inbox_truncation = _inbox(ledger, employee)
+    reports = project_reports(ledger, manager_id=employee.id, team_id=team_id) if include_reports else ()
+    return TaskContextPacket(
+        task_id=f"employee:{employee.id}",
+        contract=TaskContract(intent="No assigned task this beat."),
+        ancestry=(),
+        prior_beats=(),
+        inbox=inbox,
+        sibling_failures=(),
+        budget=_budget(ledger, employee, now or datetime.now(UTC), beat_count=0),
+        citations=(Citation(f"ledger.employee:{employee.id}", "recipient and budget scope"),),
+        truncation=tuple(item for item in (inbox_truncation,) if item is not None),
+        reports=reports,
+        runtime=runtime,
+        lattice_wake=lattice_wake,
+    )
+
+
+def project_standalone_wake(
+    *,
+    employee_id: str,
+    runtime: OperatingEnvironment | None = None,
+    lattice_wake: LatticeWake | None = None,
+) -> TaskContextPacket:
+    """Beat facts when there is no ledger (tests / config-only materialize)."""
+    return TaskContextPacket(
+        task_id=f"employee:{employee_id}",
+        contract=TaskContract(intent="No assigned task this beat."),
+        ancestry=(),
+        prior_beats=(),
+        inbox=(),
+        sibling_failures=(),
+        budget=BudgetPosition(0, None, 0),
+        citations=(),
+        runtime=runtime,
+        lattice_wake=lattice_wake,
+    )
+
+
+def project_reports(
+    ledger: Ledger, *, manager_id: str, team_id: str | None = None
+) -> tuple[ReportRef, ...]:
+    """Direct reports the manager may name as assignees (ids + roles only)."""
+    if team_id is None:
+        employees = [emp for emp in ledger.employees.list() if emp.reports_to == manager_id]
+    else:
+        member_ids = {
+            member.employee_id
+            for member in ledger.team_members.members_of(team_id)
+            if member.employee_id != manager_id
+        }
+        employees = [
+            emp
+            for emp in ledger.employees.list()
+            if emp.id in member_ids and emp.reports_to == manager_id
+        ]
+    return tuple(
+        ReportRef(
+            employee_id=emp.id,
+            role=emp.role,
+            can_lead=_can_lead(ledger, emp.id),
+        )
+        for emp in employees
+    )
+
+
+def operating_environment_from_platform(info: PlatformInfo | None = None) -> OperatingEnvironment:
+    """Map host detection into the TCP runtime field."""
+    snapshot = info or detect_platform()
+    runtimes = [
+        f"Python {snapshot.python_version}",
+        f"Node.js {snapshot.node_version}" if snapshot.node_version else "Node.js: not on PATH",
+        f"npm {snapshot.npm_version}" if snapshot.npm_version else "npm: not on PATH",
+        (
+            "Playwright browsers: cached (offline e2e OK)"
+            if snapshot.playwright_browsers_cached
+            else "Playwright browsers: not cached (npx playwright install may be needed)"
+        ),
+    ]
+    return OperatingEnvironment(
+        os_label=f"{snapshot.os_name} ({snapshot.os_release})",
+        shell=snapshot.shell,
+        path_runtimes=tuple(runtimes),
+    )
+
+
+def _can_lead(ledger: Ledger, employee_id: str) -> bool:
+    profile = ledger.management_profiles.get(employee_id)
+    return profile is not None and profile.active and profile.can_lead
 
 
 def _contract(ledger: Ledger, task: Task) -> TaskContract:
@@ -199,5 +316,9 @@ __all__ = [
     "MAX_ANCESTRY",
     "MAX_INBOX",
     "MAX_PRIOR_BEATS",
+    "operating_environment_from_platform",
+    "project_employee_wake",
+    "project_reports",
+    "project_standalone_wake",
     "project_task_context",
 ]

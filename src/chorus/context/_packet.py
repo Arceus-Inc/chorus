@@ -84,6 +84,32 @@ class Truncation:
 
 
 @dataclass(frozen=True)
+class ReportRef:
+    """A direct report the employee may name as an assignee."""
+
+    employee_id: str
+    role: str
+    can_lead: bool = False
+
+
+@dataclass(frozen=True)
+class OperatingEnvironment:
+    """Host facts for roles that call ``run_command``."""
+
+    os_label: str
+    shell: str
+    path_runtimes: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class LatticeWake:
+    """Prior-beat lattice gate teaser. Cookbook steps live in the consolidate skill."""
+
+    gate_open: bool
+    teaser: str
+
+
+@dataclass(frozen=True)
 class TaskContextPacket:
     """Task-keyed control-plane context. It never owns Dream conversation state."""
 
@@ -96,6 +122,9 @@ class TaskContextPacket:
     budget: BudgetPosition
     citations: tuple[Citation, ...]
     truncation: tuple[Truncation, ...] = ()
+    reports: tuple[ReportRef, ...] = ()
+    runtime: OperatingEnvironment | None = None
+    lattice_wake: LatticeWake | None = None
 
 
 __all__ = [
@@ -105,7 +134,10 @@ __all__ = [
     "Citation",
     "DoDRequirement",
     "InboxItem",
+    "LatticeWake",
+    "OperatingEnvironment",
     "PriorBeat",
+    "ReportRef",
     "SiblingFailure",
     "TaskContextPacket",
     "TaskContract",

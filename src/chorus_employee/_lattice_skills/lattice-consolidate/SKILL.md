@@ -1,7 +1,7 @@
 ---
 name: lattice-consolidate
 description: Promote recurring beat evidence into lattice patterns (facts) and skill_manage procedures. Use ONLY at beat end when the gate is open — never every beat.
-when_to_use: Beat end ONLY, when the beat-end notice says "Lattice gate open". Do not run on every beat — consolidation is expensive. Skip entirely when the gate is closed.
+when_to_use: Beat end ONLY, when the beat-end notice or Task context Lattice wake says the gate is open. Do not run on every beat — consolidation is expensive. Skip entirely when the gate is closed.
 ---
 
 # lattice consolidate — patterns + skill_manage (gate-gated)
@@ -10,6 +10,10 @@ Consolidation turns **recurring episodic evidence** into:
 
 - **Patterns** — declarative facts (`api.retry`) → `lattice_apply` → `lattice_context`
 - **Procedures** — playbooks → **`skill_manage(evolve|patch)`** on an existing role skill (default); `create` only for new class-level umbrellas
+
+## When Task context shows Lattice wake
+
+If the pushed Task context includes `### Lattice wake` (prior beat opened the gate), load **this skill first** before other task work, then run the workflow below.
 
 ## Gate
 

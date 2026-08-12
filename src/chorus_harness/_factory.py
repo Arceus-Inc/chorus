@@ -29,13 +29,18 @@ from dream.tools._registry import ToolRegistry, ToolSource
 from dream.tools.builtin import default_registry
 
 from chorus.adapters import DreamBeatRunner, TokenPricing, pricing_from_env_if_configured
-from chorus.context import ContextAudience, project_task_context
+from chorus.context import (
+    LatticeWake,
+    OperatingEnvironment,
+    TaskContextPacket,
+    operating_environment_from_platform,
+    project_employee_wake,
+    project_standalone_wake,
+    project_task_context,
+)
 from chorus.heartbeat import BeatRunner, ExecutionProfileResolver, IntegrateContextPacket
 from chorus.memory import EpisodicRecallService, EpisodicStore
-from chorus.outcomes import (
-    LanderRegistry,
-    runtime_brief_block,
-)
+from chorus.outcomes import LanderRegistry
 from chorus.roles import RoleBeatConfig, RoleRegistry, role_beat_config
 from chorus.roles._manifest import DEFAULT_BEAT_TIMEOUT_S, McpServerSpec
 from chorus.roles._subagent import SubagentSpec
@@ -43,19 +48,10 @@ from chorus.trust import TrustPolicy
 from chorus.workforce import Employee
 from chorus.workspace import CompanyWorkspace, default_work_root
 from chorus_employee import default_landers
-from chorus_employee._lattice import (
-    LATTICE_BEAT_START_HEADER,
-    LATTICE_DIRECTIVES_BLOCK,
-    LATTICE_SKILLS_ROOT,
-    read_lattice_consolidation_push,
-)
+from chorus_employee._lattice import LATTICE_SKILLS_ROOT, read_lattice_wake
 from chorus_employee._shared_skills import SHARED_SKILLS_ROOT
 from chorus_harness._company_state import write_company_state
-from chorus_harness._dream_hooks import (
-    BeatContextKind,
-    BeatContextSection,
-    VolatileBeatPacket,
-)
+from chorus_harness._dream_hooks import VolatileBeatPacket
 from chorus_harness._env_capabilities import degrade_for_env
 from chorus_harness._skills import materialize_skills, materialize_versioned_skills_into
 from chorus_harness._trust import apply_trust
@@ -389,82 +385,6 @@ _LEDGER_FREE_CAPABILITY_TOOLS = frozenset(
 _DELEGATING_TOOLS = frozenset({"decompose", "submit_task", "assign_task"})
 # The manager's reactive tools on an integrate beat — withheld once the subtree is already complete.
 _REACTIVE_TOOLS = frozenset({"submit_task", "assign_task"})
-
-
-def _team_roster(ledger: Ledger, *, exclude: str, team_id: str | None = None) -> str:
-    """The employee's direct reports (id + role), so a delegator names valid assignees.
-
-    When any report has active authority to lead, the delegator is a director: it must hand each lead a
-    whole self-contained AREA (a multi-file sub-goal) and let that lead sub-decompose — never a single
-    file, and never dropping part of the goal. Without this the model collapses a multi-area goal into
-    one file per lead (so whole areas are silently lost) and then, on integrate, re-submits the area a
-    lead already delivered instead of the area that is still missing.
-    """
-    if team_id is None:
-        reports = [emp for emp in ledger.employees.list() if emp.reports_to == exclude]
-    else:
-        member_ids = {
-            member.employee_id
-            for member in ledger.team_members.members_of(team_id)
-            if member.employee_id != exclude
-        }
-        reports = [
-            emp
-            for emp in ledger.employees.list()
-            if emp.id in member_ids and emp.reports_to == exclude
-        ]
-    lines = [f"- {emp.id} ({emp.role})" for emp in reports]
-    body = "\n".join(lines) if lines else "(no other employees are currently hired)"
-    roster = (
-        "\n\n## Your reports (assign each subtask's `assignee` to one of these employee ids)\n"
-        + body
-    )
-    roster += (
-        "\n\n## Keep each subtask a BIG chunk — do NOT over-split\n"
-        "A modern coding harness is powerful: one subtask is a whole module or a whole feature, built "
-        "end to end WITH its own tests in a single beat. Create the FEWEST children that cover the "
-        "objective — roughly one per module or feature. Never split a single module into per-function, "
-        "per-file, or per-layer subtasks, and never create a plan-only or test-only subtask (the owner "
-        "writes the code and its tests together)."
-    )
-    manager_reports = []
-    for employee in reports:
-        profile = ledger.management_profiles.get(employee.id)
-        if profile is not None and profile.active and profile.can_lead:
-            manager_reports.append(employee)
-    if manager_reports:
-        ids = ", ".join(emp.id for emp in manager_reports)
-        roster += (
-            "\n\n## You are a director — delegate whole AREAS to your manager reports ("
-            + ids
-            + ")\n"
-            "Some of your reports are themselves managers who run their own teams. Delegate a COMPLETE, "
-            "self-contained AREA (a multi-file sub-goal) to each manager — NOT a single file — and let "
-            "each manager sub-decompose its area into their own engineers. Do NOT break the goal down "
-            "into individual files yourself, and do NOT create any files. Your decomposition MUST cover "
-            "the ENTIRE goal: identify every distinct part it requires and assign EVERY part to exactly "
-            "one manager — never drop, merge away, or forget a required area/module. Write each area "
-            "child's `intent` as a full, standalone brief that names ALL the modules and behaviors that "
-            "area must deliver.\n"
-            "### Mapping rule (follow EXACTLY)\n"
-            f"- You have these manager reports: {ids}. Create EXACTLY ONE area child task per manager "
-            "report — so the number of child tasks you create EQUALS the number of managers above.\n"
-            "- Map ONE distinct area to EACH manager: every manager listed MUST receive exactly one "
-            "area child, and no manager may receive two. Assigning two children to the same manager (and "
-            "leaving another manager with none) is WRONG — that is how whole areas get dropped.\n"
-            "- Do NOT split ONE area's modules across multiple children: each area child must contain "
-            "the COMPLETE set of modules the goal assigns to that area, never a subset. If the goal "
-            "says an area has two modules, a child naming only one of them is a wrong per-file split. "
-            "(An area the goal EXPLICITLY defines as a single integration module is fine — match the "
-            "goal's own area definitions.)\n"
-            "- Before you finish decomposing, verify: (a) one child per manager, (b) every manager has a "
-            "child, (c) the four-or-more module files of the goal are all accounted for across your area "
-            "children. If any check fails, re-form the children before finishing.\n"
-            "On an integrate beat, if a required area is still missing or "
-            "incomplete, `submit_task` the MISSING area to a manager — NEVER re-submit an area a manager "
-            "already delivered, and never re-create files that already exist."
-        )
-    return roster
 
 
 def _toml_escape(value: str) -> str:
@@ -820,10 +740,12 @@ class EmployeeHarnessFactory:
         # Env-capability degradation (H2): a tool this environment cannot back (browser_run with no
         # Chromium CDP endpoint) is dropped and disclosed in the brief — the beat still runs.
         config = degrade_for_env(config)
-        volatile_sections: list[BeatContextSection] = []
         inbox_ids: tuple[str, ...] = ()
-        task_context = None
-        runtime_context = ""
+        task_context: TaskContextPacket | None = None
+        include_reports = bool(_DELEGATING_TOOLS.intersection(config.tools))
+        runtime: OperatingEnvironment | None = (
+            operating_environment_from_platform() if "run_command" in config.tools else None
+        )
 
         # Persisted contract status selects the phase-specific management tools in the execution
         # profile. Child presence is retained only for worktree synchronization and the completed
@@ -844,30 +766,6 @@ class EmployeeHarnessFactory:
                     config, tools=tuple(t for t in config.tools if t not in _REACTIVE_TOOLS)
                 )
 
-        # Team rehydration: a delegating role (decompose/submit/assign) gets its reports appended to its
-        # brief, read live from the workforce — so the model assigns to real employee ids, not invented.
-        if self._ledger is not None and _DELEGATING_TOOLS.intersection(config.tools):
-            roster = _team_roster(
-                self._ledger,
-                exclude=employee.id,
-                team_id=task.team_id if task is not None else None,
-            )
-            volatile_sections.append(
-                BeatContextSection(
-                    kind=BeatContextKind.ROSTER,
-                    content=roster,
-                    audiences=frozenset({ContextAudience.PLANNER, ContextAudience.GENERATOR}),
-                )
-            )
-
-        # Operating environment: a role that RUNS commands (a build engineer) gets a factual runtime
-        # block appended to its brief — the OS, the shell run_command lands on, and which build runtimes
-        # (Node/npm/Playwright) are on PATH — so it writes portable commands and its DoD is known to be
-        # platform-agnostic instead of guessed. dream advertises OS/shell/Python to every role already;
-        # this adds the toolchain facts only a command-running role needs (doc/review roles run nothing).
-        if "run_command" in config.tools:
-            runtime_context = runtime_brief_block()
-
         if "recall" in config.tools and "get_run" not in config.tools:
             config = replace(config, tools=(*config.tools, "get_run"))
 
@@ -880,8 +778,6 @@ class EmployeeHarnessFactory:
             missing = tuple(t for t in ("comment", "read_comments") if t not in config.tools)
             if missing:
                 config = replace(config, tools=(*config.tools, *missing))
-        if _LATTICE_TOOLS.intersection(config.tools):
-            config = replace(config, system_prompt=config.system_prompt + LATTICE_DIRECTIVES_BLOCK)
 
         # ``working_dir`` IS the worktree, because dream confines its tools to it — that is what
         # isolates one employee's edits from another's. A non-worktree posture falls back to a flat
@@ -899,21 +795,11 @@ class EmployeeHarnessFactory:
         else:
             root = self._company_root / employee.id
         root.mkdir(parents=True, exist_ok=True)
-        if runtime_context:
-            volatile_sections.append(
-                BeatContextSection(
-                    kind=BeatContextKind.RUNTIME,
-                    content=runtime_context,
-                    audiences=frozenset({ContextAudience.GENERATOR}),
-                )
-            )
-        if self._ledger is not None and task is not None:
-            task_context = project_task_context(self._ledger, task_id=task.id, employee=employee)
-            inbox_ids = tuple(item.id for item in task_context.inbox)
-        # Lattice sleep-as-verifier (integration §4.4): adjudicate fresh episodes at beat START, then
-        # inject the prior beat's gate-open consolidation teaser (if any) so the model consolidates
-        # FIRST this beat. Best-effort: a lattice failure never blocks the beat.
+
+        # Lattice sleep-as-verifier (integration §4.4): adjudicate fresh episodes at beat START.
+        # Gate-open teaser rides the TCP lattice_wake field (skills own the cookbook).
         lattice = None
+        lattice_wake: LatticeWake | None = None
         if _LATTICE_TOOLS.intersection(config.tools):
             try:
                 lattice = build_lattice_for_chorus(
@@ -925,15 +811,36 @@ class EmployeeHarnessFactory:
             except Exception as exc:
                 lattice = None
                 write_lattice_error(root, site="materialize.adjudicate", error=exc)
-            lattice_push = read_lattice_consolidation_push(root)
-            if lattice_push:
-                volatile_sections.append(
-                    BeatContextSection(
-                        kind=BeatContextKind.LATTICE,
-                        content=LATTICE_BEAT_START_HEADER + lattice_push,
-                        audiences=frozenset({ContextAudience.GENERATOR}),
-                    )
-                )
+            lattice_wake = read_lattice_wake(root)
+
+        if self._ledger is not None and task is not None:
+            task_context = project_task_context(
+                self._ledger,
+                task_id=task.id,
+                employee=employee,
+                include_reports=include_reports,
+                team_id=task.team_id,
+                runtime=runtime,
+                lattice_wake=lattice_wake,
+            )
+            inbox_ids = tuple(item.id for item in task_context.inbox)
+        elif self._ledger is not None and (include_reports or runtime is not None or lattice_wake):
+            task_context = project_employee_wake(
+                self._ledger,
+                employee=employee,
+                include_reports=include_reports,
+                team_id=task.team_id if task is not None else None,
+                runtime=runtime,
+                lattice_wake=lattice_wake,
+            )
+            inbox_ids = tuple(item.id for item in task_context.inbox)
+        elif runtime is not None or lattice_wake is not None:
+            task_context = project_standalone_wake(
+                employee_id=employee.id,
+                runtime=runtime,
+                lattice_wake=lattice_wake,
+            )
+
         write_agents_md(root, config)  # employee brief → Dream <context> AGENTS.md
         write_role_overlays(root, config)  # tools / permission_mode only
         write_sandbox_config(
@@ -1021,7 +928,6 @@ class EmployeeHarnessFactory:
             subagents=config.subagents,
             stop_evidence_requirements=self._stop_evidence_requirements,
             volatile_packet=VolatileBeatPacket(
-                sections=tuple(volatile_sections),
                 task_context=task_context,
                 on_injected=consume_inbox if inbox_ids else None,
             ),

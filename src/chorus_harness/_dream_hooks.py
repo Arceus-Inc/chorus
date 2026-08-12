@@ -27,8 +27,6 @@ from chorus.context import ContextAudience, TaskContextPacket, render_task_conte
 from chorus.roles._subagent import SubagentSpec
 
 __all__ = [
-    "BeatContextKind",
-    "BeatContextSection",
     "DangerousToolVetoHook",
     "EvidenceContinueHook",
     "EvidenceForgeVetoHook",
@@ -68,40 +66,17 @@ class EvidenceOwner(StrEnum):
     ANY_SPECIALIST = "__any_specialist__"
 
 
-class BeatContextKind(StrEnum):
-    ROSTER = "roster"
-    LATTICE = "lattice"
-    RUNTIME = "runtime"
-
-
-@dataclass(frozen=True)
-class BeatContextSection:
-    kind: BeatContextKind
-    content: str
-    audiences: frozenset[ContextAudience] = frozenset(
-        {ContextAudience.PLANNER, ContextAudience.GENERATOR}
-    )
-
-
 @dataclass(frozen=True)
 class VolatileBeatPacket:
     """Changing beat facts injected as user context, outside the stable prompt."""
 
-    sections: tuple[BeatContextSection, ...]
     task_context: TaskContextPacket | None = None
     on_injected: Callable[[], None] | None = None
 
     def render(self, audience: ContextAudience | None) -> str:
-        if audience is None:
+        if audience is None or self.task_context is None:
             return ""
-        rendered = [
-            section.content.strip()
-            for section in self.sections
-            if section.content.strip() and audience in section.audiences
-        ]
-        if self.task_context is not None:
-            rendered.append(render_task_context(self.task_context, audience))
-        return "\n\n".join(rendered)
+        return render_task_context(self.task_context, audience)
 
 
 class VolatileBeatPacketHook:
@@ -269,7 +244,7 @@ def register_employee_hooks(
             working_dir=working_dir,
         )
     )
-    if volatile_packet is not None and (volatile_packet.sections or volatile_packet.task_context):
+    if volatile_packet is not None and volatile_packet.task_context is not None:
         register(VolatileBeatPacketHook(volatile_packet))
     protected = tuple(
         ProtectedEvidencePath(spec.evidence_path, spec.name)

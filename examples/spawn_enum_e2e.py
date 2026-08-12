@@ -32,6 +32,7 @@ from dream.tools._registry import ToolSource
 from dream.tools.builtin import default_registry
 from dream.tools.builtin.spawn_subagent import GENERAL_PURPOSE, SpawnSubagentTool
 
+from chorus.context import BudgetPosition, TaskContextPacket, TaskContract
 from chorus_cli._env import load_env_file
 from chorus_employee.backend_engineer._subagents import (
     API_VERIFIER_SUBAGENT,
@@ -39,8 +40,6 @@ from chorus_employee.backend_engineer._subagents import (
     TEST_AUTHOR_SUBAGENT,
 )
 from chorus_harness._dream_hooks import (
-    BeatContextKind,
-    BeatContextSection,
     DangerousToolVetoHook,
     EvidenceContinueHook,
     EvidenceForgeVetoHook,
@@ -136,11 +135,17 @@ def _build(
         harness.register_hook(
             VolatileBeatPacketHook(
                 VolatileBeatPacket(
-                    sections=(
-                        BeatContextSection(
-                            kind=BeatContextKind.INBOX,
-                            content=f"## Live checkpoint context\n{volatile_token}",
+                    task_context=TaskContextPacket(
+                        task_id="e2e",
+                        contract=TaskContract(
+                            intent=f"Live checkpoint context\n{volatile_token}"
                         ),
+                        ancestry=(),
+                        prior_beats=(),
+                        inbox=(),
+                        sibling_failures=(),
+                        budget=BudgetPosition(0, None, 0),
+                        citations=(),
                     )
                 )
             )

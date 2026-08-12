@@ -20,9 +20,12 @@ def render_task_context(packet: TaskContextPacket, audience: ContextAudience) ->
         sections.append(_ancestry(packet))
         sections.append(_prior_beats(packet))
         sections.append(_sibling_failures(packet))
+        sections.append(_reports(packet))
     if audience is ContextAudience.GENERATOR:
         sections.append(_inbox(packet))
         sections.append(_budget(packet))
+        sections.append(_runtime(packet))
+        sections.append(_lattice_wake(packet))
     sections.append(_citations(packet, audience))
     visible = [section for section in sections if section]
     return "\n\n".join(("## Task context", *visible))
@@ -83,6 +86,19 @@ def _sibling_failures(packet: TaskContextPacket) -> str:
     return "\n".join(lines)
 
 
+def _reports(packet: TaskContextPacket) -> str:
+    if not packet.reports:
+        return ""
+    lines = [
+        "### Reports",
+        "Assign each subtask's `assignee` to one of these employee ids:",
+    ]
+    for report in packet.reports:
+        lead = ", lead" if report.can_lead else ""
+        lines.append(f"- {report.employee_id} ({report.role}{lead})")
+    return "\n".join(lines)
+
+
 def _inbox(packet: TaskContextPacket) -> str:
     if not packet.inbox:
         return ""
@@ -101,6 +117,34 @@ def _budget(packet: TaskContextPacket) -> str:
     else:
         limit = f"{max(0, budget.limit_cents - budget.spent_cents)} cents remaining of {budget.limit_cents}"
     return f"### Budget\nBeat {budget.beat_count + 1}; {budget.spent_cents} cents spent; {limit}."
+
+
+def _runtime(packet: TaskContextPacket) -> str:
+    runtime = packet.runtime
+    if runtime is None:
+        return ""
+    runtime_lines = "\n".join(f"- {line}" for line in runtime.path_runtimes)
+    return (
+        "### Operating environment\n"
+        f"You are running on {runtime.os_label}. Commands you pass to `run_command` "
+        f"execute through `{runtime.shell}` — write them in that shell's syntax (POSIX `sh` on "
+        "Linux/macOS, `cmd.exe` on Windows), or invoke a cross-platform runtime "
+        "(prefer `node`/`npx`/`python`) so the same command works everywhere. Runtimes on PATH:\n"
+        f"{runtime_lines}\n"
+        "Your Definition of Done is verified with a platform-agnostic Python check, so it evaluates "
+        "identically on every OS — you do not need to author OS-specific verification yourself."
+    )
+
+
+def _lattice_wake(packet: TaskContextPacket) -> str:
+    wake = packet.lattice_wake
+    if wake is None or not wake.gate_open or not wake.teaser.strip():
+        return ""
+    return (
+        "### Lattice wake\n"
+        f"{wake.teaser.strip()}\n"
+        "Load skill `lattice-consolidate` before other task work."
+    )
 
 
 def _citations(packet: TaskContextPacket, audience: ContextAudience) -> str:
