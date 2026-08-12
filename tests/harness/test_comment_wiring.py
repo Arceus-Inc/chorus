@@ -113,7 +113,7 @@ async def test_unread_comments_are_injected_as_volatile_user_context_and_consume
             for item in captured["harness"].hooks
             if isinstance(item, VolatileBeatPacketHook)
         )
-        outcome = await hook(HookEvent.USER_PROMPT_SUBMIT, {"prompt": "work"})
+        outcome = await hook(HookEvent.USER_PROMPT_SUBMIT, {"role": "generator", "prompt": "work"})
         assert "parser must handle CRLF line endings" in (outcome.inject_context or "")
         assert "mia" in (outcome.inject_context or "")
         assert ledger.messages.inbox("rex") == []

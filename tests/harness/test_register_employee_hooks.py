@@ -6,15 +6,25 @@ from pathlib import Path
 
 import pytest
 from dream.contracts.hook import HookEvent
+from dream.contracts.strategy import LandedPhase, RecoveryHint
 
+from chorus.context import (
+    BudgetPosition,
+    Citation,
+    ContextAudience,
+    DoDRequirement,
+    PriorBeat,
+    TaskContextPacket,
+    TaskContract,
+)
 from chorus.roles._subagent import SubagentSpec
 from chorus_harness._dream_hooks import (
     BeatContextKind,
     BeatContextSection,
     DangerousToolVetoHook,
-    ShadowCheckpointHook,
     EvidenceContinueHook,
     EvidenceForgeVetoHook,
+    ShadowCheckpointHook,
     VolatileBeatPacket,
     VolatileBeatPacketHook,
     register_employee_hooks,
@@ -85,7 +95,7 @@ async def test_volatile_packet_injects_each_session_and_consumes_once(
     packet = VolatileBeatPacket(
         sections=(
             BeatContextSection(
-                kind=BeatContextKind.INBOX,
+                kind=BeatContextKind.RUNTIME,
                 content="## Inbox\nparser must handle CRLF",
             ),
         ),
@@ -99,9 +109,55 @@ async def test_volatile_packet_injects_each_session_and_consumes_once(
     )
     hook = next(h for h in harness.hooks if isinstance(h, VolatileBeatPacketHook))
 
-    first = await hook(HookEvent.USER_PROMPT_SUBMIT, {"prompt": "one"})
-    second = await hook(HookEvent.USER_PROMPT_SUBMIT, {"prompt": "two"})
+    first = await hook(HookEvent.USER_PROMPT_SUBMIT, {"role": "generator", "prompt": "one"})
+    second = await hook(HookEvent.USER_PROMPT_SUBMIT, {"role": "generator", "prompt": "two"})
 
     assert "parser must handle CRLF" in (first.inject_context or "")
     assert first.inject_context == second.inject_context
     assert consumed == 1
+
+
+async def test_volatile_packet_keeps_evaluator_independent() -> None:
+    packet = VolatileBeatPacket(
+        sections=(),
+        task_context=TaskContextPacket(
+            task_id="task-1",
+            contract=TaskContract(intent="ship", dod=(DoDRequirement("command", "pytest -q"),)),
+            ancestry=(),
+            prior_beats=(
+                PriorBeat(
+                    run_id="run-1",
+                    phase=LandedPhase.NEEDS_REWORK,
+                    recovery_hint=RecoveryHint.REWORK,
+                    evaluator_notes=("fix the regression",),
+                    citation=Citation("ledger.run_carryover:run-1", "landed beat carryover"),
+                ),
+            ),
+            inbox=(),
+            sibling_failures=(),
+            budget=BudgetPosition(0, None, 1),
+            citations=(),
+        ),
+    )
+    hook = VolatileBeatPacketHook(packet)
+
+    planner = await hook(HookEvent.USER_PROMPT_SUBMIT, {"role": "planner", "prompt": "plan"})
+    generator = await hook(HookEvent.USER_PROMPT_SUBMIT, {"role": "generator", "prompt": "work"})
+    evaluator = await hook(HookEvent.USER_PROMPT_SUBMIT, {"role": "evaluator", "prompt": "judge"})
+
+    assert "fix the regression" in (planner.inject_context or "")
+    assert "fix the regression" in (generator.inject_context or "")
+    assert "fix the regression" not in (evaluator.inject_context or "")
+    assert generator.inject_context == packet.render(ContextAudience.GENERATOR)
+
+
+async def test_volatile_packet_fails_closed_without_dream_role() -> None:
+    packet = VolatileBeatPacket(
+        sections=(BeatContextSection(BeatContextKind.LATTICE, "private state"),),
+    )
+
+    outcome = await VolatileBeatPacketHook(packet)(
+        HookEvent.USER_PROMPT_SUBMIT, {"prompt": "work"}
+    )
+
+    assert outcome.inject_context is None

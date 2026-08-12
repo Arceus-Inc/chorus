@@ -46,6 +46,13 @@ class _Ledger:
 @dataclass(frozen=True)
 class _Sprint:
     outcome: str | None
+    evaluation: object | None = None
+
+
+@dataclass(frozen=True)
+class _Evaluation:
+    notes: str
+    items: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -302,6 +309,19 @@ def test_passed_when_every_step_done() -> None:
     assert outcome.outcome["steps_total"] == 2
     assert outcome.outcome["steps_done"] == 2
     assert outcome.outcome["sprint_outcomes"] == ["pass", "pass"]
+
+
+def test_typed_evaluation_notes_carry_into_the_beat_outcome() -> None:
+    result = _Result(
+        final_ledger=_Ledger((_Step("done"),)),
+        sprints=(
+            _Sprint("needs-changes", _Evaluation("cover retries", ("missing edge case",))),
+        ),
+    )
+
+    outcome = to_beat_outcome(result)
+
+    assert outcome.evaluator_notes == ("cover retries", "missing edge case")
 
 
 async def test_run_task_records_reasoning_and_actions_into_raw_record() -> None:

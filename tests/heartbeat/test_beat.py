@@ -246,10 +246,7 @@ async def test_delegated_beat_carries_parent_objective_context(ledger: Ledger) -
     await _wired(ledger, beat).run_beat(wake, run_id=uid("r1"), now=_NOW)
 
     intent = str(beat.calls[0]["intent"])
-    assert intent.startswith("Implement analytics.py and its dedicated tests")
-    assert "Parent objective context" in intent
-    assert "Build SQLite click ingestion keyed by event id" in intent
-    assert "Do not expand beyond the assigned child scope" in intent
+    assert intent == "Implement analytics.py and its dedicated tests"
 
 
 async def test_errored_beat_strands_task_to_recovery(ledger: Ledger) -> None:

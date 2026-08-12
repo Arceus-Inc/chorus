@@ -96,7 +96,9 @@ async def test_materialize_injects_lattice_push_when_gate_file_present(
         for item in captured["harness"].hooks
         if isinstance(item, VolatileBeatPacketHook)
     ][-1]
-    packet = (await hook(HookEvent.USER_PROMPT_SUBMIT, {"prompt": "work"})).inject_context or ""
+    packet = (
+        await hook(HookEvent.USER_PROMPT_SUBMIT, {"role": "generator", "prompt": "work"})
+    ).inject_context or ""
     assert LATTICE_BEAT_START_HEADER.strip() in packet
     assert "consolidate now" in packet
     assert "lattice_packet" in packet

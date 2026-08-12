@@ -15,7 +15,6 @@ so the factory rebuilds the harness per call without a cache.
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
@@ -30,6 +29,7 @@ from dream.tools._registry import ToolRegistry, ToolSource
 from dream.tools.builtin import default_registry
 
 from chorus.adapters import DreamBeatRunner, TokenPricing, pricing_from_env_if_configured
+from chorus.context import ContextAudience, project_task_context
 from chorus.heartbeat import BeatRunner, ExecutionProfileResolver, IntegrateContextPacket
 from chorus.memory import EpisodicRecallService, EpisodicStore
 from chorus.outcomes import (
@@ -99,7 +99,7 @@ if TYPE_CHECKING:
     from dream.contracts import GovernancePort
     from lattice.facade import Lattice
 
-    from chorus.ledger import Ledger, Task
+    from chorus.ledger import Ledger
 
 # dream runs these three intra-task roles per task; the employee's identity is overlaid onto each.
 _DREAM_ROLES: tuple[Literal["planner", "generator", "evaluator"], ...] = (
@@ -389,67 +389,6 @@ _LEDGER_FREE_CAPABILITY_TOOLS = frozenset(
 _DELEGATING_TOOLS = frozenset({"decompose", "submit_task", "assign_task"})
 # The manager's reactive tools on an integrate beat — withheld once the subtree is already complete.
 _REACTIVE_TOOLS = frozenset({"submit_task", "assign_task"})
-
-
-def _failure_inheritance(ledger: Ledger, task: Task, root: Path) -> str:
-    """The corrective beat's inherited defect list — machine-injected, never re-discovered.
-
-    Live T3 (2026-07-18): the lead re-dispatched rejected children correctly, but each
-    corrective child received only prose ("fix remaining review findings") while the
-    evaluator's exact defect ("base62 alphabet order…, tests assert the wrong vectors")
-    stayed in the failed attempt's records — so the corrective beat re-failed on it for two
-    full cycles. Lineage is derived structurally (same parent, same assignee, terminal
-    REJECTED/CANCELLED siblings), which also folds a whole corrective chain's history into
-    the newest attempt. Evidence comes from the ledger's run outcomes plus the evaluator
-    records dream persisted in this worktree (docs/evals/<run>/sprint-*.json).
-    """
-    from chorus.ledger import TaskStatus
-
-    parent_id = task.parent_id
-    assignee = task.assignee_employee_id
-    task_id = task.id
-    if parent_id is None or assignee is None:
-        return ""
-    failed = [
-        sibling
-        for sibling in ledger.tasks.children(parent_id)
-        if sibling.id != task_id
-        and sibling.assignee_employee_id == assignee
-        and sibling.status in {TaskStatus.REJECTED, TaskStatus.CANCELLED}
-    ]
-    if not failed:
-        return ""
-    lines = [
-        "\n\n## Inherited failure evidence — you are the corrective attempt",
-        "Prior attempts at this exact scope FAILED with the findings below. Fix these "
-        "findings FIRST; do not re-discover or re-litigate them.",
-    ]
-    for sibling in failed:
-        lines.append(f"\n### Failed attempt {sibling.id} ({sibling.status.value})")
-        for run in ledger.runs.for_task(sibling.id):
-            outcome = run.outcome or {}
-            fragments = []
-            if outcome.get("sprint_outcomes"):
-                fragments.append(f"sprint outcomes: {outcome['sprint_outcomes']}")
-            if outcome.get("subagent_evidence_reason"):
-                fragments.append(f"evidence gate: {outcome['subagent_evidence_reason']}")
-            if fragments:
-                lines.append(f"- run {run.id} ({run.status.value}): " + "; ".join(fragments))
-            for eval_path in sorted(root.glob(f"docs/evals/{run.id}/sprint-*.json")):
-                try:
-                    record = json.loads(eval_path.read_text(encoding="utf-8"))
-                except (OSError, json.JSONDecodeError, ValueError):
-                    continue
-                notes = str(record.get("notes", "")).strip() if isinstance(record, dict) else ""
-                if notes:
-                    lines.append(f"  - evaluator ({eval_path.name}): {notes}")
-    lines.append(
-        "\nWhere a finding implicates the TESTS themselves (wrong assertions or vectors), you "
-        "are AUTHORIZED to re-author those tests via the test_author subagent — correcting a "
-        "wrong assertion is a fix, not a weakening. Address every finding above, then run the "
-        "full verification gate."
-    )
-    return "\n".join(lines)
 
 
 def _team_roster(ledger: Ledger, *, exclude: str, team_id: str | None = None) -> str:
@@ -883,6 +822,8 @@ class EmployeeHarnessFactory:
         config = degrade_for_env(config)
         volatile_sections: list[BeatContextSection] = []
         inbox_ids: tuple[str, ...] = ()
+        task_context = None
+        runtime_context = ""
 
         # Persisted contract status selects the phase-specific management tools in the execution
         # profile. Child presence is retained only for worktree synchronization and the completed
@@ -912,7 +853,11 @@ class EmployeeHarnessFactory:
                 team_id=task.team_id if task is not None else None,
             )
             volatile_sections.append(
-                BeatContextSection(kind=BeatContextKind.ROSTER, content=roster)
+                BeatContextSection(
+                    kind=BeatContextKind.ROSTER,
+                    content=roster,
+                    audiences=frozenset({ContextAudience.PLANNER, ContextAudience.GENERATOR}),
+                )
             )
 
         # Operating environment: a role that RUNS commands (a build engineer) gets a factual runtime
@@ -921,9 +866,7 @@ class EmployeeHarnessFactory:
         # platform-agnostic instead of guessed. dream advertises OS/shell/Python to every role already;
         # this adds the toolchain facts only a command-running role needs (doc/review roles run nothing).
         if "run_command" in config.tools:
-            config = replace(
-                config, system_prompt=config.system_prompt + "\n\n" + runtime_brief_block()
-            )
+            runtime_context = runtime_brief_block()
 
         if "recall" in config.tools and "get_run" not in config.tools:
             config = replace(config, tools=(*config.tools, "get_run"))
@@ -937,25 +880,6 @@ class EmployeeHarnessFactory:
             missing = tuple(t for t in ("comment", "read_comments") if t not in config.tools)
             if missing:
                 config = replace(config, tools=(*config.tools, *missing))
-            inbox = self._ledger.messages.inbox(employee.id)
-            if inbox:
-                lines = "\n".join(
-                    f"- [task {m.task_id or '—'}] from {m.from_employee_id or m.from_user_id}: "
-                    f"{m.body}"
-                    for m in inbox
-                )
-                volatile_sections.append(
-                    BeatContextSection(
-                        kind=BeatContextKind.INBOX,
-                        content=(
-                            "## Inbox — unread comments for you\n"
-                            + lines
-                            + "\nRead the full thread with read_comments(task_id); "
-                            "reply with comment."
-                        ),
-                    )
-                )
-                inbox_ids = tuple(message.id for message in inbox)
         if _LATTICE_TOOLS.intersection(config.tools):
             config = replace(config, system_prompt=config.system_prompt + LATTICE_DIRECTIVES_BLOCK)
 
@@ -975,6 +899,17 @@ class EmployeeHarnessFactory:
         else:
             root = self._company_root / employee.id
         root.mkdir(parents=True, exist_ok=True)
+        if runtime_context:
+            volatile_sections.append(
+                BeatContextSection(
+                    kind=BeatContextKind.RUNTIME,
+                    content=runtime_context,
+                    audiences=frozenset({ContextAudience.GENERATOR}),
+                )
+            )
+        if self._ledger is not None and task is not None:
+            task_context = project_task_context(self._ledger, task_id=task.id, employee=employee)
+            inbox_ids = tuple(item.id for item in task_context.inbox)
         # Lattice sleep-as-verifier (integration §4.4): adjudicate fresh episodes at beat START, then
         # inject the prior beat's gate-open consolidation teaser (if any) so the model consolidates
         # FIRST this beat. Best-effort: a lattice failure never blocks the beat.
@@ -996,17 +931,7 @@ class EmployeeHarnessFactory:
                     BeatContextSection(
                         kind=BeatContextKind.LATTICE,
                         content=LATTICE_BEAT_START_HEADER + lattice_push,
-                    )
-                )
-        # Corrective replacement: a child whose same-assignee siblings already failed inherits
-        # their exact findings.
-        if self._ledger is not None and task is not None:
-            inheritance = _failure_inheritance(self._ledger, task, root)
-            if inheritance:
-                volatile_sections.append(
-                    BeatContextSection(
-                        kind=BeatContextKind.FAILURE_EVIDENCE,
-                        content=inheritance,
+                        audiences=frozenset({ContextAudience.GENERATOR}),
                     )
                 )
         write_agents_md(root, config)  # employee brief → Dream <context> AGENTS.md
@@ -1097,6 +1022,7 @@ class EmployeeHarnessFactory:
             stop_evidence_requirements=self._stop_evidence_requirements,
             volatile_packet=VolatileBeatPacket(
                 sections=tuple(volatile_sections),
+                task_context=task_context,
                 on_injected=consume_inbox if inbox_ids else None,
             ),
         )

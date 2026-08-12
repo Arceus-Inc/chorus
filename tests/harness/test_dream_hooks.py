@@ -120,6 +120,91 @@ async def test_forge_veto_blocks_shell_redirect_to_protected_path(tmp_path: Path
 
 
 @pytest.mark.asyncio
+async def test_forge_veto_blocks_protected_apply_patch_target(tmp_path: Path) -> None:
+    hook = EvidenceForgeVetoHook(
+        (ProtectedEvidencePath("test_plan.json", "test_author"),), working_dir=tmp_path
+    )
+    result = await hook(
+        HookEvent.PRE_TOOL_USE,
+        {
+            "tool_name": "apply_patch",
+            "tool_input": {
+                "patch": """*** Begin Patch
+*** Update File: src/ordinary.py
+@@
+ old
++new
+*** Add File: test_plan.json
++{\"authored\": true}
+*** End Patch"""
+            },
+        },
+    )
+    assert result.blocked is True
+    assert "test_plan.json" in (result.feedback or "")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("target", "owner"),
+    (("test_plan.json", "test_author"), ("review_verdict.json", "code_reviewer")),
+)
+async def test_forge_veto_blocks_apply_patch_move_to_protected_evidence(
+    tmp_path: Path, target: str, owner: str
+) -> None:
+    hook = EvidenceForgeVetoHook(
+        (
+            ProtectedEvidencePath("test_plan.json", "test_author"),
+            ProtectedEvidencePath("review_verdict.json", "code_reviewer"),
+        ),
+        working_dir=tmp_path,
+    )
+    result = await hook(
+        HookEvent.PRE_TOOL_USE,
+        {
+            "tool_name": "apply_patch",
+            "tool_input": {
+                "patch": f"""*** Begin Patch
+*** Update File: draft.json
+*** Move to: {target}
+@@
+-draft
++forged
+*** End Patch"""
+            },
+        },
+    )
+    assert result.blocked is True
+    assert target in (result.feedback or "")
+    assert owner in (result.feedback or "")
+
+
+@pytest.mark.asyncio
+async def test_forge_veto_allows_unprotected_apply_patch_targets(tmp_path: Path) -> None:
+    hook = EvidenceForgeVetoHook(
+        (ProtectedEvidencePath("test_plan.json", "test_author"),), working_dir=tmp_path
+    )
+    result = await hook(
+        HookEvent.PRE_TOOL_USE,
+        {
+            "tool_name": "apply_patch",
+            "tool_input": {
+                "patch": """*** Begin Patch
+*** Update File: src/ordinary.py
+@@
+ old
++new
+*** Add File: docs/ordinary.md
++notes
+*** Delete File: obsolete.txt
+*** End Patch"""
+            },
+        },
+    )
+    assert result.blocked is False
+
+
+@pytest.mark.asyncio
 async def test_evidence_continue_when_missing(tmp_path: Path) -> None:
     hook = EvidenceContinueHook(
         (EvidenceRequirement("code_reviewer", "review_verdict.json", {"cleared": True}),),
