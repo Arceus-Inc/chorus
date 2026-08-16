@@ -211,3 +211,38 @@ def test_abort_session(ledger: Ledger) -> None:
     assert got is not None
     assert got.status is AgentSessionStatus.ABORTED
     assert ledger.agent_sessions.get_open_for_task(task_id) is None
+
+
+def test_account_if_open_meters_only_while_the_handle_is_open(ledger: Ledger) -> None:
+    emp = uid("emp")
+    task_id = uid("task")
+    run_id = uid("run1")
+    _employee(ledger, emp)
+    _task(ledger, task_id, assignee=emp)
+    ledger.runs.create(Run(id=run_id, employee_id=emp, task_id=task_id))
+    session = ledger.agent_sessions.open(
+        _session(ledger, employee_id=emp, task_id=task_id, session_id=uid("s1"))
+    )
+    cost = SessionCost(input_tokens=40, output_tokens=9, cost_usd=0.02)
+
+    assert ledger.agent_sessions.account_if_open(
+        session.id, cost, run_id=run_id, last_error=None, seal=False
+    )
+    open_row = ledger.agent_sessions.get(session.id)
+    assert open_row is not None
+    assert open_row.cost.input_tokens == 40
+    assert open_row.run_id == run_id
+
+    ledger.agent_sessions.abort(session.id)
+    assert not ledger.agent_sessions.account_if_open(
+        session.id,
+        SessionCost(input_tokens=99, output_tokens=11, cost_usd=7.0),
+        run_id=uid("run2"),
+        last_error="stale",
+        seal=True,
+    )
+    aborted = ledger.agent_sessions.get(session.id)
+    assert aborted is not None
+    assert aborted.status is AgentSessionStatus.ABORTED
+    assert aborted.cost.input_tokens == 40
+    assert aborted.last_error is None

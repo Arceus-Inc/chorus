@@ -6,7 +6,7 @@ ledger); a **beat** is one employee's short ``dream.run_task`` invocation.
 
 from __future__ import annotations
 
-from chorus.heartbeat._beat import BeatDisposition, BeatOutcome, BeatRunner
+from chorus.heartbeat._beat import BeatDisposition, BeatOutcome, BeatRunner, SessionScopeFactory
 from chorus.heartbeat._beat_context import (
     BeatContext,
     ChildOutcomeContext,
@@ -39,6 +39,7 @@ __all__ = [
     "ReportContext",
     "ResolvedExecutionProfile",
     "Scheduler",
+    "SessionScopeFactory",
     "TickReport",
     "Wake",
     "WakeReason",

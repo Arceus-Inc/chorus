@@ -69,19 +69,20 @@ answerable for — spend against a budget, the last run to touch the thread, whe
 and why a resume failed.
 
 ```python
-from chorus.ledger import begin_beat_session, dream_session_key_for_task, persist_beat_account
+from chorus.ledger import begin_beat_session, persist_beat_account
 
 session = begin_beat_session(
     ledger, employee_id=employee.id, task_id=task.id, run_id=run.id
 )
-# session.dream_session_key == dream_session_key_for_task(task.id)
-# The beat runner passes it as run_task(session_scope=...); dream derives one
+# The scheduler binds session.dream_session_key into capable beat runners, which
+# pass it as run_task(session_scope=...); dream derives one
 # session per role beneath it ({scope}-planner, -generator, -evaluator).
 persist_beat_account(ledger, session.id, input_tokens=…, output_tokens=…, cost_cents=…)
 ```
 
-One **open** session per task (partial unique index). Seal/abort frees the slot for a fresh
-thread.
+One **open** session per task (partial unique index). The provider key belongs to that immutable
+control-plane handle, not to a run or task name: retries and process restarts reuse it, while
+seal/abort frees the slot and the next handle receives a genuinely fresh provider scope.
 
 Mirroring the messages here as well would give one conversation two sources of truth, and the
 copy in Postgres would always be the stale one. Read a transcript from dream.
