@@ -343,8 +343,8 @@ class Scheduler:
         # In-beat retry budget for *transient* engine faults (a planner/evaluator parse blip): re-run the
         # beat this many times before stranding it onto the recovery ladder (spec 05 §5).
         self.transient_retries = transient_retries
-        # How many adaptive integrate beats a manager gets per goal before the kernel forces
-        # acceptance of the completed subtree — bounds the submit→re-integrate loop (spec M3 §5).
+        # How many adaptive integrate beats a manager gets per goal before the kernel cuts the loop
+        # off without another model beat — bounds the submit→re-integrate loop (spec M3 §5).
         self.max_integrate_iterations = max_integrate_iterations
         self._ledger = ledger
         self._workforce = workforce
@@ -743,15 +743,15 @@ class Scheduler:
         )
 
         # Integrate-iteration cap (M3 §5): a manager that keeps spawning follow-ups would re-park /
-        # re-integrate forever, bounded only by budget. Past the cap, accept the completed subtree
-        # mechanically — no further adaptive beat — so the loop is bounded.
-        if profile_error is None and await self._maybe_cap_integrate(
+        # re-integrate forever, bounded only by budget. Past the cap, stop the adaptive loop without
+        # another model beat; delegated work strands for human review instead of force-accepting.
+        # Cap exhaustion is deterministic and wins over a later execution-profile denial.
+        if await self._maybe_cap_integrate(
             ledger,
             wake=wake,
             run_id=run_id,
             task=task,
             employee=employee,
-            execution_profile=execution_profile,
         ):
             return
 
@@ -1195,15 +1195,15 @@ class Scheduler:
     ) -> bool | None:
         """Run the parent's objective ``command`` floor against the integrator's worktree at rollup.
 
-        Spec M3 §5 lands a delegated parent ``done`` the instant its subtree is terminal — a *mechanical*
-        rollup that never asks whether the assembled result actually satisfies the goal. When the goal
-        carries an objective ``command`` DoD (e.g. "every required deliverable exists and ``gate_check``
-        passes"), that command IS the structural rollup gate: run it here, in the integrator's worktree
-        (= company main once the children merged), and return whether every step exits 0.
+        Spec M3 §5 rolls a delegated parent up once its subtree is terminal; the objective ``command``
+        DoD is the structural gate that decides whether that rollup can land. When the goal carries a
+        command floor (e.g. "every required deliverable exists and ``gate_check`` passes"), run it here,
+        in the integrator's worktree (= company main once the children merged), and return whether every
+        step exits 0.
 
         Returns ``None`` when there is no objective floor to run — no ``command`` DoD, or a seam that
-        exposes no worktree (e.g. an in-memory test runner) — so the caller keeps the mechanical
-        ``done`` acceptance unchanged. Returns ``True``/``False`` only when a real floor actually ran.
+        exposes no worktree (e.g. an in-memory test runner). Returns ``True``/``False`` only when a
+        real floor actually ran.
         """
         if verifier is None:
             return None
@@ -1389,121 +1389,49 @@ class Scheduler:
         run_id: str,
         task: Task,
         employee: Employee,
-        execution_profile: ResolvedExecutionProfile | None,
     ) -> bool:
-        """At the integrate-iteration cap, accept the completed subtree mechanically — no model beat.
+        """At the integrate-iteration cap, stop the loop without another model beat.
 
-        Returns ``True`` when it handled (and landed) the beat, so ``run_beat`` returns early. Only a
-        re-invocation whose subtree is already complete can be capped; a kickoff or engineer beat
-        (no terminal subtree) always returns ``False``.
+        Any capped parent strands for human review instead of force-accepting. Returns ``True``
+        when it handled the capped beat, so ``run_beat`` returns early. Only a re-invocation whose
+        subtree is already complete can be capped; a kickoff or engineer beat (no terminal subtree)
+        always returns ``False``.
         """
         if not (ledger.tasks.has_children(task.id) and ledger.tasks.all_children_terminal(task.id)):
             return False
         iteration = IntegrateContextPacket.iteration_for(ledger, task.id)
         if iteration <= self.max_integrate_iterations:
             return False
-        verifier = ledger.dod.verifier_for_task(task.id)
-        beat_runner_for = self._require(self._beat_runner_for, "beat_runner")
-        beat_runner = beat_runner_for.runner_for(employee, task_id=task.id)
-        floor_ok = (
-            self._integrate_floor_verdict(task.id, verifier=verifier, beat_runner=beat_runner)
-            is not False
-        )
+        evidence: dict[str, object] = {
+            "iteration": iteration,
+            "cap": self.max_integrate_iterations,
+            "done_children": sum(
+                1 for child in ledger.tasks.children(task.id) if child.status is TaskStatus.DONE
+            ),
+        }
         if task.execution_mode is ExecutionMode.DELEGATION:
-            children = list(ledger.tasks.children(task.id))
-            done_children = [c for c in children if c.status is TaskStatus.DONE]
-            # Converge, don't strand: a capped delegation that produced REAL, verified output — at
-            # least one completed child deliverable AND a passing objective command floor — is
-            # accepted here so Phase 0 can roll the goal up to ``done``. This is the difference
-            # between a company that finishes work and one that loops until a human intervenes. Only
-            # strand for human review when nothing genuine converged (every child failed/was
-            # rejected, or the floor fails) — never fabricate a pass on empty or failed work.
-            if done_children and floor_ok:
-                if not ledger.runs.finish(run_id, RunStatus.SUCCEEDED, outcome=None):
-                    return True
-                ledger.delegation_contracts.accept_for_verification(task.id, run_id)
-                record_activity(
-                    ledger,
-                    verb=ActivityVerb.PARENT_VERIFIED,
-                    subject_kind="delegation_contract",
-                    subject_id=task.id,
-                    actor_employee_id=employee.id,
-                    payload={
-                        "capped_accept": True,
-                        "iteration": iteration,
-                        "deliverables": len(done_children),
-                    },
-                )
-                await self._land_passed(
-                    task.id,
-                    run_id=run_id,
-                    verifier=verifier,
-                    verdict=None,
-                    employee=employee,
-                    result=BeatOutcome(
-                        passed=True,
-                        outcome={},
-                        summary=f"integrated at cap ({len(done_children)} deliverables)",
-                    ),
-                    outcome_kind=(
-                        execution_profile.outcome_kind if execution_profile is not None else None
-                    ),
-                )
-                self._close_verified_delegation(task.id, run_id=run_id, recovered=False)
-                ledger.tasks.release_locks(task.id, run_id=run_id)
-                ledger.wakes.mark_done(wake.id)
+            evidence["contract_task_id"] = task.id
+        with ledger.transaction():
+            # CAS from the terminal-run fence: a concurrent cancel/finish must win, and this path
+            # must not synthesize a later success/acceptance on a run that is already terminal.
+            if not ledger.runs.finish(run_id, RunStatus.FAILED, outcome=evidence):
                 return True
-            evidence: dict[str, object] = {
-                "iteration": iteration,
-                "cap": self.max_integrate_iterations,
-                "contract_task_id": task.id,
-                "done_children": len(done_children),
-            }
-            with ledger.transaction():
-                if not ledger.runs.finish(run_id, RunStatus.FAILED, outcome=evidence):
-                    return True
-                ledger.tasks.set_status(task.id, TaskStatus.BLOCKED)
-                ledger.delegation_contracts.update_status(task.id, DelegationContractStatus.BLOCKED)
-                if ledger.recovery_actions.active_for_source(task.id) is None:
-                    ledger.recovery_actions.open(
-                        RecoveryAction(
-                            id=mint_id(),
-                            source_task_id=task.id,
-                            kind=RecoveryKind.STRANDED,
-                            owner_employee_id=employee.id,
-                            cause="integrate_iteration_exhausted",
-                            fingerprint="integrate_iteration",
-                            evidence=evidence,
-                            next_action="human review of delegated objective and Team plan",
-                        )
-                    )
-            ledger.tasks.release_locks(task.id, run_id=run_id)
-            ledger.wakes.mark_done(wake.id)
-            return True
-        if not ledger.runs.finish(run_id, RunStatus.SUCCEEDED, outcome=None):
-            return True
-        if not floor_ok:
-            # The cap bounds the MODEL loop (no further decompose/integrate beats), NOT the objective
-            # gate: even here a parent does not land ``done`` while its ``command`` rollup floor fails —
-            # record the failed verdict and park BLOCKED rather than fabricate a passing outcome.
-            ledger.finalize_beat(
-                task_id=task.id, run_id=run_id, dod_status=DodStatus.FAILED, verdict=None
-            )
             ledger.tasks.set_status(task.id, TaskStatus.BLOCKED)
-        else:
-            await self._land_passed(
-                task.id,
-                run_id=run_id,
-                verifier=verifier,
-                verdict=None,
-                employee=employee,
-                result=BeatOutcome(
-                    passed=True, outcome={}, summary="integrated (iteration cap reached)"
-                ),
-                outcome_kind=(
-                    execution_profile.outcome_kind if execution_profile is not None else None
-                ),
-            )
+            if task.execution_mode is ExecutionMode.DELEGATION:
+                ledger.delegation_contracts.update_status(task.id, DelegationContractStatus.BLOCKED)
+            if ledger.recovery_actions.active_for_source(task.id) is None:
+                ledger.recovery_actions.open(
+                    RecoveryAction(
+                        id=mint_id(),
+                        source_task_id=task.id,
+                        kind=RecoveryKind.STRANDED,
+                        owner_employee_id=employee.id,
+                        cause="integrate_iteration_exhausted",
+                        fingerprint="integrate_iteration",
+                        evidence=evidence,
+                        next_action="human review of capped integration and next plan",
+                    )
+                )
         ledger.tasks.release_locks(task.id, run_id=run_id)
         ledger.wakes.mark_done(wake.id)
         return True

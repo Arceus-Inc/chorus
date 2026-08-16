@@ -172,6 +172,40 @@ def _seed_delegation(ledger: Ledger, *, child_status: TaskStatus = TaskStatus.DO
     return lead
 
 
+def _seed_delivery_parent(ledger: Ledger, *, child_status: TaskStatus = TaskStatus.DONE) -> Employee:
+    lead = ledger.employees.create(Employee(id="lead", name="Lead", role="backend_engineer"))
+    worker = ledger.employees.create(
+        Employee(id="worker", name="Worker", role="backend_engineer", reports_to=lead.id)
+    )
+    ledger.tasks.submit(
+        Task(
+            id=uid("task-release"),
+            intent="coordinate the release",
+            status=TaskStatus.TODO,
+            execution_mode=ExecutionMode.DELIVERY,
+            assignee_employee_id=lead.id,
+        )
+    )
+    ledger.tasks.submit(
+        Task(
+            id=uid("task-child"),
+            parent_id=uid("task-release"),
+            intent="implement the release endpoint",
+            status=child_status,
+            assignee_employee_id=worker.id,
+        )
+    )
+    ledger.wakes.enqueue(
+        Wake(
+            id=uid("wake-release"),
+            employee_id=lead.id,
+            reason=WakeReason.CHILDREN_DONE,
+            payload={"task_id": uid("task-release")},
+        )
+    )
+    return lead
+
+
 async def test_delegation_profile_drives_scheduler_contract(ledger: Ledger) -> None:
     lead = _seed_delegation(ledger)
     beat = _RecordingBeat()
@@ -316,6 +350,42 @@ async def test_authority_denial_is_never_laundered_into_delegated_success(
     assert ledger.recovery_actions.active_for_source(uid("task-release")) is not None
 
 
+async def test_integrate_cap_wins_over_profile_denial(
+    ledger: Ledger,
+) -> None:
+    _seed_delegation(ledger)
+    ledger.teams.archive(uid("team-release"))  # revoked mid-flight, but cap exhaustion is deterministic
+    beat = _RecordingBeat()
+    scheduler = Scheduler(
+        ledger=ledger,
+        workforce=LedgerWorkforce(ledger.employees),
+        beat_runner=beat,
+        roles=RoleRegistry.from_plugins(default_roles()),
+        memory_writer=_RecordingMemory(),
+        landers=LanderRegistry.from_landers([_SubtreeLander()]),
+        max_concurrent_runs=1,
+        max_integrate_iterations=0,
+    )
+
+    await scheduler.tick(_NOW)
+    await scheduler.drain()
+
+    assert beat.rubrics == []
+    runs = ledger.runs.for_task(uid("task-release"))
+    assert [run.status.value for run in runs] == ["failed"]
+    contract = ledger.delegation_contracts.get(uid("task-release"))
+    assert contract is not None and contract.status is DelegationContractStatus.BLOCKED
+    assert contract.accepted_run_id is None
+    task = ledger.tasks.get(uid("task-release"))
+    assert task is not None and task.status is TaskStatus.BLOCKED
+    assert task.checkout_run_id is None
+    assert task.execution_run_id is None
+    recovery = ledger.recovery_actions.active_for_source(uid("task-release"))
+    assert recovery is not None and recovery.cause == "integrate_iteration_exhausted"
+    assert ledger.wakes.get(uid("wake-release")).status is WakeStatus.DONE  # type: ignore[union-attr]
+    assert ledger.activity.by_subject("delegation_contract", uid("task-release")) == []
+
+
 async def test_unmigrated_manager_is_blocked_before_dispatch(
     ledger: Ledger, caplog: pytest.LogCaptureFixture
 ) -> None:
@@ -363,13 +433,9 @@ async def test_unmigrated_manager_is_blocked_before_dispatch(
     assert uid("legacy-manager") in caplog.text and "specialize-manager" in caplog.text
 
 
-async def test_delegation_integrate_cap_accepts_completed_subtree(
+async def test_delegation_integrate_cap_blocks_completed_subtree_for_review(
     ledger: Ledger,
 ) -> None:
-    # At the integrate cap, a delegation whose subtree produced REAL deliverables (>=1 done child)
-    # AND passes its objective floor is ACCEPTED by the kernel on the manager's behalf — exactly what
-    # the manager brief promises ("after a few iterations the kernel accepts for you"). It converges
-    # to done so the goal can roll up, instead of stranding for a human even though the work is there.
     _seed_delegation(ledger)  # children DONE by default
     beat = _RecordingBeat()
     lander = _SubtreeLander()
@@ -388,22 +454,24 @@ async def test_delegation_integrate_cap_accepts_completed_subtree(
     await scheduler.drain()
 
     contract = ledger.delegation_contracts.get(uid("task-release"))
-    assert contract is not None and contract.status is DelegationContractStatus.DONE
-    assert ledger.tasks.get(uid("task-release")).status is TaskStatus.DONE  # type: ignore[union-attr]
-    assert ledger.teams.get(uid("team-release")).status is TeamStatus.ARCHIVED  # type: ignore[union-attr]
-    # accepted mechanically at the cap — no model rubric beat runs, but the subtree lands
+    assert contract is not None and contract.status is DelegationContractStatus.BLOCKED
+    assert contract.accepted_run_id is None
+    assert ledger.tasks.get(uid("task-release")).status is TaskStatus.BLOCKED  # type: ignore[union-attr]
+    assert ledger.teams.get(uid("team-release")).status is TeamStatus.ACTIVE  # type: ignore[union-attr]
     assert beat.rubrics == []
-    assert lander.landed == [uid("task-release")]
-    # real work converged, so no stranding recovery is opened
-    assert ledger.recovery_actions.active_for_source(uid("task-release")) is None
+    assert lander.landed == []
+    recovery = ledger.recovery_actions.active_for_source(uid("task-release"))
+    assert recovery is not None and recovery.cause == "integrate_iteration_exhausted"
+    done_children = recovery.evidence.get("done_children")
+    assert isinstance(done_children, int) and done_children > 0
+    assert not ledger.activity.by_subject("delegation_contract", uid("task-release"))
 
 
 async def test_delegation_integrate_cap_strands_when_nothing_converged(
     ledger: Ledger,
 ) -> None:
-    # The honest guard: at the cap, a delegation whose subtree produced NO completed deliverable
-    # (its only child was rejected) is NOT force-accepted — it strands for human review. The kernel
-    # accepts real work, never fabricates a pass over failed work.
+    # At the cap, a delegation whose subtree produced no completed deliverable (its only child was
+    # rejected) strands for human review. Cap exhaustion never fabricates a pass over failed work.
     _seed_delegation(ledger, child_status=TaskStatus.REJECTED)
     beat = _RecordingBeat()
     lander = _SubtreeLander()
@@ -427,8 +495,40 @@ async def test_delegation_integrate_cap_strands_when_nothing_converged(
     recovery = ledger.recovery_actions.active_for_source(uid("task-release"))
     assert recovery is not None
     assert recovery.cause == "integrate_iteration_exhausted"
-    assert recovery.evidence["done_children"] == 0  # type: ignore[index]
+    done_children = recovery.evidence.get("done_children")
+    assert done_children == 0
     assert lander.landed == []
+
+
+async def test_delivery_integrate_cap_blocks_completed_subtree_for_review(
+    ledger: Ledger,
+) -> None:
+    _seed_delivery_parent(ledger)
+    beat = _RecordingBeat()
+    lander = _SubtreeLander()
+    scheduler = Scheduler(
+        ledger=ledger,
+        workforce=LedgerWorkforce(ledger.employees),
+        beat_runner=beat,
+        roles=RoleRegistry.from_plugins(default_roles()),
+        memory_writer=_RecordingMemory(),
+        landers=LanderRegistry.from_landers([lander]),
+        max_concurrent_runs=1,
+        max_integrate_iterations=0,
+    )
+
+    await scheduler.tick(_NOW)
+    await scheduler.drain()
+
+    assert ledger.tasks.get(uid("task-release")).status is TaskStatus.BLOCKED  # type: ignore[union-attr]
+    recovery = ledger.recovery_actions.active_for_source(uid("task-release"))
+    assert recovery is not None and recovery.cause == "integrate_iteration_exhausted"
+    done_children = recovery.evidence.get("done_children")
+    assert isinstance(done_children, int) and done_children > 0
+    runs = ledger.runs.for_task(uid("task-release"))
+    assert runs[-1].status.value == "failed"
+    assert lander.landed == []
+    assert beat.rubrics == []
 
 
 async def test_restart_closes_landed_delegation_exactly_once(
