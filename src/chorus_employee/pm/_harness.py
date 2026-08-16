@@ -52,8 +52,8 @@ def pm_manifest() -> RoleManifest:
             # REPO_WRITE_NET sandbox — no command execution, no writes.
             "repo_search",
             "warehouse_query",
-            # spawn_subagent — dispatch the Tier-1 Researcher mid-beat (§06). The web tools above are
-            # also what the Researcher is capability-minimised from (it delegates them to web_research).
+            # spawn_subagent — dispatch web_research + critic mid-beat. The web tools above are
+            # also what web_research is capability-minimised from.
             "spawn_subagent",
             # record_decision — the §10 Decision OS write: record the decision as an immutable, cited
             # ledger object (confidence-floor-gated, mirrors decision.json). The PM's only ledger write.
@@ -117,15 +117,14 @@ def pm_manifest() -> RoleManifest:
         # — build_harness(memory=…) —
         memory_scope=MemoryScope.PROJECT,
         # — beat time budget (depth-2 research reach) —
-        # Piper can now spawn the Researcher, which itself nests web_research (depth-2) — a single beat
-        # can hold a depth-2 live sweep, so widen the wall-clock to the Marketer's depth-2 budget or the
-        # reaper claims it mid-nest. The org defaults (90s beat / 300s lease) are far too tight.
+        # Piper can spawn web_research (live sweep) plus the Critic, so widen the wall-clock past
+        # the org defaults (90s beat / 300s lease) or the reaper claims it mid-research.
         beat_timeout_s=900.0,
         lease_ttl_s=1200.0,
         # — turn / sprint budget —
         # The full loop is: gather evidence, draft the plan, red-team it with the Critic ONCE, apply the
         # verdict, then record + finalize. A tight budget is deliberate (a wide one lets the model fan
-        # out the Researcher/Critic many times), but 2 sprints left no room to record AFTER the Critic's
+        # out web_research/Critic many times), but 2 sprints left no room to record AFTER the Critic's
         # revise — so 3 sprints: draft → critique → revise+record. The Critic is calibrated to PASS a
         # sound decision, so this does not reopen the fan-out loop.
         max_turns=12,

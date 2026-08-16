@@ -278,11 +278,14 @@ def _project_spec(spec: SubagentSpec, parent_tools: frozenset[str]) -> Subagent:
     Tools are mapped to dream names and intersected with ``parent_tools`` (narrower-wins). A spec's
     ``spawnable`` children (depth-2) are projected the same way against THIS spec's own effective
     tools, so the intersection chain holds transitively — a grandchild can only ever narrow.
+
+    ``isolation`` is always projected onto :class:`dream.subagents.IsolationMode` (Dream PR #111).
     """
-    tools = tuple(t for t in dream_tool_names(spec.tools) if t in parent_tools)
-    own_tools = frozenset(tools)
     from dream.subagents import IsolationMode as DreamIsolation
 
+    tools = tuple(t for t in dream_tool_names(spec.tools) if t in parent_tools)
+    own_tools = frozenset(tools)
+    spawnable = tuple(_project_spec(child, own_tools) for child in spec.spawnable)
     return Subagent(
         name=spec.name,
         description=spec.description,
@@ -292,7 +295,7 @@ def _project_spec(spec: SubagentSpec, parent_tools: frozenset[str]) -> Subagent:
         output_schema=spec.output_schema,
         strict=spec.strict,
         isolation=DreamIsolation(spec.isolation.value),
-        spawnable=tuple(_project_spec(child, own_tools) for child in spec.spawnable),
+        spawnable=spawnable,
     )
 
 

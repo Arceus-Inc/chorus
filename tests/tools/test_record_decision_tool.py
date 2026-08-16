@@ -85,7 +85,7 @@ def test_refuses_a_decision_below_the_floor_with_a_recovery_hint(
 
     assert result.is_error is True
     assert result.structured["status"] == "blocked"
-    assert any("researcher" in action for action in result.structured["next_actions"])
+    assert any("web_research" in action for action in result.structured["next_actions"])
     assert result.metadata["root_cause"] == "confidence-below-floor"
     assert ledger.decisions.for_task(uid("pm-task")) == []  # nothing written
     assert not (tmp_path / "decision.json").exists()  # no mirror on refusal

@@ -8,7 +8,7 @@ harness, one component per module:
 - :mod:`._dod`      — the Definition of Done (intent -> typed :class:`~chorus.outcomes.Verifier`).
 - :mod:`._lander`   — the ``design`` :class:`~chorus.outcomes.OutcomeLander` (committed spec).
 - :mod:`._routines` — standing routines (system-drift scan, accessibility audit — later slice).
-- :mod:`._subagents` — Tier-1 subagents (Explorer, Design-Critic, UX-Researcher).
+- :mod:`._subagents` — Tier-1 isolation earners (Design-Critic) plus typed return contracts.
 
 :func:`designer_plugin` assembles the role triple; :func:`designer_lander` provides the matching
 :class:`~chorus.outcomes.OutcomeLander`. This is the **single source** of the Designer:
@@ -36,8 +36,6 @@ from chorus_employee.designer._routines import (
 )
 from chorus_employee.designer._subagents import (
     DESIGN_CRITIC_SUBAGENT,
-    EXPLORER_SUBAGENT,
-    UX_RESEARCHER_SUBAGENT,
     DesignVerdict,
     DesignViolation,
     EvidenceItem,
@@ -69,8 +67,6 @@ __all__ = [
     "DESIGN_CRITIC_SUBAGENT",
     "DESIGN_SPEC_DOC",
     "DESIGN_SYSTEM_DOC",
-    "EXPLORER_SUBAGENT",
-    "UX_RESEARCHER_SUBAGENT",
     "DesignVerdict",
     "DesignViolation",
     "DesignerLander",

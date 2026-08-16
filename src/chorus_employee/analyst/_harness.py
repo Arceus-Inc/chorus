@@ -90,8 +90,8 @@ def analyst_manifest() -> RoleManifest:
         # dream's credential guard, command-deny list, and worktree confinement still apply, and the
         # toolset carries no ``git`` — so "read the world, write only my worktree" holds.
         sandbox=SandboxTier.UNRESTRICTED,
-        # Lean: no craft personas. with_web_research adds spawn_subagent + web_research.
-        # Dream builtins (explore/plan/verify) are always available when spawn is enabled.
+        # Lean: critic (isolation earner) + with_web_research. Craft personas → skills.
+        # Dream builtins (explore/plan/verify) are available when spawn is enabled.
         subagents=ANALYST_SUBAGENTS,
         # — build_harness(skill_registry=…) — the Analyst's authored playbooks, discovered from this
         # package's ``skills/`` dir and offered via the `skill` tool. A distinguished-analyst library:

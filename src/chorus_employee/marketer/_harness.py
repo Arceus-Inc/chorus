@@ -54,7 +54,7 @@ def marketer_manifest() -> RoleManifest:
             "lattice_apply",
             "skill_manage",
             "spawn_subagent",
-            # market/audience research via the web (§06 Researcher, §07 read reach).
+            # market/audience research via the web (§06 web_research, §07 read reach).
             # browser_run drives Chromium CDP; web_fetch is the cheap no-browser read.
             # Granted so narrower-wins doesn't strip them from web_research at materialize.
             "browser_run",
@@ -84,9 +84,8 @@ def marketer_manifest() -> RoleManifest:
         #   (pairs with the live email.send reach).
         # - geo-aeo-seo: structuring owned content so search AND generative answer engines cite it
         #   (pairs with the content/GEO-refresh routine).
-        # - channel-priors: what format + cadence each surface rewards (shapes the Strategist's plan).
-        # Experiment/measurement skills (A/B discipline, attribution) wait on the analytics + the
-        # Experimenter subagent.
+        # - channel-priors: what format + cadence each surface rewards (shapes the campaign plan).
+        # Experiment/measurement skills (A/B discipline, attribution) wait on the analytics layer.
         skills=("brand-voice", "deliverability", "geo-aeo-seo", "channel-priors"),
         skills_root=_SKILLS_ROOT,
         # --- build_harness(memory=...) + working_memory ---
@@ -109,9 +108,8 @@ def marketer_manifest() -> RoleManifest:
         # --- build_harness(env=...) ---
         env=(),
         # --- beat time budget (research-heavy, now depth-2) ---
-        # Mira spawns research that blocks the beat in one uninterrupted call. With the Strategist
-        # (which itself nests the Web-Research Orchestrator, depth-2), a single beat can hold TWO
-        # live research sweeps — so widen the wall-clock further or the reaper claims it mid-nest.
+        # Mira spawns web_research that blocks the beat in one uninterrupted call. Widen the
+        # wall-clock or the reaper claims it mid-sweep.
         beat_timeout_s=900.0,
         lease_ttl_s=1200.0,
         # --- worktree containment ---

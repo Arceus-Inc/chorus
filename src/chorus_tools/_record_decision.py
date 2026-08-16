@@ -77,7 +77,7 @@ class RecordDecisionTool(BaseTool):
         "Record your product decision as an immutable, cited ledger object. Supply the option, "
         "rationale, confidence, outcome metric, revisit trigger, rejected alternatives, and the claims "
         "(each with a source_url). Refused if your confidence is below the floor without cited "
-        "evidence — gather evidence with the researcher first, then call again."
+        "evidence — gather evidence with web_research first, then call again."
     )
     declaration = ToolDeclaration(risk="mutating", tier_required=1, timeout_seconds=30.0)
     input_model = RecordDecisionInput
@@ -170,7 +170,7 @@ class RecordDecisionTool(BaseTool):
                 "status": "blocked",
                 "reason": "insufficient_evidence",
                 "next_actions": [
-                    "spawn_subagent(name='researcher', prompt='<the evidence question>')",
+                    "spawn_subagent(name='web_research', prompt='<the evidence question>')",
                     "re-call record_decision with the returned claims and a grounded confidence",
                 ],
                 "stop_condition": "do not write plan.md until a decision is recorded",

@@ -1,14 +1,11 @@
-"""Marketer + Strategist — the depth-2 chain, live: Mira → strategist → web_research.
+"""Marketer + web_research — lean campaign framing, live: Mira → web_research.
 
-Proves bounded depth-2 subagent spawning end to end, keyed:
-  1. Mira spawns the ``strategist`` subagent to frame the bet (depth-1).
-  2. The strategist ITSELF spawns the shared ``web_research`` orchestrator for cited market
-     facts (depth-2) — the capability that did not exist before this build.
-  3. The strategist writes ``strategy_brief.md``; Mira drafts ``content_draft.md`` from it.
+Proves the Marketer's isolation-earner research path end to end, keyed:
+  1. Mira loads ``channel-priors`` and spawns ``web_research`` for cited market facts.
+  2. Mira drafts ``content_draft.md`` from those facts and red-teams with ``brand_critic``.
 
-The bus captures every ``SUBAGENT_SPAWNED`` so we can assert BOTH ``strategist`` and
-``web_research`` fired — the second one only possible because the strategist inherited a scoped
-spawn set + the shared per-beat counter.
+The bus captures every ``SUBAGENT_SPAWNED`` so we can assert ``web_research`` fired
+and ``strategist`` did not.
 
     AZURE_OPENAI_API_KEY=... AZURE_OPENAI_BASE_URL=... AZURE_OPENAI_DEPLOYMENT=... \
     TAVILY_API_KEY=... uv run python examples/marketer_strategist_run.py
@@ -51,17 +48,13 @@ _BRAND_SPEC = """# Arceus Brand Voice Specification
 - When you cite a fact from research, name the source inline.
 """
 
-_STRATEGY_DOC = "strategy_brief.md"
-
 _TASK = (
     "Plan and draft a launch blog post positioning Arceus (an AI company operating system) against "
-    "the current AI coding-assistant market. This is a substantial campaign, so FRAME THE BET FIRST: "
-    'call spawn_subagent(name="strategist", prompt="Frame the go-to-market bet for Arceus vs the '
-    "AI coding-assistant market. Research what Anysphere/Cursor recently raised and at what valuation "
-    "(name sources), then write strategy_brief.md with the hypothesis, audience, channel, message "
-    'angle, success metric, and cited evidence."). The strategist will research the market itself and '
-    "write strategy_brief.md. Then READ strategy_brief.md and draft an on-brand content_draft.md TO "
-    "that brief, citing the sources inline. Deliverable: content_draft.md."
+    "the current AI coding-assistant market. This is a substantial campaign, so gather external "
+    "facts first: load channel-priors and call spawn_subagent(name=\"web_research\", prompt=\"What did "
+    "Anysphere/Cursor recently raise and at what valuation? Name sources.\"). Draft an on-brand "
+    f"{MARKETER_CONTENT_DOC} grounded in those cited facts, citing the sources inline. "
+    f"Deliverable: {MARKETER_CONTENT_DOC}."
 )
 
 
@@ -163,20 +156,18 @@ def main() -> int:
         cfg = role_beat_config(registry.get("marketer").manifest)
         mat = factory.materialize(ledger.employees.get("mira"))  # type: ignore[arg-type]
 
-        strategist = next((s for s in cfg.subagents if s.name == "strategist"), None)
+        web = next((s for s in cfg.subagents if s.name == "web_research"), None)
 
         _log("=" * 72)
-        _log("MARKETER + STRATEGIST — depth-2 chain: Mira → strategist → web_research")
+        _log("MARKETER + web_research — lean campaign framing")
         _log("=" * 72)
         _log(f"   subagents on Mira : {[s.name for s in cfg.subagents]}")
-        _log(
-            f"   strategist spawnable: {[c.name for c in strategist.spawnable] if strategist else '?'}"
-        )
+        _log(f"   web_research present: {web is not None}")
         _log(f"   worktree : {mat.working_dir}")
 
         ledger.tasks.submit(Task(id="arceus-launch-post", intent=_TASK))
         assign_task(ledger, "arceus-launch-post", "mira")
-        _log("\nTASK: frame the bet (strategist → web_research), then draft the post\n" + "-" * 72)
+        _log("\nTASK: frame the bet (web_research), then draft the post\n" + "-" * 72)
 
         scheduler = Scheduler(
             ledger=ledger,
@@ -204,41 +195,25 @@ def main() -> int:
             asyncio.run(_pulse())
 
         _log("\n" + "=" * 72)
-        _log("RESULT — the depth-2 chain")
+        _log("RESULT — lean research path")
         _log("=" * 72)
         _log(f"   subagents spawned (top bus): {bus.spawned}")
         _log(f"   subagents completed        : {bus.completed}")
-        # NB: each dream session gets its OWN tracer (_factory.py), so a NESTED spawn
-        # (strategist → web_research) emits to the strategist's private trace, NOT this top-level
-        # bus — a live run cannot observe the depth-2 spawn here by construction. The authoritative
-        # proof is deterministic: the wiring below + the dream integration test
-        # (test_depth2_integration.py) + the runtime trace. This run exercises the chain live.
-        wiring = strategist is not None and [c.name for c in strategist.spawnable] == [
-            "web_research"
-        ]
+        lean = web is not None and "strategist" not in {s.name for s in cfg.subagents}
         _log(
-            f"   ★ DEPTH-2 WIRING (deterministic): {wiring}  "
-            f"— strategist holds spawn_subagent + scoped web_research; it CAN nest."
-        )
-        _log(
-            "     (nested spawns are invisible to this bus — per-session tracers; see integration test.)"
+            f"   ★ LEAN ROSTER (deterministic): {lean}  "
+            f"— Mira holds web_research + brand_critic; no strategist persona."
         )
 
-        brief = mat.working_dir / _STRATEGY_DOC
-        if brief.is_file():
-            text = brief.read_text(encoding="utf-8")
-            _log(f"\n   {_STRATEGY_DOC} ({len(text)} chars):")
+        draft = mat.working_dir / MARKETER_CONTENT_DOC
+        if draft.is_file():
+            text = draft.read_text(encoding="utf-8")
+            _log(f"\n   {MARKETER_CONTENT_DOC} ({len(text)} chars):")
             _log("   " + "-" * 60)
             for line in text.splitlines()[:20]:
                 _log(f"   {line}")
         else:
-            _log(f"   ⚠ no {_STRATEGY_DOC} written by the strategist")
-
-        draft = mat.working_dir / MARKETER_CONTENT_DOC
-        _log(
-            f"\n   {MARKETER_CONTENT_DOC} written: {draft.is_file()}"
-            f" ({len(draft.read_text(encoding='utf-8')) if draft.is_file() else 0} chars)"
-        )
+            _log(f"   ⚠ no {MARKETER_CONTENT_DOC} written")
         task = ledger.tasks.get("arceus-launch-post")
         _log(f"   task status : {task.status.value if task else '?'}")
     finally:

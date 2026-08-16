@@ -85,7 +85,7 @@ class DreamObserverBridge:
             self._maybe_emit_subagent_start(event)
             return
         if isinstance(event, RoleToolResult):
-            payload = {
+            result_payload: dict[str, object] = {
                 "role": event.role,
                 "tool": event.tool,
                 "is_error": event.is_error,
@@ -94,8 +94,8 @@ class DreamObserverBridge:
                 "dream_kind": "role.tool.result",
             }
             if event.structured is not None:
-                payload["structured"] = dict(event.structured)
-            self._emit_run(EventKind.RUN_TOOL_RESULT, payload)
+                result_payload["structured"] = dict(event.structured)
+            self._emit_run(EventKind.RUN_TOOL_RESULT, result_payload)
             self._maybe_emit_subagent_result(event)
             self._maybe_emit_memory(event)
             return

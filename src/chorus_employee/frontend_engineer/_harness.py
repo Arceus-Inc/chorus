@@ -10,7 +10,7 @@ in the brief; framework specifics live only in the authored skills. Each field b
 component it drives.
 
 Slices layer in: the ``evidence_scan`` scan tool (a deterministic read-only view of the bundle), the
-Code-Reviewer + UI-Tester subagents (in-beat quality pressure, both read-only), and the authored
+Code-Reviewer subagent (in-beat quality pressure, read-only), and the authored
 build/testing craft skills (loaded on demand via the ``skill`` tool) are all wired here.
 """
 
@@ -63,7 +63,7 @@ def frontend_engineer_manifest() -> RoleManifest:
         # --- build_harness(registry=...) ---
         # Read + repo-write + run gates + git (a build role), plus durable/task memory and read-only web
         # research for API/pattern/a11y facts. test_evidence (the deterministic bundle scan) and
-        # spawn_subagent (the Code-Reviewer + UI-Tester review layer) are wired here; skill lands next.
+        # spawn_subagent (the Code-Reviewer review layer) is wired here; skill lands next.
         tools=(
             "read_file",
             # code navigation (read-only, tier 0): glob finds files by name/path shape, grep finds text
@@ -79,7 +79,7 @@ def frontend_engineer_manifest() -> RoleManifest:
             "git",
             # deterministic read-only self-check of the test-evidence bundle before declaring done.
             "evidence_scan",
-            # dispatch the Tier-1 review subagents (Code-Reviewer, UI-Tester) after building + running.
+            # dispatch the Tier-1 review subagent (Code-Reviewer) after building + running.
             "spawn_subagent",
             "memory_search",
             "memory_get",
@@ -188,7 +188,7 @@ def frontend_engineer_manifest() -> RoleManifest:
         # gates behind an interactive approval the kernel can't supply. dream's credential guard,
         # command-deny list, and worktree confinement still apply.
         sandbox=SandboxTier.UNRESTRICTED,
-        # Lean roster: code_reviewer only. UI proof audits → playwright/evidence skills on main.
+        # Lean roster: code_reviewer only. UI proof audits → playwright/evidence skills + Dream verify.
         subagents=(CODE_REVIEWER_SUBAGENT,),
     )
 

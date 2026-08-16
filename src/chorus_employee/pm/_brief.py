@@ -26,11 +26,11 @@ PM_BRIEF = (
     "re-querying; cite an internal fact (a repo path, a metric) when it informs the call.\n"
     "   - For a quick external fact, one or two `browser_run` calls (open Chromium, search/read a "
     "page).\n"
-    "   - For a real evidence question — a market/competitor/user signal that needs a sweep — spawn the "
-    '`researcher` subagent EXACTLY ONCE: `spawn_subagent(name="researcher", prompt="<one focused '
-    'evidence question>")`. It returns a typed, cited brief (claims with `source_url`s). One sweep is '
-    "enough — do NOT spawn the researcher again or fan out more browser_run; two or three cited claims "
-    "are plenty to decide on.\n"
+    "   - For a real evidence question — a market/competitor/user signal that needs a sweep — load "
+    "`evidence-brief` and spawn `web_research` EXACTLY ONCE: "
+    '`spawn_subagent(name="web_research", prompt="<one focused evidence question>")`. It returns a '
+    "cited JSON answer (findings with sources). One sweep is enough — do NOT fan out more "
+    "browser_run; two or three cited claims are plenty to decide on.\n"
     f"2. DRAFT THE PLAN. Once your evidence is in, write your decision to `{PM_PLAN_DOC}` with "
     "`write_file` (exactly that path in your working directory root — not a `docs/…` subpath, not any "
     "other filename): a `## Decision` section stating the option you are choosing and why, your "

@@ -45,17 +45,17 @@ class TestSpawnableProjection:
         researcher = SubagentSpec(
             name="web_research", description="reads the web", tools=("browser_run",)
         )
-        strategist = SubagentSpec(
-            name="strategist",
+        framer = SubagentSpec(
+            name="framer",
             description="frames the bet",
             # A spawner must itself hold what it delegates (transitivity): it grants web tools down.
             tools=("read_file", "browser_run", "spawn_subagent"),
             spawnable=(researcher,),
         )
-        subagent_set = _subagent_set(_config_with(strategist))
+        subagent_set = _subagent_set(_config_with(framer))
 
         assert subagent_set is not None
-        projected = subagent_set.get("strategist")
+        projected = subagent_set.get("framer")
         assert projected is not None
         assert "spawn_subagent" in projected.tools
         assert [c.name for c in projected.spawnable] == ["web_research"]
@@ -66,16 +66,16 @@ class TestSpawnableProjection:
         greedy = SubagentSpec(
             name="web_research", description="d", tools=("browser_run", "run_command")
         )
-        strategist = SubagentSpec(
-            name="strategist",
+        framer = SubagentSpec(
+            name="framer",
             description="frames the bet",
             tools=("read_file", "browser_run", "spawn_subagent"),  # no run_command
             spawnable=(greedy,),
         )
-        subagent_set = _subagent_set(_config_with(strategist))
+        subagent_set = _subagent_set(_config_with(framer))
 
         assert subagent_set is not None
-        projected = subagent_set.get("strategist")
+        projected = subagent_set.get("framer")
         assert projected is not None
         assert projected.spawnable[0].tools == ("browser_run",)  # run_command dropped
 

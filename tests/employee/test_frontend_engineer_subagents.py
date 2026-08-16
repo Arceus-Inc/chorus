@@ -19,10 +19,7 @@ import pytest
 from chorus.roles import role_beat_config
 from chorus.testing import open_test_ledger
 from chorus_employee.frontend_engineer import frontend_engineer_plugin
-from chorus_employee.frontend_engineer._subagents import (
-    CODE_REVIEWER_SUBAGENT,
-    UI_TESTER_SUBAGENT,
-)
+from chorus_employee.frontend_engineer._subagents import CODE_REVIEWER_SUBAGENT
 from chorus_harness._factory import _subagent_set
 
 pytestmark = pytest.mark.integration
@@ -89,47 +86,6 @@ class TestCodeReviewerDeclaration:
         assert schema["properties"]["verdict"]["enum"] == ["PASS", "FAIL"]
 
 
-# --- UI-Tester declaration (the proof auditor) ---
-
-
-class TestUiTesterDeclaration:
-    def test_subagent_name(self) -> None:
-        assert UI_TESTER_SUBAGENT.name == "ui_tester"
-
-    def test_subagent_is_read_only(self) -> None:
-        assert "write_file" not in UI_TESTER_SUBAGENT.tools
-        assert "run_command" not in UI_TESTER_SUBAGENT.tools
-        assert "read_file" in UI_TESTER_SUBAGENT.tools
-
-    def test_subagent_max_turns_bounded(self) -> None:
-        assert UI_TESTER_SUBAGENT.max_turns <= 8
-
-    def test_description_is_about_e2e_proof(self) -> None:
-        desc = UI_TESTER_SUBAGENT.description.lower()
-        assert "e2e" in desc
-        assert "proof" in desc or "prove" in desc
-
-    def test_description_instructs_pass_fail_verdict(self) -> None:
-        desc = UI_TESTER_SUBAGENT.description
-        assert "PASS" in desc
-        assert "FAIL" in desc
-
-    def test_description_instructs_read_only(self) -> None:
-        desc = UI_TESTER_SUBAGENT.description.lower()
-        assert "read-only" in desc or "read only" in desc
-
-    def test_grounds_verdict_on_test_evidence(self) -> None:
-        assert "evidence_scan" in UI_TESTER_SUBAGENT.tools
-        assert "evidence_scan" in UI_TESTER_SUBAGENT.description
-
-    def test_carries_the_verdict_output_schema(self) -> None:
-        schema = UI_TESTER_SUBAGENT.output_schema
-        assert schema is not None
-        assert schema.get("type") == "object"
-        assert {"verdict", "gaps"} <= set(schema["required"])
-        assert schema["properties"]["verdict"]["enum"] == ["PASS", "FAIL"]
-
-
 # --- Manifest integration ---
 
 
@@ -140,19 +96,17 @@ class TestFrontendEngineerManifestSubagents:
     def test_manifest_declares_code_reviewer(self) -> None:
         assert any(sa.name == "code_reviewer" for sa in self._manifest().subagents)
 
-    def test_manifest_declares_ui_tester(self) -> None:
-        assert any(sa.name == "ui_tester" for sa in self._manifest().subagents)
+    def test_manifest_omits_ui_tester(self) -> None:
+        assert all(sa.name != "ui_tester" for sa in self._manifest().subagents)
 
     def test_manifest_includes_spawn_subagent_tool(self) -> None:
         assert "spawn_subagent" in self._manifest().tools
 
-    def test_reviewers_get_test_evidence_as_a_subagent_primitive(self) -> None:
+    def test_reviewer_gets_test_evidence_as_a_subagent_primitive(self) -> None:
         manifest = self._manifest()
-        # parent superset (needed so the projection's narrower-wins intersection keeps it)
         assert "evidence_scan" in manifest.tools
-        for name in ("code_reviewer", "ui_tester"):
-            sa = next(s for s in manifest.subagents if s.name == name)
-            assert "evidence_scan" in sa.tools
+        sa = next(s for s in manifest.subagents if s.name == "code_reviewer")
+        assert "evidence_scan" in sa.tools
 
     def test_subagent_tools_are_subset_of_parent_tools(self) -> None:
         manifest = self._manifest()
@@ -165,7 +119,7 @@ class TestFrontendEngineerManifestSubagents:
 
     def test_beat_config_carries_the_subagents(self) -> None:
         config = role_beat_config(self._manifest())
-        assert {sa.name for sa in config.subagents} == {"code_reviewer", "ui_tester"}
+        assert {sa.name for sa in config.subagents} == {"code_reviewer"}
 
 
 # --- Factory projection (guarded on dream `spawnable` support) ---
@@ -186,16 +140,6 @@ class TestFrontendEngineerProjection:
         assert "evidence_scan" in child.tools
         assert "write_file" not in child.tools  # read-only survives projection
         assert "run_command" not in child.tools
-
-    def test_ui_tester_projects_read_only_with_test_evidence(self) -> None:
-        result = _subagent_set(self._config())
-        assert result is not None
-        child = result.get("ui_tester")
-        assert child is not None
-        assert "read_file" in child.tools
-        assert "evidence_scan" in child.tools
-        assert "write_file" not in child.tools
-        assert child.output_schema is not None
 
     def test_test_evidence_is_actually_offered_to_the_reviewer_at_runtime(self) -> None:
         from dream.permissions._types import SandboxTier

@@ -56,7 +56,7 @@ def designer_manifest() -> RoleManifest:
             "lattice_apply",
             "skill_manage",
             "spawn_subagent",
-            # pattern/prior-art research via Chromium CDP (designer §06 UX-Researcher,
+            # pattern/prior-art research via Chromium CDP (designer §06 web_research,
             # §07 pattern research). Needs the net tier below.
             "browser_run",
             "web_fetch",
@@ -101,7 +101,7 @@ def designer_manifest() -> RoleManifest:
         model=None,  # use the deployment model the composition root supplies
         wake_model=None,
         # --- build_harness(max_turns=...) ---
-        # The explore→lint→critic→revise loop is turn-hungry: read system, draft, self-lint, spawn
+        # The frame→lint→critic→revise loop is turn-hungry: read system, draft, self-lint, spawn
         # critic, revise, re-spawn. 20 turns leaves room for ~3 critic rounds without starving the beat.
         max_turns=20,
         # --- per-beat sprint budget ---

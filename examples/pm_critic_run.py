@@ -79,7 +79,7 @@ class Trace:
 
     critic_spawns: int = 0
     critic_result: str = ""
-    researcher_spawned: bool = False
+    web_research_spawned: bool = False
 
 
 def _observer_for(trace: Trace):
@@ -93,10 +93,8 @@ def _observer_for(trace: Trace):
                 if name == "critic":
                     trace.critic_spawns += 1
                     print(f"  [CRITIC ->] spawn #{trace.critic_spawns}")
-                elif name == "researcher":
-                    trace.researcher_spawned = True
-                    print(f"  [RESEARCH ->] spawn {_short(inp.get('prompt'), 100)}")
                 elif name == "web_research":
+                    trace.web_research_spawned = True
                     print(f"  [web_research ->] {_short(inp.get('prompt'), 90)}")
             elif tool == "record_decision" and isinstance(inp, dict):
                 print(
@@ -173,7 +171,7 @@ async def main() -> int:
 
     print(f"\n{'=' * 78}\nCRITIC E2E — did the red-team elevate the decision?\n{'=' * 78}")
     print(f"critic spawns      : {trace.critic_spawns}")
-    print(f"researcher spawned : {trace.researcher_spawned}")
+    print(f"web_research spawned : {trace.web_research_spawned}")
     print(f"recorded option    : {_short(dec.get('option'), 90)}")
     print(f"final confidence   : {conf}")
     print(f"claims (real/total): {len(real_claims)}/{len(claims)}")
