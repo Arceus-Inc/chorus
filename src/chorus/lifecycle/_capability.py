@@ -293,10 +293,12 @@ class CapabilityService:
         children: Sequence[ChildPlan],
         actor_employee_id: str | None,
     ) -> DecomposeResult:
-        # Craft-reroute FIRST, then the fail-closed gates (reviewer / unknown / outcome / authorize).
-        # PR #104's director manager-area fan-out belongs AFTER this rewrite: routing is DELIVERY-only
-        # (a no-op on director DELEGATION waves) and must not run after those gates or it would rewrite
-        # an already-authorized wave. Post-route authorization still runs on the rewritten assignees.
+        # Craft-reroute FIRST (undeclared DELIVERY children only), then the fail-closed gates
+        # (reviewer / unknown / outcome / authorize). A declared ``outcome_kind`` skips rewrite so
+        # the outcome check validates the manager's named assignee. PR #104's director manager-area
+        # fan-out belongs AFTER this rewrite: routing is DELIVERY-only (a no-op on director
+        # DELEGATION waves) and must not run after those gates or it would rewrite an
+        # already-authorized wave. Post-route authorization still runs on the rewritten assignees.
         routed = self._capability_route(children, manager_id=parent.assignee_employee_id)
         children = routed.children
         reroutes = routed.reroutes
@@ -775,8 +777,10 @@ class CapabilityService:
         non-decompose callers are unaffected.
 
         An unauthorized or non-report original assignee is never rewritten — that would launder a
-        fail-closed unknown/authority denial into a valid assignment. Post-route reviewer, unknown,
-        outcome, and authorize gates still run on the rewritten wave.
+        fail-closed unknown/authority denial into a valid assignment. A child with a declared
+        ``outcome_kind`` is also left as named so the outcome-capability check validates the
+        manager's pair. Post-route reviewer, unknown, outcome, and authorize gates still run on the
+        (possibly rewritten) wave.
         """
         if self._roles is None or manager_id is None:
             return RoutedChildWave(children=tuple(children))
@@ -815,19 +819,21 @@ class CapabilityService:
     def _better_matched_report(self, child: ChildPlan, reports: Sequence[Employee]) -> str | None:
         """The id of a strictly-better-matched report for a mis-crafted DELIVERY child.
 
-        ``None`` (keep the manager's pick) unless ALL hold: the child is DELIVERY craft work; its
-        intent carries an unambiguous deliverable cue (not ROLE_DEFAULT); the current assignee is an
-        eligible direct report whose craft is a *different* concrete kind (a generalist whose native
-        kind is ROLE_DEFAULT is never "wrong", and a non-report is never rewritten); and a different
-        report actually produces that kind. Among matches the lowest employee id wins — load is
-        ignored so the decompose claim fingerprint is stable across in-beat retries. Canonical /
-        ambiguous work and pods that lack the ideal craft are left exactly as asked.
+        ``None`` (keep the manager's pick) unless ALL hold: the child is DELIVERY craft work with no
+        declared ``outcome_kind``; its intent carries an unambiguous deliverable cue (not
+        ROLE_DEFAULT); the current assignee is an eligible direct report whose craft is a *different*
+        concrete kind (a generalist whose native kind is ROLE_DEFAULT is never "wrong", and a
+        non-report is never rewritten); and a different report actually produces that kind. Among
+        matches the lowest employee id wins — load is ignored so the decompose claim fingerprint is
+        stable across in-beat retries. Canonical / ambiguous work, declared-kind assignments, and
+        pods that lack the ideal craft are left exactly as asked.
         """
         roles = self._roles
         if (
             roles is None
             or child.execution_mode is not ExecutionMode.DELIVERY
             or child.assignee is None
+            or child.outcome_kind is not None
         ):
             return None
         task_kind = classify_deliverable(child.intent)
