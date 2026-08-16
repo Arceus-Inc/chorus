@@ -84,6 +84,22 @@ def test_task_submit_and_get(ledger: Ledger) -> None:
     assert got.goal_id == uid("g1")
 
 
+def test_task_roundtrips_files_to_touch(ledger: Ledger) -> None:
+    ledger.goals.create(Goal(id=uid("g1"), title="ship"))
+    ledger.tasks.submit(
+        Task(
+            id=uid("t1"),
+            intent="build login",
+            status=TaskStatus.TODO,
+            goal_id=uid("g1"),
+            files_to_touch=("src/login.py", "tests/test_login.py"),
+        )
+    )
+    got = ledger.tasks.get(uid("t1"))
+    assert got is not None
+    assert got.files_to_touch == ("src/login.py", "tests/test_login.py")
+
+
 def test_checkout_cas_grants_single_owner(ledger: Ledger) -> None:
     ledger.employees.create(Employee(id=uid("e1"), name="a", role="engineer"))
     ledger.tasks.submit(Task(id=uid("t1"), intent="x", status=TaskStatus.TODO))
