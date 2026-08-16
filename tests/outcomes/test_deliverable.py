@@ -6,8 +6,10 @@ from chorus.outcomes import DoDKind, Verifier
 from chorus.outcomes._deliverable import (
     DeliverableKind,
     classify_deliverable,
+    native_kind_for_role,
     resolve_delivery_verifier,
 )
+from chorus.roles import RoleRegistry, default_roles
 
 
 class _Plugin:
@@ -36,7 +38,9 @@ def test_classify_catches_test_work() -> None:
 
 def test_in_craft_intent_uses_role_generator() -> None:
     # An analyst asked for analysis work keeps its own findings DoD.
-    v = resolve_delivery_verifier("investigate the drop and write findings.md", _Plugin(_analyst_generator))
+    v = resolve_delivery_verifier(
+        "investigate the drop and write findings.md", _Plugin(_analyst_generator)
+    )
     assert v.artifact_class == "finding"
 
 
@@ -64,9 +68,18 @@ def test_frontend_assigned_tests_is_judged_as_tests_not_a_code_command() -> None
 
 def test_frontend_assigned_code_keeps_its_own_command_floor() -> None:
     # In-craft: a code task on a code-native role stays with the role's command floor.
-    v = resolve_delivery_verifier("implement the markdown editor component", _Plugin(_frontend_generator))
+    v = resolve_delivery_verifier(
+        "implement the markdown editor component", _Plugin(_frontend_generator)
+    )
     assert v.kind is DoDKind.COMMAND
     assert v.artifact_class == "pr"
+
+
+def test_native_kind_for_role_reads_the_roles_own_dod() -> None:
+    roles = RoleRegistry.from_plugins(default_roles())
+    assert native_kind_for_role("analyst", roles) is DeliverableKind.ANALYSIS
+    assert native_kind_for_role("backend_engineer", roles) is DeliverableKind.CODE
+    assert native_kind_for_role("unknown", roles) is DeliverableKind.ROLE_DEFAULT
 
 
 if __name__ == "__main__":

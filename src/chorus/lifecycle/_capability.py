@@ -15,7 +15,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING
 
 from chorus.ids import derive_id
@@ -48,9 +48,12 @@ from chorus.lifecycle._decompose import (
     decompose,
 )
 from chorus.lifecycle._team_policy import MissionTeamPolicy
+from chorus.outcomes import DeliverableKind, classify_deliverable, native_kind_for_role
+from chorus.workforce import Employee, EmployeeStatus
 
 if TYPE_CHECKING:
     from chorus.ledger import Ledger
+    from chorus.roles import RoleRegistry
 
 
 @dataclass(frozen=True)
@@ -65,6 +68,23 @@ class ChildPlan:
     execution_mode: ExecutionMode = ExecutionMode.DELIVERY
     can_subdelegate: bool = False
     replaces_task_id: str | None = None
+
+
+@dataclass(frozen=True)
+class CapabilityReroute:
+    """One audited correction of a mis-crafted DELIVERY child's assignee."""
+
+    label: str
+    from_assignee: str
+    to_assignee: str
+
+
+@dataclass(frozen=True)
+class RoutedChildWave:
+    """A decompose/submit wave after optional craft-matched reassignment."""
+
+    children: tuple[ChildPlan, ...]
+    reroutes: tuple[CapabilityReroute, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -147,8 +167,12 @@ class DecisionOutcome:
 class CapabilityService:
     """Ledger-mutating capabilities a manager beat invokes (``decompose`` for M3 Slice 1)."""
 
-    def __init__(self, ledger: Ledger) -> None:
+    def __init__(self, ledger: Ledger, *, roles: RoleRegistry | None = None) -> None:
         self._ledger = ledger
+        # The role registry powers capability-matched routing (decompose/submit_one). Optional so the
+        # non-decompose callers (record_decision, reassign) keep working unchanged; routing is simply
+        # inert without it.
+        self._roles = roles
 
     def record_decision(
         self,
@@ -255,6 +279,13 @@ class CapabilityService:
         children: Sequence[ChildPlan],
         actor_employee_id: str | None,
     ) -> DecomposeResult:
+        # Craft-reroute FIRST, then the fail-closed gates (reviewer / unknown / authorize). PR #104's
+        # director manager-area fan-out belongs AFTER this rewrite: routing is DELIVERY-only (a no-op
+        # on director DELEGATION waves) and must not run after those gates or it would rewrite an
+        # already-authorized wave. Post-route authorization still runs on the rewritten assignees.
+        routed = self._capability_route(children, manager_id=parent.assignee_employee_id)
+        children = routed.children
+        reroutes = routed.reroutes
         reviewers = self._reviewer_assignees(children)
         if reviewers:
             return DecomposeResult(reviewer_assignees=reviewers)
@@ -411,6 +442,25 @@ class CapabilityService:
                         actor_employee_id=actor_employee_id,
                     )
                     team_policy.activate(child_team_ids[child.label] or "")
+            if reroutes:
+                # Audit the capability re-routes atomically with the children they retargeted, so the
+                # cockpit/report can see the manager's pick was corrected and to whom.
+                record_activity(
+                    self._ledger,
+                    verb=ActivityVerb.ASSIGNED,
+                    subject_id=parent.id,
+                    actor_employee_id=parent.assignee_employee_id,
+                    payload={
+                        "capability_reroute": [
+                            {
+                                "label": reroute.label,
+                                "from": reroute.from_assignee,
+                                "to": reroute.to_assignee,
+                            }
+                            for reroute in reroutes
+                        ]
+                    },
+                )
         return DecomposeResult(child_ids=ids)
 
     def _authorize_wave(
@@ -691,6 +741,98 @@ class CapabilityService:
                 seen.setdefault(child.assignee, None)
         return tuple(seen)
 
+    def _capability_route(
+        self, children: Sequence[ChildPlan], *, manager_id: str | None
+    ) -> RoutedChildWave:
+        """Re-route a strongly mis-crafted DELIVERY child to a better-matched free report.
+
+        F1 already judges a cross-assigned deliverable by its OWN standard, so correct work is never
+        rejected for the wrong rubric; this closes the other half — don't route craft work to the
+        wrong craft when a better-matched report is free, so the pod doesn't burn a beat producing a
+        rejectable deliverable. Deterministic and derived from the role registry (each role's native
+        kind is read from its own DoD — no task→role table). Inert without a registry, so the
+        non-decompose callers are unaffected.
+
+        An unauthorized or non-report original assignee is never rewritten — that would launder a
+        fail-closed unknown/authority denial into a valid assignment. Post-route reviewer, unknown,
+        and authorize gates still run on the rewritten wave.
+        """
+        if self._roles is None or manager_id is None:
+            return RoutedChildWave(children=tuple(children))
+        profile = self._ledger.management_profiles.get(manager_id)
+        allowed = frozenset(profile.allowed_professions) if profile is not None else frozenset()
+        reports = [
+            employee
+            for employee in self._ledger.employees.list()
+            if employee.reports_to == manager_id
+            and employee.status
+            not in (
+                EmployeeStatus.TERMINATED,
+                EmployeeStatus.PAUSED,
+                EmployeeStatus.PENDING,
+            )
+            and employee.role != "reviewer"
+            and (not allowed or employee.role in allowed)
+        ]
+        routed: list[ChildPlan] = []
+        trail: list[CapabilityReroute] = []
+        for child in children:
+            target = self._better_matched_report(child, reports)
+            if target is None:
+                routed.append(child)
+                continue
+            trail.append(
+                CapabilityReroute(
+                    label=child.label,
+                    from_assignee=child.assignee or "",
+                    to_assignee=target,
+                )
+            )
+            routed.append(replace(child, assignee=target))
+        return RoutedChildWave(children=tuple(routed), reroutes=tuple(trail))
+
+    def _better_matched_report(self, child: ChildPlan, reports: Sequence[Employee]) -> str | None:
+        """The id of a strictly-better-matched report for a mis-crafted DELIVERY child.
+
+        ``None`` (keep the manager's pick) unless ALL hold: the child is DELIVERY craft work; its
+        intent carries an unambiguous deliverable cue (not ROLE_DEFAULT); the current assignee is an
+        eligible direct report whose craft is a *different* concrete kind (a generalist whose native
+        kind is ROLE_DEFAULT is never "wrong", and a non-report is never rewritten); and a different
+        report actually produces that kind. Among matches the lowest employee id wins — load is
+        ignored so the decompose claim fingerprint is stable across in-beat retries. Canonical /
+        ambiguous work and pods that lack the ideal craft are left exactly as asked.
+        """
+        roles = self._roles
+        if (
+            roles is None
+            or child.execution_mode is not ExecutionMode.DELIVERY
+            or child.assignee is None
+        ):
+            return None
+        task_kind = classify_deliverable(child.intent)
+        if task_kind is DeliverableKind.ROLE_DEFAULT:
+            return None
+        current = self._ledger.employees.get(child.assignee)
+        if current is None:  # an unknown assignee is the _unknown_assignees gate's job, not ours
+            return None
+        report_ids = {employee.id for employee in reports}
+        if current.id not in report_ids:
+            # Don't launder a non-report / unauthorized original into a valid assignment.
+            return None
+        current_kind = native_kind_for_role(current.role, roles)
+        if current_kind is DeliverableKind.ROLE_DEFAULT or current_kind is task_kind:
+            return None
+        matches = [
+            employee
+            for employee in reports
+            if employee.id != child.assignee
+            and native_kind_for_role(employee.role, roles) is task_kind
+        ]
+        if not matches:
+            return None
+        matches.sort(key=lambda employee: employee.id)
+        return matches[0].id
+
     def _is_direct_report(self, employee_id: str, *, manager_id: str | None) -> bool:
         employee = self._ledger.employees.get(employee_id)
         return manager_id is not None and employee is not None and employee.reports_to == manager_id
@@ -724,8 +866,10 @@ class CapabilityService:
 
 __all__ = [
     "AssignTaskResult",
+    "CapabilityReroute",
     "CapabilityService",
     "ChildPlan",
     "DecomposeResult",
+    "RoutedChildWave",
     "SubmitTaskResult",
 ]

@@ -26,6 +26,7 @@ from typing import TYPE_CHECKING
 from chorus.outcomes._verifier import Verifier
 
 if TYPE_CHECKING:
+    from chorus.roles import RoleRegistry
     from chorus.roles._plugin import RolePlugin
 
 
@@ -225,6 +226,19 @@ def _role_native_kind(plugin: RolePlugin) -> DeliverableKind:
     return native
 
 
+def native_kind_for_role(role: str, roles: RoleRegistry) -> DeliverableKind:
+    """The deliverable kind a role produces by default — its own DoD's artifact class, no lookup table.
+
+    ``ROLE_DEFAULT`` for an unknown role or one whose default DoD maps to no craft kind, so a caller
+    treats it as a generalist (never a mismatch). This is the read side of capability matching: it lets
+    a router compare *what a task asks for* (:func:`classify_deliverable`) against *what a worker makes*
+    without any hardcoded role→kind mapping — both are derived from the same role registry.
+    """
+    if role not in roles:
+        return DeliverableKind.ROLE_DEFAULT
+    return _role_native_kind(roles.get(role))
+
+
 def resolve_delivery_verifier(intent: str, plugin: RolePlugin) -> Verifier:
     """Select a delivery task's DoD by the deliverable it owes, not the assignee's role.
 
@@ -243,5 +257,6 @@ def resolve_delivery_verifier(intent: str, plugin: RolePlugin) -> Verifier:
 __all__ = [
     "DeliverableKind",
     "classify_deliverable",
+    "native_kind_for_role",
     "resolve_delivery_verifier",
 ]

@@ -13,7 +13,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from chorus.ledger import Ledger, Task, TaskStatus, Wake
+from chorus.ledger import ExecutionMode, Ledger, Task, TaskStatus, Wake
 from chorus.ledger._models import (
     RecoveryAction,
     RecoveryKind,
@@ -85,14 +85,22 @@ def _run(
 # -- failed-prerequisite cascade (a rejected child must not deadlock the subtree) --
 
 
-def _child(ledger: Ledger, task_id: str, status: TaskStatus) -> Task:
+def _child(
+    ledger: Ledger,
+    task_id: str,
+    status: TaskStatus,
+    *,
+    parent_id: str = uid("goal"),
+    execution_mode: ExecutionMode = ExecutionMode.DELIVERY,
+) -> Task:
     return ledger.tasks.submit(
         Task(
             id=task_id,
             intent=task_id,
             status=status,
             assignee_employee_id="emp_1",
-            parent_id=uid("goal"),
+            parent_id=parent_id,
+            execution_mode=execution_mode,
         )
     )
 
@@ -164,6 +172,152 @@ def test_stranded_child_terminalizes_so_the_parent_can_integrate(ledger: Ledger)
     assert ledger.tasks.get(uid("C")).status is TaskStatus.REJECTED  # type: ignore[union-attr]
     woken = [w for w in ledger.wakes.queued() if w.payload.get("task_id") == uid("goal")]
     assert [w.reason for w in woken] == [WakeReason.CHILDREN_DONE]  # manager gets its react beat
+
+
+def _hung_child(ledger: Ledger, *, timeouts: int, running: bool = False) -> None:
+    """A delegation parent ``goal`` with one child that has timed out ``timeouts`` times."""
+    ledger.employees.create(Employee(id="moe", name="moe", role="engineer"))
+    ledger.tasks.submit(
+        Task(
+            id=uid("goal"),
+            intent=uid("goal"),
+            status=TaskStatus.BLOCKED,
+            assignee_employee_id="moe",
+        )
+    )
+    _child(ledger, uid("C"), TaskStatus.IN_PROGRESS)
+    for i in range(timeouts):
+        _run(ledger, RunStatus.TIMED_OUT, run_id=uid(f"to_{i}"), task_id=uid("C"))
+    if running:  # a fresh in-lease retry is live right now — must NOT be killed
+        _run(ledger, RunStatus.RUNNING, run_id=uid("live"), task_id=uid("C"), lease=FUTURE)
+
+
+def test_repeatedly_hung_child_is_terminalized_so_the_manager_is_not_wake_starved(
+    ledger: Ledger,
+) -> None:
+    """A child beat that hangs under a long lease is reaped and re-continued, looking 'healthy' to the
+    ladder while never crossing a terminal edge — so the manager's children_done wake never fires and
+    the goal stalls for as long as the lease. After the timeout cap the child has hung, not progressed:
+    reject it and wake the manager (once the subtree is wholly terminal), independent of lease length."""
+    _hung_child(ledger, timeouts=2)
+
+    reconcile(ledger, now=NOW)
+
+    child = ledger.tasks.get(uid("C"))
+    assert child is not None
+    assert child.status is TaskStatus.REJECTED
+    woken = [w for w in ledger.wakes.queued() if w.payload.get("task_id") == uid("goal")]
+    assert [w.reason for w in woken] == [WakeReason.CHILDREN_DONE]
+
+
+def test_a_live_retry_is_never_killed_by_the_timeout_cap(ledger: Ledger) -> None:
+    """The cap only fires when the child is NOT currently running: a fresh in-lease retry (even past the
+    timeout count) is a live beat that may still finish, so it is left alone until it too is reaped."""
+    _hung_child(ledger, timeouts=2, running=True)
+
+    reconcile(ledger, now=NOW)
+
+    child = ledger.tasks.get(uid("C"))
+    assert child is not None
+    assert child.status is TaskStatus.IN_PROGRESS
+
+
+def test_a_child_under_the_timeout_cap_is_left_to_retry(ledger: Ledger) -> None:
+    _hung_child(ledger, timeouts=1)
+
+    reconcile(ledger, now=NOW)
+
+    child = ledger.tasks.get(uid("C"))
+    assert child is not None
+    assert child.status is TaskStatus.IN_PROGRESS
+
+
+def test_timeout_cap_is_a_scheduler_policy_knob(ledger: Ledger) -> None:
+    _hung_child(ledger, timeouts=2)
+
+    reconcile(ledger, now=NOW, max_child_timeouts=3)
+
+    child = ledger.tasks.get(uid("C"))
+    assert child is not None
+    assert child.status is TaskStatus.IN_PROGRESS
+
+
+def test_a_top_level_hung_task_is_not_auto_killed(ledger: Ledger) -> None:
+    """A top-level task (no parent manager) that keeps timing out is a human's to resolve — it keeps
+    escalating on its own ladder, never auto-rejected."""
+    ledger.tasks.submit(
+        Task(
+            id=uid("solo"),
+            intent="solo",
+            status=TaskStatus.IN_PROGRESS,
+            assignee_employee_id="emp_1",
+        )
+    )
+    for i in range(3):
+        _run(ledger, RunStatus.TIMED_OUT, run_id=uid(f"solo_to_{i}"), task_id=uid("solo"))
+
+    reconcile(ledger, now=NOW)
+
+    solo = ledger.tasks.get(uid("solo"))
+    assert solo is not None
+    assert solo.status is not TaskStatus.REJECTED
+
+
+def test_hung_in_review_child_is_not_auto_killed(ledger: Ledger) -> None:
+    """Review progress means the child is not hung — IN_REVIEW is never auto-rejected."""
+    _hung_child(ledger, timeouts=2)
+    ledger.tasks.set_status(uid("C"), TaskStatus.IN_REVIEW)
+
+    reconcile(ledger, now=NOW)
+
+    child = ledger.tasks.get(uid("C"))
+    assert child is not None
+    assert child.status is TaskStatus.IN_REVIEW
+
+
+def test_hung_child_with_a_later_succeeded_run_is_not_auto_killed(ledger: Ledger) -> None:
+    """A later succeeded beat is progress — timeout count alone must not reject the child."""
+    _hung_child(ledger, timeouts=2)
+    _run(ledger, RunStatus.SUCCEEDED, run_id=uid("ok"), task_id=uid("C"))
+
+    reconcile(ledger, now=NOW)
+
+    child = ledger.tasks.get(uid("C"))
+    assert child is not None
+    assert child.status is TaskStatus.IN_PROGRESS
+
+
+def test_hung_nested_delegation_child_with_a_live_subtree_is_not_auto_killed(
+    ledger: Ledger,
+) -> None:
+    """A nested manager (DELEGATION) with a live grandchild is not a DELIVERY leaf — leave it."""
+    ledger.employees.create(Employee(id="moe", name="moe", role="engineer"))
+    ledger.tasks.submit(
+        Task(
+            id=uid("goal"),
+            intent=uid("goal"),
+            status=TaskStatus.BLOCKED,
+            assignee_employee_id="moe",
+        )
+    )
+    _child(
+        ledger,
+        uid("C"),
+        TaskStatus.IN_PROGRESS,
+        execution_mode=ExecutionMode.DELEGATION,
+    )
+    _child(ledger, uid("G"), TaskStatus.TODO, parent_id=uid("C"))
+    for i in range(2):
+        _run(ledger, RunStatus.TIMED_OUT, run_id=uid(f"to_{i}"), task_id=uid("C"))
+
+    reconcile(ledger, now=NOW)
+
+    child = ledger.tasks.get(uid("C"))
+    assert child is not None
+    assert child.status is TaskStatus.IN_PROGRESS
+    grandchild = ledger.tasks.get(uid("G"))
+    assert grandchild is not None
+    assert grandchild.status is TaskStatus.TODO
 
 
 def test_stranded_top_level_task_keeps_escalating_to_a_human(ledger: Ledger) -> None:

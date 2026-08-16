@@ -29,15 +29,17 @@ from typing import TYPE_CHECKING
 from chorus.ids import mint_id
 from chorus.ledger._models import (
     ActivityVerb,
+    ExecutionMode,
     RecoveryAction,
     RecoveryKind,
+    RunStatus,
     Task,
     TaskStatus,
     Wake,
     WakeReason,
     WakeStatus,
 )
-from chorus.lifecycle import classify, record_activity
+from chorus.lifecycle import IllegalTransition, classify, is_legal, record_activity
 
 if TYPE_CHECKING:
     from chorus.ledger import Ledger
@@ -62,6 +64,12 @@ _DISPATCH_RECOVERY: dict[str, str] = {
 # never run, so the dependency is permanently unsatisfiable (spec 02 §2).
 _FAILED_BLOCKER = frozenset({TaskStatus.REJECTED, TaskStatus.CANCELLED})
 
+# A delegation child whose beat hangs is reaped and re-continued without ever crossing a terminal
+# edge, so the manager's ``children_done`` wake never fires. After this many timed-out runs the child
+# has hung, not progressed — give up and reject it. A policy knob (scheduler-overridable), not a magic
+# constant: it bounds how many lease-length hangs a manager waits through before the kernel intervenes.
+_DEFAULT_MAX_CHILD_TIMEOUTS = 2
+
 
 @dataclass(frozen=True)
 class ReconcileReport:
@@ -74,11 +82,15 @@ class ReconcileReport:
     cascaded: list[str] = field(default_factory=list)
 
 
-def reconcile(ledger: Ledger, *, now: datetime) -> ReconcileReport:
+def reconcile(
+    ledger: Ledger, *, now: datetime, max_child_timeouts: int = _DEFAULT_MAX_CHILD_TIMEOUTS
+) -> ReconcileReport:
     """Run one ordered recovery sweep over the ledger (spec 02 §7); see module docstring."""
     reaped = _reap_orphaned_runs(ledger, now=now)
     cascaded = _cascade_failed_prerequisites(ledger)
     cascaded += _terminalize_stranded_children(ledger)
+    # After reap, a hung child's run is TIMED_OUT (not RUNNING), so this reads a clean timeout count.
+    cascaded += _terminalize_repeatedly_hung_children(ledger, max_timeouts=max_child_timeouts)
     recovered, opened = _reconcile_stranded(ledger, now=now)
     folded = _fold_terminal_sources(ledger)
     return ReconcileReport(
@@ -110,6 +122,63 @@ def _terminalize_stranded_children(ledger: Ledger) -> list[str]:
                 actor_employee_id=task.assignee_employee_id,
                 payload={"cause": "stranded_child_terminalized"},
             )
+        _wake_parent_if_subtree_terminal(ledger, parent_id=task.parent_id)
+        terminalized.append(task.id)
+    return terminalized
+
+
+def _is_eligible_hung_delivery_leaf(ledger: Ledger, task: Task, *, max_timeouts: int) -> bool:
+    """True iff ``task`` is a hung DELIVERY leaf the kernel may reject after bounded reaps.
+
+    Only a parented DELIVERY leaf with no nested subtree, no live run, no later success or review
+    progress, a legal ``→ rejected`` edge, and at least ``max_timeouts`` timed-out runs is eligible.
+    A DELEGATION child, a partial subtree, ``in_review`` work, or a later ``succeeded`` beat has
+    progressed — leave it on its own ladder.
+    """
+    if task.parent_id is None or task.execution_mode is not ExecutionMode.DELIVERY:
+        return False
+    if task.status is TaskStatus.IN_REVIEW:
+        return False
+    if not is_legal(task.status, TaskStatus.REJECTED):
+        return False
+    if ledger.tasks.has_children(task.id):
+        return False
+    runs = ledger.runs.for_task(task.id)
+    if any(run.status is RunStatus.RUNNING for run in runs):
+        return False
+    if any(run.status is RunStatus.SUCCEEDED for run in runs):
+        return False
+    return sum(run.status is RunStatus.TIMED_OUT for run in runs) >= max_timeouts
+
+
+def _terminalize_repeatedly_hung_children(ledger: Ledger, *, max_timeouts: int) -> list[str]:
+    """Reject a hung DELIVERY leaf so its manager isn't wake-starved (spec 02 §6).
+
+    A child beat can hang under a long (research-widened) lease; the reaper times its run out and the
+    ladder re-continues the SAME child, which reads as ``queued_continuation`` = *healthy* and so never
+    crosses a terminal edge — the manager's ``children_done`` wake never fires and the goal stalls for
+    as long as the lease. Once an *eligible* DELIVERY leaf has been reaped ``max_timeouts`` times AND
+    is not currently running, it has hung rather than progressed: reject it via the guarded status
+    machine and wake the parent once the subtree is wholly terminal. Nested delegation, a live
+    subtree, ``in_review``, or a later succeeded beat are left alone. A top-level task (no parent) is
+    never auto-killed.
+    """
+    terminalized: list[str] = []
+    for task in ledger.tasks.agent_owned_open():
+        if not _is_eligible_hung_delivery_leaf(ledger, task, max_timeouts=max_timeouts):
+            continue
+        try:
+            with ledger.transaction():
+                ledger.tasks.transition(task.id, TaskStatus.REJECTED)
+                record_activity(
+                    ledger,
+                    verb=ActivityVerb.RECOVERED,
+                    subject_id=task.id,
+                    actor_employee_id=task.assignee_employee_id,
+                    payload={"cause": "child_timeout_exhausted"},
+                )
+        except IllegalTransition:
+            continue
         _wake_parent_if_subtree_terminal(ledger, parent_id=task.parent_id)
         terminalized.append(task.id)
     return terminalized
