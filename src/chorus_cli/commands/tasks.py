@@ -1,23 +1,9 @@
-"""Backlog verbs — submit/task/assign/eligible/decompose."""
+"""Backlog verbs — submit/task/assign/eligible."""
 
 from __future__ import annotations
 
-from chorus.ids import mint_id
-from chorus.ledger import (
-    Artifact,
-    ArtifactRevision,
-    ArtifactType,
-    Ledger,
-    Task,
-    TaskPriority,
-)
-from chorus.lifecycle import (
-    DEFAULT_REQUEST_DEPTH_CAP,
-    ChildSpec,
-    DepthCapped,
-    assign_task,
-    decompose,
-)
+from chorus.ledger import Task, TaskPriority
+from chorus.lifecycle import assign_task
 from chorus_cli._context import CommandContext, LoopSignal
 from chorus_cli.commands._base import REGISTRY
 from chorus_cli.commands._shared import (
@@ -138,52 +124,6 @@ def _eligible(ctx: CommandContext) -> LoopSignal:
             for t in tasks
         ],
     )
-    return LoopSignal.CONTINUE
-
-
-def _accepted_plan(ledger: Ledger, parent_id: str) -> str:
-    """Record a minimal accepted plan revision the decomposition claim references (spec 02 §4)."""
-    plan = Artifact(id=mint_id(), task_id=parent_id, type=ArtifactType.DOC)
-    ledger.artifacts.create(plan)
-    revision = ArtifactRevision(id=mint_id(), artifact_id=plan.id)
-    ledger.artifact_revisions.record(revision)
-    return revision.id
-
-
-_DECOMPOSE = "decompose <parent_id> <child_intent...>"
-
-
-@REGISTRY.command(
-    "decompose",
-    summary="manager fan-out: create a gated child (depth-capped)",
-    usage=_DECOMPOSE,
-    hidden=True,
-)
-def _decompose(ctx: CommandContext) -> LoopSignal:
-    if len(ctx.args) < 2:
-        ctx.out.error(f"usage: {_DECOMPOSE}")
-        return LoopSignal.CONTINUE
-    parent_id, child_intent = ctx.args[0], " ".join(ctx.args[1:])
-    ledger = ctx.session.ledger
-    if ledger.tasks.get(parent_id) is None:
-        ctx.out.error(f"no such task: {parent_id!r}")
-        return LoopSignal.CONTINUE
-    revision_id = _accepted_plan(ledger, parent_id)  # the manager's accepted plan (spec 02 §4)
-    child = Task(id=mint_id(), intent=child_intent)
-    outcome = decompose(
-        ledger,
-        source_task_id=parent_id,
-        accepted_plan_revision_id=revision_id,
-        children=[ChildSpec(task=child, gates_parent=True)],
-        request_depth_cap=DEFAULT_REQUEST_DEPTH_CAP,
-    )
-    if isinstance(outcome, DepthCapped):
-        ctx.out.error(
-            f"decompose refused: {parent_id} is at the delegation depth cap "
-            f"({DEFAULT_REQUEST_DEPTH_CAP}) -- task blocked, recovery {outcome.recovery.id} opened"
-        )
-        return LoopSignal.CONTINUE
-    ctx.out.line(f"decomposed {parent_id} -> {child.id} ({child_intent})")
     return LoopSignal.CONTINUE
 
 

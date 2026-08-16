@@ -55,7 +55,7 @@ from chorus.outcomes import (
     classify_deliverable,
     native_kind_for_role,
 )
-from chorus.workforce import Employee, EmployeeStatus
+from chorus.workforce import Employee, EmployeeStatus, LedgerWorkforce
 
 if TYPE_CHECKING:
     from chorus.ledger import Ledger
@@ -98,20 +98,31 @@ class RoutedChildWave:
 
 
 @dataclass(frozen=True)
+class ManagerAreaViolation:
+    """Director-only decomposition shape that must be enforced before any fan-out mutation."""
+
+    manager_report_ids: tuple[str, ...]
+    assigned_manager_report_ids: tuple[str, ...]
+    invalid_child_labels: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
 class DecomposeResult:
     """The outcome of a decompose call: the ``label → task_id`` map, or a fail-closed reason.
 
     Exactly one of the failure fields is set on a rejection (and ``child_ids`` is empty): ``depth_capped``
     when the fan-out would exceed the delegation depth cap, ``unknown_assignees`` when a child names a
-    report that is not a direct report, ``outcome_mismatches`` when a child's declared outcome can't be
-    produced by its assignee's role, or ``authority_denied`` for a contract/profession refusal. A clean
-    fan-out leaves the failure fields empty and ``child_ids`` populated.
+    report that is not a direct report, ``manager_area_violation`` when a director wave does not map
+    one-to-one onto invokable manager reports, ``outcome_mismatches`` when a child's declared outcome
+    can't be produced by its assignee's role, or ``authority_denied`` for a contract/profession refusal.
+    A clean fan-out leaves the failure fields empty and ``child_ids`` populated.
     """
 
     child_ids: dict[str, str] = field(default_factory=dict)
     depth_capped: bool = False
     unknown_assignees: tuple[str, ...] = ()
     reviewer_assignees: tuple[str, ...] = ()
+    manager_area_violation: ManagerAreaViolation | None = None
     authority_denied: str | None = None
     outcome_mismatches: tuple[OutcomeMismatch, ...] = ()
 
@@ -147,6 +158,30 @@ def _child_id(parent_id: str, label: str) -> str:
 def _decision_id(task_id: str, revision: str) -> str:
     """A deterministic decision id per ``(task, revision)`` so a re-fired record is idempotent."""
     return derive_id("decision", task_id, revision)
+
+
+def _request_fingerprint(children: Sequence[ChildPlan], ids: dict[str, str]) -> str:
+    """Canonicalize the exact-once comparison surface without changing mutation order.
+
+    Child order and ``depends_on`` ordering are semantic-free, so retries that only reshuffle them
+    must resume the same wave instead of tripping the "different child wave" guard.
+    """
+    payload = [
+        {
+            "assignee": child.assignee,
+            "can_subdelegate": child.can_subdelegate,
+            "depends_on": sorted(child.depends_on),
+            "execution_mode": child.execution_mode.value,
+            "intent": child.intent,
+            "outcome_kind": None if child.outcome_kind is None else child.outcome_kind.value,
+            "replaces_task_id": child.replaces_task_id,
+            "task_id": ids[child.label],
+        }
+        for child in sorted(children, key=lambda child: child.label)
+    ]
+    return hashlib.sha256(
+        json.dumps(payload, separators=(",", ":"), sort_keys=True).encode()
+    ).hexdigest()
 
 
 @dataclass(frozen=True)
@@ -283,6 +318,7 @@ class CapabilityService:
             revision=revision,
             children=children,
             actor_employee_id=actor_employee_id,
+            enforce_manager_area_fanout=True,
         )
 
     def _mutate_children(
@@ -292,16 +328,21 @@ class CapabilityService:
         revision: str,
         children: Sequence[ChildPlan],
         actor_employee_id: str | None,
+        enforce_manager_area_fanout: bool = False,
     ) -> DecomposeResult:
-        # Craft-reroute FIRST (undeclared DELIVERY children only), then the fail-closed gates
-        # (reviewer / unknown / outcome / authorize). A declared ``outcome_kind`` skips rewrite so
-        # the outcome check validates the manager's named assignee. PR #104's director manager-area
-        # fan-out belongs AFTER this rewrite: routing is DELIVERY-only (a no-op on director
-        # DELEGATION waves) and must not run after those gates or it would rewrite an
-        # already-authorized wave. Post-route authorization still runs on the rewritten assignees.
+        # Compose order is load-bearing: DELIVERY craft reroute (skips declared outcome_kind),
+        # then director manager-area (decompose-only), then reviewer / unknown / outcome mismatch /
+        # team-grant / authorization. Routing is DELIVERY-only (a no-op on director DELEGATION
+        # waves) and must not run after those gates or it would rewrite an already-authorized wave.
+        # Post-route gates still run on the rewritten assignees.
         routed = self._capability_route(children, manager_id=parent.assignee_employee_id)
         children = routed.children
         reroutes = routed.reroutes
+        manager_area_violation = (
+            self._manager_area_violation(parent, children) if enforce_manager_area_fanout else None
+        )
+        if manager_area_violation is not None:
+            return DecomposeResult(manager_area_violation=manager_area_violation)
         reviewers = self._reviewer_assignees(children)
         if reviewers:
             return DecomposeResult(reviewer_assignees=reviewers)
@@ -311,6 +352,9 @@ class CapabilityService:
         mismatches = self._outcome_mismatches(children)
         if mismatches:
             return DecomposeResult(outcome_mismatches=mismatches)
+        team_grant_denial = self._team_grant_denial(parent, children)
+        if team_grant_denial is not None:
+            return DecomposeResult(authority_denied=team_grant_denial)
 
         decision = self._authorize_wave(parent, children, actor_employee_id)
         if not decision.authorized:
@@ -320,27 +364,7 @@ class CapabilityService:
             raise RuntimeError("authorized delegation wave has no effective limits")
 
         ids = {child.label: _child_id(parent.id, child.label) for child in children}
-        request_fingerprint = hashlib.sha256(
-            json.dumps(
-                [
-                    {
-                        "assignee": child.assignee,
-                        "can_subdelegate": child.can_subdelegate,
-                        "depends_on": list(child.depends_on),
-                        "execution_mode": child.execution_mode.value,
-                        "intent": child.intent,
-                        "outcome_kind": None
-                        if child.outcome_kind is None
-                        else child.outcome_kind.value,
-                        "replaces_task_id": child.replaces_task_id,
-                        "task_id": ids[child.label],
-                    }
-                    for child in children
-                ],
-                separators=(",", ":"),
-                sort_keys=True,
-            ).encode()
-        ).hexdigest()
+        request_fingerprint = _request_fingerprint(children, ids)
         accepted_plan_revision_id = self._ensure_plan_revision(parent.id, revision)
         existing_claim = self._ledger.decomposition_claims.by_source_revision(
             parent.id, accepted_plan_revision_id
@@ -526,6 +550,57 @@ class CapabilityService:
         if len(proposed_members) > decision.effective.max_team_size:
             return AuthorizationResult(False, reason="Team size limit exceeded")
         return decision
+
+    def _manager_area_violation(
+        self, parent: Task, children: Sequence[ChildPlan]
+    ) -> ManagerAreaViolation | None:
+        manager_report_ids = self._manager_report_ids(parent)
+        if not manager_report_ids:
+            return None
+        manager_report_set = frozenset(manager_report_ids)
+        assigned_manager_report_ids: list[str] = []
+        invalid_child_labels: list[str] = []
+        for child in children:
+            assignee = child.assignee
+            if (
+                assignee is None
+                or assignee not in manager_report_set
+                or child.execution_mode is not ExecutionMode.DELEGATION
+                or not child.can_subdelegate
+            ):
+                invalid_child_labels.append(child.label)
+                continue
+            assigned_manager_report_ids.append(assignee)
+        if (
+            len(children) == len(manager_report_ids)
+            and not invalid_child_labels
+            and len(set(assigned_manager_report_ids)) == len(manager_report_ids)
+            and frozenset(assigned_manager_report_ids) == manager_report_set
+        ):
+            return None
+        return ManagerAreaViolation(
+            manager_report_ids=manager_report_ids,
+            assigned_manager_report_ids=tuple(assigned_manager_report_ids),
+            invalid_child_labels=tuple(invalid_child_labels),
+        )
+
+    def _team_grant_denial(self, parent: Task, children: Sequence[ChildPlan]) -> str | None:
+        if parent.team_id is None:
+            return None
+        for child in children:
+            if child.assignee is None:
+                continue
+            member = self._ledger.team_members.get(parent.team_id, child.assignee)
+            if (
+                member is not None
+                and member.left_at is None
+                and member.can_subdelegate != child.can_subdelegate
+            ):
+                return (
+                    f"existing Team membership for {child.assignee!r} has a different "
+                    "subdelegation grant; use governed reorganization"
+                )
+        return None
 
     def _create_nested_contract(
         self,
@@ -779,8 +854,8 @@ class CapabilityService:
         An unauthorized or non-report original assignee is never rewritten — that would launder a
         fail-closed unknown/authority denial into a valid assignment. A child with a declared
         ``outcome_kind`` is also left as named so the outcome-capability check validates the
-        manager's pair. Post-route reviewer, unknown, outcome, and authorize gates still run on the
-        (possibly rewritten) wave.
+        manager's pair. Post-route manager-area (decompose-only), reviewer, unknown, outcome, and
+        authorize gates still run on the (possibly rewritten) wave.
         """
         if self._roles is None or manager_id is None:
             return RoutedChildWave(children=tuple(children))
@@ -875,6 +950,36 @@ class CapabilityService:
         employee = self._ledger.employees.get(employee_id)
         return manager_id is not None and employee is not None and employee.reports_to == manager_id
 
+    def _manager_report_ids(self, parent: Task) -> tuple[str, ...]:
+        from chorus.heartbeat._invokability import invokability_block
+
+        manager_id = parent.assignee_employee_id
+        if manager_id is None or parent.team_id is None:
+            return ()
+        workforce = LedgerWorkforce(self._ledger.employees)
+        member_ids = {
+            member.employee_id
+            for member in self._ledger.team_members.members_of(parent.team_id)
+            if member.employee_id != manager_id
+        }
+        reports = [
+            employee
+            for employee in self._ledger.employees.list()
+            if employee.id in member_ids and employee.reports_to == manager_id
+        ]
+        manager_reports: list[str] = []
+        for employee in reports:
+            profile = self._ledger.management_profiles.get(employee.id)
+            if (
+                profile is not None
+                and profile.active
+                and profile.can_lead
+                and invokability_block(workforce, employee.id) is None
+            ):
+                manager_reports.append(employee.id)
+        manager_reports.sort()
+        return tuple(manager_reports)
+
     def _ensure_plan_revision(self, parent_id: str, revision: str) -> str:
         """Record (once per beat) the parent's accepted decomposition plan; return its revision id.
 
@@ -908,6 +1013,7 @@ __all__ = [
     "CapabilityService",
     "ChildPlan",
     "DecomposeResult",
+    "ManagerAreaViolation",
     "OutcomeMismatch",
     "RoutedChildWave",
     "SubmitTaskResult",

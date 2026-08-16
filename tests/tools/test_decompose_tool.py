@@ -260,3 +260,41 @@ def test_tool_refuses_declared_pr_child_assigned_to_a_pm(
     assert mismatches[0]["declared"] == OutcomeKind.PR.value
     assert mismatches[0]["role_kind"] == OutcomeKind.DOC.value
     assert ledger.tasks.children(uid("M")) == []
+
+
+def test_tool_refuses_director_wave_that_skips_manager_fanout(
+    ledger: Ledger, tmp_path: Path
+) -> None:
+    _seed(ledger)
+    task = ledger.tasks.get(uid("M"))
+    assert task is not None and task.team_id is not None
+    ledger.management_profiles.upsert(
+        ManagementProfile(
+            employee_id="ada",
+            active=True,
+            can_lead=True,
+            can_subdelegate=True,
+            max_delegation_depth=2,
+            max_team_size=2,
+            allowed_professions=("engineer",),
+            granted_by_user_id="operator",
+        )
+    )
+    MissionTeamPolicy(ledger).add_member(task.team_id, "ada", can_subdelegate=True)
+    BeatContext(task_id=uid("M"), run_id=REV, employee_id="mgr").write(tmp_path)
+
+    result = asyncio.run(
+        DecomposeTool(ledger).execute(
+            {"children": [{"label": "api", "intent": "build the api", "assignee": "ada"}]},
+            _ctx(tmp_path),
+        )
+    )
+
+    assert result.is_error is True
+    assert (
+        result.content
+        == "refused: when manager reports are on your Team, create exactly one delegation child "
+        "for each of them, set can_subdelegate=true on each, and create no other subtasks. No "
+        "subtasks created."
+    )
+    assert ledger.tasks.children(uid("M")) == []

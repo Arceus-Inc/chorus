@@ -134,6 +134,28 @@ class DecomposeTool(BaseTool):
                 is_error=True,
                 structured={"unknown_assignees": list(result.unknown_assignees)},
             )
+        if result.manager_area_violation is not None:
+            return ToolResult(
+                content=(
+                    "refused: when manager reports are on your Team, create exactly one delegation "
+                    "child for each of them, set can_subdelegate=true on each, and create no other "
+                    "subtasks. No subtasks created."
+                ),
+                is_error=True,
+                structured={
+                    "manager_area_violation": {
+                        "manager_report_ids": list(
+                            result.manager_area_violation.manager_report_ids
+                        ),
+                        "assigned_manager_report_ids": list(
+                            result.manager_area_violation.assigned_manager_report_ids
+                        ),
+                        "invalid_child_labels": list(
+                            result.manager_area_violation.invalid_child_labels
+                        ),
+                    }
+                },
+            )
         if result.depth_capped:
             return ToolResult(
                 content=(
