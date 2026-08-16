@@ -1,17 +1,124 @@
-"""Typed helpers for chorus adapters consuming dream's ``RunTaskEvent`` stream."""
+"""Typed helpers for chorus adapters consuming dream's ``RunTaskEvent`` stream.
+
+Dream #107 exports ``RoleSessionRecovered`` on ``dream.runner.events`` and adds
+it to ``RunTaskEvent``. Chorus never decodes dict observer payloads. A local
+compatibility dataclass remains only until the installed dream pin includes that
+export; then delete the copy, drop the fallback, and type observers as
+``RunTaskEvent`` only.
+"""
 
 from __future__ import annotations
 
 import json
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass
-from typing import Literal
+from typing import Literal, Protocol, runtime_checkable
 
+from dream.runner import events as dream_events
 from dream.runner.events import RoleText, RoleToolResult, RoleToolStart, RunTaskEvent
+
+from chorus.heartbeat._beat import (
+    SessionRecoveryAction,
+    SessionRecoveryNotice,
+    SessionRecoveryReason,
+)
 
 SPAWN_SUBAGENT_TOOL = "spawn_subagent"
 MEMORY_TOOLS = frozenset({"recall", "lattice_context"})
 _CONTENT_PREVIEW_LIMIT = 240
+
+# Dream #107 (merged) exports this dataclass; older pins omit the name.
+_dream_recovered_attr: object = getattr(dream_events, "RoleSessionRecovered", None)
+_DREAM_ROLE_SESSION_RECOVERED: type[object] | None = (
+    _dream_recovered_attr if isinstance(_dream_recovered_attr, type) else None
+)
+
+
+@runtime_checkable
+class _RoleSessionRecoveredView(Protocol):
+    """Structural view of Dream #107's typed ``role.session.recovered`` event."""
+
+    role: str
+    session_id: str
+    requested_session_id: str
+    reason: str
+    action: str
+    snapshot_preserved: bool
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class RoleSessionRecovered:
+    """Typed ``role.session.recovered`` envelope matching Dream #107's export.
+
+    ``session_id`` is the active recovered session; ``requested_session_id`` is the
+    handle Dream failed to resume. Do not accept dict events here.
+    """
+
+    role: str
+    session_id: str
+    requested_session_id: str
+    reason: str
+    action: str
+    snapshot_preserved: bool
+
+
+def session_recovery_notice_from_dream_event(event: object) -> SessionRecoveryNotice | None:
+    """Decode a typed recovery event without letting malformed observer data affect a beat.
+
+    Dict payloads are rejected. Only :class:`RoleSessionRecovered` (or Dream's export
+    of that same dataclass) is accepted.
+    """
+    recovered = _as_role_session_recovered(event)
+    if recovered is None:
+        return None
+    if not (
+        recovered.role
+        and recovered.session_id
+        and recovered.requested_session_id
+        and type(recovered.snapshot_preserved) is bool
+    ):
+        return None
+    try:
+        return SessionRecoveryNotice(
+            role=recovered.role,
+            session_id=recovered.session_id,
+            requested_session_id=recovered.requested_session_id,
+            reason=SessionRecoveryReason(_recovery_token(recovered.reason)),
+            action=SessionRecoveryAction(_recovery_token(recovered.action)),
+            snapshot_preserved=recovered.snapshot_preserved,
+        )
+    except ValueError:
+        return None
+
+
+def _recovery_token(value: object) -> str:
+    """Normalize Dream's Literal/enum recovery fields to the Chorus closed vocabulary."""
+    if isinstance(value, str):
+        return value
+    raw = getattr(value, "value", None)
+    return raw if isinstance(raw, str) else ""
+
+
+def _as_role_session_recovered(event: object) -> RoleSessionRecovered | None:
+    """Accept Chorus's contract type or Dream's export of the same dataclass."""
+    if isinstance(event, Mapping):
+        return None
+    if isinstance(event, RoleSessionRecovered):
+        return event
+    if (
+        _DREAM_ROLE_SESSION_RECOVERED is not None
+        and isinstance(event, _DREAM_ROLE_SESSION_RECOVERED)
+        and isinstance(event, _RoleSessionRecoveredView)
+    ):
+        return RoleSessionRecovered(
+            role=event.role,
+            session_id=event.session_id,
+            requested_session_id=event.requested_session_id,
+            reason=event.reason,
+            action=event.action,
+            snapshot_preserved=event.snapshot_preserved,
+        )
+    return None
 
 
 @dataclass(frozen=True, slots=True)
@@ -110,6 +217,8 @@ __all__ = [
     "MemoryHit",
     "MemoryRetrieval",
     "ReasoningRecordLine",
+    "RoleSessionRecovered",
     "SpawnSubagentInput",
+    "session_recovery_notice_from_dream_event",
     "tool_result_content_preview",
 ]

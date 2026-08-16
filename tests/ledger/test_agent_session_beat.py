@@ -19,7 +19,14 @@ from dataclasses import dataclass
 import pytest
 
 from chorus.events import Event
-from chorus.heartbeat import Scheduler, Wake, WakeReason
+from chorus.heartbeat import (
+    Scheduler,
+    SessionRecoveryAction,
+    SessionRecoveryNotice,
+    SessionRecoveryReason,
+    Wake,
+    WakeReason,
+)
 from chorus.heartbeat._beat import BeatDisposition, BeatOutcome
 from chorus.ledger import (
     Ledger,
@@ -39,10 +46,18 @@ pytestmark = pytest.mark.integration
 
 
 class _Beat:
-    def __init__(self, *, passed: bool = True) -> None:
+    def __init__(
+        self,
+        *,
+        passed: bool = True,
+        disposition: BeatDisposition | None = None,
+        session_recovery: SessionRecoveryNotice | None = None,
+    ) -> None:
         self.intents: list[str] = []
         self.session_scopes: list[str] = []
         self._passed = passed
+        self._disposition = disposition
+        self._session_recovery = session_recovery
 
     def for_session_scope(self, session_scope: str) -> _Beat:
         self.session_scopes.append(session_scope)
@@ -61,15 +76,24 @@ class _Beat:
         del task_id, verification, rubric, observer, run_id
         self.intents.append(intent)
         raw = json.dumps({"kind": "role.text", "text": f"handled:{intent[:24]}"})
+        recovery_notice = self._session_recovery
+        self._session_recovery = None
         return BeatOutcome(
             passed=self._passed,
-            disposition=BeatDisposition.PASSED if self._passed else BeatDisposition.DOD_FAILED,
+            disposition=(
+                self._disposition
+                if self._disposition is not None
+                else BeatDisposition.PASSED
+                if self._passed
+                else BeatDisposition.DOD_FAILED
+            ),
             summary="ok" if self._passed else "not yet",
             raw_record=raw,
             model="test-model",
             input_tokens=10,
             output_tokens=5,
             cost_cents=3,
+            session_recovery=recovery_notice,
         )
 
 
@@ -374,3 +398,74 @@ async def test_persist_beat_account_clears_a_previous_failure(ledger: Ledger) ->
     refreshed = ledger.agent_sessions.get(session.id)
     assert refreshed is not None
     assert refreshed.last_error is None
+
+
+async def test_recovery_notice_updates_and_then_clears_the_same_open_handle(ledger: Ledger) -> None:
+    emp, task_id = _employee_with_task(ledger, "recover session")
+    beat = _Beat(
+        passed=False,
+        session_recovery=SessionRecoveryNotice(
+            role="generator",
+            session_id="fresh-session",
+            requested_session_id="stale-session",
+            reason=SessionRecoveryReason.WORKING_DIR_MISMATCH,
+            action=SessionRecoveryAction.RESET,
+            snapshot_preserved=True,
+        ),
+    )
+    scheduler = _scheduler(ledger, beat)
+
+    await _wake_and_run(ledger, scheduler, emp=emp, task_id=task_id, wake="recovery-1")
+    first = ledger.agent_sessions.get_open_for_task(task_id)
+    assert first is not None
+    assert first.last_error == SessionRecoveryReason.WORKING_DIR_MISMATCH.value
+
+    await _wake_and_run(ledger, scheduler, emp=emp, task_id=task_id, wake="recovery-2")
+    second = ledger.agent_sessions.get_open_for_task(task_id)
+    assert second is not None
+    assert second.id == first.id
+    assert second.last_error is None
+
+
+async def test_cancelled_recovery_updates_only_the_exact_open_handle_error(ledger: Ledger) -> None:
+    emp, task_id = _employee_with_task(ledger, "cancel after recovery")
+    session = ensure_open_session(
+        ledger,
+        employee_id=emp,
+        task_id=task_id,
+        model="",
+        run_id=None,
+    )
+    persist_beat_account(ledger, session.id, input_tokens=7, output_tokens=3, cost_cents=11)
+    before = ledger.agent_sessions.get(session.id)
+    assert before is not None
+    beat = _Beat(
+        passed=False,
+        disposition=BeatDisposition.CANCELLED,
+        session_recovery=SessionRecoveryNotice(
+            role="generator",
+            session_id="fresh-session",
+            requested_session_id="stale-session",
+            reason=SessionRecoveryReason.MISSING,
+            action=SessionRecoveryAction.RESUME,
+            snapshot_preserved=False,
+        ),
+    )
+
+    await _wake_and_run(
+        ledger,
+        _scheduler(ledger, beat),
+        emp=emp,
+        task_id=task_id,
+        wake="cancelled-recovery",
+    )
+
+    refreshed = ledger.agent_sessions.get(session.id)
+    assert refreshed is not None
+    assert refreshed.id == before.id
+    assert refreshed.status == before.status
+    assert refreshed.cost == before.cost
+    assert refreshed.last_error == SessionRecoveryReason.MISSING.value
+    latest = ledger.agent_sessions.latest_for_task(task_id)
+    assert latest is not None
+    assert latest.id == session.id

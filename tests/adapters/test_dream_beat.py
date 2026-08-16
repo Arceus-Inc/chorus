@@ -20,10 +20,12 @@ from typing import Any
 import pytest
 from dream.runner.events import RunTaskEvent
 from tests.adapters._dream_events import (
+    RoleSessionRecovered,
     contract_written,
     evaluator_completed,
     planner_started,
     role_session_closed,
+    role_session_recovered,
     role_text,
     role_tool_result,
     role_tool_start,
@@ -35,7 +37,12 @@ from tests.adapters._dream_events import (
 
 from chorus.adapters import DreamBeatRunner, ModelRate, TokenPricing, to_beat_outcome
 from chorus.events import Event, EventKind
-from chorus.heartbeat import BeatDisposition
+from chorus.heartbeat import (
+    BeatDisposition,
+    SessionRecoveryAction,
+    SessionRecoveryNotice,
+    SessionRecoveryReason,
+)
 from chorus.heartbeat._todo_flush import read_todo_flush_nudge
 from chorus.ledger import dream_session_key_for_task
 from chorus.outcomes import VerificationStep
@@ -124,7 +131,7 @@ class _FakeHarness:
         *,
         result: _Result | None = None,
         error: BaseException | None = None,
-        events: tuple[RunTaskEvent, ...] = (),
+        events: tuple[RunTaskEvent | RoleSessionRecovered, ...] = (),
     ) -> None:
         self._result = result
         self._error = error
@@ -561,6 +568,117 @@ async def test_run_task_records_the_account_even_without_a_chorus_observer() -> 
     )
     outcome = await DreamBeatRunner(harness).run_task(task_id=uid("t1"), intent="x")
     assert "picked X" in outcome.raw_record  # captured with no chorus observer wired
+
+
+async def test_run_task_captures_session_recovery_without_a_chorus_observer() -> None:
+    """Recovery remains observable even when a caller did not wire Chorus eventing."""
+    outcome = await DreamBeatRunner(
+        _FakeHarness(
+            result=_result("done"),
+            events=(
+                role_session_recovered(
+                    session_id="fresh-session",
+                    requested_session_id="stale-session",
+                    reason="corrupt",
+                    action="reset",
+                    snapshot_preserved=True,
+                ),
+            ),
+        )
+    ).run_task(task_id=uid("t1"), intent="x")
+
+    assert outcome.session_recovery == SessionRecoveryNotice(
+        role="generator",
+        session_id="fresh-session",
+        requested_session_id="stale-session",
+        reason=SessionRecoveryReason.CORRUPT,
+        action=SessionRecoveryAction.RESET,
+        snapshot_preserved=True,
+    )
+    assert "role.session.recovered" not in outcome.raw_record
+
+
+async def test_run_task_forwards_session_recovery_to_the_observer() -> None:
+    harness = _FakeHarness(
+        result=_result("done"),
+        events=(role_session_recovered(reason="corrupt", action="reset", snapshot_preserved=True),),
+    )
+    seen: list[Event] = []
+    outcome = await DreamBeatRunner(harness).run_task(
+        task_id=uid("t1"), intent="x", observer=seen.append
+    )
+
+    assert outcome.session_recovery is not None
+    assert [e.kind for e in seen] == [EventKind.SESSION_RECOVERED]
+    assert seen[0].payload["session_id"] == "fresh-session"
+    assert seen[0].payload["requested_session_id"] == "stale-session"
+
+
+async def test_run_task_forwards_resume_recovery_to_the_observer() -> None:
+    harness = _FakeHarness(
+        result=_result("done"),
+        events=(role_session_recovered(reason="corrupt", action="resume", snapshot_preserved=True),),
+    )
+    seen: list[Event] = []
+    outcome = await DreamBeatRunner(harness).run_task(
+        task_id=uid("t1"), intent="x", observer=seen.append
+    )
+
+    assert outcome.session_recovery is not None
+    assert outcome.session_recovery.action is SessionRecoveryAction.RESUME
+    assert seen[0].payload["action"] == SessionRecoveryAction.RESUME.value
+
+
+@pytest.mark.parametrize(
+    "event",
+    (
+        role_session_recovered(reason="unknown", action="reset"),
+        role_session_recovered(reason="missing", action="wipe"),
+        role_session_recovered(role=""),
+        role_session_recovered(session_id=""),
+    ),
+)
+async def test_run_task_ignores_malformed_session_recovery_events(
+    event: RoleSessionRecovered,
+) -> None:
+    outcome = await DreamBeatRunner(
+        _FakeHarness(result=_result("done"), events=(event,))
+    ).run_task(task_id=uid("t1"), intent="x")
+
+    assert outcome.passed is True
+    assert outcome.session_recovery is None
+
+
+async def test_run_task_retains_recovery_when_dream_raises() -> None:
+    outcome = await DreamBeatRunner(
+        _FakeHarness(
+            error=_FakeRunTaskError("boom", phase="generator"),
+            events=(
+                role_session_recovered(
+                    reason="working_dir_mismatch",
+                    action="reset",
+                    snapshot_preserved=True,
+                ),
+            ),
+        )
+    ).run_task(task_id=uid("t1"), intent="x")
+
+    assert outcome.disposition is BeatDisposition.ERRORED
+    assert outcome.session_recovery is not None
+    assert outcome.session_recovery.reason is SessionRecoveryReason.WORKING_DIR_MISMATCH
+
+
+async def test_run_task_retains_recovery_when_dream_cancels() -> None:
+    outcome = await DreamBeatRunner(
+        _FakeHarness(
+            error=_FakeTaskCancelled("budget exhausted"),
+            events=(role_session_recovered(reason="missing", action="bypass"),),
+        )
+    ).run_task(task_id=uid("t1"), intent="x")
+
+    assert outcome.disposition is BeatDisposition.CANCELLED
+    assert outcome.session_recovery is not None
+    assert outcome.session_recovery.reason is SessionRecoveryReason.MISSING
 
 
 async def test_run_task_rejects_a_parent_replaced_subagent_artifact(tmp_path: Path) -> None:

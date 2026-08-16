@@ -20,6 +20,7 @@ import json
 import logging
 import subprocess
 from collections.abc import Awaitable, Callable
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol, TypeVar, runtime_checkable
@@ -28,7 +29,12 @@ from chorus.adapters._failure import failure_outcome
 from chorus.cron._fire import fire_routine
 from chorus.events import Event, EventKind
 from chorus.governance import GovernanceResolver
-from chorus.heartbeat._beat import BeatDisposition, BeatOutcome, SessionScopeFactory
+from chorus.heartbeat._beat import (
+    BeatDisposition,
+    BeatOutcome,
+    SessionRecoveryNotice,
+    SessionScopeFactory,
+)
 from chorus.heartbeat._beat_context import IntegrateContextPacket
 from chorus.heartbeat._execution_profile import (
     ExecutionProfileResolver,
@@ -697,18 +703,24 @@ class Scheduler:
         engine fault is returned as-is. Same ``run_id`` throughout: the retries are one beat.
         """
         attempt = 0
+        latest_recovery: SessionRecoveryNotice | None = None
         while True:
-            result = await beat_runner.run_task(
-                run_id=run_id,
-                task_id=task_id,
-                intent=intent,
-                verification=verification,
-                rubric=rubric,
-                observer=observer,
-            )
+            try:
+                result = await beat_runner.run_task(
+                    run_id=run_id,
+                    task_id=task_id,
+                    intent=intent,
+                    verification=verification,
+                    rubric=rubric,
+                    observer=observer,
+                )
+            except Exception as exc:
+                return replace(failure_outcome(exc), session_recovery=latest_recovery)
+            if result.session_recovery is not None:
+                latest_recovery = result.session_recovery
             transient = result.disposition is BeatDisposition.ERRORED and result.retryable
             if not transient or attempt >= self.transient_retries:
-                return result
+                return replace(result, session_recovery=latest_recovery)
             attempt += 1
 
     async def run_beat(self, wake: Wake, *, run_id: str, now: datetime) -> None:
@@ -1056,8 +1068,19 @@ class Scheduler:
         session_id: str | None,
         result: BeatOutcome,
     ) -> None:
-        """Meter this beat's spend onto the task's agent_session handle row."""
-        if result.disposition is BeatDisposition.CANCELLED or session_id is None:
+        """Meter this beat's spend onto the task's agent_session handle row.
+
+        Recovery ``last_error`` is written onto the captured open handle even for a
+        ``CANCELLED`` beat; that path adds no cost and does not seal or reopen.
+        """
+        if session_id is None:
+            return
+        last_error = (
+            result.session_recovery.reason.value if result.session_recovery is not None else None
+        )
+        if result.disposition is BeatDisposition.CANCELLED:
+            if last_error is not None:
+                persist_beat_account(ledger, session_id, last_error=last_error)
             return
         task = ledger.tasks.get(task_id)
         seal = task is not None and task.status is TaskStatus.DONE
@@ -1068,6 +1091,7 @@ class Scheduler:
             output_tokens=result.output_tokens,
             cost_cents=result.cost_cents,
             run_id=run_id,
+            last_error=last_error,
             seal=seal,
         )
 
