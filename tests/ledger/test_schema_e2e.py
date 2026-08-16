@@ -69,6 +69,9 @@ def test_key_indexes_exist(ledger: Ledger) -> None:
         "dod_task_uq",
         "task_open_routine_uq",
         "task_active_stranded_recovery_uq",
+        "run_task_created_idx",
+        "cost_event_run_occurred_idx",
+        "cost_event_task_only_occurred_idx",
     } <= idx
 
 

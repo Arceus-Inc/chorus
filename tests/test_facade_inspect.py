@@ -10,8 +10,15 @@ from __future__ import annotations
 import pytest
 
 from chorus.facade import Caps, Chorus
-from chorus.ledger import Ledger, Task, TaskStatus
-from chorus.observability import EventBus, LedgerInspector, TaskView, WorkforceStatus
+from chorus.ledger import Artifact, ArtifactType, Goal, Ledger, Task, TaskStatus
+from chorus.observability import (
+    EventBus,
+    LedgerInspector,
+    TaskThreadView,
+    TaskView,
+    WorkforceStatus,
+)
+from chorus.outcomes import Verifier
 from chorus.roles import RoleRegistry, default_roles
 from chorus.testing import open_test_ledger, uid
 from chorus.workforce import Employee, LedgerWorkforce
@@ -64,6 +71,48 @@ def test_inspect_group_task_resolves_a_view() -> None:
         view = _chorus(ledger).inspect.task(uid("t1"))
         assert isinstance(view, TaskView)
         assert view.assignee == "Ada"
+    finally:
+        ledger.close()
+
+
+def test_inspect_group_task_thread_resolves_a_tree() -> None:
+    ledger = open_test_ledger()
+    try:
+        ledger.employees.create(Employee(id="ada", name="Ada", role="engineer"))
+        ledger.goals.create(Goal(id=uid("goal"), title="Ship"))
+        ledger.tasks.submit(
+            Task(
+                id=uid("parent"),
+                intent="parent work",
+                status=TaskStatus.IN_PROGRESS,
+                assignee_employee_id="ada",
+                goal_id=uid("goal"),
+            )
+        )
+        ledger.tasks.submit(
+            Task(
+                id=uid("child"),
+                intent="child work",
+                status=TaskStatus.TODO,
+                assignee_employee_id="ada",
+                goal_id=uid("goal"),
+                parent_id=uid("parent"),
+                depth=1,
+            )
+        )
+        ledger.dod.create(uid("parent"), Verifier.command("pytest -q", artifact_class="report"))
+        ledger.artifacts.create(
+            Artifact(id=uid("artifact"), task_id=uid("parent"), type=ArtifactType.DOC)
+        )
+
+        view = _chorus(ledger).inspect.task_thread(uid("parent"))
+
+        assert isinstance(view, TaskThreadView)
+        assert view.goal is not None
+        assert view.goal.id == uid("goal")
+        assert [entry.task.id for entry in view.tasks] == [uid("parent"), uid("child")]
+        assert view.tasks[0].dod is not None
+        assert [artifact.artifact.id for artifact in view.tasks[0].artifacts] == [uid("artifact")]
     finally:
         ledger.close()
 
