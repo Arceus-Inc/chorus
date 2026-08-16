@@ -17,6 +17,12 @@ from chorus.ledger._agent_session_beat import (
 )
 from chorus.ledger._agent_session_store import ensure_open_session
 from chorus.ledger._connection import LedgerConnection
+from chorus.ledger._finalization import (
+    FinalizationFailureReason,
+    FinalizationJudgment,
+    GoalJudge,
+    judge_task_finalization,
+)
 from chorus.ledger._ledger import (
     Ledger,
     LedgerIntegrityError,
@@ -75,8 +81,10 @@ from chorus.ledger._models import (
     Goal,
     GoalLevel,
     HumanAuthorizationProof,
+    IntegrationVerdict,
     ManagementGrantDraft,
     ManagementProfile,
+    MergeReceipt,
     Message,
     MessageKind,
     Monitor,
@@ -236,11 +244,15 @@ __all__ = [
     "ExecPlanLedger",
     "ExecPlanStatus",
     "ExecutionMode",
+    "FinalizationFailureReason",
+    "FinalizationJudgment",
     "Goal",
+    "GoalJudge",
     "GoalLevel",
     "GoalRepo",
     "HumanAuthorizationProof",
     "HumanAuthorizationProofRepo",
+    "IntegrationVerdict",
     "Ledger",
     "LedgerAheadError",
     "LedgerConnection",
@@ -248,6 +260,7 @@ __all__ = [
     "ManagementGrantDraft",
     "ManagementProfile",
     "ManagementProfileRepo",
+    "MergeReceipt",
     "Message",
     "MessageKind",
     "MessageRepo",
@@ -327,6 +340,7 @@ __all__ = [
     "begin_beat_session",
     "dream_session_key_for_task",
     "ensure_open_session",
+    "judge_task_finalization",
     "ledger_table_names",
     "load_migrations",
     "persist_beat_account",

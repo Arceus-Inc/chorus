@@ -30,6 +30,10 @@ from chorus.lifecycle._decompose import (
     Fanned,
     decompose,
 )
+from chorus.lifecycle._delegation_resolution import (
+    DelegationResolutionError,
+    DelegationResolutionPolicy,
+)
 from chorus.lifecycle._disposition import (
     Disposition,
     DispositionAction,
@@ -66,6 +70,8 @@ __all__ = [
     "ClaimDraft",
     "DecisionOutcome",
     "DecomposeResult",
+    "DelegationResolutionError",
+    "DelegationResolutionPolicy",
     "DepthCapped",
     "Disposition",
     "DispositionAction",

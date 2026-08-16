@@ -7,7 +7,7 @@ from dream.contracts.strategy import LandedPhase, RecoveryHint
 
 from chorus.heartbeat._beat import BeatDisposition, BeatOutcome
 from chorus.heartbeat._landed_outcome import derive_landed_outcome
-from chorus.ledger import ExecutionMode, Task, TaskStatus
+from chorus.ledger import ExecutionMode, IntegrationVerdict, Task, TaskStatus
 from chorus.ledger._models._enums import DodStatus
 
 
@@ -151,3 +151,16 @@ def test_unmerged_pr_exhausted_is_stranded_not_terminal_pass() -> None:
     assert landed.phase is LandedPhase.STRANDED
     assert landed.strategy_passed() is None
     assert landed.recovery_hint() is RecoveryHint.ESCALATE
+
+
+def test_derived_outcome_carries_typed_integration_truth() -> None:
+    integration = IntegrationVerdict(ok=False, note="objective floor did not pass")
+    landed = derive_landed_outcome(
+        _task(status=TaskStatus.BLOCKED),
+        _result(passed=False, disposition=BeatDisposition.DOD_FAILED),
+        DodStatus.FAILED,
+        integration=integration,
+    )
+    assert landed.integration == integration
+    assert landed.to_dict()["integration_ok"] is False
+    assert landed.to_dict()["integration_note"] == "objective floor did not pass"

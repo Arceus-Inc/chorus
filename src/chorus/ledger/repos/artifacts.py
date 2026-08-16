@@ -3,7 +3,14 @@
 from __future__ import annotations
 
 from chorus.ledger._models import Artifact, ArtifactType
-from chorus.ledger.repos._base import LedgerConnection, LedgerRow, dumps, loads, utcnow_iso
+from chorus.ledger.repos._base import (
+    LedgerConnection,
+    LedgerRow,
+    dumps,
+    from_iso,
+    loads,
+    utcnow_iso,
+)
 
 
 class ArtifactRepo:
@@ -53,6 +60,40 @@ class ArtifactRepo:
         ).fetchall()
         return [_row_to_artifact(row) for row in rows]
 
+    def latest_primary_non_verdict(self, task_id: str) -> Artifact | None:
+        return _latest_primary_non_verdict_for_task(self._conn, task_id)
+
+    def has_pending_primary_non_verdict(self, task_id: str) -> bool:
+        return _latest_pending_primary_non_verdict_for_task(self._conn, task_id) is not None
+
+    def mark_latest_pending_primary_non_verdict_verified(self, task_id: str) -> Artifact | None:
+        """CAS-stamp the newest pending primary at write time; never rewrite other columns.
+
+        The subquery and ``RETURNING`` are one statement so the stamped row is the newest
+        pending primary as of the write, not a previously selected id.
+        """
+        cursor = self._conn.execute(
+            "UPDATE artifact SET review_state = ?, updated_at = ? "
+            "WHERE id = ("
+            "SELECT id FROM artifact "
+            "WHERE task_id = ? AND is_primary = ? AND type <> ? AND review_state = ? "
+            "ORDER BY created_at DESC, id DESC LIMIT 1"
+            ") AND review_state = ? "
+            "RETURNING *",
+            (
+                "verified",
+                utcnow_iso(),
+                task_id,
+                True,
+                ArtifactType.VERDICT.value,
+                "pending",
+                "pending",
+            ),
+        )
+        row = cursor.fetchone()
+        self._conn.commit()
+        return _row_to_artifact(row) if row is not None else None
+
 
 def _row_to_artifact(row: LedgerRow) -> Artifact:
     return Artifact(
@@ -66,4 +107,34 @@ def _row_to_artifact(row: LedgerRow) -> Artifact:
         health_status=row["health_status"],
         is_primary=bool(row["is_primary"]),
         resource_ref=loads(row["resource_ref"]),
+        created_at=from_iso(row["created_at"]),
     )
+
+
+def _latest_primary_non_verdict_for_task(conn: LedgerConnection, task_id: str) -> Artifact | None:
+    return _fetch_latest_primary_non_verdict(conn, task_id, pending_only=False)
+
+
+def _latest_pending_primary_non_verdict_for_task(
+    conn: LedgerConnection, task_id: str
+) -> Artifact | None:
+    return _fetch_latest_primary_non_verdict(conn, task_id, pending_only=True)
+
+
+def _fetch_latest_primary_non_verdict(
+    conn: LedgerConnection, task_id: str, *, pending_only: bool
+) -> Artifact | None:
+    sql = (
+        "SELECT * FROM artifact WHERE task_id = ? AND is_primary = ? AND type <> ? "
+        "AND review_state = ? ORDER BY created_at DESC, id DESC LIMIT 1"
+        if pending_only
+        else "SELECT * FROM artifact WHERE task_id = ? AND is_primary = ? AND type <> ? "
+        "ORDER BY created_at DESC, id DESC LIMIT 1"
+    )
+    params: tuple[object, ...] = (
+        (task_id, True, ArtifactType.VERDICT.value, "pending")
+        if pending_only
+        else (task_id, True, ArtifactType.VERDICT.value)
+    )
+    row = conn.execute(sql, params).fetchone()
+    return _row_to_artifact(row) if row is not None else None

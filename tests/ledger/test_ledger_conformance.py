@@ -530,6 +530,7 @@ def test_postgres_columns_are_native_types(pg_database: str) -> None:
             ("task", "created_at"): "timestamp with time zone",
             ("task", "origin_id"): "text",  # polymorphic by design — stays text
             ("task", "assignee_user_id"): "text",  # external principal ref — stays text
+            ("task", "files_to_touch"): "ARRAY",
             ("run", "id"): "uuid",
             ("run", "lease_expires_at"): "timestamp with time zone",
             ("run", "outcome"): "jsonb",

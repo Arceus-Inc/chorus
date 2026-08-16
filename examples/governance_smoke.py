@@ -42,6 +42,19 @@ _NOW = datetime(2026, 6, 16, 12, 0, tzinfo=UTC)
 _USER = "operator"
 
 
+def _authorization(label: str) -> HumanAuthorization:
+    return HumanAuthorization(
+        decision_id=_id(f"{label}-decision"),
+        user_id=_USER,
+        method=AuthenticationMethod.STEP_UP,
+        authenticated_at=_NOW,
+        nonce=_id(f"{label}-nonce"),
+        decided_at=_NOW,
+        request_id=f"governance-smoke-{label}",
+        request_hash=f"sha256:governance-smoke-{label}",
+    )
+
+
 def main() -> int:
     _bump_demo_salt()
     ledger = Ledger.open(
@@ -70,8 +83,10 @@ def main() -> int:
             _id("spec"), gate_kind=ApprovalGate.ACCEPTANCE, reason="board signs off the spec"
         )
         print(f"opened {gate.id} — 'spec' is now {ledger.tasks.get(_id('spec')).status.value}")  # type: ignore[union-attr]
-        accept = resolver.resolve(
-            gate.id, decision=ApprovalDecision.APPROVE, decided_by_user_id=_USER, now=_NOW
+        accept = resolver.resolve_authenticated(
+            gate.id,
+            decision=ApprovalDecision.APPROVE,
+            authorization=_authorization("accept-spec"),
         )
         print(
             f"approved → 'spec' is {accept.subject_status}; "
@@ -93,16 +108,7 @@ def main() -> int:
         deny = resolver.resolve_authenticated(
             gate2.id,
             decision=ApprovalDecision.DENY,
-            authorization=HumanAuthorization(
-                decision_id=_id("decision"),
-                user_id=_USER,
-                method=AuthenticationMethod.SESSION,
-                authenticated_at=_NOW,
-                nonce=_id("nonce"),
-                decided_at=_NOW,
-                request_id="governance-smoke",
-                request_hash="sha256:governance-smoke",
-            ),
+            authorization=_authorization("deny-risky"),
         )
         print(f"denied  → 'risky' is {deny.subject_status}")
 

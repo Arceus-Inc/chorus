@@ -9,12 +9,22 @@ from typing import Any
 
 import pytest
 
+from chorus.events import Event, EventKind
+from chorus.governance import (
+    ApprovalDecision,
+    GovernanceError,
+    GovernanceResolver,
+    HumanAuthorization,
+)
 from chorus.heartbeat import Scheduler, Wake, WakeReason
 from chorus.heartbeat._beat import BeatOutcome
 from chorus.ledger import (
     ActivityVerb,
+    ApprovalStatus,
+    AuthenticationMethod,
     DelegationContract,
     DelegationContractStatus,
+    DodStatus,
     ExecutionMode,
     Ledger,
     ManagementProfile,
@@ -26,8 +36,14 @@ from chorus.ledger import (
     TeamStatus,
     WakeStatus,
 )
+from chorus.ledger import (
+    Artifact as LedgerArtifact,
+)
+from chorus.ledger import (
+    ArtifactType as LedgerArtifactType,
+)
 from chorus.memory import SprintDelta
-from chorus.outcomes import Artifact, ArtifactType, LanderRegistry
+from chorus.outcomes import Artifact, ArtifactType, LanderRegistry, Verifier
 from chorus.roles import RoleRegistry, default_roles
 from chorus.testing import uid
 from chorus.workforce import Employee, LedgerWorkforce
@@ -36,6 +52,19 @@ pytestmark = pytest.mark.integration
 
 _NOW = datetime(2026, 6, 17, 12, tzinfo=UTC)
 _RUBRIC = "integrate every release outcome and independently verify the assembled result"
+
+
+def _authorization(label: str) -> HumanAuthorization:
+    return HumanAuthorization(
+        decision_id=uid(f"decision-{label}"),
+        user_id="operator",
+        method=AuthenticationMethod.STEP_UP,
+        authenticated_at=_NOW,
+        nonce=uid(f"nonce-{label}"),
+        decided_at=_NOW,
+        request_id=f"delegation-{label}",
+        request_hash=f"sha256:delegation-{label}",
+    )
 
 
 class _RecordingBeat:
@@ -75,6 +104,21 @@ class _RecordingMemory:
 
     def append(self, delta: SprintDelta) -> None:
         self.appended.append(delta)
+
+
+class _RecordingEvents:
+    def __init__(self) -> None:
+        self.events: list[Event] = []
+
+    def emit(self, event: Event) -> None:
+        self.events.append(event)
+
+    def landed_for(self, task_id: str) -> list[Event]:
+        return [
+            event
+            for event in self.events
+            if event.kind is EventKind.OUTCOME_LANDED and event.task_id == task_id
+        ]
 
 
 class _SubtreeLander:
@@ -211,12 +255,14 @@ async def test_delegation_profile_drives_scheduler_contract(ledger: Ledger) -> N
     beat = _RecordingBeat()
     memory = _RecordingMemory()
     lander = _SubtreeLander()
+    events = _RecordingEvents()
     scheduler = Scheduler(
         ledger=ledger,
         workforce=LedgerWorkforce(ledger.employees),
         beat_runner=beat,
         roles=RoleRegistry.from_plugins(default_roles()),
         memory_writer=memory,
+        event_bus=events,
         landers=LanderRegistry.from_landers([lander]),
         max_concurrent_runs=1,
     )
@@ -251,6 +297,10 @@ async def test_delegation_profile_drives_scheduler_contract(ledger: Ledger) -> N
         run for run in ledger.runs.for_task(uid("task-release")) if run.principal_kind == "system"
     ]  # the lead's own acceptance IS the verdict — no system run row
     assert lead.role == "backend_engineer"
+    dod = ledger.dod.get_for_task(uid("task-release"))
+    assert dod is not None and dod.integration_ok is True and dod.integration_note is None
+    assert events.landed_for(uid("task-release"))[-1].payload["integration_ok"] is True
+    assert events.landed_for(uid("task-release"))[-1].payload["integration_note"] is None
 
 
 async def test_failed_parent_verification_returns_contract_to_integrating(
@@ -291,6 +341,9 @@ async def test_failed_parent_verification_returns_contract_to_integrating(
     ]
     assert contract_events[-1].payload["passed"] is False
     assert "reviewer_id" not in contract_events[-1].payload  # no verifier principal involved
+    dod = ledger.dod.get_for_task(uid("task-release"))
+    assert dod is not None and dod.integration_ok is False
+    assert dod.integration_note == "delegation integration failed: lead integration verdict did not pass"
 
 
 async def test_rejected_required_child_cannot_reach_acceptance_or_verification(
@@ -433,6 +486,152 @@ async def test_unmigrated_manager_is_blocked_before_dispatch(
     assert uid("legacy-manager") in caplog.text and "specialize-manager" in caplog.text
 
 
+async def test_invalid_scoped_child_is_blocked_before_dispatch(ledger: Ledger) -> None:
+    ledger.employees.create(Employee(id="lead", name="Lead", role="engineer"))
+    parent = ledger.tasks.submit(
+        Task(
+            id=uid("scope-parent"),
+            intent="ship the scoped work",
+            status=TaskStatus.BLOCKED,
+            files_to_touch=("src/parent.py",),
+            assignee_employee_id="lead",
+        )
+    )
+    worker = ledger.employees.create(Employee(id="scope-worker", name="Worker", role="engineer"))
+    child = ledger.tasks.submit(
+        Task(
+            id=uid("scope-child"),
+            parent_id=parent.id,
+            intent="touch the wrong file",
+            status=TaskStatus.TODO,
+            assignee_employee_id=worker.id,
+            files_to_touch=("src/other.py",),
+        )
+    )
+    ledger.dependencies.add(parent.id, child.id)
+    ledger.wakes.enqueue(
+        Wake(
+            id=uid("wake-scope-child"),
+            employee_id=worker.id,
+            reason=WakeReason.TASK_ASSIGNED,
+            payload={"task_id": child.id},
+        )
+    )
+    beat = _RecordingBeat()
+    scheduler = Scheduler(
+        ledger=ledger,
+        workforce=LedgerWorkforce(ledger.employees),
+        beat_runner=beat,
+        roles=RoleRegistry.from_plugins(default_roles()),
+        memory_writer=_RecordingMemory(),
+        landers=LanderRegistry.from_landers([_SubtreeLander()]),
+        max_concurrent_runs=1,
+    )
+
+    report = await scheduler.tick(_NOW)
+    await scheduler.drain()
+
+    assert report.beats_started == 0
+    assert beat.rubrics == []
+    assert ledger.wakes.queued() == []
+    blocked = ledger.tasks.get(child.id)
+    assert blocked is not None and blocked.status is TaskStatus.BLOCKED
+    recovery = ledger.recovery_actions.active_for_source(child.id)
+    assert recovery is not None and recovery.cause == "invalid_file_scope"
+    assert recovery.next_action is not None
+    assert "cancel" in recovery.next_action and "recreate" in recovery.next_action
+    assert "repair files_to_touch" not in recovery.next_action
+
+
+async def test_invalid_scoped_delegation_blocks_the_contract_before_dispatch(ledger: Ledger) -> None:
+    lead = ledger.employees.create(Employee(id="scope-lead", name="Lead", role="backend_engineer"))
+    ledger.management_profiles.upsert(
+        ManagementProfile(
+            employee_id=lead.id,
+            granted_by_user_id="user-admin",
+            active=True,
+            can_lead=True,
+            max_delegation_depth=1,
+            max_team_size=2,
+            allowed_professions=("backend_engineer",),
+            version=1,
+        )
+    )
+    ledger.teams.create(
+        Team(
+            id=uid("scope-team"),
+            name="Scope Team",
+            lead_employee_id=lead.id,
+            created_by="user-admin",
+            status=TeamStatus.ACTIVE,
+        )
+    )
+    ledger.team_members.add(
+        TeamMember(
+            team_id=uid("scope-team"),
+            employee_id=lead.id,
+            source_manager_id=lead.id,
+            membership_role=TeamMembershipRole.LEAD,
+        )
+    )
+    ledger.tasks.submit(
+        Task(
+            id=uid("scope-delegation"),
+            intent="coordinate the release",
+            status=TaskStatus.TODO,
+            execution_mode=ExecutionMode.DELEGATION,
+            team_id=uid("scope-team"),
+            assignee_employee_id=lead.id,
+            files_to_touch=("/tmp/not-allowed",),
+        )
+    )
+    ledger.delegation_contracts.create(
+        DelegationContract(
+            task_id=uid("scope-delegation"),
+            team_id=uid("scope-team"),
+            lead_employee_id=lead.id,
+            management_profile_version=1,
+            max_depth=1,
+            max_team_size=2,
+            objective_rubric=_RUBRIC,
+            status=DelegationContractStatus.INTEGRATING,
+        )
+    )
+    ledger.wakes.enqueue(
+        Wake(
+            id=uid("wake-scope-delegation"),
+            employee_id=lead.id,
+            reason=WakeReason.TASK_ASSIGNED,
+            payload={"task_id": uid("scope-delegation")},
+        )
+    )
+    beat = _RecordingBeat()
+    scheduler = Scheduler(
+        ledger=ledger,
+        workforce=LedgerWorkforce(ledger.employees),
+        beat_runner=beat,
+        roles=RoleRegistry.from_plugins(default_roles()),
+        memory_writer=_RecordingMemory(),
+        landers=LanderRegistry.from_landers([_SubtreeLander()]),
+        max_concurrent_runs=1,
+    )
+
+    report = await scheduler.tick(_NOW)
+    await scheduler.drain()
+
+    assert report.beats_started == 0
+    assert beat.rubrics == []
+    task = ledger.tasks.get(uid("scope-delegation"))
+    assert task is not None and task.status is TaskStatus.BLOCKED
+    contract = ledger.delegation_contracts.get(uid("scope-delegation"))
+    assert contract is not None and contract.status is DelegationContractStatus.BLOCKED
+    recovery = ledger.recovery_actions.active_for_source(uid("scope-delegation"))
+    assert recovery is not None and recovery.cause == "invalid_file_scope"
+    assert recovery.next_action is not None
+    assert "cancel" in recovery.next_action and "recreate" in recovery.next_action
+    assert "repair files_to_touch" not in recovery.next_action
+
+
 async def test_delegation_integrate_cap_blocks_completed_subtree_for_review(
     ledger: Ledger,
 ) -> None:
@@ -465,6 +664,11 @@ async def test_delegation_integrate_cap_blocks_completed_subtree_for_review(
     done_children = recovery.evidence.get("done_children")
     assert isinstance(done_children, int) and done_children > 0
     assert not ledger.activity.by_subject("delegation_contract", uid("task-release"))
+    dod = ledger.dod.get_for_task(uid("task-release"))
+    assert dod is not None and dod.integration_ok is False
+    assert dod.integration_note is not None
+    assert "stranded for human review without fabricating acceptance" in dod.integration_note
+    assert ledger.tasks.get(uid("task-release")).status is not TaskStatus.DONE  # type: ignore[union-attr]
 
 
 async def test_delegation_integrate_cap_strands_when_nothing_converged(
@@ -498,6 +702,11 @@ async def test_delegation_integrate_cap_strands_when_nothing_converged(
     done_children = recovery.evidence.get("done_children")
     assert done_children == 0
     assert lander.landed == []
+    dod = ledger.dod.get_for_task(uid("task-release"))
+    assert dod is not None and dod.integration_ok is False
+    assert dod.integration_note is not None
+    assert "stranded for human review without fabricating acceptance" in dod.integration_note
+    assert ledger.tasks.get(uid("task-release")).status is not TaskStatus.DONE  # type: ignore[union-attr]
 
 
 async def test_delivery_integrate_cap_blocks_completed_subtree_for_review(
@@ -593,3 +802,457 @@ async def test_restart_closes_landed_delegation_exactly_once(
         "recovered": True,
         "run_id": contract.accepted_run_id,
     }
+
+
+@pytest.mark.parametrize("malformed", ["false", 0])
+async def test_malformed_child_pr_merge_receipt_fails_closed(
+    ledger: Ledger,
+    malformed: object,
+) -> None:
+    _seed_delegation(ledger)
+    ledger.artifacts.create(
+        LedgerArtifact(
+            id=uid("malformed-merge"),
+            task_id=uid("task-child"),
+            type=LedgerArtifactType.PR,
+            is_primary=True,
+            resource_ref={"merged": malformed},
+        )
+    )
+    scheduler = Scheduler(
+        ledger=ledger,
+        workforce=LedgerWorkforce(ledger.employees),
+        beat_runner=_RecordingBeat(),
+        roles=RoleRegistry.from_plugins(default_roles()),
+        memory_writer=_RecordingMemory(),
+        landers=LanderRegistry.from_landers([_SubtreeLander()]),
+        max_concurrent_runs=1,
+    )
+
+    await scheduler.tick(_NOW)
+    await scheduler.drain()
+
+    dod = ledger.dod.get_for_task(uid("task-release"))
+    assert dod is not None and dod.integration_ok is False
+    assert dod.integration_note is not None
+    assert "malformed merge evidence" in dod.integration_note
+    assert "must be a boolean" in dod.integration_note
+    assert ledger.tasks.get(uid("task-release")).status is TaskStatus.BLOCKED  # type: ignore[union-attr]
+
+
+@pytest.mark.parametrize("resource_ref", [None, {}])
+async def test_missing_child_pr_merge_receipt_fails_closed(
+    ledger: Ledger,
+    resource_ref: dict[str, object] | None,
+) -> None:
+    _seed_delegation(ledger)
+    ledger.artifacts.create(
+        LedgerArtifact(
+            id=uid("missing-merge"),
+            task_id=uid("task-child"),
+            type=LedgerArtifactType.PR,
+            is_primary=True,
+            resource_ref=resource_ref,
+        )
+    )
+    scheduler = Scheduler(
+        ledger=ledger,
+        workforce=LedgerWorkforce(ledger.employees),
+        beat_runner=_RecordingBeat(),
+        roles=RoleRegistry.from_plugins(default_roles()),
+        memory_writer=_RecordingMemory(),
+        landers=LanderRegistry.from_landers([_SubtreeLander()]),
+        max_concurrent_runs=1,
+    )
+
+    await scheduler.tick(_NOW)
+    await scheduler.drain()
+
+    dod = ledger.dod.get_for_task(uid("task-release"))
+    assert dod is not None and dod.integration_ok is False
+    assert dod.integration_note is not None
+    assert "requires an explicit resource_ref.merged boolean" in dod.integration_note
+
+
+async def test_unmerged_child_pr_fails_closed_without_fabricating_acceptance(ledger: Ledger) -> None:
+    _seed_delegation(ledger)
+    ledger.artifacts.create(
+        LedgerArtifact(
+            id=uid("unmerged"),
+            task_id=uid("task-child"),
+            type=LedgerArtifactType.PR,
+            is_primary=True,
+            resource_ref={"merged": False},
+        )
+    )
+    events = _RecordingEvents()
+    scheduler = Scheduler(
+        ledger=ledger,
+        workforce=LedgerWorkforce(ledger.employees),
+        beat_runner=_RecordingBeat(),
+        roles=RoleRegistry.from_plugins(default_roles()),
+        memory_writer=_RecordingMemory(),
+        event_bus=events,
+        landers=LanderRegistry.from_landers([_SubtreeLander()]),
+        max_concurrent_runs=1,
+    )
+
+    await scheduler.tick(_NOW)
+    await scheduler.drain()
+
+    dod = ledger.dod.get_for_task(uid("task-release"))
+    assert dod is not None and dod.integration_ok is False
+    assert dod.integration_note is not None
+    assert "resource_ref.merged=false" in dod.integration_note
+    assert ledger.tasks.get(uid("task-release")).status is TaskStatus.BLOCKED  # type: ignore[union-attr]
+    landed = events.landed_for(uid("task-release"))
+    assert landed[-1].payload["integration_ok"] is False
+    assert landed[-1].payload["phase"] != "terminal_pass"
+
+
+@pytest.mark.parametrize(
+    (
+        "decision",
+        "task_status",
+        "contract_status",
+        "dod_status",
+        "team_status",
+        "phase",
+        "passed",
+    ),
+    [
+        (
+            ApprovalDecision.APPROVE,
+            TaskStatus.DONE,
+            DelegationContractStatus.DONE,
+            DodStatus.PASSED,
+            TeamStatus.ARCHIVED,
+            "terminal_pass",
+            True,
+        ),
+        (
+            ApprovalDecision.DENY,
+            TaskStatus.BLOCKED,
+            DelegationContractStatus.BLOCKED,
+            DodStatus.FAILED,
+            TeamStatus.ACTIVE,
+            "needs_rework",
+            False,
+        ),
+        (
+            ApprovalDecision.REQUEST_REVISION,
+            TaskStatus.TODO,
+            DelegationContractStatus.INTEGRATING,
+            DodStatus.FAILED,
+            TeamStatus.ACTIVE,
+            "needs_rework",
+            False,
+        ),
+    ],
+)
+async def test_delegated_human_approval_resolves_contract_only_on_terminal_decision(
+    ledger: Ledger,
+    decision: ApprovalDecision,
+    task_status: TaskStatus,
+    contract_status: DelegationContractStatus,
+    dod_status: DodStatus,
+    team_status: TeamStatus,
+    phase: str,
+    passed: bool,
+) -> None:
+    _seed_delegation(ledger)
+    ledger.dod.create(uid("task-release"), Verifier.human_approval())
+    events = _RecordingEvents()
+    scheduler = Scheduler(
+        ledger=ledger,
+        workforce=LedgerWorkforce(ledger.employees),
+        beat_runner=_RecordingBeat(),
+        roles=RoleRegistry.from_plugins(default_roles()),
+        memory_writer=_RecordingMemory(),
+        event_bus=events,
+        landers=LanderRegistry.from_landers([_SubtreeLander()]),
+        max_concurrent_runs=1,
+    )
+
+    await scheduler.tick(_NOW)
+    await scheduler.drain()
+
+    pending = ledger.approvals.pending()
+    assert len(pending) == 1
+    assert ledger.tasks.get(uid("task-release")).status is TaskStatus.BLOCKED  # type: ignore[union-attr]
+    assert (
+        ledger.delegation_contracts.get(uid("task-release")).status
+        is DelegationContractStatus.VERIFYING
+    )  # type: ignore[union-attr]
+    assert ledger.teams.get(uid("team-release")).status is TeamStatus.ACTIVE  # type: ignore[union-attr]
+    before = ledger.dod.get_for_task(uid("task-release"))
+    assert before is not None and before.status is DodStatus.PENDING
+    assert before.integration_ok is True
+    assert events.landed_for(uid("task-release")) == []
+
+    resolver = GovernanceResolver(ledger, event_sink=events)
+    with pytest.raises(GovernanceError, match="requires authenticated"):
+        resolver.resolve(
+            pending[0].id,
+            decision=decision,
+            decided_by_user_id="operator",
+            now=_NOW,
+        )
+    assert events.landed_for(uid("task-release")) == []
+
+    resolver.resolve_authenticated(
+        pending[0].id,
+        decision=decision,
+        authorization=_authorization(decision.value),
+    )
+
+    assert ledger.tasks.get(uid("task-release")).status is task_status  # type: ignore[union-attr]
+    assert ledger.delegation_contracts.get(uid("task-release")).status is contract_status  # type: ignore[union-attr]
+    assert ledger.teams.get(uid("team-release")).status is team_status  # type: ignore[union-attr]
+    after = ledger.dod.get_for_task(uid("task-release"))
+    assert after is not None and after.status is dod_status
+    assert after.integration_ok is True and after.integration_note is None
+    landed = events.landed_for(uid("task-release"))
+    assert len(landed) == 1
+    assert landed[0].payload["phase"] == phase
+    assert landed[0].payload["passed"] is passed
+
+
+async def test_human_acceptance_resolution_between_gate_and_scheduler_emit_is_exactly_once(
+    ledger: Ledger,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _seed_delegation(ledger)
+    ledger.dod.create(uid("task-release"), Verifier.human_approval())
+    events = _RecordingEvents()
+    scheduler = Scheduler(
+        ledger=ledger,
+        workforce=LedgerWorkforce(ledger.employees),
+        beat_runner=_RecordingBeat(),
+        roles=RoleRegistry.from_plugins(default_roles()),
+        memory_writer=_RecordingMemory(),
+        event_bus=events,
+        landers=LanderRegistry.from_landers([_SubtreeLander()]),
+        max_concurrent_runs=1,
+    )
+    scheduler_emit = scheduler._emit_outcome_landed
+
+    def decide_then_project(
+        *,
+        task: Task,
+        result: BeatOutcome,
+        run_id: str,
+        employee: Employee,
+        now: datetime,
+        files_touched: tuple[str, ...],
+        todo_digest: str,
+        this_beat_landing: object = None,
+    ) -> None:
+        (approval,) = ledger.approvals.pending()
+        GovernanceResolver(ledger, event_sink=events).resolve_authenticated(
+            approval.id,
+            decision=ApprovalDecision.APPROVE,
+            authorization=_authorization("interleaved-approve"),
+        )
+        scheduler_emit(
+            task=task,
+            result=result,
+            run_id=run_id,
+            employee=employee,
+            now=now,
+            files_touched=files_touched,
+            todo_digest=todo_digest,
+            this_beat_landing=this_beat_landing,
+        )
+
+    monkeypatch.setattr(scheduler, "_emit_outcome_landed", decide_then_project)
+
+    await scheduler.tick(_NOW)
+    await scheduler.drain()
+
+    (approval,) = ledger.approvals.for_subject(uid("task-release"))
+    assert len(events.landed_for(uid("task-release"))) == 1
+    durable = [
+        row
+        for row in ledger.activity.by_subject("approval", approval.id)
+        if row.verb is ActivityVerb.OUTCOME_LANDED
+    ]
+    assert len(durable) == 1
+
+
+async def test_delegated_human_approval_hold_keeps_contract_and_team_open(ledger: Ledger) -> None:
+    _seed_delegation(ledger)
+    ledger.dod.create(uid("task-release"), Verifier.human_approval())
+    events = _RecordingEvents()
+    scheduler = Scheduler(
+        ledger=ledger,
+        workforce=LedgerWorkforce(ledger.employees),
+        beat_runner=_RecordingBeat(),
+        roles=RoleRegistry.from_plugins(default_roles()),
+        memory_writer=_RecordingMemory(),
+        event_bus=events,
+        landers=LanderRegistry.from_landers([_SubtreeLander()]),
+        max_concurrent_runs=1,
+    )
+    await scheduler.tick(_NOW)
+    await scheduler.drain()
+    (approval,) = ledger.approvals.pending()
+
+    GovernanceResolver(ledger, event_sink=events).hold_authenticated(
+        approval.id, authorization=_authorization("hold")
+    )
+
+    assert ledger.approvals.get(approval.id).status is ApprovalStatus.PENDING  # type: ignore[union-attr]
+    assert (
+        ledger.delegation_contracts.get(uid("task-release")).status
+        is DelegationContractStatus.VERIFYING
+    )  # type: ignore[union-attr]
+    assert ledger.teams.get(uid("team-release")).status is TeamStatus.ACTIVE  # type: ignore[union-attr]
+    dod = ledger.dod.get_for_task(uid("task-release"))
+    assert dod is not None and dod.status is DodStatus.PENDING and dod.integration_ok is True
+    assert events.landed_for(uid("task-release")) == []
+
+
+@pytest.mark.parametrize(
+    ("resource_ref", "expected_note"),
+    [
+        ({"merged": False}, "resource_ref.merged=false"),
+        ({"merged": "false"}, "malformed merge evidence"),
+        ({"merged": 0}, "malformed merge evidence"),
+        (None, "requires an explicit resource_ref.merged boolean"),
+        ({}, "requires an explicit resource_ref.merged boolean"),
+    ],
+)
+async def test_delegation_integrate_cap_rejects_failed_or_malformed_merge_evidence(
+    ledger: Ledger,
+    resource_ref: dict[str, object] | None,
+    expected_note: str,
+) -> None:
+    _seed_delegation(ledger)
+    ledger.artifacts.create(
+        LedgerArtifact(
+            id=uid("cap-merge"),
+            task_id=uid("task-child"),
+            type=LedgerArtifactType.PR,
+            is_primary=True,
+            resource_ref=resource_ref,
+        )
+    )
+    events = _RecordingEvents()
+    scheduler = Scheduler(
+        ledger=ledger,
+        workforce=LedgerWorkforce(ledger.employees),
+        beat_runner=_RecordingBeat(),
+        roles=RoleRegistry.from_plugins(default_roles()),
+        memory_writer=_RecordingMemory(),
+        event_bus=events,
+        landers=LanderRegistry.from_landers([_SubtreeLander()]),
+        max_concurrent_runs=1,
+        max_integrate_iterations=0,
+    )
+
+    await scheduler.tick(_NOW)
+    await scheduler.drain()
+
+    contract = ledger.delegation_contracts.get(uid("task-release"))
+    assert contract is not None and contract.status is DelegationContractStatus.BLOCKED
+    assert ledger.tasks.get(uid("task-release")).status is TaskStatus.BLOCKED  # type: ignore[union-attr]
+    assert ledger.tasks.get(uid("task-release")).status is not TaskStatus.DONE  # type: ignore[union-attr]
+    recovery = ledger.recovery_actions.active_for_source(uid("task-release"))
+    assert recovery is not None and recovery.cause == "integrate_iteration_exhausted"
+    dod = ledger.dod.get_for_task(uid("task-release"))
+    assert dod is not None and dod.integration_ok is False
+    assert dod.integration_note is not None and expected_note in dod.integration_note
+    assert "force-accepted" not in dod.integration_note
+    landed = events.landed_for(uid("task-release"))
+    assert len(landed) == 1
+    assert landed[0].payload["phase"] == "stranded"
+    assert landed[0].payload["passed"] is not True
+    assert landed[0].payload["integration_ok"] is False
+    assert landed[0].payload["integration_note"] == dod.integration_note
+
+
+async def test_delegated_human_approval_resolution_rolls_back_and_survives_restart(
+    pg_database: str,
+) -> None:
+    company_id = uid("delegated-human-company")
+    ledger = Ledger.open(pg_database, company_id=company_id)
+    _seed_delegation(ledger)
+    ledger.dod.create(uid("task-release"), Verifier.human_approval())
+    scheduler = Scheduler(
+        ledger=ledger,
+        workforce=LedgerWorkforce(ledger.employees),
+        beat_runner=_RecordingBeat(),
+        roles=RoleRegistry.from_plugins(default_roles()),
+        memory_writer=_RecordingMemory(),
+        landers=LanderRegistry.from_landers([_SubtreeLander()]),
+        max_concurrent_runs=1,
+    )
+    await scheduler.tick(_NOW)
+    await scheduler.drain()
+    (approval,) = ledger.approvals.pending()
+    authorization = _authorization("restart-approve")
+
+    archive = ledger.teams.archive
+
+    def fail_archive(team_id: str) -> Team:
+        raise RuntimeError(f"injected archive failure for {team_id}")
+
+    ledger.teams.archive = fail_archive  # type: ignore[method-assign]
+    with pytest.raises(RuntimeError, match="injected archive failure"):
+        GovernanceResolver(ledger).resolve_authenticated(
+            approval.id,
+            decision=ApprovalDecision.APPROVE,
+            authorization=authorization,
+        )
+    ledger.teams.archive = archive  # type: ignore[method-assign]
+
+    assert ledger.approvals.get(approval.id).status is ApprovalStatus.PENDING  # type: ignore[union-attr]
+    assert GovernanceResolver(ledger).get_authorization_proof(approval.id) is None
+    assert ledger.tasks.get(uid("task-release")).status is TaskStatus.BLOCKED  # type: ignore[union-attr]
+    assert (
+        ledger.delegation_contracts.get(uid("task-release")).status
+        is DelegationContractStatus.VERIFYING
+    )  # type: ignore[union-attr]
+    dod = ledger.dod.get_for_task(uid("task-release"))
+    assert dod is not None and dod.status is DodStatus.PENDING and dod.integration_ok is True
+    ledger.close()
+
+    restarted = Ledger.open(pg_database, company_id=company_id)
+    restarted_resolver = GovernanceResolver(restarted)
+    outcome = restarted_resolver.resolve_authenticated(
+        approval.id,
+        decision=ApprovalDecision.APPROVE,
+        authorization=authorization,
+    )
+    assert restarted.tasks.get(uid("task-release")).status is TaskStatus.DONE  # type: ignore[union-attr]
+    assert (
+        restarted.delegation_contracts.get(uid("task-release")).status
+        is DelegationContractStatus.DONE
+    )  # type: ignore[union-attr]
+    assert restarted.teams.get(uid("team-release")).status is TeamStatus.ARCHIVED  # type: ignore[union-attr]
+    persisted = restarted.dod.get_for_task(uid("task-release"))
+    assert persisted is not None and persisted.status is DodStatus.PASSED
+    assert persisted.integration_ok is True and persisted.integration_note is None
+    assert outcome.landed is not None and outcome.landed.phase.value == "terminal_pass"
+    replayed = restarted_resolver.get_landed_outcome(approval.id)
+    assert replayed == outcome.landed
+    with pytest.raises(GovernanceError, match="already"):
+        restarted_resolver.resolve_authenticated(
+            approval.id,
+            decision=ApprovalDecision.APPROVE,
+            authorization=_authorization("duplicate-after-restart"),
+        )
+    durable = [
+        row
+        for row in restarted.activity.by_subject("approval", approval.id)
+        if row.verb is ActivityVerb.OUTCOME_LANDED
+    ]
+    assert len(durable) == 1
+    restarted.close()
+
+    replay_ledger = Ledger.open(pg_database, company_id=company_id)
+    try:
+        assert GovernanceResolver(replay_ledger).get_landed_outcome(approval.id) == outcome.landed
+    finally:
+        replay_ledger.close()

@@ -16,6 +16,7 @@ from chorus.ledger import (
     ArtifactType,
     DecompositionClaim,
     DodStatus,
+    IntegrationVerdict,
     Ledger,
     Run,
     Task,
@@ -89,6 +90,34 @@ def test_finalize_passed_marks_done_and_records_verdict(ledger: Ledger) -> None:
     assert dod is not None and dod.status is DodStatus.PASSED
     assert dod.verdict == {"score": 1}
     assert dod.verified_by_run_id == uid("r1")
+    assert dod.integration_ok is None
+    assert dod.integration_note is None
+
+
+def test_finalize_round_trips_typed_integration_verdict(ledger: Ledger) -> None:
+    _task_with_dod(ledger)
+    ledger.finalize_beat(
+        task_id=uid("t1"),
+        run_id=uid("r1"),
+        dod_status=DodStatus.PASSED,
+        integration=IntegrationVerdict(ok=True, note="delegated release integrated"),
+    )
+
+    dod = ledger.dod.get_for_task(uid("t1"))
+    assert dod is not None
+    assert dod.integration_ok is True
+    assert dod.integration_note == "delegated release integrated"
+
+    ledger.finalize_beat(
+        task_id=uid("t1"),
+        run_id=None,
+        dod_status=DodStatus.PASSED,
+    )
+    preserved = ledger.dod.get_for_task(uid("t1"))
+    assert preserved is not None
+    assert preserved.integration_verdict == IntegrationVerdict(
+        ok=True, note="delegated release integrated"
+    )
 
 
 def test_finalize_without_a_run_marks_done(ledger: Ledger) -> None:

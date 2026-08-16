@@ -5,14 +5,18 @@ from __future__ import annotations
 from dream.contracts.tool import ToolResult
 from dream.tools._base import BaseTool, ToolDeclaration
 from dream.tools._context import ToolExecutionContext
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
 from chorus.heartbeat import BeatContext
 from chorus.ledger import ExecutionMode, Ledger
 from chorus.lifecycle import CapabilityService, ChildPlan
 from chorus.outcomes import OutcomeKind
 from chorus.roles import RoleRegistry
-from chorus_tools._decompose import _outcome_mismatch_result
+from chorus_tools._decompose import (
+    _outcome_mismatch_result,
+    _scope_refusal,
+    _serialize_scope_violations,
+)
 
 
 class SubmitTaskInput(BaseModel):
@@ -42,6 +46,10 @@ class SubmitTaskInput(BaseModel):
             "match what the assignee's role produces."
         ),
     )
+    files_to_touch: list[str] = Field(
+        min_length=1,
+        description="declared repo-relative POSIX paths for this child's coordination scope",
+    )
 
 
 class AssignTaskInput(BaseModel):
@@ -69,7 +77,10 @@ class SubmitTaskTool(BaseTool):
         self._service = CapabilityService(ledger, roles=roles)
 
     async def execute(self, input: dict[str, object], ctx: ToolExecutionContext) -> ToolResult:
-        args = SubmitTaskInput.model_validate(input)
+        try:
+            args = SubmitTaskInput.model_validate(input)
+        except ValidationError as exc:
+            return ToolResult(content=f"refused: malformed submit_task input — {exc}", is_error=True)
         beat = BeatContext.read(ctx.working_dir)
         result = self._service.submit_one(
             parent_id=beat.task_id,
@@ -83,6 +94,7 @@ class SubmitTaskTool(BaseTool):
                 can_subdelegate=args.can_subdelegate,
                 replaces_task_id=args.replaces_task_id,
                 outcome_kind=args.outcome_kind,
+                files_to_touch=tuple(args.files_to_touch),
             ),
         )
         mismatch = _outcome_mismatch_result(result.outcome_mismatches)
@@ -115,6 +127,12 @@ class SubmitTaskTool(BaseTool):
             return ToolResult(
                 content=f"refused: {result.authority_denied}; no task created",
                 structured={"authority_denied": result.authority_denied},
+                is_error=True,
+            )
+        if result.scope_violations:
+            return ToolResult(
+                content=_scope_refusal(result.scope_violations, created="task"),
+                structured={"scope_violations": _serialize_scope_violations(result.scope_violations)},
                 is_error=True,
             )
         return ToolResult(
