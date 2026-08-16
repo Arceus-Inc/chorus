@@ -22,11 +22,16 @@ from chorus.ledger import (
     ApprovalGate,
     ApprovalStatus,
     ApprovalSubjectKind,
+    Artifact,
+    ArtifactType,
     AuthenticationMethod,
     DodStatus,
     Ledger,
+    Run,
+    RunStatus,
     Task,
     TaskStatus,
+    judge_task_finalization,
 )
 from chorus.outcomes import Verifier
 from chorus.testing import uid
@@ -124,6 +129,7 @@ def test_acceptance_approve_marks_done_and_fires_dependents(ledger: Ledger) -> N
     assert ledger.tasks.get(uid("t1")).status is TaskStatus.DONE  # type: ignore[union-attr]
     assert outcome.wakes_fired == 1  # deps_resolved for t2
     assert any(w.payload.get("task_id") == uid("t2") for w in ledger.wakes.queued())
+    assert judge_task_finalization(ledger, uid("t1")).passed is True
 
 
 def test_acceptance_deny_stays_blocked_and_records_failed(ledger: Ledger) -> None:
@@ -140,6 +146,113 @@ def test_acceptance_deny_stays_blocked_and_records_failed(ledger: Ledger) -> Non
     assert outcome.subject_status == TaskStatus.BLOCKED.value
     assert ledger.tasks.get(uid("t1")).status is TaskStatus.BLOCKED  # type: ignore[union-attr]
     assert ledger.dod.get_for_task(uid("t1")).status is DodStatus.FAILED  # type: ignore[union-attr]
+
+
+def test_strict_acceptance_approve_rolls_back_when_producer_run_is_missing(ledger: Ledger) -> None:
+    _task(ledger, uid("t1"))
+    ledger.dod.create(uid("t1"), Verifier.human_approval())
+    ledger.artifacts.create(
+        Artifact(
+            id=uid("art1"),
+            task_id=uid("t1"),
+            type=ArtifactType.DOC,
+            review_state="pending",
+            is_primary=True,
+            resource_ref={"path": "spec.md"},
+        )
+    )
+    res = _resolver(ledger)
+    approval = res.open_task_gate(uid("t1"), gate_kind=ApprovalGate.ACCEPTANCE, reason="sign off")
+
+    with pytest.raises(GovernanceError, match="succeeded producer run"):
+        res.resolve(
+            approval.id, decision=ApprovalDecision.APPROVE, decided_by_user_id=_USER, now=_NOW
+        )
+
+    kept = ledger.approvals.get(approval.id)
+    assert kept is not None and kept.status is ApprovalStatus.PENDING
+    assert ledger.tasks.get(uid("t1")).status is TaskStatus.BLOCKED  # type: ignore[union-attr]
+    artifact = ledger.artifacts.get(uid("art1"))
+    assert artifact is not None and artifact.review_state == "pending"
+    assert artifact.resource_ref == {"path": "spec.md"}
+
+
+def test_strict_acceptance_approve_uses_latest_pending_artifact_and_succeeded_run(
+    ledger: Ledger,
+) -> None:
+    _task(ledger, uid("t1"))
+    ledger.dod.create(uid("t1"), Verifier.human_approval())
+    ledger.artifacts.create(
+        Artifact(
+            id=uid("art-old"),
+            task_id=uid("t1"),
+            type=ArtifactType.DOC,
+            review_state="pending",
+            is_primary=True,
+            resource_ref={"path": "old.md"},
+        )
+    )
+    ledger.artifacts.create(
+        Artifact(
+            id=uid("art-new"),
+            task_id=uid("t1"),
+            type=ArtifactType.DOC,
+            review_state="pending",
+            is_primary=True,
+            resource_ref={"path": "new.md"},
+        )
+    )
+    ledger.runs.create(Run(id=uid("run-ok"), employee_id="alice", task_id=uid("t1")))
+    ledger.runs.finish(uid("run-ok"), RunStatus.SUCCEEDED)
+    res = _resolver(ledger)
+    approval = res.open_task_gate(uid("t1"), gate_kind=ApprovalGate.ACCEPTANCE, reason="sign off")
+
+    outcome = res.resolve(
+        approval.id, decision=ApprovalDecision.APPROVE, decided_by_user_id=_USER, now=_NOW
+    )
+
+    assert outcome.subject_status == TaskStatus.DONE.value
+    old_artifact = ledger.artifacts.get(uid("art-old"))
+    new_artifact = ledger.artifacts.get(uid("art-new"))
+    assert old_artifact is not None and old_artifact.review_state == "pending"
+    assert old_artifact.resource_ref == {"path": "old.md"}
+    assert new_artifact is not None and new_artifact.review_state == "verified"
+    assert new_artifact.resource_ref == {"path": "new.md"}
+    dod = ledger.dod.get_for_task(uid("t1"))
+    assert dod is not None and dod.verified_by_run_id == uid("run-ok")
+    assert judge_task_finalization(ledger, uid("t1")).passed is True
+
+
+def test_strict_acceptance_approve_refuses_unmerged_pr_without_overwriting(ledger: Ledger) -> None:
+    _task(ledger, uid("t1"))
+    ledger.dod.create(uid("t1"), Verifier.human_approval())
+    ledger.artifacts.create(
+        Artifact(
+            id=uid("art-pr"),
+            task_id=uid("t1"),
+            type=ArtifactType.PR,
+            review_state=None,
+            is_primary=True,
+            resource_ref={"branch": "chorus/alice", "merged": False},
+        )
+    )
+    ledger.runs.create(Run(id=uid("run-ok"), employee_id="alice", task_id=uid("t1")))
+    ledger.runs.finish(uid("run-ok"), RunStatus.SUCCEEDED)
+    res = _resolver(ledger)
+    approval = res.open_task_gate(uid("t1"), gate_kind=ApprovalGate.ACCEPTANCE, reason="sign off")
+
+    with pytest.raises(GovernanceError, match="unmerged primary PR"):
+        res.resolve(
+            approval.id, decision=ApprovalDecision.APPROVE, decided_by_user_id=_USER, now=_NOW
+        )
+
+    kept = ledger.approvals.get(approval.id)
+    assert kept is not None and kept.status is ApprovalStatus.PENDING
+    artifact = ledger.artifacts.get(uid("art-pr"))
+    assert artifact is not None
+    assert artifact.review_state is None
+    assert artifact.resource_ref == {"branch": "chorus/alice", "merged": False}
+    assert ledger.tasks.get(uid("t1")).status is TaskStatus.BLOCKED  # type: ignore[union-attr]
 
 
 # -- authorization gate -----------------------------------------------------------------------------
