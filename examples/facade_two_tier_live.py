@@ -224,7 +224,7 @@ def main() -> int:
 
     def _governance() -> str:
         appr = org.governance.open_gate(
-            gate_target.id, gate_kind=ApprovalGate.AUTHORIZATION, reason="staging sign-off"
+            gate_target.id, gate_kind=ApprovalGate.ACCEPTANCE, reason="staging sign-off"
         )
         pending = len(org.governance.approvals())
         org.governance.resolve(appr.id, decision=ApprovalDecision.APPROVE, by="moe")

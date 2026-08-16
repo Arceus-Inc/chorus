@@ -26,6 +26,7 @@ from chorus.ledger.repos.eval_cases import EvalCaseRepo
 from chorus.ledger.repos.eval_runs import EvalRunRepo
 from chorus.ledger.repos.eval_suites import EvalSuiteRepo
 from chorus.ledger.repos.goals import GoalRepo
+from chorus.ledger.repos.human_authorization_proofs import HumanAuthorizationProofRepo
 from chorus.ledger.repos.management_profiles import ManagementProfileRepo
 from chorus.ledger.repos.messages import MessageRepo
 from chorus.ledger.repos.monitors import MonitorRepo
@@ -67,6 +68,7 @@ __all__ = [
     "EvalRunRepo",
     "EvalSuiteRepo",
     "GoalRepo",
+    "HumanAuthorizationProofRepo",
     "ManagementProfileRepo",
     "MessageRepo",
     "MonitorRepo",

@@ -21,7 +21,12 @@ from chorus.governance._registry import (
 )
 from chorus.governance._resolver import GovernanceError, GovernanceResolver, ResolveOutcome
 from chorus.governance._staffing_request import StaffingRequestService
-from chorus.governance._types import ActionOutcome, ApprovalDecision, GovernedAction
+from chorus.governance._types import (
+    ActionOutcome,
+    ApprovalDecision,
+    GovernedAction,
+    HumanAuthorization,
+)
 from chorus.governance._workforce_plan import WorkforcePlanService
 
 __all__ = [
@@ -34,6 +39,7 @@ __all__ = [
     "GovernedAction",
     "HireEmployeeAction",
     "HireError",
+    "HumanAuthorization",
     "ManagementAuthorityService",
     "ResolveOutcome",
     "StaffingRequestService",

@@ -70,13 +70,40 @@ def test_migration_reports_the_tables_it_creates() -> None:
     assert eval_cases.table_names() == ["eval_case"]
     eval_suites = next(m for m in load_migrations() if m.id == "0007_eval_suites")
     assert eval_suites.table_names() == ["eval_suite", "eval_suite_case"]
+    human_auth = next(m for m in load_migrations() if m.id == "0011_human_authorization_proof")
+    assert human_auth.table_names() == ["human_authorization_proof"]
+    assert "CONSTRAINT TRIGGER approval_authorization_requires_terminal_proof" in human_auth.sql
+    assert "DEFERRABLE INITIALLY DEFERRED" in human_auth.sql
 
 
 def test_shipped_migrations_load_in_id_order() -> None:
     """The real shipped stream loads cleanly, id-ordered (0002_skills is the first delta)."""
     shipped = load_migrations()
-    assert [m.id for m in shipped] == sorted(m.id for m in shipped)
-    assert "0002_skills" in {m.id for m in shipped}
+    ids = [m.id for m in shipped]
+    assert ids == sorted(ids)
+    assert "0002_skills" in set(ids)
+    assert "0011_human_authorization_proof" in set(ids)
+    assert ids.index("0010_agent_config_revisions") < ids.index("0011_human_authorization_proof")
+    assert "0006_human_authorization_proof" not in set(ids)
+
+
+def test_split_statements_keeps_dollar_quoted_function_bodies_intact() -> None:
+    """Plpgsql trigger bodies contain semicolons and must stay one statement."""
+    from chorus.ledger._migrations import split_statements
+
+    sql = """
+    CREATE FUNCTION foo() RETURNS trigger LANGUAGE plpgsql AS $$
+    BEGIN
+        RAISE EXCEPTION 'human authorization proof is immutable';
+    END;
+    $$;
+    CREATE TABLE bar (id uuid);
+    """
+    statements = split_statements(sql)
+    assert len(statements) == 2
+    assert "RAISE EXCEPTION" in statements[0]
+    assert ";" in statements[0]
+    assert statements[1].startswith("CREATE TABLE")
 
 
 def test_agent_session_migration_reports_tables() -> None:

@@ -63,6 +63,7 @@ from chorus.ledger.repos import (
     EvalRunRepo,
     EvalSuiteRepo,
     GoalRepo,
+    HumanAuthorizationProofRepo,
     ManagementProfileRepo,
     MessageRepo,
     MonitorRepo,
@@ -190,6 +191,7 @@ class Ledger:
         self.wakes = WakeRepo(conn)
         self.messages = MessageRepo(conn)
         self.approvals = ApprovalRepo(conn)
+        self.human_authorization_proofs = HumanAuthorizationProofRepo(conn)
         self.decisions = DecisionRepo(conn)
         self.claims = ClaimRepo(conn)
         self.activity = ActivityRepo(conn)
