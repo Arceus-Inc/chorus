@@ -12,20 +12,33 @@ if TYPE_CHECKING:
     from chorus.ledger import DelegationContract, Ledger
 
 
+class DelegationResolutionError(RuntimeError):
+    """The durable contract is not in a state that can accept this resolution."""
+
+
 class DelegationResolutionPolicy:
     """Close or return a verifying delegation after its terminal acceptance decision."""
 
     def __init__(self, ledger: Ledger) -> None:
         self._ledger = ledger
 
+    def ensure_approvable(self, task_id: str) -> None:
+        """Raise if a live contract exists that cannot close from its current status."""
+        contract = self._ledger.delegation_contracts.get(task_id)
+        if contract is None or contract.status is DelegationContractStatus.DONE:
+            return
+        if contract.status is not DelegationContractStatus.VERIFYING:
+            raise DelegationResolutionError(
+                f"delegation task {task_id!r} cannot close from {contract.status.value!r}"
+            )
+        if contract.accepted_run_id is None:
+            raise DelegationResolutionError(f"delegation task {task_id!r} has no accepted run")
+
     def approve(self, task_id: str, *, recovered: bool = False) -> bool:
         contract = self._ledger.delegation_contracts.get(task_id)
         if contract is None or contract.status is DelegationContractStatus.DONE:
             return False
-        if contract.status is not DelegationContractStatus.VERIFYING:
-            raise RuntimeError(
-                f"delegation task {task_id!r} cannot close from {contract.status.value!r}"
-            )
+        self.ensure_approvable(task_id)
         run_id = self._accepted_run_id(contract)
         with self._ledger.transaction():
             self._record(contract, passed=True, decision=None, recovered=recovered)
@@ -72,7 +85,9 @@ class DelegationResolutionPolicy:
     @staticmethod
     def _accepted_run_id(contract: DelegationContract) -> str:
         if contract.accepted_run_id is None:
-            raise RuntimeError(f"delegation task {contract.task_id!r} has no accepted run")
+            raise DelegationResolutionError(
+                f"delegation task {contract.task_id!r} has no accepted run"
+            )
         return contract.accepted_run_id
 
     def _record(
@@ -97,4 +112,4 @@ class DelegationResolutionPolicy:
         )
 
 
-__all__ = ["DelegationResolutionPolicy"]
+__all__ = ["DelegationResolutionError", "DelegationResolutionPolicy"]

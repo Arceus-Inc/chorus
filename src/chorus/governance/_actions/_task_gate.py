@@ -29,7 +29,10 @@ from chorus.ledger import (
     Wake,
     WakeReason,
 )
-from chorus.lifecycle._delegation_resolution import DelegationResolutionPolicy
+from chorus.lifecycle._delegation_resolution import (
+    DelegationResolutionError,
+    DelegationResolutionPolicy,
+)
 from chorus.outcomes import DoDKind, pr_landing_of
 
 if TYPE_CHECKING:
@@ -62,6 +65,10 @@ class TaskGateAction:
                 raise TaskGateError(
                     f"acceptance gate {approval.id!r} cannot finalize an unmerged primary PR"
                 )
+            try:
+                DelegationResolutionPolicy(self._ledger).ensure_approvable(approval.subject_id)
+            except DelegationResolutionError as exc:
+                raise TaskGateError(str(exc)) from exc
             if _is_strict_acceptance(self._ledger, approval.subject_id):
                 producer_run = _latest_succeeded_task_run(self._ledger, approval.subject_id)
                 if producer_run is None:
@@ -88,14 +95,20 @@ class TaskGateAction:
                     run_id=producer_run.id,
                     dod_status=DodStatus.PASSED,
                 )
-                DelegationResolutionPolicy(self._ledger).approve(approval.subject_id)
+                try:
+                    DelegationResolutionPolicy(self._ledger).approve(approval.subject_id)
+                except DelegationResolutionError as exc:
+                    raise TaskGateError(str(exc)) from exc
                 return ActionOutcome(TaskStatus.DONE.value, len(wakes))
             wakes = self._ledger.finalize_beat(
                 task_id=approval.subject_id,
                 run_id=None,
                 dod_status=DodStatus.PASSED,
             )
-            DelegationResolutionPolicy(self._ledger).approve(approval.subject_id)
+            try:
+                DelegationResolutionPolicy(self._ledger).approve(approval.subject_id)
+            except DelegationResolutionError as exc:
+                raise TaskGateError(str(exc)) from exc
             return ActionOutcome(TaskStatus.DONE.value, len(wakes))
         self._ledger.tasks.transition(approval.subject_id, TaskStatus.TODO)
         return ActionOutcome(TaskStatus.TODO.value, self._wake_assignee(approval.subject_id))

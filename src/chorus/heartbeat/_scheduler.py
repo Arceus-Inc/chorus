@@ -1265,6 +1265,8 @@ class Scheduler:
         the verdict, gated only by the descendants-passed check and the objective rollup floor.
         """
         ledger = self._require_ledger()
+        if self._pending_acceptance_gate(ledger, task.id):
+            return None
         contract = ledger.delegation_contracts.active_for_task(task.id)
         if contract is None:
             raise RuntimeError(f"delegation task {task.id!r} has no active contract")
@@ -1445,10 +1447,23 @@ class Scheduler:
         Any capped parent strands for human review instead of force-accepting. Returns ``True``
         when it handled the capped beat, so ``run_beat`` returns early. Only a re-invocation whose
         subtree is already complete can be capped; a kickoff or engineer beat (no terminal subtree)
-        always returns ``False``. A lost run CAS leaves durable state untouched.
+        always returns ``False``. A lost run CAS leaves durable state untouched. A pending
+        acceptance gate owns a delegated parent: leftover integrate wakes drain without mutating
+        contract or DoD.
         """
         if not (ledger.tasks.has_children(task.id) and ledger.tasks.all_children_terminal(task.id)):
             return False
+        if self._pending_acceptance_gate(ledger, task.id):
+            if not ledger.runs.finish(
+                run_id, RunStatus.CANCELLED, outcome={"fenced": "pending_acceptance"}
+            ):
+                return True
+            # Leftover children_done dispatch may have checked the parent out of BLOCKED.
+            # Restore the gate's park state without touching contract or DoD.
+            ledger.tasks.set_status(task.id, TaskStatus.BLOCKED)
+            ledger.tasks.release_locks(task.id, run_id=run_id)
+            ledger.wakes.mark_done(wake.id)
+            return True
         iteration = IntegrateContextPacket.iteration_for(ledger, task.id)
         if iteration <= self.max_integrate_iterations:
             return False
@@ -1462,29 +1477,31 @@ class Scheduler:
         integration: IntegrationVerdict | None = None
         if task.execution_mode is ExecutionMode.DELEGATION:
             evidence["contract_task_id"] = task.id
-            if execution_profile is not None and ledger.dod.get_for_task(task.id) is None:
-                ledger.dod.create(task.id, execution_profile.verifier)
-            artifacts_integrated, artifact_note = self._primary_child_artifacts_integrated(task.id)
-            done_children = evidence["done_children"]
-            integration_note = (
-                artifact_note
-                if isinstance(done_children, int) and done_children and not artifacts_integrated
-                else (
-                    f"delegation integration failed at cap "
-                    f"{iteration}/{self.max_integrate_iterations}: "
-                    f"{done_children} completed child deliverables; "
-                    "stranded for human review without fabricating acceptance"
-                )
-            )
-            if integration_note is None:
-                raise RuntimeError("failed cap integration must carry a precise note")
-            integration = IntegrationVerdict(ok=False, note=integration_note)
         with ledger.transaction():
             # CAS from the terminal-run fence: a concurrent cancel/finish must win, and this path
             # must not synthesize a later success/acceptance on a run that is already terminal.
             if not ledger.runs.finish(run_id, RunStatus.FAILED, outcome=evidence):
                 return True
-            if integration is not None:
+            if task.execution_mode is ExecutionMode.DELEGATION:
+                if execution_profile is not None and ledger.dod.get_for_task(task.id) is None:
+                    ledger.dod.create(task.id, execution_profile.verifier)
+                artifacts_integrated, artifact_note = self._primary_child_artifacts_integrated(
+                    task.id
+                )
+                done_children = evidence["done_children"]
+                integration_note = (
+                    artifact_note
+                    if isinstance(done_children, int) and done_children and not artifacts_integrated
+                    else (
+                        f"delegation integration failed at cap "
+                        f"{iteration}/{self.max_integrate_iterations}: "
+                        f"{done_children} completed child deliverables; "
+                        "stranded for human review without fabricating acceptance"
+                    )
+                )
+                if integration_note is None:
+                    raise RuntimeError("failed cap integration must carry a precise note")
+                integration = IntegrationVerdict(ok=False, note=integration_note)
                 ledger.finalize_beat(
                     task_id=task.id,
                     run_id=run_id,
@@ -1634,6 +1651,13 @@ class Scheduler:
             integration=integration,
         )
         return landing
+
+    def _pending_acceptance_gate(self, ledger: Ledger, task_id: str) -> bool:
+        """True when a pending acceptance gate owns this task's terminal landing."""
+        return any(
+            approval.subject_id == task_id and approval.gate_kind is ApprovalGate.ACCEPTANCE
+            for approval in ledger.approvals.pending()
+        )
 
     def _human_acceptance_owns_landing(self, ledger: Ledger, task_id: str) -> bool:
         """The authenticated resolver is the sole publisher for HumanApproval acceptance."""

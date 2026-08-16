@@ -13,6 +13,8 @@ from chorus.ledger import (
     ApprovalSubjectKind,
     Artifact,
     ArtifactType,
+    DelegationContract,
+    DelegationContractStatus,
     Dod,
     DodStatus,
     Run,
@@ -90,9 +92,14 @@ class _FakeApprovals:
 
 
 class _FakeDelegationContracts:
-    def get(self, task_id: str) -> None:
-        del task_id
-        return None
+    def __init__(self, contract: object | None = None) -> None:
+        self._contract = contract
+
+    def get(self, task_id: str) -> object | None:
+        if self._contract is None:
+            return None
+        contract_id = getattr(self._contract, "task_id", None)
+        return self._contract if contract_id in (None, task_id) else None
 
 
 class _FakeLedger:
@@ -287,3 +294,37 @@ def test_acceptance_approval_fails_closed_when_newest_landing_mismatches_cas() -
     with pytest.raises(TaskGateError, match="stale primary"):
         TaskGateAction(ledger).on_approve(_approval())
     assert ledger.finalize_calls == []
+
+
+def test_acceptance_approval_fails_closed_when_delegation_contract_is_not_verifying() -> None:
+    ledger = _FakeLedger(
+        task=Task(id="task-1", intent="ship", status=TaskStatus.BLOCKED, assignee_employee_id="e1"),
+        dod=Dod(id="dod-1", task_id="task-1", kind="human_approval", status=DodStatus.PENDING),
+        runs=[Run(id="run-1", employee_id="e1", task_id="task-1", status=RunStatus.SUCCEEDED)],
+        artifacts=[
+            Artifact(
+                id="artifact-1",
+                task_id="task-1",
+                type=ArtifactType.DOC,
+                is_primary=True,
+                review_state="pending",
+                resource_ref={"path": "spec.md"},
+            )
+        ],
+    )
+    ledger.delegation_contracts = _FakeDelegationContracts(
+        DelegationContract(
+            task_id="task-1",
+            team_id="team-1",
+            lead_employee_id="e1",
+            management_profile_version=1,
+            objective_rubric="verify",
+            status=DelegationContractStatus.INTEGRATING,
+        )
+    )
+
+    with pytest.raises(TaskGateError, match="cannot close"):
+        TaskGateAction(ledger).on_approve(_approval())
+    assert ledger.finalize_calls == []
+    assert ledger.tasks.get("task-1") is not None
+    assert ledger.tasks.get("task-1").status is TaskStatus.BLOCKED  # type: ignore[union-attr]
