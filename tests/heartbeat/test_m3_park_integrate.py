@@ -17,6 +17,7 @@ import pytest
 from chorus.heartbeat import IntegrateContextPacket, Scheduler
 from chorus.heartbeat._beat import BeatOutcome
 from chorus.ledger import (
+    ActivityVerb,
     DelegationContract,
     DelegationContractStatus,
     ExecutionMode,
@@ -413,8 +414,17 @@ async def test_adaptive_integrate_cap_escalates_without_force_acceptance(
     assert ledger.tasks.get(uid("M")).status is TaskStatus.BLOCKED  # type: ignore[union-attr]
     contract = ledger.delegation_contracts.get(uid("M"))
     assert contract is not None and contract.status is DelegationContractStatus.BLOCKED
+    assert contract.accepted_run_id is None
     recovery = ledger.recovery_actions.active_for_source(uid("M"))
     assert recovery is not None and recovery.cause == "integrate_iteration_exhausted"
+    done_children = recovery.evidence.get("done_children")
+    assert isinstance(done_children, int) and done_children > 0
+    activities = ledger.activity.by_subject("delegation_contract", uid("M"))
+    assert not [
+        activity
+        for activity in activities
+        if activity.verb in {ActivityVerb.LEAD_ACCEPTED, ActivityVerb.PARENT_VERIFIED}
+    ]
     # kickoff + exactly cap(=2) adaptive integrate beats; the 3rd integrate was capped (mechanical, no beat)
     assert beat.ran.count(uid("M")) == 3
 
