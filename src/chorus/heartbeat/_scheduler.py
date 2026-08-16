@@ -1651,7 +1651,10 @@ class Scheduler:
         Failed integration, cap stranding, and human-approval wait also leave a parent BLOCKED with
         children; those happen after the subtree is already terminal and must not emit DELEGATED.
         """
-        if task.execution_mode is not ExecutionMode.DELEGATION or task.status is not TaskStatus.BLOCKED:
+        if (
+            task.execution_mode is not ExecutionMode.DELEGATION
+            or task.status is not TaskStatus.BLOCKED
+        ):
             return False
         if not ledger.tasks.has_children(task.id):
             return False
@@ -1672,7 +1675,6 @@ class Scheduler:
             outcome_kind=outcome_kind,
             review_state="pending",
         )
-
 
     def _route_block(self, task_id: str) -> None:
         """Route a blocked child to its manager parent (spec 15).
@@ -1898,7 +1900,7 @@ class Scheduler:
                 evidence={"phase": phase, "error": result.outcome.get("error")},
                 next_action="inspect the engine fault and resume or hand off the task",
             )
-            )
+        )
 
     def _task_scope_violations(self, task_id: str) -> tuple[FileScopeViolation, ...]:
         ledger = self._require_ledger()
@@ -1908,7 +1910,9 @@ class Scheduler:
         if task.parent_id is None:
             return validate_file_scope(
                 parent_files_to_touch=task.files_to_touch,
-                current_blockers=(BlockerScope(task_id=task.id, files_to_touch=task.files_to_touch),),
+                current_blockers=(
+                    BlockerScope(task_id=task.id, files_to_touch=task.files_to_touch),
+                ),
                 require_current_scope=False,
                 require_proposed_scope=False,
             ).violations
@@ -1918,7 +1922,8 @@ class Scheduler:
         blockers = tuple(
             BlockerScope(task_id=blocker.id, files_to_touch=blocker.files_to_touch)
             for blocker_id in ledger.dependencies.blockers(parent.id)
-            if (blocker := ledger.tasks.get(blocker_id)) is not None and blocker.parent_id == parent.id
+            if (blocker := ledger.tasks.get(blocker_id)) is not None
+            and blocker.parent_id == parent.id
         )
         if blockers and any(blocker.task_id == task.id for blocker in blockers):
             scoped_plan = bool(parent.files_to_touch) or any(

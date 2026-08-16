@@ -55,9 +55,10 @@ class TaskGateAction:
         gate = _require_gate(approval)
         if gate is ApprovalGate.ACCEPTANCE:
             latest = self._ledger.artifacts.latest_primary_non_verdict(approval.subject_id)
-            if latest is not None and pr_landing_of(
-                latest.type.value, latest.resource_ref
-            ).blocks_done:
+            if (
+                latest is not None
+                and pr_landing_of(latest.type.value, latest.resource_ref).blocks_done
+            ):
                 raise TaskGateError(
                     f"acceptance gate {approval.id!r} cannot finalize an unmerged primary PR"
                 )

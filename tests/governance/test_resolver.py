@@ -297,7 +297,9 @@ def test_legacy_authorization_approve_fails_closed(ledger: Ledger) -> None:
     )
 
     with pytest.raises(GovernanceError, match="requires authenticated"):
-        res.resolve(approval.id, decision=ApprovalDecision.APPROVE, decided_by_user_id=_USER, now=_NOW)
+        res.resolve(
+            approval.id, decision=ApprovalDecision.APPROVE, decided_by_user_id=_USER, now=_NOW
+        )
 
     task = ledger.tasks.get(uid("t1"))
     assert task is not None and task.status is TaskStatus.BLOCKED

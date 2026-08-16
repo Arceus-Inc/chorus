@@ -123,7 +123,9 @@ def test_agent_session_migration_reports_tables() -> None:
 def test_run_carryover_ownership_is_derived_from_run_schema(pg_database: str) -> None:
     """Carryovers cannot name a different task than their foreign-keyed run."""
     migration = next(m for m in load_migrations() if m.id == "0006_run_carryover")
-    create_table = next(statement for statement in migration.statements() if statement.startswith("CREATE TABLE"))
+    create_table = next(
+        statement for statement in migration.statements() if statement.startswith("CREATE TABLE")
+    )
     assert "task_id" not in create_table
     with psycopg.connect(pg_database) as db:
         columns = {
@@ -134,7 +136,9 @@ def test_run_carryover_ownership_is_derived_from_run_schema(pg_database: str) ->
         }
         indexes = {
             row[0]
-            for row in db.execute("SELECT indexname FROM pg_indexes WHERE tablename = 'run'").fetchall()
+            for row in db.execute(
+                "SELECT indexname FROM pg_indexes WHERE tablename = 'run'"
+            ).fetchall()
         }
     assert "task_id" not in columns
     assert "run_task_created_idx" in indexes

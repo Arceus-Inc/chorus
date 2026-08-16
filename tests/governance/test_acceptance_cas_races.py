@@ -141,9 +141,7 @@ def test_lost_cas_second_connection_is_idempotent(pg_database: str) -> None:
         lost: list[Artifact | None] = []
 
         def compete() -> None:
-            lost.append(
-                racer.artifacts.mark_latest_pending_primary_non_verdict_verified(uid("t1"))
-            )
+            lost.append(racer.artifacts.mark_latest_pending_primary_non_verdict_verified(uid("t1")))
 
         worker = threading.Thread(target=compete)
         with ledger.transaction():

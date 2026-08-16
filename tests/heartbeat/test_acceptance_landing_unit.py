@@ -58,7 +58,9 @@ class _FakeTasks:
 class _FakeLedger:
     def __init__(self, approvals: list[Approval]) -> None:
         self.tasks = _FakeTasks(
-            Task(id="task-1", intent="ship", status=TaskStatus.IN_PROGRESS, assignee_employee_id="e1")
+            Task(
+                id="task-1", intent="ship", status=TaskStatus.IN_PROGRESS, assignee_employee_id="e1"
+            )
         )
         self.approvals = _FakePendingApprovals(approvals)
         self.artifacts = _FakeArtifacts()
@@ -148,9 +150,7 @@ async def test_human_approval_dod_lands_pending_artifact_before_opening_gate(
     scheduler = Scheduler(ledger=ledger, landers=LanderRegistry.from_landers([_FakeLander()]))
     opened: list[tuple[str, ApprovalGate, str]] = []
 
-    def _open_task_gate(
-        self, task_id: str, *, gate_kind: ApprovalGate, reason: str
-    ) -> None:
+    def _open_task_gate(self, task_id: str, *, gate_kind: ApprovalGate, reason: str) -> None:
         opened.append((task_id, gate_kind, reason))
 
     monkeypatch.setattr(GovernanceResolver, "open_task_gate", _open_task_gate)
@@ -170,7 +170,9 @@ async def test_human_approval_dod_lands_pending_artifact_before_opening_gate(
     assert opened == [("task-1", ApprovalGate.ACCEPTANCE, "human-approval DoD for task-1")]
 
 
-async def test_strict_acceptance_revision_loop_lands_a_fresh_pending_artifact_each_attempt() -> None:
+async def test_strict_acceptance_revision_loop_lands_a_fresh_pending_artifact_each_attempt() -> (
+    None
+):
     ledger = _FakeLedger([])
     scheduler = Scheduler(ledger=ledger, landers=LanderRegistry.from_landers([_FakeLander()]))
     employee = Employee(id="e1", name="E1", role="engineer")
@@ -184,7 +186,10 @@ async def test_strict_acceptance_revision_loop_lands_a_fresh_pending_artifact_ea
     )
 
     assert len(ledger.artifacts.created) == 2
-    assert [artifact.review_state for artifact in ledger.artifacts.created] == ["pending", "pending"]
+    assert [artifact.review_state for artifact in ledger.artifacts.created] == [
+        "pending",
+        "pending",
+    ]
 
 
 async def test_pending_acceptance_does_not_stamp_an_unmerged_pr_verified() -> None:

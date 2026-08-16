@@ -22,11 +22,15 @@ from chorus.ledger import (
     Approval,
     ApprovalGate,
     ApprovalStatus,
+    Artifact,
+    ArtifactType,
     AuthenticationMethod,
     AuthorizationVerdict,
     HumanAuthorizationProof,
     Ledger,
     LedgerIntegrityError,
+    Run,
+    RunStatus,
     Task,
     TaskStatus,
 )
@@ -122,6 +126,18 @@ def test_live_event_failure_returns_committed_replayable_landed_outcome(
     task_id = uid("human-acceptance")
     _task(ledger, task_id)
     ledger.dod.create(task_id, Verifier.human_approval())
+    ledger.artifacts.create(
+        Artifact(
+            id=uid("art"),
+            task_id=task_id,
+            type=ArtifactType.DOC,
+            review_state="pending",
+            is_primary=True,
+            resource_ref={"path": "spec.md"},
+        )
+    )
+    ledger.runs.create(Run(id=uid("run-ok"), employee_id="ada", task_id=task_id))
+    ledger.runs.finish(uid("run-ok"), RunStatus.SUCCEEDED)
     resolver = GovernanceResolver(ledger, event_sink=_FailingEventSink())
     approval = resolver.open_task_gate(
         task_id,
@@ -154,7 +170,9 @@ def test_duplicate_nonce_rejects_and_rolls_back_second_resolution(ledger: Ledger
     resolver, first_approval_id = _opened_gate(ledger, uid("first"))
     nonce = uid("idem")
     resolver.resolve_authenticated(
-        first_approval_id, decision=ApprovalDecision.APPROVE, authorization=_authorization(nonce=nonce)
+        first_approval_id,
+        decision=ApprovalDecision.APPROVE,
+        authorization=_authorization(nonce=nonce),
     )
     _, second_approval_id = _opened_gate(ledger, uid("second"))
 
@@ -223,7 +241,9 @@ def test_authenticated_holds_stay_pending_then_terminal_approval_resolves(ledger
     assert resolved.status is ApprovalStatus.APPROVED
 
 
-def test_duplicate_terminal_resolution_leaves_existing_proof_and_status_intact(ledger: Ledger) -> None:
+def test_duplicate_terminal_resolution_leaves_existing_proof_and_status_intact(
+    ledger: Ledger,
+) -> None:
     resolver, approval_id = _opened_gate(ledger, uid("task"))
     resolver.resolve_authenticated(
         approval_id, decision=ApprovalDecision.APPROVE, authorization=_authorization()
