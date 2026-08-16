@@ -47,6 +47,12 @@ from chorus.lifecycle._decompose import (
     DepthCapped,
     decompose,
 )
+from chorus.lifecycle._file_scope import (
+    BlockerScope,
+    FileScopeViolation,
+    ProposedBlockerScope,
+    validate_file_scope,
+)
 from chorus.lifecycle._outcome_capability import OutcomeMismatch, outcome_mismatches
 from chorus.lifecycle._team_policy import MissionTeamPolicy
 from chorus.outcomes import (
@@ -78,6 +84,7 @@ class ChildPlan:
     # role that produces a different kind (a ``pr`` child routed to a ``doc`` pm strands). ``None``
     # skips the check so internal callers and undeclared tool args stay fail-open.
     outcome_kind: OutcomeKind | None = None
+    files_to_touch: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -114,7 +121,8 @@ class DecomposeResult:
     when the fan-out would exceed the delegation depth cap, ``unknown_assignees`` when a child names a
     report that is not a direct report, ``manager_area_violation`` when a director wave does not map
     one-to-one onto invokable manager reports, ``outcome_mismatches`` when a child's declared outcome
-    can't be produced by its assignee's role, or ``authority_denied`` for a contract/profession refusal.
+    can't be produced by its assignee's role, ``authority_denied`` for a contract/profession refusal,
+    or ``scope_violations`` when declared file scopes are empty, out-of-parent, or overlapping.
     A clean fan-out leaves the failure fields empty and ``child_ids`` populated.
     """
 
@@ -125,6 +133,7 @@ class DecomposeResult:
     manager_area_violation: ManagerAreaViolation | None = None
     authority_denied: str | None = None
     outcome_mismatches: tuple[OutcomeMismatch, ...] = ()
+    scope_violations: tuple[FileScopeViolation, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -137,6 +146,7 @@ class SubmitTaskResult:
     unknown_assignees: tuple[str, ...] = ()
     authority_denied: str | None = None
     outcome_mismatches: tuple[OutcomeMismatch, ...] = ()
+    scope_violations: tuple[FileScopeViolation, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -160,11 +170,17 @@ def _decision_id(task_id: str, revision: str) -> str:
     return derive_id("decision", task_id, revision)
 
 
-def _request_fingerprint(children: Sequence[ChildPlan], ids: dict[str, str]) -> str:
+def _request_fingerprint(
+    children: Sequence[ChildPlan],
+    ids: dict[str, str],
+    *,
+    files_to_touch_by_id: dict[str, tuple[str, ...]],
+) -> str:
     """Canonicalize the exact-once comparison surface without changing mutation order.
 
-    Child order and ``depends_on`` ordering are semantic-free, so retries that only reshuffle them
-    must resume the same wave instead of tripping the "different child wave" guard.
+    Child order, ``depends_on`` ordering, and ``files_to_touch`` ordering are semantic-free, so
+    retries that only reshuffle them must resume the same wave instead of tripping the "different
+    child wave" guard. Moving a path from one child to another remains a different wave.
     """
     payload = [
         {
@@ -175,6 +191,7 @@ def _request_fingerprint(children: Sequence[ChildPlan], ids: dict[str, str]) -> 
             "intent": child.intent,
             "outcome_kind": None if child.outcome_kind is None else child.outcome_kind.value,
             "replaces_task_id": child.replaces_task_id,
+            "files_to_touch": sorted(files_to_touch_by_id[ids[child.label]]),
             "task_id": ids[child.label],
         }
         for child in sorted(children, key=lambda child: child.label)
@@ -332,9 +349,11 @@ class CapabilityService:
     ) -> DecomposeResult:
         # Compose order is load-bearing: DELIVERY craft reroute (skips declared outcome_kind),
         # then director manager-area (decompose-only), then reviewer / unknown / outcome mismatch /
-        # team-grant / authorization. Routing is DELIVERY-only (a no-op on director DELEGATION
-        # waves) and must not run after those gates or it would rewrite an already-authorized wave.
-        # Post-route gates still run on the rewritten assignees.
+        # team-grant / authorization, then file-scope. Routing is DELIVERY-only (a no-op on director
+        # DELEGATION waves) and must not run after those gates or it would rewrite an already-authorized
+        # wave. Post-route gates still run on the rewritten assignees. File-scope runs after those
+        # identity/capability gates and before any mutation so empty, out-of-parent, or overlapping
+        # claims never write children.
         routed = self._capability_route(children, manager_id=parent.assignee_employee_id)
         children = routed.children
         reroutes = routed.reroutes
@@ -364,7 +383,32 @@ class CapabilityService:
             raise RuntimeError("authorized delegation wave has no effective limits")
 
         ids = {child.label: _child_id(parent.id, child.label) for child in children}
-        request_fingerprint = _request_fingerprint(children, ids)
+        current_blockers = self._current_blocker_scopes(parent.id)
+        scoped_plan = bool(parent.files_to_touch) or any(
+            blocker.files_to_touch for blocker in current_blockers
+        )
+        validation = validate_file_scope(
+            parent_files_to_touch=parent.files_to_touch,
+            current_blockers=current_blockers,
+            proposed_blockers=tuple(
+                ProposedBlockerScope(
+                    task_id=ids[child.label],
+                    files_to_touch=child.files_to_touch,
+                    replaces_task_id=child.replaces_task_id,
+                )
+                for child in children
+            ),
+            require_current_scope=scoped_plan,
+            require_proposed_scope=scoped_plan,
+        )
+        if not validation.valid:
+            return DecomposeResult(scope_violations=validation.violations)
+        normalized_scope_by_id = {
+            child.task_id: child.files_to_touch for child in validation.proposed_blockers
+        }
+        request_fingerprint = _request_fingerprint(
+            children, ids, files_to_touch_by_id=normalized_scope_by_id
+        )
         accepted_plan_revision_id = self._ensure_plan_revision(parent.id, revision)
         existing_claim = self._ledger.decomposition_claims.by_source_revision(
             parent.id, accepted_plan_revision_id
@@ -449,6 +493,7 @@ class CapabilityService:
                         origin_kind=OriginKind.DECOMPOSITION,
                         origin_id=parent.id,
                         origin_fingerprint=child.label,
+                        files_to_touch=normalized_scope_by_id[ids[child.label]],
                     ),
                     gates_parent=True,
                 )
@@ -689,6 +734,7 @@ class CapabilityService:
             unknown_assignees=outcome.unknown_assignees,
             authority_denied=outcome.authority_denied,
             outcome_mismatches=outcome.outcome_mismatches,
+            scope_violations=outcome.scope_violations,
         )
 
     def _replacement_denial(self, parent: Task, child: ChildPlan) -> DecomposeResult | None:
@@ -800,6 +846,15 @@ class CapabilityService:
                 return AssignTaskResult(terminal_or_missing=True)
             MissionTeamPolicy(self._ledger).add_member(parent.team_id, assignee)
         return AssignTaskResult(assigned=True)
+
+    def _current_blocker_scopes(self, parent_id: str) -> tuple[BlockerScope, ...]:
+        blockers: list[BlockerScope] = []
+        for blocker_id in self._ledger.dependencies.blockers(parent_id):
+            blocker = self._ledger.tasks.get(blocker_id)
+            if blocker is None or blocker.parent_id != parent_id:
+                continue
+            blockers.append(BlockerScope(task_id=blocker.id, files_to_touch=blocker.files_to_touch))
+        return tuple(blockers)
 
     def _phase_denial(
         self,

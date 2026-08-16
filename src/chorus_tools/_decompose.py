@@ -19,6 +19,11 @@ from pydantic import BaseModel, Field, ValidationError
 from chorus.heartbeat import BeatContext
 from chorus.ledger import ExecutionMode, Ledger
 from chorus.lifecycle import CapabilityService, ChildPlan, OutcomeMismatch
+from chorus.lifecycle._file_scope import (
+    FileScopeViolation,
+    describe_file_scope_violation,
+    file_scope_violation_payload,
+)
 from chorus.outcomes import OutcomeKind
 from chorus.roles import RoleRegistry
 
@@ -50,6 +55,10 @@ class _ChildInput(BaseModel):
             "directive). Omitted skips the capability check; when set, must match what the "
             "assignee's role produces."
         ),
+    )
+    files_to_touch: list[str] = Field(
+        min_length=1,
+        description="declared repo-relative POSIX paths for this subtask's coordination scope",
     )
 
 
@@ -101,6 +110,7 @@ class DecomposeTool(BaseTool):
                 execution_mode=child.execution_mode,
                 can_subdelegate=child.can_subdelegate,
                 outcome_kind=child.outcome_kind,
+                files_to_touch=tuple(child.files_to_touch),
             )
             for child in args.children
         ]
@@ -170,6 +180,12 @@ class DecomposeTool(BaseTool):
                 structured={"authority_denied": result.authority_denied},
                 is_error=True,
             )
+        if result.scope_violations:
+            return ToolResult(
+                content=_scope_refusal(result.scope_violations),
+                structured={"scope_violations": _serialize_scope_violations(result.scope_violations)},
+                is_error=True,
+            )
         listing = ", ".join(f"{c.label}→{c.assignee}" for c in args.children)
         return ToolResult(
             content=f"created {len(plans)} subtasks: {listing}",
@@ -190,6 +206,19 @@ def _validate(args: DecomposeInput) -> str | None:
         if unknown:
             return f"subtask {child.label!r} depends on unknown label(s): {', '.join(unknown)}"
     return None
+
+
+def _scope_refusal(
+    violations: tuple[FileScopeViolation, ...], *, created: str = "subtasks"
+) -> str:
+    joined = "; ".join(describe_file_scope_violation(violation) for violation in violations)
+    return f"refused: invalid files_to_touch — {joined}. No {created} created."
+
+
+def _serialize_scope_violations(
+    violations: tuple[FileScopeViolation, ...],
+) -> list[dict[str, str]]:
+    return [file_scope_violation_payload(violation) for violation in violations]
 
 
 def _outcome_mismatch_result(mismatches: tuple[OutcomeMismatch, ...]) -> ToolResult | None:
