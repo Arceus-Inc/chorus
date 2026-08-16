@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 from chorus.heartbeat import BeatContext
 from chorus.ledger import ExecutionMode, Ledger
 from chorus.lifecycle import CapabilityService, ChildPlan
+from chorus.roles import RoleRegistry
 
 
 class SubmitTaskInput(BaseModel):
@@ -54,8 +55,9 @@ class SubmitTaskTool(BaseTool):
     declaration = ToolDeclaration(risk="mutating", tier_required=1, timeout_seconds=30.0)
     input_model = SubmitTaskInput
 
-    def __init__(self, ledger: Ledger) -> None:
-        self._service = CapabilityService(ledger)
+    def __init__(self, ledger: Ledger, roles: RoleRegistry | None = None) -> None:
+        # roles powers capability-matched routing; the live factory always supplies it (see DecomposeTool).
+        self._service = CapabilityService(ledger, roles=roles)
 
     async def execute(self, input: dict[str, object], ctx: ToolExecutionContext) -> ToolResult:
         args = SubmitTaskInput.model_validate(input)

@@ -342,9 +342,9 @@ def _capability_tool(
     # _LEDGER_FREE_CAPABILITY_TOOLS guard); the `is not None` check also narrows the type for mypy.
     if ledger is not None:
         if name == "decompose":
-            return DecomposeTool(ledger)
+            return DecomposeTool(ledger, roles)
         if name == "submit_task":
-            return SubmitTaskTool(ledger)
+            return SubmitTaskTool(ledger, roles)
         if name == "assign_task":
             return AssignTaskTool(ledger)
         if name == "team_read":

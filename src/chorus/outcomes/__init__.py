@@ -10,6 +10,7 @@ from __future__ import annotations
 from chorus.outcomes._deliverable import (
     DeliverableKind,
     classify_deliverable,
+    native_kind_for_role,
     resolve_delivery_verifier,
 )
 from chorus.outcomes._lander import Artifact, ArtifactType, OutcomeLander
@@ -62,6 +63,7 @@ __all__ = [
     "file_matches_any",
     "glob_at_least",
     "min_words",
+    "native_kind_for_role",
     "python_check",
     "resolve_delivery_verifier",
     "runtime_brief_block",

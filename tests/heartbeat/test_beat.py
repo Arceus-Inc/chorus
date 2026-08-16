@@ -495,6 +495,66 @@ async def test_cancelled_beat_returns_task_to_pre_beat_state(ledger: Ledger) -> 
     )  # cancel opens no recovery card
 
 
+async def test_run_beat_aborts_when_task_is_already_rejected(ledger: Ledger) -> None:
+    """Checkout then reject (hung-child race): the beat must not mint a run or land DONE."""
+    wake = _setup_task(ledger)
+    ledger.tasks.transition(uid("t1"), TaskStatus.REJECTED)
+    beat = _FakeBeat(passed=True)
+    sched = _wired(ledger, beat)
+    await sched.run_beat(wake, run_id=uid("r1"), now=_NOW)
+
+    assert beat.calls == []
+    task = ledger.tasks.get(uid("t1"))
+    assert task is not None
+    assert task.status is TaskStatus.REJECTED
+    assert ledger.runs.get(uid("r1")) is None
+    done = ledger.wakes.get(uid("w1"))
+    assert done is not None
+    assert done.status.value == "done"
+
+
+class _RejectMidBeat:
+    """A beat that terminalizes its task while in flight — the concurrent hung-child race."""
+
+    def __init__(self, ledger: Ledger, task_id: str) -> None:
+        self._ledger = ledger
+        self._task_id = task_id
+        self.calls = 0
+
+    async def run_task(
+        self,
+        *,
+        task_id: str,
+        intent: str,
+        verification: object = (),
+        rubric: object = "",
+        observer: object = None,
+        run_id: str | None = None,
+    ) -> BeatOutcome:
+        del intent, verification, rubric, observer, run_id, task_id
+        self.calls += 1
+        self._ledger.tasks.transition(self._task_id, TaskStatus.REJECTED)
+        return BeatOutcome(passed=True, outcome={}, summary="done")
+
+
+async def test_run_beat_does_not_revive_a_task_rejected_during_the_beat(ledger: Ledger) -> None:
+    wake = _setup_task(ledger)
+    beat = _RejectMidBeat(ledger, uid("t1"))
+    sched = _wired(ledger, beat)
+    await sched.run_beat(wake, run_id=uid("r1"), now=_NOW)
+
+    assert beat.calls == 1
+    task = ledger.tasks.get(uid("t1"))
+    assert task is not None
+    assert task.status is TaskStatus.REJECTED
+    run = ledger.runs.get(uid("r1"))
+    assert run is not None
+    assert run.status is RunStatus.CANCELLED
+    done = ledger.wakes.get(uid("w1"))
+    assert done is not None
+    assert done.status.value == "done"
+
+
 def _command_verifier() -> object:
     from chorus.outcomes import Verifier
 

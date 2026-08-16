@@ -314,6 +314,7 @@ class Scheduler:
         max_resume_attempts: int = 2,
         transient_retries: int = 2,
         max_integrate_iterations: int = 3,
+        max_child_timeouts: int = 2,
         memory_writer: EpisodicStore | None = None,
         company_root: Path | None = None,
         ledger: Ledger | None = None,
@@ -346,6 +347,9 @@ class Scheduler:
         # How many adaptive integrate beats a manager gets per goal before the kernel cuts the loop
         # off without another model beat — bounds the submit→re-integrate loop (spec M3 §5).
         self.max_integrate_iterations = max_integrate_iterations
+        # How many times a delegation child may be reaped (timed-out) before the kernel rejects it so
+        # its manager isn't wake-starved by a beat hanging under a long lease (spec 02 §6).
+        self.max_child_timeouts = max_child_timeouts
         self._ledger = ledger
         self._workforce = workforce
         # The beat seam is per-employee (resolve a role-faithful runner for the dispatched employee). A
@@ -385,7 +389,7 @@ class Scheduler:
 
         # (a) RECOVER — reap orphaned leases + reconcile stranded work before any new dispatch, so
         # a crashed beat's lock is freed and its slot returned to the budget this same pulse.
-        swept = reconcile(ledger, now=now)
+        swept = reconcile(ledger, now=now, max_child_timeouts=self.max_child_timeouts)
         for (
             reaped_run_id
         ) in swept.reaped_runs:  # watchdog: a reaped lease is a red lane, not a counter
@@ -700,7 +704,10 @@ class Scheduler:
         task = ledger.tasks.get(task_id)
         if task is None:
             raise KeyError(task_id)
-        if task.status is TaskStatus.CANCELLED:
+        # A concurrent path (hung-child rejection, operator cancel) can terminalize the task after
+        # checkout and before this beat mints its run. Don't revive a REJECTED/CANCELLED/DONE task.
+        if task.status in TERMINAL:
+            ledger.tasks.release_locks(task_id, run_id=run_id)
             ledger.wakes.mark_done(wake.id)
             return
         employee = workforce.get(wake.employee_id)
@@ -826,7 +833,11 @@ class Scheduler:
 
         verdict = result.outcome or None
         current = ledger.tasks.get(task_id)
-        if current is not None and current.status is TaskStatus.CANCELLED:
+        if current is not None and current.status in TERMINAL:
+            # Hung-child rejection (or cancel) won the race while this beat was in flight — finish the
+            # run without landing a verdict that would revive the terminal task. Honor the #103
+            # terminal-run CAS: a concurrent finish/cancel must win and not be overwritten.
+            ledger.runs.finish(run_id, RunStatus.CANCELLED, outcome=verdict)
             ledger.tasks.release_locks(task_id, run_id=run_id)
             ledger.wakes.mark_done(wake.id)
             self._record_cost(
