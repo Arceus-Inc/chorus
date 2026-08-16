@@ -23,6 +23,7 @@ from chorus.ledger import (
 )
 from chorus.lifecycle import CapabilityService, MissionTeamPolicy
 from chorus.lifecycle._capability import AssignTaskResult, SubmitTaskResult
+from chorus.outcomes import OutcomeKind
 from chorus.testing import uid
 from chorus.workforce import Employee
 from chorus_tools import AssignTaskTool, SubmitTaskTool
@@ -44,7 +45,9 @@ def _ctx(working_dir: Path) -> object:
     )
 
 
-def _seed(ledger: Ledger) -> None:
+def _seed(
+    ledger: Ledger, *, allowed_professions: tuple[str, ...] = ("engineer",)
+) -> None:
     lead = ledger.employees.create(Employee(id="mgr", name="Mgr", role="engineer"))
     ledger.employees.create(Employee(id="ada", name="Ada", role="engineer", reports_to="mgr"))
     ledger.employees.create(Employee(id="bob", name="Bob", role="engineer", reports_to="mgr"))
@@ -56,7 +59,7 @@ def _seed(ledger: Ledger) -> None:
             can_subdelegate=True,
             max_delegation_depth=3,
             max_team_size=3,
-            allowed_professions=("engineer",),
+            allowed_professions=allowed_professions,
             granted_by_user_id="operator",
         )
     )
@@ -198,7 +201,52 @@ def test_submit_tool_forwards_actor_and_execution_mode(
     child = captured["child"]
     assert captured["actor_employee_id"] == "mgr"
     assert child.execution_mode is ExecutionMode.DELEGATION  # type: ignore[union-attr]
+    assert child.outcome_kind is None  # type: ignore[union-attr]
     assert result.is_error is False
+
+
+def test_submit_tool_omitted_outcome_kind_skips_capability_check(
+    ledger: Ledger, tmp_path: Path
+) -> None:
+    """Omitting outcome_kind is backward-safe: a pm may receive undeclared work."""
+    _seed(ledger, allowed_professions=("engineer", "pm"))
+    ledger.employees.create(Employee(id="pam", name="Pam", role="pm", reports_to="mgr"))
+    BeatContext(task_id=uid("M"), run_id=REV, employee_id="mgr").write(tmp_path)
+    result = asyncio.run(
+        SubmitTaskTool(ledger).execute(
+            {"label": "spec", "intent": "write the api spec", "assignee": "pam"},
+            _ctx(tmp_path),
+        )
+    )
+    assert result.is_error is False
+    child = ledger.tasks.get(result.structured["child_id"])
+    assert child is not None
+    assert child.assignee_employee_id == "pam"
+
+
+def test_submit_tool_refuses_declared_pr_child_assigned_to_a_pm(
+    ledger: Ledger, tmp_path: Path
+) -> None:
+    _seed(ledger, allowed_professions=("engineer", "pm"))
+    ledger.employees.create(Employee(id="pam", name="Pam", role="pm", reports_to="mgr"))
+    BeatContext(task_id=uid("M"), run_id=REV, employee_id="mgr").write(tmp_path)
+    result = asyncio.run(
+        SubmitTaskTool(ledger).execute(
+            {
+                "label": "impl",
+                "intent": "build it",
+                "assignee": "pam",
+                "outcome_kind": OutcomeKind.PR.value,
+            },
+            _ctx(tmp_path),
+        )
+    )
+    assert result.is_error is True
+    assert "pam" in result.content
+    mismatches = result.structured["outcome_mismatches"]
+    assert mismatches[0]["declared"] == OutcomeKind.PR.value
+    assert mismatches[0]["role_kind"] == OutcomeKind.DOC.value
+    assert ledger.dependencies.unresolved_blockers(uid("M")) == []
 
 
 def test_assign_tool_surfaces_authority_denial(

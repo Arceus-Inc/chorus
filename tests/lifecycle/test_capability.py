@@ -23,6 +23,7 @@ from chorus.ledger import (
 )
 from chorus.lifecycle import DEFAULT_REQUEST_DEPTH_CAP, MissionTeamPolicy
 from chorus.lifecycle._capability import CapabilityService, ChildPlan
+from chorus.outcomes import OutcomeKind
 from chorus.testing import uid
 from chorus.workforce import Employee
 
@@ -31,7 +32,12 @@ pytestmark = pytest.mark.integration
 REV = uid("run_mgr_1")  # the manager's beat (run_id) — the decompose idempotency key
 
 
-def _service(ledger: Ledger, *, request_depth: int = 0) -> CapabilityService:
+def _service(
+    ledger: Ledger,
+    *,
+    request_depth: int = 0,
+    allowed_professions: tuple[str, ...] = ("engineer",),
+) -> CapabilityService:
     lead = ledger.employees.create(Employee(id="mgr", name="Mgr", role="engineer"))
     ledger.management_profiles.upsert(
         ManagementProfile(
@@ -42,7 +48,7 @@ def _service(ledger: Ledger, *, request_depth: int = 0) -> CapabilityService:
             can_subdelegate=True,
             max_delegation_depth=DEFAULT_REQUEST_DEPTH_CAP,
             max_team_size=3,
-            allowed_professions=("engineer",),
+            allowed_professions=allowed_professions,
         )
     )
     ledger.employees.create(Employee(id="ada", name="Ada", role="engineer", reports_to="mgr"))
@@ -141,6 +147,100 @@ def test_submit_one_rejects_a_deliverable_assigned_to_a_reviewer(ledger: Ledger)
         child=ChildPlan(label="qa", intent="checks", assignee=uid("rev")),
     )
     assert res.reviewer_assignees == (uid("rev"),)
+    assert res.child_id is None
+
+
+def test_decompose_rejects_a_code_child_assigned_to_a_non_engineer(ledger: Ledger) -> None:
+    """A `pr` child routed to a pm (produces `doc`) is refused fail-closed (BUG-006)."""
+    svc = _service(ledger, allowed_professions=("engineer", "pm"))
+    ledger.employees.create(Employee(id="pam", name="Pam", role="pm", reports_to="mgr"))
+    res = svc.decompose(
+        parent_id=uid("M"),
+        revision=REV,
+        actor_employee_id="mgr",
+        children=[
+            ChildPlan(
+                label="impl",
+                intent="build it",
+                assignee="ada",
+                outcome_kind=OutcomeKind.PR,
+            ),
+            ChildPlan(
+                label="spec",
+                intent="write the api spec",
+                assignee="pam",
+                outcome_kind=OutcomeKind.PR,
+            ),
+        ],
+    )
+    assert [(m.assignee, m.role, m.declared, m.role_kind) for m in res.outcome_mismatches] == [
+        ("pam", "pm", OutcomeKind.PR, OutcomeKind.DOC)
+    ]
+    assert res.child_ids == {}
+    assert ledger.tasks.children(uid("M")) == []
+
+
+def test_decompose_allows_a_child_matching_the_assignee_role_outcome(ledger: Ledger) -> None:
+    """A pm legitimately owns a `doc` child; an engineer a `pr` child — fan-out proceeds."""
+    svc = _service(ledger, allowed_professions=("engineer", "pm"))
+    ledger.employees.create(Employee(id="pam", name="Pam", role="pm", reports_to="mgr"))
+    res = svc.decompose(
+        parent_id=uid("M"),
+        revision=REV,
+        actor_employee_id="mgr",
+        children=[
+            ChildPlan(
+                label="impl",
+                intent="build it",
+                assignee="ada",
+                outcome_kind=OutcomeKind.PR,
+            ),
+            ChildPlan(
+                label="spec",
+                intent="write the api spec",
+                assignee="pam",
+                outcome_kind=OutcomeKind.DOC,
+            ),
+        ],
+    )
+    assert res.outcome_mismatches == ()
+    assert set(res.child_ids) == {"impl", "spec"}
+
+
+def test_decompose_with_no_declared_outcome_skips_the_capability_check(ledger: Ledger) -> None:
+    """An undeclared outcome (internal callers) is not checked — the guard is opt-in via the tool."""
+    svc = _service(ledger, allowed_professions=("engineer", "pm"))
+    ledger.employees.create(Employee(id="pam", name="Pam", role="pm", reports_to="mgr"))
+    res = svc.decompose(
+        parent_id=uid("M"),
+        revision=REV,
+        actor_employee_id="mgr",
+        children=[
+            ChildPlan(label="spec", intent="write the api spec", assignee="pam"),
+        ],
+    )
+    assert res.outcome_mismatches == ()
+    assert set(res.child_ids) == {"spec"}
+
+
+def test_submit_one_rejects_a_code_child_assigned_to_a_pm(ledger: Ledger) -> None:
+    svc = _service(ledger, allowed_professions=("engineer", "pm"))
+    _start_integrating(ledger)
+    ledger.employees.create(Employee(id="pam", name="Pam", role="pm", reports_to="mgr"))
+    res = svc.submit_one(
+        parent_id=uid("M"),
+        revision=REV,
+        actor_employee_id="mgr",
+        child=ChildPlan(
+            label="impl",
+            intent="build it",
+            assignee="pam",
+            outcome_kind=OutcomeKind.PR,
+        ),
+    )
+    assert [(m.assignee, m.role, m.declared, m.role_kind) for m in res.outcome_mismatches] == [
+        ("pam", "pm", OutcomeKind.PR, OutcomeKind.DOC)
+    ]
     assert res.child_id is None
 
 

@@ -28,6 +28,7 @@ from chorus.ledger import (
     TaskStatus,
 )
 from chorus.lifecycle import CapabilityService, DecomposeResult, MissionTeamPolicy
+from chorus.outcomes import OutcomeKind
 from chorus.testing import uid
 from chorus.workforce import Employee
 from chorus_tools import DecomposeTool
@@ -49,7 +50,9 @@ def _ctx(working_dir: Path) -> object:
     )
 
 
-def _seed(ledger: Ledger) -> None:
+def _seed(
+    ledger: Ledger, *, allowed_professions: tuple[str, ...] = ("engineer",)
+) -> None:
     lead = ledger.employees.create(Employee(id="mgr", name="Mgr", role="engineer"))
     ledger.employees.create(Employee(id="ada", name="Ada", role="engineer", reports_to="mgr"))
     ledger.employees.create(Employee(id="bob", name="Bob", role="engineer", reports_to="mgr"))
@@ -61,7 +64,7 @@ def _seed(ledger: Ledger) -> None:
             can_subdelegate=True,
             max_delegation_depth=3,
             max_team_size=3,
-            allowed_professions=("engineer",),
+            allowed_professions=allowed_professions,
             granted_by_user_id="operator",
         )
     )
@@ -208,4 +211,52 @@ def test_tool_forwards_actor_and_explicit_child_execution_mode(
     children = captured["children"]
     assert captured["actor_employee_id"] == "mgr"
     assert children[0].execution_mode is ExecutionMode.DELEGATION  # type: ignore[index]
+    assert children[0].outcome_kind is None  # type: ignore[index]
     assert result.is_error is False
+
+
+def test_tool_omitted_outcome_kind_skips_capability_check(
+    ledger: Ledger, tmp_path: Path
+) -> None:
+    """Omitting outcome_kind is backward-safe: a pm may receive undeclared work."""
+    _seed(ledger, allowed_professions=("engineer", "pm"))
+    ledger.employees.create(Employee(id="pam", name="Pam", role="pm", reports_to="mgr"))
+    BeatContext(task_id=uid("M"), run_id=REV, employee_id="mgr").write(tmp_path)
+    result = asyncio.run(
+        DecomposeTool(ledger).execute(
+            {"children": [{"label": "spec", "intent": "write the api spec", "assignee": "pam"}]},
+            _ctx(tmp_path),
+        )
+    )
+    assert result.is_error is False
+    assert "spec" in result.structured["children"]
+    assert ledger.tasks.children(uid("M")) != []
+
+
+def test_tool_refuses_declared_pr_child_assigned_to_a_pm(
+    ledger: Ledger, tmp_path: Path
+) -> None:
+    _seed(ledger, allowed_professions=("engineer", "pm"))
+    ledger.employees.create(Employee(id="pam", name="Pam", role="pm", reports_to="mgr"))
+    BeatContext(task_id=uid("M"), run_id=REV, employee_id="mgr").write(tmp_path)
+    result = asyncio.run(
+        DecomposeTool(ledger).execute(
+            {
+                "children": [
+                    {
+                        "label": "impl",
+                        "intent": "build it",
+                        "assignee": "pam",
+                        "outcome_kind": OutcomeKind.PR.value,
+                    }
+                ]
+            },
+            _ctx(tmp_path),
+        )
+    )
+    assert result.is_error is True
+    assert "pam" in result.content
+    mismatches = result.structured["outcome_mismatches"]
+    assert mismatches[0]["declared"] == OutcomeKind.PR.value
+    assert mismatches[0]["role_kind"] == OutcomeKind.DOC.value
+    assert ledger.tasks.children(uid("M")) == []

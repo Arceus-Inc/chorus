@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import pytest
+from dream.contracts.strategy import LandedPhase, RecoveryHint
 
 from chorus.heartbeat._beat import BeatDisposition, BeatOutcome
 from chorus.heartbeat._landed_outcome import derive_landed_outcome
 from chorus.ledger import ExecutionMode, Task, TaskStatus
 from chorus.ledger._models._enums import DodStatus
-from dream.contracts.strategy import LandedPhase, RecoveryHint
 
 
 def _task(**overrides: object) -> Task:
@@ -127,3 +127,27 @@ def test_derive_rejects_unmapped_state() -> None:
             _result(passed=False, disposition=BeatDisposition.ERRORED),
             DodStatus.PENDING,
         )
+
+
+def test_unmerged_pr_redispatch_is_needs_rework_not_terminal_pass() -> None:
+    landed = derive_landed_outcome(
+        _task(status=TaskStatus.TODO),
+        _result(passed=True, disposition=BeatDisposition.PASSED),
+        DodStatus.PENDING,
+        unmerged_pr=True,
+    )
+    assert landed.phase is LandedPhase.NEEDS_REWORK
+    assert landed.strategy_passed() is False
+    assert landed.recovery_hint() is RecoveryHint.REWORK
+
+
+def test_unmerged_pr_exhausted_is_stranded_not_terminal_pass() -> None:
+    landed = derive_landed_outcome(
+        _task(status=TaskStatus.BLOCKED),
+        _result(passed=True, disposition=BeatDisposition.PASSED),
+        DodStatus.PENDING,
+        unmerged_pr=True,
+    )
+    assert landed.phase is LandedPhase.STRANDED
+    assert landed.strategy_passed() is None
+    assert landed.recovery_hint() is RecoveryHint.ESCALATE

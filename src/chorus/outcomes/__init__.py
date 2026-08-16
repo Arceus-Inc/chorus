@@ -14,6 +14,7 @@ from chorus.outcomes._deliverable import (
     resolve_delivery_verifier,
 )
 from chorus.outcomes._lander import Artifact, ArtifactType, OutcomeLander
+from chorus.outcomes._outcome_kind import OutcomeKind
 from chorus.outcomes._platform import (
     Check,
     PlatformInfo,
@@ -26,6 +27,7 @@ from chorus.outcomes._platform import (
     python_check,
     runtime_brief_block,
 )
+from chorus.outcomes._pr_landing import PrIntegration, PrLanding, pr_landing, pr_landing_of
 from chorus.outcomes._registry import LanderRegistry
 from chorus.outcomes._revision import Obligation, RevisionDirection, classify
 from chorus.outcomes._verifier import (
@@ -50,8 +52,11 @@ __all__ = [
     "HumanApproval",
     "LanderRegistry",
     "Obligation",
+    "OutcomeKind",
     "OutcomeLander",
     "PlatformInfo",
+    "PrIntegration",
+    "PrLanding",
     "RevisionDirection",
     "VerificationStep",
     "Verifier",
@@ -64,6 +69,8 @@ __all__ = [
     "glob_at_least",
     "min_words",
     "native_kind_for_role",
+    "pr_landing",
+    "pr_landing_of",
     "python_check",
     "resolve_delivery_verifier",
     "runtime_brief_block",

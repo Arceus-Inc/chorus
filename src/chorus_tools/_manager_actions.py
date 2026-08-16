@@ -10,7 +10,9 @@ from pydantic import BaseModel, Field
 from chorus.heartbeat import BeatContext
 from chorus.ledger import ExecutionMode, Ledger
 from chorus.lifecycle import CapabilityService, ChildPlan
+from chorus.outcomes import OutcomeKind
 from chorus.roles import RoleRegistry
+from chorus_tools._decompose import _outcome_mismatch_result
 
 
 class SubmitTaskInput(BaseModel):
@@ -32,6 +34,13 @@ class SubmitTaskInput(BaseModel):
     replaces_task_id: str | None = Field(
         default=None,
         description="rejected or cancelled required child this corrective task replaces",
+    )
+    outcome_kind: OutcomeKind | None = Field(
+        default=None,
+        description=(
+            "optional declared deliverable. Omitted skips the capability check; when set, must "
+            "match what the assignee's role produces."
+        ),
     )
 
 
@@ -73,8 +82,12 @@ class SubmitTaskTool(BaseTool):
                 execution_mode=args.execution_mode,
                 can_subdelegate=args.can_subdelegate,
                 replaces_task_id=args.replaces_task_id,
+                outcome_kind=args.outcome_kind,
             ),
         )
+        mismatch = _outcome_mismatch_result(result.outcome_mismatches)
+        if mismatch is not None:
+            return mismatch
         if result.reviewer_assignees:
             joined = ", ".join(result.reviewer_assignees)
             return ToolResult(

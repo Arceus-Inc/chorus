@@ -32,6 +32,7 @@ One chorus spec per Paperclip research dimension — so coverage is at parity, n
 | [14](14-public-facade.md) | **Public facade** | `07-api` | the two-tier `Chorus` facade — front door + group accessors |
 | [15](15-cross-child-coherence.md) | **Cross-child coherence** | `llm-wiki` (Wiki Maintainer + `wiki-lint`) | kill the integrate split-brain: AGENTS.md as the public-surface contract, wire dream's dormant orientation/guard, gate the manager integrate on a deliverable-coherence DoD |
 | [16](16-unified-task-eval.md) | **Unified task-level eval** | — | kill the double-eval: collapse the separate chorus Reviewer beat into dream's single evaluator turn-loop so one task = one `run_task` = one verdict; the Reviewer becomes the evaluator persona, `HumanApproval` stays a governance gate |
+| [17](17-ledger-truth-guards.md) | **Ledger-truth guards** | — | `done` ⇒ landed: an unmerged PR re-dispatches the author to rebase, then blocks (BUG-005); capability-checked assignment refuses a child whose declared `OutcomeKind` its assignee's role can't produce (BUG-006) |
 
 ## The frame these specs assume (from the beliefs)
 
