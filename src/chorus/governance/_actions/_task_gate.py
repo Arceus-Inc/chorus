@@ -27,6 +27,7 @@ from chorus.ledger import (
     Wake,
     WakeReason,
 )
+from chorus.lifecycle._delegation_resolution import DelegationResolutionPolicy
 
 if TYPE_CHECKING:
     from chorus.ledger import Ledger
@@ -53,6 +54,7 @@ class TaskGateAction:
             wakes = self._ledger.finalize_beat(
                 task_id=approval.subject_id, run_id=None, dod_status=DodStatus.PASSED
             )
+            DelegationResolutionPolicy(self._ledger).approve(approval.subject_id)
             return ActionOutcome(TaskStatus.DONE.value, len(wakes))
         self._ledger.tasks.transition(approval.subject_id, TaskStatus.TODO)
         return ActionOutcome(TaskStatus.TODO.value, self._wake_assignee(approval.subject_id))
@@ -63,13 +65,19 @@ class TaskGateAction:
             dod = self._ledger.dod.get_for_task(approval.subject_id)
             if dod is not None:
                 self._ledger.dod.record_verdict(dod.id, DodStatus.FAILED)
+            DelegationResolutionPolicy(self._ledger).deny(approval.subject_id)
             return ActionOutcome(TaskStatus.BLOCKED.value)
         self._ledger.tasks.transition(approval.subject_id, TaskStatus.CANCELLED)
         return ActionOutcome(TaskStatus.CANCELLED.value)
 
     def on_revise(self, approval: Approval) -> ActionOutcome:
-        _require_gate(approval)  # only a task gate is revisable here
+        gate = _require_gate(approval)
+        if gate is ApprovalGate.ACCEPTANCE:
+            dod = self._ledger.dod.get_for_task(approval.subject_id)
+            if dod is not None:
+                self._ledger.dod.record_verdict(dod.id, DodStatus.FAILED)
         self._ledger.tasks.set_status(approval.subject_id, TaskStatus.TODO)
+        DelegationResolutionPolicy(self._ledger).request_revision(approval.subject_id)
         return ActionOutcome(TaskStatus.TODO.value, self._wake_assignee(approval.subject_id))
 
     def _wake_assignee(self, task_id: str) -> int:

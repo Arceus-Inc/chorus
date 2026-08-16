@@ -9,12 +9,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
 from chorus.errors import OrgInvariantViolation
 from chorus.governance import (
     ApprovalDecision,
     GovernancePolicy,
     GovernanceResolver,
+    HumanAuthorization,
     ResolveOutcome,
     WorkforcePlanService,
 )
@@ -34,6 +36,9 @@ from chorus.ledger import (
 )
 from chorus.roles import RoleRegistry
 from chorus.workforce import Employee, EmployeeStatus, Workforce
+
+if TYPE_CHECKING:
+    from chorus.observability import EventSink
 
 
 @dataclass(frozen=True)
@@ -56,12 +61,13 @@ class GovernanceFacade:
         workforce: Workforce,
         roles: RoleRegistry,
         policy: GovernancePolicy,
+        event_sink: EventSink | None = None,
     ) -> None:
         self._ledger = ledger
         self._workforce = workforce
         self._roles = roles
         self._policy = policy
-        self._resolver = GovernanceResolver(ledger)
+        self._resolver = GovernanceResolver(ledger, event_sink=event_sink)
         self._workforce_plans = WorkforcePlanService(
             ledger,
             workforce=workforce,
@@ -131,6 +137,20 @@ class GovernanceFacade:
         Raises ``GovernanceError`` on an unknown approval or one no longer pending."""
         return self._resolver.resolve(
             approval_id, decision=decision, decided_by_user_id=by, now=datetime.now(UTC)
+        )
+
+    def resolve_authenticated(
+        self,
+        approval_id: str,
+        *,
+        decision: ApprovalDecision,
+        authorization: HumanAuthorization,
+    ) -> ResolveOutcome:
+        """Resolve a human task gate with durable authentication evidence."""
+        return self._resolver.resolve_authenticated(
+            approval_id,
+            decision=decision,
+            authorization=authorization,
         )
 
     def approvals(self) -> list[Approval]:

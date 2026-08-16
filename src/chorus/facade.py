@@ -120,7 +120,13 @@ class Chorus:
         self._governance_policy = governance_policy or GovernancePolicy()
         # Low-level grouped surfaces (spec 14 §2.2) — built once over the same backends.
         self._inspect = InspectFacade(inspector, event_bus)
-        self._governance = GovernanceFacade(ledger, workforce, roles, self._governance_policy)
+        self._governance = GovernanceFacade(
+            ledger,
+            workforce,
+            roles,
+            self._governance_policy,
+            event_sink=event_bus,
+        )
         self._budgets = BudgetsFacade(ledger, company_id=company_id)
         self._trust = TrustFacade(ledger)
         self._routines = RoutinesFacade(ledger, workforce, inspector)

@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import UTC, datetime, timedelta, timezone
 
 import pytest
 
+from chorus.events import Event
 from chorus.governance import (
     ActionOutcome,
     ApprovalDecision,
@@ -28,6 +30,7 @@ from chorus.ledger import (
     Task,
     TaskStatus,
 )
+from chorus.outcomes import Verifier
 from chorus.testing import uid
 from chorus.workforce import Employee
 
@@ -104,6 +107,47 @@ def test_authenticated_resolution_persists_typed_immutable_proof(ledger: Ledger)
     assert approval is not None
     assert approval.decided_by_user_id == authorization.user_id
     assert approval.decided_at == authorization.decided_at
+
+
+class _FailingEventSink:
+    def emit(self, event: Event) -> None:
+        del event
+        raise RuntimeError("event delivery unavailable")
+
+
+def test_live_event_failure_returns_committed_replayable_landed_outcome(
+    ledger: Ledger,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    task_id = uid("human-acceptance")
+    _task(ledger, task_id)
+    ledger.dod.create(task_id, Verifier.human_approval())
+    resolver = GovernanceResolver(ledger, event_sink=_FailingEventSink())
+    approval = resolver.open_task_gate(
+        task_id,
+        gate_kind=ApprovalGate.ACCEPTANCE,
+        reason="human acceptance",
+    )
+
+    with caplog.at_level(logging.WARNING, logger="chorus.governance.resolver"):
+        outcome = resolver.resolve_authenticated(
+            approval.id,
+            decision=ApprovalDecision.APPROVE,
+            authorization=_authorization(),
+        )
+
+    assert outcome.landed is not None and outcome.landed.phase.value == "terminal_pass"
+    assert resolver.get_landed_outcome(approval.id) == outcome.landed
+    persisted = ledger.approvals.get(approval.id)
+    assert persisted is not None and persisted.status is ApprovalStatus.APPROVED
+    assert resolver.get_authorization_proof(approval.id) is not None
+    durable = [
+        row
+        for row in ledger.activity.by_subject("approval", approval.id)
+        if row.verb is ActivityVerb.OUTCOME_LANDED
+    ]
+    assert len(durable) == 1
+    assert "durable receipt remains" in caplog.text
 
 
 def test_duplicate_nonce_rejects_and_rolls_back_second_resolution(ledger: Ledger) -> None:

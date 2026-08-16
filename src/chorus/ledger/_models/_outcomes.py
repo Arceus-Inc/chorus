@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import datetime
 
@@ -9,6 +10,33 @@ from chorus.ledger._models._enums import (
     ArtifactType,
     DodStatus,
 )
+
+
+@dataclass(frozen=True)
+class IntegrationVerdict:
+    """Typed delegated-integration truth carried by the DoD and landed events."""
+
+    ok: bool | None = None
+    note: str | None = None
+
+    def to_dict(self) -> dict[str, bool | str | None]:
+        return {"integration_ok": self.ok, "integration_note": self.note}
+
+
+@dataclass(frozen=True)
+class MergeReceipt:
+    """The validated merge field, when an artifact resource reference declares one."""
+
+    merged: bool
+
+    @classmethod
+    def from_resource_ref(cls, resource_ref: Mapping[str, object] | None) -> MergeReceipt | None:
+        if resource_ref is None or "merged" not in resource_ref:
+            return None
+        merged = resource_ref["merged"]
+        if type(merged) is not bool:
+            raise ValueError("resource_ref.merged must be a boolean")
+        return cls(merged=merged)
 
 
 @dataclass(frozen=True)
@@ -29,7 +57,13 @@ class Dod:
     status: DodStatus = DodStatus.PENDING
     verdict: dict[str, object] | None = None
     verified_by_run_id: str | None = None
+    integration_ok: bool | None = None
+    integration_note: str | None = None
     proposed_revision: dict[str, object] | None = None  # a loosen staged for §5 approval (§1)
+
+    @property
+    def integration_verdict(self) -> IntegrationVerdict:
+        return IntegrationVerdict(ok=self.integration_ok, note=self.integration_note)
 
 
 @dataclass(frozen=True)

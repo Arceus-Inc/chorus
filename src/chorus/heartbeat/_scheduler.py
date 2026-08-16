@@ -35,6 +35,7 @@ from chorus.heartbeat._execution_profile import (
     ResolvedExecutionProfile,
 )
 from chorus.heartbeat._invokability import InvokabilityReason, invokability_block
+from chorus.heartbeat._landed_event import emit_derived_landed_outcome
 from chorus.heartbeat._landed_outcome import derive_landed_outcome
 from chorus.heartbeat._runner_for import single
 from chorus.heartbeat._wake import TickReport, Wake
@@ -42,6 +43,8 @@ from chorus.hooks import OrgHook, default_org_hooks, run_org_hooks
 from chorus.ids import mint_id
 from chorus.ledger import (
     ApprovalGate,
+    IntegrationVerdict,
+    MergeReceipt,
     TaskPriority,
     begin_beat_session,
     persist_beat_account,
@@ -65,8 +68,7 @@ from chorus.ledger._models import (
     TaskStatus,
     WakeReason,
 )
-from chorus.lifecycle import TERMINAL, record_activity
-from chorus.lifecycle._team_policy import MissionTeamPolicy
+from chorus.lifecycle import TERMINAL, DelegationResolutionPolicy, record_activity
 from chorus.memory import EpisodicStore, SprintDelta, beat_fingerprint, distilled_body
 from chorus.observability._trace import TraceStamper, trace_root
 from chorus.outcomes import DoDKind, PrLanding, Verifier, pr_landing, pr_landing_of
@@ -759,6 +761,8 @@ class Scheduler:
             run_id=run_id,
             task=task,
             employee=employee,
+            now=now,
+            execution_profile=execution_profile,
         ):
             return
 
@@ -1075,11 +1079,7 @@ class Scheduler:
         # own job (the hand-off); the subtree it owns is judged later at integrate. Re-read the task
         # so a transition during the beat is reflected.
         latest = ledger.tasks.get(task.id) or task
-        orchestrated = (
-            latest.execution_mode is ExecutionMode.DELEGATION
-            and latest.status is TaskStatus.BLOCKED
-            and ledger.tasks.has_children(task.id)
-        )
+        orchestrated = self._orchestrated_handoff(ledger, latest)
         delta = _sprint_delta(
             run_id=run_id,
             employee=employee,
@@ -1110,13 +1110,10 @@ class Scheduler:
         latest = ledger.tasks.get(task.id) or task
         dod_row = ledger.dod.get_for_task(task.id)
         dod_status = dod_row.status if dod_row is not None else None
-        orchestrated = (
-            latest.execution_mode is ExecutionMode.DELEGATION
-            and latest.status is TaskStatus.BLOCKED
-            and ledger.tasks.has_children(task.id)
-        )
+        orchestrated = self._orchestrated_handoff(ledger, latest)
         # This beat's landing only — a prior unmerged PR must not poison a later successful merge.
         unmerged_pr = this_beat_landing is not None and this_beat_landing.blocks_done
+        integration = dod_row.integration_verdict if dod_row is not None else IntegrationVerdict()
         try:
             landed = derive_landed_outcome(
                 latest,
@@ -1124,10 +1121,10 @@ class Scheduler:
                 dod_status,
                 orchestrated=orchestrated,
                 unmerged_pr=unmerged_pr,
+                integration=integration,
             )
         except ValueError:
             return
-        recovery_hint = landed.recovery_hint().value
         ledger.run_carryovers.append(
             RunCarryover(
                 run_id=run_id,
@@ -1139,22 +1136,16 @@ class Scheduler:
                 summary=result.summary,
             )
         )
-        if self._event_bus is None:
+        if self._human_acceptance_owns_landing(ledger, task.id):
             return
-        self._event_bus.emit(
-            Event(
-                kind=EventKind.OUTCOME_LANDED,
-                at=now,
-                trace_id=trace_root(ledger, task.id),
-                task_id=task.id,
-                employee_id=employee.id,
-                run_id=run_id,
-                payload={
-                    **landed.to_dict(),
-                    "passed": landed.strategy_passed(),
-                    "recovery_hint": recovery_hint,
-                },
-            )
+        emit_derived_landed_outcome(
+            ledger,
+            self._event_bus,
+            task=task,
+            landed=landed,
+            at=now,
+            employee_id=employee.id,
+            run_id=run_id,
         )
 
     def _write_lattice_beat_end(
@@ -1281,12 +1272,24 @@ class Scheduler:
             verifier=verifier,
             beat_runner=beat_runner,
         )
+        artifacts_integrated, artifact_note = self._primary_child_artifacts_integrated(task.id)
         # Operator decision (2026-07-18): employees verify their own work — no system-verifier beat
         # before closing delegated work. The lead's own integrate acceptance is the verdict; the
         # deterministic descendants check (above) and the objective rollup command floor (cheap
         # command runs the lead's beat contracts to) remain the only gates.
-        verified = result.passed and floor_passed is not False
+        verified = result.passed and floor_passed is not False and artifacts_integrated
         if not verified:
+            integration_note = (
+                "delegation integration failed: lead integration verdict did not pass"
+                if not result.passed
+                else (
+                    "delegation integration failed: objective floor did not pass"
+                    if floor_passed is False
+                    else artifact_note
+                )
+            )
+            if integration_note is None:
+                raise RuntimeError("failed delegation integration must carry a precise note")
             with ledger.transaction():
                 ledger.delegation_contracts.update_status(
                     task.id, DelegationContractStatus.INTEGRATING
@@ -1306,6 +1309,7 @@ class Scheduler:
                     run_id=run_id,
                     dod_status=DodStatus.FAILED,
                     verdict=verdict,
+                    integration=IntegrationVerdict(ok=False, note=integration_note),
                 )
                 ledger.tasks.set_status(task.id, TaskStatus.BLOCKED)
                 ledger.wakes.enqueue(
@@ -1326,8 +1330,11 @@ class Scheduler:
             employee=employee,
             result=result,
             outcome_kind=outcome_kind,
+            integration=IntegrationVerdict(ok=True),
         )
-        self._close_verified_delegation(task.id, run_id=run_id, recovered=False)
+        latest = ledger.tasks.get(task.id)
+        if latest is not None and latest.status is TaskStatus.DONE:
+            self._close_verified_delegation(task.id, run_id=run_id, recovered=False)
         return landing
 
     def _required_descendants_passed(self, task_id: str) -> bool:
@@ -1342,6 +1349,35 @@ class Scheduler:
         return bool(required) and all(
             child is not None and child.status is TaskStatus.DONE for child in required
         )
+
+    def _primary_child_artifacts_integrated(self, task_id: str) -> tuple[bool, str | None]:
+        """Require every primary child PR to carry an explicit successful merge receipt."""
+        ledger = self._require_ledger()
+        for child in ledger.tasks.children(task_id):
+            for artifact in ledger.artifacts.list_for_task(child.id):
+                if not artifact.is_primary or artifact.type is not ArtifactType.PR:
+                    continue
+                try:
+                    receipt = MergeReceipt.from_resource_ref(artifact.resource_ref)
+                except ValueError as exc:
+                    return (
+                        False,
+                        f"delegation integration failed: primary child artifact {artifact.id} "
+                        f"for task {child.id} has malformed merge evidence: {exc}",
+                    )
+                if receipt is None:
+                    return (
+                        False,
+                        f"delegation integration failed: primary child PR artifact {artifact.id} "
+                        f"for task {child.id} requires an explicit resource_ref.merged boolean",
+                    )
+                if not receipt.merged:
+                    return (
+                        False,
+                        f"delegation integration failed: primary child artifact {artifact.id} "
+                        f"for task {child.id} reports resource_ref.merged=false",
+                    )
+        return True, None
 
     def _recover_landed_delegations(self, ledger: Ledger) -> int:
         """Close delegation metadata left behind after a verified parent landed."""
@@ -1365,34 +1401,10 @@ class Scheduler:
         recovered: bool,
     ) -> bool:
         """Atomically record verification, close the contract, and archive its Team."""
-        ledger = self._require_ledger()
-        with ledger.transaction():
-            contract = ledger.delegation_contracts.get(task_id)
-            if contract is None or contract.status is DelegationContractStatus.DONE:
-                return False
-            if contract.status is not DelegationContractStatus.VERIFYING:
-                raise RuntimeError(
-                    f"delegation task {task_id!r} cannot close from {contract.status.value!r}"
-                )
-            record_activity(
-                ledger,
-                verb=ActivityVerb.PARENT_VERIFIED,
-                subject_kind="delegation_contract",
-                subject_id=task_id,
-                payload={
-                    "passed": True,
-                    "run_id": run_id,
-                    **({"recovered": True} if recovered else {}),
-                },
-            )
-            ledger.delegation_contracts.update_status(task_id, DelegationContractStatus.DONE)
-            MissionTeamPolicy(ledger).archive(contract.team_id)
-            if recovered:
-                ledger.tasks.release_locks(task_id, run_id=run_id)
-                run = ledger.runs.get(run_id)
-                if run is not None and run.wake_id is not None:
-                    ledger.wakes.mark_done(run.wake_id)
-        return True
+        del run_id  # the contract's accepted_run_id is the durable source of truth
+        return DelegationResolutionPolicy(self._require_ledger()).approve(
+            task_id, recovered=recovered
+        )
 
     async def _maybe_cap_integrate(
         self,
@@ -1402,13 +1414,15 @@ class Scheduler:
         run_id: str,
         task: Task,
         employee: Employee,
+        now: datetime,
+        execution_profile: ResolvedExecutionProfile | None,
     ) -> bool:
         """At the integrate-iteration cap, stop the loop without another model beat.
 
         Any capped parent strands for human review instead of force-accepting. Returns ``True``
         when it handled the capped beat, so ``run_beat`` returns early. Only a re-invocation whose
         subtree is already complete can be capped; a kickoff or engineer beat (no terminal subtree)
-        always returns ``False``.
+        always returns ``False``. A lost run CAS leaves durable state untouched.
         """
         if not (ledger.tasks.has_children(task.id) and ledger.tasks.all_children_terminal(task.id)):
             return False
@@ -1422,13 +1436,39 @@ class Scheduler:
                 1 for child in ledger.tasks.children(task.id) if child.status is TaskStatus.DONE
             ),
         }
+        integration: IntegrationVerdict | None = None
         if task.execution_mode is ExecutionMode.DELEGATION:
             evidence["contract_task_id"] = task.id
+            if execution_profile is not None and ledger.dod.get_for_task(task.id) is None:
+                ledger.dod.create(task.id, execution_profile.verifier)
+            artifacts_integrated, artifact_note = self._primary_child_artifacts_integrated(task.id)
+            done_children = evidence["done_children"]
+            integration_note = (
+                artifact_note
+                if isinstance(done_children, int) and done_children and not artifacts_integrated
+                else (
+                    f"delegation integration failed at cap "
+                    f"{iteration}/{self.max_integrate_iterations}: "
+                    f"{done_children} completed child deliverables; "
+                    "stranded for human review without fabricating acceptance"
+                )
+            )
+            if integration_note is None:
+                raise RuntimeError("failed cap integration must carry a precise note")
+            integration = IntegrationVerdict(ok=False, note=integration_note)
         with ledger.transaction():
             # CAS from the terminal-run fence: a concurrent cancel/finish must win, and this path
             # must not synthesize a later success/acceptance on a run that is already terminal.
             if not ledger.runs.finish(run_id, RunStatus.FAILED, outcome=evidence):
                 return True
+            if integration is not None:
+                ledger.finalize_beat(
+                    task_id=task.id,
+                    run_id=run_id,
+                    dod_status=DodStatus.FAILED,
+                    verdict=evidence,
+                    integration=integration,
+                )
             ledger.tasks.set_status(task.id, TaskStatus.BLOCKED)
             if task.execution_mode is ExecutionMode.DELEGATION:
                 ledger.delegation_contracts.update_status(task.id, DelegationContractStatus.BLOCKED)
@@ -1447,6 +1487,22 @@ class Scheduler:
                 )
         ledger.tasks.release_locks(task.id, run_id=run_id)
         ledger.wakes.mark_done(wake.id)
+        if integration is not None:
+            self._emit_outcome_landed(
+                task=task,
+                result=BeatOutcome(
+                    passed=False,
+                    outcome=evidence,
+                    summary=integration.note or "capped integration stranded",
+                    disposition=BeatDisposition.ERRORED,
+                ),
+                run_id=run_id,
+                employee=employee,
+                now=now,
+                files_touched=(),
+                todo_digest="",
+                this_beat_landing=None,
+            )
         return True
 
     def _memory_scope(self, employee: Employee) -> str:
@@ -1465,6 +1521,7 @@ class Scheduler:
         employee: Employee,
         result: BeatOutcome,
         outcome_kind: str | None,
+        integration: IntegrationVerdict | None = None,
     ) -> PrLanding | None:
         """A passed beat lands its role's outcome, then ``done`` — unless a person decides.
 
@@ -1499,16 +1556,21 @@ class Scheduler:
         # and the gate's approval path (blocked → todo) then hits an illegal ``… → todo``. Checked
         # before the DoD branches so it guards every gated path.
         if any(approval.subject_id == task_id for approval in ledger.approvals.pending()):
+            if integration is not None:
+                ledger.record_integration_verdict(task_id, integration)
             task = ledger.tasks.get(task_id)
             if task is not None and task.status is not TaskStatus.BLOCKED:
                 ledger.tasks.transition(task_id, TaskStatus.BLOCKED)
             return None
         if verifier is not None and verifier.kind is DoDKind.HUMAN_APPROVAL:
-            GovernanceResolver(ledger).open_task_gate(
-                task_id,
-                gate_kind=ApprovalGate.ACCEPTANCE,
-                reason=f"human-approval DoD for {task_id}",
-            )
+            with ledger.transaction():
+                if integration is not None:
+                    ledger.record_integration_verdict(task_id, integration)
+                GovernanceResolver(ledger).open_task_gate(
+                    task_id,
+                    gate_kind=ApprovalGate.ACCEPTANCE,
+                    reason=f"human-approval DoD for {task_id}",
+                )
             return None
         artifact = await self._land_outcome(
             task_id,
@@ -1525,9 +1587,35 @@ class Scheduler:
             self._route_merge_conflict(task_id, author=employee)
             return landing
         ledger.finalize_beat(
-            task_id=task_id, run_id=run_id, dod_status=DodStatus.PASSED, verdict=verdict
+            task_id=task_id,
+            run_id=run_id,
+            dod_status=DodStatus.PASSED,
+            verdict=verdict,
+            integration=integration,
         )
         return landing
+
+    def _human_acceptance_owns_landing(self, ledger: Ledger, task_id: str) -> bool:
+        """The authenticated resolver is the sole publisher for HumanApproval acceptance."""
+        verifier = ledger.dod.verifier_for_task(task_id)
+        if verifier is None or verifier.kind is not DoDKind.HUMAN_APPROVAL:
+            return False
+        return any(
+            approval.gate_kind is ApprovalGate.ACCEPTANCE
+            for approval in ledger.approvals.for_subject(task_id)
+        )
+
+    def _orchestrated_handoff(self, ledger: Ledger, task: Task) -> bool:
+        """True only when this beat parked a still-open delegated subtree.
+
+        Failed integration, cap stranding, and human-approval wait also leave a parent BLOCKED with
+        children; those happen after the subtree is already terminal and must not emit DELEGATED.
+        """
+        if task.execution_mode is not ExecutionMode.DELEGATION or task.status is not TaskStatus.BLOCKED:
+            return False
+        if not ledger.tasks.has_children(task.id):
+            return False
+        return not ledger.tasks.all_children_terminal(task.id)
 
     def _route_block(self, task_id: str) -> None:
         """Route a blocked child to its manager parent (spec 15).

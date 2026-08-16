@@ -114,8 +114,8 @@ def test_acceptance_approve_marks_done_and_fires_dependents(ledger: Ledger) -> N
     res = _resolver(ledger)
     approval = res.open_task_gate(uid("t1"), gate_kind=ApprovalGate.ACCEPTANCE, reason="sign off")
 
-    outcome = res.resolve(
-        approval.id, decision=ApprovalDecision.APPROVE, decided_by_user_id=_USER, now=_NOW
+    outcome = res.resolve_authenticated(
+        approval.id, decision=ApprovalDecision.APPROVE, authorization=_authorization()
     )
 
     assert isinstance(outcome, ResolveOutcome)
@@ -132,14 +132,42 @@ def test_acceptance_deny_stays_blocked_and_records_failed(ledger: Ledger) -> Non
     res = _resolver(ledger)
     approval = res.open_task_gate(uid("t1"), gate_kind=ApprovalGate.ACCEPTANCE, reason="sign off")
 
-    outcome = res.resolve(
-        approval.id, decision=ApprovalDecision.DENY, decided_by_user_id=_USER, now=_NOW
+    outcome = res.resolve_authenticated(
+        approval.id, decision=ApprovalDecision.DENY, authorization=_authorization()
     )
 
     assert outcome.decision is ApprovalStatus.DENIED
     assert outcome.subject_status == TaskStatus.BLOCKED.value
     assert ledger.tasks.get(uid("t1")).status is TaskStatus.BLOCKED  # type: ignore[union-attr]
     assert ledger.dod.get_for_task(uid("t1")).status is DodStatus.FAILED  # type: ignore[union-attr]
+
+
+@pytest.mark.parametrize(
+    "decision",
+    [
+        ApprovalDecision.APPROVE,
+        ApprovalDecision.DENY,
+        ApprovalDecision.REQUEST_REVISION,
+    ],
+)
+def test_legacy_human_acceptance_resolution_fails_closed(
+    ledger: Ledger, decision: ApprovalDecision
+) -> None:
+    _task(ledger, uid("t1"))
+    ledger.dod.create(uid("t1"), Verifier.human_approval())
+    res = _resolver(ledger)
+    approval = res.open_task_gate(
+        uid("t1"), gate_kind=ApprovalGate.ACCEPTANCE, reason="human sign-off"
+    )
+
+    with pytest.raises(GovernanceError, match="requires authenticated"):
+        res.resolve(approval.id, decision=decision, decided_by_user_id=_USER, now=_NOW)
+
+    persisted = ledger.approvals.get(approval.id)
+    assert persisted is not None and persisted.status is ApprovalStatus.PENDING
+    task = ledger.tasks.get(uid("t1"))
+    assert task is not None and task.status is TaskStatus.BLOCKED
+    assert res.get_authorization_proof(approval.id) is None
 
 
 # -- authorization gate -----------------------------------------------------------------------------

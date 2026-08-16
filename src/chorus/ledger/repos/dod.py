@@ -11,7 +11,7 @@ from dataclasses import asdict
 from typing import cast
 
 from chorus.ids import mint_id
-from chorus.ledger._models import Dod, DodStatus
+from chorus.ledger._models import Dod, DodStatus, IntegrationVerdict
 from chorus.ledger.repos._base import (
     LedgerConnection,
     LedgerRow,
@@ -86,18 +86,43 @@ class DodRepo:
         *,
         verdict: dict[str, object] | None = None,
         run_id: str | None = None,
+        integration: IntegrationVerdict | None = None,
     ) -> None:
         now = utcnow_iso()
+        if integration is None:
+            self._conn.execute(
+                "UPDATE dod SET status = ?, verdict = ?, "
+                "verified_by_run_id = COALESCE(?, verified_by_run_id), updated_at = ? WHERE id = ?",
+                (
+                    status.value,
+                    dumps(verdict) if verdict is not None else None,
+                    run_id,
+                    now,
+                    dod_id,
+                ),
+            )
+        else:
+            self._conn.execute(
+                "UPDATE dod SET status = ?, verdict = ?, "
+                "verified_by_run_id = COALESCE(?, verified_by_run_id), integration_ok = ?, "
+                "integration_note = ?, updated_at = ? WHERE id = ?",
+                (
+                    status.value,
+                    dumps(verdict) if verdict is not None else None,
+                    run_id,
+                    integration.ok,
+                    integration.note,
+                    now,
+                    dod_id,
+                ),
+            )
+        self._conn.commit()
+
+    def record_integration_verdict(self, dod_id: str, integration: IntegrationVerdict) -> None:
+        """Persist integration truth without prematurely resolving a human-approval DoD."""
         self._conn.execute(
-            "UPDATE dod SET status = ?, verdict = ?, "
-            "verified_by_run_id = COALESCE(?, verified_by_run_id), updated_at = ? WHERE id = ?",
-            (
-                status.value,
-                dumps(verdict) if verdict is not None else None,
-                run_id,
-                now,
-                dod_id,
-            ),
+            "UPDATE dod SET integration_ok = ?, integration_note = ?, updated_at = ? WHERE id = ?",
+            (integration.ok, integration.note, utcnow_iso(), dod_id),
         )
         self._conn.commit()
 
@@ -192,5 +217,7 @@ def _row_to_dod(row: LedgerRow) -> Dod:
         status=DodStatus(row["status"]),
         verdict=loads(row["verdict"]),
         verified_by_run_id=row["verified_by_run_id"],
+        integration_ok=row["integration_ok"],
+        integration_note=row["integration_note"],
         proposed_revision=loads(row["proposed_revision"]),
     )

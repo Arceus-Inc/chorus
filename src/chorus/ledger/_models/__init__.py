@@ -95,6 +95,8 @@ from chorus.ledger._models._outcomes import (
     Artifact,
     ArtifactRevision,
     Dod,
+    IntegrationVerdict,
+    MergeReceipt,
 )
 from chorus.ledger._models._rollouts import (
     PromotionGates,
@@ -183,8 +185,10 @@ __all__ = [
     "Goal",
     "GoalLevel",
     "HumanAuthorizationProof",
+    "IntegrationVerdict",
     "ManagementGrantDraft",
     "ManagementProfile",
+    "MergeReceipt",
     "Message",
     "MessageKind",
     "Monitor",

@@ -7,6 +7,8 @@ closes the loop with ``resolve`` + the ``approvals`` inbox, all through the test
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 import pytest
 
 from chorus.facade import Caps, Chorus
@@ -14,10 +16,12 @@ from chorus.governance import (
     ApprovalDecision,
     GovernanceError,
     GovernancePolicy,
+    HumanAuthorization,
     WorkforcePlanService,
 )
 from chorus.ledger import (
     ApprovalGate,
+    AuthenticationMethod,
     Ledger,
     ManagementGrantDraft,
     PlannedEmployee,
@@ -32,6 +36,21 @@ from chorus.testing import open_test_ledger, uid
 from chorus.workforce import EmployeeStatus, LedgerWorkforce
 
 pytestmark = pytest.mark.integration
+
+_NOW = datetime(2026, 8, 9, 12, tzinfo=UTC)
+
+
+def _authorization() -> HumanAuthorization:
+    return HumanAuthorization(
+        decision_id=uid("facade-decision"),
+        user_id="boss",
+        method=AuthenticationMethod.STEP_UP,
+        authenticated_at=_NOW,
+        nonce=uid("facade-nonce"),
+        decided_at=_NOW,
+        request_id="facade-governance",
+        request_hash="sha256:facade-governance",
+    )
 
 
 def _chorus(ledger: Ledger, policy: GovernancePolicy | None = None) -> Chorus:
@@ -87,8 +106,31 @@ def test_open_task_gate_then_resolve_clears_the_inbox() -> None:
             uid("t1"), gate_kind=ApprovalGate.ACCEPTANCE, reason="needs sign-off"
         )
         assert approval.id in {a.id for a in chorus.governance.approvals()}
-        chorus.governance.resolve(approval.id, decision=ApprovalDecision.APPROVE, by="boss")
+        chorus.governance.resolve_authenticated(
+            approval.id,
+            decision=ApprovalDecision.APPROVE,
+            authorization=_authorization(),
+        )
         assert chorus.governance.approvals() == []
+    finally:
+        ledger.close()
+
+
+def test_facade_resolve_cannot_bypass_an_acceptance_gate() -> None:
+    ledger = open_test_ledger()
+    try:
+        chorus = _chorus(ledger)
+        ledger.tasks.submit(Task(id=uid("t1"), intent="risky deploy"))
+        approval = chorus.governance.open_gate(
+            uid("t1"), gate_kind=ApprovalGate.ACCEPTANCE, reason="requires real authentication"
+        )
+
+        with pytest.raises(GovernanceError, match="requires authenticated"):
+            chorus.governance.resolve(approval.id, decision=ApprovalDecision.APPROVE, by="boss")
+
+        task = ledger.tasks.get(uid("t1"))
+        assert task is not None and task.status is TaskStatus.BLOCKED
+        assert [pending.id for pending in chorus.governance.approvals()] == [approval.id]
     finally:
         ledger.close()
 
@@ -129,16 +171,24 @@ def test_human_governance_facade_applies_a_ceo_workforce_proposal() -> None:
                     reports_to_ref="ceo",
                 ),
             ),
-            management_grants=(
-                ManagementGrantDraft(
-                    employee_ref="ceo",
-                    can_lead=True,
-                    can_subdelegate=False,
-                    max_delegation_depth=1,
-                    max_team_size=2,
-                    allowed_professions=("analyst",),
+                management_grants=(
+                    ManagementGrantDraft(
+                        employee_ref="ceo",
+                        can_lead=True,
+                        can_subdelegate=False,
+                        max_delegation_depth=1,
+                        max_team_size=2,
+                        allowed_professions=("analyst",),
+                    ),
+                    ManagementGrantDraft(
+                        employee_ref="analyst",
+                        can_lead=True,
+                        can_subdelegate=False,
+                        max_delegation_depth=1,
+                        max_team_size=2,
+                        allowed_professions=("analyst",),
+                    ),
                 ),
-            ),
         )
         proposed = WorkforcePlanService(
             ledger,
