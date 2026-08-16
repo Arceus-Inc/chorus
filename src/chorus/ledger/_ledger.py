@@ -381,6 +381,27 @@ class Ledger:
             self._complete_goal_if_root(task_id)
             return self._fire_downstream_wakes(task_id)
 
+    def cancel_task(self, task_id: str) -> bool:
+        """Atomically terminalize one task and drain the work that could revive it.
+
+        Returns ``False`` for a missing or already-completed/rejected task. Repeating a successful
+        cancellation is a no-op that returns ``True`` after reapplying the durable cleanup.
+        """
+        with self.transaction():
+            task = self.tasks.get(task_id)
+            if task is None or task.status in (TaskStatus.DONE, TaskStatus.REJECTED):
+                return False
+            self.tasks.cancel(task_id)
+            self.runs.cancel_running_for_task(task_id)
+            self.wakes.finish_for_task(task_id)
+            session = self.agent_sessions.get_open_for_task(task_id)
+            if session is not None:
+                self.agent_sessions.abort(session.id)
+            recovery = self.recovery_actions.active_for_source(task_id)
+            if recovery is not None:
+                self.recovery_actions.fold(recovery.id, resolution_note="task cancelled")
+        return True
+
     def _complete_goal_if_root(self, task_id: str) -> None:
         """Roll a goal up to ``done`` when its delegation-root task lands ``done``.
 

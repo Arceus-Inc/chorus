@@ -66,6 +66,33 @@ class _CannedBeat:
         return self._outcome
 
 
+class _CancellingBeat:
+    """Cancel its task while the external call is in flight, then report usage."""
+
+    def __init__(self, ledger: Ledger) -> None:
+        self._ledger = ledger
+
+    async def run_task(
+        self,
+        *,
+        task_id: str,
+        intent: str,
+        verification: object = (),
+        rubric: object = "",
+        observer: object = None,
+        run_id: str | None = None,
+    ) -> BeatOutcome:
+        assert self._ledger.cancel_task(task_id)
+        return BeatOutcome(
+            passed=True,
+            summary="finished after cancellation",
+            cost_cents=17,
+            model="gpt-test",
+            input_tokens=11,
+            output_tokens=7,
+        )
+
+
 class _FakeWorkforce:
     """A minimal :class:`~chorus.workforce.Workforce` — only ``get`` is exercised by a beat."""
 
@@ -158,6 +185,37 @@ async def test_beat_marks_wake_done(ledger: Ledger) -> None:
     assert done is not None
     assert done.status.value == "done"
     assert ledger.wakes.queued() == []
+
+
+async def test_cancelled_task_does_not_start_a_claimed_beat(ledger: Ledger) -> None:
+    wake = _setup_task(ledger)
+    assert ledger.cancel_task(uid("t1"))
+
+    beat = _FakeBeat(passed=True)
+    await _wired(ledger, beat).run_beat(wake, run_id=uid("r1"), now=_NOW)
+
+    assert beat.calls == []
+    assert ledger.runs.get(uid("r1")) is None
+    task = ledger.tasks.get(uid("t1"))
+    assert task is not None
+    assert task.status is TaskStatus.CANCELLED
+
+
+async def test_in_flight_cancellation_still_records_returned_usage(ledger: Ledger) -> None:
+    wake = _setup_task(ledger)
+
+    await _wired(ledger, _CancellingBeat(ledger)).run_beat(
+        wake, run_id=uid("r1"), now=_NOW
+    )
+
+    task = ledger.tasks.get(uid("t1"))
+    assert task is not None
+    assert task.status is TaskStatus.CANCELLED
+    assert ledger.cost_events.spent_cents(uid("e1")) == 17
+    events = ledger.cost_events.for_run(uid("r1"))
+    assert len(events) == 1
+    assert events[0].input_tokens == 11
+    assert events[0].output_tokens == 7
 
 
 async def test_passed_beat_records_dod_verdict(ledger: Ledger) -> None:

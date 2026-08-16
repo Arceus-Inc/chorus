@@ -155,21 +155,34 @@ class TaskRepo:
         self._conn.commit()
 
     def set_status(self, task_id: str, status: TaskStatus) -> None:
-        """Transition a task, stamping the matching ``*_at`` column (spec 02 §2)."""
+        """Transition an active task, preserving an operator cancellation (spec 02 §2)."""
         now = utcnow_iso()
         stamp = _STATUS_STAMP.get(status.value)
         if stamp is not None:
             self._conn.execute(
                 f"UPDATE task SET status = ?, updated_at = ?, {stamp} = COALESCE({stamp}, ?) "
-                "WHERE id = ?",
+                "WHERE id = ? AND status != 'cancelled'",
                 (status.value, now, now, task_id),
             )
         else:
             self._conn.execute(
-                "UPDATE task SET status = ?, updated_at = ? WHERE id = ?",
+                "UPDATE task SET status = ?, updated_at = ? WHERE id = ? "
+                "AND status != 'cancelled'",
                 (status.value, now, task_id),
             )
         self._conn.commit()
+
+    def cancel(self, task_id: str) -> bool:
+        """Terminalize a non-terminal task and release either execution lock."""
+        now = utcnow_iso()
+        cursor = self._conn.execute(
+            "UPDATE task SET status = 'cancelled', checkout_run_id = NULL, execution_run_id = NULL, "
+            "updated_at = ?, cancelled_at = COALESCE(cancelled_at, ?) "
+            "WHERE id = ? AND status NOT IN ('done', 'cancelled', 'rejected')",
+            (now, now, task_id),
+        )
+        self._conn.commit()
+        return bool(cursor.rowcount == 1)
 
     def transition(self, task_id: str, target: TaskStatus) -> None:
         """Guarded status PATCH — reject an illegal edge before writing (spec 02 §2).
