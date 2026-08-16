@@ -1,7 +1,7 @@
 # Human intervention backlog
 
 **Last updated:** 2026-08-16  
-**Status:** 6 open decisions blocking merge or stack rebasing
+**Status:** 8 open decisions blocking merge or stack rebasing
 
 ## Maintenance rule
 
@@ -29,6 +29,16 @@ Record **only** PRs that need an explicit human product, architecture, or securi
 
 ---
 
+## Chorus [#81 — credential brokerage](https://github.com/Arceus-Inc/chorus/pull/81)
+
+| Field | Detail |
+|---|---|
+| **Decision** | Wait for parked [Dream #84](https://github.com/Arceus-Inc/dream/pull/84) (typed brokered credential contract) **or** reject Chorus-only persistence without the Dream ToolContext broker seam. Do not merge until Dream #84 is accepted. |
+| **Why not automate** | Blocked on Dream #84. Landing #81 first would persist credentials without the shared ToolContext broker contract — a cross-repo security/architecture fork, not a rebase. |
+| **Unblock** | Choose: **(A)** accept Dream #84 → rebase/merge #81 against the typed broker contract; **(B)** reject #81 if Chorus-only persistence without the broker seam is not acceptable. |
+
+---
+
 ## Chorus [#88 — default-on OTLP export](https://github.com/Arceus-Inc/chorus/pull/88)
 
 | Field | Detail |
@@ -48,6 +58,16 @@ Stack: [#97 coach](https://github.com/Arceus-Inc/chorus/pull/97) → [#98 run pi
 | **Decision** | Rewrite #97 (Reflection Coach routine + factory wiring) for the current AGENTS.md / harness factory — **or** drop #97 and retarget #98–#101 to anchor on #96's pinned agent-config model without the paused coach role. |
 | **Why not automate** | #97 was built against a pre-#96 factory; its role catalog, routine install, and self-exclusion assumptions may not match today's composition root. Retargeting the DB/artifact chain (#98–#101) without choosing the coach entrypoint risks a broken or unsafe learning loop. |
 | **Unblock** | Pick stack shape: **(A)** rewrite #97 → rebase #98–#101; **(B)** close #97 → rebase #98 onto #96 and adjust proposal source constraints in #99. Do not merge #98+ until the anchor PR is settled. |
+
+---
+
+## Chorus [#118 — Lattice applied outcome edges](https://github.com/Arceus-Inc/chorus/pull/118)
+
+| Field | Detail |
+|---|---|
+| **Decision** | Whether to land the Lattice postgres atom/lineage stack before Chorus injects `LatticeRuntime` + `lattice_selection_seal_outbox`. |
+| **Why not automate** | Blocked on the unmerged Lattice stack ([Lattice #21](https://github.com/Arceus-Inc/lattice/pull/21) and parents [#10](https://github.com/Arceus-Inc/lattice/pull/10)–[#20](https://github.com/Arceus-Inc/lattice/pull/20)). Chorus cannot safely inject Lattice runtime/outbox against an unmerged atom/lineage schema. |
+| **Unblock** | Choose: **(A)** merge Lattice #10–#21 first, then rebase/merge #118; **(B)** hold or retarget #118 until the Lattice stack is accepted. |
 
 ---
 
