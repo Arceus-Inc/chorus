@@ -15,6 +15,10 @@ from chorus.ledger.repos._base import (
     utcnow_iso,
 )
 
+_TERMINAL_RUN_STATUSES = frozenset(
+    {RunStatus.SUCCEEDED, RunStatus.FAILED, RunStatus.CANCELLED, RunStatus.TIMED_OUT}
+)
+
 
 class RunRepo:
     """Create + read + finish ``run`` rows."""
@@ -143,22 +147,75 @@ class RunRepo:
         liveness_state: str | None = None,
         outcome: dict[str, object] | None = None,
         usage: dict[str, object] | None = None,
-    ) -> None:
-        now = utcnow_iso()
-        self._conn.execute(
+    ) -> bool:
+        """Renew a running run or finish a queued/running run, returning whether the CAS won.
+
+        ``RUNNING`` is an explicit liveness update and never revives a terminal row. Terminal targets
+        preserve the original public contract by accepting a default-created ``QUEUED`` run, while
+        still making the first terminal writer permanent.
+        """
+        if status is RunStatus.RUNNING:
+            cursor = self._conn.execute(
+                "UPDATE run SET liveness_state = COALESCE(?, liveness_state), "
+                "outcome = COALESCE(?, outcome), usage = COALESCE(?, usage) "
+                "WHERE id = ? AND status = 'running'",
+                (
+                    liveness_state,
+                    dumps(outcome) if outcome is not None else None,
+                    dumps(usage) if usage is not None else None,
+                    run_id,
+                ),
+            )
+            self._conn.commit()
+            return bool(cursor.rowcount == 1)
+        if status not in _TERMINAL_RUN_STATUSES:
+            raise ValueError(f"{status.value} is not a valid finish target")
+        return self._finish_terminal(
+            run_id,
+            status,
+            liveness_state=liveness_state,
+            outcome=outcome,
+            usage=usage,
+            require_running=False,
+        )
+
+    def reap_running(self, run_id: str, *, liveness_state: str = "reaped") -> bool:
+        """Strictly transition one ``RUNNING`` run to ``TIMED_OUT`` for the watchdog."""
+        return self._finish_terminal(
+            run_id,
+            RunStatus.TIMED_OUT,
+            liveness_state=liveness_state,
+            outcome=None,
+            usage=None,
+            require_running=True,
+        )
+
+    def _finish_terminal(
+        self,
+        run_id: str,
+        status: RunStatus,
+        *,
+        liveness_state: str | None,
+        outcome: dict[str, object] | None,
+        usage: dict[str, object] | None,
+        require_running: bool,
+    ) -> bool:
+        expected = "status = 'running'" if require_running else "status IN ('queued', 'running')"
+        cursor = self._conn.execute(
             "UPDATE run SET status = ?, liveness_state = COALESCE(?, liveness_state), "
             "outcome = COALESCE(?, outcome), usage = COALESCE(?, usage), finished_at = ? "
-            "WHERE id = ? AND status != 'cancelled'",
+            f"WHERE id = ? AND {expected}",
             (
                 status.value,
                 liveness_state,
                 dumps(outcome) if outcome is not None else None,
                 dumps(usage) if usage is not None else None,
-                now,
+                utcnow_iso(),
                 run_id,
             ),
         )
         self._conn.commit()
+        return bool(cursor.rowcount == 1)
 
 
 def _row_to_run(row: LedgerRow) -> Run:
