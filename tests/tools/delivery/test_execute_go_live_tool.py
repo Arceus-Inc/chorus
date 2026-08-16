@@ -8,13 +8,23 @@ staged draft is publishable. The backend is a fake — the real ones are tested 
 from __future__ import annotations
 
 import asyncio
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 import pytest
 
 from chorus.heartbeat import BeatContext
-from chorus.ledger import Approval, ApprovalGate, ApprovalSubjectKind, Ledger
+from chorus.ledger import (
+    Approval,
+    ApprovalGate,
+    ApprovalStatus,
+    ApprovalSubjectKind,
+    AuthenticationMethod,
+    AuthorizationVerdict,
+    HumanAuthorizationProof,
+    Ledger,
+)
 from chorus.testing import uid
 from chorus_tools.cms import ContentType, DraftRef
 from chorus_tools.cms._index import CmsDraftIndex
@@ -25,6 +35,7 @@ from chorus_tools.delivery._tool import ExecuteGoLiveInput, ExecuteGoLiveTool
 pytestmark = pytest.mark.integration
 
 _TASK = "task-1"
+_PROOF_AT = datetime(2026, 8, 16, 12, 0, tzinfo=UTC)
 
 
 class _FakeBackend:
@@ -77,6 +88,38 @@ def _open_gate(ledger: Ledger, approval_id: str = uid("apr_1"), task_id: str = _
     )
 
 
+def _terminalize_authorization(
+    ledger: Ledger,
+    approval_id: str,
+    *,
+    decided_by_user_id: str,
+    status: ApprovalStatus = ApprovalStatus.APPROVED,
+) -> None:
+    verdict = {
+        ApprovalStatus.APPROVED: AuthorizationVerdict.APPROVE,
+        ApprovalStatus.DENIED: AuthorizationVerdict.DENY,
+        ApprovalStatus.REVISION_REQUESTED: AuthorizationVerdict.REQUEST_REVISION,
+    }[status]
+    with ledger.transaction():
+        ledger.approvals.set_status(
+            approval_id, status, decided_by_user_id=decided_by_user_id, decided_at=_PROOF_AT
+        )
+        ledger.human_authorization_proofs.record(
+            HumanAuthorizationProof(
+                decision_id=uid(f"auth-decision-{approval_id}-{status.value}"),
+                approval_id=approval_id,
+                user_id=decided_by_user_id,
+                method=AuthenticationMethod.SESSION,
+                authenticated_at=_PROOF_AT,
+                nonce=uid(f"auth-nonce-{approval_id}-{status.value}"),
+                decided_at=_PROOF_AT,
+                request_id=f"test-{approval_id}",
+                request_hash=f"sha256:{approval_id}:{status.value}",
+                verdict=verdict,
+            )
+        )
+
+
 def _run(tool: ExecuteGoLiveTool, payload: dict[str, object], tmp: Path) -> Any:
     return asyncio.run(tool.execute(dict(payload), _ctx(tmp)))
 
@@ -114,7 +157,9 @@ class TestFailClosed:
         _wire_beat(tmp_path)
         _stage_draft(tmp_path)
         _open_gate(ledger)
-        ledger.approvals.deny(uid("apr_1"), decided_by_user_id="boss")
+        _terminalize_authorization(
+            ledger, uid("apr_1"), decided_by_user_id="boss", status=ApprovalStatus.DENIED
+        )
         backend = _FakeBackend()
         res = _run(ExecuteGoLiveTool(ledger, backend), _PUBLISH, tmp_path)
         assert res.is_error is True
@@ -125,7 +170,7 @@ class TestFailClosed:
         _wire_beat(tmp_path)  # beat is task-1
         _stage_draft(tmp_path)
         _open_gate(ledger, approval_id=uid("apr_other"), task_id="SOMEONE-ELSES-TASK")
-        ledger.approvals.approve(uid("apr_other"), decided_by_user_id="boss")
+        _terminalize_authorization(ledger, uid("apr_other"), decided_by_user_id="boss")
         backend = _FakeBackend()
         res = _run(
             ExecuteGoLiveTool(ledger, backend),
@@ -138,7 +183,7 @@ class TestFailClosed:
     def test_approved_but_nothing_staged_rejected(self, ledger: Ledger, tmp_path: Path) -> None:
         _wire_beat(tmp_path)  # no cms draft staged
         _open_gate(ledger)
-        ledger.approvals.approve(uid("apr_1"), decided_by_user_id="boss")
+        _terminalize_authorization(ledger, uid("apr_1"), decided_by_user_id="boss")
         backend = _FakeBackend()
         res = _run(ExecuteGoLiveTool(ledger, backend), _PUBLISH, tmp_path)
         assert res.is_error is True
@@ -153,7 +198,7 @@ class TestApprovedExecutes:
         _wire_beat(tmp_path)
         staged = _stage_draft(tmp_path)
         _open_gate(ledger)
-        ledger.approvals.approve(uid("apr_1"), decided_by_user_id="boss")
+        _terminalize_authorization(ledger, uid("apr_1"), decided_by_user_id="boss")
         backend = _FakeBackend()
 
         res = _run(ExecuteGoLiveTool(ledger, backend), _PUBLISH, tmp_path)
@@ -174,7 +219,7 @@ class TestApprovedExecutes:
         _wire_beat(tmp_path)
         _stage_draft(tmp_path)
         _open_gate(ledger)
-        ledger.approvals.approve(uid("apr_1"), decided_by_user_id="boss")
+        _terminalize_authorization(ledger, uid("apr_1"), decided_by_user_id="boss")
         backend = _FakeBackend()
         tool = ExecuteGoLiveTool(ledger, backend)
 
@@ -190,7 +235,7 @@ class TestApprovedExecutes:
         _wire_beat(tmp_path)
         _stage_draft(tmp_path)
         _open_gate(ledger)
-        ledger.approvals.approve(uid("apr_1"), decided_by_user_id="boss")
+        _terminalize_authorization(ledger, uid("apr_1"), decided_by_user_id="boss")
 
         res = _run(ExecuteGoLiveTool(ledger, _RaisingBackend()), _PUBLISH, tmp_path)
 
@@ -219,7 +264,7 @@ class TestDuplicateGateResolution:
         _wire_beat(tmp_path)
         _stage_draft(tmp_path)
         _open_gate(ledger, approval_id=uid("apr_1"))
-        ledger.approvals.approve(uid("apr_1"), decided_by_user_id="boss")
+        _terminalize_authorization(ledger, uid("apr_1"), decided_by_user_id="boss")
         _open_gate(ledger, approval_id=uid("apr_dup"))  # accidental re-stage, newer, pending
         backend = _FakeBackend()
 
@@ -235,10 +280,10 @@ class TestDuplicateGateResolution:
         _wire_beat(tmp_path)
         _stage_draft(tmp_path)
         _open_gate(ledger, approval_id=uid("apr_1"))
-        ledger.approvals.approve(uid("apr_1"), decided_by_user_id="boss")
+        _terminalize_authorization(ledger, uid("apr_1"), decided_by_user_id="boss")
         _open_gate(ledger, approval_id=uid("apr_dup"))
-        ledger.approvals.deny(
-            uid("apr_dup"), decided_by_user_id="boss"
+        _terminalize_authorization(
+            ledger, uid("apr_dup"), decided_by_user_id="boss", status=ApprovalStatus.DENIED
         )  # human kills the duplicate
         backend = _FakeBackend()
 
@@ -253,7 +298,7 @@ class TestDuplicateGateResolution:
         _wire_beat(tmp_path)
         _stage_draft(tmp_path)
         _open_gate(ledger, approval_id=uid("apr_1"))
-        ledger.approvals.approve(uid("apr_1"), decided_by_user_id="boss")
+        _terminalize_authorization(ledger, uid("apr_1"), decided_by_user_id="boss")
         backend = _FakeBackend()
         tool = ExecuteGoLiveTool(ledger, backend)
         _run(tool, _PUBLISH, tmp_path)  # delivered

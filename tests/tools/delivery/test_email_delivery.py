@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from tests.tools.delivery.test_execute_go_live_tool import _terminalize_authorization
 
 from chorus.heartbeat import BeatContext
 from chorus.ledger import Approval, ApprovalGate, ApprovalSubjectKind, Ledger
@@ -107,7 +108,7 @@ def _approved_email_stage(ledger: Ledger, tmp: Path) -> DraftRef:
             gate_kind=ApprovalGate.AUTHORIZATION,
         )
     )
-    ledger.approvals.approve(uid("apr_1"), decided_by_user_id="boss")
+    _terminalize_authorization(ledger, uid("apr_1"), decided_by_user_id="boss")
     return staged
 
 

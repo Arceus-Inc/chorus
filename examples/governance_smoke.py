@@ -30,8 +30,12 @@ _EXAMPLE_COMPANY = str(uuid.uuid5(uuid.NAMESPACE_URL, "chorus-example"))  # one 
 
 from datetime import UTC, datetime
 
-from chorus.governance import ApprovalDecision, GovernanceResolver
-from chorus.ledger import ApprovalGate, Ledger, Task, TaskStatus
+from chorus.governance import (
+    ApprovalDecision,
+    GovernanceResolver,
+    HumanAuthorization,
+)
+from chorus.ledger import ApprovalGate, AuthenticationMethod, Ledger, Task, TaskStatus
 from chorus.workforce import Employee
 
 _NOW = datetime(2026, 6, 16, 12, 0, tzinfo=UTC)
@@ -86,8 +90,19 @@ def main() -> int:
         gate2 = resolver.open_task_gate(
             _id("risky"), gate_kind=ApprovalGate.AUTHORIZATION, reason="authorise a Friday deploy"
         )
-        deny = resolver.resolve(
-            gate2.id, decision=ApprovalDecision.DENY, decided_by_user_id=_USER, now=_NOW
+        deny = resolver.resolve_authenticated(
+            gate2.id,
+            decision=ApprovalDecision.DENY,
+            authorization=HumanAuthorization(
+                decision_id=_id("decision"),
+                user_id=_USER,
+                method=AuthenticationMethod.SESSION,
+                authenticated_at=_NOW,
+                nonce=_id("nonce"),
+                decided_at=_NOW,
+                request_id="governance-smoke",
+                request_hash="sha256:governance-smoke",
+            ),
         )
         print(f"denied  → 'risky' is {deny.subject_status}")
 

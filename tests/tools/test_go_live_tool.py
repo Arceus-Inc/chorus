@@ -14,6 +14,7 @@ from collections.abc import Mapping
 from pathlib import Path
 
 import pytest
+from tests.tools.delivery.test_execute_go_live_tool import _terminalize_authorization
 
 from chorus.heartbeat import BeatContext
 from chorus.ledger import Ledger, Task, TaskStatus
@@ -138,7 +139,7 @@ class TestRestageGuard:
 
     def _approve_first_gate(self, ledger: Ledger) -> str:
         gate = ledger.approvals.pending()[0]
-        ledger.approvals.approve(gate.id, decided_by_user_id=uid("board"))
+        _terminalize_authorization(ledger, gate.id, decided_by_user_id=uid("board"))
         return gate.id
 
     def test_restage_rejected_while_approved_gate_awaits_execution(

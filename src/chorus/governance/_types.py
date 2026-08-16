@@ -8,14 +8,25 @@ opening it parks/flags the subject, and what approving / denying / requesting-re
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from enum import StrEnum
 from typing import Protocol, runtime_checkable
 
-from chorus.ledger import Approval, ApprovalAction, ApprovalStatus
+from chorus.ledger import (
+    Approval,
+    ApprovalAction,
+    ApprovalStatus,
+    AuthenticationMethod,
+)
+from chorus.ledger._models import require_utc_datetime
 
 
 class ApprovalDecision(StrEnum):
-    """The three ways a human resolves a gate (spec 04 §5). Maps 1:1 to a terminal status."""
+    """The three ways a human resolves a gate (spec 04 §5). Maps 1:1 to a terminal status.
+
+    ``HOLD`` is intentionally not a decision: :meth:`GovernanceResolver.hold_authenticated` records
+    it as durable evidence while leaving the approval pending. These remain the terminal resolutions.
+    """
 
     APPROVE = "approve"
     DENY = "deny"
@@ -32,6 +43,41 @@ _DECISION_STATUS: dict[ApprovalDecision, ApprovalStatus] = {
     ApprovalDecision.DENY: ApprovalStatus.DENIED,
     ApprovalDecision.REQUEST_REVISION: ApprovalStatus.REVISION_REQUESTED,
 }
+
+
+@dataclass(frozen=True)
+class HumanAuthorization:
+    """Authenticated human context supplied to the public terminal-resolution API."""
+
+    decision_id: str
+    user_id: str
+    method: AuthenticationMethod
+    authenticated_at: datetime
+    nonce: str
+    decided_at: datetime
+    request_id: str
+    request_hash: str
+
+    def __post_init__(self) -> None:
+        for field, text in (
+            ("decision_id", self.decision_id),
+            ("user_id", self.user_id),
+            ("nonce", self.nonce),
+            ("request_id", self.request_id),
+            ("request_hash", self.request_hash),
+        ):
+            if not text.strip():
+                raise ValueError(f"{field} must not be blank")
+        object.__setattr__(
+            self,
+            "authenticated_at",
+            require_utc_datetime("authenticated_at", self.authenticated_at),
+        )
+        object.__setattr__(
+            self, "decided_at", require_utc_datetime("decided_at", self.decided_at)
+        )
+        if self.authenticated_at > self.decided_at:
+            raise ValueError("authenticated_at must be at or before decided_at")
 
 
 @dataclass(frozen=True)
@@ -68,4 +114,4 @@ class GovernedAction(Protocol):
     def on_revise(self, approval: Approval) -> ActionOutcome: ...
 
 
-__all__ = ["ActionOutcome", "ApprovalDecision", "GovernedAction"]
+__all__ = ["ActionOutcome", "ApprovalDecision", "GovernedAction", "HumanAuthorization"]

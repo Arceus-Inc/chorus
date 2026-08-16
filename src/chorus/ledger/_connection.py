@@ -132,8 +132,12 @@ class LedgerConnection:
 
     def commit(self) -> None:
         if self._defer_depth == 0 and self._in_txn:
-            self._pg.execute("COMMIT")
-            self._in_txn = False
+            try:
+                self._pg.execute("COMMIT")
+            finally:
+                # A deferred constraint failure rolls the transaction back; clear the latch so
+                # the next write can BEGIN instead of issuing SAVEPOINT with no open transaction.
+                self._in_txn = False
 
     def rollback(self) -> None:
         if self._in_txn:
