@@ -31,6 +31,11 @@ dependencies = [
   # Chorus PR #121 IsolationMode projection requires Dream PR #111
   # (`dream.subagents.IsolationMode` on Subagent, plus explore/plan/verify builtins).
   # The factory always projects isolation; there is no fallback when the field is absent.
+  # Chorus PR #111 consumes Dream PR #107's typed ``RoleSessionRecovered``
+  # (``dream.runner.events``; no dict observer payloads). A Chorus-local
+  # compatibility dataclass remains until the installed dream pin exports the
+  # type on ``RunTaskEvent``; then delete the copy, drop the fallback, and type
+  # observers as ``RunTaskEvent`` only.
   "dream",
   "croniter>=2.0",
   "pyyaml>=6.0",

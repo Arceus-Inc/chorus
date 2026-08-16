@@ -33,6 +33,41 @@ class BeatDisposition(StrEnum):
     CANCELLED = "cancelled"
 
 
+class SessionRecoveryReason(StrEnum):
+    """Why dream could not resume the requested role session."""
+
+    MISSING = "missing"
+    CORRUPT = "corrupt"
+    SCHEMA_MISMATCH = "schema_mismatch"
+    WORKING_DIR_MISMATCH = "working_dir_mismatch"
+
+
+class SessionRecoveryAction(StrEnum):
+    """How dream continued after it could not resume a role session.
+
+    ``RESET`` mints a fresh transcript under the requested id, ``BYPASS`` continues
+    on a new id and leaves the unreadable snapshot alone, and ``RESUME`` keeps the
+    requested session after a recoverable read failure. These match Dream #107's
+    ``RoleSessionRecovered.action`` literals.
+    """
+
+    RESET = "reset"
+    BYPASS = "bypass"
+    RESUME = "resume"
+
+
+@dataclass(frozen=True)
+class SessionRecoveryNotice:
+    """One adapter-neutral record of dream recovering a role session during a beat."""
+
+    role: str
+    session_id: str
+    requested_session_id: str
+    reason: SessionRecoveryReason
+    action: SessionRecoveryAction
+    snapshot_preserved: bool
+
+
 @dataclass(frozen=True)
 class BeatOutcome:
     """A beat's landed verdict — the chorus projection of dream's ``RunTaskResult`` (spec 05)."""
@@ -56,6 +91,9 @@ class BeatOutcome:
     # emitted unparseable structured output). The scheduler re-runs a retryable beat before stranding
     # it; a clean return or a hard engine fault is never retryable.
     retryable: bool = False
+    # A valid session recovery Dream reported during this beat, if any. The adapter retains only the
+    # latest notice because this is the control-plane handle's current recovery state.
+    session_recovery: SessionRecoveryNotice | None = None
     # Dream's typed EvaluationRecord is projected here by the adapter; Chorus never parses evaluator
     # JSON files.
     evaluator_notes: tuple[str, ...] = ()
@@ -106,5 +144,8 @@ __all__ = [
     "BeatDisposition",
     "BeatOutcome",
     "BeatRunner",
+    "SessionRecoveryAction",
+    "SessionRecoveryNotice",
+    "SessionRecoveryReason",
     "SessionScopeFactory",
 ]

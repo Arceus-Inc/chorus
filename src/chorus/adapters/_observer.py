@@ -25,7 +25,9 @@ from dream.runner.events import (
 from chorus.adapters._dream_events import (
     SPAWN_SUBAGENT_TOOL,
     MemoryRetrieval,
+    RoleSessionRecovered,
     SpawnSubagentInput,
+    session_recovery_notice_from_dream_event,
     tool_result_content_preview,
 )
 from chorus.events import Event, EventKind
@@ -51,7 +53,27 @@ class DreamObserverBridge:
         self._clock = clock
         self._pending_subagents: list[str] = []
 
-    def on_event(self, event: RunTaskEvent) -> None:
+    def on_event(self, event: RunTaskEvent | RoleSessionRecovered) -> None:
+        # Union stays until the installed dream pin includes RoleSessionRecovered
+        # on RunTaskEvent (Dream #107).
+        recovery_notice = session_recovery_notice_from_dream_event(event)
+        if recovery_notice is not None:
+            self._emit(
+                Event(
+                    kind=EventKind.SESSION_RECOVERED,
+                    at=self._clock(),
+                    task_id=self._task_id,
+                    payload={
+                        "role": recovery_notice.role,
+                        "session_id": recovery_notice.session_id,
+                        "requested_session_id": recovery_notice.requested_session_id,
+                        "reason": recovery_notice.reason.value,
+                        "action": recovery_notice.action.value,
+                        "snapshot_preserved": recovery_notice.snapshot_preserved,
+                    },
+                )
+            )
+            return
         if isinstance(event, RoleSessionClosed):
             self._emit_llm_call(event)
             return

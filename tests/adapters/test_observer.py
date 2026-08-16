@@ -13,17 +13,22 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from chorus.adapters._observer import DreamObserverBridge
-from chorus.events import Event, EventKind
-from chorus.testing import uid
+import pytest
 from tests.adapters._dream_events import (
     planner_started,
     role_session_closed,
+    role_session_recovered,
     role_tool_result,
     role_tool_start,
     spawn_subagent_result,
     spawn_subagent_start,
 )
+
+from chorus.adapters._dream_events import session_recovery_notice_from_dream_event
+from chorus.adapters._observer import DreamObserverBridge
+from chorus.events import Event, EventKind
+from chorus.heartbeat import SessionRecoveryAction, SessionRecoveryNotice, SessionRecoveryReason
+from chorus.testing import uid
 
 
 def _bridge(sink: list[Event]) -> DreamObserverBridge:
@@ -186,3 +191,138 @@ class TestLlmCall:
         assert call.payload["output_tokens"] == 340
         assert call.payload["cache_read_tokens"] == 800
         assert call.payload["cost_usd"] == 0.0123
+
+
+class TestSessionRecovery:
+    @pytest.mark.parametrize(
+        ("action", "expected"),
+        (
+            ("reset", SessionRecoveryAction.RESET),
+            ("bypass", SessionRecoveryAction.BYPASS),
+            ("resume", SessionRecoveryAction.RESUME),
+        ),
+    )
+    def test_session_recovery_maps_to_a_closed_chorus_event(
+        self, action: str, expected: SessionRecoveryAction
+    ) -> None:
+        sink: list[Event] = []
+        _bridge(sink).on_event(
+            role_session_recovered(
+                session_id="fresh-session",
+                requested_session_id="stale-session",
+                reason="schema_mismatch",
+                action=action,
+                snapshot_preserved=False,
+            )
+        )
+
+        assert _kinds(sink) == [EventKind.SESSION_RECOVERED]
+        assert sink[0].payload == {
+            "role": "generator",
+            "session_id": "fresh-session",
+            "requested_session_id": "stale-session",
+            "reason": "schema_mismatch",
+            "action": expected.value,
+            "snapshot_preserved": False,
+        }
+
+    def test_decoder_accepts_resume_action(self) -> None:
+        notice = session_recovery_notice_from_dream_event(
+            role_session_recovered(reason="missing", action="resume", snapshot_preserved=True)
+        )
+        assert notice == SessionRecoveryNotice(
+            role="generator",
+            session_id="fresh-session",
+            requested_session_id="stale-session",
+            reason=SessionRecoveryReason.MISSING,
+            action=SessionRecoveryAction.RESUME,
+            snapshot_preserved=True,
+        )
+
+    def test_decoder_rejects_dict_events(self) -> None:
+        notice = session_recovery_notice_from_dream_event(
+            {
+                "kind": "role.session.recovered",
+                "role": "generator",
+                "session_id": "fresh-session",
+                "requested_session_id": "stale-session",
+                "reason": "missing",
+                "action": "resume",
+                "snapshot_preserved": True,
+            }
+        )
+        assert notice is None
+
+    def test_observer_drops_dict_recovery_events(self) -> None:
+        sink: list[Event] = []
+        event: object = {
+            "kind": "role.session.recovered",
+            "role": "generator",
+            "session_id": "fresh-session",
+            "requested_session_id": "stale-session",
+            "reason": "missing",
+            "action": "resume",
+            "snapshot_preserved": True,
+        }
+        _bridge(sink).on_event(event)  # type: ignore[arg-type]
+        assert sink == []
+
+    def test_malformed_session_recovery_is_dropped(self) -> None:
+        sink: list[Event] = []
+        _bridge(sink).on_event(role_session_recovered(reason="unknown", action="reset"))
+        _bridge(sink).on_event(role_session_recovered(reason="missing", action="wipe"))
+        assert sink == []
+
+    def test_decoder_accepts_dream_role_session_recovered_type(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from dataclasses import dataclass
+
+        from dream.runner import events as dream_events
+
+        from chorus.adapters import _dream_events
+
+        expected = SessionRecoveryNotice(
+            role="generator",
+            session_id="fresh-session",
+            requested_session_id="stale-session",
+            reason=SessionRecoveryReason.CORRUPT,
+            action=SessionRecoveryAction.RESUME,
+            snapshot_preserved=True,
+        )
+        DreamType = getattr(dream_events, "RoleSessionRecovered", None)
+        if isinstance(DreamType, type):
+            notice = session_recovery_notice_from_dream_event(
+                DreamType(
+                    role="generator",
+                    session_id="fresh-session",
+                    requested_session_id="stale-session",
+                    reason="corrupt",
+                    action="resume",
+                    snapshot_preserved=True,
+                )
+            )
+            assert notice == expected
+            return
+
+        @dataclass(frozen=True, slots=True, kw_only=True)
+        class DreamRoleSessionRecovered:
+            role: str
+            session_id: str
+            requested_session_id: str
+            reason: str
+            action: str
+            snapshot_preserved: bool
+
+        monkeypatch.setattr(_dream_events, "_DREAM_ROLE_SESSION_RECOVERED", DreamRoleSessionRecovered)
+        notice = session_recovery_notice_from_dream_event(
+            DreamRoleSessionRecovered(
+                role="generator",
+                session_id="fresh-session",
+                requested_session_id="stale-session",
+                reason="corrupt",
+                action="resume",
+                snapshot_preserved=True,
+            )
+        )
+        assert notice == expected
