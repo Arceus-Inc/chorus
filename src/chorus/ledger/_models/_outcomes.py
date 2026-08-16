@@ -80,6 +80,7 @@ class Artifact:
     health_status: str | None = None
     is_primary: bool = False
     resource_ref: dict[str, object] | None = None
+    created_at: datetime | None = None
 
 
 @dataclass(frozen=True)

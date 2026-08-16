@@ -9,8 +9,18 @@ import pytest
 from chorus.governance import ApprovalDecision, GovernanceResolver, HumanAuthorization
 from chorus.heartbeat import Scheduler, Wake, WakeReason
 from chorus.heartbeat._beat import BeatOutcome
-from chorus.ledger import ApprovalGate, AuthenticationMethod, Ledger, Task, TaskStatus
-from chorus.outcomes import VerificationStep, Verifier
+from chorus.ledger import (
+    ApprovalGate,
+    AuthenticationMethod,
+    Ledger,
+    Task,
+    TaskStatus,
+    judge_task_finalization,
+)
+from chorus.outcomes import Artifact as OutcomeArtifact
+from chorus.outcomes import ArtifactType as OutcomeArtifactType
+from chorus.outcomes import LanderRegistry, VerificationStep, Verifier
+from chorus.roles import RoleRegistry, default_roles
 from chorus.testing import uid
 from chorus.workforce import Employee
 
@@ -53,6 +63,16 @@ class _RecordingBeat:
         self.calls.append(task_id)
         self.verification = verification
         return BeatOutcome(passed=self._passed, outcome={}, summary="ok")
+
+
+class _PendingDocLander:
+    """A lander keyed to the engineer's ``pr`` outcome so human-approval beats record a deliverable."""
+
+    outcome_kind = "pr"
+
+    async def land(self, task: Task, result: BeatOutcome) -> OutcomeArtifact:
+        del result
+        return OutcomeArtifact(task_id=task.id, type=OutcomeArtifactType.DOC)
 
 
 class _FakeWorkforce:
@@ -196,20 +216,34 @@ async def test_human_approval_dod_opens_an_approval_instead_of_marking_done(
 ) -> None:
     employee = _seed(ledger)
     ledger.dod.create(uid("t1"), Verifier.human_approval())
-
-    await _tick(ledger, _RecordingBeat(passed=True), employee)
+    beat = _RecordingBeat(passed=True)
+    sched = Scheduler(
+        ledger=ledger,
+        workforce=_FakeWorkforce(employee),
+        beat_runner=beat,
+        roles=RoleRegistry.from_plugins(default_roles()),
+        landers=LanderRegistry.from_landers([_PendingDocLander()]),
+        max_concurrent_runs=1,
+    )
+    await sched.tick(_NOW)
+    await sched.drain()
 
     task = ledger.tasks.get(uid("t1"))
     assert task is not None and task.status is TaskStatus.BLOCKED  # not done — pending a human
     pending = ledger.approvals.pending()
     assert len(pending) == 1 and pending[0].gate_kind is ApprovalGate.ACCEPTANCE
-    # and a human signing off lands the task done
+    artifacts = ledger.artifacts.list_for_task(uid("t1"))
+    assert len(artifacts) == 1 and artifacts[0].review_state == "pending"
+    # and a human signing off lands the task done against the newest pending deliverable
     GovernanceResolver(ledger).resolve_authenticated(
         pending[0].id,
         decision=ApprovalDecision.APPROVE,
         authorization=_authorization(),
     )
     assert ledger.tasks.get(uid("t1")).status is TaskStatus.DONE  # type: ignore[union-attr]
+    verified = ledger.artifacts.get(artifacts[0].id)
+    assert verified is not None and verified.review_state == "verified"
+    assert judge_task_finalization(ledger, uid("t1")).passed is True
 
 
 class _GatingBeat:

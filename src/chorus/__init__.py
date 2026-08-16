@@ -73,7 +73,7 @@ from chorus.roles import (
 from chorus.trust import TrustPreset
 from chorus.workforce import Employee
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 
 __all__ = [
     "AgentReview",

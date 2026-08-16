@@ -23,11 +23,14 @@ from chorus.ledger import (
     ApprovalAction,
     ApprovalGate,
     DodStatus,
+    Run,
+    RunStatus,
     TaskStatus,
     Wake,
     WakeReason,
 )
 from chorus.lifecycle._delegation_resolution import DelegationResolutionPolicy
+from chorus.outcomes import DoDKind, pr_landing_of
 
 if TYPE_CHECKING:
     from chorus.ledger import Ledger
@@ -51,8 +54,45 @@ class TaskGateAction:
     def on_approve(self, approval: Approval) -> ActionOutcome:
         gate = _require_gate(approval)
         if gate is ApprovalGate.ACCEPTANCE:
+            latest = self._ledger.artifacts.latest_primary_non_verdict(approval.subject_id)
+            if latest is not None and pr_landing_of(
+                latest.type.value, latest.resource_ref
+            ).blocks_done:
+                raise TaskGateError(
+                    f"acceptance gate {approval.id!r} cannot finalize an unmerged primary PR"
+                )
+            if _is_strict_acceptance(self._ledger, approval.subject_id):
+                producer_run = _latest_succeeded_task_run(self._ledger, approval.subject_id)
+                if producer_run is None:
+                    raise TaskGateError(
+                        f"acceptance gate {approval.id!r} has no succeeded producer run"
+                    )
+                artifact = self._ledger.artifacts.mark_latest_pending_primary_non_verdict_verified(
+                    approval.subject_id
+                )
+                if artifact is None:
+                    raise TaskGateError(
+                        f"acceptance gate {approval.id!r} has no pending primary non-verdict artifact to verify"
+                    )
+                latest_after = self._ledger.artifacts.latest_primary_non_verdict(
+                    approval.subject_id
+                )
+                if latest_after is None or latest_after.id != artifact.id:
+                    raise TaskGateError(
+                        f"acceptance gate {approval.id!r} stamped a stale primary; "
+                        "newest landing no longer matches the CAS row"
+                    )
+                wakes = self._ledger.finalize_beat(
+                    task_id=approval.subject_id,
+                    run_id=producer_run.id,
+                    dod_status=DodStatus.PASSED,
+                )
+                DelegationResolutionPolicy(self._ledger).approve(approval.subject_id)
+                return ActionOutcome(TaskStatus.DONE.value, len(wakes))
             wakes = self._ledger.finalize_beat(
-                task_id=approval.subject_id, run_id=None, dod_status=DodStatus.PASSED
+                task_id=approval.subject_id,
+                run_id=None,
+                dod_status=DodStatus.PASSED,
             )
             DelegationResolutionPolicy(self._ledger).approve(approval.subject_id)
             return ActionOutcome(TaskStatus.DONE.value, len(wakes))
@@ -99,6 +139,20 @@ def _require_gate(approval: Approval) -> ApprovalGate:
     if approval.gate_kind is None:
         raise TaskGateError(f"task gate {approval.id!r} has no gate_kind")
     return approval.gate_kind
+
+
+def _latest_succeeded_task_run(ledger: Ledger, task_id: str) -> Run | None:
+    for run in reversed(ledger.runs.for_task(task_id)):
+        if run.status is RunStatus.SUCCEEDED:
+            return run
+    return None
+
+
+def _is_strict_acceptance(ledger: Ledger, task_id: str) -> bool:
+    dod = ledger.dod.get_for_task(task_id)
+    if dod is not None and dod.kind == DoDKind.HUMAN_APPROVAL.value:
+        return True
+    return ledger.artifacts.has_pending_primary_non_verdict(task_id)
 
 
 __all__ = ["TaskGateAction", "TaskGateError"]

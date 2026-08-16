@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "chorus"
-version = "0.1.0"
+version = "0.1.1"
 description = "An SDK for running an org of agents that completes one sprint, built on dream."
 readme = "README.md"
 license = { text = "MIT" }

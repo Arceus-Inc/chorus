@@ -97,6 +97,5 @@ def test_module_exposes_all() -> None:
     assert not missing, f"declared in __all__ but not present on module: {sorted(missing)}"
 
 
-def test_version_is_string() -> None:
-    assert isinstance(chorus.__version__, str)
-    assert chorus.__version__.count(".") >= 2
+def test_version_matches_package_release() -> None:
+    assert chorus.__version__ == "0.1.1"

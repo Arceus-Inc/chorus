@@ -16,7 +16,7 @@ import uuid
 import psycopg
 import pytest
 
-from chorus.ledger import Ledger
+from chorus.ledger import Ledger, baseline
 from chorus.ledger._migrations import (
     LedgerAheadError,
     Migration,
@@ -84,6 +84,10 @@ def test_shipped_migrations_load_in_id_order() -> None:
     assert "0002_skills" in set(ids)
     assert "0011_human_authorization_proof" in set(ids)
     assert ids.index("0010_agent_config_revisions") < ids.index("0011_human_authorization_proof")
+    assert "0012_task_files_to_touch" in set(ids)
+    assert ids.index("0011_human_authorization_proof") < ids.index("0012_task_files_to_touch")
+    assert "0013_dod_integration_verdict" in set(ids)
+    assert ids.index("0012_task_files_to_touch") < ids.index("0013_dod_integration_verdict")
     assert "0006_human_authorization_proof" not in set(ids)
 
 
@@ -165,6 +169,45 @@ def test_existing_database_applies_only_pending_migrations(
     store.close()
     assert _table_exists(pg_database, "widget")
     assert _applied_rows(pg_database)["0099_widget"] == _FIXTURE.checksum
+
+
+def test_origin_main_baseline_upgrades_files_to_touch(
+    pg_database: str,
+) -> None:
+    """A database already at current main (through 0011) applies the additive scope migration."""
+    baseline_id, checksum, statements = baseline()
+
+    with psycopg.connect(pg_database, autocommit=True) as admin:
+        admin.execute("DROP SCHEMA public CASCADE")
+        admin.execute("CREATE SCHEMA public")
+        admin.execute(
+            "CREATE TABLE chorus_schema_migrations ("
+            "id text PRIMARY KEY, checksum text NOT NULL, applied_at timestamptz NOT NULL)"
+        )
+        for statement in statements:
+            admin.execute(statement)
+        admin.execute(
+            "INSERT INTO chorus_schema_migrations (id, checksum, applied_at) VALUES (%s, %s, now())",
+            (baseline_id, checksum),
+        )
+        for migration in load_migrations():
+            if migration.id == "0012_task_files_to_touch":
+                continue
+            for statement in migration.statements():
+                admin.execute(statement)
+            admin.execute(
+                "INSERT INTO chorus_schema_migrations (id, checksum, applied_at) VALUES (%s, %s, now())",
+                (migration.id, migration.checksum),
+            )
+
+    Ledger.open(pg_database, company_id=str(uuid.uuid4())).close()
+    with psycopg.connect(pg_database) as admin:
+        column = admin.execute(
+            "SELECT data_type FROM information_schema.columns "
+            "WHERE table_schema = 'public' AND table_name = 'task' AND column_name = 'files_to_touch'"
+        ).fetchone()
+    assert column == ("ARRAY",)
+    assert "0012_task_files_to_touch" in _applied_rows(pg_database)
 
 
 def test_reapply_is_a_noop(pg_database: str, monkeypatch: pytest.MonkeyPatch) -> None:
