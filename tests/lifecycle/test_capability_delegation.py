@@ -632,6 +632,31 @@ def test_decompose_manager_area_runs_before_reviewer_and_unknown_gates(ledger: L
     assert ledger.tasks.children(parent.id) == []
 
 
+def test_decompose_manager_area_runs_before_file_scope(ledger: Ledger) -> None:
+    service, parent = _seed_delegation_parent(ledger)
+    assert parent.team_id is not None
+    MissionTeamPolicy(ledger).add_member(parent.team_id, uid("member"), can_subdelegate=True)
+
+    result = service.decompose(
+        parent_id=parent.id,
+        revision=uid("manager-area-before-scope"),
+        actor_employee_id="lead",
+        children=[
+            ChildPlan(
+                label="review",
+                intent="Review the work",
+                assignee=uid("member"),
+                files_to_touch=("/tmp/not-allowed.py",),
+            )
+        ],
+    )
+
+    assert result.manager_area_violation is not None
+    assert result.scope_violations == ()
+    assert result.child_ids == {}
+    assert ledger.tasks.children(parent.id) == []
+
+
 def test_submit_one_does_not_enforce_manager_area_fanout(ledger: Ledger) -> None:
     service, parent = _seed_delegation_parent(ledger)
     assert parent.team_id is not None
