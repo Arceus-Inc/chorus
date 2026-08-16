@@ -69,7 +69,35 @@ class SkillRevision:
         return list(data) if isinstance(data, list) else []
 
 
+@dataclass(frozen=True)
+class EvalCase:
+    """One reusable evaluation pinned to an immutable skill revision."""
+
+    id: str
+    skill_revision_id: str
+    name: str
+    input_text: str
+    expected_behavior: str
+    created_at: datetime | None = None
+
+
+@dataclass(frozen=True)
+class EvalSuite:
+    """An ordered set of cases pinned to one immutable skill revision."""
+
+    id: str
+    skill_revision_id: str
+    case_ids: tuple[str, ...]
+    created_at: datetime | None = None
+
+    def __post_init__(self) -> None:
+        if len(self.case_ids) != len(set(self.case_ids)):
+            raise ValueError("eval suite case_ids must not contain duplicates")
+
+
 __all__ = [
+    "EvalCase",
+    "EvalSuite",
     "Skill",
     "SkillOrigin",
     "SkillRevision",

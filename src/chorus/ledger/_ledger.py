@@ -44,6 +44,7 @@ from chorus.ledger._models import (
 )
 from chorus.ledger.repos import (
     ActivityRepo,
+    AgentConfigRevisionRepo,
     AgentSessionRepo,
     ApprovalRepo,
     ArtifactRepo,
@@ -58,11 +59,15 @@ from chorus.ledger.repos import (
     DependencyRepo,
     DodRepo,
     EmployeeRepo,
+    EvalCaseRepo,
+    EvalRunRepo,
+    EvalSuiteRepo,
     GoalRepo,
     ManagementProfileRepo,
     MessageRepo,
     MonitorRepo,
     RecoveryActionRepo,
+    RolloutRepo,
     RoutineRepo,
     RoutineRevisionRepo,
     RoutineRunRepo,
@@ -198,6 +203,11 @@ class Ledger:
         self.run_carryovers = RunCarryoverRepo(conn)
         self.skills = SkillRepo(conn)
         self.skill_revisions = SkillRevisionRepo(conn)
+        self.agent_config_revisions = AgentConfigRevisionRepo(conn)
+        self.eval_cases = EvalCaseRepo(conn)
+        self.eval_suites = EvalSuiteRepo(conn)
+        self.eval_runs = EvalRunRepo(conn)
+        self.rollouts = RolloutRepo(conn)
         self.dod = DodRepo(conn)
         self.artifacts = ArtifactRepo(conn)
         self.artifact_revisions = ArtifactRevisionRepo(conn)

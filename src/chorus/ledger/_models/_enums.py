@@ -301,6 +301,7 @@ class ApprovalSubjectKind(StrEnum):
     TASK = "task"
     ARTIFACT = "artifact"
     EMPLOYEE = "employee"
+    ROLLOUT = "rollout"
 
 
 class ApprovalAction(StrEnum):
@@ -318,6 +319,7 @@ class ApprovalAction(StrEnum):
     BUDGET_OVERRIDE = "budget_override"
     LOOSEN_DOD = "loosen_dod"
     TASK_GATE = "task_gate"
+    PROMOTE_ROLLOUT = "promote_rollout"
 
 
 class ApprovalStatus(StrEnum):

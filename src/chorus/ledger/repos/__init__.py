@@ -8,6 +8,7 @@ shared connection.
 from __future__ import annotations
 
 from chorus.ledger.repos.activity import ActivityRepo
+from chorus.ledger.repos.agent_config_revisions import AgentConfigRevisionRepo
 from chorus.ledger.repos.agent_sessions import AgentSessionRepo
 from chorus.ledger.repos.approvals import ApprovalRepo
 from chorus.ledger.repos.artifact_revisions import ArtifactRevisionRepo
@@ -21,11 +22,15 @@ from chorus.ledger.repos.delegation_contracts import DelegationContractRepo
 from chorus.ledger.repos.dependencies import DependencyCycleError, DependencyRepo
 from chorus.ledger.repos.dod import DodRepo
 from chorus.ledger.repos.employees import EmployeeRepo
+from chorus.ledger.repos.eval_cases import EvalCaseRepo
+from chorus.ledger.repos.eval_runs import EvalRunRepo
+from chorus.ledger.repos.eval_suites import EvalSuiteRepo
 from chorus.ledger.repos.goals import GoalRepo
 from chorus.ledger.repos.management_profiles import ManagementProfileRepo
 from chorus.ledger.repos.messages import MessageRepo
 from chorus.ledger.repos.monitors import MonitorRepo
 from chorus.ledger.repos.recovery_actions import RecoveryActionRepo
+from chorus.ledger.repos.rollouts import RolloutRepo
 from chorus.ledger.repos.routine_revisions import RoutineRevisionRepo
 from chorus.ledger.repos.routine_runs import RoutineRunRepo
 from chorus.ledger.repos.routine_triggers import RoutineTriggerRepo
@@ -42,6 +47,7 @@ from chorus.ledger.repos.workforce_plans import WorkforcePlanRepo
 
 __all__ = [
     "ActivityRepo",
+    "AgentConfigRevisionRepo",
     "AgentSessionRepo",
     "ApprovalRepo",
     "ArtifactRepo",
@@ -57,11 +63,15 @@ __all__ = [
     "DependencyRepo",
     "DodRepo",
     "EmployeeRepo",
+    "EvalCaseRepo",
+    "EvalRunRepo",
+    "EvalSuiteRepo",
     "GoalRepo",
     "ManagementProfileRepo",
     "MessageRepo",
     "MonitorRepo",
     "RecoveryActionRepo",
+    "RolloutRepo",
     "RoutineRepo",
     "RoutineRevisionRepo",
     "RoutineRunRepo",

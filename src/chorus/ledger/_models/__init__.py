@@ -3,6 +3,15 @@ every name is re-exported here so `from chorus.ledger._models import X` is uncha
 
 from __future__ import annotations
 
+from chorus.ledger._models._agent_config_revisions import (
+    AgentConfigRevision,
+    AgentIdentity,
+    AgentsMdReference,
+    EffectiveToolPin,
+    ProviderModelConfig,
+    SandboxProfile,
+    SkillRevisionPin,
+)
 from chorus.ledger._models._agent_session import (
     AgentSession,
     AgentSessionStatus,
@@ -61,6 +70,14 @@ from chorus.ledger._models._enums import (
     WakeReason,
     WakeStatus,
 )
+from chorus.ledger._models._eval_runs import (
+    AgentConfigRevisionRef,
+    EvalInputSnapshot,
+    EvalOutputSnapshot,
+    EvalRun,
+    EvalRunStatus,
+    EvalRunUsage,
+)
 from chorus.ledger._models._governance import (
     Activity,
     Approval,
@@ -76,6 +93,14 @@ from chorus.ledger._models._outcomes import (
     ArtifactRevision,
     Dod,
 )
+from chorus.ledger._models._rollouts import (
+    PromotionGates,
+    ReplayRegression,
+    Rollout,
+    RolloutDecision,
+    RolloutStage,
+    RolloutStatus,
+)
 from chorus.ledger._models._scheduling import (
     Routine,
     RoutineRevision,
@@ -84,7 +109,14 @@ from chorus.ledger._models._scheduling import (
     Run,
     Wake,
 )
-from chorus.ledger._models._skills import Skill, SkillOrigin, SkillRevision, SkillState
+from chorus.ledger._models._skills import (
+    EvalCase,
+    EvalSuite,
+    Skill,
+    SkillOrigin,
+    SkillRevision,
+    SkillState,
+)
 from chorus.ledger._models._staffing import (
     StaffingNeed,
     StaffingRequest,
@@ -106,8 +138,12 @@ from chorus.ledger._models._workforce_plan import (
 __all__ = [
     "Activity",
     "ActivityVerb",
+    "AgentConfigRevision",
+    "AgentConfigRevisionRef",
+    "AgentIdentity",
     "AgentSession",
     "AgentSessionStatus",
+    "AgentsMdReference",
     "Approval",
     "ApprovalAction",
     "ApprovalGate",
@@ -130,6 +166,14 @@ __all__ = [
     "DelegationContractStatus",
     "Dod",
     "DodStatus",
+    "EffectiveToolPin",
+    "EvalCase",
+    "EvalInputSnapshot",
+    "EvalOutputSnapshot",
+    "EvalRun",
+    "EvalRunStatus",
+    "EvalRunUsage",
+    "EvalSuite",
     "ExecutionMode",
     "Goal",
     "GoalLevel",
@@ -142,11 +186,18 @@ __all__ = [
     "MonitorStatus",
     "OriginKind",
     "PlannedEmployee",
+    "PromotionGates",
+    "ProviderModelConfig",
     "RecoveryAction",
     "RecoveryKind",
     "RecoveryOutcome",
     "RecoveryStatus",
     "RejectedAlternative",
+    "ReplayRegression",
+    "Rollout",
+    "RolloutDecision",
+    "RolloutStage",
+    "RolloutStatus",
     "Routine",
     "RoutineCatchUp",
     "RoutineConcurrency",
@@ -159,10 +210,12 @@ __all__ = [
     "Run",
     "RunCarryover",
     "RunStatus",
+    "SandboxProfile",
     "SessionCost",
     "Skill",
     "SkillOrigin",
     "SkillRevision",
+    "SkillRevisionPin",
     "SkillState",
     "StaffingNeed",
     "StaffingRequest",
