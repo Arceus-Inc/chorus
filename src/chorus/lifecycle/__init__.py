@@ -20,6 +20,7 @@ from chorus.lifecycle._capability import (
     ClaimDraft,
     DecisionOutcome,
     DecomposeResult,
+    OutcomeMismatch,
 )
 from chorus.lifecycle._coordination import assign_task, deliver_message
 from chorus.lifecycle._decompose import (
@@ -77,6 +78,7 @@ __all__ = [
     "MissionTeamPolicy",
     "MissionTeamPolicyDenied",
     "NoRevision",
+    "OutcomeMismatch",
     "ReviseOutcome",
     "RevisionAuthorityError",
     "assert_legal",

@@ -18,7 +18,8 @@ from pydantic import BaseModel, Field, ValidationError
 
 from chorus.heartbeat import BeatContext
 from chorus.ledger import ExecutionMode, Ledger
-from chorus.lifecycle import CapabilityService, ChildPlan
+from chorus.lifecycle import CapabilityService, ChildPlan, OutcomeMismatch
+from chorus.outcomes import OutcomeKind
 from chorus.roles import RoleRegistry
 
 
@@ -41,6 +42,14 @@ class _ChildInput(BaseModel):
     depends_on: list[str] = Field(
         default_factory=list,
         description="labels of sibling subtasks in this call that must finish before this one starts",
+    )
+    outcome_kind: OutcomeKind | None = Field(
+        default=None,
+        description=(
+            "optional declared deliverable (pr, doc, finding, subtree, design, content, "
+            "directive). Omitted skips the capability check; when set, must match what the "
+            "assignee's role produces."
+        ),
     )
 
 
@@ -91,6 +100,7 @@ class DecomposeTool(BaseTool):
                 depends_on=tuple(child.depends_on),
                 execution_mode=child.execution_mode,
                 can_subdelegate=child.can_subdelegate,
+                outcome_kind=child.outcome_kind,
             )
             for child in args.children
         ]
@@ -100,6 +110,9 @@ class DecomposeTool(BaseTool):
             children=plans,
             actor_employee_id=beat.employee_id,
         )
+        mismatch = _outcome_mismatch_result(result.outcome_mismatches)
+        if mismatch is not None:
+            return mismatch
         if result.reviewer_assignees:
             joined = ", ".join(result.reviewer_assignees)
             return ToolResult(
@@ -155,6 +168,33 @@ def _validate(args: DecomposeInput) -> str | None:
         if unknown:
             return f"subtask {child.label!r} depends on unknown label(s): {', '.join(unknown)}"
     return None
+
+
+def _outcome_mismatch_result(mismatches: tuple[OutcomeMismatch, ...]) -> ToolResult | None:
+    """Tool refusal when a declared outcome cannot be produced by the assignee's role."""
+    if not mismatches:
+        return None
+    joined = ", ".join(mismatch.refusal_clause() for mismatch in mismatches)
+    return ToolResult(
+        content=(
+            f"refused: {joined}. That role can't produce the declared deliverable. No subtasks "
+            "created — route code ('pr') to an engineer, a written doc to a pm, an analysis to "
+            "an analyst, further delegation ('subtree') to a manager; then call again."
+        ),
+        is_error=True,
+        structured={
+            "outcome_mismatches": [
+                {
+                    "label": mismatch.label,
+                    "assignee": mismatch.assignee,
+                    "role": mismatch.role,
+                    "declared": mismatch.declared.value,
+                    "role_kind": mismatch.role_kind.value,
+                }
+                for mismatch in mismatches
+            ]
+        },
+    )
 
 
 __all__ = ["DecomposeInput", "DecomposeTool"]

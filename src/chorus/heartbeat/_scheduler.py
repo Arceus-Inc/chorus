@@ -69,7 +69,7 @@ from chorus.lifecycle import TERMINAL, record_activity
 from chorus.lifecycle._team_policy import MissionTeamPolicy
 from chorus.memory import EpisodicStore, SprintDelta, beat_fingerprint, distilled_body
 from chorus.observability._trace import TraceStamper, trace_root
-from chorus.outcomes import DoDKind, Verifier
+from chorus.outcomes import DoDKind, PrLanding, Verifier, pr_landing, pr_landing_of
 from chorus.recovery import reconcile
 
 if TYPE_CHECKING:
@@ -849,6 +849,7 @@ class Scheduler:
                 now=now,
             )
             return
+        this_beat_landing: PrLanding | None = None
         if result.disposition is BeatDisposition.CANCELLED:
             # Cooperative cancel (caps/budget/operator): record a cancelled run and return the task
             # to its pre-beat (dispatchable) state — no DoD verdict, no recovery card (spec 05 §5/§6).
@@ -872,7 +873,7 @@ class Scheduler:
                 # PARK (delegated) — wait for the children; not done, not failed, no recovery ladder.
                 ledger.tasks.set_status(task_id, TaskStatus.BLOCKED)
             elif task.execution_mode is ExecutionMode.DELEGATION:
-                await self._finish_delegation_parent(
+                this_beat_landing = await self._finish_delegation_parent(
                     task=task,
                     run_id=run_id,
                     verifier=verifier,
@@ -901,7 +902,7 @@ class Scheduler:
             else:
                 # INTEGRATE — the whole subtree is terminal and the parent's objective floor passed (or
                 # it declares none), so the parent is complete (spec M3 §5).
-                await self._land_passed(
+                this_beat_landing = await self._land_passed(
                     task_id,
                     run_id=run_id,
                     verifier=verifier,
@@ -939,7 +940,7 @@ class Scheduler:
         elif result.passed:
             if not ledger.runs.finish(run_id, RunStatus.SUCCEEDED, outcome=verdict):
                 return
-            await self._land_passed(
+            this_beat_landing = await self._land_passed(
                 task_id,
                 run_id=run_id,
                 verifier=verifier,
@@ -974,6 +975,7 @@ class Scheduler:
             now=now,
             files_touched=beat_fingerprint(working_dir, base_sha),
             todo_digest=_todo_digest(working_dir),
+            this_beat_landing=this_beat_landing,
         )
 
         self._persist_agent_session(
@@ -1107,6 +1109,7 @@ class Scheduler:
         now: datetime,
         files_touched: tuple[str, ...],
         todo_digest: str,
+        this_beat_landing: PrLanding | None = None,
     ) -> None:
         """Publish the typed landed outcome once — bridge/horizon project it mechanically (Phase 0)."""
         ledger = self._require_ledger()
@@ -1118,12 +1121,15 @@ class Scheduler:
             and latest.status is TaskStatus.BLOCKED
             and ledger.tasks.has_children(task.id)
         )
+        # This beat's landing only — a prior unmerged PR must not poison a later successful merge.
+        unmerged_pr = this_beat_landing is not None and this_beat_landing.blocks_done
         try:
             landed = derive_landed_outcome(
                 latest,
                 result,
                 dod_status,
                 orchestrated=orchestrated,
+                unmerged_pr=unmerged_pr,
             )
         except ValueError:
             return
@@ -1156,6 +1162,7 @@ class Scheduler:
                 },
             )
         )
+
     def _write_lattice_beat_end(
         self,
         *,
@@ -1243,7 +1250,7 @@ class Scheduler:
         result: BeatOutcome,
         beat_runner: BeatRunner | None,
         outcome_kind: str | None,
-    ) -> None:
+    ) -> PrLanding | None:
         """Close delegated work on the lead's own acceptance plus the deterministic gates.
 
         Operator decision (2026-07-18): no system-verifier beat — the lead's integrate acceptance is
@@ -1263,7 +1270,7 @@ class Scheduler:
                     payload={"task_id": task.id, "cause": "required_descendant_failed"},
                 )
             )
-            return
+            return None
         with ledger.transaction():
             ledger.delegation_contracts.accept_for_verification(task.id, run_id)
             record_activity(
@@ -1315,9 +1322,9 @@ class Scheduler:
                         payload={"task_id": task.id},
                     )
                 )
-            return
+            return None
 
-        await self._land_passed(
+        landing = await self._land_passed(
             task.id,
             run_id=run_id,
             verifier=verifier,
@@ -1327,6 +1334,7 @@ class Scheduler:
             outcome_kind=outcome_kind,
         )
         self._close_verified_delegation(task.id, run_id=run_id, recovered=False)
+        return landing
 
     def _required_descendants_passed(self, task_id: str) -> bool:
         """Require every persisted parent gate, or every legacy direct child, to be done."""
@@ -1463,14 +1471,18 @@ class Scheduler:
         employee: Employee,
         result: BeatOutcome,
         outcome_kind: str | None,
-    ) -> None:
+    ) -> PrLanding | None:
         """A passed beat lands its role's outcome, then ``done`` — unless a person decides.
 
         For a ``HumanApproval`` DoD the deliverable is produced but a person decides: open an
         **acceptance** gate (parks the task ``blocked`` pending the approval). An ``AgentReview`` DoD
         renders no second beat: its rubric was already judged by dream's single in-beat evaluator
         (spec 16), so a passed beat *is* the verdict. Otherwise the role's
-        :class:`~chorus.outcomes.OutcomeLander` records the deliverable before the task is finalised ``done``.
+        :class:`~chorus.outcomes.OutcomeLander` records the deliverable before the task is finalised
+        ``done`` — unless that deliverable is a PR that recorded an unmerged integration (BUG-005).
+
+        Returns this beat's typed :class:`~chorus.outcomes.PrLanding` when a lander recorded an
+        artifact, else ``None``. Historical unmerged rows are not this beat's landing.
         """
         ledger = self._require_ledger()
         # A concurrent path (the completion daemon rolling a subtree up, or a duplicate integrate beat)
@@ -1484,7 +1496,7 @@ class Scheduler:
             TaskStatus.CANCELLED,
             TaskStatus.REJECTED,
         ):
-            return
+            return None
         # A gate opened *during* the beat (e.g. the marketer's ``stage_go_live`` tool) must win over the
         # DoD: a task carrying a pending approval is parked BLOCKED, not finalised ``done`` — resolving
         # the gate is what completes it. Explicitly (re-)block here rather than trusting the mid-run
@@ -1496,24 +1508,32 @@ class Scheduler:
             task = ledger.tasks.get(task_id)
             if task is not None and task.status is not TaskStatus.BLOCKED:
                 ledger.tasks.transition(task_id, TaskStatus.BLOCKED)
-            return
+            return None
         if verifier is not None and verifier.kind is DoDKind.HUMAN_APPROVAL:
             GovernanceResolver(ledger).open_task_gate(
                 task_id,
                 gate_kind=ApprovalGate.ACCEPTANCE,
                 reason=f"human-approval DoD for {task_id}",
             )
-            return
-        await self._land_outcome(
+            return None
+        artifact = await self._land_outcome(
             task_id,
             employee=employee,
             result=result,
             outcome_kind=outcome_kind,
             review_state="verified",  # F7: a beat lands only on the pass path, so this is verified
         )
+        # A recorded unmerged PR is not landed reality (BUG-005). Do not finalise ``done`` —
+        # the author rebases, then the task blocks. Goal-finalization evidence must not see a
+        # false-done leaf.
+        landing = pr_landing(artifact) if artifact is not None else None
+        if landing is not None and landing.blocks_done:
+            self._route_merge_conflict(task_id, author=employee)
+            return landing
         ledger.finalize_beat(
             task_id=task_id, run_id=run_id, dod_status=DodStatus.PASSED, verdict=verdict
         )
+        return landing
 
     def _route_block(self, task_id: str) -> None:
         """Route a blocked child to its manager parent (spec 15).
@@ -1575,28 +1595,73 @@ class Scheduler:
         result: BeatOutcome,
         outcome_kind: str | None = None,
         review_state: str | None = None,
-    ) -> None:
+    ) -> OutcomeArtifact | None:
         """Record the role's deliverable as an artifact via its registered lander (spec 04 §2).
 
-        A no-op when no lander registry is wired or the employee's role lands no artifact kind — the
-        beat still finalises ``done``, so landing is purely additive (the strict-completion record).
-        ``review_state`` stamps the beat's DoD verdict onto the landed artifact (F7).
+        Returns the landed artifact so the caller can refuse ``done`` when a PR did not merge
+        (BUG-005). ``None`` when no lander registry is wired or the role lands no artifact kind —
+        landing is additive, so the beat still finalises ``done``. ``review_state`` stamps the beat's
+        DoD verdict onto the landed artifact (F7).
         """
         if self._landers is None:
-            return
+            return None
         if outcome_kind is None:
             if employee is None or self._roles is None or employee.role not in self._roles:
-                return
+                return None
             outcome_kind = self._roles.get(employee.role).outcome_kind
         lander = self._landers.get(outcome_kind)
         if lander is None:
-            return
+            return None
         ledger = self._require_ledger()
         task = ledger.tasks.get(task_id)
         if task is None:
-            return
+            return None
         artifact = await lander.land(task, result)
-        ledger.artifacts.create(_to_ledger_artifact(artifact, review_state=review_state))
+        # An explicit unmerged PR is recorded but not yet landed — never stamp it verified.
+        stamp = None if pr_landing(artifact).blocks_done else review_state
+        ledger.artifacts.create(_to_ledger_artifact(artifact, review_state=stamp))
+        return artifact
+
+    def _route_merge_conflict(self, task_id: str, *, author: Employee) -> None:
+        """A passed beat whose PR did not integrate — re-dispatch the author to rebase, then block.
+
+        ``done`` must mean *landed* (BUG-005): the work passed its DoD but conflicts with company
+        main, so it is not finalised. Count only recorded unmerged-PR landings (not DoD-failure
+        runs). Re-dispatch the author up to ``max_repair_attempts`` to rebase (the worktree/branch
+        persist, so the next passed beat re-attempts the merge); after the cap it is ``blocked``
+        with a recovery card. Unlike a review block this never escalates to the manager — the
+        conflict is the author's branch to resolve, not a quality rejection.
+        """
+        ledger = self._require_ledger()
+        attempts = sum(
+            1
+            for recorded in ledger.artifacts.list_for_task(task_id)
+            if pr_landing_of(recorded.type.value, recorded.resource_ref).blocks_done
+        )
+        if attempts <= self.max_repair_attempts:
+            ledger.tasks.set_status(task_id, TaskStatus.TODO)
+            ledger.wakes.enqueue(
+                Wake(
+                    id=mint_id(),
+                    employee_id=author.id,
+                    reason=WakeReason.RECOVERY,
+                    payload={"task_id": task_id, "cause": "merge_conflict"},
+                )
+            )
+            return
+        ledger.tasks.set_status(task_id, TaskStatus.BLOCKED)
+        if ledger.recovery_actions.active_for_source(task_id) is None:
+            ledger.recovery_actions.open(
+                RecoveryAction(
+                    id=mint_id(),
+                    source_task_id=task_id,
+                    kind=RecoveryKind.WORKSPACE,
+                    owner_employee_id=author.id,
+                    cause="merge_conflict_exhausted",
+                    fingerprint="merge_conflict",
+                    next_action="rebase onto company main and resolve the conflict",
+                )
+            )
 
     def _climb_repair_ladder(
         self, task_id: str, *, employee_id: str, verifier: Verifier | None

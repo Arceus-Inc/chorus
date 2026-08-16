@@ -47,8 +47,14 @@ from chorus.lifecycle._decompose import (
     DepthCapped,
     decompose,
 )
+from chorus.lifecycle._outcome_capability import OutcomeMismatch, outcome_mismatches
 from chorus.lifecycle._team_policy import MissionTeamPolicy
-from chorus.outcomes import DeliverableKind, classify_deliverable, native_kind_for_role
+from chorus.outcomes import (
+    DeliverableKind,
+    OutcomeKind,
+    classify_deliverable,
+    native_kind_for_role,
+)
 from chorus.workforce import Employee, EmployeeStatus
 
 if TYPE_CHECKING:
@@ -68,6 +74,10 @@ class ChildPlan:
     execution_mode: ExecutionMode = ExecutionMode.DELIVERY
     can_subdelegate: bool = False
     replaces_task_id: str | None = None
+    # The deliverable the child is expected to land. When set, the service refuses to assign it to a
+    # role that produces a different kind (a ``pr`` child routed to a ``doc`` pm strands). ``None``
+    # skips the check so internal callers and undeclared tool args stay fail-open.
+    outcome_kind: OutcomeKind | None = None
 
 
 @dataclass(frozen=True)
@@ -92,8 +102,10 @@ class DecomposeResult:
     """The outcome of a decompose call: the ``label → task_id`` map, or a fail-closed reason.
 
     Exactly one of the failure fields is set on a rejection (and ``child_ids`` is empty): ``depth_capped``
-    when the fan-out would exceed the delegation depth cap, or ``unknown_assignees`` when a child names a
-    report that is not a direct report employee. A clean fan-out leaves both empty and ``child_ids`` populated.
+    when the fan-out would exceed the delegation depth cap, ``unknown_assignees`` when a child names a
+    report that is not a direct report, ``outcome_mismatches`` when a child's declared outcome can't be
+    produced by its assignee's role, or ``authority_denied`` for a contract/profession refusal. A clean
+    fan-out leaves the failure fields empty and ``child_ids`` populated.
     """
 
     child_ids: dict[str, str] = field(default_factory=dict)
@@ -101,6 +113,7 @@ class DecomposeResult:
     unknown_assignees: tuple[str, ...] = ()
     reviewer_assignees: tuple[str, ...] = ()
     authority_denied: str | None = None
+    outcome_mismatches: tuple[OutcomeMismatch, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -112,6 +125,7 @@ class SubmitTaskResult:
     depth_capped: bool = False
     unknown_assignees: tuple[str, ...] = ()
     authority_denied: str | None = None
+    outcome_mismatches: tuple[OutcomeMismatch, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -279,9 +293,11 @@ class CapabilityService:
         children: Sequence[ChildPlan],
         actor_employee_id: str | None,
     ) -> DecomposeResult:
-        # Craft-reroute FIRST, then the fail-closed gates (reviewer / unknown / authorize). PR #104's
-        # director manager-area fan-out belongs AFTER this rewrite: routing is DELIVERY-only (a no-op
-        # on director DELEGATION waves) and must not run after those gates or it would rewrite an
+        # Craft-reroute FIRST (undeclared DELIVERY children only), then the fail-closed gates
+        # (reviewer / unknown / outcome / authorize). A declared ``outcome_kind`` skips rewrite so
+        # the outcome check validates the manager's named assignee. PR #104's director manager-area
+        # fan-out belongs AFTER this rewrite: routing is DELIVERY-only (a no-op on director
+        # DELEGATION waves) and must not run after those gates or it would rewrite an
         # already-authorized wave. Post-route authorization still runs on the rewritten assignees.
         routed = self._capability_route(children, manager_id=parent.assignee_employee_id)
         children = routed.children
@@ -292,6 +308,9 @@ class CapabilityService:
         unknown = self._unknown_assignees(children, manager_id=parent.assignee_employee_id)
         if unknown:  # fail closed at the boundary — a bad report id never half-applies a fan-out
             return DecomposeResult(unknown_assignees=unknown)
+        mismatches = self._outcome_mismatches(children)
+        if mismatches:
+            return DecomposeResult(outcome_mismatches=mismatches)
 
         decision = self._authorize_wave(parent, children, actor_employee_id)
         if not decision.authorized:
@@ -310,6 +329,9 @@ class CapabilityService:
                         "depends_on": list(child.depends_on),
                         "execution_mode": child.execution_mode.value,
                         "intent": child.intent,
+                        "outcome_kind": None
+                        if child.outcome_kind is None
+                        else child.outcome_kind.value,
                         "replaces_task_id": child.replaces_task_id,
                         "task_id": ids[child.label],
                     }
@@ -591,6 +613,7 @@ class CapabilityService:
             depth_capped=outcome.depth_capped,
             unknown_assignees=outcome.unknown_assignees,
             authority_denied=outcome.authority_denied,
+            outcome_mismatches=outcome.outcome_mismatches,
         )
 
     def _replacement_denial(self, parent: Task, child: ChildPlan) -> DecomposeResult | None:
@@ -754,8 +777,10 @@ class CapabilityService:
         non-decompose callers are unaffected.
 
         An unauthorized or non-report original assignee is never rewritten — that would launder a
-        fail-closed unknown/authority denial into a valid assignment. Post-route reviewer, unknown,
-        and authorize gates still run on the rewritten wave.
+        fail-closed unknown/authority denial into a valid assignment. A child with a declared
+        ``outcome_kind`` is also left as named so the outcome-capability check validates the
+        manager's pair. Post-route reviewer, unknown, outcome, and authorize gates still run on the
+        (possibly rewritten) wave.
         """
         if self._roles is None or manager_id is None:
             return RoutedChildWave(children=tuple(children))
@@ -794,19 +819,21 @@ class CapabilityService:
     def _better_matched_report(self, child: ChildPlan, reports: Sequence[Employee]) -> str | None:
         """The id of a strictly-better-matched report for a mis-crafted DELIVERY child.
 
-        ``None`` (keep the manager's pick) unless ALL hold: the child is DELIVERY craft work; its
-        intent carries an unambiguous deliverable cue (not ROLE_DEFAULT); the current assignee is an
-        eligible direct report whose craft is a *different* concrete kind (a generalist whose native
-        kind is ROLE_DEFAULT is never "wrong", and a non-report is never rewritten); and a different
-        report actually produces that kind. Among matches the lowest employee id wins — load is
-        ignored so the decompose claim fingerprint is stable across in-beat retries. Canonical /
-        ambiguous work and pods that lack the ideal craft are left exactly as asked.
+        ``None`` (keep the manager's pick) unless ALL hold: the child is DELIVERY craft work with no
+        declared ``outcome_kind``; its intent carries an unambiguous deliverable cue (not
+        ROLE_DEFAULT); the current assignee is an eligible direct report whose craft is a *different*
+        concrete kind (a generalist whose native kind is ROLE_DEFAULT is never "wrong", and a
+        non-report is never rewritten); and a different report actually produces that kind. Among
+        matches the lowest employee id wins — load is ignored so the decompose claim fingerprint is
+        stable across in-beat retries. Canonical / ambiguous work, declared-kind assignments, and
+        pods that lack the ideal craft are left exactly as asked.
         """
         roles = self._roles
         if (
             roles is None
             or child.execution_mode is not ExecutionMode.DELIVERY
             or child.assignee is None
+            or child.outcome_kind is not None
         ):
             return None
         task_kind = classify_deliverable(child.intent)
@@ -832,6 +859,17 @@ class CapabilityService:
             return None
         matches.sort(key=lambda employee: employee.id)
         return matches[0].id
+
+    def _outcome_mismatches(self, children: Sequence[ChildPlan]) -> tuple[OutcomeMismatch, ...]:
+        """Children whose declared outcome their assignee's role cannot produce (BUG-006)."""
+        seen: dict[str, Employee] = {}
+        for child in children:
+            if child.assignee is None or child.assignee in seen:
+                continue
+            employee = self._ledger.employees.get(child.assignee)
+            if employee is not None:
+                seen[child.assignee] = employee
+        return outcome_mismatches(children, employees=tuple(seen.values()))
 
     def _is_direct_report(self, employee_id: str, *, manager_id: str | None) -> bool:
         employee = self._ledger.employees.get(employee_id)
@@ -870,6 +908,7 @@ __all__ = [
     "CapabilityService",
     "ChildPlan",
     "DecomposeResult",
+    "OutcomeMismatch",
     "RoutedChildWave",
     "SubmitTaskResult",
 ]

@@ -34,6 +34,7 @@ from chorus.lifecycle._capability import (
     DecomposeResult,
     SubmitTaskResult,
 )
+from chorus.outcomes import OutcomeKind
 from chorus.roles import RoleRegistry, default_roles
 from chorus.testing import uid
 from chorus.workforce import Employee
@@ -250,6 +251,87 @@ def test_submit_one_reroutes_from_wrong_craft_to_matched_report(ledger: Ledger) 
     result = _submit(
         svc,
         ChildPlan(label="api", intent="implement the REST API endpoint", assignee="dana"),
+        revision=revision,
+    )
+    assert result.authority_denied is None
+    assert result.child_id is not None
+    task = ledger.tasks.get(result.child_id)
+    assert task is not None
+    assert task.assignee_employee_id == "bob"
+
+
+_CODE_INTENT = "implement the REST API endpoint"
+
+
+def test_declared_doc_on_pm_with_code_shaped_intent_is_not_rerouted(ledger: Ledger) -> None:
+    """A declared OutcomeKind is the manager's assignment — do not rewrite it from intent cues."""
+    svc = _service(ledger, reports=(("pam", "pm"), ("bob", "backend_engineer")))
+    result = _decompose(
+        svc,
+        [
+            ChildPlan(
+                label="spec",
+                intent=_CODE_INTENT,
+                assignee="pam",
+                outcome_kind=OutcomeKind.DOC,
+            )
+        ],
+    )
+    assert result.outcome_mismatches == ()
+    assert result.authority_denied is None
+    assert _assignee(ledger, result, "spec") == "pam"
+    assert _reroute_destinations(ledger) == ()
+
+
+def test_undeclared_code_shaped_intent_on_pm_still_reroutes(ledger: Ledger) -> None:
+    """#74 routing remains for undeclared children — a pm handed CODE work is rewritten."""
+    svc = _service(ledger, reports=(("pam", "pm"), ("bob", "backend_engineer")))
+    result = _decompose(
+        svc,
+        [ChildPlan(label="api", intent=_CODE_INTENT, assignee="pam")],
+    )
+    assert _assignee(ledger, result, "api") == "bob"
+    assert _reroute_destinations(ledger) == ("bob",)
+
+
+def test_submit_one_declared_doc_on_pm_with_code_shaped_intent_is_not_rerouted(
+    ledger: Ledger,
+) -> None:
+    svc = _service(ledger, reports=(("pam", "pm"), ("bob", "backend_engineer")))
+    ledger.delegation_contracts.update_status(uid("M"), DelegationContractStatus.INTEGRATING)
+    revision = uid("run_mgr_submit_doc")
+    ledger.runs.create(
+        Run(id=revision, employee_id="mgr", task_id=uid("M"), status=RunStatus.RUNNING)
+    )
+    result = _submit(
+        svc,
+        ChildPlan(
+            label="spec",
+            intent=_CODE_INTENT,
+            assignee="pam",
+            outcome_kind=OutcomeKind.DOC,
+        ),
+        revision=revision,
+    )
+    assert result.outcome_mismatches == ()
+    assert result.authority_denied is None
+    assert result.child_id is not None
+    task = ledger.tasks.get(result.child_id)
+    assert task is not None
+    assert task.assignee_employee_id == "pam"
+    assert _reroute_destinations(ledger) == ()
+
+
+def test_submit_one_undeclared_code_shaped_intent_on_pm_still_reroutes(ledger: Ledger) -> None:
+    svc = _service(ledger, reports=(("pam", "pm"), ("bob", "backend_engineer")))
+    ledger.delegation_contracts.update_status(uid("M"), DelegationContractStatus.INTEGRATING)
+    revision = uid("run_mgr_submit_code")
+    ledger.runs.create(
+        Run(id=revision, employee_id="mgr", task_id=uid("M"), status=RunStatus.RUNNING)
+    )
+    result = _submit(
+        svc,
+        ChildPlan(label="api", intent=_CODE_INTENT, assignee="pam"),
         revision=revision,
     )
     assert result.authority_denied is None

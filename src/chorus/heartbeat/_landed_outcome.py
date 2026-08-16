@@ -19,11 +19,13 @@ def derive_landed_outcome(
     dod_status: DodStatus | None,
     *,
     orchestrated: bool = False,
+    unmerged_pr: bool = False,
 ) -> LandedOutcome:
     """Map the beat's landed state to a single :class:`LandedOutcome`.
 
     Evaluation order is load-bearing — orchestrated delegation wins over a downstream DoD failure
-    on the same beat, and ``CANCELLED`` is terminal regardless of task status.
+    on the same beat, and ``CANCELLED`` is terminal regardless of task status. An explicit unmerged
+    PR is never ``TERMINAL_PASS``: rebase is ``NEEDS_REWORK``, exhausted merge repair is ``STRANDED``.
     """
     disposition = result.disposition or (
         BeatDisposition.PASSED if result.passed else BeatDisposition.DOD_FAILED
@@ -44,6 +46,25 @@ def derive_landed_outcome(
         return LandedOutcome(
             phase=LandedPhase.DELEGATED,
             summary="Delegated to subtree",
+            dod_status=dod_status.value if dod_status is not None else None,
+            disposition=disposition.value,
+            diagnostic=diagnostic,
+            execution_mode=execution_mode,
+        )
+
+    if unmerged_pr:
+        if task.status is TaskStatus.BLOCKED:
+            return LandedOutcome(
+                phase=LandedPhase.STRANDED,
+                summary="Merge conflict exhausted",
+                dod_status=dod_status.value if dod_status is not None else None,
+                disposition=disposition.value,
+                diagnostic=diagnostic,
+                execution_mode=execution_mode,
+            )
+        return LandedOutcome(
+            phase=LandedPhase.NEEDS_REWORK,
+            summary="PR did not merge — rebase",
             dod_status=dod_status.value if dod_status is not None else None,
             disposition=disposition.value,
             diagnostic=diagnostic,
