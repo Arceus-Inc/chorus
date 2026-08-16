@@ -135,7 +135,7 @@ directly. Highlights:
 
 - `chat <employee>` — a conversational loop (one beat per line) instead of fire-and-forget.
 - `company init [seed]` — create/seed the company workspace explicitly.
-- `hire <name> <role>` · `workforce` · `task <id>` · `budget` · `approval` · `decompose` · …
+- `hire <name> <role>` · `workforce` · `task <id>` · `budget` · `approval` · …
 
 See [`src/chorus_cli/README.md`](src/chorus_cli/README.md) for the full reference.
 

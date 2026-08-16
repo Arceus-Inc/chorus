@@ -7,6 +7,7 @@ from dataclasses import replace
 
 import pytest
 
+from chorus.ids import derive_id
 from chorus.ledger import (
     DelegationContract,
     DelegationContractStatus,
@@ -25,7 +26,7 @@ from chorus.lifecycle import (
     MissionTeamPolicy,
 )
 from chorus.testing import uid
-from chorus.workforce import Employee
+from chorus.workforce import Employee, EmployeeStatus
 
 pytestmark = pytest.mark.integration
 
@@ -128,6 +129,29 @@ def _seed_delivery_parent(ledger: Ledger) -> tuple[CapabilityService, Task]:
 
 def _start_integrating(ledger: Ledger, parent: Task) -> None:
     ledger.delegation_contracts.update_status(parent.id, DelegationContractStatus.INTEGRATING)
+
+
+def _seed_second_manager(ledger: Ledger, parent: Task) -> str:
+    report_id = uid("member2")
+    ledger.employees.create(
+        Employee(id=report_id, name="Member Two", role="designer", reports_to="lead")
+    )
+    ledger.management_profiles.upsert(
+        ManagementProfile(
+            employee_id=report_id,
+            active=True,
+            can_lead=True,
+            can_subdelegate=True,
+            max_delegation_depth=2,
+            max_team_size=2,
+            allowed_professions=("engineer",),
+            spend_limit_cents=10_000,
+            version=1,
+            granted_by_user_id="user-admin",
+        )
+    )
+    assert parent.team_id is not None
+    return report_id
 
 
 def test_decompose_rejects_delivery_parent_without_partial_writes(
@@ -317,6 +341,320 @@ def test_decompose_creates_nested_team_and_contract_atomically(ledger: Ledger) -
     assert nested_contract.spend_limit_cents == 10_000
     membership = ledger.team_members.get(parent.team_id or "", uid("member"))
     assert membership is not None and membership.can_subdelegate is True
+
+
+def test_decompose_rejects_manager_report_wave_without_explicit_subdelegation_grant(
+    ledger: Ledger,
+) -> None:
+    service, parent = _seed_delegation_parent(ledger)
+    assert parent.team_id is not None
+    MissionTeamPolicy(ledger).add_member(parent.team_id, uid("member"), can_subdelegate=True)
+    roster_before = {member.employee_id for member in ledger.team_members.members_of(parent.team_id)}
+    revision = uid("director-wave")
+
+    result = service.decompose(
+        parent_id=parent.id,
+        revision=revision,
+        actor_employee_id="lead",
+        children=[
+            ChildPlan(
+                label="design-area",
+                intent="Lead design",
+                assignee=uid("member"),
+                execution_mode=ExecutionMode.DELEGATION,
+            )
+        ],
+    )
+
+    assert result.manager_area_violation is not None
+    assert result.manager_area_violation.manager_report_ids == (uid("member"),)
+    assert result.child_ids == {}
+    assert ledger.tasks.children(parent.id) == []
+    roster_after = {member.employee_id for member in ledger.team_members.members_of(parent.team_id)}
+    assert roster_after == roster_before
+    plan_revision_id = derive_id("planrev", revision)
+    assert ledger.artifact_revisions.get(plan_revision_id) is None
+    assert ledger.artifacts.get(derive_id("plan", parent.id, revision)) is None
+    assert ledger.decomposition_claims.by_source_revision(parent.id, plan_revision_id) is None
+
+
+def test_decompose_refuses_conflicting_existing_team_subdelegation_grant(
+    ledger: Ledger,
+) -> None:
+    service, parent = _seed_delegation_parent(ledger)
+    assert parent.team_id is not None
+    MissionTeamPolicy(ledger).add_member(parent.team_id, uid("member"))
+    revision = uid("conflicting-team-grant")
+
+    result = service.decompose(
+        parent_id=parent.id,
+        revision=revision,
+        actor_employee_id="lead",
+        children=[
+            ChildPlan(
+                label="design-area",
+                intent="Lead design",
+                assignee=uid("member"),
+                execution_mode=ExecutionMode.DELEGATION,
+                can_subdelegate=True,
+            )
+        ],
+    )
+
+    assert result.authority_denied == (
+        f"existing Team membership for {uid('member')!r} has a different subdelegation grant; "
+        "use governed reorganization"
+    )
+    assert ledger.tasks.children(parent.id) == []
+    plan_revision_id = derive_id("planrev", revision)
+    assert ledger.artifact_revisions.get(plan_revision_id) is None
+    assert ledger.decomposition_claims.by_source_revision(parent.id, plan_revision_id) is None
+
+
+def test_decompose_ignores_noninvokable_manager_reports(ledger: Ledger) -> None:
+    service, parent = _seed_delegation_parent(ledger)
+    assert parent.team_id is not None
+    MissionTeamPolicy(ledger).add_member(parent.team_id, uid("member"), can_subdelegate=True)
+    ledger.employees.set_status(uid("member"), EmployeeStatus.TERMINATED)
+    ledger.employees.create(
+        Employee(id=uid("member2"), name="Member Two", role="designer", reports_to="lead")
+    )
+
+    result = service.decompose(
+        parent_id=parent.id,
+        revision=uid("terminated-manager"),
+        actor_employee_id="lead",
+        children=[ChildPlan(label="design", intent="Design", assignee=uid("member2"))],
+    )
+
+    assert result.manager_area_violation is None
+    assert result.authority_denied is None
+    assert result.child_ids
+
+
+def test_decompose_rejects_manager_report_wave_that_omits_a_manager(ledger: Ledger) -> None:
+    service, parent = _seed_delegation_parent(ledger)
+    member2 = _seed_second_manager(ledger, parent)
+    team_policy = MissionTeamPolicy(ledger)
+    assert parent.team_id is not None
+    team_policy.add_member(parent.team_id, uid("member"), can_subdelegate=True)
+    team_policy.add_member(parent.team_id, member2, can_subdelegate=True)
+
+    result = service.decompose(
+        parent_id=parent.id,
+        revision=uid("director-wave-duplicate"),
+        actor_employee_id="lead",
+        children=[
+            ChildPlan(
+                label="design-area",
+                intent="Lead design",
+                assignee=uid("member"),
+                execution_mode=ExecutionMode.DELEGATION,
+                can_subdelegate=True,
+            ),
+            ChildPlan(
+                label="design-followup",
+                intent="Lead more design",
+                assignee=uid("member"),
+                execution_mode=ExecutionMode.DELEGATION,
+                can_subdelegate=True,
+            ),
+        ],
+    )
+
+    assert result.manager_area_violation is not None
+    assert set(result.manager_area_violation.manager_report_ids) == {
+        uid("member"),
+        member2,
+    }
+    assert result.manager_area_violation.assigned_manager_report_ids == (
+        uid("member"),
+        uid("member"),
+    )
+    assert ledger.tasks.children(parent.id) == []
+
+
+def test_decompose_accepts_valid_manager_wave_in_any_child_order(ledger: Ledger) -> None:
+    service, parent = _seed_delegation_parent(ledger)
+    member2 = _seed_second_manager(ledger, parent)
+    team_policy = MissionTeamPolicy(ledger)
+    assert parent.team_id is not None
+    team_policy.add_member(parent.team_id, uid("member"), can_subdelegate=True)
+    team_policy.add_member(parent.team_id, member2, can_subdelegate=True)
+
+    result = service.decompose(
+        parent_id=parent.id,
+        revision=uid("director-wave-reversed"),
+        actor_employee_id="lead",
+        children=[
+            ChildPlan(
+                label="second-area",
+                intent="Lead second area",
+                assignee=member2,
+                execution_mode=ExecutionMode.DELEGATION,
+                can_subdelegate=True,
+            ),
+            ChildPlan(
+                label="first-area",
+                intent="Lead first area",
+                assignee=uid("member"),
+                execution_mode=ExecutionMode.DELEGATION,
+                can_subdelegate=True,
+            ),
+        ],
+    )
+
+    assert result.manager_area_violation is None
+    assert set(result.child_ids) == {"first-area", "second-area"}
+    assert ledger.tasks.get(result.child_ids["first-area"]).assignee_employee_id == uid("member")  # type: ignore[union-attr]
+    assert ledger.tasks.get(result.child_ids["second-area"]).assignee_employee_id == member2  # type: ignore[union-attr]
+
+
+def test_decompose_refire_accepts_same_manager_wave_in_reversed_order(ledger: Ledger) -> None:
+    service, parent = _seed_delegation_parent(ledger)
+    member2 = _seed_second_manager(ledger, parent)
+    team_policy = MissionTeamPolicy(ledger)
+    assert parent.team_id is not None
+    team_policy.add_member(parent.team_id, uid("member"), can_subdelegate=True)
+    team_policy.add_member(parent.team_id, member2, can_subdelegate=True)
+    revision = uid("director-wave-refire")
+
+    first = service.decompose(
+        parent_id=parent.id,
+        revision=revision,
+        actor_employee_id="lead",
+        children=[
+            ChildPlan(
+                label="first-area",
+                intent="Lead first area",
+                assignee=uid("member"),
+                execution_mode=ExecutionMode.DELEGATION,
+                can_subdelegate=True,
+            ),
+            ChildPlan(
+                label="second-area",
+                intent="Lead second area",
+                assignee=member2,
+                execution_mode=ExecutionMode.DELEGATION,
+                can_subdelegate=True,
+            ),
+        ],
+    )
+    second = service.decompose(
+        parent_id=parent.id,
+        revision=revision,
+        actor_employee_id="lead",
+        children=[
+            ChildPlan(
+                label="second-area",
+                intent="Lead second area",
+                assignee=member2,
+                execution_mode=ExecutionMode.DELEGATION,
+                can_subdelegate=True,
+            ),
+            ChildPlan(
+                label="first-area",
+                intent="Lead first area",
+                assignee=uid("member"),
+                execution_mode=ExecutionMode.DELEGATION,
+                can_subdelegate=True,
+            ),
+        ],
+    )
+
+    assert first.child_ids == second.child_ids
+    assert second.authority_denied is None
+    assert second.manager_area_violation is None
+    assert len(ledger.tasks.children(parent.id)) == 2
+
+
+def test_decompose_invalid_team_still_denies_before_manager_gate(ledger: Ledger) -> None:
+    service, parent = _seed_delegation_parent(ledger)
+    member2 = _seed_second_manager(ledger, parent)
+    team_policy = MissionTeamPolicy(ledger)
+    assert parent.team_id is not None
+    team_policy.add_member(parent.team_id, uid("member"), can_subdelegate=True)
+    team_policy.add_member(parent.team_id, member2, can_subdelegate=True)
+    ledger._conn.execute("UPDATE task SET team_id = NULL WHERE id = ?", (parent.id,))
+    ledger._conn.commit()
+    revision = uid("director-wave-invalid-team")
+
+    result = service.decompose(
+        parent_id=parent.id,
+        revision=revision,
+        actor_employee_id="lead",
+        children=[
+            ChildPlan(
+                label="first-area",
+                intent="Lead first area",
+                assignee=uid("member"),
+                execution_mode=ExecutionMode.DELEGATION,
+                can_subdelegate=True,
+            ),
+            ChildPlan(
+                label="second-area",
+                intent="Lead second area",
+                assignee=member2,
+                execution_mode=ExecutionMode.DELEGATION,
+                can_subdelegate=True,
+            ),
+        ],
+    )
+
+    assert result.authority_denied == "active delegation Team is invalid"
+    assert result.manager_area_violation is None
+    assert ledger.tasks.children(parent.id) == []
+    plan_revision_id = derive_id("planrev", revision)
+    assert ledger.artifact_revisions.get(plan_revision_id) is None
+    assert ledger.artifacts.get(derive_id("plan", parent.id, revision)) is None
+    assert ledger.decomposition_claims.by_source_revision(parent.id, plan_revision_id) is None
+
+
+def test_decompose_manager_area_runs_before_reviewer_and_unknown_gates(ledger: Ledger) -> None:
+    service, parent = _seed_delegation_parent(ledger)
+    assert parent.team_id is not None
+    MissionTeamPolicy(ledger).add_member(parent.team_id, uid("member"), can_subdelegate=True)
+    ledger.employees.create(
+        Employee(id=uid("rev"), name="Rev", role="reviewer", reports_to="lead")
+    )
+
+    result = service.decompose(
+        parent_id=parent.id,
+        revision=uid("manager-area-before-reviewer"),
+        actor_employee_id="lead",
+        children=[ChildPlan(label="review", intent="Review the work", assignee=uid("rev"))],
+    )
+
+    assert result.manager_area_violation is not None
+    assert result.reviewer_assignees == ()
+    assert result.unknown_assignees == ()
+    assert result.child_ids == {}
+    assert ledger.tasks.children(parent.id) == []
+
+
+def test_submit_one_does_not_enforce_manager_area_fanout(ledger: Ledger) -> None:
+    service, parent = _seed_delegation_parent(ledger)
+    assert parent.team_id is not None
+    MissionTeamPolicy(ledger).add_member(parent.team_id, uid("member"), can_subdelegate=True)
+    _start_integrating(ledger, parent)
+
+    result = service.submit_one(
+        parent_id=parent.id,
+        revision=uid("corrective-without-manager-gate"),
+        actor_employee_id="lead",
+        child=ChildPlan(
+            label="hotfix",
+            intent="Patch the landing",
+            assignee=uid("member"),
+            can_subdelegate=True,
+        ),
+    )
+
+    assert result.authority_denied is None
+    assert result.child_id is not None
+    child = ledger.tasks.get(result.child_id)
+    assert child is not None and child.execution_mode is ExecutionMode.DELIVERY
+    assert child.assignee_employee_id == uid("member")
 
 
 def test_nested_delegation_without_explicit_team_grant_refuses_whole_wave(
