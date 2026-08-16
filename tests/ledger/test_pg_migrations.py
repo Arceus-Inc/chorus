@@ -88,6 +88,9 @@ def test_shipped_migrations_load_in_id_order() -> None:
     assert ids.index("0011_human_authorization_proof") < ids.index("0012_task_files_to_touch")
     assert "0013_dod_integration_verdict" in set(ids)
     assert ids.index("0012_task_files_to_touch") < ids.index("0013_dod_integration_verdict")
+    assert "0014_task_thread_lookup_indexes" in set(ids)
+    assert ids.index("0013_dod_integration_verdict") < ids.index("0014_task_thread_lookup_indexes")
+    assert "0016_task_thread_lookup_indexes" not in set(ids)
     assert "0006_human_authorization_proof" not in set(ids)
 
 

@@ -106,6 +106,14 @@ class CostEventRepo:
         ).fetchall()
         return [_row_to_event(row) for row in rows]
 
+    def task_only_for_task(self, task_id: str) -> list[CostEvent]:
+        """Task-attributed spend with no run, oldest first — preserve unbatched provenance."""
+        rows = self._conn.execute(
+            "SELECT * FROM cost_event WHERE task_id = ? AND run_id IS NULL ORDER BY occurred_at, id",
+            (task_id,),
+        ).fetchall()
+        return [_row_to_event(row) for row in rows]
+
     def spent_cents(self, employee_id: str, *, since: datetime | None = None) -> int:
         """Live-recomputed spend for an employee, optionally bounded to a window start."""
         if since is None:
