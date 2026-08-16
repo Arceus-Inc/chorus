@@ -47,7 +47,7 @@ _TOOL_META: dict[str, tuple[str, str]] = {
     "run_command": ("run", "#0d9488"),
     "bash": ("run", "#0d9488"),
     "git": ("git", "#d97706"),
-    "test_evidence": ("evidence", "#2563eb"),
+    "evidence_scan": ("evidence", "#2563eb"),
     "write_file": ("write", "#16a34a"),
     "read_file": ("read", "#6b7280"),
     "skill": ("skill", "#db2777"),
@@ -102,7 +102,7 @@ def _short_payload(tool: str, payload: str) -> str:
             args = re.findall(r"'((?:[^'\\]|\\.)*)'", m.group(1))
             return "git " + " ".join(args)
         return "git"
-    if tool == "test_evidence":
+    if tool == "evidence_scan":
         return "(scan the worktree)"
     if tool == "web_search":
         return _field(payload, "query")
@@ -198,7 +198,7 @@ _PHASES = [
     ),
     (
         "Review under pressure",
-        "Spawn the read-only <b>code_reviewer</b> and <b>ui_tester</b>, self-check with <b>test_evidence</b>, address every blocker/major, and re-run until green.",
+        "Spawn the read-only <b>code_reviewer</b>, self-check with <b>evidence_scan</b> and Playwright skills, address every blocker/major, and re-run until green.",
     ),
 ]
 
@@ -207,9 +207,9 @@ def phase_for(node: Node, current: int) -> int:
     """Monotonic phase pointer — a node can advance the phase, never rewind it."""
     wanted = current
     if node.is_subagent:
-        if node.subagent_name in {"code_reviewer", "ui_tester"}:
+        if node.subagent_name == "code_reviewer":
             wanted = 4
-    elif node.tool == "test_evidence":
+    elif node.tool == "evidence_scan":
         wanted = max(wanted, 4)
     elif node.tool in {"bash", "run_command"}:
         cmd = node.payload.lower()
@@ -425,7 +425,7 @@ def build_html(task_dir: Path) -> str:
             "spawn_subagent": _TOOL_META["spawn_subagent"],
             "run_command": _TOOL_META["run_command"],
             "git": _TOOL_META["git"],
-            "test_evidence": _TOOL_META["test_evidence"],
+            "evidence_scan": _TOOL_META["evidence_scan"],
             "write_file": _TOOL_META["write_file"],
             "read_file": _TOOL_META["read_file"],
             "skill": _TOOL_META["skill"],

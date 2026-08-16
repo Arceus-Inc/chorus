@@ -13,8 +13,16 @@ never widen, what its parent can do.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import StrEnum
 from pathlib import Path
 from typing import Any
+
+
+class IsolationMode(StrEnum):
+    """Filesystem isolation for the child session (mirrors dream.subagents.IsolationMode)."""
+
+    SHARED = "shared"
+    WORKTREE = "worktree"
 
 
 @dataclass(frozen=True)
@@ -46,6 +54,8 @@ class SubagentSpec:
     """Tier-2 subagents THIS spec may itself dispatch (depth-2). Empty (default) = a leaf. The
     composition root projects these onto dream's ``Subagent.spawnable``, intersecting each with this
     spec's own tools so a grandchild can only narrow. Requires ``spawn_subagent`` in ``tools``."""
+    isolation: IsolationMode = IsolationMode.SHARED
+    """``SHARED`` = parent worktree; ``WORKTREE`` = ephemeral git worktree (dream)."""
 
     def __post_init__(self) -> None:
         if not self.name or not self.name.strip():
@@ -77,4 +87,4 @@ class SubagentSpec:
             )
 
 
-__all__ = ["SubagentSpec"]
+__all__ = ["IsolationMode", "SubagentSpec"]

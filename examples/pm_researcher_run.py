@@ -1,14 +1,11 @@
-"""PM + Researcher — the depth-2 chain, live: Piper → researcher → web_research.
+"""PM + web_research — lean evidence sweep, live: Piper → web_research.
 
-Proves the PM's Tier-1 evidence specialist end to end, keyed:
-  1. Piper spawns the ``researcher`` subagent to gather cited evidence (depth-1).
-  2. The researcher ITSELF spawns the shared ``web_research`` orchestrator for real market facts
-     (depth-2) — so no claim is written from memory.
-  3. The researcher writes ``research_brief.md`` + returns a typed ResearchBrief; Piper cites its
-     ``source_url``\\ s in ``plan.md``'s ``## Decision`` — which is what clears the grounding floor.
+Proves the PM's isolation-earner research path end to end, keyed:
+  1. Piper loads ``evidence-brief`` and spawns ``web_research`` for cited market facts.
+  2. Piper cites those sources in ``plan.md``'s ``## Decision`` — which clears the grounding floor.
 
-The bus captures every ``SUBAGENT_SPAWNED`` so we can assert BOTH ``researcher`` and ``web_research``
-fired — the second only possible because the researcher inherited a scoped spawn set (§06 depth-2).
+The bus captures every ``SUBAGENT_SPAWNED`` so we can assert ``web_research`` fired
+and ``researcher`` did not.
 
     AZURE_OPENAI_API_KEY=... AZURE_OPENAI_BASE_URL=... AZURE_OPENAI_DEPLOYMENT=... \
     TAVILY_API_KEY=... uv run python examples/pm_researcher_run.py
@@ -53,12 +50,11 @@ _TASK = (
     "You are the product manager for Arceus (arceus.sh). Product context:\n\n"
     + _ARCEUS_CONTEXT
     + "\nDecide what to build next and write the plan to plan.md. This decision needs EXTERNAL "
-    "evidence, so gather it first with your Researcher: "
-    'call spawn_subagent(name="researcher", prompt="How do autonomous-agent / long-running-workflow '
+    "evidence, so gather it first with web_research: "
+    'call spawn_subagent(name="web_research", prompt="How do autonomous-agent / long-running-workflow '
     "products surface run progress and build user trust? Find real, current sources (e.g. how Temporal "
-    'or agent platforms expose execution state) and cite them."). The researcher will run web_research '
-    "itself and hand back a cited brief. Then write plan.md with a `## Decision` section stating your "
-    "choice and why, citing the researcher's source URLs. Be decisive."
+    'or agent platforms expose execution state) and cite them."). Then write plan.md with a '
+    "`## Decision` section stating your choice and why, citing those source URLs. Be decisive."
 )
 
 
@@ -159,21 +155,18 @@ def main() -> int:
         ledger.employees.create(Employee(id="piper", name="Piper", role="pm"))
         cfg = role_beat_config(registry.get("pm").manifest)
         mat = factory.materialize(ledger.employees.get("piper"))  # type: ignore[arg-type]
-        researcher = next((s for s in cfg.subagents if s.name == "researcher"), None)
+        web = next((s for s in cfg.subagents if s.name == "web_research"), None)
 
         _log("=" * 72)
-        _log("PM + RESEARCHER — depth-2 chain: Piper → researcher → web_research")
+        _log("PM + web_research — lean evidence sweep")
         _log("=" * 72)
         _log(f"   subagents on Piper   : {[s.name for s in cfg.subagents]}")
-        _log(
-            f"   researcher spawnable : "
-            f"{[c.name for c in researcher.spawnable] if researcher else '?'}"
-        )
+        _log(f"   web_research present : {web is not None}")
         _log(f"   worktree : {mat.working_dir}")
 
         ledger.tasks.submit(Task(id="arceus-next", intent=_TASK))
         assign_task(ledger, "arceus-next", "piper")
-        _log("\nTASK: gather evidence (researcher → web_research), then decide\n" + "-" * 72)
+        _log("\nTASK: gather evidence (web_research), then decide\n" + "-" * 72)
 
         scheduler = Scheduler(
             ledger=ledger,
@@ -207,11 +200,11 @@ def main() -> int:
         _log(f"   task status          : {ledger.tasks.get('arceus-next').status.value}")  # type: ignore[union-attr]
         _log(f"   subagents spawned    : {bus.spawned}")
         _log(f"   subagents completed  : {bus.completed}")
-        depth2 = "researcher" in bus.spawned and "web_research" in bus.spawned
-        _log(f"   ★ DEPTH-2 PROVEN     : {depth2}  (both researcher AND web_research fired)")
+        lean = "web_research" in bus.spawned and "researcher" not in bus.spawned
+        _log(f"   ★ LEAN RESEARCH      : {lean}  (web_research fired; researcher did not)")
 
         wt = mat.working_dir
-        for name in ("research_brief.md", PM_PLAN_DOC):
+        for name in (PM_PLAN_DOC,):
             f = wt / name
             if f.exists():
                 body = f.read_text(encoding="utf-8")

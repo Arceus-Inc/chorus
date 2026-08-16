@@ -22,13 +22,14 @@ from chorus.roles._manifest import (
 )
 from chorus_employee.ceo._brief import CEO_BRIEF
 from chorus_employee.ceo._subagents import CEO_SUBAGENTS
+from swarm.web_research_orchestrator import with_web_research
 
 _SKILLS_ROOT = str(Path(__file__).parent / "skills")
 
 
 def ceo_manifest() -> RoleManifest:
     """The complete harness identity of a CEO (spec 06 §2 -> dream ``build_harness``)."""
-    return RoleManifest(
+    return with_web_research(RoleManifest(
         # - per-role overlay -
         system_prompt=CEO_BRIEF,
         # ACCEPT_EDITS: the CEO writes its directive autonomously — there is no human to approve the
@@ -83,8 +84,7 @@ def ceo_manifest() -> RoleManifest:
         # credential guard, command-deny list, and worktree confinement still apply, and the toolset
         # carries no ``git`` — so "read the world, write only my worktree" holds.
         sandbox=SandboxTier.UNRESTRICTED,
-        # - build_harness(subagents=...) - Tier-1 specialists the CEO may dispatch mid-beat. Each
-        # subagent's tools are a subset of the CEO's toolset (intersected at materialize).
+        # Lean: no advisor/researcher personas. with_web_research adds spawn + web_research.
         subagents=CEO_SUBAGENTS,
         # - build_harness(skill_registry=...) - the CEO's authored playbooks, discovered from this
         # package's ``skills/`` dir and offered via the `skill` tool: the executive operating procedures
@@ -104,7 +104,7 @@ def ceo_manifest() -> RoleManifest:
         # — beat time budget — multi-step governance review (P0 #6) —
         beat_timeout_s=900.0,
         lease_ttl_s=1200.0,
-    )
+    ))
 
 
 __all__ = ["ceo_manifest"]

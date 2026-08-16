@@ -46,6 +46,7 @@ def test_ceo_declares_its_executive_toolset() -> None:
         "goal_archive",
         "workforce_catalog_read",
         "workforce_plan_propose",
+        "spawn_subagent",
     )
     assert manifest.permission_mode.value == "acceptEdits"
     assert manifest.memory_scope.value == "project"

@@ -18,7 +18,7 @@ from chorus.roles._manifest import (
     SandboxTier,
 )
 from chorus_employee.pm._brief import PM_BRIEF
-from chorus_employee.pm._subagents import CRITIC_SUBAGENT, RESEARCHER_SUBAGENT
+from chorus_employee.pm._subagents import CRITIC_SUBAGENT
 from swarm.web_research_orchestrator import WEB_RESEARCH_ORCHESTRATOR
 
 # The PM's authored playbooks live beside this package; the `skill` tool loads a body on demand (§08).
@@ -52,8 +52,8 @@ def pm_manifest() -> RoleManifest:
             # REPO_WRITE_NET sandbox — no command execution, no writes.
             "repo_search",
             "warehouse_query",
-            # spawn_subagent — dispatch the Tier-1 Researcher mid-beat (§06). The web tools above are
-            # also what the Researcher is capability-minimised from (it delegates them to web_research).
+            # spawn_subagent — dispatch web_research + critic mid-beat. The web tools above are
+            # also what web_research is capability-minimised from.
             "spawn_subagent",
             # record_decision — the §10 Decision OS write: record the decision as an immutable, cited
             # ledger object (confidence-floor-gated, mirrors decision.json). The PM's only ledger write.
@@ -74,15 +74,9 @@ def pm_manifest() -> RoleManifest:
             "lattice_apply",
             "skill_manage",
         ),
-        # — build_harness(subagents=…) — the Tier-1 specialists Piper may dispatch mid-beat (§06).
-        # The Researcher gathers cited evidence (depth-2 over the shared web_research orchestrator) and
-        # hands back a typed ResearchBrief whose source URLs the PM cites — clearing its grounding floor.
-        # web_research is also exposed top-level (as the Marketer does) so Piper can run a direct sweep
-        # without the Researcher wrapper; it is the Researcher's depth-2 child either way.
-        # The Critic (read-only, adversarial) red-teams the drafted decision BEFORE record_decision —
-        # the qualitative pre-record check the deterministic grounding floor cannot make (the Marketer's
-        # Brand-Critic analog); it returns a typed DecisionCritique (PASS/REVISE + findings).
-        subagents=(RESEARCHER_SUBAGENT, WEB_RESEARCH_ORCHESTRATOR, CRITIC_SUBAGENT),
+        # Lean roster: web_research (noise isolation) + critic (adversarial firewall).
+        # Craft (evidence-brief etc.) stays on the main employee via skills — no researcher middleman.
+        subagents=(WEB_RESEARCH_ORCHESTRATOR, CRITIC_SUBAGENT),
         # — build_harness(skill_registry=…) — the PM's authored playbooks, discovered from this package's
         # ``skills/`` dir and offered via the `skill` tool (§08). Slice 1 ships the Decision-core group —
         # the method behind the Decision OS (evidence -> options -> decision -> recommendation); later
@@ -123,15 +117,14 @@ def pm_manifest() -> RoleManifest:
         # — build_harness(memory=…) —
         memory_scope=MemoryScope.PROJECT,
         # — beat time budget (depth-2 research reach) —
-        # Piper can now spawn the Researcher, which itself nests web_research (depth-2) — a single beat
-        # can hold a depth-2 live sweep, so widen the wall-clock to the Marketer's depth-2 budget or the
-        # reaper claims it mid-nest. The org defaults (90s beat / 300s lease) are far too tight.
+        # Piper can spawn web_research (live sweep) plus the Critic, so widen the wall-clock past
+        # the org defaults (90s beat / 300s lease) or the reaper claims it mid-research.
         beat_timeout_s=900.0,
         lease_ttl_s=1200.0,
         # — turn / sprint budget —
         # The full loop is: gather evidence, draft the plan, red-team it with the Critic ONCE, apply the
         # verdict, then record + finalize. A tight budget is deliberate (a wide one lets the model fan
-        # out the Researcher/Critic many times), but 2 sprints left no room to record AFTER the Critic's
+        # out web_research/Critic many times), but 2 sprints left no room to record AFTER the Critic's
         # revise — so 3 sprints: draft → critique → revise+record. The Critic is calibrated to PASS a
         # sound decision, so this does not reopen the fan-out loop.
         max_turns=12,

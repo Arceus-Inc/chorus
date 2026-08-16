@@ -28,6 +28,9 @@ dependencies = [
   # heartbeat coma→one substrate failover, and tool exact-failure circuit breaker (warn@2/block@5).
   # Chorus inherits this via build_harness — no chorus-side streamer wiring. Still carries the
   # earlier floor: capability-aware evaluator (cb30e60) + RunTaskResult.usage_by_model (c1ff39e).
+  # Chorus PR #121 IsolationMode projection requires Dream PR #111
+  # (`dream.subagents.IsolationMode` on Subagent, plus explore/plan/verify builtins).
+  # The factory always projects isolation; there is no fallback when the field is absent.
   "dream",
   "croniter>=2.0",
   "pyyaml>=6.0",

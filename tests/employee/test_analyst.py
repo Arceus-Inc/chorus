@@ -43,6 +43,7 @@ def test_analyst_declares_its_analysis_toolset() -> None:
         "lattice_packet",
         "lattice_apply",
         "skill_manage",
+        "spawn_subagent",
     )
     assert (
         manifest.permission_mode.value == "acceptEdits"
@@ -141,18 +142,11 @@ def test_analyst_dod_classify_ignores_substring_false_matches() -> None:
     assert classify_action("forecast next quarter's revenue") is ActionClass.PREDICT
 
 
-def test_analyst_declares_a_tier1_subagent_swarm() -> None:
-    """The Analyst owns specialist subagents it can dispatch mid-beat (data/modeling/critic/narrative/scout)."""
+def test_analyst_declares_isolation_earners_only() -> None:
+    """Lean roster: critic (recompute firewall) + web_research. Craft personas are skills."""
     manifest = analyst_plugin().manifest
     names = {sa.name for sa in manifest.subagents}
-    assert {"data", "modeling", "critic", "narrative", "scout"} <= names
-
-
-def test_analyst_scout_is_a_read_only_web_researcher() -> None:
-    manifest = analyst_plugin().manifest
-    scout = next(sa for sa in manifest.subagents if sa.name == "scout")
-    assert set(scout.tools) == {"browser_run", "web_fetch", "read_file", "read_offloaded"}
-    assert "write_file" not in scout.tools and "warehouse_query" not in scout.tools
+    assert names == {"critic", "web_research"}
 
 
 def test_analyst_subagent_tools_are_a_subset_of_the_analyst() -> None:
@@ -161,24 +155,15 @@ def test_analyst_subagent_tools_are_a_subset_of_the_analyst() -> None:
     parent_tools = set(manifest.tools)
     for sa in manifest.subagents:
         assert set(sa.tools) <= parent_tools, f"subagent {sa.name!r} widens beyond the Analyst"
-    # The critic may read and recompute (read/query/notebook) but must not write the deliverable.
     critic = next(sa for sa in manifest.subagents if sa.name == "critic")
     assert "read_file" in critic.tools and "notebook_run" in critic.tools
     assert "write_file" not in critic.tools
-
-
-def test_analyst_data_subagents_carry_the_analysis_tools() -> None:
-    """The data/modeling specialists can pull from the warehouse and compute in the notebook."""
-    manifest = analyst_plugin().manifest
-    data = next(sa for sa in manifest.subagents if sa.name == "data")
-    modeling = next(sa for sa in manifest.subagents if sa.name == "modeling")
-    assert "warehouse_query" in data.tools and "notebook_run" in data.tools
-    assert "notebook_run" in modeling.tools and "chart_render" in modeling.tools
+    assert "run_command" not in critic.tools
 
 
 def test_analyst_beat_config_carries_the_subagents() -> None:
     config = role_beat_config(analyst_plugin().manifest)
-    assert {sa.name for sa in config.subagents} >= {"data", "critic"}
+    assert {sa.name for sa in config.subagents} == {"critic", "web_research"}
 
 
 def test_analyst_declares_authored_skills() -> None:

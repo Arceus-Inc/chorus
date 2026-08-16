@@ -49,4 +49,4 @@ def test_analyst_brings_tools_skills_and_subagents(tmp_path) -> None:
         mat.config.tools
     )
     assert mat.config.skills_root is not None
-    assert {sa.name for sa in mat.config.subagents} >= {"data", "critic"}
+    assert {sa.name for sa in mat.config.subagents} >= {"critic", "web_research"}

@@ -19,11 +19,7 @@ from chorus.roles._manifest import (
     SandboxTier,
 )
 from chorus_employee.marketer._brief import MARKETER_BRIEF
-from chorus_employee.marketer._subagents import (
-    BRAND_CRITIC_SUBAGENT,
-    CREATIVE_SUBAGENT,
-    STRATEGIST_SUBAGENT,
-)
+from chorus_employee.marketer._subagents import BRAND_CRITIC_SUBAGENT
 from swarm.web_research_orchestrator import WEB_RESEARCH_ORCHESTRATOR
 
 # Authored playbooks discovered from this package's ``skills/`` dir and offered via the ``skill`` tool.
@@ -58,7 +54,7 @@ def marketer_manifest() -> RoleManifest:
             "lattice_apply",
             "skill_manage",
             "spawn_subagent",
-            # market/audience research via the web (§06 Researcher, §07 read reach).
+            # market/audience research via the web (§06 web_research, §07 read reach).
             # browser_run drives Chromium CDP; web_fetch is the cheap no-browser read.
             # Granted so narrower-wins doesn't strip them from web_research at materialize.
             "browser_run",
@@ -88,9 +84,8 @@ def marketer_manifest() -> RoleManifest:
         #   (pairs with the live email.send reach).
         # - geo-aeo-seo: structuring owned content so search AND generative answer engines cite it
         #   (pairs with the content/GEO-refresh routine).
-        # - channel-priors: what format + cadence each surface rewards (shapes the Strategist's plan).
-        # Experiment/measurement skills (A/B discipline, attribution) wait on the analytics + the
-        # Experimenter subagent.
+        # - channel-priors: what format + cadence each surface rewards (shapes the campaign plan).
+        # Experiment/measurement skills (A/B discipline, attribution) wait on the analytics layer.
         skills=("brand-voice", "deliverability", "geo-aeo-seo", "channel-priors"),
         skills_root=_SKILLS_ROOT,
         # --- build_harness(memory=...) + working_memory ---
@@ -113,9 +108,8 @@ def marketer_manifest() -> RoleManifest:
         # --- build_harness(env=...) ---
         env=(),
         # --- beat time budget (research-heavy, now depth-2) ---
-        # Mira spawns research that blocks the beat in one uninterrupted call. With the Strategist
-        # (which itself nests the Web-Research Orchestrator, depth-2), a single beat can hold TWO
-        # live research sweeps — so widen the wall-clock further or the reaper claims it mid-nest.
+        # Mira spawns web_research that blocks the beat in one uninterrupted call. Widen the
+        # wall-clock or the reaper claims it mid-sweep.
         beat_timeout_s=900.0,
         lease_ttl_s=1200.0,
         # --- worktree containment ---
@@ -126,24 +120,9 @@ def marketer_manifest() -> RoleManifest:
         # no commands, and her only outbound-write surface (publish/send/spend) is still the gated
         # stage_go_live tool. Research reach is read-only egress, not an open network.
         sandbox=SandboxTier.REPO_WRITE_NET,
-        # --- subagents (Tier-1, role-owned) ---
-        # The Brand-Critic: an adversarial reviewer Mira spawns mid-beat to validate content
-        # against the voice spec. Read-only (can only inspect, never edit the draft).
-        # The Web-Research Orchestrator: a shared specialist (declared once in src/swarm/) she spawns to
-        # answer a market/audience question from the live web (browser_run), returning a
-        # runtime-validated WebResearchOutput. Passed directly — no with_web_research indirection.
-        # The Creative/Copywriter: a variation engine she spawns on a grounded seed to draft a set of
-        # on-brand variants (§10 variety). Writes to her worktree (candidates/), never publishes or
-        # selects; returns a typed CreativeManifest. It self-lints via brand_lint.
-        # The Strategist: frames the bet BEFORE drafting (§06) — reads the funnel/brand/brief and
-        # writes strategy_brief.md. Depth-2: it itself dispatches the Web-Research Orchestrator for
-        # cited market facts (the first employee to use bounded subagent nesting).
-        subagents=(
-            BRAND_CRITIC_SUBAGENT,
-            CREATIVE_SUBAGENT,
-            STRATEGIST_SUBAGENT,
-            WEB_RESEARCH_ORCHESTRATOR,
-        ),
+        # Lean roster: brand_critic (adversarial PASS/FAIL) + web_research (noise isolation).
+        # Strategist/creative craft → skills on the main employee.
+        subagents=(BRAND_CRITIC_SUBAGENT, WEB_RESEARCH_ORCHESTRATOR),
     )
 
 

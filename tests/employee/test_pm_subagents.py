@@ -14,7 +14,7 @@ from pydantic import ValidationError
 
 from chorus.roles import role_beat_config
 from chorus_employee.pm import (
-    RESEARCHER_SUBAGENT,
+    CRITIC_SUBAGENT,
     EvidenceItem,
     ResearchBrief,
     pm_plugin,
@@ -24,39 +24,17 @@ from chorus_employee.pm import (
 pytestmark = pytest.mark.unit
 
 
-# --- Researcher declaration (§06) ---
+# --- Critic declaration (retained isolation earner) ---
 
 
-class TestResearcherDeclaration:
+class TestCriticDeclaration:
     def test_subagent_name(self) -> None:
-        assert RESEARCHER_SUBAGENT.name == "researcher"
+        assert CRITIC_SUBAGENT.name == "critic"
 
-    def test_max_turns_bounded(self) -> None:
-        assert 0 < RESEARCHER_SUBAGENT.max_turns <= 12
-
-    def test_carries_the_research_output_schema(self) -> None:
-        schema = RESEARCHER_SUBAGENT.output_schema
+    def test_carries_the_critique_output_schema(self) -> None:
+        schema = CRITIC_SUBAGENT.output_schema
         assert schema is not None
         assert schema.get("type") == "object"
-        assert "evidence" in schema.get("properties", {})
-
-    def test_is_depth_2_over_web_research(self) -> None:
-        # It reuses the shared Web-Research Orchestrator (as the Strategist does) — cited facts, not
-        # memory. Depth-2 requires spawn_subagent in its own tools (SubagentSpec enforces this).
-        spawnable_names = {child.name for child in RESEARCHER_SUBAGENT.spawnable}
-        assert "web_research" in spawnable_names
-        assert "spawn_subagent" in RESEARCHER_SUBAGENT.tools
-
-    def test_description_instructs_grounding_via_web_research(self) -> None:
-        desc = RESEARCHER_SUBAGENT.description.lower()
-        assert "web_research" in desc
-        assert "source" in desc  # every claim carries a citation
-
-    def test_description_keeps_the_researcher_off_the_decision(self) -> None:
-        # It gathers evidence; the PM decides. It must not write the plan or make the call.
-        desc = RESEARCHER_SUBAGENT.description.lower()
-        assert "plan.md" in desc  # named explicitly as out of bounds
-        assert "do not" in desc or "does not" in desc
 
 
 # --- The typed return contract (pydantic is the single source of truth) ---
@@ -112,17 +90,13 @@ class TestResearchBriefSchema:
 # --- Manifest wiring + capability minimisation (§06) ---
 
 
-class TestPmManifestWiresResearcher:
+class TestPmManifestWiresLeanRoster:
     def test_manifest_includes_spawn_subagent_tool(self) -> None:
         assert "spawn_subagent" in pm_plugin().manifest.tools
 
-    def test_manifest_declares_the_researcher(self) -> None:
+    def test_manifest_declares_isolation_earners_only(self) -> None:
         names = {sa.name for sa in pm_plugin().manifest.subagents}
-        assert "researcher" in names
-
-    def test_manifest_declares_the_critic(self) -> None:
-        names = {sa.name for sa in pm_plugin().manifest.subagents}
-        assert "critic" in names
+        assert names == {"web_research", "critic"}
 
     def test_subagent_tools_are_a_subset_of_parent_tools(self) -> None:
         parent_tools = set(pm_plugin().manifest.tools)
@@ -132,12 +106,13 @@ class TestPmManifestWiresResearcher:
                     f"Subagent tool {tool!r} is not in the PM's tools — narrower-wins violation"
                 )
 
-    def test_beat_config_flattens_the_depth_2_set(self) -> None:
-        # role_beat_config surfaces both the declared Researcher and its depth-2 web_research child.
+    def test_beat_config_carries_the_lean_set(self) -> None:
         config = role_beat_config(pm_plugin().manifest)
-        assert {sa.name for sa in config.subagents} == {"researcher", "web_research", "critic"}
+        assert {sa.name for sa in config.subagents} == {"web_research", "critic"}
 
-    def test_brief_points_the_pm_at_the_researcher(self) -> None:
+    def test_brief_points_the_pm_at_web_research_and_critic(self) -> None:
         from chorus_employee.pm import PM_BRIEF
 
-        assert "researcher" in PM_BRIEF.lower()
+        assert 'spawn_subagent(name="web_research"' in PM_BRIEF
+        assert 'spawn_subagent(name="critic"' in PM_BRIEF
+        assert 'spawn_subagent(name="researcher"' not in PM_BRIEF

@@ -163,7 +163,7 @@ def parse_log(text: str) -> tuple[str, list[Node], list[Eval], dict[str, str]]:
 _PHASES = [
     (
         "Research the bet",
-        "The <b>ux_researcher</b> subagent frames the design bet from real UX evidence <em>before</em> anything is drawn — it dispatches <b>web_research</b> and writes <code>ux_brief.md</code>.",
+        "Load <b>user-flow-mapping</b> and spawn <b>web_research</b> for current UX/pattern facts, then write your own framing notes <em>before</em> anything is drawn.",
     ),
     (
         "Ground &amp; author the system",
@@ -171,7 +171,7 @@ _PHASES = [
     ),
     (
         "Explore on-system variants",
-        "Seed the direction (<code>design_seed.md</code>), then spawn the <b>explorer</b> to draft 3 self-linted variants and vary layout without touching the token system.",
+        "Seed the direction (<code>design_seed.md</code>), then draft 2–3 on-system variants yourself with layout skills — vary hierarchy without touching the token system.",
     ),
     (
         "Draft the spec",
@@ -188,10 +188,8 @@ def phase_for(node: Node, current: int) -> int:
     """Monotonic phase pointer — a node can advance the phase, never rewind it."""
     wanted = current
     if node.is_subagent:
-        if node.subagent_name == "ux_researcher":
+        if node.subagent_name == "web_research":
             wanted = 0
-        elif node.subagent_name == "explorer":
-            wanted = 2
         elif node.subagent_name == "design_critic":
             wanted = 4
     elif node.tool == "design_exemplar":

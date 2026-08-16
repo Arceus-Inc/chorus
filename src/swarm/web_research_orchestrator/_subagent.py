@@ -9,7 +9,7 @@ operating contract lives in the brief.
 
 from __future__ import annotations
 
-from chorus.roles._subagent import SubagentSpec
+from chorus.roles._subagent import IsolationMode, SubagentSpec
 from swarm.web_research_orchestrator._brief import _WEB_RESEARCH_BRIEF
 from swarm.web_research_orchestrator._schemas import web_research_output_schema
 
@@ -27,6 +27,8 @@ WEB_RESEARCH_ORCHESTRATOR = SubagentSpec(
     # Runtime-enforced return contract: the brief instructs the JSON shape (soft); this makes it hard
     # — the inline executor validates + repair-loops + fails open with a warning (WebResearchOutput).
     output_schema=web_research_output_schema(),
+    # Noise isolation: research fetches belong in an ephemeral worktree (Dream PR #111).
+    isolation=IsolationMode.WORKTREE,
 )
 
 __all__ = ["WEB_RESEARCH_ORCHESTRATOR", "WEB_RESEARCH_SUBAGENT_TOOLS"]

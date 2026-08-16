@@ -22,13 +22,14 @@ from chorus.roles._manifest import (
 )
 from chorus_employee.analyst._brief import ANALYST_BRIEF
 from chorus_employee.analyst._subagents import ANALYST_SUBAGENTS
+from swarm.web_research_orchestrator import with_web_research
 
 _SKILLS_ROOT = str(Path(__file__).parent / "skills")
 
 
 def analyst_manifest() -> RoleManifest:
     """The complete harness identity of an Analyst (spec 06 §2 → dream ``build_harness``)."""
-    return RoleManifest(
+    return with_web_research(RoleManifest(
         # — per-role overlay —
         system_prompt=ANALYST_BRIEF,  # → roles/{planner,generator,evaluator}.toml system_prompt
         # ACCEPT_EDITS: the Analyst writes its findings doc autonomously — there is no human to approve
@@ -89,8 +90,8 @@ def analyst_manifest() -> RoleManifest:
         # dream's credential guard, command-deny list, and worktree confinement still apply, and the
         # toolset carries no ``git`` — so "read the world, write only my worktree" holds.
         sandbox=SandboxTier.UNRESTRICTED,
-        # — build_harness(subagents=…) — Tier-1 specialists the Analyst may dispatch mid-beat. Each
-        # subagent's tools are a subset of the Analyst's toolset (intersected at materialize).
+        # Lean: critic (isolation earner) + with_web_research. Craft personas → skills.
+        # Dream builtins (explore/plan/verify) are available when spawn is enabled.
         subagents=ANALYST_SUBAGENTS,
         # — build_harness(skill_registry=…) — the Analyst's authored playbooks, discovered from this
         # package's ``skills/`` dir and offered via the `skill` tool. A distinguished-analyst library:
@@ -111,7 +112,7 @@ def analyst_manifest() -> RoleManifest:
             "findings-communication",
         ),
         skills_root=_SKILLS_ROOT,
-    )
+    ))
 
 
 __all__ = ["analyst_manifest"]

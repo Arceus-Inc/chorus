@@ -15,8 +15,6 @@ from chorus.roles import role_beat_config
 from chorus.testing import open_test_ledger
 from chorus_employee.designer import (
     DESIGN_CRITIC_SUBAGENT,
-    EXPLORER_SUBAGENT,
-    UX_RESEARCHER_SUBAGENT,
     designer_plugin,
 )
 from chorus_harness._factory import _subagent_set
@@ -82,71 +80,6 @@ class TestDesignCriticDeclaration:
         assert schema["properties"]["verdict"]["enum"] == ["PASS", "FAIL"]
 
 
-# --- Explorer declaration (Creative twin) ---
-
-
-class TestExplorerDeclaration:
-    def test_subagent_name(self) -> None:
-        assert EXPLORER_SUBAGENT.name == "explorer"
-
-    def test_explorer_is_a_write_agent(self) -> None:
-        assert "write_file" in EXPLORER_SUBAGENT.tools
-        assert "read_file" in EXPLORER_SUBAGENT.tools
-
-    def test_explorer_self_lints(self) -> None:
-        # It runs design_lint on each variant so the set arrives pre-checked.
-        assert "design_lint" in EXPLORER_SUBAGENT.tools
-
-    def test_explorer_loads_a_craft_skill(self) -> None:
-        assert "skill" in EXPLORER_SUBAGENT.tools
-
-    def test_explorer_never_runs_commands(self) -> None:
-        assert "run_command" not in EXPLORER_SUBAGENT.tools
-        assert "stage_handoff" not in EXPLORER_SUBAGENT.tools
-
-    def test_explorer_carries_the_output_schema(self) -> None:
-        schema = EXPLORER_SUBAGENT.output_schema
-        assert schema is not None
-        assert schema.get("type") == "object"
-        assert set(schema["required"]) == {"seed", "variants"}
-
-    def test_description_names_the_seed_and_variants_contract(self) -> None:
-        desc = EXPLORER_SUBAGENT.description
-        assert "design_seed.md" in desc
-        assert "variants/" in desc
-
-    def test_description_forbids_leaving_the_system(self) -> None:
-        # The hard rule: vary the layout/approach, never invent off-system tokens (§10 discipline).
-        desc = EXPLORER_SUBAGENT.description.lower()
-        assert "token" in desc
-
-    def test_max_turns_bounded(self) -> None:
-        assert 6 <= EXPLORER_SUBAGENT.max_turns <= 12
-
-
-# --- UX-Researcher declaration (Strategist twin, depth-2) ---
-
-
-class TestUxResearcherDeclaration:
-    def test_subagent_name(self) -> None:
-        assert UX_RESEARCHER_SUBAGENT.name == "ux_researcher"
-
-    def test_ux_researcher_is_depth_2(self) -> None:
-        # It dispatches the shared Web-Research Orchestrator for real pattern/prior-art facts.
-        assert "spawn_subagent" in UX_RESEARCHER_SUBAGENT.tools
-        assert any(s.name == "web_research" for s in UX_RESEARCHER_SUBAGENT.spawnable)
-
-    def test_ux_researcher_carries_the_brief_output_schema(self) -> None:
-        schema = UX_RESEARCHER_SUBAGENT.output_schema
-        assert schema is not None
-        assert schema.get("type") == "object"
-        assert {"brief_file", "approach", "evidence"} <= set(schema["required"])
-
-    def test_ux_researcher_writes_a_brief(self) -> None:
-        assert "write_file" in UX_RESEARCHER_SUBAGENT.tools
-        assert "ux_brief.md" in UX_RESEARCHER_SUBAGENT.description
-
-
 # --- Manifest integration ---
 
 
@@ -155,13 +88,11 @@ class TestDesignerManifestSubagents:
         plugin = designer_plugin()
         assert any(sa.name == "design_critic" for sa in plugin.manifest.subagents)
 
-    def test_manifest_declares_explorer(self) -> None:
+    def test_manifest_omits_craft_personas(self) -> None:
         plugin = designer_plugin()
-        assert any(sa.name == "explorer" for sa in plugin.manifest.subagents)
-
-    def test_manifest_declares_ux_researcher(self) -> None:
-        plugin = designer_plugin()
-        assert any(sa.name == "ux_researcher" for sa in plugin.manifest.subagents)
+        names = {sa.name for sa in plugin.manifest.subagents}
+        assert "explorer" not in names
+        assert "ux_researcher" not in names
 
     def test_manifest_declares_web_research(self) -> None:
         # The shared Web-Research Orchestrator, passed DIRECTLY into the manifest so the UX-Researcher
@@ -197,10 +128,15 @@ class TestDesignerManifestSubagents:
         config = role_beat_config(designer_plugin().manifest)
         assert {sa.name for sa in config.subagents} == {
             "design_critic",
-            "explorer",
-            "ux_researcher",
             "web_research",
         }
+
+    def test_brief_does_not_instruct_removed_personas(self) -> None:
+        from chorus_employee.designer import DESIGNER_BRIEF
+
+        assert 'spawn_subagent(name="ux_researcher"' not in DESIGNER_BRIEF
+        assert 'spawn_subagent(name="explorer"' not in DESIGNER_BRIEF
+        assert 'spawn_subagent(name="design_critic"' in DESIGNER_BRIEF
 
 
 # --- Factory projection (guarded on dream `spawnable` support) ---
@@ -218,24 +154,6 @@ class TestDesignerProjection:
         assert "read_file" in child.tools
         assert "design_lint" in child.tools
         assert "write_file" not in child.tools  # read-only survives projection
-
-    def test_explorer_projects_with_write_and_lint(self) -> None:
-        config = role_beat_config(designer_plugin().manifest)
-        result = _subagent_set(config)
-        assert result is not None
-        child = result.get("explorer")
-        assert child is not None
-        assert "write_file" in child.tools
-        assert "design_lint" in child.tools
-        assert child.output_schema is not None
-
-    def test_ux_researcher_projects_depth_2(self) -> None:
-        config = role_beat_config(designer_plugin().manifest)
-        result = _subagent_set(config)
-        assert result is not None
-        child = result.get("ux_researcher")
-        assert child is not None
-        assert any(g.name == "web_research" for g in child.spawnable)
 
     def test_design_lint_is_actually_offered_to_the_critic_at_runtime(self) -> None:
         from dream.permissions._types import SandboxTier
