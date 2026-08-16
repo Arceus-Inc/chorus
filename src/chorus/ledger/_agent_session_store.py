@@ -7,12 +7,17 @@ from chorus.ledger._ledger import Ledger
 from chorus.ledger._models import AgentSession
 
 
+def dream_session_key_for_handle(session_id: str) -> str:
+    """Provider scope owned by one provider-neutral Chorus session handle."""
+    return f"session-{session_id}"
+
+
 def ensure_open_session(
     ledger: Ledger,
     *,
     employee_id: str,
     task_id: str,
-    dream_session_key: str,
+    dream_session_key: str | None = None,
     model: str,
     run_id: str | None,
     working_dir: str | None = None,
@@ -21,9 +26,14 @@ def ensure_open_session(
     existing = ledger.agent_sessions.get_open_for_task(task_id)
     if existing is not None:
         return existing
+    session_id = mint_id()
     session = AgentSession(
-        id=mint_id(),
-        dream_session_key=dream_session_key,
+        id=session_id,
+        dream_session_key=(
+            dream_session_key
+            if dream_session_key is not None
+            else dream_session_key_for_handle(session_id)
+        ),
         employee_id=employee_id,
         task_id=task_id,
         run_id=run_id,
@@ -31,3 +41,6 @@ def ensure_open_session(
         working_dir=working_dir,
     )
     return ledger.agent_sessions.open(session)
+
+
+__all__ = ["dream_session_key_for_handle", "ensure_open_session"]

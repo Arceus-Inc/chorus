@@ -18,14 +18,6 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-
-from chorus.adapters import DreamBeatRunner, ModelRate, TokenPricing, to_beat_outcome
-from chorus.events import Event, EventKind
-from chorus.heartbeat import BeatDisposition
-from chorus.heartbeat._todo_flush import read_todo_flush_nudge
-from chorus.ledger import dream_session_key_for_task
-from chorus.outcomes import VerificationStep
-from chorus.testing import uid
 from dream.runner.events import RunTaskEvent
 from tests.adapters._dream_events import (
     contract_written,
@@ -40,6 +32,14 @@ from tests.adapters._dream_events import (
     task_completed,
     task_started,
 )
+
+from chorus.adapters import DreamBeatRunner, ModelRate, TokenPricing, to_beat_outcome
+from chorus.events import Event, EventKind
+from chorus.heartbeat import BeatDisposition
+from chorus.heartbeat._todo_flush import read_todo_flush_nudge
+from chorus.ledger import dream_session_key_for_task
+from chorus.outcomes import VerificationStep
+from chorus.testing import uid
 
 pytestmark = pytest.mark.unit
 
@@ -291,6 +291,25 @@ async def test_every_beat_on_a_task_addresses_the_same_dream_session(tmp_path: P
 
     assert first_scope == dream_session_key_for_task("task_M")
     assert harness.session_scope == first_scope
+
+
+async def test_bound_control_plane_session_scope_overrides_task_fallback(tmp_path: Path) -> None:
+    harness = _FakeHarness(
+        result=_result("done"),
+        events=(role_text(text="resumed"),),
+    )
+    runner = DreamBeatRunner(harness, working_dir=tmp_path, employee_id=uid("e"))
+    scoped = runner.for_session_scope("session-control-plane-1")
+    assert scoped.working_dir == tmp_path
+
+    seen: list[Event] = []
+    await scoped.run_task(
+        task_id="task_M", intent="resume", run_id=uid("run_1"), observer=seen.append
+    )
+
+    assert harness.session_scope == "session-control-plane-1"
+    assert [event.kind for event in seen] == [EventKind.RUN_TEXT]
+    assert seen[0].payload["dream_kind"] == "role.text"
 
 
 async def test_run_task_writes_the_beat_context_for_capability_tools(tmp_path: Path) -> None:
